@@ -159,15 +159,6 @@ import { useToastHelpers } from "@/components/ui/toast";
 
 const DEBUG_DAY_SHIFT = true;
 
-function safeDateTimeFormat(
-  locale: string | undefined,
-  tz: string | null | undefined,
-  options: Intl.DateTimeFormatOptions
-) {
-  const effectiveTz = typeof tz === "string" && tz.trim() ? tz : "UTC";
-  return new Intl.DateTimeFormat(locale, { ...options, timeZone: effectiveTz });
-}
-
 function formatScheduleDateKey(date: Date, timeZone: string) {
   return dayKeyFromUtc(date, timeZone);
 }
@@ -472,270 +463,6 @@ function parseScheduleDateParam(value: string | null) {
     key: formatLocalDateKey(fallback),
     wasValid: false,
   };
-}
-
-const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function InlineJumpToDate({
-  currentDate,
-  timeZone,
-  onSelectDate,
-  onClose,
-}: {
-  currentDate: Date;
-  timeZone: string;
-  onSelectDate: (date: Date) => void;
-  onClose: () => void;
-}) {
-  const todayDateKey = useMemo(() => dayKeyFromUtc(new Date(), timeZone), [timeZone]);
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const { year, month } = getDateTimeParts(currentDate, timeZone);
-    return makeDateInTimeZone(
-      { year, month, day: 1, hour: 12, minute: 0 },
-      timeZone
-    );
-  });
-
-  const { year: cmYear, month: cmMonth } = useMemo(
-    () => getDateTimeParts(calendarMonth, timeZone),
-    [calendarMonth, timeZone]
-  );
-
-  const monthLabel = useMemo(() => {
-    const fmt = safeDateTimeFormat(undefined, timeZone, {
-      month: "long",
-      year: "numeric",
-    });
-    return fmt.format(calendarMonth);
-  }, [calendarMonth, timeZone]);
-
-  const currentDateKey = useMemo(
-    () => dayKeyFromUtc(currentDate, timeZone),
-    [currentDate, timeZone]
-  );
-
-  const goToPrevMonth = useCallback(() => {
-    setCalendarMonth((prev) => {
-      const { year, month } = getDateTimeParts(prev, timeZone);
-      const newMonth = month - 1;
-      if (newMonth < 1) {
-        return makeDateInTimeZone(
-          { year: year - 1, month: 12, day: 1, hour: 12, minute: 0 },
-          timeZone
-        );
-      }
-      return makeDateInTimeZone(
-        { year, month: newMonth, day: 1, hour: 12, minute: 0 },
-        timeZone
-      );
-    });
-  }, [timeZone]);
-
-  const goToNextMonth = useCallback(() => {
-    setCalendarMonth((prev) => {
-      const { year, month } = getDateTimeParts(prev, timeZone);
-      const newMonth = month + 1;
-      if (newMonth > 12) {
-        return makeDateInTimeZone(
-          { year: year + 1, month: 1, day: 1, hour: 12, minute: 0 },
-          timeZone
-        );
-      }
-      return makeDateInTimeZone(
-        { year, month: newMonth, day: 1, hour: 12, minute: 0 },
-        timeZone
-      );
-    });
-  }, [timeZone]);
-
-  const goToToday = useCallback(() => {
-    const today = new Date();
-    const { year, month } = getDateTimeParts(today, timeZone);
-    setCalendarMonth(
-      makeDateInTimeZone(
-        { year, month, day: 1, hour: 12, minute: 0 },
-        timeZone
-      )
-    );
-    onSelectDate(today);
-  }, [timeZone, onSelectDate]);
-
-  const daysInMonth = useMemo(() => {
-    const firstOfMonth = makeDateInTimeZone(
-      { year: cmYear, month: cmMonth, day: 1, hour: 12, minute: 0 },
-      timeZone
-    );
-    const totalDays = new Date(cmYear, cmMonth, 0).getDate();
-    const firstDayOfWeek = weekdayInTimeZone(firstOfMonth, timeZone);
-    const previousMonth = cmMonth === 1 ? 12 : cmMonth - 1;
-    const previousMonthYear = cmMonth === 1 ? cmYear - 1 : cmYear;
-    const previousMonthDays = new Date(previousMonthYear, previousMonth, 0).getDate();
-
-    const cells: Array<{
-      key: string;
-      day: number;
-      date: Date;
-      isCurrentMonth: boolean;
-      isToday: boolean;
-      isSelected: boolean;
-    }> = [];
-
-    for (let i = 0; i < firstDayOfWeek; i++) {
-      const day = previousMonthDays - firstDayOfWeek + i + 1;
-      const cellDate = makeDateInTimeZone(
-        { year: previousMonthYear, month: previousMonth, day, hour: 12, minute: 0 },
-        timeZone
-      );
-      const cellKey = dayKeyFromUtc(cellDate, timeZone);
-      cells.push({
-        key: `prev-${cellKey}`,
-        day,
-        date: cellDate,
-        isCurrentMonth: false,
-        isToday: cellKey === todayDateKey,
-        isSelected: cellKey === currentDateKey,
-      });
-    }
-
-    for (let day = 1; day <= totalDays; day++) {
-      const cellDate = makeDateInTimeZone(
-        { year: cmYear, month: cmMonth, day, hour: 12, minute: 0 },
-        timeZone
-      );
-      const cellKey = dayKeyFromUtc(cellDate, timeZone);
-      cells.push({
-        key: cellKey,
-        day,
-        date: cellDate,
-        isCurrentMonth: true,
-        isToday: cellKey === todayDateKey,
-        isSelected: cellKey === currentDateKey,
-      });
-    }
-
-    const nextMonth = cmMonth === 12 ? 1 : cmMonth + 1;
-    const nextMonthYear = cmMonth === 12 ? cmYear + 1 : cmYear;
-    const remainingCells = 42 - cells.length;
-    for (let day = 1; day <= remainingCells; day++) {
-      const cellDate = makeDateInTimeZone(
-        { year: nextMonthYear, month: nextMonth, day, hour: 12, minute: 0 },
-        timeZone
-      );
-      const cellKey = dayKeyFromUtc(cellDate, timeZone);
-      cells.push({
-        key: `next-${cellKey}`,
-        day,
-        date: cellDate,
-        isCurrentMonth: false,
-        isToday: cellKey === todayDateKey,
-        isSelected: cellKey === currentDateKey,
-      });
-    }
-
-    return cells;
-  }, [cmYear, cmMonth, timeZone, todayDateKey, currentDateKey]);
-
-  return (
-    <div
-      className="flex flex-col gap-3 px-5 pt-3 pb-4"
-      aria-label="Inline jump to date"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={goToPrevMonth}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-          aria-label="Previous month"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M10 2L4 8L10 14"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        <span className="text-sm font-semibold text-white">
-          {monthLabel}
-        </span>
-        <button
-          type="button"
-          onClick={goToNextMonth}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-          aria-label="Next month"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M6 2L12 8L6 14"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
-      <div className="grid grid-cols-7">
-        {WEEKDAY_LABELS.map((label) => (
-          <div
-            key={label}
-            className="flex h-8 items-center justify-center text-[11px] font-semibold text-white/50"
-          >
-            {label}
-          </div>
-        ))}
-        {daysInMonth.map((cell) => (
-          <button
-            key={cell.key}
-            type="button"
-            onClick={() => onSelectDate(cell.date)}
-            className={clsx(
-              "flex h-9 items-center justify-center rounded-full text-sm transition-colors",
-              cell.isCurrentMonth
-                ? "font-medium text-white/90 hover:bg-white/15"
-                : "text-white/30 hover:bg-white/10",
-              cell.isSelected &&
-                !cell.isToday &&
-                "bg-white/20 font-semibold text-white",
-              cell.isToday &&
-                "bg-amber-400/80 font-bold text-black"
-            )}
-          >
-            {cell.day}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={goToToday}
-        className="mx-auto mt-1 rounded-full bg-white/15 px-4 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/25"
-      >
-        Today
-      </button>
-      <button
-        type="button"
-        onClick={onClose}
-        className="mt-1 text-center text-[11px] font-medium text-white/40 hover:text-white/70"
-      >
-        Close calendar
-      </button>
-    </div>
-  );
 }
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
@@ -9833,11 +9560,16 @@ export default function ScheduleTabContent({
                   marginTop: -INLINE_JUMP_REVEAL_HEIGHT_PX,
                 }}
               >
-                <InlineJumpToDate
+                <JumpToDateSheet
+                  variant="inline"
+                  open={isInlineJumpToDateOpen}
+                  onOpenChange={(open) => {
+                    if (!open) closeInlineJumpToDate();
+                  }}
                   currentDate={currentDate}
                   timeZone={effectiveTimeZone}
                   onSelectDate={handleInlineJumpToDateSelect}
-                  onClose={closeInlineJumpToDate}
+                  snapshot={jumpToDateSnapshot ?? undefined}
                 />
               </div>
               <AnimatePresence mode="wait" initial={false}>

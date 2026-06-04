@@ -3,6 +3,7 @@ import BottomNav from "@/components/BottomNav";
 import AppMain from "@/components/AppMain";
 import { ProfileProvider } from "@/components/ProfileProvider";
 import LevelUpListener from "@/components/LevelUpListener";
+import SchedulerActivityHeartbeat from "@/components/SchedulerActivityHeartbeat";
 import { ToastProvider } from "@/components/ui/toast";
 import ProfileSetupPrompt from "@/components/ProfileSetupPrompt";
 import { TourProvider } from "@/components/tour/TourProvider";
@@ -17,6 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <ProfileProvider>
             <FabCreationProvider>
               <LevelUpListener />
+              <SchedulerActivityHeartbeat />
               <ProfileSetupPrompt />
               <TopNav />
               <AppMain>{children}</AppMain>
