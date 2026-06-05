@@ -406,7 +406,7 @@ export default function SettingsPage() {
                 )}
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
                   {isPlus
-                    ? "The full CREATOR Pro planning and execution layer is unlocked on this account."
+                    ? "Full CREATOR Pro planning and execution layer is unlocked."
                     : "More room for goals, projects, tasks, and habits. Bigger roadmaps for bigger life systems."}
                 </p>
                 {planRenewalDate && (
@@ -571,7 +571,7 @@ export default function SettingsPage() {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">{mainContent}</main>
+      <main className="mx-auto max-w-5xl space-y-6 px-4 pb-16 pt-4">{mainContent}</main>
       {deleteDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div

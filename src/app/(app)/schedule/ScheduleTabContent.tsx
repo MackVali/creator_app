@@ -203,11 +203,6 @@ const inlineJumpCloseTransition = {
   damping: 31,
   mass: 0.85,
 } as const;
-const inlineJumpSettleTransition = {
-  type: "tween",
-  duration: 0.1,
-  ease: [0.22, 0.72, 0.24, 1],
-} as const;
 const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
@@ -327,6 +322,14 @@ function computeInlineJumpRevealHeight(viewportHeight: number) {
   const upperBound = Math.max(0, viewportHeight - timelinePeekHeight);
 
   return Math.round(upperBound);
+}
+
+function computeInlineJumpMaxRevealHeight(viewportHeight: number) {
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+    return INLINE_JUMP_REVEAL_HEIGHT_PX;
+  }
+
+  return Math.round(viewportHeight);
 }
 
 type OverlayWindowRecord = {
@@ -3464,13 +3467,29 @@ export default function ScheduleTabContent({
   const [inlineJumpRevealHeight, setInlineJumpRevealHeight] = useState(
     INLINE_JUMP_REVEAL_HEIGHT_PX
   );
-  const inlineJumpRevealHeightRef = useRef(inlineJumpRevealHeight);
+  const [inlineJumpMaxRevealHeight, setInlineJumpMaxRevealHeight] = useState(
+    INLINE_JUMP_REVEAL_HEIGHT_PX
+  );
+  const [inlineJumpContentHeight, setInlineJumpContentHeight] = useState(0);
+  const inlineJumpMeasuredRevealHeight = Math.max(
+    inlineJumpRevealHeight,
+    inlineJumpContentHeight
+  );
+  const inlineJumpContentExceedsMaxReveal =
+    inlineJumpContentHeight > inlineJumpMaxRevealHeight;
+  const inlineJumpEffectiveRevealHeight = inlineJumpContentExceedsMaxReveal
+    ? inlineJumpMeasuredRevealHeight
+    : Math.min(inlineJumpMaxRevealHeight, inlineJumpMeasuredRevealHeight);
+  const isInlineJumpExpandedLayout =
+    isInlineJumpToDateOpen &&
+    inlineJumpContentHeight > inlineJumpRevealHeight + 8;
+  const inlineJumpRevealHeightRef = useRef(inlineJumpEffectiveRevealHeight);
   const jumpPullStartYRef = useRef<number | null>(null);
   const jumpPullDistanceRef = useRef(0);
   const isJumpPullingRef = useRef(false);
   const inlineJumpPullThreshold = Math.min(
     220,
-    Math.max(145, inlineJumpRevealHeight * 0.32)
+    Math.max(145, inlineJumpEffectiveRevealHeight * 0.32)
   );
 
   useEffect(() => {
@@ -3488,7 +3507,9 @@ export default function ScheduleTabContent({
           : 0;
       const availableHeight = Math.max(0, viewportHeight - topChromeOffset);
       const nextHeight = computeInlineJumpRevealHeight(availableHeight);
+      const nextMaxHeight = computeInlineJumpMaxRevealHeight(availableHeight);
       setInlineJumpRevealHeight(nextHeight);
+      setInlineJumpMaxRevealHeight(nextMaxHeight);
     };
 
     updateInlineJumpRevealHeight();
@@ -3508,14 +3529,30 @@ export default function ScheduleTabContent({
 
   useEffect(() => {
     if (!isInlineJumpToDateOpen) {
-      inlineJumpRevealHeightRef.current = inlineJumpRevealHeight;
+      inlineJumpRevealHeightRef.current = inlineJumpEffectiveRevealHeight;
       return;
     }
-    if (inlineJumpRevealHeightRef.current !== inlineJumpRevealHeight) {
-      jumpPullControls.set({ y: inlineJumpRevealHeight });
+    if (isInlineJumpExpandedLayout) {
+      jumpPullControls.stop();
+      jumpPullControls.set({ y: 0 });
+      inlineJumpRevealHeightRef.current = inlineJumpEffectiveRevealHeight;
+      return;
     }
-    inlineJumpRevealHeightRef.current = inlineJumpRevealHeight;
-  }, [inlineJumpRevealHeight, isInlineJumpToDateOpen, jumpPullControls]);
+    if (
+      inlineJumpRevealHeightRef.current !== inlineJumpEffectiveRevealHeight
+    ) {
+      void jumpPullControls.start({
+        y: inlineJumpEffectiveRevealHeight,
+        transition: inlineJumpOpenTransition,
+      });
+    }
+    inlineJumpRevealHeightRef.current = inlineJumpEffectiveRevealHeight;
+  }, [
+    inlineJumpEffectiveRevealHeight,
+    isInlineJumpToDateOpen,
+    isInlineJumpExpandedLayout,
+    jumpPullControls,
+  ]);
 
   const resetInlineJumpPullState = useCallback(() => {
     isJumpPullingRef.current = false;
@@ -3525,14 +3562,13 @@ export default function ScheduleTabContent({
 
   const animateInlineJumpOpen = useCallback(
     async ({ source = "button" }: { source?: "button" | "pull" } = {}) => {
-      const currentY = jumpPullDistanceRef.current;
       jumpPullControls.stop();
       resetInlineJumpPullState();
       setIsJumpToDateOpen(false);
       setIsInlineJumpToDateOpen(true);
 
       if (prefersReducedMotion) {
-        jumpPullControls.set({ y: inlineJumpRevealHeight });
+        jumpPullControls.set({ y: inlineJumpEffectiveRevealHeight });
         return;
       }
 
@@ -3542,20 +3578,13 @@ export default function ScheduleTabContent({
         });
       }
 
-      if (source === "button" && currentY > 10) {
-        await jumpPullControls.start({
-          y: Math.max(0, currentY - 10),
-          transition: inlineJumpSettleTransition,
-        });
-      }
-
       await jumpPullControls.start({
-        y: inlineJumpRevealHeight,
+        y: inlineJumpEffectiveRevealHeight,
         transition: inlineJumpOpenTransition,
       });
     },
     [
-      inlineJumpRevealHeight,
+      inlineJumpEffectiveRevealHeight,
       jumpPullControls,
       prefersReducedMotion,
       resetInlineJumpPullState,
@@ -3573,13 +3602,23 @@ export default function ScheduleTabContent({
         return;
       }
 
+      if (isInlineJumpExpandedLayout) {
+        jumpPullControls.set({ y: inlineJumpEffectiveRevealHeight });
+      }
+
       await jumpPullControls.start({
         y: 0,
         transition: inlineJumpCloseTransition,
       });
       if (unmount) setIsInlineJumpToDateOpen(false);
     },
-    [jumpPullControls, prefersReducedMotion, resetInlineJumpPullState]
+    [
+      jumpPullControls,
+      inlineJumpEffectiveRevealHeight,
+      isInlineJumpExpandedLayout,
+      prefersReducedMotion,
+      resetInlineJumpPullState,
+    ]
   );
 
   const canInitiateJumpPull = useCallback(() => {
@@ -6028,10 +6067,9 @@ export default function ScheduleTabContent({
 
     if (isInlineJumpToDateOpen) {
       const target = e.target as HTMLElement | null;
-      if (!target?.closest?.("[data-inline-jump-panel]")) {
-        void closeInlineJumpToDate();
-        return;
-      }
+      if (target?.closest?.("[data-inline-jump-panel]")) return;
+      void closeInlineJumpToDate();
+      return;
     }
 
     swipeScrollProgressRef.current = null;
@@ -6149,6 +6187,10 @@ export default function ScheduleTabContent({
 
   function handleTouchMove(e: React.TouchEvent) {
     if (isTouchFromFabOverlay(e)) return;
+    if (isInlineJumpToDateOpen) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("[data-inline-jump-panel]")) return;
+    }
     if (pinchActiveRef.current) {
       const pinchState = pinchStateRef.current;
       if (!pinchState) {
@@ -6271,7 +6313,7 @@ export default function ScheduleTabContent({
         );
         const clamped = Math.min(
           Math.max(0, distance),
-          inlineJumpRevealHeight
+          inlineJumpEffectiveRevealHeight
         );
         jumpPullDistanceRef.current = clamped;
         jumpPullControls.set({ y: clamped });
@@ -9693,7 +9735,10 @@ export default function ScheduleTabContent({
           data-schedule-root
         >
           <div
-            className="relative bg-[var(--surface)] overflow-hidden"
+            className={clsx(
+              "relative bg-[var(--surface)]",
+              isInlineJumpToDateOpen ? "overflow-visible" : "overflow-hidden"
+            )}
             ref={swipeContainerRef}
             style={{
               touchAction: manualPlacementSession ? "none" : TIMELINE_TOUCH_ACTION,
@@ -9723,24 +9768,16 @@ export default function ScheduleTabContent({
               <div
                 data-inline-jump-panel
                 aria-hidden={!isInlineJumpToDateOpen}
-                onTouchStart={(event) => {
-                  event.stopPropagation();
-                }}
-                onTouchMove={(event) => {
-                  event.stopPropagation();
-                }}
-                onTouchEnd={(event) => {
-                  event.stopPropagation();
-                }}
-                onTouchCancel={(event) => {
-                  event.stopPropagation();
-                }}
                 onClick={(event) => {
                   event.stopPropagation();
                 }}
                 style={{
-                  height: inlineJumpRevealHeight,
-                  marginTop: -inlineJumpRevealHeight,
+                  height: inlineJumpEffectiveRevealHeight,
+                  marginTop: isInlineJumpExpandedLayout
+                    ? 0
+                    : -inlineJumpEffectiveRevealHeight,
+                  touchAction: "pan-y",
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
                 <JumpToDateSheet
@@ -9753,6 +9790,7 @@ export default function ScheduleTabContent({
                   timeZone={effectiveTimeZone}
                   onSelectDate={handleInlineJumpToDateSelect}
                   snapshot={jumpToDateSnapshot ?? undefined}
+                  onInlineContentHeightChange={setInlineJumpContentHeight}
                 />
               </div>
               <AnimatePresence mode="wait" initial={false}>
