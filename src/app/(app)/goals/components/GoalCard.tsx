@@ -114,6 +114,7 @@ interface GoalCardProps {
   onManualComplete?: (goal: Goal) => void | Promise<void>;
   completeWhenProjectsDone?: boolean;
   completionTheme?: "auto" | "emerald" | "monument" | "border";
+  suppressReadyToast?: boolean;
 }
 
 function isProjectComplete(project: Project) {
@@ -235,6 +236,7 @@ function GoalCardImpl({
   onProjectHoldComplete,
   onManualComplete,
   completionTheme = "auto",
+  suppressReadyToast = false,
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = typeof openProp === "boolean";
@@ -371,6 +373,9 @@ function GoalCardImpl({
   }, []);
 
   useEffect(() => {
+    if (suppressReadyToast) {
+      return;
+    }
     if (!isReadyToComplete) {
       readyToastShownGoalIdsRef.current.delete(goal.id);
       return;
@@ -378,7 +383,7 @@ function GoalCardImpl({
     if (readyToastShownGoalIdsRef.current.has(goal.id)) return;
     readyToastShownGoalIdsRef.current.add(goal.id);
     toast.info("Goal ready to complete");
-  }, [goal.id, isReadyToComplete, toast]);
+  }, [goal.id, isReadyToComplete, suppressReadyToast, toast]);
 
   const handleShellClick = useCallback(
     (event?: MouseEvent<HTMLButtonElement>) => {
@@ -1459,7 +1464,8 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.open === next.open &&
     prev.onManualComplete === next.onManualComplete &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
-    prev.completionTheme === next.completionTheme
+    prev.completionTheme === next.completionTheme &&
+    prev.suppressReadyToast === next.suppressReadyToast
   );
 });
 

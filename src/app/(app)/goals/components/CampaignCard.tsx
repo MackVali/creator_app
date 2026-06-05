@@ -184,6 +184,7 @@ function DraggableGoalCard({
   hideEnergyPill,
   campaignDrawerRow = false,
   onGoalManualComplete,
+  suppressReadyToast = false,
 }: {
   goal: Goal;
   index: number;
@@ -202,6 +203,7 @@ function DraggableGoalCard({
   monumentContext?: boolean;
   hideEnergyPill?: boolean;
   campaignDrawerRow?: boolean;
+  suppressReadyToast?: boolean;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const {
@@ -293,6 +295,9 @@ function DraggableGoalCard({
   }, []);
 
   useEffect(() => {
+    if (suppressReadyToast) {
+      return;
+    }
     if (!isReadyToComplete) {
       readyToastShownGoalIdsRef.current.delete(goal.id);
       return;
@@ -300,7 +305,7 @@ function DraggableGoalCard({
     if (readyToastShownGoalIdsRef.current.has(goal.id)) return;
     readyToastShownGoalIdsRef.current.add(goal.id);
     toast.info("Goal ready to complete");
-  }, [goal.id, isReadyToComplete, toast]);
+  }, [goal.id, isReadyToComplete, suppressReadyToast, toast]);
 
   const triggerManualCompleteRejection = useCallback(() => {
     setManualCompleteRejected(true);
@@ -460,6 +465,7 @@ function DraggableGoalCard({
                 onManualComplete={onGoalManualComplete}
                 completeWhenProjectsDone
                 completionTheme="emerald"
+                suppressReadyToast={suppressReadyToast}
               />
             </motion.div>
           ) : (
@@ -579,6 +585,7 @@ interface CampaignCardProps {
     origin: ProjectCardMorphOrigin | null
   ) => void;
   monumentContext?: boolean;
+  suppressReadyToast?: boolean;
 }
 
 function CampaignCardImpl({
@@ -594,6 +601,7 @@ function CampaignCardImpl({
   onGoalManualComplete,
   onProjectEditOpen,
   monumentContext = false,
+  suppressReadyToast = false,
   onRoadmapOrderSaved,
   onCampaignDetailsSaved,
 }: CampaignCardProps) {
@@ -759,6 +767,7 @@ function CampaignCardImpl({
                 onGoalManualComplete={onGoalManualComplete}
                 onProjectEditOpen={onProjectEditOpen}
                 monumentContext={monumentContext}
+                suppressReadyToast={suppressReadyToast}
                 onAddGoal={onAddGoal}
                 onCampaignDetailsSaved={onCampaignDetailsSaved}
                 onGoalsReordered={async (reordered) => {
@@ -857,6 +866,7 @@ function CampaignCardImpl({
                                 onGoalDelete={onGoalDelete}
                                 onGoalManualComplete={onGoalManualComplete}
                                 onProjectEditOpen={onProjectEditOpen}
+                                suppressReadyToast={suppressReadyToast}
                               />
                             </div>
                           ))}
@@ -897,6 +907,7 @@ type CampaignDrawerProps = {
     origin: ProjectCardMorphOrigin | null
   ) => void;
   monumentContext?: boolean;
+  suppressReadyToast?: boolean;
   onGoalsReordered?: (goals: Goal[]) => void | Promise<void>;
   onAddGoal?: () => void;
   onCampaignDetailsSaved?: (
@@ -916,6 +927,7 @@ function CampaignDrawer({
   onGoalManualComplete,
   onProjectEditOpen,
   monumentContext,
+  suppressReadyToast = false,
   onGoalsReordered,
   onAddGoal,
   onCampaignDetailsSaved,
@@ -1292,6 +1304,7 @@ function CampaignDrawer({
                   monumentContext={monumentContext}
                   hideEnergyPill
                   campaignDrawerRow
+                  suppressReadyToast={suppressReadyToast}
                 />
               ))}
             </div>
@@ -1374,6 +1387,7 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.variant === next.variant &&
     prev.goals === next.goals &&
     prev.monumentContext === next.monumentContext &&
+    prev.suppressReadyToast === next.suppressReadyToast &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onGoalManualComplete === next.onGoalManualComplete &&
     prev.onAddGoal === next.onAddGoal &&
