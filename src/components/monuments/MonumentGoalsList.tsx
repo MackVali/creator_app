@@ -608,6 +608,21 @@ function isGoalCompletedForSection(goal: Goal): boolean {
   return normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
 }
 
+function isMonumentGoalReadyToComplete(goal: Goal): boolean {
+  const hasCompletedProjects =
+    goal.projects.length > 0 &&
+    goal.projects.every(
+      (project) =>
+        project.status === "Done" ||
+        project.stage === "RELEASE" ||
+        Number(project.progress ?? 0) >= 100
+    );
+  return (
+    hasCompletedProjects &&
+    normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
+  );
+}
+
 async function fetchTrueRoadmapsForCircle(
   userId: string,
   circleId: string
@@ -987,6 +1002,7 @@ export function MonumentGoalsList({
   const activeGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const loadingGoalPanelRef = useRef<HTMLDivElement | null>(null);
+  const readyGoalsToastSignatureRef = useRef<string | null>(null);
   const goalPanelWheelLockedRef = useRef(false);
   const goalPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -1018,6 +1034,37 @@ export function MonumentGoalsList({
     -goalPanelViewportWidth,
     Math.min(0, goalPanelBaseTransform + goalPanelDragOffset)
   );
+  const readyGoalIds = useMemo(
+    () =>
+      goals
+        .filter(isMonumentGoalReadyToComplete)
+        .map((goal) => goal.id)
+        .sort(),
+    [goals]
+  );
+  const readyGoalIdsSignature = readyGoalIds.join("|");
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (readyGoalIds.length === 0) {
+      readyGoalsToastSignatureRef.current = null;
+      return;
+    }
+
+    if (readyGoalsToastSignatureRef.current === readyGoalIdsSignature) {
+      return;
+    }
+
+    readyGoalsToastSignatureRef.current = readyGoalIdsSignature;
+    toast.info(
+      readyGoalIds.length === 1
+        ? "1 goal ready to complete"
+        : `${readyGoalIds.length} goals ready to complete`
+    );
+  }, [loading, readyGoalIds.length, readyGoalIdsSignature, toast]);
 
   const getGoalPanelElement = useCallback((panel: GoalPanel) => {
     return panel === "completed"
@@ -2575,6 +2622,7 @@ export function MonumentGoalsList({
               monumentContext
               completeWhenProjectsDone
               completionTheme="border"
+              suppressReadyToast
               onEdit={() => handleGoalEdit(roadmapOpenGoal)}
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
@@ -2652,6 +2700,7 @@ export function MonumentGoalsList({
                     setRefreshVersion((current) => current + 1)
                   }
                   monumentContext
+                  suppressReadyToast
                 />
               </div>
             )
@@ -2671,6 +2720,7 @@ export function MonumentGoalsList({
                 monumentContext
                 completeWhenProjectsDone
                 completionTheme="border"
+                suppressReadyToast
                 onEdit={() => handleGoalEdit(openRoadmapGoalForSection)}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(
@@ -2717,6 +2767,7 @@ export function MonumentGoalsList({
                 monumentContext
                 completeWhenProjectsDone
                 completionTheme="border"
+                suppressReadyToast
                 onEdit={() => handleGoalEdit(goal)}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(goal.id, projectId, updates)

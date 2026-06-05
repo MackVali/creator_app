@@ -533,6 +533,9 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   const [communitySkillPickerOpen, setCommunitySkillPickerOpen] = useState(false);
   const [selectedCommunitySkillId, setSelectedCommunitySkillId] = useState<string | null>(null);
   const [communitySkillSearch, setCommunitySkillSearch] = useState("");
+  const [skillSuggestionPanelOpen, setSkillSuggestionPanelOpen] = useState(false);
+  const [suggestedSkillName, setSuggestedSkillName] = useState("");
+  const [suggestedSkillIcon, setSuggestedSkillIcon] = useState("");
   const [activeCommunitySkillCategoryIndex, setActiveCommunitySkillCategoryIndex] = useState(0);
   const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
     Record<string, boolean>
@@ -709,7 +712,11 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
       .filter((subcategory) => subcategory.skills.length > 0);
   }, [activeCommunityMainCategory, communitySkillSearch]);
   const filteredCommunitySkills =
-    activeCommunitySkillCategory === "Popular"
+    isCommunitySkillSearching
+      ? communityCatalog.skills.filter((skill) =>
+          skill.name.toLowerCase().includes(communitySkillSearchQuery)
+        )
+      : activeCommunitySkillCategory === "Popular"
       ? filteredPopularCommunitySkills
       : filteredCommunitySubcategories.flatMap((subcategory) => subcategory.skills);
   const selectedCommunitySkill = selectedCommunitySkillId
@@ -817,6 +824,9 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     setCommunitySkillPickerOpen(false);
     setSelectedCommunitySkillId(null);
     setCommunitySkillSearch("");
+    setSkillSuggestionPanelOpen(false);
+    setSuggestedSkillName("");
+    setSuggestedSkillIcon("");
     activeCommunitySkillCategoryIndexRef.current = 0;
     setActiveCommunitySkillCategoryIndex(0);
     setOpenCommunitySkillSubcategories({});
@@ -880,6 +890,14 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     communitySkillCategoryNames.length,
     scrollCommunityResultsToIndex,
   ]);
+
+  useEffect(() => {
+    if (communitySkillPickerOpen && isCommunitySkillSearching) {
+      return;
+    }
+
+    setSkillSuggestionPanelOpen(false);
+  }, [communitySkillPickerOpen, isCommunitySkillSearching]);
 
   useEffect(() => {
     const pager = communityResultsPagerRef.current;
@@ -1961,12 +1979,66 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                               </button>
                             );
                           })}
-                        </div>
-                        {filteredCommunitySkills.length === 0 && (
-                          <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
-                            No skills found.
+                          <div className="relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={() => setSkillSuggestionPanelOpen((isOpen) => !isOpen)}
+                              aria-expanded={skillSuggestionPanelOpen}
+                              className="inline-flex h-7 items-center rounded-full border border-white/[0.025] bg-white/[0.018] px-2.5 text-left text-[11px] font-medium leading-none text-zinc-600 transition hover:border-white/10 hover:bg-white/[0.035] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                            >
+                              +
+                            </button>
+                            {skillSuggestionPanelOpen && (
+                              <div className="absolute left-0 top-9 z-20 w-56 rounded-2xl border border-white/10 bg-zinc-950/95 p-3 text-zinc-200 shadow-[0_18px_36px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-semibold text-zinc-200">
+                                    Suggest skill
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSkillSuggestionPanelOpen(false)}
+                                    aria-label="Close skill suggestion"
+                                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/[0.06] text-zinc-500 transition hover:border-white/15 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <div className="space-y-2">
+                                  <input
+                                    type="text"
+                                    value={suggestedSkillName}
+                                    onChange={(event) => setSuggestedSkillName(event.target.value)}
+                                    placeholder="Skill name"
+                                    className="h-8 w-full rounded-full border border-white/10 bg-white/[0.035] px-3 text-xs text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-white/20 focus:ring-2 focus:ring-white/15"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={suggestedSkillIcon}
+                                    onChange={(event) => setSuggestedSkillIcon(event.target.value)}
+                                    placeholder="Emoji/icon"
+                                    className="h-8 w-full rounded-full border border-white/10 bg-white/[0.035] px-3 text-xs text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-white/20 focus:ring-2 focus:ring-white/15"
+                                  />
+                                  <div className="flex items-center justify-end gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSkillSuggestionPanelOpen(false)}
+                                      className="h-7 rounded-full border border-white/[0.06] px-3 text-[10px] font-medium text-zinc-500 transition hover:border-white/15 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled
+                                      className="h-7 rounded-full border border-white/[0.05] bg-white/[0.025] px-3 text-[10px] font-semibold text-zinc-600"
+                                    >
+                                      Send later
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
                         {communityCatalog.source === "fallback" && communityCatalogError && (
                           <p className="mt-2 px-1 text-[10px] text-zinc-600">
                             Showing starter skills while the catalog is unavailable.

@@ -71,7 +71,7 @@ function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+    <div className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50 w-[min(calc(100vw-1.5rem),20rem)] space-y-1.5 sm:right-5 sm:top-[calc(env(safe-area-inset-top)+1rem)] sm:w-80">
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onRemove={removeToast} />
       ))}
@@ -89,47 +89,50 @@ function Toast({
   const getIcon = () => {
     switch (toast.type) {
       case "success":
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
+        return <CheckCircle className="h-4 w-4 text-emerald-300" />;
       case "error":
-        return <AlertCircle className="h-5 w-5 text-red-500" />;
+        return <AlertCircle className="h-4 w-4 text-rose-300" />;
       case "warning":
-        return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
+        return <AlertTriangle className="h-4 w-4 text-amber-300" />;
       case "info":
-        return <Info className="h-5 w-5 text-blue-500" />;
+        return <Info className="h-4 w-4 text-sky-300" />;
     }
   };
 
-  const getBorderColor = () => {
+  const getToneClasses = () => {
     switch (toast.type) {
       case "success":
-        return "border-green-200 bg-green-50";
+        return "border-emerald-300/20 bg-emerald-300/[0.07]";
       case "error":
-        return "border-red-200 bg-red-50";
+        return "border-rose-300/20 bg-rose-300/[0.07]";
       case "warning":
-        return "border-yellow-200 bg-yellow-50";
+        return "border-amber-300/20 bg-amber-300/[0.07]";
       case "info":
-        return "border-blue-200 bg-blue-50";
+        return "border-sky-300/20 bg-sky-300/[0.07]";
     }
   };
 
   return (
     <div
       className={cn(
-        "rounded-lg border p-4 shadow-lg transition-all duration-300 ease-in-out",
-        getBorderColor()
+        "rounded-lg border px-3 py-2.5 shadow-lg shadow-black/25 backdrop-blur-xl transition-all duration-300 ease-in-out",
+        "bg-zinc-950/75 text-zinc-100 ring-1 ring-white/[0.08] supports-[backdrop-filter]:bg-zinc-950/60",
+        getToneClasses()
       )}
     >
-      <div className="flex items-start space-x-3">
+      <div className="flex items-start space-x-2.5">
         {getIcon()}
         <div className="flex-1 space-y-1">
-          <h4 className="text-sm font-medium text-gray-900">{toast.title}</h4>
+          <h4 className="text-sm font-medium text-zinc-50">{toast.title}</h4>
           {toast.description && (
-            <p className="text-sm text-gray-600">{toast.description}</p>
+            <p className="text-xs leading-5 text-zinc-300">
+              {toast.description}
+            </p>
           )}
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className="text-sm font-medium text-blue-600 hover:text-blue-500"
+              className="text-sm font-medium text-white/90 underline-offset-4 transition-colors hover:text-white hover:underline"
             >
               {toast.action.label}
             </button>
@@ -137,7 +140,8 @@ function Toast({
         </div>
         <button
           onClick={() => onRemove(toast.id)}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
+          className="rounded-md p-0.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
+          aria-label="Close toast"
         >
           <X className="h-4 w-4" />
         </button>
