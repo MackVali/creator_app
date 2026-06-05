@@ -666,3 +666,25 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   animation: progress-glint-sweep 2.15s ease-in-out infinite;
   will-change: transform, opacity;
 }
+
+.level-progress-bar-glint-sweep {
+  top: -145%;
+  bottom: -145%;
+  left: -82%;
+  width: 108%;
+  z-index: 3;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(22, 22, 26, 0.18) 13%,
+    rgba(255, 255, 255, 0.2) 27%,
+    rgba(255, 255, 255, 0.9) 43%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(28, 28, 32, 0.16) 59%,
+    rgba(255, 255, 255, 0.2) 73%,
+    transparent 91%,
+    transparent 100%
+  );
+  filter: blur(0.35px);
+  opacity: 1;
+}

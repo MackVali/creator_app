@@ -94,7 +94,7 @@ export function ScheduleTopBar({
 
   return (
     <header
-      className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-2 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
+      className="fixed inset-x-0 top-0 z-[120] flex items-center justify-between gap-2 bg-[var(--surface-elevated)] shadow-sm border-b border-[var(--hairline)]"
       style={safeAreaPadding}
       ref={headerRef}
     >
