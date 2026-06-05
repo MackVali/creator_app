@@ -3464,25 +3464,18 @@ export default function ScheduleTabContent({
   const swipeScrollProgressRef = useRef<number | null>(null);
   const jumpPullControls = useAnimationControls();
   const [isInlineJumpToDateOpen, setIsInlineJumpToDateOpen] = useState(false);
+  const [isInlineJumpEditorMode, setIsInlineJumpEditorMode] = useState(false);
   const [inlineJumpRevealHeight, setInlineJumpRevealHeight] = useState(
     INLINE_JUMP_REVEAL_HEIGHT_PX
   );
   const [inlineJumpMaxRevealHeight, setInlineJumpMaxRevealHeight] = useState(
     INLINE_JUMP_REVEAL_HEIGHT_PX
   );
-  const [inlineJumpContentHeight, setInlineJumpContentHeight] = useState(0);
-  const inlineJumpMeasuredRevealHeight = Math.max(
-    inlineJumpRevealHeight,
-    inlineJumpContentHeight
-  );
-  const inlineJumpContentExceedsMaxReveal =
-    inlineJumpContentHeight > inlineJumpMaxRevealHeight;
-  const inlineJumpEffectiveRevealHeight = inlineJumpContentExceedsMaxReveal
-    ? inlineJumpMeasuredRevealHeight
-    : Math.min(inlineJumpMaxRevealHeight, inlineJumpMeasuredRevealHeight);
-  const isInlineJumpExpandedLayout =
-    isInlineJumpToDateOpen &&
-    inlineJumpContentHeight > inlineJumpRevealHeight + 8;
+  const shouldUseInlineJumpEditorPanel =
+    isInlineJumpToDateOpen && isInlineJumpEditorMode;
+  const inlineJumpEffectiveRevealHeight = shouldUseInlineJumpEditorPanel
+    ? inlineJumpMaxRevealHeight
+    : inlineJumpRevealHeight;
   const inlineJumpRevealHeightRef = useRef(inlineJumpEffectiveRevealHeight);
   const jumpPullStartYRef = useRef<number | null>(null);
   const jumpPullDistanceRef = useRef(0);
@@ -3532,7 +3525,7 @@ export default function ScheduleTabContent({
       inlineJumpRevealHeightRef.current = inlineJumpEffectiveRevealHeight;
       return;
     }
-    if (isInlineJumpExpandedLayout) {
+    if (shouldUseInlineJumpEditorPanel) {
       jumpPullControls.stop();
       jumpPullControls.set({ y: 0 });
       inlineJumpRevealHeightRef.current = inlineJumpEffectiveRevealHeight;
@@ -3550,7 +3543,7 @@ export default function ScheduleTabContent({
   }, [
     inlineJumpEffectiveRevealHeight,
     isInlineJumpToDateOpen,
-    isInlineJumpExpandedLayout,
+    shouldUseInlineJumpEditorPanel,
     jumpPullControls,
   ]);
 
@@ -3566,6 +3559,11 @@ export default function ScheduleTabContent({
       resetInlineJumpPullState();
       setIsJumpToDateOpen(false);
       setIsInlineJumpToDateOpen(true);
+
+      if (isInlineJumpEditorMode) {
+        jumpPullControls.set({ y: 0 });
+        return;
+      }
 
       if (prefersReducedMotion) {
         jumpPullControls.set({ y: inlineJumpEffectiveRevealHeight });
@@ -3585,6 +3583,7 @@ export default function ScheduleTabContent({
     },
     [
       inlineJumpEffectiveRevealHeight,
+      isInlineJumpEditorMode,
       jumpPullControls,
       prefersReducedMotion,
       resetInlineJumpPullState,
@@ -3602,8 +3601,10 @@ export default function ScheduleTabContent({
         return;
       }
 
-      if (isInlineJumpExpandedLayout) {
-        jumpPullControls.set({ y: inlineJumpEffectiveRevealHeight });
+      if (shouldUseInlineJumpEditorPanel) {
+        jumpPullControls.set({ y: 0 });
+        if (unmount) setIsInlineJumpToDateOpen(false);
+        return;
       }
 
       await jumpPullControls.start({
@@ -3614,8 +3615,7 @@ export default function ScheduleTabContent({
     },
     [
       jumpPullControls,
-      inlineJumpEffectiveRevealHeight,
-      isInlineJumpExpandedLayout,
+      shouldUseInlineJumpEditorPanel,
       prefersReducedMotion,
       resetInlineJumpPullState,
     ]
@@ -6068,6 +6068,7 @@ export default function ScheduleTabContent({
     if (isInlineJumpToDateOpen) {
       const target = e.target as HTMLElement | null;
       if (target?.closest?.("[data-inline-jump-panel]")) return;
+      if (shouldUseInlineJumpEditorPanel) return;
       void closeInlineJumpToDate();
       return;
     }
@@ -6190,6 +6191,7 @@ export default function ScheduleTabContent({
     if (isInlineJumpToDateOpen) {
       const target = e.target as HTMLElement | null;
       if (target?.closest?.("[data-inline-jump-panel]")) return;
+      if (shouldUseInlineJumpEditorPanel) return;
     }
     if (pinchActiveRef.current) {
       const pinchState = pinchStateRef.current;
@@ -9758,7 +9760,7 @@ export default function ScheduleTabContent({
               animate={jumpPullControls}
               initial={false}
               onClick={
-                isInlineJumpToDateOpen
+                isInlineJumpToDateOpen && !shouldUseInlineJumpEditorPanel
                   ? () => {
                       void closeInlineJumpToDate();
                     }
@@ -9773,11 +9775,18 @@ export default function ScheduleTabContent({
                 }}
                 style={{
                   height: inlineJumpEffectiveRevealHeight,
-                  marginTop: isInlineJumpExpandedLayout
+                  maxHeight: inlineJumpEffectiveRevealHeight,
+                  marginTop: shouldUseInlineJumpEditorPanel
                     ? 0
                     : -inlineJumpEffectiveRevealHeight,
+                  overflowY: shouldUseInlineJumpEditorPanel
+                    ? "auto"
+                    : "visible",
+                  overscrollBehavior: "contain",
                   touchAction: "pan-y",
                   WebkitOverflowScrolling: "touch",
+                  position: "relative",
+                  zIndex: shouldUseInlineJumpEditorPanel ? 80 : 1,
                 }}
               >
                 <JumpToDateSheet
@@ -9790,77 +9799,79 @@ export default function ScheduleTabContent({
                   timeZone={effectiveTimeZone}
                   onSelectDate={handleInlineJumpToDateSelect}
                   snapshot={jumpToDateSnapshot ?? undefined}
-                  onInlineContentHeightChange={setInlineJumpContentHeight}
+                  onInlineEditorModeChange={setIsInlineJumpEditorMode}
                 />
               </div>
-              <AnimatePresence mode="wait" initial={false}>
-                {view === "day" && (
-                  <ScheduleViewShell key="day">
-                    {!dayTimelineModel ? (
-                      <div className="flex h-64 items-center justify-center text-zinc-500">
-                        Loading schedule...
-                      </div>
-                    ) : prefersReducedMotion ? (
-                      dayTimelineNode
-                    ) : isSwipingDayView ? (
-                      <div className="relative overflow-hidden">
-                        <motion.div animate={sliderControls} initial={false}>
-                          {dayTimelineNode}
-                        </motion.div>
-                        <DayPeekOverlays
-                          peekState={peekState}
-                          previousLabel={previousDayLabel}
-                          nextLabel={nextDayLabel}
-                          previousKey={previousDayKey}
-                          nextKey={nextDayKey}
-                          containerRef={dayTimelineContainerRef}
-                          previousModel={peekModels.previous}
-                          nextModel={peekModels.next}
-                          renderPreview={renderDayTimeline}
-                          scrollProgress={swipeScrollProgressRef.current}
-                          baseTimelineHeight={baseTimelineHeight}
-                          timelineChromeHeight={timelineChromeHeight}
-                          pxPerMin={pxPerMin}
-                        />
-                      </div>
-                    ) : skipNextDayAnimation ? (
-                      <div key={dayViewDateKey}>{dayTimelineNode}</div>
-                    ) : (
-                      <AnimatePresence
-                        mode="sync"
-                        initial={false}
-                        custom={dayTransitionDirection}
-                      >
-                        <motion.div
-                          key={dayViewDateKey}
+              {!shouldUseInlineJumpEditorPanel && (
+                <AnimatePresence mode="wait" initial={false}>
+                  {view === "day" && (
+                    <ScheduleViewShell key="day">
+                      {!dayTimelineModel ? (
+                        <div className="flex h-64 items-center justify-center text-zinc-500">
+                          Loading schedule...
+                        </div>
+                      ) : prefersReducedMotion ? (
+                        dayTimelineNode
+                      ) : isSwipingDayView ? (
+                        <div className="relative overflow-hidden">
+                          <motion.div animate={sliderControls} initial={false}>
+                            {dayTimelineNode}
+                          </motion.div>
+                          <DayPeekOverlays
+                            peekState={peekState}
+                            previousLabel={previousDayLabel}
+                            nextLabel={nextDayLabel}
+                            previousKey={previousDayKey}
+                            nextKey={nextDayKey}
+                            containerRef={dayTimelineContainerRef}
+                            previousModel={peekModels.previous}
+                            nextModel={peekModels.next}
+                            renderPreview={renderDayTimeline}
+                            scrollProgress={swipeScrollProgressRef.current}
+                            baseTimelineHeight={baseTimelineHeight}
+                            timelineChromeHeight={timelineChromeHeight}
+                            pxPerMin={pxPerMin}
+                          />
+                        </div>
+                      ) : skipNextDayAnimation ? (
+                        <div key={dayViewDateKey}>{dayTimelineNode}</div>
+                      ) : (
+                        <AnimatePresence
+                          mode="sync"
+                          initial={false}
                           custom={dayTransitionDirection}
-                          variants={dayTimelineVariants}
-                          initial="enter"
-                          animate="center"
-                          exit="exit"
-                          transition={dayTimelineTransition}
                         >
-                          {dayTimelineNode}
-                        </motion.div>
-                      </AnimatePresence>
-                    )}
-                    <FocusTimelineFab
-                      hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
-                      editTarget={fabEditTarget}
-                      onEditClose={handleCloseEditSheet}
-                    />
-                  </ScheduleViewShell>
-                )}
-                {view === "focus" && (
-                  <ScheduleViewShell key="focus">
-                    <FocusTimeline
-                      hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
-                      editTarget={fabEditTarget}
-                      onEditClose={handleCloseEditSheet}
-                    />
-                  </ScheduleViewShell>
-                )}
-              </AnimatePresence>
+                          <motion.div
+                            key={dayViewDateKey}
+                            custom={dayTransitionDirection}
+                            variants={dayTimelineVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={dayTimelineTransition}
+                          >
+                            {dayTimelineNode}
+                          </motion.div>
+                        </AnimatePresence>
+                      )}
+                      <FocusTimelineFab
+                        hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
+                        editTarget={fabEditTarget}
+                        onEditClose={handleCloseEditSheet}
+                      />
+                    </ScheduleViewShell>
+                  )}
+                  {view === "focus" && (
+                    <ScheduleViewShell key="focus">
+                      <FocusTimeline
+                        hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
+                        editTarget={fabEditTarget}
+                        onEditClose={handleCloseEditSheet}
+                      />
+                    </ScheduleViewShell>
+                  )}
+                </AnimatePresence>
+              )}
             </motion.div>
           </div>
         </div>

@@ -81,6 +81,7 @@ interface JumpToDateSheetProps {
   snapshot?: JumpToDateSnapshot;
   className?: string;
   onInlineContentHeightChange?: (height: number) => void;
+  onInlineEditorModeChange?: (isEditorMode: boolean) => void;
 }
 
 type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
@@ -153,6 +154,7 @@ export function JumpToDateSheet({
   snapshot,
   className,
   onInlineContentHeightChange,
+  onInlineEditorModeChange,
 }: JumpToDateSheetProps) {
   const router = useRouter();
   const inlineHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -484,6 +486,14 @@ export function JumpToDateSheet({
       window.removeEventListener("resize", measure);
     };
   }, [onInlineContentHeightChange, variant]);
+
+  useEffect(() => {
+    if (variant !== "inline" || !onInlineEditorModeChange) return;
+    onInlineEditorModeChange(isPaintMode);
+    return () => {
+      onInlineEditorModeChange(false);
+    };
+  }, [isPaintMode, onInlineEditorModeChange, variant]);
 
   const togglePaintMode = () => {
     setIsPaintMode((prev) => {
@@ -3178,7 +3188,7 @@ export function JumpToDateSheet({
         <div
           className={cn(
             "flex min-h-0 flex-col rounded-b-[22px] border-b border-white/10 bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] text-[var(--text-primary)] shadow-[0_18px_42px_rgba(0,0,0,0.32)] backdrop-blur",
-            "h-full overflow-visible",
+            "min-h-full overflow-visible",
             className
           )}
           onClick={(event) => event.stopPropagation()}

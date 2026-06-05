@@ -51,6 +51,7 @@ const IGNORE_TARGET_SELECTOR = [
   "[role='slider']",
   "[contenteditable]:not([contenteditable='false'])",
   "[data-no-tab-swipe]",
+  "[data-inline-jump-panel]",
   "[data-radix-select-trigger]",
   "[data-radix-dropdown-menu-trigger]",
   "[data-tour='fab']",
@@ -704,7 +705,9 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
       data-main-tab-swipe-root
       onPointerDownCapture={handlePointerDownCapture}
       style={{ touchAction: "pan-y pinch-zoom" }}
-      className="relative min-h-full overflow-hidden bg-[#050505]"
+      className={`relative min-h-full bg-[#050505] ${
+        normalizedPathname === SCHEDULE_ROUTE ? "overflow-visible" : "overflow-hidden"
+      }`}
     >
       {activePreviewRoute && activeSwipeDirection ? (
         <motion.div
