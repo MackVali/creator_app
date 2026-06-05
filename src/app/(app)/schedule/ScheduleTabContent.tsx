@@ -9771,12 +9771,6 @@ export default function ScheduleTabContent({
                 data-inline-jump-panel
                 data-no-tab-swipe
                 aria-hidden={!isInlineJumpToDateOpen}
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                }}
-                onTouchStart={(event) => {
-                  event.stopPropagation();
-                }}
                 onClick={(event) => {
                   event.stopPropagation();
                 }}
@@ -9787,7 +9781,7 @@ export default function ScheduleTabContent({
                     ? shouldUseInlineJumpEditorPanel
                       ? 0
                       : -inlineJumpEffectiveRevealHeight
-                    : -inlineJumpEffectiveRevealHeight,
+                    : -inlineJumpEffectiveRevealHeight - 2,
                   overflowY: shouldUseInlineJumpEditorPanel
                     ? "auto"
                     : "visible",
@@ -9796,8 +9790,6 @@ export default function ScheduleTabContent({
                   WebkitOverflowScrolling: "touch",
                   position: "relative",
                   zIndex: shouldUseInlineJumpEditorPanel ? 80 : 1,
-                  visibility: isInlineJumpToDateOpen ? "visible" : "hidden",
-                  pointerEvents: isInlineJumpToDateOpen ? "auto" : "none",
                 }}
               >
                 <JumpToDateSheet
