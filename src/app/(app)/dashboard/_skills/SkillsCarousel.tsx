@@ -25,6 +25,7 @@ import { updateCatOrder } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { createRecord, updateRecord } from "@/lib/db";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -1989,51 +1990,53 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                               +
                             </button>
                             {skillSuggestionPanelOpen && (
-                              <div className="absolute left-0 top-9 z-20 w-56 rounded-2xl border border-white/10 bg-zinc-950/95 p-3 text-zinc-200 shadow-[0_18px_36px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)]">
-                                <div className="mb-2 flex items-center justify-between gap-2">
+                              <div className="absolute left-0 top-9 z-20 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-white/10 bg-zinc-950/95 p-3 text-zinc-200 shadow-[0_18px_36px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                <div className="mb-2 flex items-center gap-2">
                                   <p className="text-[11px] font-semibold text-zinc-200">
                                     Suggest skill
                                   </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setSkillSuggestionPanelOpen(false)}
-                                    aria-label="Close skill suggestion"
-                                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/[0.06] text-zinc-500 transition hover:border-white/15 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={suggestedSkillIcon}
+                                    onChange={(event) => setSuggestedSkillIcon(event.target.value)}
+                                    placeholder="✦"
+                                    className="h-8 w-10 shrink-0 rounded-lg border border-white/10 bg-white/[0.035] px-2 text-center text-xs text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-white/20 focus:ring-2 focus:ring-white/15"
+                                  />
                                   <input
                                     type="text"
                                     value={suggestedSkillName}
                                     onChange={(event) => setSuggestedSkillName(event.target.value)}
                                     placeholder="Skill name"
-                                    className="h-8 w-full rounded-full border border-white/10 bg-white/[0.035] px-3 text-xs text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-white/20 focus:ring-2 focus:ring-white/15"
+                                    className="h-8 min-w-0 flex-1 rounded-lg border border-white/15 bg-white/[0.05] px-3 text-xs font-medium text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-white/25 focus:ring-2 focus:ring-white/15"
                                   />
-                                  <input
-                                    type="text"
-                                    value={suggestedSkillIcon}
-                                    onChange={(event) => setSuggestedSkillIcon(event.target.value)}
-                                    placeholder="Emoji/icon"
-                                    className="h-8 w-full rounded-full border border-white/10 bg-white/[0.035] px-3 text-xs text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-white/20 focus:ring-2 focus:ring-white/15"
-                                  />
-                                  <div className="flex items-center justify-end gap-2 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSkillSuggestionPanelOpen(false)}
-                                      className="h-7 rounded-full border border-white/[0.06] px-3 text-[10px] font-medium text-zinc-500 transition hover:border-white/15 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled
-                                      className="h-7 rounded-full border border-white/[0.05] bg-white/[0.025] px-3 text-[10px] font-semibold text-zinc-600"
-                                    >
-                                      Send later
-                                    </button>
-                                  </div>
+                                  <Button
+                                    type="button"
+                                    onClick={() => setSkillSuggestionPanelOpen(false)}
+                                    aria-label="Discard skill suggestion"
+                                    variant="cancelSquare"
+                                    size="iconSquare"
+                                    className="h-8 w-8 shrink-0 drop-shadow-xl transform-none touch-manipulation transition-none hover:scale-100 active:translate-y-0"
+                                  >
+                                    <X
+                                      className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                                      aria-hidden="true"
+                                    />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    disabled
+                                    aria-label="Save skill suggestion"
+                                    variant="confirmSquare"
+                                    size="iconSquare"
+                                    className="h-8 w-8 shrink-0 drop-shadow-xl transform-none touch-manipulation bg-white/10 text-white opacity-50 transition-none hover:scale-100 hover:bg-white/20 active:translate-y-0"
+                                  >
+                                    <Check
+                                      className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                                      aria-hidden="true"
+                                    />
+                                  </Button>
                                 </div>
                               </div>
                             )}
