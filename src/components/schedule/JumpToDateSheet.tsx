@@ -80,6 +80,7 @@ interface JumpToDateSheetProps {
   >;
   snapshot?: JumpToDateSnapshot;
   className?: string;
+  onInlineContentHeightChange?: (height: number) => void;
 }
 
 type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
@@ -151,8 +152,13 @@ export function JumpToDateSheet({
   dayMetaByDateKey,
   snapshot,
   className,
+  onInlineContentHeightChange,
 }: JumpToDateSheetProps) {
   const router = useRouter();
+  const inlineHeaderRef = useRef<HTMLDivElement | null>(null);
+  const inlineScrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const inlineContentMeasureRef = useRef<HTMLDivElement | null>(null);
+  const lastReportedInlineContentHeightRef = useRef(0);
   const [isPaintMode, setIsPaintMode] = useState(false);
   const [paintSelectionKey, setPaintSelectionKey] = useState<string | null>(
     null
@@ -412,6 +418,72 @@ export function JumpToDateSheet({
   const scrollAreaPadding: CSSProperties = {
     paddingBottom: "calc(0.8rem + env(safe-area-inset-bottom, 0px))",
   };
+
+  useEffect(() => {
+    if (variant !== "inline" || !onInlineContentHeightChange) return;
+    if (typeof window === "undefined") return;
+
+    let frame: number | null = null;
+    const measure = () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        const headerHeight =
+          inlineHeaderRef.current?.getBoundingClientRect().height ?? 0;
+        const inlineScrollArea = inlineScrollAreaRef.current;
+        const scrollAreaStyle = inlineScrollArea
+          ? window.getComputedStyle(inlineScrollArea)
+          : null;
+        const scrollAreaVerticalPadding = scrollAreaStyle
+          ? (Number.parseFloat(scrollAreaStyle.paddingTop) || 0) +
+            (Number.parseFloat(scrollAreaStyle.paddingBottom) || 0)
+          : 0;
+        const measuredInnerContentHeight =
+          inlineContentMeasureRef.current?.getBoundingClientRect().height ?? 0;
+        const nextHeight = Math.ceil(
+          headerHeight +
+            measuredInnerContentHeight +
+            scrollAreaVerticalPadding
+        );
+
+        if (Math.abs(nextHeight - lastReportedInlineContentHeightRef.current) < 3) {
+          return;
+        }
+
+        lastReportedInlineContentHeightRef.current = nextHeight;
+        onInlineContentHeightChange(nextHeight);
+      });
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => {
+        if (frame !== null) {
+          window.cancelAnimationFrame(frame);
+        }
+        window.removeEventListener("resize", measure);
+      };
+    }
+
+    const observer = new ResizeObserver(measure);
+    if (inlineHeaderRef.current) observer.observe(inlineHeaderRef.current);
+    if (inlineContentMeasureRef.current) {
+      observer.observe(inlineContentMeasureRef.current);
+    }
+    window.addEventListener("resize", measure);
+
+    return () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [onInlineContentHeightChange, variant]);
 
   const togglePaintMode = () => {
     setIsPaintMode((prev) => {
@@ -2026,37 +2098,59 @@ export function JumpToDateSheet({
   }: {
     titleVariant: "sheet" | "inline";
   }) {
+    const header = (
+      <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            {titleVariant === "sheet" ? (
+              <SheetTitle className="text-base font-semibold tracking-tight text-zinc-500">
+                JUMP TO DATE
+              </SheetTitle>
+            ) : (
+              <h2 className="text-base font-semibold tracking-tight text-zinc-500">
+                JUMP TO DATE
+              </h2>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleCreateDayType}
+            data-tour="create-day-type"
+            className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-200 shadow-[0_10px_30px_rgba(0,0,0,0.22)] backdrop-blur-md transition hover:border-white/18 hover:bg-white/[0.12] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+          >
+            DAY TYPES MENU
+          </button>
+        </div>
+      </SheetHeader>
+    );
+
     return (
       <>
-        <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              {titleVariant === "sheet" ? (
-                <SheetTitle className="text-base font-semibold tracking-tight text-zinc-500">
-                  JUMP TO DATE
-                </SheetTitle>
-              ) : (
-                <h2 className="text-base font-semibold tracking-tight text-zinc-500">
-                  JUMP TO DATE
-                </h2>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={handleCreateDayType}
-              data-tour="create-day-type"
-              className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-200 shadow-[0_10px_30px_rgba(0,0,0,0.22)] backdrop-blur-md transition hover:border-white/18 hover:bg-white/[0.12] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
-            >
-              DAY TYPES MENU
-            </button>
-          </div>
-        </SheetHeader>
+        {titleVariant === "inline" ? (
+          <div ref={inlineHeaderRef}>{header}</div>
+        ) : (
+          header
+        )}
         <div
-          className="flex min-h-0 flex-1 flex-col gap-2.5 px-3 sm:px-4 pb-3.5 pt-1.5 sm:pt-2 overflow-y-auto"
+          ref={titleVariant === "inline" ? inlineScrollAreaRef : undefined}
+          className={cn(
+            "flex min-h-0 flex-1 flex-col px-3 sm:px-4 pb-3.5 pt-1.5 sm:pt-2",
+            titleVariant === "inline"
+              ? "overflow-visible"
+              : "gap-2.5 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+          )}
           style={scrollAreaPadding}
         >
-          {isPaintMode ? (
-            <div className="space-y-2 sm:space-y-3">
+          <div
+            ref={
+              titleVariant === "inline" ? inlineContentMeasureRef : undefined
+            }
+            className={
+              titleVariant === "inline" ? "flex flex-col gap-2.5" : "contents"
+            }
+          >
+            {isPaintMode ? (
+              <div className="space-y-2 sm:space-y-3">
               <div className="flex items-center justify-between text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] sm:tracking-[0.18em] text-white/70">
                 <span className="text-white/80">Day</span>
                 <span className="text-white/50">Paint mode</span>
@@ -3049,17 +3143,18 @@ export function JumpToDateSheet({
             </table>
           </div>
 
-          {variant !== "inline" && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleSelectToday}
-                className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-white/15"
-              >
-                Today
-              </button>
+            {variant !== "inline" && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSelectToday}
+                  className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-white/15"
+                >
+                  Today
+                </button>
+              </div>
+            )}
             </div>
-          )}
         </div>
       </>
     );
@@ -3082,7 +3177,8 @@ export function JumpToDateSheet({
       <>
         <div
           className={cn(
-            "flex h-full min-h-0 flex-col overflow-hidden rounded-b-[22px] border-b border-white/10 bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] text-[var(--text-primary)] shadow-[0_18px_42px_rgba(0,0,0,0.32)] backdrop-blur",
+            "flex min-h-0 flex-col rounded-b-[22px] border-b border-white/10 bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] text-[var(--text-primary)] shadow-[0_18px_42px_rgba(0,0,0,0.32)] backdrop-blur",
+            "h-full overflow-visible",
             className
           )}
           onClick={(event) => event.stopPropagation()}
