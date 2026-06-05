@@ -15,6 +15,10 @@ const MAX_LIMIT = 25;
 const DEFAULT_ACTIVE_WITHIN_HOURS = 36;
 const MIN_ACTIVE_WITHIN_HOURS = 1;
 const MAX_ACTIVE_WITHIN_HOURS = 168;
+const DEFAULT_TARGET_LOCAL_HOUR = 4;
+const MIN_TARGET_LOCAL_HOUR = 0;
+const MAX_TARGET_LOCAL_HOUR = 23;
+const MAX_INSPECTED_CANDIDATES = 100;
 const STALE_LOCK_MINUTES = 30;
 const SUCCESS_RETRY_HOURS = 20;
 const FAILURE_RETRY_HOURS = 1;
@@ -43,12 +47,18 @@ type CronRequestBody = {
   limit?: unknown;
   activeWithinHours?: unknown;
   dryRun?: unknown;
+  targetLocalHour?: unknown;
 };
 
 type CronRequestOptions = {
   limit: number;
   activeWithinHours: number;
   dryRun: boolean;
+  targetLocalHour: number;
+};
+
+type EligibleSchedulerUser = SchedulerUserStateRow & {
+  timeZone: string;
 };
 
 type CronResult = {
@@ -89,6 +99,10 @@ async function handleCronRun(request: Request) {
   const staleLockBeforeIso = new Date(
     now.getTime() - STALE_LOCK_MINUTES * 60 * 1000
   ).toISOString();
+  const inspectedLimit = Math.min(
+    options.limit * 4,
+    MAX_INSPECTED_CANDIDATES
+  );
 
   const { data: candidates, error: selectError } = await adminClient
     .from("scheduler_user_state")
@@ -101,18 +115,44 @@ async function handleCronRun(request: Request) {
       nullsFirst: true,
     })
     .order("last_active_at", { ascending: true })
-    .limit(options.limit);
+    .limit(inspectedLimit);
 
   if (selectError) {
     return NextResponse.json({ error: selectError.message }, { status: 500 });
   }
 
   const selected = (candidates ?? []) as SchedulerUserStateRow[];
+  const eligible = (
+    await Promise.all(
+      selected.map(async (candidate) => {
+        const timeZone = await resolveProfileTimeZone(
+          adminClient,
+          candidate.user_id
+        );
+
+        if (!timeZone) {
+          return null;
+        }
+
+        const localHour = getLocalHour(now, timeZone);
+        if (localHour !== options.targetLocalHour) {
+          return null;
+        }
+
+        return { ...candidate, timeZone };
+      })
+    )
+  )
+    .filter((candidate): candidate is EligibleSchedulerUser => Boolean(candidate))
+    .slice(0, options.limit);
+
   if (options.dryRun) {
     return NextResponse.json({
       ok: true,
       dryRun: true,
+      targetLocalHour: options.targetLocalHour,
       selected: selected.length,
+      eligible: eligible.length,
       claimed: 0,
       succeeded: 0,
       failed: 0,
@@ -131,7 +171,7 @@ async function handleCronRun(request: Request) {
   let failed = 0;
   let skipped = 0;
 
-  for (const candidate of selected) {
+  for (const candidate of eligible) {
     const claimedUser = await claimSchedulerUser(
       adminClient,
       candidate.user_id,
@@ -150,13 +190,12 @@ async function handleCronRun(request: Request) {
     const userId = candidate.user_id;
 
     try {
-      const timeZone = await resolveProfileTimeZone(adminClient, userId);
       const runResult = await runSchedulerForUser(
         userId,
         now,
         adminClient,
         {
-          timeZone,
+          timeZone: candidate.timeZone,
           mode: { type: "REGULAR" },
           writeThroughDaysOverride: WRITE_THROUGH_DAYS,
         }
@@ -208,7 +247,9 @@ async function handleCronRun(request: Request) {
   return NextResponse.json({
     ok: true,
     dryRun: false,
+    targetLocalHour: options.targetLocalHour,
     selected: selected.length,
+    eligible: eligible.length,
     claimed,
     succeeded,
     failed,
@@ -272,6 +313,12 @@ async function readCronRequestOptions(
       MAX_ACTIVE_WITHIN_HOURS
     ),
     dryRun: body?.dryRun === true,
+    targetLocalHour: clampInteger(
+      body?.targetLocalHour,
+      DEFAULT_TARGET_LOCAL_HOUR,
+      MIN_TARGET_LOCAL_HOUR,
+      MAX_TARGET_LOCAL_HOUR
+    ),
   };
 }
 
@@ -286,6 +333,21 @@ function clampInteger(
   }
 
   return Math.min(maximum, Math.max(minimum, Math.trunc(value)));
+}
+
+function getLocalHour(date: Date, timeZone: string): number | null {
+  try {
+    const hour = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(date);
+
+    const parsed = Number(hour);
+    return Number.isInteger(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 async function claimSchedulerUser(
