@@ -27,9 +27,11 @@ export function ProgressBarGradient({
       style={{ height }}
     >
       <div
-        className="h-full bg-gradient-to-r from-gray-200 to-gray-400 transition-[width] duration-300 shadow-[0_0_2px_rgba(0,0,0,0.4)]"
+        className="progress-bar-glint relative h-full bg-gradient-to-r from-gray-200 to-gray-400 transition-[width] duration-300 shadow-[0_0_2px_rgba(0,0,0,0.4)]"
         style={{ width: `${clamped}%` }}
-      />
+      >
+        <span className="progress-bar-glint-sweep" aria-hidden="true" />
+      </div>
     </div>
   );
 }

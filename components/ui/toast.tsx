@@ -108,7 +108,7 @@ function Toast({
       case "warning":
         return "border-amber-300/20 bg-amber-300/[0.07]";
       case "info":
-        return "border-sky-300/20 bg-sky-300/[0.07]";
+        return "border-zinc-600/35 bg-zinc-800/[0.18]";
     }
   };
 

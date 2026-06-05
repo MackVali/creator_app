@@ -151,11 +151,18 @@ export default function TopNav() {
                 <Link href="/settings">Settings</Link>
               </DropdownMenuItem>
               {userIsTopNavAdmin(currentUser) ? (
-                <DropdownMenuItem asChild>
-                  <Link href="/schedule/priorities" className="text-zinc-500">
-                    Priority Editor
-                  </Link>
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem asChild>
+                    <Link href="/schedule/priorities" className="text-zinc-500">
+                      Priority Editor
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/test" className="text-zinc-500">
+                      Test
+                    </Link>
+                  </DropdownMenuItem>
+                </>
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>

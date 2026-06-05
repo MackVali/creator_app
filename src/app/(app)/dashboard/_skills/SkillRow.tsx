@@ -21,7 +21,7 @@ interface Props {
 
 const SKILL_OPEN_PREVIEW_PREFIX = "creator.skillOpenPreview.";
 
-export default function SkillRow({ skill, progress, onColor, trackColor, fillColor }: Props) {
+export default function SkillRow({ skill, progress, onColor }: Props) {
   const router = useRouter();
   const openingTimerRef = useRef<number | null>(null);
   const [opening, setOpening] = useState(false);
@@ -131,14 +131,14 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
       </div>
       {showProgress && (
         <div className="flex min-w-[24%] flex-col gap-1">
-          <div
-            className="h-2 w-full overflow-hidden rounded-full"
-            style={{ backgroundColor: trackColor }}
-          >
+          <div className="h-2.5 w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]">
             <div
-              className="h-full rounded-full transition-[width] duration-200"
-              style={{ width: computeWidth(progress?.progressPercent ?? 0), backgroundColor: fillColor }}
-            />
+              className="progress-bar-glint relative h-full rounded-full border border-white/[0.14] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)] transition-[width] duration-200"
+              style={{ width: computeWidth(progress?.progressPercent ?? 0) }}
+            >
+              <span className="progress-bar-glint-sweep" aria-hidden="true" />
+              <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-white/35" />
+            </div>
           </div>
           <span className="text-xs" style={{ color: onColor }}>
             {progress?.xpIntoLevel ?? 0} / {progress?.xpRequired ?? 0} XP

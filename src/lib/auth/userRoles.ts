@@ -54,3 +54,25 @@ export function userHasAppManagerAccess(user: UserWithRoleMetadata | null) {
 
   return roles.some((role) => APP_MANAGER_ROLES.has(normalizeRole(role)));
 }
+
+export function userIsAdmin(user: UserWithRoleMetadata | null) {
+  if (!user) {
+    return false;
+  }
+
+  const userMetadata = (user.user_metadata ?? {}) as RoleMetadata;
+  const appMetadata = (user.app_metadata ?? {}) as RoleMetadata;
+
+  if (userMetadata.is_admin === true || appMetadata.is_admin === true) {
+    return true;
+  }
+
+  const roles = [
+    ...collectRoles(userMetadata.role),
+    ...collectRoles(appMetadata.role),
+    ...collectRoles(userMetadata.roles),
+    ...collectRoles(appMetadata.roles),
+  ];
+
+  return roles.some((role) => normalizeRole(role) === "admin");
+}
