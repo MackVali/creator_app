@@ -151,11 +151,6 @@ export function useSkillsData() {
   const [skillsByCategory, setSkillsByCategory] = useState<Record<string, Skill[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const reload = useCallback(() => {
-    setRefreshKey((prev) => prev + 1);
-  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -200,9 +195,13 @@ export function useSkillsData() {
     }
   }, []);
 
+  const reload = useCallback(async () => {
+    await load();
+  }, [load]);
+
   useEffect(() => {
-    load();
-  }, [load, refreshKey]);
+    void load();
+  }, [load]);
 
   return { categories, skillsByCategory, isLoading, error, reload };
 }
