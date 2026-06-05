@@ -9775,35 +9775,40 @@ export default function ScheduleTabContent({
                   event.stopPropagation();
                 }}
                 style={{
-                  height: inlineJumpEffectiveRevealHeight,
-                  maxHeight: inlineJumpEffectiveRevealHeight,
+                  height: isInlineJumpToDateOpen ? inlineJumpEffectiveRevealHeight : 0,
+                  maxHeight: isInlineJumpToDateOpen
+                    ? inlineJumpEffectiveRevealHeight
+                    : 0,
                   marginTop: isInlineJumpToDateOpen
                     ? shouldUseInlineJumpEditorPanel
                       ? 0
                       : -inlineJumpEffectiveRevealHeight
-                    : -inlineJumpEffectiveRevealHeight - 2,
+                    : 0,
                   overflowY: shouldUseInlineJumpEditorPanel
                     ? "auto"
-                    : "visible",
+                    : "hidden",
                   overscrollBehavior: "contain",
                   touchAction: "pan-y",
                   WebkitOverflowScrolling: "touch",
                   position: "relative",
                   zIndex: shouldUseInlineJumpEditorPanel ? 80 : 1,
+                  pointerEvents: isInlineJumpToDateOpen ? "auto" : "none",
                 }}
               >
-                <JumpToDateSheet
-                  variant="inline"
-                  open={isInlineJumpToDateOpen}
-                  onOpenChange={(open) => {
-                    if (!open) void closeInlineJumpToDate();
-                  }}
-                  currentDate={currentDate}
-                  timeZone={effectiveTimeZone}
-                  onSelectDate={handleInlineJumpToDateSelect}
-                  snapshot={jumpToDateSnapshot ?? undefined}
-                  onInlineEditorModeChange={setIsInlineJumpEditorMode}
-                />
+                {isInlineJumpToDateOpen ? (
+                  <JumpToDateSheet
+                    variant="inline"
+                    open={isInlineJumpToDateOpen}
+                    onOpenChange={(open) => {
+                      if (!open) void closeInlineJumpToDate();
+                    }}
+                    currentDate={currentDate}
+                    timeZone={effectiveTimeZone}
+                    onSelectDate={handleInlineJumpToDateSelect}
+                    snapshot={jumpToDateSnapshot ?? undefined}
+                    onInlineEditorModeChange={setIsInlineJumpEditorMode}
+                  />
+                ) : null}
               </div>
               {!shouldUseInlineJumpEditorPanel && (
                 <AnimatePresence mode="wait" initial={false}>
