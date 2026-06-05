@@ -9759,13 +9759,6 @@ export default function ScheduleTabContent({
             <motion.div
               animate={jumpPullControls}
               initial={false}
-              onClick={
-                isInlineJumpToDateOpen && !shouldUseInlineJumpEditorPanel
-                  ? () => {
-                      void closeInlineJumpToDate();
-                    }
-                  : undefined
-              }
             >
               <div
                 data-inline-jump-panel
@@ -9811,74 +9804,85 @@ export default function ScheduleTabContent({
                 ) : null}
               </div>
               {!shouldUseInlineJumpEditorPanel && (
-                <AnimatePresence mode="wait" initial={false}>
-                  {view === "day" && (
-                    <ScheduleViewShell key="day">
-                      {!dayTimelineModel ? (
-                        <div className="flex h-64 items-center justify-center text-zinc-500">
-                          Loading schedule...
-                        </div>
-                      ) : prefersReducedMotion ? (
-                        dayTimelineNode
-                      ) : isSwipingDayView ? (
-                        <div className="relative overflow-hidden">
-                          <motion.div animate={sliderControls} initial={false}>
-                            {dayTimelineNode}
-                          </motion.div>
-                          <DayPeekOverlays
-                            peekState={peekState}
-                            previousLabel={previousDayLabel}
-                            nextLabel={nextDayLabel}
-                            previousKey={previousDayKey}
-                            nextKey={nextDayKey}
-                            containerRef={dayTimelineContainerRef}
-                            previousModel={peekModels.previous}
-                            nextModel={peekModels.next}
-                            renderPreview={renderDayTimeline}
-                            scrollProgress={swipeScrollProgressRef.current}
-                            baseTimelineHeight={baseTimelineHeight}
-                            timelineChromeHeight={timelineChromeHeight}
-                            pxPerMin={pxPerMin}
-                          />
-                        </div>
-                      ) : skipNextDayAnimation ? (
-                        <div key={dayViewDateKey}>{dayTimelineNode}</div>
-                      ) : (
-                        <AnimatePresence
-                          mode="sync"
-                          initial={false}
-                          custom={dayTransitionDirection}
-                        >
-                          <motion.div
-                            key={dayViewDateKey}
+                <div
+                  data-inline-jump-timeline-peek
+                  onClick={
+                    isInlineJumpToDateOpen
+                      ? () => {
+                          void closeInlineJumpToDate();
+                        }
+                      : undefined
+                  }
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    {view === "day" && (
+                      <ScheduleViewShell key="day">
+                        {!dayTimelineModel ? (
+                          <div className="flex h-64 items-center justify-center text-zinc-500">
+                            Loading schedule...
+                          </div>
+                        ) : prefersReducedMotion ? (
+                          dayTimelineNode
+                        ) : isSwipingDayView ? (
+                          <div className="relative overflow-hidden">
+                            <motion.div animate={sliderControls} initial={false}>
+                              {dayTimelineNode}
+                            </motion.div>
+                            <DayPeekOverlays
+                              peekState={peekState}
+                              previousLabel={previousDayLabel}
+                              nextLabel={nextDayLabel}
+                              previousKey={previousDayKey}
+                              nextKey={nextDayKey}
+                              containerRef={dayTimelineContainerRef}
+                              previousModel={peekModels.previous}
+                              nextModel={peekModels.next}
+                              renderPreview={renderDayTimeline}
+                              scrollProgress={swipeScrollProgressRef.current}
+                              baseTimelineHeight={baseTimelineHeight}
+                              timelineChromeHeight={timelineChromeHeight}
+                              pxPerMin={pxPerMin}
+                            />
+                          </div>
+                        ) : skipNextDayAnimation ? (
+                          <div key={dayViewDateKey}>{dayTimelineNode}</div>
+                        ) : (
+                          <AnimatePresence
+                            mode="sync"
+                            initial={false}
                             custom={dayTransitionDirection}
-                            variants={dayTimelineVariants}
-                            initial="enter"
-                            animate="center"
-                            exit="exit"
-                            transition={dayTimelineTransition}
                           >
-                            {dayTimelineNode}
-                          </motion.div>
-                        </AnimatePresence>
-                      )}
-                      <FocusTimelineFab
-                        hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
-                        editTarget={fabEditTarget}
-                        onEditClose={handleCloseEditSheet}
-                      />
-                    </ScheduleViewShell>
-                  )}
-                  {view === "focus" && (
-                    <ScheduleViewShell key="focus">
-                      <FocusTimeline
-                        hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
-                        editTarget={fabEditTarget}
-                        onEditClose={handleCloseEditSheet}
-                      />
-                    </ScheduleViewShell>
-                  )}
-                </AnimatePresence>
+                            <motion.div
+                              key={dayViewDateKey}
+                              custom={dayTransitionDirection}
+                              variants={dayTimelineVariants}
+                              initial="enter"
+                              animate="center"
+                              exit="exit"
+                              transition={dayTimelineTransition}
+                            >
+                              {dayTimelineNode}
+                            </motion.div>
+                          </AnimatePresence>
+                        )}
+                        <FocusTimelineFab
+                          hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
+                          editTarget={fabEditTarget}
+                          onEditClose={handleCloseEditSheet}
+                        />
+                      </ScheduleViewShell>
+                    )}
+                    {view === "focus" && (
+                      <ScheduleViewShell key="focus">
+                        <FocusTimeline
+                          hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
+                          editTarget={fabEditTarget}
+                          onEditClose={handleCloseEditSheet}
+                        />
+                      </ScheduleViewShell>
+                    )}
+                  </AnimatePresence>
+                </div>
               )}
             </motion.div>
           </div>

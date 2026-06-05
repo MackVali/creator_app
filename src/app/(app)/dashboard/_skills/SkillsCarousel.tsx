@@ -32,11 +32,14 @@ import type { SkillRow } from "@/lib/types/skill";
 const FALLBACK_COLOR = "#6366f1";
 const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
+const RECOMMENDED_SKILL_DIRECT_MATCH_THRESHOLD = 4;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type CommunitySkill = {
   id: string | null;
   name: string;
   icon: string;
+  slug?: string | null;
+  searchAliases?: string[];
   categoryName?: string | null;
 };
 
@@ -303,7 +306,9 @@ type CatalogSkillRow = {
   category_id: string;
   subcategory_id: string | null;
   name: string;
+  slug: string | null;
   icon: string | null;
+  metadata: unknown;
   is_popular: boolean | null;
   popular_order: number | null;
   sort_order: number | null;
@@ -344,6 +349,26 @@ const isReorderable = (category: Category) =>
 
 const normalizeSkillName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
 const normalizeCategoryName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
+const getSearchAliases = (metadata: unknown) => {
+  if (!metadata || typeof metadata !== "object" || !("search_aliases" in metadata)) {
+    return [];
+  }
+
+  const aliases = (metadata as { search_aliases?: unknown }).search_aliases;
+  return Array.isArray(aliases) && aliases.every((alias) => typeof alias === "string")
+    ? aliases
+    : [];
+};
+const getCommunitySkillDirectSearchText = (skill: CommunitySkill) =>
+  [skill.name, skill.slug]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
+const getCommunitySkillAliasSearchText = (skill: CommunitySkill) =>
+  (skill.searchAliases ?? [])
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
 
 const compareBySortOrderThenName = <T extends { sort_order: number | null; name: string }>(
   left: T,
@@ -424,7 +449,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
       .order("name", { ascending: true }),
     supabase
       .from("global_skills")
-      .select("id,category_id,subcategory_id,name,icon,is_popular,popular_order,sort_order")
+      .select("id,category_id,subcategory_id,name,slug,icon,metadata,is_popular,popular_order,sort_order")
       .eq("is_active", true)
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("name", { ascending: true }),
@@ -459,6 +484,8 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
       id: skill.id,
       name: skill.name,
       icon: skill.icon || "✦",
+      slug: skill.slug,
+      searchAliases: getSearchAliases(skill.metadata),
       categoryName: categoryNameById.get(skill.category_id) ?? null,
     });
     skillsBySubcategory.set(skill.subcategory_id, list);
@@ -489,6 +516,8 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
       id: skill.id,
       name: skill.name,
       icon: skill.icon || "✦",
+      slug: skill.slug,
+      searchAliases: getSearchAliases(skill.metadata),
       categoryName: categoryNameById.get(skill.category_id) ?? null,
     }));
 
@@ -500,6 +529,8 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
       id: skill.id,
       name: skill.name,
       icon: skill.icon || "✦",
+      slug: skill.slug,
+      searchAliases: getSearchAliases(skill.metadata),
       categoryName: categoryNameById.get(skill.category_id) ?? null,
     })),
     source: "supabase",
@@ -712,11 +743,33 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
       }))
       .filter((subcategory) => subcategory.skills.length > 0);
   }, [activeCommunityMainCategory, communitySkillSearch]);
+  const communitySkillSearchResults = useMemo(() => {
+    if (!isCommunitySkillSearching) {
+      return { direct: [] as CommunitySkill[], recommended: [] as CommunitySkill[] };
+    }
+
+    const direct = communityCatalog.skills.filter((skill) =>
+      getCommunitySkillDirectSearchText(skill).includes(communitySkillSearchQuery)
+    );
+
+    if (direct.length >= RECOMMENDED_SKILL_DIRECT_MATCH_THRESHOLD) {
+      return { direct, recommended: [] as CommunitySkill[] };
+    }
+
+    const directSkillKeys = new Set(direct.map((skill) => skill.id ?? skill.name));
+    const recommended = communityCatalog.skills.filter((skill) => {
+      const skillKey = skill.id ?? skill.name;
+      return (
+        !directSkillKeys.has(skillKey) &&
+        getCommunitySkillAliasSearchText(skill).includes(communitySkillSearchQuery)
+      );
+    });
+
+    return { direct, recommended };
+  }, [communityCatalog.skills, communitySkillSearchQuery, isCommunitySkillSearching]);
   const filteredCommunitySkills =
     isCommunitySkillSearching
-      ? communityCatalog.skills.filter((skill) =>
-          skill.name.toLowerCase().includes(communitySkillSearchQuery)
-        )
+      ? [...communitySkillSearchResults.direct, ...communitySkillSearchResults.recommended]
       : activeCommunitySkillCategory === "Popular"
       ? filteredPopularCommunitySkills
       : filteredCommunitySubcategories.flatMap((subcategory) => subcategory.skills);
@@ -1952,7 +2005,40 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                         className="h-full min-h-0 overflow-y-auto overscroll-y-contain"
                       >
                         <div className="flex flex-wrap gap-1.5">
-                          {filteredCommunitySkills.map((skill) => {
+                          {communitySkillSearchResults.direct.map((skill) => {
+                            const skillKey = skill.id ?? skill.name;
+                            const isSelected = selectedCommunitySkillId === skillKey;
+                            return (
+                              <button
+                                key={skillKey}
+                                type="button"
+                                onClick={() => setSelectedCommunitySkillId(skillKey)}
+                                aria-pressed={isSelected}
+                                className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                                  isSelected
+                                    ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
+                                    : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
+                                }`}
+                              >
+                                <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
+                                  {skill.icon}
+                                </span>
+                                <span className="truncate">{skill.name}</span>
+                                <span
+                                  className={isSelected ? "shrink-0 text-zinc-200/85" : "hidden"}
+                                  aria-hidden
+                                >
+                                  <Check className="h-3 w-3" />
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {communitySkillSearchResults.recommended.length > 0 && (
+                            <div className="basis-full px-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+                              Recommended
+                            </div>
+                          )}
+                          {communitySkillSearchResults.recommended.map((skill) => {
                             const skillKey = skill.id ?? skill.name;
                             const isSelected = selectedCommunitySkillId === skillKey;
                             return (
@@ -1985,7 +2071,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                               type="button"
                               onClick={() => setSkillSuggestionPanelOpen((isOpen) => !isOpen)}
                               aria-expanded={skillSuggestionPanelOpen}
-                              className="inline-flex h-7 items-center rounded-full border border-white/[0.025] bg-white/[0.018] px-2.5 text-left text-[11px] font-medium leading-none text-zinc-600 transition hover:border-white/10 hover:bg-white/[0.035] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                              className="inline-flex h-7 items-center rounded-full border border-zinc-600/60 bg-white/[0.018] px-2.5 text-left text-[11px] font-medium leading-none text-zinc-600 transition hover:border-zinc-400/70 hover:bg-white/[0.035] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
                             >
                               +
                             </button>
