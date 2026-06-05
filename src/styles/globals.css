@@ -299,6 +299,37 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   }
 }
 
+.progress-bar-glint {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+@keyframes progress-glint-sweep {
+  0% {
+    transform: translateX(0) skewX(-18deg);
+    opacity: 0;
+  }
+
+  16% {
+    opacity: 0.86;
+  }
+
+  44% {
+    opacity: 0.7;
+  }
+
+  62% {
+    transform: translateX(240%) skewX(-18deg);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
 .goal-card {
   position: relative;
   overflow: visible;
@@ -608,4 +639,30 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   .btn-3d--amber {
     --btn-3d-ring: #f59e0b;
   }
+}
+
+.progress-bar-glint-sweep {
+  position: absolute;
+  top: -85%;
+  bottom: -85%;
+  left: -60%;
+  width: 70%;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.02) 18%,
+    rgba(255, 255, 255, 0.28) 36%,
+    rgba(255, 255, 255, 0.9) 49%,
+    rgba(255, 255, 255, 0.38) 58%,
+    rgba(255, 255, 255, 0.06) 76%,
+    transparent 88%,
+    transparent 100%
+  );
+  filter: blur(0.2px);
+  mix-blend-mode: screen;
+  transform: translateX(0) skewX(-18deg);
+  animation: progress-glint-sweep 2.15s ease-in-out infinite;
+  will-change: transform, opacity;
 }

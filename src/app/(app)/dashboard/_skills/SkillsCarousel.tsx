@@ -1990,10 +1990,10 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                               +
                             </button>
                             {skillSuggestionPanelOpen && (
-                              <div className="absolute left-0 top-9 z-20 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-white/10 bg-zinc-950/95 p-3 text-zinc-200 shadow-[0_18px_36px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)]">
+                              <div className="absolute left-0 top-9 z-20 w-72 max-w-[calc(100vw-3rem)] rounded-2xl border border-black bg-zinc-950/95 p-3 text-zinc-200 shadow-[0_18px_36px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)]">
                                 <div className="mb-2 flex items-center gap-2">
                                   <p className="text-[11px] font-semibold text-zinc-200">
-                                    Suggest skill
+                                    Suggest a new skill
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">

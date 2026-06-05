@@ -83,12 +83,13 @@ export const LevelBanner = forwardRef<LevelBannerHandle, LevelBannerProps>(
         <div className="relative z-[1]">
           <div className="h-[15px] w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)] backdrop-blur-sm">
             <motion.div
-              className="relative h-full rounded-full border border-white/[0.16] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)]"
+              className="progress-bar-glint relative h-full rounded-full border border-white/[0.16] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)]"
               initial={{ width: "0%" }}
               animate={{ width: `${progressPercent}%` }}
               transition={{ duration: 0.8, ease: "easeOut" }}
             >
-              <div className="pointer-events-none absolute inset-x-1 top-[2px] h-[3px] rounded-full bg-white/35" />
+              <span className="progress-bar-glint-sweep" aria-hidden="true" />
+              <div className="pointer-events-none absolute inset-x-1 top-[2px] z-[4] h-[3px] rounded-full bg-white/35" />
             </motion.div>
           </div>
         </div>

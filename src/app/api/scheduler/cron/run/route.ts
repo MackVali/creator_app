@@ -58,7 +58,7 @@ type CronResult = {
   error?: string;
 };
 
-export async function POST(request: Request) {
+async function handleCronRun(request: Request) {
   const cronSecret = process.env.SCHEDULER_CRON_SECRET;
   if (!cronSecret) {
     return NextResponse.json(
@@ -217,8 +217,12 @@ export async function POST(request: Request) {
   });
 }
 
-export async function GET() {
-  return methodNotAllowed();
+export async function POST(request: Request) {
+  return handleCronRun(request);
+}
+
+export async function GET(request: Request) {
+  return handleCronRun(request);
 }
 
 export async function HEAD() {
