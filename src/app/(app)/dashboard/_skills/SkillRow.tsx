@@ -140,7 +140,7 @@ export default function SkillRow({ skill, progress, onColor }: Props) {
               <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-white/35" />
             </div>
           </div>
-          <span className="text-xs" style={{ color: onColor }}>
+          <span className="text-xs text-zinc-500">
             {progress?.xpIntoLevel ?? 0} / {progress?.xpRequired ?? 0} XP
           </span>
         </div>

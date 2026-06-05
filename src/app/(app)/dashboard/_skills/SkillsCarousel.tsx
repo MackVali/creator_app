@@ -887,6 +887,15 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     communityResultsPagerRef.current?.scrollTo({ left: 0, behavior: "auto" });
   }, []);
 
+  const handleSkillSuggestionToggle = useCallback(() => {
+    setSkillSuggestionPanelOpen((isOpen) => {
+      if (!isOpen) {
+        setSuggestedSkillName(communitySkillSearch.trim());
+      }
+      return !isOpen;
+    });
+  }, [communitySkillSearch]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -2069,7 +2078,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                           <div className="relative inline-flex">
                             <button
                               type="button"
-                              onClick={() => setSkillSuggestionPanelOpen((isOpen) => !isOpen)}
+                              onClick={handleSkillSuggestionToggle}
                               aria-expanded={skillSuggestionPanelOpen}
                               className="inline-flex h-7 items-center rounded-full border border-zinc-600/60 bg-white/[0.018] px-2.5 text-left text-[11px] font-medium leading-none text-zinc-600 transition hover:border-zinc-400/70 hover:bg-white/[0.035] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
                             >

@@ -3608,9 +3608,10 @@ export default function ScheduleTabContent({
       }
 
       await jumpPullControls.start({
-        y: 0,
+        y: -6,
         transition: inlineJumpCloseTransition,
       });
+      jumpPullControls.set({ y: 0 });
       if (unmount) setIsInlineJumpToDateOpen(false);
     },
     [

@@ -80,9 +80,9 @@ function MilestonesPanelInternal(
   return (
     <Card
       id="monument-milestones"
-      className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7 gap-0"
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] sm:p-7 gap-0"
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_transparent_55%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.04),_transparent_58%)]" />
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-white/60">
