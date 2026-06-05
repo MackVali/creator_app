@@ -1,6 +1,15 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  startTransition,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 
@@ -299,6 +308,10 @@ type CatalogSkillRow = {
   sort_order: number | null;
 };
 
+export type SkillsCarouselHandle = {
+  refresh: () => Promise<void>;
+};
+
 function parseHex(hex?: string | null) {
   if (!hex) {
     return { r: 99, g: 102, b: 241 };
@@ -492,7 +505,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
   };
 }
 
-export default function SkillsCarousel() {
+const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(_props, ref) {
   const { categories: fetchedCategories, skillsByCategory, isLoading, reload } = useSkillsData();
   const { progressBySkillId } = useSkillProgress();
   const router = useRouter();
@@ -538,6 +551,8 @@ export default function SkillsCarousel() {
   const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
   const communityCategoryButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const communityContentContainerRef = useRef<HTMLDivElement>(null);
+
+  useImperativeHandle(ref, () => ({ refresh: reload }), [reload]);
   const communityResultsPagerRef = useRef<HTMLDivElement>(null);
   const activeCommunitySkillCategoryIndexRef = useRef(0);
   const communityResultsScrollFrameRef = useRef<number | null>(null);
@@ -1362,7 +1377,7 @@ export default function SkillsCarousel() {
         return;
       }
       toast.success("Category created", `${trimmedName} is now available in the carousel.`);
-      reload();
+      void reload();
       setIsAddCategoryMenuOpen(false);
     } catch (err) {
       console.error("Failed to create category", err);
@@ -1421,7 +1436,7 @@ export default function SkillsCarousel() {
           },
         ];
       });
-      reload();
+      void reload();
       return true;
     },
     [existingSkillSortItems, reload, toast]
@@ -1579,13 +1594,13 @@ export default function SkillsCarousel() {
   );
 
   const handleCategoryNameChange = useCallback(() => {
-    reload();
+    void reload();
   }, [reload]);
 
   const handleCategoryDelete = useCallback(
     (categoryId: string) => {
       setCategories((previous) => previous.filter((category) => category.id !== categoryId));
-      reload();
+      void reload();
     },
     [reload]
   );
@@ -2382,4 +2397,6 @@ export default function SkillsCarousel() {
       </div>
     </>
   );
-}
+});
+
+export default SkillsCarousel;
