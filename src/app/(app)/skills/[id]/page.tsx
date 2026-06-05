@@ -1200,10 +1200,10 @@ export default function SkillDetailPage() {
     return (
       <main className="px-4 pb-6 pt-3 sm:px-6 sm:pt-4 lg:px-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-          <section aria-labelledby="skill-overview-loading" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-4 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-5 md:p-6">
+          <section aria-labelledby="skill-overview-loading" className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] p-4 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5 md:p-6">
             <div className="absolute inset-0">
-              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
-              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
+              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_72%)] blur-3xl" />
+              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.035),_transparent_68%)] blur-3xl" />
             </div>
             <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
               <div className="flex min-w-0 items-start gap-3 sm:gap-4">
@@ -1244,7 +1244,7 @@ export default function SkillDetailPage() {
           </section>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-5 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.76)] sm:p-6">
+            <section className="rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] p-5 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <Skeleton className="h-3 w-20 bg-white/10" />
@@ -1262,8 +1262,8 @@ export default function SkillDetailPage() {
             </section>
 
               <section className="relative space-y-6">
-                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
+                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
                   <CardHeader className="relative pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -1286,8 +1286,8 @@ export default function SkillDetailPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
+                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
                   <CardHeader className="relative pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -1489,10 +1489,10 @@ export default function SkillDetailPage() {
         onClose={() => setFocusPomoSource(null)}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-4 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-5 md:p-6">
+        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] p-4 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5 md:p-6">
             <div className="absolute inset-0">
-              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
-              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
+              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_72%)] blur-3xl" />
+              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.035),_transparent_68%)] blur-3xl" />
             </div>
             <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
               <div className="flex min-w-0 items-start gap-3 sm:gap-4">
@@ -1593,16 +1593,16 @@ export default function SkillDetailPage() {
           </section>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
+            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.04),_transparent_62%)]" />
               <CardContent className="relative overflow-visible">
                 <SkillProjectsList skillId={id} icon={icon} />
               </CardContent>
             </Card>
 
           <section className="relative space-y-6">
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
+            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
               <CardHeader className="relative pb-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -1665,15 +1665,15 @@ export default function SkillDetailPage() {
                         const habitPillLabel = isHabitCompletedToday
                           ? "COMPLETE"
                           : habit.dueLabel;
-                        const shimmerBorderClass = isHabitCompletedToday
+                        const habitStateBorderClass = isHabitCompletedToday
                           ? "shimmer-border-complete"
-                          : isHabitDue
-                            ? "shimmer-border-due"
+                          : isHabitDue && !isHabitCompletedToday
+                            ? "related-habit-due-border"
                             : null;
                         const habitPillClass = isHabitCompletedToday
                           ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
                           : isHabitDue
-                            ? "border-rose-200/25 bg-rose-500/15 text-rose-50"
+                            ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
                             : "border-white/10 bg-white/[0.06] text-white/65";
 
                         return (
@@ -1697,7 +1697,7 @@ export default function SkillDetailPage() {
                               pressedRelatedHabitId === habit.id
                                 ? "scale-[0.985] translate-y-px brightness-95"
                                 : null,
-                              shimmerBorderClass
+                              habitStateBorderClass
                             )}
                             role="button"
                             tabIndex={isHabitPending ? -1 : 0}
@@ -1783,8 +1783,8 @@ export default function SkillDetailPage() {
               </CardContent>
             </Card>
 
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-4 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-5">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.1),_transparent_60%)]" />
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] p-4 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] sm:p-5">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.035),_transparent_62%)]" />
               <div className="relative">
                 <NotesGrid skillId={id} />
               </div>

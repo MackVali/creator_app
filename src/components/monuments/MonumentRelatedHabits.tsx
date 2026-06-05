@@ -918,8 +918,8 @@ export function MonumentRelatedHabits({
   }, [monumentId, supabase]);
 
   return (
-    <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
+    <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
       <CardHeader className="relative px-6 pt-3 pb-1">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -967,15 +967,15 @@ export function MonumentRelatedHabits({
                 const habitPillLabel = isHabitCompletedToday
                   ? "COMPLETE"
                   : habit.dueLabel;
-                const shimmerBorderClass = isHabitCompletedToday
+                const habitStateBorderClass = isHabitCompletedToday
                   ? "shimmer-border-complete"
-                  : isHabitDue
-                    ? "shimmer-border-due"
+                  : isHabitDue && !isHabitCompletedToday
+                    ? "related-habit-due-border"
                     : null;
                 const habitPillClass = isHabitCompletedToday
                   ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
                   : isHabitDue
-                    ? "border-rose-200/25 bg-rose-500/15 text-rose-50"
+                    ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
                     : "border-white/10 bg-white/[0.06] text-white/65";
 
                 return (
@@ -995,7 +995,7 @@ export function MonumentRelatedHabits({
                       pressedRelatedHabitId === habit.id
                         ? "scale-[0.985] translate-y-px brightness-95"
                         : null,
-                      shimmerBorderClass
+                      habitStateBorderClass
                     )}
                     role="button"
                     tabIndex={isHabitPending ? -1 : 0}
