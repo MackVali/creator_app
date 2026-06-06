@@ -158,6 +158,11 @@ export default function TopNav() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
+                    <Link href="/schedule/matrix" className="text-zinc-500">
+                      Matrix
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
                     <Link href="/test" className="text-zinc-500">
                       Test
                     </Link>
