@@ -1702,28 +1702,51 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                 className="w-[85vw] shrink-0 sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
                 style={{ scrollMarginInline: "12px" }}
               >
-                <div className="flex h-full animate-pulse flex-col justify-between rounded-[26px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg">
-                  <div className="flex flex-col gap-4">
-                    <div className="h-8 w-8 rounded-full bg-white/[0.08]" />
-                    <div className="h-6 w-2/3 rounded-full bg-white/[0.08]" />
-                    <div className="space-y-3">
-                      {skeletonCategoryPlaceholders.map((line) => (
-                        <div key={line} className="h-5 w-full rounded-full bg-white/[0.06]" />
-                      ))}
+                <article className="relative flex h-full animate-pulse flex-col rounded-[26px] border border-white/10 bg-white/[0.055] px-3 pb-4 pt-5 shadow-lg backdrop-blur-lg sm:px-4">
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[26px]">
+                    <span className="absolute inset-[1px] rounded-[24px] border border-white/10" />
+                    <span className="absolute inset-[6px] rounded-[20px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]" />
+                    <span className="absolute inset-0 bg-gradient-to-br from-white/[0.10] via-white/[0.025] to-transparent" />
+                  </div>
+
+                  <div className="relative z-10 flex h-full flex-col">
+                    <header className="mb-3 flex items-start justify-between gap-3">
+                      <div className="inline-flex h-9 w-40 rounded-full border border-white/10 bg-white/[0.08]" />
+                      <div className="h-7 w-20 rounded-full border border-white/10 bg-white/[0.07]" />
+                    </header>
+
+                    <div className="flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/20 px-3 pb-5 pt-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.12)]">
+                      <div className="space-y-2">
+                        {Array.from({ length: 5 }).map((_, rowIndex) => (
+                          <div
+                            key={`${placeholder}-skill-row-${rowIndex}`}
+                            className="flex items-center gap-3 rounded-2xl border border-black/20 bg-black/15 px-3 py-2.5"
+                          >
+                            <div className="size-9 shrink-0 rounded-xl bg-black/25" />
+                            <div className="min-w-0 flex-1">
+                              <div className="h-3.5 w-24 max-w-[58%] rounded-full bg-white/[0.12]" />
+                              <div className="mt-1 flex items-center gap-2">
+                                <div className="h-4 w-9 rounded-lg border border-white/10 bg-white/[0.08]" />
+                                <div className="h-2.5 w-9 rounded-full bg-white/[0.06]" />
+                              </div>
+                            </div>
+                            <div className="flex min-w-[24%] flex-col gap-1">
+                              <div className="h-2.5 w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]">
+                                <div className="h-full w-2/3 rounded-full border border-white/[0.14] bg-white/40" />
+                              </div>
+                              <div className="h-3 w-16 rounded-full bg-white/[0.06]" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-6 flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-white/[0.07]" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3 w-2/3 rounded-full bg-white/[0.06]" />
-                      <div className="h-3 w-1/3 rounded-full bg-white/[0.04]" />
-                    </div>
-                  </div>
-                </div>
+                </article>
               </div>
             ))}
           </div>
         </div>
+
         <div className="mt-6 flex flex-wrap justify-center gap-2.5">
           {skeletonChipPlaceholders.map((placeholder) => (
             <div
