@@ -6041,6 +6041,26 @@ export default function ScheduleTabContent({
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
 
+  const isEventFromInlineJumpPanel = (
+    event: React.SyntheticEvent | Event
+  ) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest?.("[data-inline-jump-panel]")) return true;
+    const nativeEvent =
+      "nativeEvent" in event
+        ? (event.nativeEvent as Event & { composedPath?: () => EventTarget[] })
+        : (event as Event & { composedPath?: () => EventTarget[] });
+    const path = nativeEvent.composedPath?.();
+    if (Array.isArray(path)) {
+      return path.some(
+        (node) =>
+          node instanceof HTMLElement &&
+          Boolean(node.closest?.("[data-inline-jump-panel]"))
+      );
+    }
+    return false;
+  };
+
   const isTouchFromFabOverlay = (event: React.TouchEvent) => {
     const target = event.target as HTMLElement | null;
     if (
@@ -6064,11 +6084,10 @@ export default function ScheduleTabContent({
   };
 
   function handleTouchStart(e: React.TouchEvent) {
+    if (isEventFromInlineJumpPanel(e)) return;
     if (isTouchFromFabOverlay(e)) return;
 
     if (isInlineJumpToDateOpen) {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.("[data-inline-jump-panel]")) return;
       if (shouldUseInlineJumpEditorPanel) return;
       void closeInlineJumpToDate();
       return;
@@ -6188,10 +6207,9 @@ export default function ScheduleTabContent({
   }
 
   function handleTouchMove(e: React.TouchEvent) {
+    if (isEventFromInlineJumpPanel(e)) return;
     if (isTouchFromFabOverlay(e)) return;
     if (isInlineJumpToDateOpen) {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.("[data-inline-jump-panel]")) return;
       if (shouldUseInlineJumpEditorPanel) return;
     }
     if (pinchActiveRef.current) {
@@ -6362,7 +6380,8 @@ export default function ScheduleTabContent({
     });
   }
 
-  async function handleTouchEnd() {
+  async function handleTouchEnd(e?: React.TouchEvent) {
+    if (e && isEventFromInlineJumpPanel(e)) return;
     if (pinchActiveRef.current) {
       pinchActiveRef.current = false;
       pinchStateRef.current = null;
@@ -6454,8 +6473,8 @@ export default function ScheduleTabContent({
     hasVerticalTouchMovement.current = false;
   }
 
-  const handleTouchCancel = () => {
-    void handleTouchEnd();
+  const handleTouchCancel = (e: React.TouchEvent) => {
+    void handleTouchEnd(e);
   };
 
   const handleJumpToDateSelect = (date: Date) => {
@@ -9751,8 +9770,8 @@ export default function ScheduleTabContent({
             onTouchEnd={
               manualPlacementSession
                 ? undefined
-                : () => {
-                    void handleTouchEnd();
+                : (event) => {
+                    void handleTouchEnd(event);
                   }
             }
             onTouchCancel={manualPlacementSession ? undefined : handleTouchCancel}
