@@ -9,6 +9,7 @@ import {
   useRef,
   type CSSProperties,
 } from "react";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -96,6 +97,7 @@ type PaintDayType = {
   days: number[];
   schedulerMode?: string | null;
 };
+type PaintPicker = "dayType" | "mode";
 const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
 const SCHEDULER_MODES = [
   "REGULAR",
@@ -104,6 +106,8 @@ const SCHEDULER_MODES = [
   "SKILLED",
   "REST",
 ] as const;
+const formatSchedulerMode = (mode: string) =>
+  mode.charAt(0) + mode.slice(1).toLowerCase();
 const FLAME_LEVELS: FlameLevel[] = [
   "NO",
   "LOW",
@@ -167,8 +171,12 @@ export function JumpToDateSheet({
   const inlineHeaderRef = useRef<HTMLDivElement | null>(null);
   const inlineScrollAreaRef = useRef<HTMLDivElement | null>(null);
   const inlineContentMeasureRef = useRef<HTMLDivElement | null>(null);
+  const timeBlocksPreviewMeasureRef = useRef<HTMLDivElement | null>(null);
   const lastReportedInlineContentHeightRef = useRef(0);
   const [isPaintMode, setIsPaintMode] = useState(false);
+  const [openPaintPicker, setOpenPaintPicker] = useState<PaintPicker | null>(
+    null
+  );
   const [paintSelectionKey, setPaintSelectionKey] = useState<string | null>(
     null
   );
@@ -184,6 +192,7 @@ export function JumpToDateSheet({
       return true;
     }
   });
+  const [timeBlocksPreviewHeight, setTimeBlocksPreviewHeight] = useState(0);
   const [dayTypes, setDayTypes] = useState<Array<PaintDayType>>([]);
   const [isLoadingDayTypes, setIsLoadingDayTypes] = useState(false);
   const [dayTypeError, setDayTypeError] = useState<string | null>(null);
@@ -507,10 +516,17 @@ export function JumpToDateSheet({
       const next = !prev;
       if (!next) {
         setPaintSelectionKey(null);
+        setOpenPaintPicker(null);
       }
       return next;
     });
   };
+
+  useEffect(() => {
+    if (!isPaintMode || !paintSelectionKey) {
+      setOpenPaintPicker(null);
+    }
+  }, [isPaintMode, paintSelectionKey]);
 
   useEffect(() => {
     if (!open || !isPaintMode) return;
@@ -1445,6 +1461,62 @@ export function JumpToDateSheet({
   ]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let frame: number | null = null;
+    const measure = () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        const preview = timeBlocksPreviewMeasureRef.current;
+        if (!preview) {
+          setTimeBlocksPreviewHeight(0);
+          return;
+        }
+        setTimeBlocksPreviewHeight(
+          Math.ceil(preview.getBoundingClientRect().height)
+        );
+      });
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => {
+        if (frame !== null) {
+          window.cancelAnimationFrame(frame);
+        }
+        window.removeEventListener("resize", measure);
+      };
+    }
+
+    const observer = new ResizeObserver(measure);
+    if (timeBlocksPreviewMeasureRef.current) {
+      observer.observe(timeBlocksPreviewMeasureRef.current);
+    }
+    window.addEventListener("resize", measure);
+
+    return () => {
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [
+    isLoadingTimeBlocks,
+    isPaintMode,
+    paintSelectionLabel,
+    paintPreviewBlocks.length,
+    saveError,
+    showTimeBlocks,
+    timeBlockError,
+  ]);
+
+  useEffect(() => {
     if (
       typeof window === "undefined" ||
       !open ||
@@ -2167,6 +2239,11 @@ export function JumpToDateSheet({
   }: {
     titleVariant: "sheet" | "inline";
   }) {
+    const selectedPaintDayType =
+      paintDayType ?? defaultDayTypeForSelection ?? null;
+    const selectedPaintMode =
+      selectedPaintDayType?.schedulerMode ?? "REGULAR";
+    const isPaintPickerDisabled = isLoadingDayTypes;
     const header = (
       <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
@@ -2242,109 +2319,178 @@ export function JumpToDateSheet({
                 ) : null}
                 {paintSelectionLabel ? (
                   <div className="space-y-1.5">
-                    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden text-[12px] sm:gap-2 sm:text-[13px] font-medium text-white/75">
-                      <span className="shrink-0 text-white/70">Day type</span>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                    <div className="relative z-10 space-y-1 overflow-visible">
+                      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-visible text-[12px] sm:gap-2 sm:text-[13px] font-medium text-white/75">
+                        <span className="shrink-0 text-white/70">
+                          Day type
+                        </span>
+                        <div className="relative overflow-visible">
                           <button
                             type="button"
-                            disabled={isLoadingDayTypes}
+                            disabled={isPaintPickerDisabled}
+                            aria-label="Paint mode day type"
+                            aria-expanded={openPaintPicker === "dayType"}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setOpenPaintPicker((current) =>
+                                current === "dayType" ? null : "dayType"
+                              );
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
                             className={cn(
-                              "inline-flex min-h-8 min-w-[86px] w-[31vw] max-w-[220px] sm:w-[220px] items-center justify-between gap-1 border-b border-white/10 bg-transparent px-0.5 py-1 text-left text-[12px] sm:text-[13px] font-medium text-white/88 transition hover:border-white/20 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
-                              isLoadingDayTypes && "opacity-60"
+                              "flex min-h-8 min-w-[86px] w-[31vw] max-w-[220px] sm:w-[220px] items-center justify-between gap-1 border-0 border-b border-white/10 bg-transparent px-0.5 py-1 text-left text-[12px] sm:text-[13px] font-medium text-white/88 outline-none transition hover:border-white/20 hover:text-white focus-visible:border-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                              isPaintPickerDisabled && "opacity-60"
                             )}
                           >
                             <span className="min-w-0 truncate">
-                              {paintDayType?.name ??
-                                defaultDayTypeForSelection?.name ??
+                              {selectedPaintDayType?.name ??
                                 (dayTypeError
                                   ? "Unavailable"
                                   : "Select day type")}
                             </span>
-                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/35" />
+                            <ChevronDown
+                              className={cn(
+                                "h-3.5 w-3.5 shrink-0 text-white/35 transition-transform",
+                                openPaintPicker === "dayType" && "rotate-180"
+                              )}
+                            />
                           </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          data-inline-jump-panel
-                          align="end"
-                          side="bottom"
-                          sideOffset={6}
-                          collisionPadding={12}
-                          className="z-[20000] min-w-[220px] max-w-[260px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
-                        >
-                          {dayTypes.map((dt) => (
-                            <DropdownMenuItem
-                              key={dt.id}
-                              className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
-                              onSelect={() => {
-                                void handleChangeDayType(dt.id);
-                              }}
+                          {openPaintPicker === "dayType" ? (
+                            <div
+                              className="absolute left-0 top-full z-[20000] mt-1.5 w-[min(320px,calc(100vw-2rem))] overflow-hidden rounded-md border border-white/[0.08] bg-black/90 p-1 shadow-[0_14px_32px_rgba(0,0,0,0.48)]"
+                              onPointerDown={(event) =>
+                                event.stopPropagation()
+                              }
+                              onClick={(event) => event.stopPropagation()}
                             >
-                              {dt.name}
-                            </DropdownMenuItem>
-                          ))}
-                          <DropdownMenuItem
-                            className="text-xs text-white/80 focus:bg-white/10 focus:text-white"
-                            onSelect={() => {
-                              handleCreateDayType();
-                            }}
-                          >
-                            Create new day type
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <span className="shrink-0 text-white/70">Mode</span>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                              {!selectedPaintDayType ? (
+                                <div className="px-2.5 py-2 text-[12px] text-white/45">
+                                  {dayTypeError
+                                    ? "Day types unavailable"
+                                    : "Select day type"}
+                                </div>
+                              ) : null}
+                              {dayTypes.map((dt) => {
+                                const isSelected =
+                                  dt.id === selectedPaintDayType?.id;
+                                return (
+                                  <button
+                                    key={dt.id}
+                                    type="button"
+                                    className={cn(
+                                      "flex w-full items-center justify-between gap-2 rounded px-2.5 py-1.5 text-left text-[13px] font-medium text-white/78 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                                      isSelected && "bg-white/[0.06] text-white"
+                                    )}
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setOpenPaintPicker(null);
+                                      void handleChangeDayType(dt.id);
+                                    }}
+                                  >
+                                    <span className="min-w-0 truncate">
+                                      {dt.name}
+                                    </span>
+                                    {isSelected ? (
+                                      <Check className="h-3.5 w-3.5 shrink-0 text-white/55" />
+                                    ) : null}
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                className="mt-1 flex w-full items-center rounded border-t border-white/[0.06] px-2.5 py-1.5 text-left text-[13px] font-medium text-white/62 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setOpenPaintPicker(null);
+                                  handleCreateDayType();
+                                }}
+                              >
+                                Create new day type
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="shrink-0 text-white/70">Mode</span>
+                        <div className="relative overflow-visible">
                           <button
                             type="button"
-                            disabled={isLoadingDayTypes}
+                            disabled={isPaintPickerDisabled}
+                            aria-label="Paint mode scheduler mode"
+                            aria-expanded={openPaintPicker === "mode"}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setOpenPaintPicker((current) =>
+                                current === "mode" ? null : "mode"
+                              );
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
                             className={cn(
-                              "inline-flex min-h-8 min-w-[68px] w-[20vw] max-w-[150px] sm:w-[150px] items-center justify-between gap-1 border-b border-white/10 bg-transparent px-0.5 py-1 text-left text-[12px] sm:text-[13px] font-medium text-white/88 transition hover:border-white/20 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
-                              isLoadingDayTypes && "opacity-60"
+                              "flex min-h-8 min-w-[96px] w-[28vw] max-w-[190px] sm:w-[180px] items-center justify-between gap-1 border-0 border-b border-white/10 bg-transparent px-0.5 py-1 text-left text-[12px] sm:text-[13px] font-medium text-white/88 outline-none transition hover:border-white/20 hover:text-white focus-visible:border-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                              isPaintPickerDisabled && "opacity-60"
                             )}
                           >
                             <span className="min-w-0 truncate">
-                              {(
-                                (paintDayType?.schedulerMode ??
-                                  defaultDayTypeForSelection?.schedulerMode ??
-                                  "REGULAR") as string
-                              )
-                                .charAt(0)
-                                .concat(
-                                  (
-                                    (paintDayType?.schedulerMode ??
-                                      defaultDayTypeForSelection?.schedulerMode ??
-                                      "REGULAR") as string
-                                  )
-                                    .slice(1)
-                                    .toLowerCase()
-                                )}
+                              {formatSchedulerMode(selectedPaintMode)}
                             </span>
-                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/35" />
+                            <ChevronDown
+                              className={cn(
+                                "h-3.5 w-3.5 shrink-0 text-white/35 transition-transform",
+                                openPaintPicker === "mode" && "rotate-180"
+                              )}
+                            />
                           </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          data-inline-jump-panel
-                          align="end"
-                          side="bottom"
-                          sideOffset={6}
-                          collisionPadding={12}
-                          className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
-                        >
-                          {SCHEDULER_MODES.map((mode) => (
-                            <DropdownMenuItem
-                              key={mode}
-                              className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
-                              onSelect={() => {
-                                void handleChangeMode(mode);
-                              }}
+                          {openPaintPicker === "mode" ? (
+                            <div
+                              className="absolute right-0 top-full z-[20000] mt-1.5 w-[176px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-white/[0.08] bg-black/90 p-1 shadow-[0_14px_32px_rgba(0,0,0,0.48)]"
+                              onPointerDown={(event) =>
+                                event.stopPropagation()
+                              }
+                              onClick={(event) => event.stopPropagation()}
                             >
-                              {mode.charAt(0) + mode.slice(1).toLowerCase()}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                              {SCHEDULER_MODES.map((mode) => {
+                                const isSelected = mode === selectedPaintMode;
+                                return (
+                                  <button
+                                    key={mode}
+                                    type="button"
+                                    className={cn(
+                                      "flex w-full items-center justify-between gap-2 rounded px-2.5 py-1.5 text-left text-[13px] font-medium text-white/78 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                                      isSelected && "bg-white/[0.06] text-white"
+                                    )}
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setOpenPaintPicker(null);
+                                      void handleChangeMode(mode);
+                                    }}
+                                  >
+                                    <span>{formatSchedulerMode(mode)}</span>
+                                    {isSelected ? (
+                                      <Check className="h-3.5 w-3.5 shrink-0 text-white/55" />
+                                    ) : null}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                     {showAssignmentOverrideWarning ? (
                       <div className="rounded-lg border border-amber-200/40 bg-amber-200/10 px-3 py-2 text-[11px] sm:text-[12px] text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.4)]">
@@ -2359,17 +2505,33 @@ export function JumpToDateSheet({
                     <div className="rounded-md border border-white/[0.06] bg-black/35 p-2.5 sm:p-3 space-y-1.5">
                       <div className="flex items-center justify-between text-[11px] sm:text-sm font-semibold uppercase tracking-[0.12em] text-white/70">
                         <span>Time blocks</span>
-                        <label className="flex items-center gap-2 text-[11px] sm:text-xs font-medium text-white/70 select-none">
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5 rounded border border-white/40 bg-white/5 accent-white/80"
-                            checked={showTimeBlocks}
-                            onChange={(e) =>
-                              setShowTimeBlocks(e.target.checked)
-                            }
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={showTimeBlocks}
+                          aria-label="Toggle time blocks"
+                          className="relative inline-flex h-8 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3a3d44]"
+                          onClick={() =>
+                            setShowTimeBlocks((current) => !current)
+                          }
+                        >
+                          <span
+                            className={cn(
+                              "h-5 w-10 rounded-full border shadow-inner transition-colors duration-200",
+                              showTimeBlocks
+                                ? "border-[#3a3d44] bg-[#2a2d33]"
+                                : "border-[#24272d] bg-[#090a0d]"
+                            )}
                           />
-                          <span>View time blocks</span>
-                        </label>
+                          <span
+                            className={cn(
+                              "pointer-events-none absolute left-[7px] h-3.5 w-3.5 rounded-full bg-[#777b82] shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-transform duration-200 ease-out",
+                              showTimeBlocks
+                                ? "translate-x-[18px]"
+                                : "translate-x-0"
+                            )}
+                          />
+                        </button>
                       </div>
                       {hasPendingAssignment ? (
                         <div className="flex items-center justify-between rounded-md border border-emerald-300/30 bg-emerald-300/10 px-2.5 py-1.5 text-[11px] sm:text-xs text-emerald-100">
@@ -2420,32 +2582,76 @@ export function JumpToDateSheet({
                           </button>
                         </div>
                       ) : null}
-                      {!showTimeBlocks ? null : timeBlockError ? (
-                        <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
-                          {timeBlockError}
+                      <motion.div
+                        initial={false}
+                        animate={{
+                          height: showTimeBlocks
+                            ? timeBlocksPreviewHeight
+                            : 0,
+                        }}
+                        transition={{
+                          height: {
+                            duration: showTimeBlocks ? 0.75 : 0.45,
+                            ease: [0.22, 1, 0.36, 1],
+                          },
+                        }}
+                        className={cn(
+                          "overflow-hidden",
+                          !showTimeBlocks && "pointer-events-none"
+                        )}
+                        aria-hidden={!showTimeBlocks}
+                      >
+                        <div ref={timeBlocksPreviewMeasureRef} className="pt-2">
+                          <motion.div
+                            initial={false}
+                            animate={{
+                              opacity: showTimeBlocks ? 1 : 0,
+                              y: showTimeBlocks ? 0 : -10,
+                            }}
+                            transition={{
+                              opacity: {
+                                duration: showTimeBlocks ? 0.32 : 0.18,
+                                delay: showTimeBlocks ? 0.14 : 0,
+                                ease: "easeOut",
+                              },
+                              y: {
+                                duration: showTimeBlocks ? 0.48 : 0.24,
+                                delay: showTimeBlocks ? 0.08 : 0,
+                                ease: showTimeBlocks
+                                  ? [0.22, 1, 0.36, 1]
+                                  : [0.55, 0, 0.1, 1],
+                              },
+                            }}
+                          >
+                            {timeBlockError ? (
+                              <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                                {timeBlockError}
+                              </div>
+                            ) : isLoadingTimeBlocks ? (
+                              <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                                Loading time blocks…
+                              </div>
+                            ) : paintPreviewBlocks.length === 0 ? (
+                              <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                                No time blocks for this day type.
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {saveError ? (
+                                  <div className="rounded-md border border-amber-200/40 bg-amber-200/10 px-2.5 py-1.5 text-[12px] sm:text-sm text-amber-100">
+                                    {saveError}
+                                  </div>
+                                ) : null}
+                                <DayType24hPreview
+                                  blocks={paintPreviewBlocks}
+                                  selectedId={highlightedBlockId}
+                                  onSelect={setHighlightedBlockId}
+                                />
+                              </div>
+                            )}
+                          </motion.div>
                         </div>
-                      ) : isLoadingTimeBlocks ? (
-                        <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
-                          Loading time blocks…
-                        </div>
-                      ) : paintPreviewBlocks.length === 0 ? (
-                        <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
-                          No time blocks for this day type.
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {saveError ? (
-                            <div className="rounded-md border border-amber-200/40 bg-amber-200/10 px-2.5 py-1.5 text-[12px] sm:text-sm text-amber-100">
-                              {saveError}
-                            </div>
-                          ) : null}
-                          <DayType24hPreview
-                            blocks={paintPreviewBlocks}
-                            selectedId={highlightedBlockId}
-                            onSelect={setHighlightedBlockId}
-                          />
-                        </div>
-                      )}
+                      </motion.div>
                     </div>
                   </div>
                 ) : null}
@@ -2823,6 +3029,7 @@ export function JumpToDateSheet({
     return (
       <>
         <div
+          data-inline-jump-panel
           className={cn(
             "flex min-h-0 flex-col rounded-b-[22px] border-b border-white/10 bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] text-[var(--text-primary)] shadow-[0_18px_42px_rgba(0,0,0,0.32)] backdrop-blur",
             "min-h-full overflow-visible",

@@ -389,6 +389,29 @@ async function fetchGoalsWithRelationsForSource(
   if (!supabase) return [] as GoalRowWithRelations[];
 
   const ownerColumn = sourceType === "circle" ? "circle_id" : "monument_id";
+  const { data, error } = await supabase
+    .from("goals")
+    .select(GOAL_RELATIONS_BASE_SELECT)
+    .eq("user_id", userId)
+    .eq(ownerColumn, sourceId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(`Error fetching ${sourceType} goals:`, error);
+    return [];
+  }
+  return data ?? [];
+}
+
+async function fetchGoalsFullRelationsForSource(
+  sourceType: GoalsSourceType,
+  sourceId: string,
+  userId: string
+) {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [] as GoalRowWithRelations[];
+
+  const ownerColumn = sourceType === "circle" ? "circle_id" : "monument_id";
   const ownerLabel = sourceType === "circle" ? "Circle" : "Monument";
   const runQuery = (select: string) =>
     supabase
@@ -412,24 +435,39 @@ async function fetchGoalsWithRelationsForSource(
       return data ?? [];
     }
     console.warn(
-      `${ownerLabel} goal fetch variant failed (${variant.description}):`,
+      `${ownerLabel} goal relation fetch variant failed (${variant.description}):`,
       error
     );
   }
 
-  console.warn(`Falling back to basic ${sourceType} goal fetch`);
+  console.warn(`Falling back to basic ${sourceType} goal relation fetch`);
 
   const fallback = await runQuery(GOAL_RELATIONS_BASE_SELECT);
   if (fallback.error) {
-    console.error(`Error fetching ${sourceType} goals:`, fallback.error);
+    console.error(`Error fetching ${sourceType} goal relations:`, fallback.error);
     return [];
   }
   return fallback.data ?? [];
 }
 
-async function fetchGoalWithRelationsById(goalId: string) {
+async function fetchGoalWithRelationsById(
+  goalId: string,
+  userId: string,
+  sourceType: GoalsSourceType,
+  sourceId: string
+) {
   const supabase = getSupabaseBrowser();
   if (!supabase) return null;
+
+  const ownerColumn = sourceType === "circle" ? "circle_id" : "monument_id";
+  const runQuery = (select: string) =>
+    supabase
+      .from("goals")
+      .select(select)
+      .eq("id", goalId)
+      .eq("user_id", userId)
+      .eq(ownerColumn, sourceId)
+      .single();
 
   const variants = [
     { description: "enum column goal display fetch", select: GOAL_RELATIONS_SELECT },
@@ -440,11 +478,7 @@ async function fetchGoalWithRelationsById(goalId: string) {
   ];
 
   for (const variant of variants) {
-    const { data, error } = await supabase
-      .from("goals")
-      .select(variant.select)
-      .eq("id", goalId)
-      .single();
+    const { data, error } = await runQuery(variant.select);
 
     if (!error && data) {
       return data as GoalRowWithRelations;
@@ -458,11 +492,7 @@ async function fetchGoalWithRelationsById(goalId: string) {
     }
   }
 
-  const fallback = await supabase
-    .from("goals")
-    .select(GOAL_RELATIONS_BASE_SELECT)
-    .eq("id", goalId)
-    .single();
+  const fallback = await runQuery(GOAL_RELATIONS_BASE_SELECT);
 
   if (fallback.error) {
     console.error("Error fetching goal for display:", fallback.error);
@@ -470,6 +500,20 @@ async function fetchGoalWithRelationsById(goalId: string) {
   }
 
   return (fallback.data as GoalRowWithRelations | null) ?? null;
+}
+
+function sortGoalsForDisplay(goals: Goal[]): Goal[] {
+  goals.sort((a, b) => {
+    const w = (b.weight ?? 0) - (a.weight ?? 0);
+    if (w !== 0) return w;
+    const ad = Date.parse(a.updatedAt);
+    const bd = Date.parse(b.updatedAt);
+    if (Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) {
+      return bd - ad;
+    }
+    return a.title.localeCompare(b.title);
+  });
+  return goals;
 }
 
 async function fetchTrueRoadmapsForMonument(
@@ -1003,6 +1047,7 @@ export function MonumentGoalsList({
   const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const loadingGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const readyGoalsToastSignatureRef = useRef<string | null>(null);
+  const hydratedGoalIdsRef = useRef<Set<string>>(new Set());
   const goalPanelWheelLockedRef = useRef(false);
   const goalPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -1761,7 +1806,16 @@ export function MonumentGoalsList({
         : null;
 
       try {
-        const goalRow = await fetchGoalWithRelationsById(goalId);
+        if (!userId || !resolvedSourceId) {
+          return fallbackGoal;
+        }
+
+        const goalRow = await fetchGoalWithRelationsById(
+          goalId,
+          userId,
+          resolvedSourceType,
+          resolvedSourceId
+        );
         if (!goalRow) {
           return fallbackGoal;
         }
@@ -1843,6 +1897,8 @@ export function MonumentGoalsList({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
       const supabase = getSupabaseBrowser();
       if (!supabase || !resolvedSourceId) {
@@ -1853,6 +1909,7 @@ export function MonumentGoalsList({
       }
       setLoading(true);
       setMonumentRoadmapsWithItems([]);
+      hydratedGoalIdsRef.current.clear();
       try {
         const {
           data: { user },
@@ -1863,50 +1920,87 @@ export function MonumentGoalsList({
         }
         setUserId(user.id);
 
-        const [rows, skills, trueMonumentRoadmaps] = await Promise.all([
-          fetchGoalsWithRelationsForSource(
-            resolvedSourceType,
-            resolvedSourceId,
-            user.id
-          ),
-          getSkillsForUser(user.id).catch(() => []),
+        const skillsPromise = getSkillsForUser(user.id).catch(() => []);
+        const roadmapsPromise =
           resolvedSourceType === "circle"
             ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
             : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
                 reconcile: true,
-              }),
-        ]);
-
-        setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
-
-        // Prepare skill emoji resolver before mapping any goals (used in both roadmap + standalone mappings)
-        const skillIconLookup = new Map(
-          skills.map((skill) => [skill.id, skill.icon ?? null])
+              });
+        const rows = await fetchGoalsWithRelationsForSource(
+          resolvedSourceType,
+          resolvedSourceId,
+          user.id
         );
+        if (cancelled) return;
 
-        const mapped: Goal[] = rows.map((g) =>
-          mapGoalRowToDisplayGoal(g, skillIconLookup)
+        const mapped: Goal[] = sortGoalsForDisplay(
+          rows.map((g) => mapGoalRowToDisplayGoal(g, new Map()))
         );
-
-        // Sort by weight desc, then recent updated, then title
-        mapped.sort((a, b) => {
-          const w = (b.weight ?? 0) - (a.weight ?? 0);
-          if (w !== 0) return w;
-          const ad = Date.parse(a.updatedAt);
-          const bd = Date.parse(b.updatedAt);
-          if (Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd)
-            return bd - ad;
-          return a.title.localeCompare(b.title);
-        });
-
         setGoals(mapped);
+        setLoading(false);
+
+        void roadmapsPromise
+          .then((trueMonumentRoadmaps) => {
+            if (!cancelled) {
+              setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
+            }
+          })
+          .catch((err) => {
+            console.error(`Error loading ${resolvedSourceType} roadmaps`, err);
+          });
+
+        void Promise.all([
+          skillsPromise,
+          fetchGoalsFullRelationsForSource(
+            resolvedSourceType,
+            resolvedSourceId,
+            user.id
+          ),
+        ])
+          .then(([skills, fullRows]) => {
+            if (cancelled) return;
+            const skillIconLookup = new Map(
+              skills.map((skill) => [skill.id, skill.icon ?? null])
+            );
+
+            setGoals((currentGoals) => {
+              const fallbackGoalsById = new Map(
+                currentGoals.map((goal) => [goal.id, goal])
+              );
+              return sortGoalsForDisplay(
+                fullRows.map((goalRow) =>
+                  mapGoalRowToDisplayGoal(
+                    goalRow,
+                    skillIconLookup,
+                    fallbackGoalsById.get(goalRow.id)
+                  )
+                )
+              );
+            });
+            hydratedGoalIdsRef.current = new Set(
+              fullRows.map((goalRow) => goalRow.id)
+            );
+          })
+          .catch((err) => {
+            console.error(
+              `Error hydrating ${resolvedSourceType} goal relations`,
+              err
+            );
+          });
       } catch (err) {
         console.error(`Error loading ${resolvedSourceType} goals`, err);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
     load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     resolvedSourceId,
     resolvedSourceType,
@@ -1985,6 +2079,30 @@ export function MonumentGoalsList({
 
   const handleGoalOpenChange = useCallback(
     (goalId: string, isOpen: boolean) => {
+      if (isOpen && !hydratedGoalIdsRef.current.has(goalId)) {
+        const currentGoal = goals.find((goal) => goal.id === goalId);
+        if (currentGoal && currentGoal.projects.length === 0) {
+          hydratedGoalIdsRef.current.add(goalId);
+          void fetchGoalForDisplay(goalId, currentGoal)
+            .then((fullGoal) => {
+              if (!fullGoal) {
+                hydratedGoalIdsRef.current.delete(goalId);
+                return;
+              }
+              setGoals((prev) =>
+                prev.map((goal) => (goal.id === goalId ? fullGoal : goal))
+              );
+              setRoadmapOpenGoal((current) =>
+                current?.id === goalId ? fullGoal : current
+              );
+            })
+            .catch((err) => {
+              hydratedGoalIdsRef.current.delete(goalId);
+              console.warn("Failed to hydrate opened monument goal:", err);
+            });
+        }
+      }
+
       setOpenGoalId((current) => {
         if (isOpen) {
           return goalId;
@@ -1995,7 +2113,7 @@ export function MonumentGoalsList({
         return current;
       });
     },
-    []
+    [fetchGoalForDisplay, goals]
   );
 
   const getGoalEditOriginRect = useCallback((goalId: string) => {

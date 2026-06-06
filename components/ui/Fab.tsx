@@ -14875,7 +14875,7 @@ export function Fab({
           onClick={handleFabButtonClick}
           aria-label={isOpen ? "Open ILAV" : "Add new item"}
           className={cn(
-            "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full text-white shadow-lg transition hover:scale-110",
+            "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full border border-white/[0.12] text-white shadow-lg backdrop-blur-xl transition hover:scale-110 hover:border-white/[0.18]",
             isOpen ? "rotate-45" : "",
             shouldAttachCreationControls ? "pointer-events-none opacity-0" : "",
           )}
@@ -14887,9 +14887,9 @@ export function Fab({
           transition={{ type: "spring", stiffness: 500, damping: 25 }}
           style={{
             background:
-              "linear-gradient(145deg, #111827 0%, #0f172a 55%, #020617 100%)",
+              "linear-gradient(145deg, rgba(18,18,22,0.94) 0%, rgba(8,9,12,0.88) 48%, rgba(2,3,6,0.92) 100%)",
             boxShadow:
-              "0 25px 60px rgba(15, 23, 42, 0.85), 0 12px 32px rgba(15, 23, 42, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18)",
+              "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -10px 18px rgba(0,0,0,0.36), 0 18px 38px rgba(0,0,0,0.52), 0 8px 18px rgba(0,0,0,0.38)",
             filter: "none",
           }}
         >

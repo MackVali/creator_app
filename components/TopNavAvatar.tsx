@@ -122,88 +122,81 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
 
       <DropdownMenuContent
         align="end"
-        className="w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#090B11]/95 p-0 text-white shadow-[0px_24px_60px_rgba(8,9,14,0.45)] backdrop-blur"
+        className="w-56 overflow-hidden rounded-2xl border border-white/10 bg-black/90 p-1.5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl"
       >
         {user ? (
           // User is signed in
           <>
-            <div className="flex items-center gap-3 border-b border-white/10 bg-gradient-to-br from-indigo-500/10 via-transparent to-slate-900 px-4 py-4">
-              <Avatar className="h-11 w-11 border border-white/10 shadow-lg">
+            <div className="mx-1 mb-1 flex items-center gap-2.5 border-b border-white/10 px-2 py-2.5">
+              <Avatar className="h-8 w-8 border border-white/10">
                 {profile?.avatar_url ? (
                   <AvatarImage
                     src={profile.avatar_url}
                     alt={`${profile.name || profile.username}'s avatar`}
                   />
                 ) : null}
-                <AvatarFallback className="bg-slate-800 text-sm font-semibold text-white">
+                <AvatarFallback className="bg-white/10 text-xs font-medium text-white">
                   {initials}
                 </AvatarFallback>
               </Avatar>
 
-              <div className="space-y-0.5">
-                <p className="text-sm font-semibold leading-tight text-white">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium leading-tight text-white">
                   {displayName}
                 </p>
                 {handleTagline ? (
-                  <p className="text-xs text-white/60">{handleTagline}</p>
+                  <p className="truncate text-xs text-white/50">{handleTagline}</p>
                 ) : null}
               </div>
             </div>
 
-            <div className="px-2 py-2 text-sm">
+            <div className="text-sm">
               <DropdownMenuItem
                 onClick={handleProfileClick}
-                className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/15 group-hover:text-white">
-                  <User className="h-4 w-4" />
-                </span>
+                <User className="h-4 w-4 text-white/55" />
                 View profile
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleEditProfileClick}
-                className="group mt-1 flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/15 group-hover:text-white">
-                  <Settings className="h-4 w-4" />
-                </span>
+                <Settings className="h-4 w-4 text-white/55" />
                 Edit profile
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleInboxClick}
-                className="group mt-1 flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/15 group-hover:text-white">
-                  <Inbox className="h-4 w-4" />
-                </span>
+                <Inbox className="h-4 w-4 text-white/55" />
                 Inbox
               </DropdownMenuItem>
-            </div>
-
-            <div className="border-t border-white/5 bg-white/5 px-4 py-3">
-              <button
+              <DropdownMenuItem
                 onClick={handleSignOut}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-500/80 to-orange-500/80 px-4 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500"
+                className="mt-1 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border-t border-white/10 px-3 py-2.5 text-white/60 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4 text-white/45" />
                 Sign out
-              </button>
+              </DropdownMenuItem>
             </div>
           </>
         ) : (
           // User is not signed in
-          <div className="px-4 py-5 text-center text-sm">
-            <p className="mb-3 text-base font-semibold text-white">Ready to get started?</p>
-            <p className="mb-4 text-xs text-white/70">
-              Sign in to personalize your experience and access your creator hub.
-            </p>
-            <button
+          <div className="text-sm">
+            <div className="mx-1 mb-1 border-b border-white/10 px-2 py-2.5">
+              <p className="text-sm font-medium text-white">CREATOR</p>
+              <p className="mt-0.5 text-xs text-white/50">
+                Sign in to access your creator hub.
+              </p>
+            </div>
+            <DropdownMenuItem
               onClick={handleSignInClick}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:from-indigo-400 hover:to-purple-400"
+              className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
             >
-              <LogIn className="h-4 w-4" />
+              <LogIn className="h-4 w-4 text-white/55" />
               Sign in
-            </button>
+            </DropdownMenuItem>
           </div>
         )}
       </DropdownMenuContent>
