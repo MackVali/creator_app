@@ -123,7 +123,7 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton
                 key={i}
-                className="aspect-square w-full rounded-2xl border border-white/10 bg-white/10"
+                className="aspect-square w-full rounded-2xl bg-white/[0.06]"
               />
             ))}
           </div>
