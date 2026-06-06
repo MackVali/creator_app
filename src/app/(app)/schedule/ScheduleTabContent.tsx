@@ -6040,24 +6040,40 @@ export default function ScheduleTabContent({
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
+  const inlineJumpPanelRef = useRef<HTMLDivElement | null>(null);
 
-  const isEventFromInlineJumpPanel = (
-    event: React.SyntheticEvent | Event
-  ) => {
-    const target = event.target as HTMLElement | null;
-    if (target?.closest?.("[data-inline-jump-panel]")) return true;
+  const isInsideInlineJumpPanelTarget = (target: EventTarget | null) => {
+    return (
+      target instanceof HTMLElement &&
+      Boolean(target.closest("[data-inline-jump-panel]"))
+    );
+  };
+
+  const isTouchWithinInlineJumpPanel = (touch: Touch) => {
+    const panel = inlineJumpPanelRef.current;
+    if (!panel) return false;
+    return isTouchWithinElement(touch, panel);
+  };
+
+  const isEventFromInlineJumpPanel = (event: React.SyntheticEvent | Event) => {
+    if (isInsideInlineJumpPanelTarget(event.target)) return true;
+
     const nativeEvent =
       "nativeEvent" in event
         ? (event.nativeEvent as Event & { composedPath?: () => EventTarget[] })
         : (event as Event & { composedPath?: () => EventTarget[] });
     const path = nativeEvent.composedPath?.();
     if (Array.isArray(path)) {
-      return path.some(
-        (node) =>
-          node instanceof HTMLElement &&
-          Boolean(node.closest?.("[data-inline-jump-panel]"))
-      );
+      if (path.some(isInsideInlineJumpPanelTarget)) return true;
     }
+
+    const touchEvent = nativeEvent as TouchEvent;
+    const touches = [
+      ...Array.from(touchEvent.touches ?? []),
+      ...Array.from(touchEvent.changedTouches ?? []),
+    ];
+    if (touches.some(isTouchWithinInlineJumpPanel)) return true;
+
     return false;
   };
 
@@ -9783,6 +9799,7 @@ export default function ScheduleTabContent({
               <div
                 data-inline-jump-panel
                 data-no-tab-swipe
+                ref={inlineJumpPanelRef}
                 aria-hidden={!isInlineJumpToDateOpen}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -9800,6 +9817,9 @@ export default function ScheduleTabContent({
                   overflowY: shouldUseInlineJumpEditorPanel
                     ? "auto"
                     : "hidden",
+                  overflowAnchor: shouldUseInlineJumpEditorPanel
+                    ? "none"
+                    : undefined,
                   overscrollBehavior: "contain",
                   touchAction: "pan-y",
                   WebkitOverflowScrolling: "touch",
@@ -9828,7 +9848,17 @@ export default function ScheduleTabContent({
                   data-inline-jump-timeline-peek
                   onClick={
                     isInlineJumpToDateOpen
-                      ? () => {
+                      ? (event) => {
+                          const target = event.target;
+                          if (isInsideInlineJumpPanelTarget(target)) return;
+                          if (
+                            !(
+                              target instanceof HTMLElement &&
+                              target.closest("[data-inline-jump-timeline-peek]")
+                            )
+                          ) {
+                            return;
+                          }
                           void closeInlineJumpToDate();
                         }
                       : undefined

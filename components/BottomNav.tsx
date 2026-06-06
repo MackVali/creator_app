@@ -119,7 +119,6 @@ export default function BottomNav() {
       </div>
       <style jsx>{`
         :global([data-bottom-nav] [data-tour="fab"]) {
-          box-shadow: 0 16px 30px rgba(0, 0, 0, 0.65) !important;
           filter: none !important;
         }
         :global(body.fab-panel-active [data-bottom-nav-bar]),
