@@ -7683,7 +7683,7 @@ export default function ScheduleTabContent({
               if (visibleSegments.length === 0) return null;
 
               const reportContent = (
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-black/[0.025] px-3 py-2 text-slate-50 shadow-[0_10px_18px_rgba(0,0,0,0.16),inset_0_1px_0_rgba(255,255,255,0.018),inset_0_-1px_0_rgba(0,0,0,0.34)] backdrop-blur-[2px]">
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none">
                   <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/70">
                     <FlameEmber
                       level={report.energyLabel}
@@ -7724,7 +7724,7 @@ export default function ScheduleTabContent({
                       reportContent
                     ) : (
                       <div
-                        className="h-full w-full rounded-[var(--radius-lg)] border border-slate-700/80 bg-black/10"
+                        className="h-full w-full rounded-[var(--radius-lg)] border border-slate-700/80 bg-transparent"
                         style={{
                           minHeight: segmentHeightPx,
                         }}

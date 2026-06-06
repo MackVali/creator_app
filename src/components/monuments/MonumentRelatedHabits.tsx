@@ -938,7 +938,7 @@ export function MonumentRelatedHabits({
             {Array.from({ length: 3 }).map((_, index) => (
               <Skeleton
                 key={index}
-                className="aspect-[5/6] min-h-[96px] rounded-2xl border border-white/10 bg-white/10"
+                className="aspect-[5/6] min-h-[96px] rounded-2xl border border-white/10 bg-white/[0.07]"
               />
             ))}
           </div>

@@ -2416,7 +2416,7 @@ export function MonumentGoalsList({
                 {Array.from({ length: 8 }).map((_, i) => (
                   <Skeleton
                     key={i}
-                    className="h-[100px] rounded-2xl bg-white/[0.06]"
+                    className="h-full min-h-[100px] rounded-2xl bg-white/[0.06]"
                   />
                 ))}
               </div>
@@ -2429,7 +2429,7 @@ export function MonumentGoalsList({
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-[100px] rounded-2xl bg-white/[0.06]"
+              className="h-full min-h-[100px] rounded-2xl bg-white/[0.06]"
             />
           ))}
         </div>

@@ -147,7 +147,7 @@ export function DayTimeline({
         return (
           <Fragment key={h}>
             <div
-              className="pointer-events-none absolute border-t border-white/10"
+              className="pointer-events-none absolute border-t border-white/[0.065]"
               style={{
                 top,
                 left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
@@ -169,8 +169,8 @@ export function DayTimeline({
               if (minute >= minutesUntilHourEnd) return null;
               const minuteTop = minutesToStyle((h - startHour) * 60 + minute);
               const isHalfHour = minute === 30;
-              const baseOpacity = isHalfHour ? 0.7 : 0.45;
-              const labelBaseOpacity = isHalfHour ? 0.7 : 0.45;
+              const baseOpacity = isHalfHour ? 0.58 : 0.42;
+              const labelBaseOpacity = isHalfHour ? 0.62 : 0.42;
               const markerOpacity = isHalfHour
                 ? `calc(${baseOpacity} * var(--quarter-intensity) + 0.35 * var(--half-hour-boost))`
                 : `calc(${baseOpacity} * var(--quarter-intensity))`;
