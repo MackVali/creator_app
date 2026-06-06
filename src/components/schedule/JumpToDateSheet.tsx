@@ -2048,6 +2048,7 @@ export function JumpToDateSheet({
   const handleSelect = (date: Date, dateKey?: string) => {
     if (isPaintMode && dateKey) {
       setPaintSelectionKey(dateKey);
+      setShowTimeBlocks(false);
       setSaveError(null);
       return;
     }
@@ -2233,126 +2234,117 @@ export function JumpToDateSheet({
                 </div>
                 <span className="shrink-0 text-white/50">Paint mode</span>
               </div>
-              <div className="rounded-xl border border-white/5 bg-white/5 p-2.5 sm:p-3 text-white/85 shadow-[0_12px_28px_rgba(0,0,0,0.25)]">
+              <div className="rounded-xl border border-white/[0.06] bg-black/45 p-2.5 sm:p-3 text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
                 {!paintSelectionLabel ? (
                   <div className="text-[13px] sm:text-sm text-white/70">
                     Tap a date to select it while paint mode is on.
                   </div>
                 ) : null}
                 {paintSelectionLabel ? (
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
-                    <div className="flex flex-col gap-1.5 text-[12px] sm:text-[13px] font-medium text-white/75">
-                      <div className="flex min-w-0 items-center justify-between gap-2">
-                        <span className="shrink-0 text-white/70">Day type</span>
-                        <div className="flex min-w-0 flex-1 items-center justify-end">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                disabled={isLoadingDayTypes}
-                                className={cn(
-                                  "inline-flex min-h-8 w-full max-w-[220px] items-center justify-between gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[12px] sm:text-[13px] font-medium text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
-                                  isLoadingDayTypes && "opacity-60"
-                                )}
-                              >
-                                <span className="min-w-0 truncate">
-                                  {paintDayType?.name ??
-                                    defaultDayTypeForSelection?.name ??
-                                    (dayTypeError
-                                      ? "Unavailable"
-                                      : "Select day type")}
-                                </span>
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              side="bottom"
-                              sideOffset={6}
-                              collisionPadding={12}
-                              className="z-[20000] min-w-[220px] max-w-[260px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                  <div className="space-y-1.5">
+                    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden text-[12px] sm:gap-2 sm:text-[13px] font-medium text-white/75">
+                      <span className="shrink-0 text-white/70">Day type</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={isLoadingDayTypes}
+                            className={cn(
+                              "inline-flex min-h-8 min-w-[86px] w-[31vw] max-w-[220px] sm:w-[220px] items-center justify-between gap-1 border-b border-white/10 bg-transparent px-0.5 py-1 text-left text-[12px] sm:text-[13px] font-medium text-white/88 transition hover:border-white/20 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                              isLoadingDayTypes && "opacity-60"
+                            )}
+                          >
+                            <span className="min-w-0 truncate">
+                              {paintDayType?.name ??
+                                defaultDayTypeForSelection?.name ??
+                                (dayTypeError
+                                  ? "Unavailable"
+                                  : "Select day type")}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/35" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          data-inline-jump-panel
+                          align="end"
+                          side="bottom"
+                          sideOffset={6}
+                          collisionPadding={12}
+                          className="z-[20000] min-w-[220px] max-w-[260px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                        >
+                          {dayTypes.map((dt) => (
+                            <DropdownMenuItem
+                              key={dt.id}
+                              className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
+                              onSelect={() => {
+                                void handleChangeDayType(dt.id);
+                              }}
                             >
-                              {dayTypes.map((dt) => (
-                                <DropdownMenuItem
-                                  key={dt.id}
-                                  className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
-                                  onSelect={(event) => {
-                                    event.preventDefault();
-                                    void handleChangeDayType(dt.id);
-                                  }}
-                                >
-                                  {dt.name}
-                                </DropdownMenuItem>
-                              ))}
-                              <DropdownMenuItem
-                                className="text-xs text-white/80 focus:bg-white/10 focus:text-white"
-                                onSelect={(event) => {
-                                  event.preventDefault();
-                                  handleCreateDayType();
-                                }}
-                              >
-                                Create new day type
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                      <div className="flex min-w-0 items-center justify-between gap-2">
-                        <span className="shrink-0 text-white/70">Mode</span>
-                        <div className="flex min-w-0 flex-1 items-center justify-end">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                disabled={isLoadingDayTypes}
-                                className={cn(
-                                  "inline-flex min-h-8 w-full max-w-[160px] items-center justify-between gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[12px] sm:text-[13px] font-medium text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
-                                  isLoadingDayTypes && "opacity-60"
-                                )}
-                              >
-                                <span className="min-w-0 truncate">
-                                  {(
+                              {dt.name}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuItem
+                            className="text-xs text-white/80 focus:bg-white/10 focus:text-white"
+                            onSelect={() => {
+                              handleCreateDayType();
+                            }}
+                          >
+                            Create new day type
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <span className="shrink-0 text-white/70">Mode</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={isLoadingDayTypes}
+                            className={cn(
+                              "inline-flex min-h-8 min-w-[68px] w-[20vw] max-w-[150px] sm:w-[150px] items-center justify-between gap-1 border-b border-white/10 bg-transparent px-0.5 py-1 text-left text-[12px] sm:text-[13px] font-medium text-white/88 transition hover:border-white/20 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                              isLoadingDayTypes && "opacity-60"
+                            )}
+                          >
+                            <span className="min-w-0 truncate">
+                              {(
+                                (paintDayType?.schedulerMode ??
+                                  defaultDayTypeForSelection?.schedulerMode ??
+                                  "REGULAR") as string
+                              )
+                                .charAt(0)
+                                .concat(
+                                  (
                                     (paintDayType?.schedulerMode ??
                                       defaultDayTypeForSelection?.schedulerMode ??
                                       "REGULAR") as string
                                   )
-                                    .charAt(0)
-                                    .concat(
-                                      (
-                                        (paintDayType?.schedulerMode ??
-                                          defaultDayTypeForSelection?.schedulerMode ??
-                                          "REGULAR") as string
-                                      )
-                                        .slice(1)
-                                        .toLowerCase()
-                                    )}
-                                </span>
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              side="bottom"
-                              sideOffset={6}
-                              collisionPadding={12}
-                              className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                                    .slice(1)
+                                    .toLowerCase()
+                                )}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/35" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          data-inline-jump-panel
+                          align="end"
+                          side="bottom"
+                          sideOffset={6}
+                          collisionPadding={12}
+                          className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                        >
+                          {SCHEDULER_MODES.map((mode) => (
+                            <DropdownMenuItem
+                              key={mode}
+                              className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
+                              onSelect={() => {
+                                void handleChangeMode(mode);
+                              }}
                             >
-                              {SCHEDULER_MODES.map((mode) => (
-                                <DropdownMenuItem
-                                  key={mode}
-                                  className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
-                                  onSelect={(event) => {
-                                    event.preventDefault();
-                                    void handleChangeMode(mode);
-                                  }}
-                                >
-                                  {mode.charAt(0) + mode.slice(1).toLowerCase()}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
+                              {mode.charAt(0) + mode.slice(1).toLowerCase()}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     {showAssignmentOverrideWarning ? (
                       <div className="rounded-lg border border-amber-200/40 bg-amber-200/10 px-3 py-2 text-[11px] sm:text-[12px] text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.4)]">
@@ -2364,7 +2356,7 @@ export function JumpToDateSheet({
                         </div>
                       </div>
                     ) : null}
-                    <div className="rounded-md border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
+                    <div className="rounded-md border border-white/[0.06] bg-black/35 p-2.5 sm:p-3 space-y-1.5">
                       <div className="flex items-center justify-between text-[11px] sm:text-sm font-semibold uppercase tracking-[0.12em] text-white/70">
                         <span>Time blocks</span>
                         <label className="flex items-center gap-2 text-[11px] sm:text-xs font-medium text-white/70 select-none">
@@ -2429,15 +2421,15 @@ export function JumpToDateSheet({
                         </div>
                       ) : null}
                       {!showTimeBlocks ? null : timeBlockError ? (
-                        <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                        <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           {timeBlockError}
                         </div>
                       ) : isLoadingTimeBlocks ? (
-                        <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                        <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           Loading time blocks…
                         </div>
                       ) : paintPreviewBlocks.length === 0 ? (
-                        <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                        <div className="rounded-md border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           No time blocks for this day type.
                         </div>
                       ) : (
