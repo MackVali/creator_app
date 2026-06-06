@@ -64,6 +64,7 @@ type EligibleSchedulerUser = SchedulerUserStateRow & {
 type CronResult = {
   userId: string;
   status: "success" | "failed" | "skipped";
+  reason?: string;
   placedCount?: number | null;
   error?: string;
 };
@@ -182,7 +183,19 @@ async function handleCronRun(request: Request) {
 
     if (!claimedUser) {
       skipped += 1;
-      results.push({ userId: candidate.user_id, status: "skipped" });
+      console.warn(
+        "[SCHEDULER_CRON] eligible user skipped because claim was not acquired",
+        {
+          userId: candidate.user_id,
+          nowIso,
+          staleLockBeforeIso,
+        }
+      );
+      results.push({
+        userId: candidate.user_id,
+        status: "skipped",
+        reason: "claim_not_acquired",
+      });
       continue;
     }
 
