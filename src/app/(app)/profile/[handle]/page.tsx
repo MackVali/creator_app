@@ -311,6 +311,8 @@ export default function ProfileByHandlePage() {
   }, [profile?.user_id]);
 
   useEffect(() => {
+    let isActive = true;
+
     async function loadProfileData() {
       if (!normalizedHandle) {
         router.push("/dashboard");
@@ -323,32 +325,59 @@ export default function ProfileByHandlePage() {
 
         // Load profile by handle
         const userProfile = await getProfileByHandle(normalizedHandle);
+        if (!isActive) return;
+
         if (!userProfile) {
           setError("Profile not found");
+          setProfile(null);
           return;
         }
 
         setProfile(userProfile);
+        setSocialLinks([]);
+        setContentCards([]);
+        setLinkedAccounts([]);
+        setLoading(false);
 
-        // Load social links and content cards
-        const [links, cards, linked] = await Promise.all([
-          getSocialLinks(userProfile.user_id),
-          getProfileLinks(userProfile.user_id),
-          getLinkedAccounts(userProfile.user_id),
-        ]);
+        try {
+          // Load secondary profile data in the background after the shell renders.
+          const [links, cards, linked] = await Promise.all([
+            getSocialLinks(userProfile.user_id),
+            getProfileLinks(userProfile.user_id),
+            getLinkedAccounts(userProfile.user_id),
+          ]);
 
-        setSocialLinks(links);
-        setContentCards(cards);
-        setLinkedAccounts(linked);
+          if (!isActive) return;
+
+          setSocialLinks(links);
+          setContentCards(cards);
+          setLinkedAccounts(linked);
+        } catch (secondaryError) {
+          if (!isActive) return;
+
+          console.error("Error loading secondary profile data:", secondaryError);
+          setSocialLinks([]);
+          setContentCards([]);
+          setLinkedAccounts([]);
+        }
       } catch (err) {
+        if (!isActive) return;
+
         console.error("Error loading profile:", err);
         setError("Failed to load profile");
+        setProfile(null);
       } finally {
-        setLoading(false);
+        if (isActive) {
+          setLoading(false);
+        }
       }
     }
 
     loadProfileData();
+
+    return () => {
+      isActive = false;
+    };
   }, [normalizedHandle, router]);
 
   useEffect(() => {

@@ -67,7 +67,10 @@ function userIsTopNavAdmin(user: User | null) {
 
 export default function TopNav() {
   const pathname = usePathname();
-  const shouldHideNav = pathname?.startsWith("/schedule");
+  const shouldHideNav =
+    pathname?.startsWith("/schedule") &&
+    pathname !== "/schedule/matrix" &&
+    !pathname?.startsWith("/schedule/matrix/");
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);

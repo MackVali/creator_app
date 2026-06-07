@@ -3,11 +3,14 @@
 import FriendRow from "./FriendRow";
 import type { Friend } from "@/types/friends";
 
+type RelationshipView = "friends" | "following" | "followers";
+
 type FriendsListProps = {
   data: Friend[];
   isLoading?: boolean;
   error?: string | null;
   onRemoveFriend?: (friend: Friend) => void;
+  relationshipView?: RelationshipView;
 };
 
 export default function FriendsList({
@@ -15,6 +18,7 @@ export default function FriendsList({
   isLoading,
   error,
   onRemoveFriend,
+  relationshipView = "friends",
 }: FriendsListProps) {
   if (isLoading) {
     return (
@@ -46,7 +50,12 @@ export default function FriendsList({
       className="space-y-0"
     >
       {data.map((f) => (
-        <FriendRow key={f.id} f={f} onRemoveFriend={onRemoveFriend} />
+        <FriendRow
+          key={f.id}
+          f={f}
+          onRemoveFriend={onRemoveFriend}
+          relationshipView={relationshipView}
+        />
       ))}
     </ul>
   );

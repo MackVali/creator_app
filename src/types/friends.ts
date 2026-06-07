@@ -7,6 +7,7 @@ export type Friend = {
   profileUrl: string | null;
   hasRing: boolean;
   isOnline: boolean;
+  isMutual?: boolean;
 };
 
 export type FriendRequest = {

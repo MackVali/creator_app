@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Grid2x2, Grid3x3, LayoutGrid } from "lucide-react";
+import { ChevronDown, Grid2x2, Grid3x3, LayoutGrid } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -10,7 +10,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type PointerEvent,
+  type KeyboardEvent,
   type ReactNode,
   type TouchEvent,
   type WheelEvent,
@@ -196,6 +198,10 @@ const MATRIX_TRAY_TRANSITION = {
   duration: 0.4,
   ease: [0.22, 1, 0.36, 1] as const,
 };
+const MATRIX_GROUP_OPEN_EASE = [0.12, 0.92, 0.18, 1] as const;
+const MATRIX_GROUP_CLOSE_EASE = [0.32, 0, 0.18, 1] as const;
+const MATRIX_GROUP_FIRST_AUTO_OPEN_DELAY_MS = 600;
+const MATRIX_GROUP_AUTO_OPEN_STAGGER_MS = 250;
 
 function getBrowserTimeZone() {
   try {
@@ -986,6 +992,37 @@ function MatrixCard({
   );
 }
 
+function MatrixLoadingRows() {
+  return (
+    <div className="space-y-2.5 px-1">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <MatrixCard
+          key={index}
+          className="p-3 sm:p-4 before:pointer-events-none before:absolute before:inset-x-4 before:top-0 before:h-px before:bg-white/[0.045]"
+        >
+          <div className="flex min-h-8 animate-pulse items-center justify-between gap-3 px-0 sm:px-1">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
+                <div className="absolute inset-1.5 rounded-lg bg-white/[0.035]" />
+                <div className="absolute left-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/[0.075]" />
+              </div>
+              <div className="min-w-0">
+                <div
+                  className="h-3.5 rounded-full bg-white/[0.08] shadow-[0_0_18px_-12px_rgba(255,255,255,0.45)]"
+                  style={{ width: `${104 + (index % 4) * 18}px` }}
+                />
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="h-5 w-14 rounded-full border border-white/8 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]" />
+              <div className="h-7 w-7 rounded-lg border border-white/8 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
+            </div>
+          </div>
+        </MatrixCard>
+      ))}
+    </div>
+  );
+}
 
 function MatrixSmallEventCard({
   glyph,
@@ -1466,13 +1503,18 @@ function MatrixSettingsTray({
 
 function MatrixMonumentCarousel({
   group,
+  revealIndex = 0,
   onCompleteScheduledEvent,
 }: {
   group: MatrixMonumentGroup;
+  revealIndex?: number;
   onCompleteScheduledEvent(instanceId: string): void;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
+  const [isGroupOpen, setIsGroupOpen] = useState(false);
+  const [hasInitialRevealCompleted, setHasInitialRevealCompleted] =
+    useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [matrixPanelHeight, setMatrixPanelHeight] = useState<number | null>(
     null
@@ -1483,6 +1525,23 @@ function MatrixMonumentCarousel({
     useState(false);
   const matrixPanelViewportRef = useRef<HTMLDivElement | null>(null);
   const scheduledPanelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setIsGroupOpen(false);
+    setHasInitialRevealCompleted(false);
+
+    const autoOpenDelay =
+      MATRIX_GROUP_FIRST_AUTO_OPEN_DELAY_MS +
+      Math.min(revealIndex, 7) * MATRIX_GROUP_AUTO_OPEN_STAGGER_MS;
+
+    const autoOpenTimeout = window.setTimeout(() => {
+      setIsGroupOpen(true);
+    }, autoOpenDelay);
+
+    return () => {
+      window.clearTimeout(autoOpenTimeout);
+    };
+  }, [group.key, revealIndex]);
   const unscheduledPanelRef = useRef<HTMLDivElement | null>(null);
   const matrixPanelWheelLockedRef = useRef(false);
   const matrixPanelWheelCooldownRef = useRef<ReturnType<
@@ -1583,6 +1642,33 @@ function MatrixMonumentCarousel({
     );
   }, []);
 
+  const toggleGroupOpen = useCallback(() => {
+    setIsGroupOpen((currentOpen) => !currentOpen);
+  }, []);
+
+  const handleGroupHeaderKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleGroupOpen();
+    },
+    [toggleGroupOpen]
+  );
+
+  const stopHeaderTogglePropagation = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+    },
+    []
+  );
+
+  const stopHeaderToggleKeyPropagation = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+    },
+    []
+  );
+
   useLayoutEffect(() => {
     const viewportElement = matrixPanelViewportRef.current;
     if (!viewportElement) return;
@@ -1633,11 +1719,14 @@ function MatrixMonumentCarousel({
     cardDensity,
     group.scheduledItems,
     group.unscheduledDueHabits,
+    isGroupOpen,
     measureActiveMatrixPanel,
     openGoalId,
   ]);
 
   useEffect(() => {
+    if (!isGroupOpen) return;
+
     const activePanel =
       matrixPanel === "unscheduled"
         ? unscheduledPanelRef.current
@@ -1666,7 +1755,7 @@ function MatrixMonumentCarousel({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureActiveMatrixPanel);
     };
-  }, [matrixPanel, measureActiveMatrixPanel]);
+  }, [isGroupOpen, matrixPanel, measureActiveMatrixPanel]);
 
   useEffect(() => {
     return () => {
@@ -1872,9 +1961,24 @@ function MatrixMonumentCarousel({
     ]
   );
 
+  const revealDelay = Math.min(revealIndex, 7) * 0.06;
+  const groupRevealDelay = 0;
+
   return (
     <MatrixCard className={cn("p-3 sm:p-4", isSmallCardDensity ? "matrix-card--small-cards" : null)}>
-      <div className="mb-3 flex items-center justify-between gap-3 px-0 sm:px-1">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isGroupOpen}
+        aria-label={`${isGroupOpen ? "Collapse" : "Expand"} ${group.title} Matrix group`}
+        onClick={toggleGroupOpen}
+        onKeyDown={handleGroupHeaderKeyDown}
+        className={cn(
+          "flex min-h-8 cursor-pointer items-center justify-between gap-3 px-0 outline-none transition sm:px-1",
+          isGroupOpen ? "mb-3" : null,
+          "focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-4 focus-visible:ring-offset-[#08090b]"
+        )}
+      >
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.055] text-base">
             {group.energyLevel ? (
@@ -1898,7 +2002,11 @@ function MatrixMonumentCarousel({
                 ? "Use large Matrix cards"
                 : "Use small Matrix cards"
             }
-            onClick={handleCardDensityToggle}
+            onClick={(event) => {
+              stopHeaderTogglePropagation(event);
+              handleCardDensityToggle();
+            }}
+            onKeyDown={stopHeaderToggleKeyPropagation}
             className={cn(
               "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
               isSmallCardDensity
@@ -1912,115 +2020,195 @@ function MatrixMonumentCarousel({
               <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
             )}
           </button>
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 text-white/28 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+              isGroupOpen ? "rotate-180" : null
+            )}
+            strokeWidth={1.8}
+            aria-hidden
+          />
         </div>
       </div>
-      <div
-        className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-        style={matrixPanelHeight ? { height: matrixPanelHeight } : undefined}
-        onPointerDown={handleMatrixPanelPointerDown}
-        onPointerUp={handleMatrixPanelPointerEnd}
-        onTouchStart={handleMatrixPanelTouchStart}
-        onTouchMove={handleMatrixPanelTouchMove}
-        onTouchEnd={handleMatrixPanelTouchEnd}
-        onTouchCancel={resetMatrixPanelTouch}
-        onWheel={handleMatrixPanelWheel}
-        onPointerCancel={() => {
-          matrixPanelDragStartRef.current = null;
-        }}
-      >
-        <div ref={matrixPanelViewportRef} className="absolute inset-0">
-          <div
-            className="flex h-full transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-            style={{
-              transform: `translate3d(${matrixPanelTrackTransform}px, 0, 0)`,
-              transitionDuration:
-                !matrixPanelTransitionEnabled || matrixPanelDragOffset
-                  ? "0ms"
-                  : undefined,
-              width: `${Math.max(1, availableMatrixPanels.length) * 100}%`,
+      <AnimatePresence>
+        {isGroupOpen ? (
+          <motion.div
+            key="matrix-group-content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{
+              height: "auto",
+              opacity: 1,
+              transition: {
+                height: {
+                  duration: 1.18,
+                  ease: MATRIX_GROUP_OPEN_EASE,
+                  delay: groupRevealDelay,
+                },
+                opacity: {
+                  duration: 0.68,
+                  ease: MATRIX_GROUP_OPEN_EASE,
+                  delay: groupRevealDelay + 0.08,
+                },
+              },
             }}
+            exit={{
+              height: 0,
+              opacity: 0,
+              transition: {
+                height: {
+                  duration: 0.42,
+                  ease: MATRIX_GROUP_CLOSE_EASE,
+                },
+                opacity: {
+                  duration: 0.22,
+                  ease: MATRIX_GROUP_CLOSE_EASE,
+                },
+              },
+            }}
+            onAnimationComplete={() => {
+              setHasInitialRevealCompleted(true);
+            }}
+            className="overflow-hidden"
           >
-            {availableMatrixPanels.map((panel) => (
+            <motion.div
+              initial={{ y: -4, opacity: 0 }}
+              animate={{
+                y: 0,
+                opacity: 1,
+                transition: {
+                  duration: 0.82,
+                  ease: MATRIX_GROUP_OPEN_EASE,
+                  delay: groupRevealDelay + 0.05,
+                },
+              }}
+              exit={{
+                y: -3,
+                opacity: 0,
+                transition: {
+                  duration: 0.24,
+                  ease: MATRIX_GROUP_CLOSE_EASE,
+                },
+              }}
+            >
               <div
-                key={panel}
-                className="h-full shrink-0 overflow-hidden"
-                style={{
-                  width: `${100 / Math.max(1, availableMatrixPanels.length)}%`,
+                className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                style={
+                  matrixPanelHeight ? { height: matrixPanelHeight } : undefined
+                }
+                onPointerDown={handleMatrixPanelPointerDown}
+                onPointerUp={handleMatrixPanelPointerEnd}
+                onTouchStart={handleMatrixPanelTouchStart}
+                onTouchMove={handleMatrixPanelTouchMove}
+                onTouchEnd={handleMatrixPanelTouchEnd}
+                onTouchCancel={resetMatrixPanelTouch}
+                onWheel={handleMatrixPanelWheel}
+                onPointerCancel={() => {
+                  matrixPanelDragStartRef.current = null;
                 }}
               >
-                {panel === "scheduled" ? (
-                  <div ref={scheduledPanelRef} className="px-1 py-1">
-                    <div
-                      className={cn(
-                        matrixLibraryGridClass,
-                        isSmallCardDensity ? "matrix-event-grid--small-cards" : null
-                      )}
-                    >
-                      {sortedScheduledItems.map((event) => (
-                        <ScheduledEventCard
-                          key={event.instance.id}
-                          event={event}
-                          density={cardDensity}
-                          onComplete={onCompleteScheduledEvent}
-                          open={
-                            Boolean(event.goal?.id) &&
-                            openGoalId === event.goal?.id
-                          }
-                          onOpenChange={(nextOpen) =>
-                            setOpenGoalId(
-                              nextOpen && event.goal?.id ? event.goal.id : null
-                            )
-                          }
-                        />
-                      ))}
-                    </div>
+                <div ref={matrixPanelViewportRef} className="absolute inset-0">
+                  <div
+                    className="flex h-full transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                    style={{
+                      transform: `translate3d(${matrixPanelTrackTransform}px, 0, 0)`,
+                      transitionDuration:
+                        !matrixPanelTransitionEnabled || matrixPanelDragOffset
+                          ? "0ms"
+                          : undefined,
+                      width: `${Math.max(1, availableMatrixPanels.length) * 100}%`,
+                    }}
+                  >
+                    {availableMatrixPanels.map((panel) => (
+                      <div
+                        key={panel}
+                        className="h-full shrink-0 overflow-hidden"
+                        style={{
+                          width: `${100 / Math.max(1, availableMatrixPanels.length)}%`,
+                        }}
+                      >
+                        {panel === "scheduled" ? (
+                          <div ref={scheduledPanelRef} className="px-1 py-1">
+                            <div
+                              className={cn(
+                                matrixLibraryGridClass,
+                                isSmallCardDensity
+                                  ? "matrix-event-grid--small-cards"
+                                  : null
+                              )}
+                            >
+                              {sortedScheduledItems.map((event) => (
+                                <ScheduledEventCard
+                                  key={event.instance.id}
+                                  event={event}
+                                  density={cardDensity}
+                                  onComplete={onCompleteScheduledEvent}
+                                  open={
+                                    Boolean(event.goal?.id) &&
+                                    openGoalId === event.goal?.id
+                                  }
+                                  onOpenChange={(nextOpen) =>
+                                    setOpenGoalId(
+                                      nextOpen && event.goal?.id
+                                        ? event.goal.id
+                                        : null
+                                    )
+                                  }
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div ref={unscheduledPanelRef} className="px-1 py-1">
+                            <div
+                              className={cn(
+                                matrixLibraryGridClass,
+                                isSmallCardDensity
+                                  ? "matrix-event-grid--small-cards"
+                                  : null
+                              )}
+                            >
+                              {sortedUnscheduledDueHabits.map((habit) => (
+                                <DueHabitCard
+                                  key={habit.id}
+                                  habit={habit}
+                                  density={cardDensity}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <div ref={unscheduledPanelRef} className="px-1 py-1">
-                    <div
-                      className={cn(
-                        matrixLibraryGridClass,
-                        isSmallCardDensity ? "matrix-event-grid--small-cards" : null
-                      )}
-                    >
-                      {sortedUnscheduledDueHabits.map((habit) => (
-                        <DueHabitCard
-                          key={habit.id}
-                          habit={habit}
-                          density={cardDensity}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 flex items-center justify-center gap-1.5">
-        {availableMatrixPanels.map((panel) => {
-          const isActive = matrixPanel === panel;
-          return (
-            <button
-              key={panel}
-              type="button"
-              aria-label={
-                panel === "scheduled"
-                  ? "Show scheduled Events"
-                  : "Show unscheduled due habits"
-              }
-              aria-current={isActive ? "true" : undefined}
-              onClick={() => handleMatrixPanelChange(panel)}
-              className={`h-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                isActive
-                  ? "w-4 bg-zinc-500/75"
-                  : "w-1 bg-zinc-700/70 hover:bg-zinc-600/80"
-              }`}
-            />
-          );
-        })}
-      </div>
+              <div className="mt-3 flex items-center justify-center gap-1.5">
+                {availableMatrixPanels.map((panel) => {
+                  const isActive = matrixPanel === panel;
+                  return (
+                    <button
+                      key={panel}
+                      type="button"
+                      aria-label={
+                        panel === "scheduled"
+                          ? "Show scheduled Events"
+                          : "Show unscheduled due habits"
+                      }
+                      aria-current={isActive ? "true" : undefined}
+                      onClick={() => handleMatrixPanelChange(panel)}
+                      className={`h-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                        isActive
+                          ? "w-4 bg-zinc-500/75"
+                          : "w-1 bg-zinc-700/70 hover:bg-zinc-600/80"
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <style jsx global>{`
         @media (max-width: 520px) {
           .matrix-event-grid--small-cards.goal-grid {
@@ -2551,27 +2739,14 @@ function MatrixContent() {
 
         <section>
           {state.loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <MatrixCard key={index} className="p-3 sm:p-4">
-                  <div className="mb-3 flex items-center gap-3 px-0 sm:px-1">
-                    <div className="h-8 w-8 rounded-xl bg-white/[0.055]" />
-                    <div className="h-4 w-36 rounded-lg bg-white/[0.055]" />
-                  </div>
-                  <div className={MATRIX_LIBRARY_GRID_CLASS}>
-                    <div className="aspect-[5/6] min-h-[96px] rounded-2xl bg-white/[0.055]" />
-                    <div className="aspect-[5/6] min-h-[96px] rounded-2xl bg-white/[0.055]" />
-                    <div className="aspect-[5/6] min-h-[96px] rounded-2xl bg-white/[0.055]" />
-                  </div>
-                </MatrixCard>
-              ))}
-            </div>
+            <MatrixLoadingRows />
           ) : activeMatrixGroups.length ? (
             <div className="space-y-3">
-              {activeMatrixGroups.map((group) => (
+              {activeMatrixGroups.map((group, index) => (
                 <MatrixMonumentCarousel
                   key={group.key}
                   group={group}
+                  revealIndex={index}
                   onCompleteScheduledEvent={handleCompleteScheduledEvent}
                 />
               ))}
