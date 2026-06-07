@@ -28,6 +28,8 @@ const defaultEntitlement: Entitlement = {
   isReady: false,
 };
 
+const NATIVE_SYNC_TIMEOUT_MS = 3_000;
+
 const EntitlementContext = createContext<Entitlement>({
   ...defaultEntitlement,
   refreshEntitlement: async () => {},
@@ -46,6 +48,20 @@ function normalizeEntitlement(payload?: {
   const current_period_end = payload?.current_period_end ?? defaultCore.current_period_end;
 
   return { tier, is_active, isPlus, current_period_end };
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 export default function EntitlementProvider({
@@ -72,7 +88,11 @@ export default function EntitlementProvider({
     try {
       if (Capacitor.isNativePlatform()) {
         try {
-          await fetch(`/api/me/entitlement/sync`, { method: "POST" });
+          await fetchWithTimeout(
+            `/api/me/entitlement/sync`,
+            { method: "POST" },
+            NATIVE_SYNC_TIMEOUT_MS
+          );
         } catch {
           // ignore sync errors
         }
