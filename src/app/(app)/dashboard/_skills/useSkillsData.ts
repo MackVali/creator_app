@@ -3,6 +3,34 @@
 import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
+const DASHBOARD_LOAD_TIMEOUT_MS = 10_000;
+const DASHBOARD_SEED_TIMEOUT_MS = 8_000;
+
+function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
+function timeoutError(label: string, timeoutMs: number): Error {
+  return new Error(`${label} timed out after ${timeoutMs}ms`);
+}
+
+async function withTimeout<T>(
+  promise: PromiseLike<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(timeoutError(label, timeoutMs)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([Promise.resolve(promise), timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -154,29 +182,43 @@ export function useSkillsData() {
 
   const load = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
+    let loadError: Error | null = null;
+
     try {
       const supabase = getSupabaseBrowser();
       if (!supabase) throw new Error("Supabase client not available");
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await withTimeout(supabase.auth.getUser(), DASHBOARD_LOAD_TIMEOUT_MS, "Supabase auth");
       if (!user) throw new Error("No user");
-      let [cats, skills] = await Promise.all([
-        fetchCategories(user.id).catch(() => []),
-        fetchSkills(user.id).catch(() => []),
-      ]);
+
+      const readCategories = () =>
+        withTimeout(fetchCategories(user.id), DASHBOARD_LOAD_TIMEOUT_MS, "Supabase categories").catch((e) => {
+          loadError = loadError ?? toError(e);
+          return [];
+        });
+      const readSkills = () =>
+        withTimeout(fetchSkills(user.id), DASHBOARD_LOAD_TIMEOUT_MS, "Supabase skills").catch((e) => {
+          loadError = loadError ?? toError(e);
+          return [];
+        });
+
+      let [cats, skills] = await Promise.all([readCategories(), readSkills()]);
 
       if (cats.length === 0 && skills.length === 0) {
         try {
-          await fetch("/api/dashboard", { cache: "no-store" });
-        } catch {
+          await withTimeout(
+            fetch("/api/dashboard", { cache: "no-store" }),
+            DASHBOARD_SEED_TIMEOUT_MS,
+            "/api/dashboard seed"
+          );
+        } catch (e) {
+          loadError = loadError ?? toError(e);
           // ignore seed failures; we'll continue to re-fetch below
         }
 
-        [cats, skills] = await Promise.all([
-          fetchCategories(user.id).catch(() => []),
-          fetchSkills(user.id).catch(() => []),
-        ]);
+        [cats, skills] = await Promise.all([readCategories(), readSkills()]);
       }
       const grouped = groupByCategory(skills);
       setSkillsByCategory(grouped);
@@ -188,8 +230,11 @@ export function useSkillsData() {
       } else {
         setCategories([]);
       }
+      setError(loadError);
     } catch (e) {
-      setError(e as Error);
+      setError(toError(e));
+      setSkillsByCategory({});
+      setCategories([]);
     } finally {
       setIsLoading(false);
     }
