@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   CalendarDays,
+  Grid2x2,
+  Grid3x3,
   Target,
   Timer,
   MoreHorizontal,
@@ -36,8 +38,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import {
+  addDaysInTimeZone,
   formatDateKeyInTimeZone,
   normalizeTimeZone,
+  startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
@@ -115,6 +119,12 @@ type HabitDueStatus = {
   label: string;
   rank: number;
 };
+type RelatedHabitCardDensity = "large" | "small";
+
+const RELATED_HABIT_GRID_CLASS =
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+const RELATED_HABIT_SMALL_GRID_CLASS =
+  "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -167,6 +177,54 @@ function parseOptionalDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function getRecurrenceCode(value: string | null | undefined): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function isDailyRelatedHabitRecurrence(habit: HabitSummary): boolean {
+  const recurrence = getRecurrenceCode(habit.recurrence);
+  return (
+    recurrence === "" ||
+    recurrence === "daily" ||
+    recurrence === "none" ||
+    recurrence === "everyday"
+  );
+}
+
+function getRelatedHabitOverdueFallbackStart(
+  habit: HabitSummary,
+  date: Date,
+  timeZone: string
+): Date | null {
+  if (!isDailyRelatedHabitRecurrence(habit)) return null;
+
+  const lastCompletedAt = parseOptionalDate(habit.lastCompletedAt);
+  if (lastCompletedAt) {
+    return addDaysInTimeZone(
+      startOfDayInTimeZone(lastCompletedAt, timeZone),
+      1,
+      timeZone
+    );
+  }
+
+  const nextDueOverride = parseOptionalDate(habit.nextDueOverride);
+  if (nextDueOverride && nextDueOverride.getTime() <= date.getTime()) {
+    return startOfDayInTimeZone(nextDueOverride, timeZone);
+  }
+
+  const anchorStartDate = parseOptionalDate(habit.anchorStartDate);
+  if (anchorStartDate) return startOfDayInTimeZone(anchorStartDate, timeZone);
+
+  const createdAt = parseOptionalDate(habit.createdAt);
+  if (createdAt) return startOfDayInTimeZone(createdAt, timeZone);
+
+  const updatedAt = parseOptionalDate(habit.updatedAt);
+  if (updatedAt) return startOfDayInTimeZone(updatedAt, timeZone);
+
+  return null;
+}
+
 function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
   return {
     id: habit.id,
@@ -199,6 +257,34 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
   } satisfies HabitScheduleItem;
 }
 
+function getRelatedHabitOverdueStart({
+  habit,
+  evaluation,
+  date,
+  timeZone,
+}: {
+  habit: HabitSummary;
+  evaluation: ReturnType<typeof evaluateHabitDueOnDate>;
+  date: Date;
+  timeZone: string;
+}): Date | null {
+  if (!evaluation.isDue) return null;
+
+  const dueStart = evaluation.dueStart ?? null;
+  const dayStart = startOfDayInTimeZone(date, timeZone);
+  const dueStartDay = dueStart
+    ? startOfDayInTimeZone(dueStart, timeZone)
+    : null;
+  const shouldUseFallback =
+    dueStartDay?.getTime() === dayStart.getTime() &&
+    (evaluation.debugTag === "DUE_DAILY" ||
+      evaluation.debugTag === "DUE_NO_ANCHOR");
+
+  if (!shouldUseFallback) return dueStart;
+
+  return getRelatedHabitOverdueFallbackStart(habit, date, timeZone) ?? dueStart;
+}
+
 function computeHabitDueStatus(
   habit: HabitSummary,
   timeZone: string
@@ -216,14 +302,20 @@ function computeHabitDueStatus(
   });
 
   if (todayEvaluation.isDue) {
-      const dueStartMs = todayEvaluation.dueStart?.getTime();
-      const isOverdue =
-        typeof dueStartMs === "number" &&
-        Number.isFinite(dueStartMs) &&
-        today.getTime() - dueStartMs >= MS_PER_DAY;
+    const overdueStart = getRelatedHabitOverdueStart({
+      habit,
+      evaluation: todayEvaluation,
+      date: today,
+      timeZone: normalizedZone,
+    });
+    const overdueStartMs = overdueStart?.getTime();
+    const isOverdue =
+      typeof overdueStartMs === "number" &&
+      Number.isFinite(overdueStartMs) &&
+      today.getTime() - overdueStartMs >= MS_PER_DAY;
 
-      return { label: isOverdue ? "OVERDUE" : "DUE", rank: 0 };
-    }
+    return { label: isOverdue ? "OVERDUE" : "DUE", rank: 0 };
+  }
 
   for (let dayOffset = 1; dayOffset <= MAX_LOOKAHEAD_DAYS; dayOffset += 1) {
     const futureDate = new Date(today.getTime() + dayOffset * MS_PER_DAY);
@@ -332,6 +424,8 @@ export default function SkillDetailPage() {
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [habitsError, setHabitsError] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [relatedHabitCardDensity, setRelatedHabitCardDensity] =
+    useState<RelatedHabitCardDensity>("large");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [completedRelatedHabitIds, setCompletedRelatedHabitIds] = useState<
     Set<string>
@@ -375,6 +469,16 @@ export default function SkillDetailPage() {
   const [pressedRelatedHabitId, setPressedRelatedHabitId] = useState<
     string | null
   >(null);
+  const relatedHabitGridClass =
+    relatedHabitCardDensity === "small"
+      ? RELATED_HABIT_SMALL_GRID_CLASS
+      : RELATED_HABIT_GRID_CLASS;
+  const isSmallRelatedHabitDensity = relatedHabitCardDensity === "small";
+  const handleRelatedHabitDensityToggle = useCallback(() => {
+    setRelatedHabitCardDensity((currentDensity) =>
+      currentDensity === "large" ? "small" : "large"
+    );
+  }, []);
   const relatedHabitLongPressTimerRef = useRef<number | null>(null);
   const relatedHabitSuppressCompletionUntilRef = useRef(0);
   const previousRelatedHabitStateRef = useRef(
@@ -1610,18 +1714,54 @@ export default function SkillDetailPage() {
                       RELATED HABITS
                     </CardTitle>
                   </div>
-                  <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                    {decoratedHabits.length}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                      {decoratedHabits.length}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={
+                        isSmallRelatedHabitDensity
+                          ? "Use large cards"
+                          : "Use small cards"
+                      }
+                      onClick={handleRelatedHabitDensityToggle}
+                      className={clsx(
+                        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                        isSmallRelatedHabitDensity
+                          ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
+                          : null
+                      )}
+                    >
+                      {isSmallRelatedHabitDensity ? (
+                        <Grid2x2
+                          className="h-3.5 w-3.5"
+                          strokeWidth={1.8}
+                          aria-hidden
+                        />
+                      ) : (
+                        <Grid3x3
+                          className="h-3.5 w-3.5"
+                          strokeWidth={1.8}
+                          aria-hidden
+                        />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="relative">
                 {habitsLoading ? (
-                  <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                  <div className={relatedHabitGridClass}>
                     {Array.from({ length: 3 }).map((_, index) => (
                       <Skeleton
                         key={index}
-                        className="h-[100px] rounded-2xl bg-white/[0.06]"
+                        className={clsx(
+                          "bg-white/[0.06]",
+                          isSmallRelatedHabitDensity
+                            ? "h-[70px] rounded-xl"
+                            : "h-[100px] rounded-2xl"
+                        )}
                       />
                     ))}
                   </div>
@@ -1650,7 +1790,7 @@ export default function SkillDetailPage() {
                     {completionError ? (
                       <p className="text-xs text-white/60">{completionError}</p>
                     ) : null}
-                    <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                    <div className={relatedHabitGridClass}>
                       {decoratedHabits.map((habit) => {
                         const isHabitCompletedToday =
                           completedRelatedHabitIds.has(habit.id);
@@ -1661,18 +1801,18 @@ export default function SkillDetailPage() {
                         const showStreakBadge = streakDays >= 2;
                         const streakLabel = `${streakDays}x`;
                         const habitSkillIcon = skill.icon || "💡";
-                        const isHabitDue = habit.dueRank === 0;
+                        const isHabitOverdue = habit.dueLabel === "OVERDUE";
                         const habitPillLabel = isHabitCompletedToday
                           ? "COMPLETE"
                           : habit.dueLabel;
                         const habitStateBorderClass = isHabitCompletedToday
                           ? "shimmer-border-complete"
-                          : isHabitDue && !isHabitCompletedToday
+                          : isHabitOverdue
                             ? "related-habit-due-border"
                             : null;
                         const habitPillClass = isHabitCompletedToday
                           ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                          : isHabitDue
+                          : isHabitOverdue
                             ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
                             : "border-white/10 bg-white/[0.06] text-white/65";
 
@@ -1680,7 +1820,10 @@ export default function SkillDetailPage() {
                           <div
                             key={habit.id}
                             className={clsx(
-                              "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4",
+                              "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                              isSmallRelatedHabitDensity
+                                ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+                                : "min-h-[96px] rounded-2xl p-3 sm:p-4",
                               isHabitCompletedToday
                                 ? "emerald-completed-compact"
                                 : [
@@ -1746,7 +1889,10 @@ export default function SkillDetailPage() {
                             <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
                               <span
                                 className={clsx(
-                                  "mt-1 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
+                                  "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
+                                  isSmallRelatedHabitDensity
+                                    ? "h-6 w-6 text-[11px] sm:h-7 sm:w-7"
+                                    : "h-7 w-7 text-xs sm:h-8 sm:w-8",
                                   isHabitCompletedToday
                                     ? "grayscale"
                                     : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
@@ -1757,7 +1903,12 @@ export default function SkillDetailPage() {
                               </span>
                               <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
                                 <span
-                                  className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
+                                  className={clsx(
+                                    "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
+                                    isSmallRelatedHabitDensity
+                                      ? "text-[8px] sm:text-[9px]"
+                                      : "text-[9px] sm:text-[10px]"
+                                  )}
                                   style={{ hyphens: "auto" }}
                                 >
                                   {habit.name}
@@ -1766,7 +1917,10 @@ export default function SkillDetailPage() {
                               <div className="flex w-full min-w-0 flex-col items-center gap-1">
                                 <span
                                   className={clsx(
-                                    "w-fit max-w-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                                    "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                                    isSmallRelatedHabitDensity
+                                      ? "px-1.5 py-[2px] text-[7px]"
+                                      : "px-2 py-[3px] text-[8px]",
                                     habitPillClass
                                   )}
                                 >

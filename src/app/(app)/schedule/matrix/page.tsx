@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { LayoutGrid } from "lucide-react";
+import { Grid2x2, Grid3x3, LayoutGrid } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -142,12 +142,14 @@ type MatrixMonumentGroup = {
 
 type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
+type MatrixCardDensity = "large" | "small";
 type MatrixView = "monuments" | "skills" | "blocks";
 type MatrixHabitDueStatus = {
   isDue: boolean;
   isOverdue: boolean;
   label: "DUE" | "OVERDUE" | "DUE TODAY";
 };
+type MatrixHabitDueEvaluation = ReturnType<typeof evaluateHabitDueOnDate>;
 
 const MATRIX_PANEL_LABELS: Record<MatrixPanel, string> = {
   scheduled: "Active",
@@ -181,9 +183,13 @@ const initialState: MatrixState = {
 const UNLINKED_GROUP_KEY = "__unlinked__";
 const NO_BLOCK_GROUP_KEY = "__no_block__";
 const MATRIX_LIBRARY_GRID_CLASS =
-  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+  "-mx-3 grid grid-cols-3 items-stretch gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+const MATRIX_LIBRARY_SMALL_GRID_CLASS =
+  "goal-grid grid w-full max-w-full auto-rows-[108px] grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] items-stretch gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_CARD_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+const MATRIX_LIBRARY_SMALL_CARD_CLASS =
+  "goal-card group relative flex h-full min-h-[108px] w-full transform-gpu flex-col rounded-xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-[0.65rem_0.45rem] text-white shadow-[0_14px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SCHEDULED_EVENT_DOUBLE_TAP_MS = 300;
 const MATRIX_TRAY_TRANSITION = {
@@ -418,6 +424,82 @@ function isHabitDueToday(habit: HabitRow, date: Date, timeZone: string) {
   return getMatrixHabitDueStatus(habit, date, timeZone).isDue;
 }
 
+function getRecurrenceCode(value: HabitRow["recurrence"]): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function isDailyMatrixRecurrence(habit: HabitRow): boolean {
+  const recurrence = getRecurrenceCode(habit.recurrence);
+  return (
+    recurrence === "" ||
+    recurrence === "daily" ||
+    recurrence === "none" ||
+    recurrence === "everyday"
+  );
+}
+
+function getMatrixOverdueFallbackStart(
+  habit: HabitRow,
+  date: Date,
+  timeZone: string
+): Date | null {
+  if (!isDailyMatrixRecurrence(habit)) return null;
+
+  const lastCompletedAt = parseOptionalDate(habit.last_completed_at);
+  if (lastCompletedAt) {
+    return addDaysInTimeZone(
+      startOfDayInTimeZone(lastCompletedAt, timeZone),
+      1,
+      timeZone
+    );
+  }
+
+  const nextDueOverride = parseOptionalDate(habit.next_due_override);
+  if (nextDueOverride && nextDueOverride.getTime() <= date.getTime()) {
+    return startOfDayInTimeZone(nextDueOverride, timeZone);
+  }
+
+  const anchorStartDate = parseOptionalDate(habit.anchor_start_date);
+  if (anchorStartDate) return startOfDayInTimeZone(anchorStartDate, timeZone);
+
+  const createdAt = parseOptionalDate(habit.created_at);
+  if (createdAt) return startOfDayInTimeZone(createdAt, timeZone);
+
+  const updatedAt = parseOptionalDate(habit.updated_at);
+  if (updatedAt) return startOfDayInTimeZone(updatedAt, timeZone);
+
+  return null;
+}
+
+function getMatrixHabitOverdueStart({
+  habit,
+  evaluation,
+  date,
+  timeZone,
+}: {
+  habit: HabitRow;
+  evaluation: MatrixHabitDueEvaluation;
+  date: Date;
+  timeZone: string;
+}): Date | null {
+  if (!evaluation.isDue) return null;
+
+  const dueStart = evaluation.dueStart ?? null;
+  const dayStart = startOfDayInTimeZone(date, timeZone);
+  const dueStartDay = dueStart
+    ? startOfDayInTimeZone(dueStart, timeZone)
+    : null;
+  const shouldUseFallback =
+    dueStartDay?.getTime() === dayStart.getTime() &&
+    (evaluation.debugTag === "DUE_DAILY" ||
+      evaluation.debugTag === "DUE_NO_ANCHOR");
+
+  if (!shouldUseFallback) return dueStart;
+
+  return getMatrixOverdueFallbackStart(habit, date, timeZone) ?? dueStart;
+}
+
 function getMatrixHabitDueStatus(
   habit: HabitRow,
   date: Date,
@@ -429,11 +511,17 @@ function getMatrixHabitDueStatus(
     timeZone,
     nextDueOverride: parseOptionalDate(habit.next_due_override),
   });
-  const dueStartMs = todayEvaluation.dueStart?.getTime();
+  const overdueStart = getMatrixHabitOverdueStart({
+    habit,
+    evaluation: todayEvaluation,
+    date,
+    timeZone,
+  });
+  const overdueStartMs = overdueStart?.getTime();
   const isOverdue =
     todayEvaluation.isDue &&
-    typeof dueStartMs === "number" &&
-    date.getTime() - dueStartMs >= MS_PER_DAY;
+    typeof overdueStartMs === "number" &&
+    date.getTime() - overdueStartMs >= MS_PER_DAY;
 
   return {
     isDue: todayEvaluation.isDue,
@@ -580,6 +668,8 @@ function buildMatrixEvents({
   skillIdToMonumentId,
   skillIdToIcon,
   monumentIdToEmoji,
+  date,
+  timeZone,
 }: {
   instances: ScheduleInstance[];
   projects: Map<string, ProjectRow>;
@@ -588,6 +678,8 @@ function buildMatrixEvents({
   skillIdToMonumentId: Map<string, string>;
   skillIdToIcon: Map<string, string>;
   monumentIdToEmoji: Map<string, string>;
+  date: Date;
+  timeZone: string;
 }): MatrixEvent[] {
   return instances.flatMap((instance) => {
     if (instance.source_type === "PROJECT") {
@@ -622,6 +714,9 @@ function buildMatrixEvents({
     const habit = habits.get(instance.source_id);
     const habitGlyph =
       habit?.skill_id ? skillIdToIcon.get(habit.skill_id) : null;
+    const dueStatus = habit
+      ? getMatrixHabitDueStatus(habit, date, timeZone)
+      : undefined;
     return [
       {
         instance,
@@ -644,6 +739,7 @@ function buildMatrixEvents({
               }),
               skillIds: habit.skill_id ? [habit.skill_id] : [],
               glyph: habitGlyph ?? getHabitFallbackGlyph(habit.habit_type),
+              dueStatus,
             }
           : null,
       },
@@ -890,6 +986,52 @@ function MatrixCard({
   );
 }
 
+
+function MatrixSmallEventCard({
+  glyph,
+  title,
+  meta,
+  className,
+  status,
+  completed = false,
+}: {
+  glyph: string;
+  title: string;
+  meta: ReactNode;
+  className?: string | null;
+  status?: string | null;
+  completed?: boolean;
+}) {
+  return (
+    <div className={cn(MATRIX_LIBRARY_SMALL_CARD_CLASS, className)}>
+      {status && !completed ? (
+        <span className="pointer-events-none absolute right-1.5 top-1.5 max-w-[58%] truncate rounded-full border border-white/8 bg-black/20 px-1 py-[2px] text-[6px] font-semibold uppercase leading-none tracking-[0.06em] text-white/42">
+          {status}
+        </span>
+      ) : null}
+
+      <div className="relative z-[2] flex h-full min-h-0 flex-col items-center justify-center gap-1 text-center">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] text-[10px] font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]">
+          {glyph}
+        </span>
+
+        <div className="flex min-h-0 w-full min-w-0 items-center justify-center">
+          <span
+            className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[7px] font-semibold leading-[0.72rem] text-white/92 whitespace-normal"
+            style={{ hyphens: "auto" }}
+          >
+            {title}
+          </span>
+        </div>
+
+        <div className="flex h-[14px] w-full shrink-0 items-center justify-center">
+          {meta}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MatrixHabitCard({
   glyph,
   title,
@@ -898,6 +1040,7 @@ function MatrixHabitCard({
   overdue,
   status,
   completed = false,
+  density = "large",
 }: {
   glyph: string;
   title: string;
@@ -906,9 +1049,11 @@ function MatrixHabitCard({
   overdue: boolean;
   status?: string | null;
   completed?: boolean;
+  density?: MatrixCardDensity;
 }) {
   const isCompleted =
     completed || status?.trim().toLowerCase() === "completed";
+  const isSmall = density === "small";
   const displayPill = isCompleted ? "COMPLETE" : pill;
   const pillClass = isCompleted
     ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
@@ -920,12 +1065,49 @@ function MatrixHabitCard({
   const completedGlyphBadgeClass =
     "!border-white/10 !bg-white/[0.055] !text-white/82 !shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]";
 
+  if (isSmall) {
+    return (
+      <MatrixSmallEventCard
+        glyph={glyph}
+        title={title}
+        status={status}
+        completed={isCompleted}
+        className={cn(
+          isCompleted
+            ? ["emerald-completed-compact", "shimmer-border-complete"]
+            : [
+                getHabitCardTypeClass(habitType),
+                getHabitCardBorderClass(habitType),
+                overdue ? "related-habit-due-border" : null,
+              ]
+        )}
+        meta={
+          <span
+            className={cn(
+              "w-fit max-w-none whitespace-nowrap rounded-full border px-1.5 py-[2px] text-[6px] font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:text-[7px]",
+              pillClass
+            )}
+          >
+            {displayPill}
+          </span>
+        }
+      />
+    );
+  }
+
   return (
     <div
       className={cn(
         isCompleted
-          ? "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4"
-          : MATRIX_LIBRARY_CARD_CLASS,
+          ? cn(
+              "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+              isSmall
+                ? "h-full min-h-[108px] rounded-xl p-[0.65rem_0.45rem]"
+                : "min-h-[96px] rounded-2xl p-3 sm:p-4"
+            )
+          : isSmall
+            ? MATRIX_LIBRARY_SMALL_CARD_CLASS
+            : MATRIX_LIBRARY_CARD_CLASS,
         isCompleted
           ? ["emerald-completed-compact", "shimmer-border-complete"]
           : [
@@ -938,17 +1120,27 @@ function MatrixHabitCard({
       {status && !isCompleted ? (
         <span
           className={cn(
-            "pointer-events-none absolute right-2.5 top-2.5 max-w-[58%] truncate rounded-full border px-1.5 py-[3px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em]",
+            "pointer-events-none absolute max-w-[58%] truncate rounded-full border font-semibold uppercase leading-none tracking-[0.06em]",
+            isSmall
+              ? "right-1.5 top-1.5 px-1 py-[2px] text-[6px]"
+              : "right-2.5 top-2.5 px-1.5 py-[3px] text-[7px]",
             "border-white/8 bg-black/20 text-white/42"
           )}
         >
           {status}
         </span>
       ) : null}
-      <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 text-center">
+      <div
+        className={cn(
+          "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center",
+          isSmall ? "gap-1" : "gap-1.5"
+        )}
+      >
         <span
           className={cn(
-            glyphBadgeClass,
+            isSmall
+              ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] text-[10px] font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)] sm:h-6 sm:w-6"
+              : glyphBadgeClass,
             isCompleted ? completedGlyphBadgeClass : null
           )}
         >
@@ -956,16 +1148,27 @@ function MatrixHabitCard({
         </span>
         <div className="flex min-h-0 w-full min-w-0 items-center justify-center">
           <span
-            className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-[1.05] text-white/92 whitespace-normal sm:text-[10px]"
+            className={cn(
+              "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-[1.05] text-white/92 whitespace-normal",
+              isSmall ? "text-[7px] sm:text-[8px]" : "text-[9px] sm:text-[10px]"
+            )}
             style={{ hyphens: "auto" }}
           >
             {title}
           </span>
         </div>
-        <div className="flex min-w-0 items-center justify-center">
+        <div
+          className={cn(
+            "flex min-w-0 items-center justify-center",
+            isSmall ? "h-[14px] shrink-0" : null
+          )}
+        >
           <span
             className={cn(
-              "w-fit max-w-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+              "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+              isSmall
+                ? "px-1.5 py-[2px] text-[6px] sm:text-[7px]"
+                : "px-2 py-[3px] text-[8px]",
               pillClass
             )}
           >
@@ -977,16 +1180,55 @@ function MatrixHabitCard({
   );
 }
 
+
+function MatrixProjectCard({
+  goal,
+  glyph,
+  completed = false,
+}: {
+  goal: Goal;
+  glyph: string;
+  completed?: boolean;
+}) {
+  const progress = completed
+    ? 100
+    : Math.max(0, Math.min(100, Math.round(Number(goal.progress ?? 0))));
+  const displayGlyph =
+    glyph ||
+    goal.emoji ||
+    goal.monumentEmoji ||
+    goal.title.slice(0, 2).toUpperCase();
+
+  return (
+    <MatrixSmallEventCard
+      glyph={displayGlyph}
+      title={goal.title}
+      completed={completed}
+      className={completed ? ["emerald-completed-compact", "shimmer-border-complete"].join(" ") : null}
+      meta={
+        <div className="h-[6px] w-full overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24] shadow-[inset_0_1px_2px_rgba(0,0,0,0.58),_0_1px_1px_rgba(255,255,255,0.06)]">
+          <div
+            className="h-full rounded-[999px] bg-white/70"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      }
+    />
+  );
+}
+
 function ScheduledEventCard({
   event,
   open,
   onOpenChange,
   onComplete,
+  density,
 }: {
   event: MatrixEvent;
   open: boolean;
   onOpenChange(open: boolean): void;
   onComplete(instanceId: string): void;
+  density: MatrixCardDensity;
 }) {
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapRef = useRef<{ instanceId: string; time: number } | null>(null);
@@ -1060,28 +1302,41 @@ function ScheduledEventCard({
       active: false,
     };
   }, [event.goal, isCompleted]);
+  const habitDueStatus = event.habit?.dueStatus ?? null;
+  const habitDueLabel =
+    habitDueStatus?.label ??
+    (event.habit?.duration_minutes ? "DUE" : "DUE TODAY");
 
   const card = scheduledGoal ? (
-    <GoalCard
-      goal={scheduledGoal}
-      showWeight={false}
-      showCreatedAt={false}
-      showEmojiPrefix={false}
-      variant="compact"
-      completionTheme="border"
-      projectDropdownMode="tasks-only"
-      open={open}
-      onOpenChange={onOpenChange}
-    />
+    density === "small" ? (
+      <MatrixProjectCard
+        goal={scheduledGoal}
+        glyph={event.glyph}
+        completed={isCompleted}
+      />
+    ) : (
+      <GoalCard
+        goal={scheduledGoal}
+        showWeight={false}
+        showCreatedAt={false}
+        showEmojiPrefix={false}
+        variant="compact"
+        completionTheme="border"
+        projectDropdownMode="tasks-only"
+        open={open}
+        onOpenChange={onOpenChange}
+      />
+    )
   ) : event.habit ? (
     <MatrixHabitCard
       glyph={event.glyph}
       title={event.title}
-      pill={isCompleted ? "COMPLETE" : "DUE"}
+      pill={isCompleted ? "COMPLETE" : habitDueLabel}
       habitType={event.habit.habit_type}
-      overdue={false}
+      overdue={habitDueStatus?.isOverdue ?? false}
       status={cleanStatus}
       completed={isCompleted}
+      density={density}
     />
   ) : null;
 
@@ -1091,24 +1346,34 @@ function ScheduledEventCard({
       onDoubleClick={handleDoubleClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
+      className="matrix-event-card-shell h-full"
     >
       {card}
     </div>
   ) : null;
 }
 
-function DueHabitCard({ habit }: { habit: MatrixHabit }) {
+function DueHabitCard({
+  habit,
+  density,
+}: {
+  habit: MatrixHabit;
+  density: MatrixCardDensity;
+}) {
   const dueLabel =
     habit.dueStatus?.label ?? (habit.duration_minutes ? "DUE" : "DUE TODAY");
 
   return (
-    <MatrixHabitCard
-      glyph={habit.glyph}
-      title={habit.name}
-      pill={dueLabel}
-      habitType={habit.habit_type}
-      overdue={habit.dueStatus?.isOverdue ?? false}
-    />
+    <div className="matrix-event-card-shell h-full">
+      <MatrixHabitCard
+        glyph={habit.glyph}
+        title={habit.name}
+        pill={dueLabel}
+        habitType={habit.habit_type}
+        overdue={habit.dueStatus?.isOverdue ?? false}
+        density={density}
+      />
+    </div>
   );
 }
 
@@ -1207,6 +1472,7 @@ function MatrixMonumentCarousel({
   onCompleteScheduledEvent(instanceId: string): void;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
+  const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [matrixPanelHeight, setMatrixPanelHeight] = useState<number | null>(
     null
@@ -1269,6 +1535,11 @@ function MatrixMonumentCarousel({
     () => sortMatrixDueHabits(group.unscheduledDueHabits),
     [group.unscheduledDueHabits]
   );
+  const matrixLibraryGridClass =
+    cardDensity === "small"
+      ? MATRIX_LIBRARY_SMALL_GRID_CLASS
+      : MATRIX_LIBRARY_GRID_CLASS;
+  const isSmallCardDensity = cardDensity === "small";
 
   const getMatrixPanelElement = useCallback((panel: MatrixPanel) => {
     return panel === "unscheduled"
@@ -1305,6 +1576,12 @@ function MatrixMonumentCarousel({
       currentHeight === nextHeight ? currentHeight : nextHeight
     );
   }, [getMatrixPanelHeight, matrixPanel]);
+
+  const handleCardDensityToggle = useCallback(() => {
+    setCardDensity((currentDensity) =>
+      currentDensity === "large" ? "small" : "large"
+    );
+  }, []);
 
   useLayoutEffect(() => {
     const viewportElement = matrixPanelViewportRef.current;
@@ -1353,6 +1630,7 @@ function MatrixMonumentCarousel({
   useLayoutEffect(() => {
     measureActiveMatrixPanel();
   }, [
+    cardDensity,
     group.scheduledItems,
     group.unscheduledDueHabits,
     measureActiveMatrixPanel,
@@ -1595,7 +1873,7 @@ function MatrixMonumentCarousel({
   );
 
   return (
-    <MatrixCard className="p-3 sm:p-4">
+    <MatrixCard className={cn("p-3 sm:p-4", isSmallCardDensity ? "matrix-card--small-cards" : null)}>
       <div className="mb-3 flex items-center justify-between gap-3 px-0 sm:px-1">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.055] text-base">
@@ -1609,9 +1887,32 @@ function MatrixMonumentCarousel({
             {group.title}
           </h3>
         </div>
-        <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70">
-          {activeMatrixPanelLabel}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70">
+            {activeMatrixPanelLabel}
+          </span>
+          <button
+            type="button"
+            aria-label={
+              isSmallCardDensity
+                ? "Use large Matrix cards"
+                : "Use small Matrix cards"
+            }
+            onClick={handleCardDensityToggle}
+            className={cn(
+              "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+              isSmallCardDensity
+                ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
+                : null
+            )}
+          >
+            {isSmallCardDensity ? (
+              <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+            ) : (
+              <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+            )}
+          </button>
+        </div>
       </div>
       <div
         className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
@@ -1649,11 +1950,17 @@ function MatrixMonumentCarousel({
               >
                 {panel === "scheduled" ? (
                   <div ref={scheduledPanelRef} className="px-1 py-1">
-                    <div className={MATRIX_LIBRARY_GRID_CLASS}>
+                    <div
+                      className={cn(
+                        matrixLibraryGridClass,
+                        isSmallCardDensity ? "matrix-event-grid--small-cards" : null
+                      )}
+                    >
                       {sortedScheduledItems.map((event) => (
                         <ScheduledEventCard
                           key={event.instance.id}
                           event={event}
+                          density={cardDensity}
                           onComplete={onCompleteScheduledEvent}
                           open={
                             Boolean(event.goal?.id) &&
@@ -1670,9 +1977,18 @@ function MatrixMonumentCarousel({
                   </div>
                 ) : (
                   <div ref={unscheduledPanelRef} className="px-1 py-1">
-                    <div className={MATRIX_LIBRARY_GRID_CLASS}>
+                    <div
+                      className={cn(
+                        matrixLibraryGridClass,
+                        isSmallCardDensity ? "matrix-event-grid--small-cards" : null
+                      )}
+                    >
                       {sortedUnscheduledDueHabits.map((habit) => (
-                        <DueHabitCard key={habit.id} habit={habit} />
+                        <DueHabitCard
+                          key={habit.id}
+                          habit={habit}
+                          density={cardDensity}
+                        />
                       ))}
                     </div>
                   </div>
@@ -1705,6 +2021,16 @@ function MatrixMonumentCarousel({
           );
         })}
       </div>
+      <style jsx global>{`
+        @media (max-width: 520px) {
+          .matrix-event-grid--small-cards.goal-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.4rem;
+            padding-left: 0;
+            padding-right: 0;
+          }
+        }
+      `}</style>
     </MatrixCard>
   );
 }
@@ -2017,6 +2343,8 @@ function MatrixContent() {
           skillIdToMonumentId,
           skillIdToIcon,
           monumentIdToEmoji,
+          date: today,
+          timeZone,
         });
         const unscheduledDueHabits = ((allHabitsResult.data ?? []) as HabitRow[])
           .filter((habit) => !scheduledHabitIds.has(habit.id))

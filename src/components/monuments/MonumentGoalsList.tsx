@@ -12,6 +12,7 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
+import { Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
@@ -82,6 +83,7 @@ type GoalRowWithRelations = GoalRow & {
 
 type GoalPanel = "active" | "completed";
 type GoalPanelSwipeAxis = "horizontal" | "vertical" | null;
+type GoalCardDensity = "large" | "small";
 
 const GOAL_RELATIONS_BASE_SELECT =
   "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
@@ -300,8 +302,10 @@ const NORMALIZED_ENERGY_VALUES = new Set([
   "ULTRA",
   "EXTREME",
 ]);
-const GOAL_GRID_CLASS =
+const GOAL_SMALL_GRID_CLASS =
   "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+const GOAL_GRID_CLASS =
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[240px] sm:min-h-[260px]";
 const GOAL_PANEL_CONTENT_CLASS = "px-1 py-1 sm:px-1.5 sm:py-1.5";
 const GOAL_REVEAL_CLASS = "monument-goal-reveal";
@@ -1023,6 +1027,8 @@ export function MonumentGoalsList({
     null
   );
   const [activeGoalPanel, setActiveGoalPanel] = useState<GoalPanel>("active");
+  const [goalCardDensity, setGoalCardDensity] =
+    useState<GoalCardDensity>("small");
   const [goalPanelHeight, setGoalPanelHeight] = useState<number | null>(null);
   const [goalPanelDragOffset, setGoalPanelDragOffset] = useState(0);
   const [goalPanelViewportWidth, setGoalPanelViewportWidth] = useState(0);
@@ -1079,6 +1085,9 @@ export function MonumentGoalsList({
     -goalPanelViewportWidth,
     Math.min(0, goalPanelBaseTransform + goalPanelDragOffset)
   );
+  const goalGridClass =
+    goalCardDensity === "small" ? GOAL_SMALL_GRID_CLASS : GOAL_GRID_CLASS;
+  const isSmallGoalCardDensity = goalCardDensity === "small";
   const readyGoalIds = useMemo(
     () =>
       goals
@@ -1235,6 +1244,31 @@ export function MonumentGoalsList({
     [getGoalPanelHeight, onGoalSectionChange]
   );
 
+  const handleGoalCardDensityToggle = useCallback(() => {
+    setGoalCardDensity((currentDensity) =>
+      currentDensity === "large" ? "small" : "large"
+    );
+  }, []);
+
+  const renderGoalCardDensityToggle = () => (
+    <button
+      type="button"
+      aria-label={isSmallGoalCardDensity ? "Use large cards" : "Use small cards"}
+      onClick={handleGoalCardDensityToggle}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 ${
+        isSmallGoalCardDensity
+          ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
+          : ""
+      }`}
+    >
+      {isSmallGoalCardDensity ? (
+        <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+      ) : (
+        <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+      )}
+    </button>
+  );
+
   const measureActiveGoalPanel = useCallback(() => {
     const nextHeight = loading
       ? getLoadingGoalPanelHeight()
@@ -1254,6 +1288,7 @@ export function MonumentGoalsList({
     measureActiveGoalPanel();
   }, [
     activeGoalPanel,
+    goalCardDensity,
     goals,
     loading,
     measureActiveGoalPanel,
@@ -1303,6 +1338,7 @@ export function MonumentGoalsList({
   }, [
     activeGoalPanel,
     goalPanelHeight,
+    goalCardDensity,
     goals,
     loading,
     measureSelectedGoalsRoadmapPanel,
@@ -1342,6 +1378,7 @@ export function MonumentGoalsList({
   }, [
     activeGoalPanel,
     goalPanelHeight,
+    goalCardDensity,
     loading,
     measureSelectedGoalsRoadmapPanel,
     monumentView,
@@ -2510,9 +2547,12 @@ export function MonumentGoalsList({
                 Goal Library
               </p>
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-              {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+                {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+              </p>
+              {renderGoalCardDensityToggle()}
+            </div>
           </div>
           <div
             className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
@@ -2529,12 +2569,16 @@ export function MonumentGoalsList({
               className={GOAL_PANEL_CONTENT_CLASS}
             >
               <div
-                className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
+                className={`${goalGridClass} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
               >
                 {Array.from({ length: 8 }).map((_, i) => (
                   <Skeleton
                     key={i}
-                    className="h-full min-h-[100px] rounded-2xl bg-white/[0.06]"
+                    className={`h-full bg-white/[0.06] ${
+                      isSmallGoalCardDensity
+                        ? "min-h-[70px] rounded-xl"
+                        : "min-h-[100px] rounded-2xl"
+                    }`}
                   />
                 ))}
               </div>
@@ -2797,7 +2841,7 @@ export function MonumentGoalsList({
       }
 
       return (
-        <div className={GOAL_GRID_CLASS}>
+        <div className={goalGridClass}>
           {campaignGroupsForGoalGrid.map(
             ({ roadmap, goals: roadmapGoalsList, goalCount }) => (
               <div
@@ -2916,9 +2960,12 @@ export function MonumentGoalsList({
               Goal Library
             </p>
           </div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-            {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+              {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+            </p>
+            {renderGoalCardDensityToggle()}
+          </div>
         </div>
         <div
           className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"

@@ -3067,6 +3067,7 @@ export default function Source() {
   return (
     <>
       <PullRefreshShell
+        lockDocumentScroll={false}
         onRefresh={handlePullRefresh}
         isBlockedRef={sourcePullRefreshBlockedRef}
       >
