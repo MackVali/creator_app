@@ -17,6 +17,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
+import { AnimatePresence, motion } from "framer-motion"
 import {
   ExternalLink,
   Facebook,
@@ -104,6 +105,20 @@ const availabilityLabels: Record<SourceListing["status"], string> = {
   queued: "Queued for publish",
   published: "Available / Live",
   needs_attention: "Needs attention",
+}
+
+const listingInlineStatusLabels: Record<SourceListing["status"], string> = {
+  draft: "Draft",
+  queued: "Queued",
+  published: "Available",
+  needs_attention: "Needs attention",
+}
+
+const listingInlineStatusTextClass: Record<SourceListing["status"], string> = {
+  draft: "text-zinc-500",
+  queued: "text-zinc-400",
+  published: "text-emerald-300",
+  needs_attention: "text-amber-300",
 }
 
 const ORDER_STATUS_LABELS: Record<ProductCheckoutStatus, string> = {
@@ -207,6 +222,24 @@ const resolveQuantityBehavior = (
     return rawValue as QuantityBehavior
   }
   return DEFAULT_QUANTITY_BEHAVIOR
+}
+
+const formatServiceDurationLabel = (minutes: number): string => {
+  if (!Number.isFinite(minutes) || minutes <= 0) return ""
+
+  if (minutes < 60) {
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`
+  }
+
+  if (minutes < 1440) {
+    const hours = minutes / 60
+    const displayHours = Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(1)))
+    return `${displayHours} ${displayHours === "1" ? "hour" : "hours"}`
+  }
+
+  const days = minutes / 1440
+  const displayDays = Number.isInteger(days) ? String(days) : String(Number(days.toFixed(1)))
+  return `${displayDays} ${displayDays === "1" ? "day" : "days"}`
 }
 
 const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
@@ -372,6 +405,32 @@ type IntegrationPreset = {
 }
 
 type OverviewSectionKey = "products" | "services" | "media" | "orders" | "inquiries"
+
+const overviewSectionOrder: OverviewSectionKey[] = [
+  "products",
+  "services",
+  "media",
+  "orders",
+  "inquiries",
+]
+
+const overviewSectionMotion = {
+  enter: (direction: number) => ({
+    opacity: 0,
+    x: direction >= 0 ? 28 : -28,
+    filter: "blur(2px)",
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    filter: "blur(0px)",
+  },
+  exit: (direction: number) => ({
+    opacity: 0,
+    x: direction >= 0 ? -28 : 28,
+    filter: "blur(2px)",
+  }),
+}
 
 type OverviewTile = {
   key: OverviewSectionKey
@@ -1514,6 +1573,7 @@ export default function Source() {
   const oauthCompletionRef = useRef(false)
   const [selectedOverviewSection, setSelectedOverviewSection] =
     useState<OverviewSectionKey>("products")
+  const previousOverviewSectionRef = useRef<OverviewSectionKey>("products")
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
@@ -1529,6 +1589,12 @@ export default function Source() {
     Boolean(selectedOrderId) ||
     isCropOpen ||
     isPostModalOpen
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [])
 
   const handlePullRefresh = useCallback(async () => {
     await Promise.all([
@@ -1704,6 +1770,17 @@ export default function Source() {
       setSelectedOrderId(null)
     }
   }, [selectedOverviewSection, selectedOrderId])
+
+  const previousOverviewIndex = overviewSectionOrder.indexOf(
+    previousOverviewSectionRef.current
+  )
+  const selectedOverviewIndex = overviewSectionOrder.indexOf(selectedOverviewSection)
+  const overviewSlideDirection =
+    previousOverviewIndex <= selectedOverviewIndex ? 1 : -1
+
+  useEffect(() => {
+    previousOverviewSectionRef.current = selectedOverviewSection
+  }, [selectedOverviewSection])
 
   const clearProductImagePreview = () => {
     setProductImagePreview((previous) => {
@@ -3073,17 +3150,17 @@ export default function Source() {
       >
       <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6">
-          <div className="flex flex-col gap-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pt-3 pb-3">
+          <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <p className="text-xs uppercase tracking-[0.3em] text-zinc-400">Source</p>
               </div>
               <Badge className="h-fit gap-2 bg-zinc-500/20 text-zinc-200">
                 <Plug className="size-3" /> Paid upgrade
               </Badge>
             </div>
-            <div className="rounded-md border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
+            <div className="rounded-md border border-zinc-800/70 bg-zinc-900/60 p-0.5 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
               <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
                 {overviewTiles.map((tile) => {
                   const isActive = selectedOverviewSection === tile.key
@@ -3094,7 +3171,7 @@ export default function Source() {
                       onClick={() => setSelectedOverviewSection(tile.key)}
                       aria-pressed={isActive}
                       className={cn(
-                        "flex flex-col items-center justify-center gap-1 rounded-md border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
+                        "flex flex-col items-center justify-center gap-0.5 rounded-md border px-2 py-2 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-3 sm:py-3 sm:text-sm",
                         "border-transparent bg-zinc-950/60",
                         isActive &&
                           "border-zinc-600 bg-zinc-900/80 text-white shadow-[inset_0_2px_6px_rgba(255,255,255,0.08),0_14px_35px_rgba(0,0,0,0.75)]"
@@ -3120,6 +3197,21 @@ export default function Source() {
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pb-10 pt-6">
+        <AnimatePresence initial={false} mode="wait" custom={overviewSlideDirection}>
+          <motion.div
+            key={selectedOverviewSection}
+            custom={overviewSlideDirection}
+            variants={overviewSectionMotion}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{
+              x: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+              opacity: { duration: 0.2, ease: "easeOut" },
+              filter: { duration: 0.2, ease: "easeOut" },
+            }}
+            className="flex min-h-[220px] flex-col gap-10 will-change-transform"
+          >
         {selectedOverviewSection === "media" && (
           isAdmin ? (
             <>
@@ -3916,17 +4008,6 @@ export default function Source() {
 
         {selectedOverviewSection === "services" && (
           <section className="space-y-2">
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
-                onClick={() => handleServiceSheetOpenChange(true)}
-              >
-                <Plus className="size-4" />
-                Add service
-              </Button>
-            </div>
             <div className="grid grid-cols-3 gap-3">
               {serviceListings.map((listing) => {
                 const coverImage =
@@ -3949,66 +4030,66 @@ export default function Source() {
                   aria-pressed={isSelected}
                   onClick={() => handleServiceCardClick(listing)}
                     className={cn(
-                      "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+                      "goal-card group flex h-full transform-gpu flex-col overflow-hidden !rounded-2xl !border-white/10 !bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.96)_56%,rgba(33,34,40,0.78)_100%)] text-left text-[11px] text-zinc-300 !shadow-[0_18px_38px_-30px_rgba(0,0,0,0.98),0_8px_18px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.07)] transition duration-200 hover:-translate-y-px hover:!border-white/25 hover:brightness-110 active:translate-y-px active:scale-[0.985] active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55 select-none",
                       isSelected
-                        ? "border-zinc-500/70 bg-zinc-900/70"
-                        : "border-zinc-900/70 hover:border-zinc-700"
+                        ? "!border-white/35 !shadow-[0_0_0_1px_rgba(255,255,255,0.18),0_20px_42px_-28px_rgba(255,255,255,0.34),0_16px_36px_-26px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.1)] brightness-110"
+                        : "hover:!shadow-[0_20px_42px_-30px_rgba(255,255,255,0.22),0_14px_30px_-22px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.08)]"
                     )}
                   >
-                    <div className="relative h-20 w-full overflow-hidden bg-zinc-900">
+                    <div className="relative mx-1 mt-1 h-24 overflow-hidden rounded-t-lg bg-zinc-900 shadow-[inset_0_-18px_32px_rgba(0,0,0,0.22)]">
                       {coverImage ? (
                         <img
                           src={coverImage}
                           alt={listing.title}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03] group-hover:brightness-110"
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-800 text-zinc-500">
-                          <span className="text-[10px] uppercase tracking-[0.3em]">
+                        <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_48%),linear-gradient(145deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))] text-zinc-500">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/35">
                             No image
                           </span>
                         </div>
                       )}
-                      <Badge
-                        className={cn(
-                          "absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em]",
-                          statusAccent[listing.status]
-                        )}
-                      >
-                        {listingStatuses[listing.status]}
-                      </Badge>
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/[0.04]" />
                     </div>
-                    <div className="flex flex-grow flex-col gap-1 px-3 py-3">
-                      <p className="text-[11px] font-semibold text-white line-clamp-2">
+                    <div className="flex flex-grow flex-col gap-1.5 px-3 py-3">
+                      <p className="text-[11px] font-semibold leading-snug text-white line-clamp-2">
                         {listing.title}
                       </p>
-                      <p className="text-[10px] text-zinc-400">{priceLabel}</p>
+                      <p className="text-[10px] font-medium text-zinc-300">{priceLabel}</p>
                       {durationMinutes !== null && (
-                        <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
-                          {durationMinutes} min service
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                          {formatServiceDurationLabel(durationMinutes)}
                         </span>
                       )}
+                      <p
+                        className={cn(
+                          "text-[9px] font-semibold uppercase tracking-[0.24em]",
+                          listingInlineStatusTextClass[listing.status]
+                        )}
+                      >
+                        {listingInlineStatusLabels[listing.status]}
+                      </p>
                     </div>
                   </button>
                 )
               })}
+              <button
+                type="button"
+                onClick={() => handleServiceSheetOpenChange(true)}
+                className="group flex min-h-[178px] transform-gpu flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.07),transparent_46%),linear-gradient(145deg,rgba(4,4,5,0.98)_0%,rgba(10,10,12,0.98)_58%,rgba(18,18,22,0.88)_100%)] px-3 py-5 text-center text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500 shadow-[0_14px_30px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-px hover:border-white/20 hover:text-zinc-300 hover:shadow-[0_18px_36px_-28px_rgba(255,255,255,0.16),0_12px_28px_-22px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] active:translate-y-px active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
+              >
+                <span className="flex size-9 items-center justify-center rounded-full border border-white/10 bg-black/25 text-zinc-400 transition group-hover:border-white/20 group-hover:text-zinc-200">
+                  <Plus className="size-4" />
+                </span>
+                Add service
+              </button>
             </div>
           </section>
         )}
 
         {selectedOverviewSection === "products" && (
         <section className="space-y-2">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
-              onClick={() => handleProductSheetOpenChange(true)}
-            >
-              <Plus className="size-4" />
-              Add product
-            </Button>
-          </div>
           <div className="grid grid-cols-3 gap-3">
             {productListings.map((listing) => {
               const coverImage =
@@ -4027,47 +4108,55 @@ export default function Source() {
                   aria-pressed={isSelected}
                   onClick={() => handleProductCardClick(listing)}
                   className={cn(
-                    "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+                    "goal-card group flex h-full transform-gpu flex-col overflow-hidden !rounded-2xl !border-white/10 !bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.96)_56%,rgba(33,34,40,0.78)_100%)] text-left text-[11px] text-zinc-300 !shadow-[0_18px_38px_-30px_rgba(0,0,0,0.98),0_8px_18px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.07)] transition duration-200 hover:-translate-y-px hover:!border-white/25 hover:brightness-110 active:translate-y-px active:scale-[0.985] active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55 select-none",
                     isSelected
-                      ? "border-zinc-500/70 bg-zinc-900/70"
-                      : "border-zinc-900/70 hover:border-zinc-700"
+                      ? "!border-white/35 !shadow-[0_0_0_1px_rgba(255,255,255,0.18),0_20px_42px_-28px_rgba(255,255,255,0.34),0_16px_36px_-26px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.1)] brightness-110"
+                      : "hover:!shadow-[0_20px_42px_-30px_rgba(255,255,255,0.22),0_14px_30px_-22px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.08)]"
                   )}
                 >
-                  <div className="relative h-20 w-full overflow-hidden bg-zinc-900">
+                  <div className="relative mx-1 mt-1 h-24 overflow-hidden rounded-t-lg bg-zinc-900 shadow-[inset_0_-18px_32px_rgba(0,0,0,0.22)]">
                     {coverImage ? (
                       <img
                         src={coverImage}
                         alt={listing.title}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03] group-hover:brightness-110"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-800 text-zinc-500">
-                        <span className="text-[10px] uppercase tracking-[0.3em]">
+                      <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_48%),linear-gradient(145deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))] text-zinc-500">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/35">
                           No image
                         </span>
                       </div>
                     )}
-                    <Badge
-                      className={cn(
-                        "absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em]",
-                        statusAccent[listing.status]
-                      )}
-                    >
-                      {listingStatuses[listing.status]}
-                    </Badge>
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/[0.04]" />
                   </div>
-                  <div className="flex flex-grow flex-col gap-1 px-3 py-3">
-                    <p className="text-[11px] font-semibold text-white line-clamp-2">
+                  <div className="flex flex-grow flex-col gap-1.5 px-3 py-3">
+                    <p className="text-[11px] font-semibold leading-snug text-white line-clamp-2">
                       {listing.title}
                     </p>
-                    <p className="text-[10px] text-zinc-400">{priceLabel}</p>
-                    <p className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
-                      Status · {availabilityLabels[listing.status]}
+                    <p className="text-[10px] font-medium text-zinc-300">{priceLabel}</p>
+                    <p
+                      className={cn(
+                        "text-[9px] font-semibold uppercase tracking-[0.24em]",
+                        listingInlineStatusTextClass[listing.status]
+                      )}
+                    >
+                      {listingInlineStatusLabels[listing.status]}
                     </p>
                   </div>
                 </button>
               )
             })}
+            <button
+              type="button"
+              onClick={() => handleProductSheetOpenChange(true)}
+              className="group flex min-h-[178px] transform-gpu flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.07),transparent_46%),linear-gradient(145deg,rgba(4,4,5,0.98)_0%,rgba(10,10,12,0.98)_58%,rgba(18,18,22,0.88)_100%)] px-3 py-5 text-center text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500 shadow-[0_14px_30px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-px hover:border-white/20 hover:text-zinc-300 hover:shadow-[0_18px_36px_-28px_rgba(255,255,255,0.16),0_12px_28px_-22px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] active:translate-y-px active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
+            >
+              <span className="flex size-9 items-center justify-center rounded-full border border-white/10 bg-black/25 text-zinc-400 transition group-hover:border-white/20 group-hover:text-zinc-200">
+                <Plus className="size-4" />
+              </span>
+              Add product
+            </button>
           </div>
         </section>
       )}
@@ -4159,6 +4248,8 @@ export default function Source() {
           </div>
         </section>
       )}
+          </motion.div>
+        </AnimatePresence>
       </main>
       {isCropOpen && cropSourceUrl ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-6">

@@ -1,12 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { User } from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import type {
   FriendRequest,
   SentInvite,
   SuggestedFriend,
+  ContactImportStatus,
 } from "@/types/friends";
 import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 
@@ -20,6 +22,7 @@ type RequestsInvitesProps = {
   requests: FriendRequest[];
   invites: SentInvite[];
   suggestions: SuggestedFriend[];
+  contactImport: ContactImportStatus | null;
   circleInvites: CircleInvite[];
   isLoadingCircleInvites: boolean;
   circleInvitesError: string | null;
@@ -59,6 +62,7 @@ export default function RequestsInvites({
   requests,
   invites,
   suggestions,
+  contactImport,
   circleInvites,
   isLoadingCircleInvites,
   circleInvitesError,
@@ -74,6 +78,18 @@ export default function RequestsInvites({
     suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
   );
   const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+  const [contactsConnected, setContactsConnected] = useState(
+    Boolean(contactImport?.imported)
+  );
+  const [isConnectingContacts, setIsConnectingContacts] = useState(false);
+  const [connectContactsMessage, setConnectContactsMessage] = useState<
+    { type: "success" | "error"; text: string } | null
+  >(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [isSendingEmailInvite, setIsSendingEmailInvite] = useState(false);
+  const [emailInviteMessage, setEmailInviteMessage] = useState<
+    { type: "success" | "error"; text: string } | null
+  >(null);
 
   useEffect(() => {
     setRequestState(requests.map((req) => ({ ...req, status: "pending" })));
@@ -88,6 +104,10 @@ export default function RequestsInvites({
       suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
     );
   }, [suggestions]);
+
+  useEffect(() => {
+    setContactsConnected(Boolean(contactImport?.imported));
+  }, [contactImport?.imported]);
 
   const pendingRequests = useMemo(
     () => requestState.filter((req) => req.status === "pending"),
@@ -194,6 +214,90 @@ export default function RequestsInvites({
     );
   };
 
+  const handleConnectContacts = async () => {
+    setIsConnectingContacts(true);
+    setConnectContactsMessage(null);
+
+    try {
+      const response = await fetch("/api/friends/discovery/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Unable to connect contacts.");
+      }
+
+      setContactsConnected(true);
+      setConnectContactsMessage({
+        type: "success",
+        text: "Contacts connected.",
+      });
+    } catch (error) {
+      console.error("Contact connection failed", error);
+      setConnectContactsMessage({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to connect contacts.",
+      });
+    } finally {
+      setIsConnectingContacts(false);
+    }
+  };
+
+  const handleSendEmailInvite = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const value = inviteEmail.trim();
+    if (!value || !value.includes("@")) {
+      setEmailInviteMessage({
+        type: "error",
+        text: "Enter an email so we know where to send the invite.",
+      });
+      return;
+    }
+
+    setIsSendingEmailInvite(true);
+    setEmailInviteMessage(null);
+
+    try {
+      const response = await fetch("/api/friends/invites", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: value }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Unable to send invite.");
+      }
+
+      setInviteEmail("");
+      setEmailInviteMessage({ type: "success", text: "Invite sent." });
+    } catch (error) {
+      console.error("Failed to send invite", error);
+      setEmailInviteMessage({
+        type: "error",
+        text:
+          error instanceof Error ? error.message : "Unable to send invite.",
+      });
+    } finally {
+      setIsSendingEmailInvite(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <section className="space-y-3">
@@ -217,7 +321,7 @@ export default function RequestsInvites({
           {pendingRequests.map((req) => (
             <article
               key={req.id}
-              className="flex items-start gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
+              className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85"
             >
               <Image
                 src={req.avatarUrl || DEFAULT_AVATAR_URL}
@@ -260,8 +364,8 @@ export default function RequestsInvites({
                   </button>
                 </div>
               </div>
-            </article>
-          ))}
+              </article>
+            ))}
 
           {circleInvites.map((invite) => {
             const inviterName = invite.invitedByProfile?.name?.trim();
@@ -432,7 +536,7 @@ export default function RequestsInvites({
         <header className="flex items-baseline justify-between">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">
-              People you may know
+              Suggested
             </h2>
             <p className="text-xs text-white/50">
               Suggestions are based on mutual collaborators and recent activity.
@@ -443,47 +547,110 @@ export default function RequestsInvites({
           {suggestionState.map((suggestion) => (
             <article
               key={suggestion.id}
-              className="flex items-start gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
+              className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85"
             >
-              <Image
-                src={suggestion.avatarUrl || DEFAULT_AVATAR_URL}
-                alt={`${suggestion.displayName} avatar`}
-                width={48}
-                height={48}
-                className="h-12 w-12 rounded-full object-cover"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">
-                      {suggestion.displayName}
-                    </p>
-                    <p className="truncate text-xs text-white/60">
-                      @{suggestion.username}
-                    </p>
-                    <p className="mt-1 text-xs text-white/50">
-                      {suggestion.mutualFriends} mutual friends · {suggestion.reason}
-                    </p>
-                  </div>
+              {suggestion.avatarUrl && suggestion.avatarUrl !== DEFAULT_AVATAR_URL ? (
+                <Image
+                  src={suggestion.avatarUrl}
+                  alt={`${suggestion.displayName} avatar`}
+                  width={48}
+                  height={48}
+                  className="h-12 w-12 rounded-full object-cover"
+                />
+              ) : (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white/34 ring-1 ring-white/8">
+                  <User className="h-6 w-6" aria-hidden="true" />
+                  <span className="sr-only">{suggestion.displayName} avatar</span>
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-[13px] font-semibold text-white">
+                    {suggestion.displayName}
+                  </p>
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                    {suggestion.mutualFriends} mutual
+                  </span>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {suggestion.status === "requested" ? (
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/80">
-                      Invite sent
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSendInvite(suggestion.id)}
-                      className={`${actionButtonClass} bg-white text-black/80 hover:bg-white/90 active:scale-[0.98]`}
-                    >
-                      Send invite
-                    </button>
-                  )}
-                </div>
+                <p className="mt-0.5 truncate text-xs text-white/65">
+                  @{suggestion.username}
+                </p>
               </div>
             </article>
           ))}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-black/55 px-3 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-white">Find your people</h3>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-white/55">
+                Invite friends or connect contacts so CREATOR can surface people
+                you already know.
+              </p>
+            </div>
+            <div className="shrink-0">
+              <button
+                type="button"
+                onClick={() => void handleConnectContacts()}
+                disabled={isConnectingContacts || contactsConnected}
+                className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {isConnectingContacts
+                  ? "Connecting…"
+                  : contactsConnected
+                  ? "Contacts connected"
+                  : "Connect contacts"}
+              </button>
+              {connectContactsMessage ? (
+                <p
+                  className={`mt-1 text-[11px] ${
+                    connectContactsMessage.type === "error"
+                      ? "text-rose-300"
+                      : "text-white/50"
+                  }`}
+                >
+                  {connectContactsMessage.text}
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <form
+            onSubmit={(event) => void handleSendEmailInvite(event)}
+            className="mt-3 flex flex-col gap-2 sm:flex-row"
+          >
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(event) => {
+                setInviteEmail(event.target.value);
+                if (emailInviteMessage) {
+                  setEmailInviteMessage(null);
+                }
+              }}
+              placeholder="friend@email.com"
+              className="min-h-9 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-white placeholder:text-white/30 focus:border-white/25 focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={isSendingEmailInvite}
+              className="min-h-9 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
+            >
+              Invite
+            </button>
+          </form>
+          {emailInviteMessage ? (
+            <p
+              className={`mt-1.5 text-[11px] ${
+                emailInviteMessage.type === "error"
+                  ? "text-rose-300"
+                  : "text-white/50"
+              }`}
+            >
+              {emailInviteMessage.text}
+            </p>
+          ) : null}
         </div>
       </section>
     </div>

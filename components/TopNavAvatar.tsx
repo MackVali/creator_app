@@ -11,7 +11,6 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { User, LogIn, Settings, LogOut, Inbox } from "lucide-react";
 import { signOut } from "@/lib/auth";
-import { getProfileByUserId } from "@/lib/db";
 
 interface Profile {
   user_id: string;
@@ -29,38 +28,11 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const router = useRouter();
   const { user } = useAuth();
 
-  const handleAvatarClick = async () => {
-    if (user && userId) {
-      // Get user's profile to redirect to handle-based route
-      try {
-        const profile = await getProfileByUserId(userId);
-        if (profile?.username) {
-          router.push(`/profile/${profile.username}`);
-        } else {
-          router.push("/profile");
-        }
-      } catch {
-        // Fallback to profile page if error
-        router.push("/profile");
-      }
-    } else if (!user) {
-      // If not signed in, go to auth page
+  const handleProfileClick = () => {
+    if (user) {
+      router.push(profile?.username ? `/profile/${profile.username}` : "/profile");
+    } else {
       router.push("/auth");
-    }
-  };
-
-  const handleProfileClick = async () => {
-    if (userId) {
-      try {
-        const profile = await getProfileByUserId(userId);
-        if (profile?.username) {
-          router.push(`/profile/${profile.username}`);
-        } else {
-          router.push("/profile");
-        }
-      } catch {
-        router.push("/profile");
-      }
     }
   };
 
@@ -102,7 +74,6 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          onClick={handleAvatarClick}
           className="h-8 w-8 rounded-full overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
           data-testid="topnav-avatar"
         >

@@ -167,6 +167,7 @@ export default function ConnectTabContent() {
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [invites, setInvites] = useState<SentInvite[]>([]);
+  const [contactImport, setContactImport] = useState<ContactImportStatus | null>(null);
   const [suggested, setSuggested] = useState<SuggestedFriend[]>([]);
   const [searchProfiles, setSearchProfiles] = useState<DiscoveryProfile[]>([]);
   const [isLoadingSearch, setIsLoadingSearch] = useState(true);
@@ -473,6 +474,7 @@ export default function ConnectTabContent() {
       }
 
       const data = (await response.json()) as {
+        contactImport?: ContactImportStatus;
         invites?: SentInvite[];
         suggestions?: SuggestedFriend[];
         discoveryProfiles?: DiscoveryProfile[];
@@ -482,6 +484,7 @@ export default function ConnectTabContent() {
         return;
       }
 
+      setContactImport(data.contactImport ?? null);
       setInvites(data.invites ?? []);
       setSuggested(data.suggestions ?? []);
       setSearchProfiles(data.discoveryProfiles ?? []);
@@ -492,6 +495,7 @@ export default function ConnectTabContent() {
       const message =
         err instanceof Error ? err.message : 'Unable to load invites.';
       setSearchError(message);
+      setContactImport(null);
       setInvites([]);
       setSuggested([]);
       setSearchProfiles([]);
@@ -599,6 +603,7 @@ export default function ConnectTabContent() {
     () => normalizeSearchValue(tabSearchQuery),
     [tabSearchQuery]
   );
+  const hasTabSearchQuery = tabSearchQuery.trim().length > 0;
 
   const filteredFriends = useMemo(
     () =>
@@ -881,8 +886,18 @@ export default function ConnectTabContent() {
             data={filteredFriends}
             isLoading={isLoading}
             error={error}
+            relationshipView={friendsView}
           />
         )}
+        {tab === 'friends' && hasTabSearchQuery ? (
+          <SearchFriends
+            data={sortedFriends}
+            discoveryProfiles={searchProfiles}
+            onRequestResolved={handleRequestResolved}
+            embedded
+            query={tabSearchQuery}
+          />
+        ) : null}
       </section>
 
       <section
@@ -901,10 +916,20 @@ export default function ConnectTabContent() {
             {searchError}
           </div>
         ) : null}
+        {tab === 'requests' && hasTabSearchQuery ? (
+          <SearchFriends
+            data={sortedFriends}
+            discoveryProfiles={searchProfiles}
+            onRequestResolved={handleRequestResolved}
+            embedded
+            query={tabSearchQuery}
+          />
+        ) : null}
         <RequestsInvites
           requests={filteredRequests}
           invites={invites}
           suggestions={suggested}
+          contactImport={contactImport}
           circleInvites={filteredCircleInvites}
           isLoadingCircleInvites={isLoadingCircleInvites}
           circleInvitesError={circleInvitesError}
@@ -1248,6 +1273,15 @@ export default function ConnectTabContent() {
               can be invited into the relationship system.
             </p>
           </div>
+          {tab === 'circles' && hasTabSearchQuery ? (
+            <SearchFriends
+              data={sortedFriends}
+              discoveryProfiles={searchProfiles}
+              onRequestResolved={handleRequestResolved}
+              embedded
+              query={tabSearchQuery}
+            />
+          ) : null}
         </div>
       </section>
 

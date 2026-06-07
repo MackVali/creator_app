@@ -1,6 +1,14 @@
 const FOCUSED_EDITOR_ROUTES = new Set(["/profile/edit"]);
 
+export function isMatrixRoute(pathname: string | null | undefined) {
+  return pathname === "/schedule/matrix" || Boolean(pathname?.startsWith("/schedule/matrix/"));
+}
+
 export function isScheduleRoute(pathname: string | null | undefined) {
+  if (isMatrixRoute(pathname)) {
+    return false;
+  }
+
   return pathname === "/schedule" || Boolean(pathname?.startsWith("/schedule/"));
 }
 

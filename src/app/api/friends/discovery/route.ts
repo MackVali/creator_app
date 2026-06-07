@@ -18,6 +18,27 @@ type RelationshipStatus =
   | "outgoing_request"
   | "none";
 
+type DiscoverySourceRow = Parameters<typeof mapDiscoveryProfile>[0];
+
+type PublicProfileFallbackRow = {
+  id: string;
+  user_id: string | null;
+  username: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+};
+
+type FriendConnectionPair = {
+  user_id: string;
+  friend_user_id: string;
+};
+
+type FriendRequestPair = {
+  requester_id: string;
+  target_id: string;
+};
+
 export async function GET() {
   const cookieStore = await cookies();
   const supabase = getSupabaseServer(cookieStore);
@@ -89,7 +110,7 @@ export async function GET() {
   } = await supabase
     .from("friend_discovery_profiles")
     .select(
-      "id, username, display_name, avatar_url, role, highlight, reason, mutual_friends"
+      "id, username, display_name, avatar_url, role, highlight, reason, mutual_friends, created_at"
     )
     .order("mutual_friends", { ascending: false })
     .limit(20);
@@ -98,8 +119,216 @@ export async function GET() {
     console.error("Failed to load discovery profiles", discoveryError);
   }
 
-  const discoveryProfiles = (discoveryRows ?? []).map(mapDiscoveryProfile);
-  const suggestions = (discoveryRows ?? []).map(mapSuggestedFriend);
+  const {
+    data: publicProfileRows,
+    error: publicProfilesError,
+  } = await supabase
+    .from("profiles")
+    .select("id, user_id, username, name, avatar_url, created_at")
+    .not("username", "is", null)
+    .eq("is_private", false)
+    .neq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (publicProfilesError) {
+    console.error(
+      "Failed to load public profile discovery candidates",
+      publicProfilesError
+    );
+  }
+
+  const publicProfiles = (publicProfileRows ??
+    []) as PublicProfileFallbackRow[];
+  const candidateUserIds = Array.from(
+    new Set(
+      publicProfiles
+        .map((profile) => profile.user_id)
+        .filter(
+          (id): id is string =>
+            typeof id === "string" && id.trim().length > 0 && id !== user.id
+        )
+    )
+  );
+
+  const followerCountByUserId = new Map<string, number>();
+  let candidatePairConnections: FriendConnectionPair[] = [];
+  let candidatePendingRequests: FriendRequestPair[] = [];
+
+  if (candidateUserIds.length) {
+    const {
+      data: followerRows,
+      error: followerError,
+    } = await supabase
+      .from("friend_connections")
+      .select("friend_user_id")
+      .in("friend_user_id", candidateUserIds);
+
+    if (followerError && followerError.code !== "PGRST116") {
+      console.error(
+        "Failed to load public profile follower counts",
+        followerError
+      );
+    } else {
+      for (const row of followerRows ?? []) {
+        followerCountByUserId.set(
+          row.friend_user_id,
+          (followerCountByUserId.get(row.friend_user_id) ?? 0) + 1
+        );
+      }
+    }
+
+    const {
+      data: connectionRows,
+      error: connectionError,
+    } = await supabase
+      .from("friend_connections")
+      .select("user_id, friend_user_id")
+      .in("user_id", [user.id, ...candidateUserIds])
+      .in("friend_user_id", [user.id, ...candidateUserIds]);
+
+    if (connectionError && connectionError.code !== "PGRST116") {
+      console.error(
+        "Failed to load public profile social signals",
+        connectionError
+      );
+    } else if (connectionRows) {
+      candidatePairConnections = connectionRows;
+    }
+
+    const {
+      data: requestRows,
+      error: requestError,
+    } = await supabase
+      .from("friend_requests")
+      .select("requester_id, target_id")
+      .eq("status", "pending")
+      .in("requester_id", [user.id, ...candidateUserIds])
+      .in("target_id", [user.id, ...candidateUserIds]);
+
+    if (requestError) {
+      console.error(
+        "Failed to load public profile pending signals",
+        requestError
+      );
+    } else if (requestRows) {
+      candidatePendingRequests = requestRows;
+    }
+  }
+
+  const candidateIdSet = new Set(candidateUserIds);
+  const viewerFollowsPublicCandidates = new Set<string>();
+  const publicCandidatesFollowViewer = new Set<string>();
+
+  for (const connection of candidatePairConnections) {
+    if (
+      connection.user_id === user.id &&
+      candidateIdSet.has(connection.friend_user_id)
+    ) {
+      viewerFollowsPublicCandidates.add(connection.friend_user_id);
+    }
+
+    if (
+      connection.friend_user_id === user.id &&
+      candidateIdSet.has(connection.user_id)
+    ) {
+      publicCandidatesFollowViewer.add(connection.user_id);
+    }
+  }
+
+  const incomingPublicRequests = new Set<string>();
+  const outgoingPublicRequests = new Set<string>();
+
+  for (const request of candidatePendingRequests) {
+    if (
+      request.target_id === user.id &&
+      candidateIdSet.has(request.requester_id)
+    ) {
+      incomingPublicRequests.add(request.requester_id);
+    }
+
+    if (
+      request.requester_id === user.id &&
+      candidateIdSet.has(request.target_id)
+    ) {
+      outgoingPublicRequests.add(request.target_id);
+    }
+  }
+
+  const rankedPublicProfiles = publicProfiles
+    .flatMap((profile) => {
+      const username = profile.username?.trim();
+      const candidateUserId = profile.user_id;
+
+      if (!username || !candidateUserId || candidateUserId === user.id) {
+        return [];
+      }
+
+      if (viewerFollowsPublicCandidates.has(candidateUserId)) {
+        return [];
+      }
+
+      const displayName = profile.name?.trim() || username;
+      const socialScore =
+        (incomingPublicRequests.has(candidateUserId) ? 3 : 0) +
+        (publicCandidatesFollowViewer.has(candidateUserId) ? 2 : 0) +
+        (outgoingPublicRequests.has(candidateUserId) ? 1 : 0);
+      const followerCount = followerCountByUserId.get(candidateUserId) ?? 0;
+
+      return [
+        {
+          row: {
+            id: profile.id,
+            username,
+            display_name: displayName,
+            avatar_url: profile.avatar_url,
+            role: "Creator",
+            highlight: "Public creator profile",
+            reason: "",
+            mutual_friends: 0,
+            created_at: profile.created_at,
+          } satisfies DiscoverySourceRow,
+          socialScore,
+          followerCount,
+        },
+      ];
+    })
+    .sort((a, b) => {
+      if (b.socialScore !== a.socialScore) {
+        return b.socialScore - a.socialScore;
+      }
+
+      if (b.followerCount !== a.followerCount) {
+        return b.followerCount - a.followerCount;
+      }
+
+      return Date.parse(b.row.created_at) - Date.parse(a.row.created_at);
+    })
+    .map(({ row }) => row);
+
+  const discoverySourceRows: DiscoverySourceRow[] = [];
+  const seenDiscoveryUsernames = new Set<string>();
+
+  for (const row of [
+    ...rankedPublicProfiles,
+    ...((discoveryRows ?? []) as DiscoverySourceRow[]),
+  ]) {
+    if (discoverySourceRows.length >= 20) {
+      break;
+    }
+
+    const normalizedUsername = row.username.trim().toLowerCase();
+
+    if (!normalizedUsername || seenDiscoveryUsernames.has(normalizedUsername)) {
+      continue;
+    }
+
+    seenDiscoveryUsernames.add(normalizedUsername);
+    discoverySourceRows.push(row);
+  }
+
+  const discoveryProfiles = discoverySourceRows.map(mapDiscoveryProfile);
+  const suggestions = discoverySourceRows.map(mapSuggestedFriend);
 
   const normalizedUsernames = Array.from(
     new Set(

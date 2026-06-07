@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User } from "lucide-react";
+import { MoreVertical, User } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -16,9 +16,12 @@ import type { Friend } from "@/types/friends";
 
 import MessageFriendButton from "./MessageFriendButton";
 
+type RelationshipView = "friends" | "following" | "followers";
+
 type FriendRowProps = {
   f: Friend;
   onRemoveFriend?: (friend: Friend) => void;
+  relationshipView?: RelationshipView;
 };
 
 const friendCardClass =
@@ -35,7 +38,11 @@ function getInitials(displayName: string, username: string) {
   return initials.toUpperCase() || "?";
 }
 
-export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
+export default function FriendRow({
+  f,
+  onRemoveFriend,
+  relationshipView = "friends",
+}: FriendRowProps) {
   const router = useRouter();
   const defaultProfileHref = `/friends/${encodeURIComponent(f.username)}`;
   const rawProfileUrl = f.profileUrl ?? defaultProfileHref;
@@ -47,6 +54,8 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
       ? rawProfileUrl
       : defaultProfileHref;
   const title = isExternalProfile ? rawProfileUrl : undefined;
+  const actionLabel =
+    relationshipView === "followers" && !f.isMutual ? "Follow back" : "Message";
   const statusText = f.isOnline ? "Online now" : null;
   const statusIndicatorClass = f.isOnline ? "bg-emerald-500" : "bg-white/40";
   const displayName = f.displayName || f.username;
@@ -131,24 +140,22 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
           </div>
         </Link>
 
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
+        <div className="flex shrink-0 items-center gap-1.5">
           <MessageFriendButton
             friend={f}
-            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/30 hover:bg-white/10 active:scale-[0.97]"
-            aria-label={`Message ${f.username}`}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent bg-white/[0.14] px-3 text-[12px] font-semibold text-white/85 transition hover:border-white/10 hover:bg-white/20 hover:text-white active:scale-[0.97]"
+            aria-label={`${actionLabel} ${f.username}`}
           >
-            Message
+            {actionLabel}
           </MessageFriendButton>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="rounded-2xl border border-white/10 p-2 text-white/70 transition hover:border-white/30 hover:text-white active:scale-95"
-                aria-label="More"
+                className="inline-flex h-9 w-7 items-center justify-center rounded-xl text-white/55 transition hover:text-white active:scale-95"
+                aria-label="Profile actions"
               >
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/70" />
-                <span className="mx-0.5 inline-block h-1.5 w-1.5 rounded-full bg-white/70" />
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/70" />
+                <MoreVertical className="h-5 w-5" aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent

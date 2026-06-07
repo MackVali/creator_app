@@ -61,6 +61,32 @@ export async function GET(request: Request) {
       .map((row) => row.user_id)
       .filter((id): id is string => typeof id === "string" && !!id);
 
+    if (followerIds.length === 0) {
+      return NextResponse.json({ friends: [] }, { status: 200 });
+    }
+
+    const { data: viewerFollowingRows, error: viewerFollowingError } =
+      await supabase
+        .from("friend_connections")
+        .select("friend_user_id")
+        .eq("user_id", user.id)
+        .in("friend_user_id", followerIds);
+
+    if (viewerFollowingError) {
+      console.error(
+        "Failed to load mutual follower connections",
+        viewerFollowingError
+      );
+      return NextResponse.json(
+        { friends: [], error: "Unable to load friends." },
+        { status: 500 }
+      );
+    }
+
+    const viewerFollowsFollowerIds = new Set(
+      (viewerFollowingRows ?? []).map((row) => row.friend_user_id)
+    );
+
     const { data: followerProfiles, error: profileError } = await supabase
       .from("profiles")
       .select("user_id, username, name, avatar_url")
@@ -103,9 +129,14 @@ export async function GET(request: Request) {
         is_online: row.is_online ?? false,
       };
 
-      return mapFriendConnection(
+      const mapped = mapFriendConnection(
         syntheticConnection as Parameters<typeof mapFriendConnection>[0]
       );
+
+      return {
+        ...mapped,
+        isMutual: viewerFollowsFollowerIds.has(row.user_id),
+      };
     });
 
     return NextResponse.json({ friends: followers }, { status: 200 });
