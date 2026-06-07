@@ -754,6 +754,7 @@ export default function ConnectTabContent() {
   return (
     <PullRefreshShell
       onRefresh={handlePullRefresh}
+      lockDocumentScroll={false}
       contentClassName="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6"
     >
       <div className="space-y-3">
@@ -862,12 +863,8 @@ export default function ConnectTabContent() {
       >
 
         {isLoading ? (
-          <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">
-            {friendsView === 'following'
-              ? 'Loading who you follow…'
-              : friendsView === 'followers'
-                ? 'Loading your followers…'
-                : 'Loading your friends…'}
+          <div className="flex justify-center py-8" aria-label="Loading">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
           </div>
         ) : !error && sortedFriends.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">

@@ -18,8 +18,8 @@ export default function FriendsList({
 }: FriendsListProps) {
   if (isLoading) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">
-        Loading your friends…
+      <div className="flex justify-center py-8" aria-label="Loading">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
       </div>
     );
   }

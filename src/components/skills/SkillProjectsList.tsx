@@ -11,6 +11,7 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
+import { Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
@@ -99,10 +100,16 @@ function mapEnergy(energy: { name?: string | null } | string | null | undefined)
 
 type ProjectSection = "active" | "completed";
 type ProjectPanelSwipeAxis = "horizontal" | "vertical" | null;
+type ProjectCardDensity = "large" | "small";
 type ProjectWithCompletion = Project & {
   completedAt?: string | null;
   completed_at?: string | null;
 };
+
+const PROJECT_GRID_CLASS =
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+const PROJECT_SMALL_GRID_CLASS =
+  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 
 function isSkillProjectCompleted(project: Project): boolean {
   const projectWithCompletion = project as ProjectWithCompletion;
@@ -285,6 +292,8 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Goal[]>([]);
   const [projectSection, setProjectSection] = useState<ProjectSection>("active");
+  const [projectCardDensity, setProjectCardDensity] =
+    useState<ProjectCardDensity>("large");
   const [projectPanelHeight, setProjectPanelHeight] = useState<number | null>(null);
   const [projectPanelDragOffset, setProjectPanelDragOffset] = useState(0);
   const [projectPanelViewportWidth, setProjectPanelViewportWidth] = useState(0);
@@ -336,6 +345,9 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     -projectPanelViewportWidth,
     Math.min(0, projectPanelBaseTransform + projectPanelDragOffset)
   );
+  const projectGridClass =
+    projectCardDensity === "small" ? PROJECT_SMALL_GRID_CLASS : PROJECT_GRID_CLASS;
+  const isSmallProjectCardDensity = projectCardDensity === "small";
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -372,6 +384,12 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     },
     [getProjectPanelHeight]
   );
+
+  const handleProjectCardDensityToggle = useCallback(() => {
+    setProjectCardDensity((currentDensity) =>
+      currentDensity === "large" ? "small" : "large"
+    );
+  }, []);
 
   const measureActiveProjectPanel = useCallback(() => {
     const nextHeight = loading
@@ -425,7 +443,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
   useLayoutEffect(() => {
     measureActiveProjectPanel();
-  }, [measureActiveProjectPanel, openGoalId, projects]);
+  }, [measureActiveProjectPanel, openGoalId, projectCardDensity, projects]);
 
   useEffect(() => {
     const activePanel = loading
@@ -457,7 +475,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureActiveProjectPanel);
     };
-  }, [loading, measureActiveProjectPanel, projectSection]);
+  }, [loading, measureActiveProjectPanel, projectCardDensity, projectSection]);
 
   const handleProjectPanelPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -1444,7 +1462,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
 
       return (
-        <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className={projectGridClass}>
           {sectionProjects.map((goal) => (
             <div key={goal.id} className="skill-project-card-wrapper relative z-0 w-full isolate min-w-0">
               <GoalCard
@@ -1476,6 +1494,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     [
       projectsBySection,
       icon,
+      projectGridClass,
       openGoalId,
       handleGoalEdit,
       handleGoalOpenChange,
@@ -1488,7 +1507,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   );
 
   return (
-    <div className="skill-projects-list">
+    <div className={`skill-projects-list ${isSmallProjectCardDensity ? "skill-projects-list--small-cards" : ""}`}>
       <section className="space-y-0">
         <div className="flex items-start justify-between gap-3 pb-2">
           <div className="space-y-1">
@@ -1496,20 +1515,44 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
               PROJECT LIBRARY
             </p>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
+            </span>
+            <button
+              type="button"
+              aria-label={
+                isSmallProjectCardDensity ? "Use large cards" : "Use small cards"
+              }
+              onClick={handleProjectCardDensityToggle}
+              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 ${
+                isSmallProjectCardDensity
+                  ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
+                  : ""
+              }`}
+            >
+              {isSmallProjectCardDensity ? (
+                <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+              ) : (
+                <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+              )}
+            </button>
+          </div>
         </div>
         <div className="relative">
           {loading ? (
             <div
               ref={loadingProjectPanelRef}
-              className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+              className={projectGridClass}
             >
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-[100px] rounded-2xl bg-white/[0.06]"
+                  className={`bg-white/[0.06] ${
+                    isSmallProjectCardDensity
+                      ? "h-[70px] rounded-xl"
+                      : "h-[100px] rounded-2xl"
+                  }`}
                 />
               ))}
             </div>
@@ -1713,10 +1756,30 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
         </div>
       ) : null}
       <style jsx global>{`
-        .skill-projects-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
-        .skill-projects-list .group:hover { transform: none !important; }
-        @media (min-width: 640px) {
-          .skill-projects-list .skill-project-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
+        .skill-projects-list .group {
+          transform: none !important;
+          will-change: auto !important;
+          z-index: 0 !important;
+        }
+        .skill-projects-list .group:hover {
+          transform: none !important;
+        }
+        .skill-projects-list .skill-project-card-wrapper {
+          isolation: isolate;
+        }
+        @media (max-width: 520px) {
+          .skill-projects-list.skill-projects-list--small-cards .goal-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.4rem;
+            padding-left: 0;
+            padding-right: 0;
+          }
+          .skill-projects-list.skill-projects-list--small-cards [data-variant="compact"] {
+            padding: 0.65rem 0.45rem;
+            border-radius: 1rem;
+            min-height: 108px;
+            aspect-ratio: auto;
+          }
         }
       `}</style>
       <GoalDrawer
