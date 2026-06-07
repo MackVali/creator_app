@@ -43,7 +43,7 @@ export default function FriendsList({
   return (
     <ul
       role="list"
-      className="space-y-3 rounded-[28px] border border-white/10 bg-[#050506]/90 p-4 shadow-xl shadow-black/30 backdrop-blur-sm"
+      className="space-y-0"
     >
       {data.map((f) => (
         <FriendRow key={f.id} f={f} onRemoveFriend={onRemoveFriend} />
