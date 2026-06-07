@@ -14,25 +14,29 @@ export function ProtectedRoute({
   children,
   requiresPlus = false,
 }: ProtectedRouteProps) {
-  const { user } = useAuth();
+  const { user, ready } = useAuth();
   const router = useRouter();
   const { isPlus, isReady } = useEntitlement();
 
   useEffect(() => {
+    if (!ready) {
+      return;
+    }
+
     if (!user) {
       router.push("/auth");
     }
-  }, [user, router]);
+  }, [ready, user, router]);
 
   useEffect(() => {
-    if (!requiresPlus || !user || !isReady || isPlus) {
+    if (!ready || !requiresPlus || !user || !isReady || isPlus) {
       return;
     }
 
     router.push("/settings?upgrade=1");
-  }, [requiresPlus, user, isPlus, isReady, router]);
+  }, [ready, requiresPlus, user, isPlus, isReady, router]);
 
-  if (!user) {
+  if (!ready || !user) {
     return null;
   }
 

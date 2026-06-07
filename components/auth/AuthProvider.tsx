@@ -1,12 +1,21 @@
 "use client";
-import { useEffect, useState, createContext, useContext } from "react";
+import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { initRevenueCatIfCapacitor } from "@/lib/revenuecat/initRevenueCat";
 import type { Session, User } from "@supabase/supabase-js";
 
-const AuthCtx = createContext<{ session: Session | null; user: User | null }>({
+type AuthContextValue = {
+  session: Session | null;
+  user: User | null;
+  ready: boolean;
+  loading: boolean;
+};
+
+const AuthCtx = createContext<AuthContextValue>({
   session: null,
   user: null,
+  ready: false,
+  loading: true,
 });
 export const useAuth = () => useContext(AuthCtx);
 
@@ -18,46 +27,94 @@ export default function AuthProvider({
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
+  const [canRender, setCanRender] = useState(false);
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     const supabase = getSupabaseBrowser?.()
-    if (!supabase) { setReady(true); return }
+    if (!supabase) {
+      setReady(true);
+      setCanRender(true);
+      return
+    }
 
-    let timed = false
-    const t = setTimeout(() => { timed = true; setReady(true) }, 4000)
     let active = true
+    let initialSessionResolved = false
+    const t = setTimeout(() => {
+      if (!active || initialSessionResolved) {
+        return
+      }
+
+      initialSessionResolved = true
+      setSession(sessionRef.current)
+      setUser(sessionRef.current?.user ?? null)
+      setReady(true)
+      setCanRender(true)
+    }, 4000)
+
+    const applySession = (nextSession: Session | null) => {
+      sessionRef.current = nextSession
+      setSession(nextSession)
+      setUser(nextSession?.user ?? null)
+    }
+
+    const refreshUserForSession = async (currentSession: Session | null) => {
+      if (!currentSession) {
+        return
+      }
+
+      try {
+        const userResult = await supabase.auth.getUser()
+        if (!active || !userResult.data.user) {
+          return
+        }
+
+        setUser(userResult.data.user)
+      } catch {
+        // Keep the session-derived user if getUser is slow or unavailable.
+      }
+    }
 
     const updateAuthState = async () => {
       try {
-        const [sessionResult, userResult] = await Promise.all([
-          supabase.auth.getSession(),
-          supabase.auth.getUser(),
-        ])
+        const sessionResult = await supabase.auth.getSession()
 
         if (!active) return
 
-        setSession(sessionResult.data.session ?? null)
-        setUser(userResult.data.user ?? null)
+        const nextSession = sessionResult.data.session ?? null
+        initialSessionResolved = true
+        applySession(nextSession)
+        setReady(true)
+        setCanRender(true)
+        clearTimeout(t)
+        void refreshUserForSession(nextSession)
       } catch {
         if (!active) return
 
-        setSession(null)
-        setUser(null)
-      } finally {
-        if (!active) return
-
-        if (!timed) {
-          setReady(true)
-          clearTimeout(t)
-          timed = true
-        }
+        initialSessionResolved = true
+        applySession(null)
+        setReady(true)
+        setCanRender(true)
+        clearTimeout(t)
       }
     }
 
     void updateAuthState()
 
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      void updateAuthState()
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) {
+        return
+      }
+
+      applySession(nextSession)
+      if (!initialSessionResolved && event === "INITIAL_SESSION") {
+        return
+      }
+
+      setReady(true)
+      setCanRender(true)
+      clearTimeout(t)
+      void refreshUserForSession(nextSession)
     })
 
     return () => {
@@ -75,6 +132,10 @@ export default function AuthProvider({
     void initRevenueCatIfCapacitor(user.id)
   }, [user?.id])
 
-  if (!ready) return null;
-  return <AuthCtx.Provider value={{ session, user }}>{children}</AuthCtx.Provider>;
+  if (!canRender) return null;
+  return (
+    <AuthCtx.Provider value={{ session, user, ready, loading: !ready }}>
+      {children}
+    </AuthCtx.Provider>
+  );
 }
