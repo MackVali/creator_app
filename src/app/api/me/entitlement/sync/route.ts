@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 const REVENUECAT_ENTITLEMENT_IDENTIFIERS = new Set(["creator_plus", "creator plus"]);
 const REVENUECAT_BASE_URL = "https://api.revenuecat.com/v1";
+const REVENUECAT_FETCH_TIMEOUT_MS = 5_000;
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,8 @@ async function fetchRevenueCatEntitlement(appUserId: string): Promise<RevenueCat
   }
 
   const endpoint = `${REVENUECAT_BASE_URL}/subscribers/${encodeURIComponent(appUserId)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REVENUECAT_FETCH_TIMEOUT_MS);
   let response: Response;
 
   try {
@@ -83,6 +86,7 @@ async function fetchRevenueCatEntitlement(appUserId: string): Promise<RevenueCat
         Authorization: `Bearer ${secretKey}`,
         Accept: "application/json",
       },
+      signal: controller.signal,
     });
   } catch (cause) {
     console.error("RevenueCat request failed", cause);
@@ -90,6 +94,8 @@ async function fetchRevenueCatEntitlement(appUserId: string): Promise<RevenueCat
       ok: false,
       message: "Unable to verify entitlement right now.",
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {
