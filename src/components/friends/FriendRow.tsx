@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { User } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -21,7 +22,7 @@ type FriendRowProps = {
 };
 
 const friendCardClass =
-  "flex min-h-[68px] items-center gap-4 rounded-2xl border border-white/10 bg-[#050506]/90 px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.45)] transition hover:border-white/20 hover:bg-zinc-950/90 focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/40";
+  "flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85 focus-within:border-white/10 focus-within:ring-1 focus-within:ring-white/40";
 
 function getInitials(displayName: string, username: string) {
   const source = displayName.trim() || username.trim();
@@ -57,7 +58,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
       <div className={friendCardClass}>
         <Link
           href={href}
-          className="group flex flex-1 items-center gap-4 min-w-0 rounded-2xl pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+          className="group flex flex-1 items-center gap-3 min-w-0 rounded-2xl pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           prefetch={false}
           aria-label={`View ${displayName}'s profile${statusText ? ` — ${statusText}` : ""}`}
           title={title}
@@ -70,18 +71,19 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
                   : "bg-transparent"
               }`}
             >
-              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-black p-[2px] ring-1 ring-white/10">
+              <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-black p-[2px] ring-1 ring-white/10">
                 {avatarSrc ? (
                   <Image
                     alt={`${displayName} avatar`}
                     src={avatarSrc}
-                    width={52}
-                    height={52}
+                    width={44}
+                    height={44}
                     className="h-full w-full rounded-full object-cover"
                   />
                 ) : (
-                  <span className="flex h-full w-full items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold uppercase text-white/70">
-                    {fallbackInitials}
+                  <span className="flex h-full w-full items-center justify-center rounded-full bg-zinc-900 text-white/45">
+                    <User className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">{fallbackInitials}</span>
                   </span>
                 )}
               </div>
@@ -92,12 +94,12 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
             </span>
           </div>
 
-          <div className="flex flex-1 items-center gap-4 min-w-0">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold text-white transition-colors group-hover:text-white/90 group-focus-visible:text-white/90 whitespace-nowrap">
+          <div className="flex flex-1 items-center gap-3 min-w-0">
+            <div className="min-w-0 space-y-0.5">
+              <p className="text-[13px] font-semibold text-white transition-colors group-hover:text-white/90 group-focus-visible:text-white/90 whitespace-nowrap">
                 {displayName}
               </p>
-              <p className="text-[13px] text-white/70 transition-colors group-hover:text-white/80 group-focus-visible:text-white/80 whitespace-nowrap">
+              <p className="text-xs text-white/65 transition-colors group-hover:text-white/80 group-focus-visible:text-white/80 whitespace-nowrap">
                 @{f.username}
               </p>
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
@@ -112,7 +114,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
                 )}
               </div>
             </div>
-            <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60 transition-colors group-hover:text-white/90 group-focus-visible:text-white/90">
+            <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/50 transition-colors group-hover:text-white/90 group-focus-visible:text-white/90">
               <span className="hidden sm:inline">View profile</span>
               <svg
                 aria-hidden

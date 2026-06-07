@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   useCallback,
@@ -18,10 +19,7 @@ import type {
   SuggestedFriend,
 } from '@/types/friends';
 import FriendsList from '@/components/friends/FriendsList';
-import {
-  RELATIONSHIP_VIEWS,
-  RelationshipView,
-} from '@/components/friends/RelationshipViewBar';
+import { RelationshipView } from '@/components/friends/RelationshipViewBar';
 import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -30,12 +28,20 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
-import { ArrowRight, Check, ChevronDown } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, Search } from 'lucide-react';
 import { userHasAppManagerAccess } from '@/lib/auth/userRoles';
+import { useProfile } from '@/lib/hooks/useProfile';
 
 type ConnectTab = 'friends' | 'search' | 'requests' | 'circles';
+type ConnectTabItem = RelationshipView | 'requests' | 'circles';
 
 type CircleType = 'HOUSEHOLD' | 'TEAM' | 'CLIENTS' | 'STUDIO' | 'CUSTOM';
+
+type ProfileOverviewProfile = {
+  username?: string | null;
+  name?: string | null;
+  avatar_url?: string | null;
+} | null;
 
 type Circle = {
   id: string;
@@ -126,8 +132,32 @@ const circleTypeFallbacks: Record<CircleType, string> = {
   CUSTOM: 'Build a trusted circle around the people you coordinate.',
 };
 
+const relationshipTabOptions: Array<{
+  view: RelationshipView;
+  refKey: 'following' | 'followers' | 'friends';
+}> = [
+  { view: 'following', refKey: 'following' },
+  { view: 'followers', refKey: 'followers' },
+  { view: 'friends', refKey: 'friends' },
+];
+
+const normalizeSearchValue = (value: string | null | undefined) =>
+  value?.toLowerCase().trim() ?? '';
+
+const matchesSearchQuery = (
+  query: string,
+  values: Array<string | null | undefined>
+) => {
+  if (!query) {
+    return true;
+  }
+
+  return values.some((value) => normalizeSearchValue(value).includes(query));
+};
+
 export default function ConnectTabContent() {
   const { user } = useAuth();
+  const { profile, loading: profileLoading } = useProfile();
   const [tab, setTab] = useState<ConnectTab>('friends');
   const [friendsView, setFriendsView] = useState<RelationshipView>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -159,9 +189,11 @@ export default function ConnectTabContent() {
   const [showCreateCircleForm, setShowCreateCircleForm] = useState(false);
   const [newCircleName, setNewCircleName] = useState('');
   const [newCircleType, setNewCircleType] = useState<CircleType>('CUSTOM');
+  const [tabSearchQuery, setTabSearchQuery] = useState('');
   const canCreateCircle = userHasAppManagerAccess(user);
+  const followingTabRef = useRef<HTMLButtonElement>(null);
+  const followersTabRef = useRef<HTMLButtonElement>(null);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
-  const searchTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
   const circlesTabRef = useRef<HTMLButtonElement>(null);
   const isMountedRef = useRef(true);
@@ -563,6 +595,84 @@ export default function ConnectTabContent() {
     );
   }, [friends]);
 
+  const normalizedTabSearchQuery = useMemo(
+    () => normalizeSearchValue(tabSearchQuery),
+    [tabSearchQuery]
+  );
+
+  const filteredFriends = useMemo(
+    () =>
+      sortedFriends.filter((friend) =>
+        matchesSearchQuery(normalizedTabSearchQuery, [
+          friend.displayName,
+          friend.username,
+        ])
+      ),
+    [normalizedTabSearchQuery, sortedFriends]
+  );
+
+  const filteredRequests = useMemo(
+    () =>
+      requests.filter((request) =>
+        matchesSearchQuery(normalizedTabSearchQuery, [
+          request.displayName,
+          request.username,
+        ])
+      ),
+    [normalizedTabSearchQuery, requests]
+  );
+
+  const filteredCircleInvites = useMemo(
+    () =>
+      circleInvites.filter((invite) =>
+        matchesSearchQuery(normalizedTabSearchQuery, [
+          invite.circle?.name,
+          invite.role,
+          invite.invitedByProfile?.name,
+          invite.invitedByProfile?.username,
+          invite.circle?.circle_type,
+        ])
+      ),
+    [circleInvites, normalizedTabSearchQuery]
+  );
+
+  const filteredCircles = useMemo(
+    () =>
+      circles.filter((circle) =>
+        matchesSearchQuery(normalizedTabSearchQuery, [
+          circle.name,
+          circle.circle_type,
+          circle.description,
+        ])
+      ),
+    [circles, normalizedTabSearchQuery]
+  );
+
+  const filteredCircleTemplates = useMemo(
+    () =>
+      circleTemplates.filter((circle) =>
+        matchesSearchQuery(normalizedTabSearchQuery, [
+          circle.name,
+          circle.type,
+          circle.role,
+          circle.status,
+          ...circle.chips,
+        ])
+      ),
+    [normalizedTabSearchQuery]
+  );
+
+  const tabSearchPlaceholder =
+    tab === 'requests'
+      ? 'Search requests'
+      : tab === 'circles'
+        ? 'Search circles'
+        : friendsView === 'following'
+          ? 'Search following'
+          : friendsView === 'followers'
+            ? 'Search followers'
+            : 'Search friends';
+
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
       return;
@@ -570,27 +680,38 @@ export default function ConnectTabContent() {
 
     event.preventDefault();
 
-    const order: ConnectTab[] = [
+    const order: ConnectTabItem[] = [
+      'following',
+      'followers',
       'friends',
-      'search',
       'requests',
       'circles',
     ];
-    const currentIndex = order.indexOf(tab);
-    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+    const currentTab: ConnectTabItem =
+      tab === 'friends' ? friendsView : tab === 'search' ? 'friends' : tab;
+    const currentIndex = order.indexOf(currentTab);
+    const direction =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
     const nextIndex = (currentIndex + direction + order.length) % order.length;
     const nextTab = order[nextIndex];
 
-    setTab(nextTab);
+    if (nextTab === 'requests' || nextTab === 'circles') {
+      setTab(nextTab);
+    } else {
+      setFriendsView(nextTab);
+      setTab('friends');
+    }
 
     const targetRef =
-      nextTab === 'friends'
-        ? friendsTabRef
-        : nextTab === 'search'
-          ? searchTabRef
-          : nextTab === 'requests'
-            ? requestsTabRef
-            : circlesTabRef;
+      nextTab === 'following'
+        ? followingTabRef
+        : nextTab === 'followers'
+          ? followersTabRef
+          : nextTab === 'friends'
+            ? friendsTabRef
+            : nextTab === 'requests'
+              ? requestsTabRef
+              : circlesTabRef;
     targetRef.current?.focus();
   };
 
@@ -600,6 +721,15 @@ export default function ConnectTabContent() {
       : view === 'following'
         ? 'Following'
         : 'Followers';
+
+  const overviewProfile = profile as ProfileOverviewProfile;
+  const email = user?.email ?? '';
+  const initials = profileLoading
+    ? ''
+    : getInitials(
+        overviewProfile?.name || overviewProfile?.username || null,
+        email
+      );
 
   const handlePullRefresh = useCallback(async () => {
     const promises: Promise<void>[] = [
@@ -628,69 +758,50 @@ export default function ConnectTabContent() {
     >
       <div className="space-y-3">
         <h1 className="sr-only">Connect</h1>
+        <ProfileOverview
+          profile={overviewProfile}
+          email={email}
+          initials={initials}
+        />
         <div
           role="tablist"
           aria-label="Connect options"
-          className="grid grid-cols-4 gap-2 rounded-full border border-white/10 bg-black/40 p-1 shadow-xl shadow-black/40"
+          className="flex w-full gap-6 overflow-x-auto bg-black px-1 py-1 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
         >
-          <div className="flex flex-col gap-2">
-            <Select
-              value={friendsView}
-              onValueChange={(value) => {
-                const relationship = value as RelationshipView;
-                setFriendsView(relationship);
-                setTab('friends');
-              }}
-              className="w-full"
-              triggerClassName={`flex h-12 items-center justify-between rounded-full px-4 py-2 text-sm font-semibold transition ${
-                tab === 'friends'
-                  ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-                  : 'bg-black/40 text-white/60 hover:bg-white/10 hover:text-white'
-              }`}
-              contentWrapperClassName="border border-white/10 bg-black/95 text-sm text-white min-w-[200px]"
-              hideChevron
-              trigger={
-                <div className="flex w-full items-center justify-between gap-2">
-                  <span>{getRelationshipLabel(friendsView)}</span>
-                  <ChevronDown className="h-4 w-4 text-white/60" />
-                </div>
-              }
-            >
-              <SelectContent className="mt-1 min-w-[200px] rounded-2xl border border-white/10 bg-black p-2 shadow-xl shadow-black/70">
-                {RELATIONSHIP_VIEWS.map((view) => (
-                  <SelectItem
-                    key={view}
-                    value={view}
-                    className={`rounded-xl px-3 py-2 text-sm font-semibold uppercase tracking-[0.2em] transition ${
-                      friendsView === view
-                        ? 'bg-white text-black/90'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    {getRelationshipLabel(view)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <button
-            ref={searchTabRef}
-            id="search-tab"
-            role="tab"
-            onClick={() => setTab('search')}
-            onKeyDown={handleKeyDown}
-            type="button"
-            aria-selected={tab === 'search'}
-            aria-controls="search-panel"
-            tabIndex={tab === 'search' ? 0 : -1}
-            className={`h-12 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
-              tab === 'search'
-                ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-                : 'text-white/60 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            Search
-          </button>
+          {relationshipTabOptions.map(({ view, refKey }) => {
+            const ref =
+              refKey === 'following'
+                ? followingTabRef
+                : refKey === 'followers'
+                  ? followersTabRef
+                  : friendsTabRef;
+            const isSelected = tab === 'friends' && friendsView === view;
+
+            return (
+              <button
+                key={view}
+                ref={ref}
+                id={`${view}-tab`}
+                role="tab"
+                onClick={() => {
+                  setFriendsView(view);
+                  setTab('friends');
+                }}
+                onKeyDown={handleKeyDown}
+                type="button"
+                aria-selected={isSelected}
+                aria-controls="friends-panel"
+                tabIndex={isSelected ? 0 : -1}
+                className={`h-10 shrink-0 border-b px-0.5 text-sm font-semibold transition ${
+                  isSelected
+                    ? 'border-white/70 text-white'
+                    : 'border-transparent text-white/48 hover:text-white/80'
+                }`}
+              >
+                {getRelationshipLabel(view)}
+              </button>
+            );
+          })}
           <button
             ref={requestsTabRef}
             id="requests-tab"
@@ -701,10 +812,10 @@ export default function ConnectTabContent() {
             aria-selected={tab === 'requests'}
             aria-controls="requests-panel"
             tabIndex={tab === 'requests' ? 0 : -1}
-            className={`h-12 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
+            className={`h-10 shrink-0 border-b px-0.5 text-sm font-semibold transition ${
               tab === 'requests'
-                ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-                : 'text-white/60 hover:bg-white/10 hover:text-white'
+                ? 'border-white/70 text-white'
+                : 'border-transparent text-white/48 hover:text-white/80'
             }`}
           >
             Requests
@@ -719,15 +830,28 @@ export default function ConnectTabContent() {
             aria-selected={tab === 'circles'}
             aria-controls="circles-panel"
             tabIndex={tab === 'circles' ? 0 : -1}
-            className={`h-12 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
+            className={`h-10 shrink-0 border-b px-0.5 text-sm font-semibold transition ${
               tab === 'circles'
-                ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-                : 'text-white/60 hover:bg-white/10 hover:text-white'
+                ? 'border-white/70 text-white'
+                : 'border-transparent text-white/48 hover:text-white/80'
             }`}
           >
             Circles
           </button>
         </div>
+        <label className="block">
+          <span className="sr-only">{tabSearchPlaceholder}</span>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" aria-hidden="true" />
+            <input
+              type="search"
+              value={tabSearchQuery}
+              onChange={(event) => setTabSearchQuery(event.target.value)}
+              placeholder={tabSearchPlaceholder}
+              className="h-11 w-full rounded-full bg-black pl-11 pr-4 text-sm font-medium text-white outline-none ring-1 ring-white/10 transition placeholder:text-white/35 focus:ring-white/35"
+            />
+          </div>
+        </label>
       </div>
 
       <section
@@ -753,9 +877,11 @@ export default function ConnectTabContent() {
                 ? 'No one is following you yet.'
                 : 'You haven’t added any friends yet.'}
           </div>
+        ) : !error && filteredFriends.length === 0 ? (
+          <p className="px-1 text-sm text-white/50">No matches.</p>
         ) : (
           <FriendsList
-            data={sortedFriends}
+            data={filteredFriends}
             isLoading={isLoading}
             error={error}
           />
@@ -778,124 +904,15 @@ export default function ConnectTabContent() {
             {searchError}
           </div>
         ) : null}
-        <section className="mb-4 rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-xl shadow-black/30">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-white">
-                Circle Invites
-              </h2>
-              <p className="mt-1 text-sm leading-5 text-white/50">
-                Review shared systems people have invited you to join.
-              </p>
-            </div>
-            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] font-semibold text-white/60">
-              {circleInvites.length}
-            </span>
-          </div>
-
-          {isLoadingCircleInvites ? (
-            <p className="mt-4 text-sm font-medium text-white/50">
-              Loading Circle invites…
-            </p>
-          ) : null}
-
-          {circleInvitesError ? (
-            <div className="mt-4 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
-              {circleInvitesError}
-            </div>
-          ) : null}
-
-          {!isLoadingCircleInvites &&
-          !circleInvitesError &&
-          circleInvites.length === 0 ? (
-            <p className="mt-4 rounded-xl bg-white/[0.04] px-3 py-3 text-sm font-medium text-white/45 ring-1 ring-white/5">
-              No pending Circle invites.
-            </p>
-          ) : null}
-
-          {circleInvites.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {circleInvites.map((invite) => {
-                const inviterName = invite.invitedByProfile?.name?.trim();
-                const inviterUsername =
-                  invite.invitedByProfile?.username?.trim();
-                const invitedByLabel =
-                  inviterName ||
-                  (inviterUsername ? `@${inviterUsername}` : 'Unknown sender');
-                const isResponding = respondingCircleInviteId === invite.id;
-
-                return (
-                  <article
-                    key={invite.id}
-                    className="rounded-2xl border border-white/10 bg-black/45 p-4 ring-1 ring-white/5"
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-semibold text-white">
-                            {invite.circle?.name ?? 'Circle invite'}
-                          </h3>
-                          <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
-                            {invite.circle?.circle_type ?? 'CIRCLE'}
-                          </span>
-                        </div>
-                        <div className="mt-3 grid gap-2 text-sm text-white/60 sm:grid-cols-2">
-                          <p className="rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/5">
-                            <span className="text-white/40">Role</span>
-                            <span className="ml-2 font-semibold text-white/80">
-                              {invite.role}
-                            </span>
-                          </p>
-                          <p className="rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/5">
-                            <span className="text-white/40">Invited by</span>
-                            <span className="ml-2 font-semibold text-white/80">
-                              {invitedByLabel}
-                            </span>
-                            {inviterName && inviterUsername ? (
-                              <span className="ml-1 text-white/45">
-                                @{inviterUsername}
-                              </span>
-                            ) : null}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          disabled={isResponding}
-                          onClick={() =>
-                            void handleCircleInviteResponse(invite.id, 'accept')
-                          }
-                          className="h-10 rounded-full bg-white px-4 text-sm font-semibold text-black/90 transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isResponding}
-                          onClick={() =>
-                            void handleCircleInviteResponse(
-                              invite.id,
-                              'decline'
-                            )
-                          }
-                          className="h-10 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : null}
-        </section>
         <RequestsInvites
-          requests={requests}
+          requests={filteredRequests}
           invites={invites}
           suggestions={suggested}
+          circleInvites={filteredCircleInvites}
+          isLoadingCircleInvites={isLoadingCircleInvites}
+          circleInvitesError={circleInvitesError}
+          respondingCircleInviteId={respondingCircleInviteId}
+          handleCircleInviteResponse={handleCircleInviteResponse}
           onRequestResolved={handleRequestResolved}
         />
         {isLoadingRequests ? (
@@ -909,7 +926,7 @@ export default function ConnectTabContent() {
       <section
         id="search-panel"
         role="tabpanel"
-        aria-labelledby="search-tab"
+        aria-label="Search friends"
         hidden={tab !== 'search'}
       >
         <SearchFriends
@@ -1118,7 +1135,7 @@ export default function ConnectTabContent() {
           {canCreateCircle && !isLoadingCircles && !circlesError ? (
             <div className="grid gap-3 md:grid-cols-3">
               {circles.length > 0
-                ? circles.map((circle) => (
+                ? filteredCircles.map((circle) => (
                     <article
                       key={circle.id}
                       className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-xl shadow-black/30"
@@ -1176,7 +1193,7 @@ export default function ConnectTabContent() {
                       </Link>
                     </article>
                   ))
-                : circleTemplates.map((circle) => (
+                : filteredCircleTemplates.map((circle) => (
                     <article
                       key={circle.name}
                       className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-xl shadow-black/30"
@@ -1240,4 +1257,91 @@ export default function ConnectTabContent() {
       <div className="pb-[env(safe-area-inset-bottom)]" />
     </PullRefreshShell>
   );
+}
+
+type ProfileOverviewProps = {
+  profile: ProfileOverviewProfile;
+  email: string;
+  initials: string;
+};
+
+function ProfileOverview({
+  profile,
+  email,
+  initials,
+}: ProfileOverviewProps) {
+  const handle = profile?.username?.trim();
+  const displayName = profile?.name?.trim() || handle || email || 'Your profile';
+  const secondaryIdentifier = handle
+    ? `@${handle}`
+    : email && email !== displayName
+      ? email
+      : null;
+  const avatarUrl = profile?.avatar_url;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025]">
+      <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <ProfileAvatar src={avatarUrl} alt={displayName} fallback={initials} />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold leading-tight text-[var(--text)]">
+              {displayName}
+            </h2>
+            {secondaryIdentifier && (
+              <p className="mt-0.5 truncate text-xs leading-5 text-[var(--muted)]">
+                {secondaryIdentifier}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+type ProfileAvatarProps = {
+  src?: string | null;
+  alt: string;
+  fallback: string;
+};
+
+function ProfileAvatar({ src, alt, fallback }: ProfileAvatarProps) {
+  const fallbackValue = fallback || alt.charAt(0).toUpperCase();
+
+  if (src) {
+    return (
+      <Image
+        src={src}
+        alt={alt}
+        width={64}
+        height={64}
+        unoptimized
+        className="h-16 w-16 rounded-full object-cover shadow-md shadow-black/25"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.08] text-lg font-semibold text-white shadow-inner shadow-black/30">
+      {fallbackValue}
+    </div>
+  );
+}
+
+function getInitials(name: string | null, email: string) {
+  if (name) {
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0))
+      .join('')
+      .toUpperCase();
+  }
+
+  if (email) {
+    return email.charAt(0).toUpperCase();
+  }
+
+  return '';
 }

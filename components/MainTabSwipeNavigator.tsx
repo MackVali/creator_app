@@ -706,7 +706,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
       onPointerDownCapture={handlePointerDownCapture}
       style={{ touchAction: "pan-y pinch-zoom" }}
       className={`relative min-h-full bg-[#050505] ${
-        normalizedPathname === SCHEDULE_ROUTE ? "overflow-visible" : "overflow-hidden"
+        (normalizedPathname === SCHEDULE_ROUTE || normalizedPathname === COMMAND_ROUTE) ? "overflow-visible" : "overflow-hidden"
       }`}
     >
       {activePreviewRoute && activeSwipeDirection ? (

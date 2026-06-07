@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
+import { LayoutGrid } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -12,11 +15,11 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
-import { CalendarDays, Grid2X2, Sparkles } from "lucide-react";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -25,7 +28,6 @@ import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import {
   addDaysInTimeZone,
-  formatDateKeyInTimeZone,
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
@@ -64,8 +66,17 @@ type GoalRow = Pick<
 >;
 type SkillRow = Pick<
   Database["public"]["Tables"]["skills"]["Row"],
-  "id" | "monument_id" | "icon"
+  "id" | "name" | "monument_id" | "icon"
 >;
+type TimeBlockRow = Pick<
+  Database["public"]["Tables"]["time_blocks"]["Row"],
+  "id" | "label" | "start_local" | "end_local"
+>;
+type DayTypeTimeBlockRow = {
+  id: string;
+  time_block_id: string | null;
+  energy: string | null;
+};
 type HabitRow = Pick<
   Database["public"]["Tables"]["habits"]["Row"],
   | "id"
@@ -97,6 +108,7 @@ type MatrixEvent = {
   instance: ScheduleInstance;
   title: string;
   monumentId: string | null;
+  skillIds: string[];
   glyph: string;
   goal: Goal | null;
   habit: MatrixHabit | null;
@@ -104,13 +116,17 @@ type MatrixEvent = {
 
 type MatrixHabit = HabitRow & {
   monumentId: string | null;
+  skillIds: string[];
   glyph: string;
+  dueStatus?: MatrixHabitDueStatus;
 };
 
 type MonumentGroup<T> = {
   key: string;
   title: string;
   emoji: string | null;
+  energyLevel?: FlameLevel | null;
+  sortValue?: string | null;
   items: T[];
 };
 
@@ -118,18 +134,35 @@ type MatrixMonumentGroup = {
   key: string;
   title: string;
   emoji: string | null;
+  energyLevel?: FlameLevel | null;
+  sortValue?: string | null;
   scheduledItems: MatrixEvent[];
   unscheduledDueHabits: MatrixHabit[];
 };
 
 type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
+type MatrixView = "monuments" | "skills" | "blocks";
+type MatrixHabitDueStatus = {
+  isDue: boolean;
+  isOverdue: boolean;
+  label: "DUE" | "OVERDUE" | "DUE TODAY";
+};
+
+const MATRIX_PANEL_LABELS: Record<MatrixPanel, string> = {
+  scheduled: "Active",
+  unscheduled: "Due",
+};
 
 type MatrixState = {
   loading: boolean;
   error: string | null;
   eventGroups: MonumentGroup<MatrixEvent>[];
   unscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
+  skillEventGroups: MonumentGroup<MatrixEvent>[];
+  skillUnscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
+  blockEventGroups: MonumentGroup<MatrixEvent>[];
+  blockUnscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
   dayLabel: string;
 };
 
@@ -138,14 +171,25 @@ const initialState: MatrixState = {
   error: null,
   eventGroups: [],
   unscheduledDueHabitGroups: [],
+  skillEventGroups: [],
+  skillUnscheduledDueHabitGroups: [],
+  blockEventGroups: [],
+  blockUnscheduledDueHabitGroups: [],
   dayLabel: "",
 };
 
 const UNLINKED_GROUP_KEY = "__unlinked__";
+const NO_BLOCK_GROUP_KEY = "__no_block__";
 const MATRIX_LIBRARY_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_CARD_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const SCHEDULED_EVENT_DOUBLE_TAP_MS = 300;
+const MATRIX_TRAY_TRANSITION = {
+  duration: 0.4,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
 
 function getBrowserTimeZone() {
   try {
@@ -193,13 +237,77 @@ function normalizeRelatedHabitType(value: string | null | undefined): string {
   return normalized === "ASYNC" ? "SYNC" : normalized;
 }
 
+function getMatrixHabitTypeRank(habitType: string | null | undefined): number {
+  switch (normalizeRelatedHabitType(habitType)) {
+    case "CHORE":
+      return 0;
+    case "HABIT":
+      return 1;
+    case "SYNC":
+      return 3;
+    case "PRACTICE":
+      return 4;
+    default:
+      return 5;
+  }
+}
+
+function getMatrixEventTypeRank(event: MatrixEvent): number {
+  if (event.habit) {
+    return getMatrixHabitTypeRank(event.habit.habit_type);
+  }
+  if (event.goal) {
+    return 2;
+  }
+  return 5;
+}
+
+function getMatrixEventStartTime(event: MatrixEvent): number {
+  const startUtc = event.instance.start_utc;
+  if (!startUtc) return Number.POSITIVE_INFINITY;
+
+  const startTime = new Date(startUtc).getTime();
+  return Number.isNaN(startTime) ? Number.POSITIVE_INFINITY : startTime;
+}
+
+function isMatrixEventCompleted(event: MatrixEvent): boolean {
+  return event.instance.status?.trim().toLowerCase() === "completed";
+}
+
+function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
+  return [...items].sort((a, b) => {
+    const completionDifference =
+      Number(isMatrixEventCompleted(a)) - Number(isMatrixEventCompleted(b));
+    if (completionDifference !== 0) return completionDifference;
+
+    const rankDifference = getMatrixEventTypeRank(a) - getMatrixEventTypeRank(b);
+    if (rankDifference !== 0) return rankDifference;
+
+    const aStartTime = getMatrixEventStartTime(a);
+    const bStartTime = getMatrixEventStartTime(b);
+    if (aStartTime !== bStartTime) return aStartTime - bStartTime;
+
+    return a.title.localeCompare(b.title);
+  });
+}
+
+function sortMatrixDueHabits(items: MatrixHabit[]): MatrixHabit[] {
+  return [...items].sort((a, b) => {
+    const rankDifference =
+      getMatrixHabitTypeRank(a.habit_type) - getMatrixHabitTypeRank(b.habit_type);
+    if (rankDifference !== 0) return rankDifference;
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
 function getHabitCardTypeClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") {
     return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
   }
   if (normalized === "SYNC") {
-    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(113,113,122,0.22),transparent_58%),linear-gradient(135deg,rgba(16,18,22,0.98)_0%,rgba(39,43,51,0.94)_48%,rgba(70,77,89,0.68)_100%)]";
+    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.34),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.98)_0%,rgba(113,113,122,0.95)_48%,rgba(161,161,170,0.9)_100%)]";
   }
   if (normalized === "PRACTICE") {
     return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
@@ -210,7 +318,7 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
 function getHabitCardBorderClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return "border-rose-200/45";
-  if (normalized === "SYNC") return "border-zinc-300/35";
+  if (normalized === "SYNC") return "border-zinc-200/45";
   if (normalized === "PRACTICE") return "border-slate-500/50";
   return "border-white/10 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.055)]";
 }
@@ -269,6 +377,11 @@ function normalizeEnergyCode(value?: string | null): string {
     : "NO";
 }
 
+function normalizeFlameLevel(value?: string | null): FlameLevel {
+  const normalized = normalizeEnergyCode(value);
+  return normalized as FlameLevel;
+}
+
 function toScheduleHabit(habit: HabitRow): HabitScheduleItem {
   return {
     id: habit.id,
@@ -302,12 +415,35 @@ function toScheduleHabit(habit: HabitRow): HabitScheduleItem {
 }
 
 function isHabitDueToday(habit: HabitRow, date: Date, timeZone: string) {
-  return evaluateHabitDueOnDate({
+  return getMatrixHabitDueStatus(habit, date, timeZone).isDue;
+}
+
+function getMatrixHabitDueStatus(
+  habit: HabitRow,
+  date: Date,
+  timeZone: string
+): MatrixHabitDueStatus {
+  const todayEvaluation = evaluateHabitDueOnDate({
     habit: toScheduleHabit(habit),
     date,
     timeZone,
     nextDueOverride: parseOptionalDate(habit.next_due_override),
-  }).isDue;
+  });
+  const dueStartMs = todayEvaluation.dueStart?.getTime();
+  const isOverdue =
+    todayEvaluation.isDue &&
+    typeof dueStartMs === "number" &&
+    date.getTime() - dueStartMs >= MS_PER_DAY;
+
+  return {
+    isDue: todayEvaluation.isDue,
+    isOverdue,
+    label: isOverdue
+      ? "OVERDUE"
+      : habit.duration_minutes
+        ? "DUE"
+        : "DUE TODAY",
+  };
 }
 
 function resolveHabitMonumentId({
@@ -329,6 +465,21 @@ function resolveHabitMonumentId({
     : null;
 }
 
+function getExplicitProjectSkillIds(project: ProjectRow): string[] {
+  return (project.project_skills ?? [])
+    .map((record) => record.skill_id)
+    .filter((skillId): skillId is string => Boolean(skillId));
+}
+
+function getProjectSkillIds(project: ProjectRow): string[] {
+  const projectSkillIds = getExplicitProjectSkillIds(project);
+  const taskSkillIds = (project.tasks ?? [])
+    .map((task) => task.skill_id)
+    .filter((skillId): skillId is string => Boolean(skillId));
+
+  return Array.from(new Set([...projectSkillIds, ...taskSkillIds]));
+}
+
 function buildProjectGoal({
   project,
   goal,
@@ -348,9 +499,7 @@ function buildProjectGoal({
     priorityCode: task.priority ?? null,
     isNew: false,
   }));
-  const projectSkillIds = (project.project_skills ?? [])
-    .map((record) => record.skill_id)
-    .filter((skillId): skillId is string => Boolean(skillId));
+  const projectSkillIds = getExplicitProjectSkillIds(project);
   const taskSkillIds = tasks
     .map((task) => task.skillId)
     .filter((skillId): skillId is string => Boolean(skillId));
@@ -458,6 +607,7 @@ function buildMatrixEvents({
           instance,
           title: instance.event_name ?? project?.name ?? "Untitled project",
           monumentId,
+          skillIds: project ? getProjectSkillIds(project) : [],
           glyph: monumentId
             ? (monumentIdToEmoji.get(monumentId) ?? "◇")
             : "◇",
@@ -481,6 +631,7 @@ function buildMatrixEvents({
           goals,
           skillIdToMonumentId,
         }),
+        skillIds: habit?.skill_id ? [habit.skill_id] : [],
         glyph: habitGlyph ?? getHabitFallbackGlyph(habit?.habit_type),
         goal: null,
         habit: habit
@@ -491,11 +642,59 @@ function buildMatrixEvents({
                 goals,
                 skillIdToMonumentId,
               }),
+              skillIds: habit.skill_id ? [habit.skill_id] : [],
               glyph: habitGlyph ?? getHabitFallbackGlyph(habit.habit_type),
             }
           : null,
       },
     ];
+  });
+}
+
+function groupBySkill<T extends { skillIds: string[] }>({
+  items,
+  skills,
+}: {
+  items: T[];
+  skills: Map<string, SkillRow>;
+}): MonumentGroup<T>[] {
+  const groupLookup = new Map<string, MonumentGroup<T>>();
+
+  for (const item of items) {
+    const itemSkillIds = item.skillIds.length
+      ? item.skillIds
+      : [UNLINKED_GROUP_KEY];
+    const itemGroupKeys = new Set(
+      itemSkillIds.map((skillId) =>
+        skillId === UNLINKED_GROUP_KEY || !skills.has(skillId)
+          ? UNLINKED_GROUP_KEY
+          : skillId
+      )
+    );
+
+    for (const skillId of itemGroupKeys) {
+      const skill =
+        skillId === UNLINKED_GROUP_KEY ? null : skills.get(skillId);
+      const key = skill?.id ?? UNLINKED_GROUP_KEY;
+      const existing = groupLookup.get(key);
+      if (existing) {
+        existing.items.push(item);
+        continue;
+      }
+
+      groupLookup.set(key, {
+        key,
+        title: skill?.name ?? "Unlinked",
+        emoji: skill?.icon ?? null,
+        items: [item],
+      });
+    }
+  }
+
+  return Array.from(groupLookup.values()).sort((a, b) => {
+    if (a.key === UNLINKED_GROUP_KEY) return 1;
+    if (b.key === UNLINKED_GROUP_KEY) return -1;
+    return a.title.localeCompare(b.title);
   });
 }
 
@@ -534,6 +733,95 @@ function groupByMonument<T extends { monumentId: string | null }>({
   });
 }
 
+function getBlockEnergyLevel({
+  event,
+  dayTypeTimeBlockById,
+  dayTypeTimeBlockByTimeBlockId,
+}: {
+  event: MatrixEvent;
+  dayTypeTimeBlockById: Map<string, DayTypeTimeBlockRow>;
+  dayTypeTimeBlockByTimeBlockId: Map<string, DayTypeTimeBlockRow>;
+}): FlameLevel {
+  const dayTypeTimeBlock =
+    event.instance.day_type_time_block_id
+      ? dayTypeTimeBlockById.get(event.instance.day_type_time_block_id)
+      : null;
+  const fallbackDayTypeTimeBlock =
+    !dayTypeTimeBlock && event.instance.time_block_id
+      ? dayTypeTimeBlockByTimeBlockId.get(event.instance.time_block_id)
+      : null;
+
+  return normalizeFlameLevel(
+    dayTypeTimeBlock?.energy ??
+      fallbackDayTypeTimeBlock?.energy ??
+      event.instance.energy_resolved ??
+      "NO"
+  );
+}
+
+function groupEventsByBlock({
+  items,
+  timeBlocks,
+  dayTypeTimeBlockById,
+  dayTypeTimeBlockByTimeBlockId,
+}: {
+  items: MatrixEvent[];
+  timeBlocks: Map<string, TimeBlockRow>;
+  dayTypeTimeBlockById: Map<string, DayTypeTimeBlockRow>;
+  dayTypeTimeBlockByTimeBlockId: Map<string, DayTypeTimeBlockRow>;
+}): MonumentGroup<MatrixEvent>[] {
+  const groupLookup = new Map<string, MonumentGroup<MatrixEvent>>();
+
+  for (const item of items) {
+    const timeBlock = item.instance.time_block_id
+      ? timeBlocks.get(item.instance.time_block_id)
+      : null;
+    const key = timeBlock?.id ?? NO_BLOCK_GROUP_KEY;
+    const existing = groupLookup.get(key);
+    if (existing) {
+      existing.items.push(item);
+      continue;
+    }
+
+    groupLookup.set(key, {
+      key,
+      title: timeBlock?.label ?? "No Block",
+      emoji: timeBlock ? null : "◇",
+      energyLevel: timeBlock
+        ? getBlockEnergyLevel({
+            event: item,
+            dayTypeTimeBlockById,
+            dayTypeTimeBlockByTimeBlockId,
+          })
+        : "EXTREME",
+      sortValue: timeBlock?.start_local ?? null,
+      items: [item],
+    });
+  }
+
+  return Array.from(groupLookup.values()).sort((a, b) => {
+    if (a.key === NO_BLOCK_GROUP_KEY) return 1;
+    if (b.key === NO_BLOCK_GROUP_KEY) return -1;
+    return (a.sortValue ?? "").localeCompare(b.sortValue ?? "");
+  });
+}
+
+function groupUnscheduledDueHabitsByNoBlock(
+  items: MatrixHabit[]
+): MonumentGroup<MatrixHabit>[] {
+  return items.length
+    ? [
+        {
+          key: NO_BLOCK_GROUP_KEY,
+          title: "No Block",
+          emoji: "◇",
+          energyLevel: "EXTREME",
+          items,
+        },
+      ]
+    : [];
+}
+
 function mergeMatrixMonumentGroups({
   scheduledGroups,
   unscheduledDueHabitGroups,
@@ -548,6 +836,8 @@ function mergeMatrixMonumentGroups({
       key: group.key,
       title: group.title,
       emoji: group.emoji,
+      energyLevel: group.energyLevel,
+      sortValue: group.sortValue,
       scheduledItems: group.items,
       unscheduledDueHabits: [],
     });
@@ -564,14 +854,19 @@ function mergeMatrixMonumentGroups({
       key: group.key,
       title: group.title,
       emoji: group.emoji,
+      energyLevel: group.energyLevel,
+      sortValue: group.sortValue,
       scheduledItems: [],
       unscheduledDueHabits: group.items,
     });
   }
 
   return Array.from(groupLookup.values()).sort((a, b) => {
-    if (a.key === UNLINKED_GROUP_KEY) return 1;
-    if (b.key === UNLINKED_GROUP_KEY) return -1;
+    if (a.key === UNLINKED_GROUP_KEY || a.key === NO_BLOCK_GROUP_KEY) return 1;
+    if (b.key === UNLINKED_GROUP_KEY || b.key === NO_BLOCK_GROUP_KEY) return -1;
+    if (a.sortValue || b.sortValue) {
+      return (a.sortValue ?? "").localeCompare(b.sortValue ?? "");
+    }
     return a.title.localeCompare(b.title);
   });
 }
@@ -600,36 +895,63 @@ function MatrixHabitCard({
   title,
   pill,
   habitType,
-  due,
+  overdue,
   status,
+  completed = false,
 }: {
   glyph: string;
   title: string;
   pill: string;
   habitType: string | null | undefined;
-  due: boolean;
+  overdue: boolean;
   status?: string | null;
+  completed?: boolean;
 }) {
-  const pillClass = due
-    ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
-    : "border-white/10 bg-white/[0.06] text-white/65";
+  const isCompleted =
+    completed || status?.trim().toLowerCase() === "completed";
+  const displayPill = isCompleted ? "COMPLETE" : pill;
+  const pillClass = isCompleted
+    ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+    : overdue
+      ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
+      : "border-white/10 bg-white/[0.06] text-white/65";
+  const glyphBadgeClass =
+    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.055] text-xs font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-7 sm:w-7";
+  const completedGlyphBadgeClass =
+    "!border-white/10 !bg-white/[0.055] !text-white/82 !shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]";
 
   return (
     <div
       className={cn(
-        MATRIX_LIBRARY_CARD_CLASS,
-        getHabitCardTypeClass(habitType),
-        getHabitCardBorderClass(habitType),
-        due ? "related-habit-due-border" : null
+        isCompleted
+          ? "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4"
+          : MATRIX_LIBRARY_CARD_CLASS,
+        isCompleted
+          ? ["emerald-completed-compact", "shimmer-border-complete"]
+          : [
+              getHabitCardTypeClass(habitType),
+              getHabitCardBorderClass(habitType),
+              overdue ? "related-habit-due-border" : null,
+            ]
       )}
     >
-      {status ? (
-        <span className="pointer-events-none absolute right-2.5 top-2.5 max-w-[58%] truncate rounded-full border border-white/8 bg-black/20 px-1.5 py-[3px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em] text-white/42">
+      {status && !isCompleted ? (
+        <span
+          className={cn(
+            "pointer-events-none absolute right-2.5 top-2.5 max-w-[58%] truncate rounded-full border px-1.5 py-[3px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em]",
+            "border-white/8 bg-black/20 text-white/42"
+          )}
+        >
           {status}
         </span>
       ) : null}
       <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 text-center">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.055] text-xs font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-7 sm:w-7">
+        <span
+          className={cn(
+            glyphBadgeClass,
+            isCompleted ? completedGlyphBadgeClass : null
+          )}
+        >
           {glyph}
         </span>
         <div className="flex min-h-0 w-full min-w-0 items-center justify-center">
@@ -647,7 +969,7 @@ function MatrixHabitCard({
               pillClass
             )}
           >
-            {pill}
+            {displayPill}
           </span>
         </div>
       </div>
@@ -657,52 +979,127 @@ function MatrixHabitCard({
 
 function ScheduledEventCard({
   event,
-  timeZone,
   open,
   onOpenChange,
+  onComplete,
 }: {
   event: MatrixEvent;
-  timeZone: string;
   open: boolean;
   onOpenChange(open: boolean): void;
+  onComplete(instanceId: string): void;
 }) {
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapRef = useRef<{ instanceId: string; time: number } | null>(null);
+  const isCompleted = event.instance.status === "completed";
   const cleanStatus =
-    event.instance.status && event.instance.status !== "scheduled"
-      ? event.instance.status.replaceAll("_", " ")
-      : null;
+    event.instance.status === "completed"
+      ? "Completed"
+      : event.instance.status && event.instance.status !== "scheduled"
+        ? event.instance.status.replaceAll("_", " ")
+        : null;
 
-  if (event.goal) {
-    return (
-      <GoalCard
-        goal={event.goal}
-        showWeight={false}
-        showCreatedAt={false}
-        showEmojiPrefix={false}
-        variant="compact"
-        completionTheme="border"
-        projectDropdownMode="tasks-only"
-        open={open}
-        onOpenChange={onOpenChange}
-      />
-    );
-  }
+  const completeEvent = useCallback(() => {
+    if (isCompleted) return;
+    onComplete(event.instance.id);
+  }, [event.instance.id, isCompleted, onComplete]);
 
-  if (!event.habit) return null;
+  const handleDoubleClick = useCallback(() => {
+    completeEvent();
+  }, [completeEvent]);
 
-  return (
+  const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
+    const touch = event.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const start = touchStartRef.current;
+      touchStartRef.current = null;
+      if (!start || event.changedTouches.length !== 1 || isCompleted) return;
+
+      const touch = event.changedTouches[0];
+      const deltaX = Math.abs(touch.clientX - start.x);
+      const deltaY = Math.abs(touch.clientY - start.y);
+      if (deltaX > 12 || deltaY > 12) return;
+
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+      if (
+        lastTap?.instanceId === event.currentTarget.dataset.instanceId &&
+        now - lastTap.time <= SCHEDULED_EVENT_DOUBLE_TAP_MS
+      ) {
+        lastTapRef.current = null;
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+        event.stopPropagation();
+        completeEvent();
+        return;
+      }
+
+      lastTapRef.current = {
+        instanceId: event.currentTarget.dataset.instanceId ?? "",
+        time: now,
+      };
+    },
+    [completeEvent, isCompleted]
+  );
+
+  const scheduledGoal = useMemo<Goal | null>(() => {
+    if (!event.goal) return null;
+    if (!isCompleted) return event.goal;
+    return {
+      ...event.goal,
+      progress: 100,
+      status: "COMPLETED",
+      active: false,
+    };
+  }, [event.goal, isCompleted]);
+
+  const card = scheduledGoal ? (
+    <GoalCard
+      goal={scheduledGoal}
+      showWeight={false}
+      showCreatedAt={false}
+      showEmojiPrefix={false}
+      variant="compact"
+      completionTheme="border"
+      projectDropdownMode="tasks-only"
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  ) : event.habit ? (
     <MatrixHabitCard
       glyph={event.glyph}
       title={event.title}
-      pill="DUE"
+      pill={isCompleted ? "COMPLETE" : "DUE"}
       habitType={event.habit.habit_type}
-      due={false}
+      overdue={false}
       status={cleanStatus}
+      completed={isCompleted}
     />
-  );
+  ) : null;
+
+  return card ? (
+    <div
+      data-instance-id={event.instance.id}
+      onDoubleClick={handleDoubleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {card}
+    </div>
+  ) : null;
 }
 
 function DueHabitCard({ habit }: { habit: MatrixHabit }) {
-  const dueLabel = habit.duration_minutes ? "DUE" : "DUE TODAY";
+  const dueLabel =
+    habit.dueStatus?.label ?? (habit.duration_minutes ? "DUE" : "DUE TODAY");
 
   return (
     <MatrixHabitCard
@@ -710,7 +1107,7 @@ function DueHabitCard({ habit }: { habit: MatrixHabit }) {
       title={habit.name}
       pill={dueLabel}
       habitType={habit.habit_type}
-      due
+      overdue={habit.dueStatus?.isOverdue ?? false}
     />
   );
 }
@@ -723,12 +1120,91 @@ function EmptyPanel({ label }: { label: string }) {
   );
 }
 
+function MatrixViewPill({
+  label,
+  selected = false,
+  disabled = false,
+  onClick,
+}: {
+  label?: string;
+  selected?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={selected ? "true" : undefined}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-7 min-w-16 items-center justify-center rounded-full border px-3 text-[10px] font-semibold leading-none text-zinc-500 backdrop-blur-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        selected
+          ? "border-zinc-500/35 bg-zinc-300/[0.085] text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.065)]"
+          : "border-zinc-700/40 bg-zinc-900/35 text-zinc-600",
+        disabled
+          ? "cursor-default opacity-70"
+          : "hover:border-zinc-500/35 hover:bg-zinc-800/40 hover:text-zinc-400"
+      )}
+    >
+      {label ?? <span aria-hidden="true">&nbsp;</span>}
+    </button>
+  );
+}
+
+function MatrixSettingsTray({
+  activeView,
+  onViewChange,
+}: {
+  activeView: MatrixView;
+  onViewChange(view: MatrixView): void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-700/35 bg-zinc-950/55 px-3.5 py-3 shadow-[0_18px_48px_-34px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.045)] backdrop-blur-xl">
+      <div className="space-y-3.5">
+        <section className="space-y-2">
+          <h2 className="text-[10px] font-bold uppercase leading-none tracking-[0.18em] text-zinc-600">
+            Views
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <MatrixViewPill
+              label="Monuments"
+              selected={activeView === "monuments"}
+              onClick={() => onViewChange("monuments")}
+            />
+            <MatrixViewPill
+              label="Skills"
+              selected={activeView === "skills"}
+              onClick={() => onViewChange("skills")}
+            />
+            <MatrixViewPill
+              label="Block"
+              selected={activeView === "blocks"}
+              onClick={() => onViewChange("blocks")}
+            />
+            <MatrixViewPill disabled />
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-[10px] font-bold uppercase leading-none tracking-[0.18em] text-zinc-600">
+            Adjust
+          </h2>
+          <p className="text-[11px] font-medium text-zinc-600">
+            No content yet
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function MatrixMonumentCarousel({
   group,
-  timeZone,
+  onCompleteScheduledEvent,
 }: {
   group: MatrixMonumentGroup;
-  timeZone: string;
+  onCompleteScheduledEvent(instanceId: string): void;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
@@ -759,19 +1235,40 @@ function MatrixMonumentCarousel({
     axis: MatrixPanelSwipeAxis;
     width: number;
   } | null>(null);
-  const activeMatrixPanelIndex = matrixPanel === "unscheduled" ? 1 : 0;
+  const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
+    const panels: MatrixPanel[] = [];
+    if (group.scheduledItems.length > 0) panels.push("scheduled");
+    if (group.unscheduledDueHabits.length > 0) panels.push("unscheduled");
+    return panels;
+  }, [group.scheduledItems.length, group.unscheduledDueHabits.length]);
+  const canSwitchMatrixPanels = availableMatrixPanels.length > 1;
+  const activeMatrixPanelIndex = Math.max(
+    0,
+    availableMatrixPanels.indexOf(matrixPanel)
+  );
+  const maxMatrixPanelTransform =
+    -Math.max(0, availableMatrixPanels.length - 1) * matrixPanelViewportWidth;
   const matrixPanelBaseTransform =
     matrixPanelViewportWidth > 0
       ? -activeMatrixPanelIndex * matrixPanelViewportWidth
       : 0;
   const matrixPanelTrackTransform = Math.max(
-    -matrixPanelViewportWidth,
+    maxMatrixPanelTransform,
     Math.min(0, matrixPanelBaseTransform + matrixPanelDragOffset)
   );
-  const activeMatrixPanelCount =
-    matrixPanel === "scheduled"
-      ? group.scheduledItems.length
-      : group.unscheduledDueHabits.length;
+  const activeMatrixPanel =
+    availableMatrixPanels[activeMatrixPanelIndex] ??
+    availableMatrixPanels[0] ??
+    matrixPanel;
+  const activeMatrixPanelLabel = MATRIX_PANEL_LABELS[activeMatrixPanel];
+  const sortedScheduledItems = useMemo(
+    () => sortMatrixScheduledItems(group.scheduledItems),
+    [group.scheduledItems]
+  );
+  const sortedUnscheduledDueHabits = useMemo(
+    () => sortMatrixDueHabits(group.unscheduledDueHabits),
+    [group.unscheduledDueHabits]
+  );
 
   const getMatrixPanelElement = useCallback((panel: MatrixPanel) => {
     return panel === "unscheduled"
@@ -789,6 +1286,7 @@ function MatrixMonumentCarousel({
 
   const handleMatrixPanelChange = useCallback(
     (panel: MatrixPanel) => {
+      if (!availableMatrixPanels.includes(panel)) return;
       const nextHeight = getMatrixPanelHeight(panel);
       if (nextHeight) {
         setMatrixPanelHeight(nextHeight);
@@ -796,7 +1294,7 @@ function MatrixMonumentCarousel({
       setMatrixPanelDragOffset(0);
       setMatrixPanel(panel);
     },
-    [getMatrixPanelHeight]
+    [availableMatrixPanels, getMatrixPanelHeight]
   );
 
   const measureActiveMatrixPanel = useCallback(() => {
@@ -841,6 +1339,16 @@ function MatrixMonumentCarousel({
     setMatrixPanelDragOffset(0);
     setMatrixPanelTransitionEnabled(true);
   }, []);
+
+  useEffect(() => {
+    const firstAvailablePanel = availableMatrixPanels[0];
+    if (!firstAvailablePanel || availableMatrixPanels.includes(matrixPanel)) {
+      return;
+    }
+
+    setMatrixPanelDragOffset(0);
+    setMatrixPanel(firstAvailablePanel);
+  }, [availableMatrixPanels, matrixPanel]);
 
   useLayoutEffect(() => {
     measureActiveMatrixPanel();
@@ -895,18 +1403,24 @@ function MatrixMonumentCarousel({
       if (event.pointerType !== "pen" && event.pointerType !== "mouse") {
         return;
       }
+      if (!canSwitchMatrixPanels) return;
+
       matrixPanelDragStartRef.current = {
         x: event.clientX,
         y: event.clientY,
         pointerId: event.pointerId,
       };
     },
-    []
+    [canSwitchMatrixPanels]
   );
 
   const handleMatrixPanelPointerEnd = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const start = matrixPanelDragStartRef.current;
+      if (!canSwitchMatrixPanels) {
+        matrixPanelDragStartRef.current = null;
+        return;
+      }
       if (!start || start.pointerId !== event.pointerId) return;
       matrixPanelDragStartRef.current = null;
 
@@ -921,9 +1435,18 @@ function MatrixMonumentCarousel({
         return;
       }
 
-      handleMatrixPanelChange(deltaX < 0 ? "unscheduled" : "scheduled");
+      const nextPanelIndex = activeMatrixPanelIndex + (deltaX < 0 ? 1 : -1);
+      const nextPanel = availableMatrixPanels[nextPanelIndex];
+      if (nextPanel) {
+        handleMatrixPanelChange(nextPanel);
+      }
     },
-    [handleMatrixPanelChange]
+    [
+      activeMatrixPanelIndex,
+      availableMatrixPanels,
+      canSwitchMatrixPanels,
+      handleMatrixPanelChange,
+    ]
   );
 
   const resetMatrixPanelTouch = useCallback(() => {
@@ -937,6 +1460,7 @@ function MatrixMonumentCarousel({
         resetMatrixPanelTouch();
         return;
       }
+      if (!canSwitchMatrixPanels) return;
 
       const touch = event.touches[0];
       matrixPanelTouchRef.current = {
@@ -949,11 +1473,13 @@ function MatrixMonumentCarousel({
       };
       setMatrixPanelDragOffset(0);
     },
-    [resetMatrixPanelTouch]
+    [canSwitchMatrixPanels, resetMatrixPanelTouch]
   );
 
   const handleMatrixPanelTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (!canSwitchMatrixPanels) return;
+
       const gesture = matrixPanelTouchRef.current;
       if (!gesture || event.touches.length !== 1) return;
 
@@ -990,11 +1516,16 @@ function MatrixMonumentCarousel({
       );
       setMatrixPanelDragOffset(nextTransform - baseTransform);
     },
-    [activeMatrixPanelIndex]
+    [activeMatrixPanelIndex, canSwitchMatrixPanels]
   );
 
   const handleMatrixPanelTouchEnd = useCallback(() => {
     const gesture = matrixPanelTouchRef.current;
+    if (!canSwitchMatrixPanels) {
+      matrixPanelTouchRef.current = null;
+      setMatrixPanelDragOffset(0);
+      return;
+    }
     if (!gesture) return;
 
     matrixPanelTouchRef.current = null;
@@ -1011,18 +1542,23 @@ function MatrixMonumentCarousel({
       return;
     }
 
-    if (matrixPanel === "scheduled" && gesture.deltaX < -releaseThreshold) {
-      handleMatrixPanelChange("unscheduled");
-      return;
+    const nextPanelIndex =
+      activeMatrixPanelIndex + (gesture.deltaX < 0 ? 1 : -1);
+    const nextPanel = availableMatrixPanels[nextPanelIndex];
+    if (nextPanel) {
+      handleMatrixPanelChange(nextPanel);
     }
-
-    if (matrixPanel === "unscheduled" && gesture.deltaX > releaseThreshold) {
-      handleMatrixPanelChange("scheduled");
-    }
-  }, [handleMatrixPanelChange, matrixPanel]);
+  }, [
+    activeMatrixPanelIndex,
+    availableMatrixPanels,
+    canSwitchMatrixPanels,
+    handleMatrixPanelChange,
+  ]);
 
   const handleMatrixPanelWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
+      if (!canSwitchMatrixPanels) return;
+
       const horizontalDistance = Math.abs(event.deltaX);
       if (
         horizontalDistance < 28 ||
@@ -1031,8 +1567,9 @@ function MatrixMonumentCarousel({
         return;
       }
 
-      const nextPanel = event.deltaX < 0 ? "unscheduled" : "scheduled";
-      if (nextPanel === matrixPanel || matrixPanelWheelLockedRef.current) {
+      const nextPanelIndex = activeMatrixPanelIndex + (event.deltaX < 0 ? 1 : -1);
+      const nextPanel = availableMatrixPanels[nextPanelIndex];
+      if (!nextPanel || nextPanel === matrixPanel || matrixPanelWheelLockedRef.current) {
         return;
       }
 
@@ -1048,7 +1585,13 @@ function MatrixMonumentCarousel({
         matrixPanelWheelCooldownRef.current = null;
       }, 650);
     },
-    [handleMatrixPanelChange, matrixPanel]
+    [
+      activeMatrixPanelIndex,
+      availableMatrixPanels,
+      canSwitchMatrixPanels,
+      handleMatrixPanelChange,
+      matrixPanel,
+    ]
   );
 
   return (
@@ -1056,14 +1599,18 @@ function MatrixMonumentCarousel({
       <div className="mb-3 flex items-center justify-between gap-3 px-0 sm:px-1">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.055] text-base">
-            {group.emoji ?? "◇"}
+            {group.energyLevel ? (
+              <FlameEmber level={group.energyLevel} size="sm" />
+            ) : (
+              (group.emoji ?? "◇")
+            )}
           </span>
           <h3 className="truncate text-[13px] font-semibold text-white/88">
             {group.title}
           </h3>
         </div>
         <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70">
-          {activeMatrixPanelCount}
+          {activeMatrixPanelLabel}
         </span>
       </div>
       <div
@@ -1082,59 +1629,61 @@ function MatrixMonumentCarousel({
       >
         <div ref={matrixPanelViewportRef} className="absolute inset-0">
           <div
-            className="flex h-full w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className="flex h-full transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
             style={{
               transform: `translate3d(${matrixPanelTrackTransform}px, 0, 0)`,
               transitionDuration:
                 !matrixPanelTransitionEnabled || matrixPanelDragOffset
                   ? "0ms"
                   : undefined,
+              width: `${Math.max(1, availableMatrixPanels.length) * 100}%`,
             }}
           >
-            <div className="h-full w-1/2 shrink-0 overflow-hidden">
-              <div ref={scheduledPanelRef}>
-                {group.scheduledItems.length ? (
-                  <div className={MATRIX_LIBRARY_GRID_CLASS}>
-                    {group.scheduledItems.map((event) => (
-                      <ScheduledEventCard
-                        key={event.instance.id}
-                        event={event}
-                        timeZone={timeZone}
-                        open={
-                          Boolean(event.goal?.id) &&
-                          openGoalId === event.goal?.id
-                        }
-                        onOpenChange={(nextOpen) =>
-                          setOpenGoalId(
-                            nextOpen && event.goal?.id ? event.goal.id : null
-                          )
-                        }
-                      />
-                    ))}
+            {availableMatrixPanels.map((panel) => (
+              <div
+                key={panel}
+                className="h-full shrink-0 overflow-hidden"
+                style={{
+                  width: `${100 / Math.max(1, availableMatrixPanels.length)}%`,
+                }}
+              >
+                {panel === "scheduled" ? (
+                  <div ref={scheduledPanelRef} className="px-1 py-1">
+                    <div className={MATRIX_LIBRARY_GRID_CLASS}>
+                      {sortedScheduledItems.map((event) => (
+                        <ScheduledEventCard
+                          key={event.instance.id}
+                          event={event}
+                          onComplete={onCompleteScheduledEvent}
+                          open={
+                            Boolean(event.goal?.id) &&
+                            openGoalId === event.goal?.id
+                          }
+                          onOpenChange={(nextOpen) =>
+                            setOpenGoalId(
+                              nextOpen && event.goal?.id ? event.goal.id : null
+                            )
+                          }
+                        />
+                      ))}
+                    </div>
                   </div>
                 ) : (
-                  <EmptyPanel label="No scheduled Events for this Monument." />
-                )}
-              </div>
-            </div>
-            <div className="h-full w-1/2 shrink-0 overflow-hidden">
-              <div ref={unscheduledPanelRef}>
-                {group.unscheduledDueHabits.length ? (
-                  <div className={MATRIX_LIBRARY_GRID_CLASS}>
-                    {group.unscheduledDueHabits.map((habit) => (
-                      <DueHabitCard key={habit.id} habit={habit} />
-                    ))}
+                  <div ref={unscheduledPanelRef} className="px-1 py-1">
+                    <div className={MATRIX_LIBRARY_GRID_CLASS}>
+                      {sortedUnscheduledDueHabits.map((habit) => (
+                        <DueHabitCard key={habit.id} habit={habit} />
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <EmptyPanel label="No unscheduled due habits for this Monument." />
                 )}
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
       <div className="mt-3 flex items-center justify-center gap-1.5">
-        {(["scheduled", "unscheduled"] as const).map((panel) => {
+        {availableMatrixPanels.map((panel) => {
           const isActive = matrixPanel === panel;
           return (
             <button
@@ -1149,8 +1698,8 @@ function MatrixMonumentCarousel({
               onClick={() => handleMatrixPanelChange(panel)}
               className={`h-1 rounded-full transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 isActive
-                  ? "w-4 bg-white/85"
-                  : "w-1 bg-white/28 hover:bg-white/45"
+                  ? "w-4 bg-zinc-500/75"
+                  : "w-1 bg-zinc-700/70 hover:bg-zinc-600/80"
               }`}
             />
           );
@@ -1168,6 +1717,80 @@ function MatrixContent() {
     [localTimeZone]
   );
   const [state, setState] = useState<MatrixState>(initialState);
+  const [matrixView, setMatrixView] = useState<MatrixView>("monuments");
+  const [isMatrixTrayOpen, setIsMatrixTrayOpen] = useState(false);
+  const [matrixTrayHeight, setMatrixTrayHeight] = useState(0);
+  const matrixTrayRef = useRef<HTMLDivElement | null>(null);
+
+  const handleCompleteScheduledEvent = useCallback(
+    async (instanceId: string) => {
+      if (!user?.id) return;
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        console.error("Supabase client is not available.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("schedule_instances")
+        .update({ status: "completed" })
+        .eq("id", instanceId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Failed to complete scheduled Matrix Event", error);
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        eventGroups: current.eventGroups.map((group) => ({
+          ...group,
+          items: group.items.map((event) =>
+            event.instance.id === instanceId
+              ? {
+                  ...event,
+                  instance: {
+                    ...event.instance,
+                    status: "completed",
+                  },
+                }
+              : event
+          ),
+        })),
+        skillEventGroups: current.skillEventGroups.map((group) => ({
+          ...group,
+          items: group.items.map((event) =>
+            event.instance.id === instanceId
+              ? {
+                  ...event,
+                  instance: {
+                    ...event.instance,
+                    status: "completed",
+                  },
+                }
+              : event
+          ),
+        })),
+        blockEventGroups: current.blockEventGroups.map((group) => ({
+          ...group,
+          items: group.items.map((event) =>
+            event.instance.id === instanceId
+              ? {
+                  ...event,
+                  instance: {
+                    ...event.instance,
+                    status: "completed",
+                  },
+                }
+              : event
+          ),
+        })),
+      }));
+    },
+    [user?.id]
+  );
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1196,11 +1819,11 @@ function MatrixContent() {
         const { data: instanceData, error: instanceError } = await supabase
           .from("schedule_instances")
           .select(
-            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name"
+            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name, time_block_id, day_type_time_block_id, energy_resolved"
           )
           .eq("user_id", userId)
           .in("source_type", ["PROJECT", "HABIT"])
-          .in("status", ["scheduled", "in_progress"])
+          .in("status", ["scheduled", "in_progress", "completed"])
           .lt("start_utc", dayEnd.toISOString())
           .gt("end_utc", dayStart.toISOString())
           .order("start_utc", { ascending: true });
@@ -1216,6 +1839,20 @@ function MatrixContent() {
             .filter((item) => item.source_type === "HABIT")
             .map((item) => item.source_id)
         );
+        const timeBlockIds = Array.from(
+          new Set(
+            instances
+              .map((item) => item.time_block_id)
+              .filter((id): id is string => Boolean(id))
+          )
+        );
+        const dayTypeTimeBlockIds = Array.from(
+          new Set(
+            instances
+              .map((item) => item.day_type_time_block_id)
+              .filter((id): id is string => Boolean(id))
+          )
+        );
 
         const monumentsPromise = getMonumentsForUser(userId).catch((error) => {
           console.error("Failed to load Matrix monuments", error);
@@ -1227,6 +1864,9 @@ function MatrixContent() {
           allHabitsResult,
           goalResult,
           skillResult,
+          timeBlockResult,
+          dayTypeTimeBlockByIdResult,
+          dayTypeTimeBlockByBlockResult,
           monuments,
         ] =
           await Promise.all([
@@ -1251,8 +1891,29 @@ function MatrixContent() {
               .eq("user_id", userId),
             supabase
               .from("skills")
-              .select("id, monument_id, icon")
+              .select("id, name, monument_id, icon")
               .eq("user_id", userId),
+            timeBlockIds.length
+              ? supabase
+                  .from("time_blocks")
+                  .select("id, label, start_local, end_local")
+                  .eq("user_id", userId)
+                  .in("id", timeBlockIds)
+              : Promise.resolve({ data: [], error: null }),
+            dayTypeTimeBlockIds.length
+              ? supabase
+                  .from("day_type_time_blocks")
+                  .select("id, time_block_id, energy")
+                  .eq("user_id", userId)
+                  .in("id", dayTypeTimeBlockIds)
+              : Promise.resolve({ data: [], error: null }),
+            timeBlockIds.length
+              ? supabase
+                  .from("day_type_time_blocks")
+                  .select("id, time_block_id, energy")
+                  .eq("user_id", userId)
+                  .in("time_block_id", timeBlockIds)
+              : Promise.resolve({ data: [], error: null }),
             monumentsPromise,
           ]);
 
@@ -1260,6 +1921,11 @@ function MatrixContent() {
         if (allHabitsResult.error) throw allHabitsResult.error;
         if (goalResult.error) throw goalResult.error;
         if (skillResult.error) throw skillResult.error;
+        if (timeBlockResult.error) throw timeBlockResult.error;
+        if (dayTypeTimeBlockByIdResult.error)
+          throw dayTypeTimeBlockByIdResult.error;
+        if (dayTypeTimeBlockByBlockResult.error)
+          throw dayTypeTimeBlockByBlockResult.error;
 
         const allProjectIds = Array.from(new Set(projectIds));
 
@@ -1287,7 +1953,9 @@ function MatrixContent() {
 
         const skillIdToMonumentId = new Map<string, string>();
         const skillIdToIcon = new Map<string, string>();
+        const skillLookup = new Map<string, SkillRow>();
         for (const skill of (skillResult.data ?? []) as SkillRow[]) {
+          skillLookup.set(skill.id, skill);
           if (skill.id && skill.monument_id) {
             skillIdToMonumentId.set(skill.id, skill.monument_id);
           }
@@ -1316,6 +1984,30 @@ function MatrixContent() {
         const goalMap = new Map(
           ((goalResult.data ?? []) as GoalRow[]).map((goal) => [goal.id, goal])
         );
+        const timeBlockMap = new Map(
+          ((timeBlockResult.data ?? []) as TimeBlockRow[]).map((block) => [
+            block.id,
+            block,
+          ])
+        );
+        const dayTypeTimeBlockRows = [
+          ...((dayTypeTimeBlockByIdResult.data ?? []) as DayTypeTimeBlockRow[]),
+          ...((dayTypeTimeBlockByBlockResult.data ??
+            []) as DayTypeTimeBlockRow[]),
+        ];
+        const dayTypeTimeBlockById = new Map<string, DayTypeTimeBlockRow>();
+        const dayTypeTimeBlockByTimeBlockId = new Map<
+          string,
+          DayTypeTimeBlockRow
+        >();
+        for (const row of dayTypeTimeBlockRows) {
+          if (row.id) {
+            dayTypeTimeBlockById.set(row.id, row);
+          }
+          if (row.time_block_id && !dayTypeTimeBlockByTimeBlockId.has(row.time_block_id)) {
+            dayTypeTimeBlockByTimeBlockId.set(row.time_block_id, row);
+          }
+        }
 
         const events = buildMatrixEvents({
           instances,
@@ -1329,18 +2021,24 @@ function MatrixContent() {
         const unscheduledDueHabits = ((allHabitsResult.data ?? []) as HabitRow[])
           .filter((habit) => !scheduledHabitIds.has(habit.id))
           .filter((habit) => isHabitDueToday(habit, today, timeZone))
-          .map((habit) => ({
-            ...habit,
-            monumentId: resolveHabitMonumentId({
-              habit,
-              goals: goalMap,
-              skillIdToMonumentId,
-            }),
-            glyph: habit.skill_id
-              ? (skillIdToIcon.get(habit.skill_id) ??
-                getHabitFallbackGlyph(habit.habit_type))
-              : getHabitFallbackGlyph(habit.habit_type),
-          }))
+          .map((habit) => {
+            const dueStatus = getMatrixHabitDueStatus(habit, today, timeZone);
+
+            return {
+              ...habit,
+              dueStatus,
+              monumentId: resolveHabitMonumentId({
+                habit,
+                goals: goalMap,
+                skillIdToMonumentId,
+              }),
+              glyph: habit.skill_id
+                ? (skillIdToIcon.get(habit.skill_id) ??
+                  getHabitFallbackGlyph(habit.habit_type))
+                : getHabitFallbackGlyph(habit.habit_type),
+              skillIds: habit.skill_id ? [habit.skill_id] : [],
+            };
+          })
           .sort((a, b) => a.name.localeCompare(b.name));
 
         if (!cancelled) {
@@ -1352,6 +2050,22 @@ function MatrixContent() {
               items: unscheduledDueHabits,
               monuments,
             }),
+            skillEventGroups: groupBySkill({
+              items: events,
+              skills: skillLookup,
+            }),
+            skillUnscheduledDueHabitGroups: groupBySkill({
+              items: unscheduledDueHabits,
+              skills: skillLookup,
+            }),
+            blockEventGroups: groupEventsByBlock({
+              items: events,
+              timeBlocks: timeBlockMap,
+              dayTypeTimeBlockById,
+              dayTypeTimeBlockByTimeBlockId,
+            }),
+            blockUnscheduledDueHabitGroups:
+              groupUnscheduledDueHabitsByNoBlock(unscheduledDueHabits),
             dayLabel: formatDayLabel(today, timeZone),
           });
         }
@@ -1379,10 +2093,6 @@ function MatrixContent() {
     };
   }, [timeZone, user?.id]);
 
-  const todayKey = useMemo(
-    () => formatDateKeyInTimeZone(new Date(), timeZone),
-    [timeZone]
-  );
   const matrixMonumentGroups = useMemo(
     () =>
       mergeMatrixMonumentGroups({
@@ -1392,35 +2102,118 @@ function MatrixContent() {
     [state.eventGroups, state.unscheduledDueHabitGroups]
   );
 
+  const matrixSkillGroups = useMemo(
+    () =>
+      mergeMatrixMonumentGroups({
+        scheduledGroups: state.skillEventGroups,
+        unscheduledDueHabitGroups: state.skillUnscheduledDueHabitGroups,
+      }),
+    [state.skillEventGroups, state.skillUnscheduledDueHabitGroups]
+  );
+
+  const matrixBlockGroups = useMemo(
+    () =>
+      mergeMatrixMonumentGroups({
+        scheduledGroups: state.blockEventGroups,
+        unscheduledDueHabitGroups: state.blockUnscheduledDueHabitGroups,
+      }),
+    [state.blockEventGroups, state.blockUnscheduledDueHabitGroups]
+  );
+
+  const activeMatrixGroups =
+    matrixView === "blocks"
+      ? matrixBlockGroups
+      : matrixView === "skills"
+        ? matrixSkillGroups
+        : matrixMonumentGroups;
+  useLayoutEffect(() => {
+    if (!isMatrixTrayOpen) return;
+
+    const trayElement = matrixTrayRef.current;
+    if (!trayElement) return;
+
+    const measureTray = () => {
+      setMatrixTrayHeight(Math.ceil(trayElement.scrollHeight));
+    };
+
+    measureTray();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureTray);
+    resizeObserver?.observe(trayElement);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureTray);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureTray);
+    };
+  }, [isMatrixTrayOpen]);
+
   return (
     <main className="min-h-screen bg-[#030406] px-4 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-[calc(1rem+env(safe-area-inset-top,0px))] text-white sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] p-5 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-6">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/55">
-                <Grid2X2 className="h-4 w-4" aria-hidden="true" />
-                CREATOR
-              </div>
-              <h1 className="mt-3 text-3xl font-semibold tracking-normal text-white sm:text-4xl">
-                Matrix
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
-                Today&apos;s scheduled Events and due habits, separated for a focused view.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-xs font-semibold text-white/70">
-                <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                {state.dayLabel || todayKey}
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-xs font-semibold text-white/70">
-                <Sparkles className="h-4 w-4" aria-hidden="true" />
-                {timeZone}
-              </span>
-            </div>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
+        <header className="flex items-center justify-between gap-3 px-1 text-zinc-500">
+          <div className="flex min-w-0 items-center gap-2">
+            <Link
+              href="/dashboard"
+              aria-label="Back to dashboard"
+              className="inline-flex h-6 w-5 items-center justify-center text-[18px] font-medium leading-none text-zinc-500 transition hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            >
+              ‹
+            </Link>
+            <h1 className="text-xs font-bold uppercase tracking-[0.24em] text-zinc-500">
+              MATRIX
+            </h1>
           </div>
-        </section>
+          <button
+            type="button"
+            aria-label="Toggle Matrix views"
+            aria-expanded={isMatrixTrayOpen}
+            onClick={() => setIsMatrixTrayOpen((current) => !current)}
+            className={cn(
+              "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-transparent text-zinc-600 transition hover:border-zinc-700/45 hover:bg-zinc-900/45 hover:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+              isMatrixTrayOpen ? "bg-zinc-900/55 text-zinc-400" : null
+            )}
+          >
+            <LayoutGrid
+              className="h-4 w-4"
+              strokeWidth={1.8}
+              aria-hidden="true"
+            />
+          </button>
+        </header>
+
+        <AnimatePresence initial={false}>
+          {isMatrixTrayOpen ? (
+            <motion.div
+              key="matrix-settings-tray"
+              initial={{ height: 0, opacity: 0, y: -6 }}
+              animate={{
+                height: matrixTrayHeight,
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{ height: 0, opacity: 0, y: -6 }}
+              transition={MATRIX_TRAY_TRANSITION}
+              className="overflow-hidden px-1"
+            >
+              <div ref={matrixTrayRef} className="pb-1">
+                <MatrixSettingsTray
+                  activeView={matrixView}
+                  onViewChange={setMatrixView}
+                />
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         {state.error ? (
           <MatrixCard className="p-4">
@@ -1445,13 +2238,13 @@ function MatrixContent() {
                 </MatrixCard>
               ))}
             </div>
-          ) : matrixMonumentGroups.length ? (
+          ) : activeMatrixGroups.length ? (
             <div className="space-y-3">
-              {matrixMonumentGroups.map((group) => (
+              {activeMatrixGroups.map((group) => (
                 <MatrixMonumentCarousel
                   key={group.key}
                   group={group}
-                  timeZone={timeZone}
+                  onCompleteScheduledEvent={handleCompleteScheduledEvent}
                 />
               ))}
             </div>

@@ -20,11 +20,32 @@ type RequestsInvitesProps = {
   requests: FriendRequest[];
   invites: SentInvite[];
   suggestions: SuggestedFriend[];
+  circleInvites: CircleInvite[];
+  isLoadingCircleInvites: boolean;
+  circleInvitesError: string | null;
+  respondingCircleInviteId: string | null;
+  handleCircleInviteResponse: (
+    inviteId: string,
+    action: "accept" | "decline"
+  ) => void | Promise<void>;
   onRequestResolved?: () => void | Promise<void>;
 };
 
 type RequestStatus = "pending" | "accepted" | "declined";
 type SuggestionStatus = "idle" | "requested";
+
+type CircleInvite = {
+  id: string;
+  role: string;
+  circle: {
+    name: string;
+    circle_type: string;
+  } | null;
+  invitedByProfile: {
+    username: string | null;
+    name: string | null;
+  } | null;
+};
 
 type RequestState = FriendRequest & {
   status: RequestStatus;
@@ -38,6 +59,11 @@ export default function RequestsInvites({
   requests,
   invites,
   suggestions,
+  circleInvites,
+  isLoadingCircleInvites,
+  circleInvitesError,
+  respondingCircleInviteId,
+  handleCircleInviteResponse,
   onRequestResolved,
 }: RequestsInvitesProps) {
   const [requestState, setRequestState] = useState<RequestState[]>(() =>
@@ -67,6 +93,8 @@ export default function RequestsInvites({
     () => requestState.filter((req) => req.status === "pending"),
     [requestState]
   );
+
+  const incomingCount = pendingRequests.length + circleInvites.length;
 
   const respondedRequests = useMemo(
     () => requestState.filter((req) => req.status !== "pending"),
@@ -174,70 +202,139 @@ export default function RequestsInvites({
             <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">
               Incoming requests
             </h2>
-            <p className="text-xs text-white/50">
-              Confirm the people who want to follow your creative journey.
+            <p className="mt-1 text-xs text-white/45">
+              Review new people and Circle invites.
             </p>
           </div>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
-            {pendingRequests.length} waiting
-          </span>
+          {incomingCount > 0 ? (
+            <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              {incomingCount} waiting
+            </span>
+          ) : null}
         </header>
 
         <div className="space-y-2">
-          {pendingRequests.length ? (
-            pendingRequests.map((req) => (
-              <article
-                key={req.id}
-                className="flex items-start gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
-              >
-                <Image
-                  src={req.avatarUrl || DEFAULT_AVATAR_URL}
-                  alt={`${req.displayName} avatar`}
-                  width={52}
-                  height={52}
-                  className="h-[52px] w-[52px] rounded-full object-cover"
-                />
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-white">
-                        {req.displayName}
-                      </p>
-                      <p className="truncate text-xs text-white/60">@{req.username}</p>
-                      <p className="mt-1 text-xs text-white/50">
-                        {req.mutualFriends} mutual friends
-                      </p>
-                    </div>
-                  </div>
-                  {req.note ? (
-                    <p className="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/70">
-                      “{req.note}”
+          {pendingRequests.map((req) => (
+            <article
+              key={req.id}
+              className="flex items-start gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
+            >
+              <Image
+                src={req.avatarUrl || DEFAULT_AVATAR_URL}
+                alt={`${req.displayName} avatar`}
+                width={52}
+                height={52}
+                className="h-[52px] w-[52px] rounded-full object-cover"
+              />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {req.displayName}
                     </p>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2">
+                    <p className="truncate text-xs text-white/60">@{req.username}</p>
+                    <p className="mt-1 text-xs text-white/50">
+                      {req.mutualFriends} mutual friends
+                    </p>
+                  </div>
+                </div>
+                {req.note ? (
+                  <p className="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/70">
+                    “{req.note}”
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRespond(req.id, "accepted")}
+                    className={`${actionButtonClass} bg-white text-black/80 hover:bg-white/90 active:scale-[0.98]`}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRespond(req.id, "declined")}
+                    className={`${mutedButtonClass} active:scale-[0.98]`}
+                  >
+                    Not now
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+
+          {circleInvites.map((invite) => {
+            const inviterName = invite.invitedByProfile?.name?.trim();
+            const inviterUsername = invite.invitedByProfile?.username?.trim();
+            const invitedByLabel =
+              inviterName ||
+              (inviterUsername ? `@${inviterUsername}` : "Unknown sender");
+            const isResponding = respondingCircleInviteId === invite.id;
+
+            return (
+              <article
+                key={invite.id}
+                className="rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-sm font-semibold text-white">
+                        {invite.circle?.name ?? "Circle invite"}
+                      </h3>
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                        {invite.circle?.circle_type ?? "CIRCLE"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/55">
+                      Role <span className="font-semibold text-white/75">{invite.role}</span>
+                      <span className="text-white/25"> · </span>
+                      Invited by{" "}
+                      <span className="font-semibold text-white/75">
+                        {invitedByLabel}
+                      </span>
+                      {inviterName && inviterUsername ? (
+                        <span className="ml-1 text-white/45">@{inviterUsername}</span>
+                      ) : null}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
-                      onClick={() => handleRespond(req.id, "accepted")}
-                      className={`${actionButtonClass} bg-white text-black/80 hover:bg-white/90 active:scale-[0.98]`}
+                      disabled={isResponding}
+                      onClick={() =>
+                        void handleCircleInviteResponse(invite.id, "accept")
+                      }
+                      className={`${actionButtonClass} bg-white text-black/80 hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.98]`}
                     >
-                      Confirm
+                      Accept
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleRespond(req.id, "declined")}
+                      disabled={isResponding}
+                      onClick={() =>
+                        void handleCircleInviteResponse(invite.id, "decline")
+                      }
                       className={`${mutedButtonClass} active:scale-[0.98]`}
                     >
-                      Not now
+                      Decline
                     </button>
                   </div>
                 </div>
               </article>
-            ))
-          ) : (
-            <div className="rounded-2xl bg-white/5 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
-              You’re caught up for now.
+            );
+          })}
+
+          {isLoadingCircleInvites ? (
+            <p className="px-1 text-xs text-white/50">Loading Circle invites…</p>
+          ) : null}
+
+          {circleInvitesError ? (
+            <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
+              {circleInvitesError}
             </div>
-          )}
+          ) : null}
         </div>
 
         {respondedRequests.length ? (
