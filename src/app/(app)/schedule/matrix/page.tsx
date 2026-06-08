@@ -194,6 +194,11 @@ const MATRIX_LIBRARY_SMALL_CARD_CLASS =
   "goal-card group relative flex h-full min-h-[108px] w-full transform-gpu flex-col rounded-xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-[0.65rem_0.45rem] text-white shadow-[0_14px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SCHEDULED_EVENT_DOUBLE_TAP_MS = 300;
+const MATRIX_CARD_DENSITY_STORAGE_KEY = "creator:matrix-card-density-by-group";
+
+function normalizeMatrixSourceId(value: string | null | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
 const MATRIX_TRAY_TRANSITION = {
   duration: 0.4,
   ease: [0.22, 1, 0.36, 1] as const,
@@ -1339,10 +1344,7 @@ function ScheduledEventCard({
       active: false,
     };
   }, [event.goal, isCompleted]);
-  const habitDueStatus = event.habit?.dueStatus ?? null;
-  const habitDueLabel =
-    habitDueStatus?.label ??
-    (event.habit?.duration_minutes ? "DUE" : "DUE TODAY");
+  const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
 
   const card = scheduledGoal ? (
     density === "small" ? (
@@ -1368,9 +1370,9 @@ function ScheduledEventCard({
     <MatrixHabitCard
       glyph={event.glyph}
       title={event.title}
-      pill={isCompleted ? "COMPLETE" : habitDueLabel}
+      pill={isCompleted ? "COMPLETE" : scheduledHabitPill}
       habitType={event.habit.habit_type}
-      overdue={habitDueStatus?.isOverdue ?? false}
+      overdue={false}
       status={cleanStatus}
       completed={isCompleted}
       density={density}
@@ -1503,10 +1505,12 @@ function MatrixSettingsTray({
 
 function MatrixMonumentCarousel({
   group,
+  matrixView,
   revealIndex = 0,
   onCompleteScheduledEvent,
 }: {
   group: MatrixMonumentGroup;
+  matrixView: MatrixView;
   revealIndex?: number;
   onCompleteScheduledEvent(instanceId: string): void;
 }) {
@@ -1560,12 +1564,36 @@ function MatrixMonumentCarousel({
     axis: MatrixPanelSwipeAxis;
     width: number;
   } | null>(null);
+  const scheduledMatrixHabitIds = useMemo(() => {
+    const habitIds = new Set<string>();
+
+    for (const event of group.scheduledItems) {
+      const isScheduledHabit =
+        event.instance.source_type === "HABIT" || Boolean(event.habit);
+      if (!isScheduledHabit) continue;
+
+      const habitId = normalizeMatrixSourceId(event.habit?.id);
+      const sourceId = normalizeMatrixSourceId(event.instance.source_id);
+
+      if (habitId) habitIds.add(habitId);
+      if (sourceId) habitIds.add(sourceId);
+    }
+
+    return habitIds;
+  }, [group.scheduledItems]);
+  const visibleUnscheduledDueHabits = useMemo(
+    () =>
+      group.unscheduledDueHabits.filter(
+        (habit) => !scheduledMatrixHabitIds.has(normalizeMatrixSourceId(habit.id))
+      ),
+    [group.unscheduledDueHabits, scheduledMatrixHabitIds]
+  );
   const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
     const panels: MatrixPanel[] = [];
     if (group.scheduledItems.length > 0) panels.push("scheduled");
-    if (group.unscheduledDueHabits.length > 0) panels.push("unscheduled");
+    if (visibleUnscheduledDueHabits.length > 0) panels.push("unscheduled");
     return panels;
-  }, [group.scheduledItems.length, group.unscheduledDueHabits.length]);
+  }, [group.scheduledItems.length, visibleUnscheduledDueHabits.length]);
   const canSwitchMatrixPanels = availableMatrixPanels.length > 1;
   const activeMatrixPanelIndex = Math.max(
     0,
@@ -1591,8 +1619,8 @@ function MatrixMonumentCarousel({
     [group.scheduledItems]
   );
   const sortedUnscheduledDueHabits = useMemo(
-    () => sortMatrixDueHabits(group.unscheduledDueHabits),
-    [group.unscheduledDueHabits]
+    () => sortMatrixDueHabits(visibleUnscheduledDueHabits),
+    [visibleUnscheduledDueHabits]
   );
   const matrixLibraryGridClass =
     cardDensity === "small"
@@ -1636,11 +1664,61 @@ function MatrixMonumentCarousel({
     );
   }, [getMatrixPanelHeight, matrixPanel]);
 
+  const cardDensityPreferenceKey = `${matrixView}:${group.key}`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const storedPreferences = window.localStorage.getItem(
+        MATRIX_CARD_DENSITY_STORAGE_KEY
+      );
+      const parsedPreferences = storedPreferences
+        ? JSON.parse(storedPreferences)
+        : null;
+      const storedDensity = parsedPreferences?.[cardDensityPreferenceKey];
+
+      if (storedDensity === "large" || storedDensity === "small") {
+        setCardDensity(storedDensity);
+      } else {
+        setCardDensity("large");
+      }
+    } catch {
+      setCardDensity("large");
+    }
+  }, [cardDensityPreferenceKey]);
+
   const handleCardDensityToggle = useCallback(() => {
-    setCardDensity((currentDensity) =>
-      currentDensity === "large" ? "small" : "large"
-    );
-  }, []);
+    setCardDensity((currentDensity) => {
+      const nextDensity = currentDensity === "large" ? "small" : "large";
+
+      if (typeof window !== "undefined") {
+        try {
+          const storedPreferences = window.localStorage.getItem(
+            MATRIX_CARD_DENSITY_STORAGE_KEY
+          );
+          const parsedPreferences = storedPreferences
+            ? JSON.parse(storedPreferences)
+            : {};
+          const nextPreferences =
+            parsedPreferences && typeof parsedPreferences === "object"
+              ? parsedPreferences
+              : {};
+
+          nextPreferences[cardDensityPreferenceKey] = nextDensity;
+
+          window.localStorage.setItem(
+            MATRIX_CARD_DENSITY_STORAGE_KEY,
+            JSON.stringify(nextPreferences)
+          );
+        } catch {
+          // Ignore localStorage failures; density can still update for this session.
+        }
+      }
+
+      return nextDensity;
+    });
+  }, [cardDensityPreferenceKey]);
 
   const toggleGroupOpen = useCallback(() => {
     setIsGroupOpen((currentOpen) => !currentOpen);
@@ -1670,6 +1748,8 @@ function MatrixMonumentCarousel({
   );
 
   useLayoutEffect(() => {
+    if (!isGroupOpen) return;
+
     const viewportElement = matrixPanelViewportRef.current;
     if (!viewportElement) return;
 
@@ -1678,6 +1758,11 @@ function MatrixMonumentCarousel({
     };
 
     measureViewportWidth();
+
+    const animationFrameId =
+      typeof window === "undefined"
+        ? null
+        : window.requestAnimationFrame(measureViewportWidth);
 
     const resizeObserver =
       typeof ResizeObserver === "undefined"
@@ -1693,10 +1778,13 @@ function MatrixMonumentCarousel({
 
     window.addEventListener("resize", measureViewportWidth);
     return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureViewportWidth);
     };
-  }, []);
+  }, [isGroupOpen, availableMatrixPanels.length]);
 
   useEffect(() => {
     setMatrixPanelDragOffset(0);
@@ -1718,10 +1806,10 @@ function MatrixMonumentCarousel({
   }, [
     cardDensity,
     group.scheduledItems,
-    group.unscheduledDueHabits,
     isGroupOpen,
     measureActiveMatrixPanel,
     openGoalId,
+    visibleUnscheduledDueHabits,
   ]);
 
   useEffect(() => {
@@ -2351,7 +2439,8 @@ function MatrixContent() {
         const scheduledHabitIds = new Set(
           instances
             .filter((item) => item.source_type === "HABIT")
-            .map((item) => item.source_id)
+            .map((item) => normalizeMatrixSourceId(item.source_id))
+            .filter(Boolean)
         );
         const timeBlockIds = Array.from(
           new Set(
@@ -2534,9 +2623,34 @@ function MatrixContent() {
           date: today,
           timeZone,
         });
-        const unscheduledDueHabits = ((allHabitsResult.data ?? []) as HabitRow[])
-          .filter((habit) => !scheduledHabitIds.has(habit.id))
-          .filter((habit) => isHabitDueToday(habit, today, timeZone))
+        const scheduledTodayHabitIds = new Set(scheduledHabitIds);
+        for (const event of events) {
+          const habitId = normalizeMatrixSourceId(event.habit?.id ?? event.instance.source_id);
+          if (event.instance.source_type === "HABIT" && habitId) {
+            scheduledTodayHabitIds.add(habitId);
+          }
+        }
+
+        const dueHabitRows = ((allHabitsResult.data ?? []) as HabitRow[]).filter(
+          (habit) => isHabitDueToday(habit, today, timeZone)
+        );
+
+        const duplicateScheduledDueHabits = dueHabitRows.filter((habit) =>
+          scheduledTodayHabitIds.has(normalizeMatrixSourceId(habit.id))
+        );
+
+        if (duplicateScheduledDueHabits.length) {
+          console.warn("[Matrix] scheduled habits excluded from Due", {
+            scheduledTodayHabitIds: Array.from(scheduledTodayHabitIds),
+            duplicates: duplicateScheduledDueHabits.map((habit) => ({
+              id: habit.id,
+              name: habit.name,
+            })),
+          });
+        }
+
+        const unscheduledDueHabits = dueHabitRows
+          .filter((habit) => !scheduledTodayHabitIds.has(normalizeMatrixSourceId(habit.id)))
           .map((habit) => {
             const dueStatus = getMatrixHabitDueStatus(habit, today, timeZone);
 
@@ -2674,7 +2788,7 @@ function MatrixContent() {
   }, [isMatrixTrayOpen]);
 
   return (
-    <main className="min-h-screen bg-[#030406] px-4 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-[calc(1rem+env(safe-area-inset-top,0px))] text-white sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#030406] px-4 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-1 text-white sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
         <header className="flex items-center justify-between gap-3 px-1 text-zinc-500">
           <div className="flex min-w-0 items-center gap-2">
@@ -2746,6 +2860,7 @@ function MatrixContent() {
                 <MatrixMonumentCarousel
                   key={group.key}
                   group={group}
+                  matrixView={matrixView}
                   revealIndex={index}
                   onCompleteScheduledEvent={handleCompleteScheduledEvent}
                 />
