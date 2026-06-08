@@ -83,7 +83,7 @@ export default function EditMonumentPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-full bg-[var(--accent)] py-2 font-semibold text-black disabled:opacity-50"
+          className="inline-flex rounded-full bg-[var(--accent)] px-4 py-1.5 text-sm font-semibold text-black disabled:opacity-50"
         >
           {loading ? "Saving..." : "Save Monument"}
         </button>

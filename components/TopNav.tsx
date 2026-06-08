@@ -142,36 +142,28 @@ export default function TopNav() {
                 <Link href="/analytics">Analytics</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/goals">Goals</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/habits">Habits</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
                 <Link href="/help">Help</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/settings">Settings</Link>
               </DropdownMenuItem>
               {userIsTopNavAdmin(currentUser) ? (
-                <>
-                  <DropdownMenuItem asChild>
-                    <Link href="/schedule/priorities" className="text-zinc-500">
-                      Priority Editor
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/schedule/matrix" className="text-zinc-500">
-                      Matrix
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/test" className="text-zinc-500">
-                      Test
-                    </Link>
-                  </DropdownMenuItem>
-                </>
+                <DropdownMenuItem asChild>
+                  <Link href="/schedule/priorities" className="text-zinc-500">
+                    Priority Editor
+                  </Link>
+                </DropdownMenuItem>
               ) : null}
+              <DropdownMenuItem asChild>
+                <Link href="/focus-pomo" className="text-zinc-500">
+                  PomoFocus
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/schedule/matrix" className="text-zinc-500">
+                  Matrix
+                </Link>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

@@ -1614,6 +1614,10 @@ export default function GoalsPage() {
                         goals={campaignGoals}
                         onRoadmapOrderSaved={refreshGoalsAndRoadmaps}
                         onGoalManualComplete={handleManualGoalComplete}
+                        onGoalEdit={handleEdit}
+                        onGoalToggleActive={handleToggleActive}
+                        onGoalDelete={handleDelete}
+                        onCampaignDetailsSaved={refreshGoalsAndRoadmaps}
                         onAddGoal={() => {
                           setEditing(null);
                           setDrawerInitialRoadmapId(campaign.roadmap_id);
