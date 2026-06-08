@@ -21,8 +21,9 @@ export type FabCreationOriginRect = {
 
 export type FabCreationRequest = {
   id: number;
-  type: "GOAL" | "PROJECT";
+  type: "GOAL" | "PROJECT" | "TASK";
   goalId?: string | null;
+  projectId?: string | null;
   originRect?: FabCreationOriginRect | null;
 };
 
@@ -31,6 +32,11 @@ type FabCreationContextValue = {
   editRequest: FabEditTarget | null;
   requestGoalCreation: (originRect?: FabCreationOriginRect | null) => void;
   requestProjectCreation: (
+    goalId?: string | null,
+    originRect?: FabCreationOriginRect | null
+  ) => void;
+  requestTaskCreation: (
+    projectId?: string | null,
     goalId?: string | null,
     originRect?: FabCreationOriginRect | null
   ) => void;
@@ -68,6 +74,24 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const requestTaskCreation = useCallback(
+    (
+      projectId?: string | null,
+      goalId?: string | null,
+      originRect?: FabCreationOriginRect | null
+    ) => {
+      nextRequestIdRef.current += 1;
+      setCreationRequest({
+        id: nextRequestIdRef.current,
+        type: "TASK",
+        goalId: goalId ?? null,
+        projectId: projectId ?? null,
+        originRect: originRect ?? null,
+      });
+    },
+    []
+  );
+
   const requestEntityEdit = useCallback((target: FabEditTarget) => {
     setEditRequest({ ...target });
   }, []);
@@ -82,6 +106,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       editRequest,
       requestGoalCreation,
       requestProjectCreation,
+      requestTaskCreation,
       requestEntityEdit,
     }),
     [
@@ -89,6 +114,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       editRequest,
       requestGoalCreation,
       requestProjectCreation,
+      requestTaskCreation,
       requestEntityEdit,
     ],
   );

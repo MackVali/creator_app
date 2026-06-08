@@ -20,6 +20,7 @@ import {
   type ProjectCardMorphOrigin,
 } from "./ProjectRow";
 import type { FabEditTarget } from "@/components/ui/Fab";
+import { cn } from "@/lib/utils";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { useToastHelpers } from "@/components/ui/toast";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
@@ -113,7 +114,7 @@ interface GoalCardProps {
   ) => void;
   onManualComplete?: (goal: Goal) => void | Promise<void>;
   completeWhenProjectsDone?: boolean;
-  completionTheme?: "auto" | "emerald" | "monument" | "border";
+  completionTheme?: "auto" | "emerald" | "monument" | "border" | "matrix";
   suppressReadyToast?: boolean;
 }
 
@@ -472,6 +473,11 @@ function GoalCardImpl({
     setAddingProject(true);
     try {
       if (projectDropdownMode === "tasks-only") {
+        const firstProject = goal.projects[0];
+        if (firstProject && fabCreation?.requestTaskCreation) {
+          fabCreation.requestTaskCreation(firstProject.id, goal.id, originRect ?? null);
+          return;
+        }
         await onAddTask?.(goal.id);
         return;
       }
@@ -479,7 +485,7 @@ function GoalCardImpl({
     } finally {
       setAddingProject(false);
     }
-  }, [addingProject, fabCreation, goal.id, onAddTask, projectDropdownMode]);
+  }, [addingProject, fabCreation, goal.id, goal.projects, onAddTask, projectDropdownMode]);
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {
@@ -509,6 +515,25 @@ function GoalCardImpl({
     [onProjectEditOpen]
   );
 
+  const handleProjectEditRequest = useCallback(
+    (project: Project, origin: ProjectCardMorphOrigin | null = null) => {
+      fabCreation?.requestEntityEdit({
+        entityType: "PROJECT",
+        entityId: project.id,
+        title: project.name,
+        originRect: origin
+          ? {
+              top: origin.y,
+              left: origin.x,
+              width: origin.width,
+              height: origin.height,
+            }
+          : null,
+      });
+    },
+    [fabCreation]
+  );
+
   const closeProjectEditor = useCallback(() => {
     setEditingProject(null);
     setEditingProjectOrigin(null);
@@ -529,12 +554,16 @@ function GoalCardImpl({
   const completedClass = isCompleted
     ? resolvedCompletionTheme === "border"
       ? "shimmer-border-complete completion-border-only"
+      : resolvedCompletionTheme === "matrix"
+      ? variant === "compact"
+        ? "emerald-completed-compact shimmer-border-complete matrix-completed-project-card"
+        : "emerald-completed shimmer-border-complete"
       : resolvedCompletionTheme === "monument"
       ? variant === "compact"
         ? "border border-white/10 bg-white/[0.04] text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),_0_4px_10px_rgba(0,0,0,0.45)] opacity-85"
         : "monument-completed"
       : variant === "compact"
-        ? "emerald-completed-compact"
+        ? "emerald-completed-compact shimmer-border-complete !bg-[radial-gradient(circle_at_0%_0%,rgba(52,211,153,0.22),transparent_58%),linear-gradient(145deg,rgba(5,95,68,0.96)_0%,rgba(6,120,83,0.94)_54%,rgba(4,83,63,0.92)_100%)]"
         : drawerCompact
           ? ""
           : "emerald-completed"
@@ -693,7 +722,7 @@ function GoalCardImpl({
             data-variant="compact"
             data-build-tag="gc-test-01"
           >
-            <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
+            <div className="relative z-[2] flex h-full min-w-0 flex-col items-stretch">
               <motion.button
                 type="button"
                 onClick={handleShellClick}
@@ -739,6 +768,7 @@ function GoalCardImpl({
                     loading={loading}
                     onClose={toggle}
                     onProjectLongPress={handleProjectLongPress}
+                    onProjectEditRequest={handleProjectEditRequest}
                     onProjectUpdated={onProjectUpdated}
                     projectDropdownMode={projectDropdownMode}
                     goalId={goal.id}
@@ -775,7 +805,7 @@ function GoalCardImpl({
           data-variant="compact"
           data-build-tag="gc-test-01"
         >
-          <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
+          <div className="relative z-[2] flex h-full min-w-0 flex-col items-stretch">
             <motion.button
               type="button"
               onClick={handleShellClick}
@@ -789,9 +819,17 @@ function GoalCardImpl({
               {...shellMotionProps}
             >
               <div
-                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${completedIconClass}`}
+                className={cn(
+                  "relative z-[3] flex h-9 w-9 shrink-0 items-center justify-center overflow-visible rounded-xl border border-white/10 text-base font-semibold leading-none shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
+                  isCompleted && resolvedCompletionTheme === "matrix"
+                    ? "bg-white/[0.075] text-white/90 ring-1 ring-white/10"
+                    : null,
+                  completedIconClass
+                )}
               >
-                {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
+                <span className="relative z-[4] leading-none">
+                  {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
+                </span>
               </div>
               <h3
                 id={`goal-${goal.id}-label`}
@@ -805,15 +843,35 @@ function GoalCardImpl({
                 {goal.title}
               </h3>
               <div
-                className="mt-1 h-[14px] w-full overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
-                style={{
-                  boxShadow:
-                    "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
-                }}
+                className={cn(
+                  "mt-1 h-3 w-full overflow-hidden rounded-[999px]",
+                  resolvedCompletionTheme === "matrix"
+                    ? Number(goal.progress ?? 0) > 0
+                      ? "border border-[#16483d] bg-[linear-gradient(180deg,#1b2d28,#0d1b17)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.72),inset_0_-1px_0_rgba(255,255,255,0.065)]"
+                      : "border border-[#252a2a] bg-[linear-gradient(180deg,#17191b,#090a0b)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.82),inset_0_-1px_0_rgba(255,255,255,0.045)]"
+                    : "h-[14px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                )}
+                style={
+                  resolvedCompletionTheme === "matrix"
+                    ? undefined
+                    : {
+                        boxShadow:
+                          "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
+                      }
+                }
               >
                 <div
-                  className="h-full rounded-[999px]"
-                  style={progressBarStyle}
+                  className={cn(
+                    "h-full rounded-[999px]",
+                    resolvedCompletionTheme === "matrix"
+                      ? "bg-[linear-gradient(90deg,#0b7a5c,#059669,#0b8060)] shadow-[0_0_9px_rgba(16,185,129,0.26),inset_0_1px_0_rgba(209,250,229,0.28),inset_0_-1px_0_rgba(0,0,0,0.24)] transition-[width] duration-500 ease-out"
+                      : ""
+                  )}
+                  style={
+                    resolvedCompletionTheme === "matrix"
+                      ? { width: `${goal.progress}%` }
+                      : progressBarStyle
+                  }
                 />
               </div>
             </motion.button>
@@ -825,6 +883,7 @@ function GoalCardImpl({
                   loading={loading}
                   onClose={toggle}
                   onProjectLongPress={handleProjectLongPress}
+                  onProjectEditRequest={handleProjectEditRequest}
                   onProjectUpdated={onProjectUpdated}
                   projectDropdownMode={projectDropdownMode}
                   goalId={goal.id}
@@ -1254,6 +1313,10 @@ type CompactProjectsOverlayProps = {
     project: Project,
     origin: ProjectCardMorphOrigin | null
   ) => void;
+  onProjectEditRequest?: (
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectDropdownMode?: "default" | "tasks-only";
   goalId: string;
@@ -1278,6 +1341,7 @@ function CompactProjectsOverlay({
   loading,
   onClose,
   onProjectLongPress,
+  onProjectEditRequest,
   onProjectUpdated,
   projectDropdownMode = "default",
   goalId,
@@ -1324,29 +1388,49 @@ function CompactProjectsOverlay({
           goal.monumentEmoji.trim().length
         ? goal.monumentEmoji.trim()
         : goal.title.slice(0, 2).toUpperCase();
+  const firstProject = goal.projects[0];
+  const drawerSubtitle =
+    projectDropdownMode === "tasks-only"
+      ? firstProject
+        ? `${firstProject.tasks.length} ${
+            firstProject.tasks.length === 1 ? "task" : "tasks"
+          }`
+        : "Project tasks"
+      : `${goal.projects.length} ${
+          goal.projects.length === 1 ? "project" : "projects"
+        }`;
 
-  const header = (
-    <div className="flex items-center justify-between gap-2 px-5 py-4">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+  const headerContent = (
+    <div className="flex items-start justify-between gap-2 sm:gap-4">
+      <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base font-semibold text-white sm:h-9 sm:w-9 sm:text-lg">
-          {goalBadge}
+          {projectDropdownMode === "tasks-only" && firstProject?.emoji
+            ? firstProject.emoji
+            : goalBadge}
         </div>
-        <h4
-          id={headingId}
-          className="min-w-0 truncate text-xs font-semibold uppercase tracking-[0.28em] text-white/70"
-        >
-          {goal.title}
-        </h4>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:gap-1">
+          <h4
+            id={headingId}
+            className="text-[15px] font-semibold leading-tight text-white sm:text-base"
+          >
+            {projectDropdownMode === "tasks-only" && firstProject
+              ? firstProject.name
+              : goal.title}
+          </h4>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-white/60 sm:text-[11px] sm:tracking-[0.32em]">
+            {drawerSubtitle}
+          </p>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="relative shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label="Goal actions"
-              className="rounded-full p-1.5 text-white/55 transition hover:bg-white/[0.06] hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+              className="rounded-md p-1.5 text-white/58 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
             >
-              <MoreVertical className="h-4 w-4" />
+              <MoreVertical aria-hidden="true" className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -1357,8 +1441,12 @@ function CompactProjectsOverlay({
               className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
               onSelect={() => {
                 if (projectDropdownMode === "tasks-only") {
-                  const firstProject = goal.projects[0];
                   if (firstProject) {
+                    if (onProjectEditRequest) {
+                      onProjectEditRequest(firstProject, null);
+                      onClose();
+                      return;
+                    }
                     onProjectLongPress(firstProject, null);
                   }
                   return;
@@ -1374,30 +1462,34 @@ function CompactProjectsOverlay({
     </div>
   );
 
-  const listContent = (
-    <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-      <ProjectRowTaskInteractionsProvider
-        value={{ goalId, onTaskEditOpen, onTaskToggleCompletion }}
-      >
-        <ProjectsDropdown
-          id={regionId}
-          goalTitle={goal.title}
-          projects={goal.projects}
-          loading={loading}
-          onProjectLongPress={onProjectLongPress}
-          onProjectUpdated={onProjectUpdated}
-          projectTasksOnly={projectDropdownMode === "tasks-only"}
-          goalId={goalId}
-          onAddProject={onAddProject}
-          addingProject={addingProject}
-          onTaskToggleCompletion={onTaskToggleCompletion}
-        />
-      </ProjectRowTaskInteractionsProvider>
+  const header = <div className="px-5 py-4">{headerContent}</div>;
+
+  const listArea = (
+    <div className="flex min-h-0 flex-1 flex-col px-3 pb-4 sm:px-5">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5">
+        <ProjectRowTaskInteractionsProvider
+          value={{ goalId, onTaskEditOpen, onTaskToggleCompletion }}
+        >
+          <ProjectsDropdown
+            id={regionId}
+            goalTitle={goal.title}
+            projects={goal.projects}
+            loading={loading}
+            onProjectLongPress={onProjectLongPress}
+            onProjectUpdated={onProjectUpdated}
+            projectTasksOnly={projectDropdownMode === "tasks-only"}
+            goalId={goalId}
+            onAddProject={onAddProject}
+            addingProject={addingProject}
+            onTaskToggleCompletion={onTaskToggleCompletion}
+          />
+        </ProjectRowTaskInteractionsProvider>
+      </div>
     </div>
   );
 
   const basePanelClass =
-    "overflow-hidden rounded-2xl border border-white/10 bg-[#07080A]/95 shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
+    "overflow-hidden rounded-2xl border border-white/10 bg-[#07080A]/95 shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)] text-white/90";
 
   return createPortal(
     <>
@@ -1428,13 +1520,14 @@ function CompactProjectsOverlay({
           transition={{ duration: prefersReducedMotion ? 0.12 : 0.18, ease: "easeOut" }}
         >
           <motion.div
+            className="flex max-h-[calc(100vh-3rem)] flex-col sm:max-h-[calc(100vh-6rem)]"
             variants={prefersReducedMotion ? undefined : detailContentVariant}
             initial={prefersReducedMotion ? false : "hidden"}
             animate={prefersReducedMotion ? undefined : "visible"}
             exit={prefersReducedMotion ? undefined : "exit"}
           >
             {header}
-            {listContent}
+            {listArea}
           </motion.div>
         </motion.div>
       </div>

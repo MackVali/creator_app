@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { User } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { BookUser, User, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   FriendRequest,
@@ -62,7 +62,6 @@ export default function RequestsInvites({
   requests,
   invites,
   suggestions,
-  contactImport,
   circleInvites,
   isLoadingCircleInvites,
   circleInvitesError,
@@ -78,18 +77,6 @@ export default function RequestsInvites({
     suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
   );
   const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
-  const [contactsConnected, setContactsConnected] = useState(
-    Boolean(contactImport?.imported)
-  );
-  const [isConnectingContacts, setIsConnectingContacts] = useState(false);
-  const [connectContactsMessage, setConnectContactsMessage] = useState<
-    { type: "success" | "error"; text: string } | null
-  >(null);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [isSendingEmailInvite, setIsSendingEmailInvite] = useState(false);
-  const [emailInviteMessage, setEmailInviteMessage] = useState<
-    { type: "success" | "error"; text: string } | null
-  >(null);
 
   useEffect(() => {
     setRequestState(requests.map((req) => ({ ...req, status: "pending" })));
@@ -104,10 +91,6 @@ export default function RequestsInvites({
       suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
     );
   }, [suggestions]);
-
-  useEffect(() => {
-    setContactsConnected(Boolean(contactImport?.imported));
-  }, [contactImport?.imported]);
 
   const pendingRequests = useMemo(
     () => requestState.filter((req) => req.status === "pending"),
@@ -212,90 +195,6 @@ export default function RequestsInvites({
           : suggestion
       )
     );
-  };
-
-  const handleConnectContacts = async () => {
-    setIsConnectingContacts(true);
-    setConnectContactsMessage(null);
-
-    try {
-      const response = await fetch("/api/friends/discovery/import", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({}),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(payload?.error ?? "Unable to connect contacts.");
-      }
-
-      setContactsConnected(true);
-      setConnectContactsMessage({
-        type: "success",
-        text: "Contacts connected.",
-      });
-    } catch (error) {
-      console.error("Contact connection failed", error);
-      setConnectContactsMessage({
-        type: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "Unable to connect contacts.",
-      });
-    } finally {
-      setIsConnectingContacts(false);
-    }
-  };
-
-  const handleSendEmailInvite = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const value = inviteEmail.trim();
-    if (!value || !value.includes("@")) {
-      setEmailInviteMessage({
-        type: "error",
-        text: "Enter an email so we know where to send the invite.",
-      });
-      return;
-    }
-
-    setIsSendingEmailInvite(true);
-    setEmailInviteMessage(null);
-
-    try {
-      const response = await fetch("/api/friends/invites", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email: value }),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(payload?.error ?? "Unable to send invite.");
-      }
-
-      setInviteEmail("");
-      setEmailInviteMessage({ type: "success", text: "Invite sent." });
-    } catch (error) {
-      console.error("Failed to send invite", error);
-      setEmailInviteMessage({
-        type: "error",
-        text:
-          error instanceof Error ? error.message : "Unable to send invite.",
-      });
-    } finally {
-      setIsSendingEmailInvite(false);
-    }
   };
 
   return (
@@ -580,77 +479,33 @@ export default function RequestsInvites({
           ))}
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-black/55 px-3 py-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-white">Find your people</h3>
-              <p className="mt-1 max-w-xl text-xs leading-5 text-white/55">
-                Invite friends or connect contacts so CREATOR can surface people
-                you already know.
-              </p>
-            </div>
-            <div className="shrink-0">
-              <button
-                type="button"
-                onClick={() => void handleConnectContacts()}
-                disabled={isConnectingContacts || contactsConnected}
-                className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {isConnectingContacts
-                  ? "Connecting…"
-                  : contactsConnected
-                  ? "Contacts connected"
-                  : "Connect contacts"}
-              </button>
-              {connectContactsMessage ? (
-                <p
-                  className={`mt-1 text-[11px] ${
-                    connectContactsMessage.type === "error"
-                      ? "text-rose-300"
-                      : "text-white/50"
-                  }`}
-                >
-                  {connectContactsMessage.text}
-                </p>
-              ) : null}
-            </div>
-          </div>
-
-          <form
-            onSubmit={(event) => void handleSendEmailInvite(event)}
-            className="mt-3 flex flex-col gap-2 sm:flex-row"
-          >
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(event) => {
-                setInviteEmail(event.target.value);
-                if (emailInviteMessage) {
-                  setEmailInviteMessage(null);
-                }
-              }}
-              placeholder="friend@email.com"
-              className="min-h-9 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-white placeholder:text-white/30 focus:border-white/25 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={isSendingEmailInvite}
-              className="min-h-9 rounded-xl border border-white/10 px-3 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
-            >
-              Invite
-            </button>
-          </form>
-          {emailInviteMessage ? (
-            <p
-              className={`mt-1.5 text-[11px] ${
-                emailInviteMessage.type === "error"
-                  ? "text-rose-300"
-                  : "text-white/50"
-              }`}
-            >
-              {emailInviteMessage.text}
+        <div className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white/75 ring-1 ring-white/10">
+            <BookUser className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-sm font-semibold text-white">
+              Connect contacts
+            </h3>
+            <p className="truncate text-xs text-white/50">
+              Find people you know
             </p>
-          ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {}}
+            className="shrink-0 rounded-xl bg-zinc-700 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98]"
+          >
+            Connect
+          </button>
+          <button
+            type="button"
+            onClick={() => {}}
+            aria-label="Dismiss connect contacts"
+            className="flex h-8 w-8 shrink-0 items-center justify-center text-white/45 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </section>
     </div>

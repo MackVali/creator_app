@@ -223,6 +223,7 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   background-size: 400% 400%;
   border-radius: inherit;
   animation: steel-shimmer 3s ease-in-out infinite;
+  animation-delay: var(--matrix-complete-shimmer-delay, 0ms);
   z-index: -1;
 }
 
@@ -428,6 +429,17 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   border-color: rgba(5, 150, 105, 0.28);
 }
 
+.matrix-event-card-shell .goal-card.emerald-completed-compact.shimmer-border-complete::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.matrix-event-card-shell .goal-card.emerald-completed-compact::after {
+  inset: 0;
+}
+
 .goal-card.completion-border-only.shimmer-border-complete {
   border-color: #1c1f25;
 }
@@ -483,6 +495,10 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
     0 10px 24px -20px rgba(0, 0, 0, 0.85);
   outline: 1px solid rgba(52, 211, 153, 0.12);
   outline-offset: -4px;
+}
+
+.goal-card.matrix-completed-project-card.emerald-completed-compact {
+  filter: brightness(1.18) saturate(1.18);
 }
 
 .goal-card.emerald-completed-compact::after {
