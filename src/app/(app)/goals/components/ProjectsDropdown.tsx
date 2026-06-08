@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 interface ProjectsDropdownProps {
   id: string;
@@ -27,6 +28,23 @@ interface ProjectsDropdownProps {
 
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
+
+const energyCodeToFlameLevel = (value?: string | null): FlameLevel => {
+  switch (value?.toUpperCase()) {
+    case "LOW":
+      return "LOW";
+    case "MEDIUM":
+      return "MEDIUM";
+    case "HIGH":
+      return "HIGH";
+    case "ULTRA":
+      return "ULTRA";
+    case "EXTREME":
+      return "EXTREME";
+    default:
+      return "NO";
+  }
+};
 
 export function ProjectsDropdown({
   id,
@@ -75,7 +93,8 @@ export function ProjectsDropdown({
           />
         ) : projectTasksOnly ? (
           taskEntries.length > 0 ? (
-            <div className="space-y-3">
+            <div className="relative space-y-1.5" role="list">
+              <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
               {taskEntries.map(({ project, task }) => (
                 <TaskRow
                   key={`${project.id}-${task.id}`}
@@ -130,11 +149,11 @@ export function ProjectsDropdown({
             <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]">
               {addingProject
                 ? projectTasksOnly
-                  ? "adding TASK"
-                  : "adding PROJECT"
+                  ? "Adding task…"
+                  : "Adding project…"
                 : projectTasksOnly
-                  ? "add TASK"
-                  : "add PROJECT"}
+                  ? "Add task"
+                  : "Add project"}
             </span>
           </button>
         </div>
@@ -152,6 +171,8 @@ type TaskLite = {
   id: string;
   name: string;
   stage: string;
+  energyCode?: string | null;
+  skillIcon?: string | null;
 };
 
 interface TaskRowProps {
@@ -233,6 +254,12 @@ function TaskRow({
   }, [clearTimer]);
 
   const completed = task.stage === "PERFECT";
+  const taskRowClass = completed
+    ? "border-emerald-300/60 bg-[linear-gradient(135deg,rgba(6,78,59,0.96)_0%,rgba(4,120,87,0.9)_48%,rgba(16,185,129,0.84)_100%)] text-emerald-50 ring-1 ring-emerald-200/30 shadow-[0_12px_26px_-16px_rgba(16,185,129,0.72),0_0_22px_rgba(16,185,129,0.14),inset_2px_0_0_rgba(209,250,229,0.24),inset_0_1px_0_rgba(255,255,255,0.14)]"
+    : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.34)_24%,rgba(24,24,24,0.92)_100%)] text-white/78 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03)]";
+  const markerClass = completed
+    ? "border-emerald-50/40 bg-emerald-100/22 text-white shadow-[0_0_12px_rgba(16,185,129,0.28)]"
+    : "border-white/10 bg-white/[0.05] text-white/50";
 
   return (
     <button
@@ -241,18 +268,25 @@ function TaskRow({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerCancel}
-      className={`flex w-full flex-col gap-2 rounded-[26px] border px-5 py-4 text-left transition-transform duration-200 ${
-        completed
-          ? "border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur hover:-translate-y-1 hover:shadow-[0_35px_50px_rgba(4,47,39,0.65)]"
-          : "border-white/10 bg-gradient-to-br from-white/[0.08] to-black/20 text-white shadow-[0_25px_40px_rgba(0,0,0,0.55),inset_0_-2px_1px_rgba(255,255,255,0.1)] hover:-translate-y-1 hover:shadow-[0_35px_50px_rgba(0,0,0,0.65),inset_0_-2px_2px_rgba(255,255,255,0.2)]"
-      }`}
+      className={`flex w-full min-w-0 items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs leading-4 ${taskRowClass}`}
+      role="listitem"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold leading-tight">{task.name}</span>
-        <span className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-          {task.stage}
-        </span>
-      </div>
+      <span
+        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none ${markerClass}`}
+        aria-hidden="true"
+      >
+        {task.skillIcon ?? (
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1 break-words pr-1">{task.name}</span>
+      {task.energyCode ? (
+        <FlameEmber
+          level={energyCodeToFlameLevel(task.energyCode)}
+          size="sm"
+          className="shrink-0"
+        />
+      ) : null}
     </button>
   );
 }

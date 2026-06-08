@@ -10288,6 +10288,9 @@ export function Fab({
     openingCreationRequestIdRef.current = creationRequest.id;
     resetFabFormState();
     setProjectGoalId(creationRequest.goalId ?? null);
+    if (creationRequest.type === "TASK") {
+      setTaskProjectId(creationRequest.projectId ?? "");
+    }
     setActiveCreationMode("main");
     handleEventClickRef.current(creationRequest.type, null, {
       skipLauncher: true,
@@ -14877,13 +14880,13 @@ export function Fab({
           className={cn(
             "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full border border-white/[0.12] text-white shadow-lg backdrop-blur-xl transition hover:scale-110 hover:border-white/[0.18]",
             isOpen ? "rotate-45" : "",
-            shouldAttachCreationControls ? "pointer-events-none opacity-0" : "",
+            shouldAttachCreationControls ? "pointer-events-none" : "",
           )}
           onTouchStart={handleFabButtonTouchStart}
           onTouchEnd={handleFabButtonTouchEnd}
           onTouchCancel={handleFabButtonTouchCancel}
           onWheel={handleFabButtonWheel}
-          whileTap={{ scale: 0.9 }}
+          whileTap={{ scale: 0.97 }}
           transition={{ type: "spring", stiffness: 500, damping: 25 }}
           style={{
             background:

@@ -745,6 +745,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
               name: task.name,
               stage: task.stage,
               skillId: task.skill_id ?? null,
+              skillIcon: resolveSkillEmoji(task.skill_id),
               priorityCode: task.priority ?? null,
               isNew: false,
             };

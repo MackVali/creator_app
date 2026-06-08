@@ -18,6 +18,7 @@ import {
   type WheelEvent,
 } from "react";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -30,6 +31,7 @@ import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import {
   addDaysInTimeZone,
+  formatDateKeyInTimeZone,
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
@@ -149,7 +151,8 @@ type MatrixView = "monuments" | "skills" | "blocks";
 type MatrixHabitDueStatus = {
   isDue: boolean;
   isOverdue: boolean;
-  label: "DUE" | "OVERDUE" | "DUE TODAY";
+  isCompletedToday?: boolean;
+  label: "DUE" | "OVERDUE" | "DUE TODAY" | "COMPLETE";
 };
 type MatrixHabitDueEvaluation = ReturnType<typeof evaluateHabitDueOnDate>;
 
@@ -194,7 +197,33 @@ const MATRIX_LIBRARY_SMALL_CARD_CLASS =
   "goal-card group relative flex h-full min-h-[108px] w-full transform-gpu flex-col rounded-xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-[0.65rem_0.45rem] text-white shadow-[0_14px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SCHEDULED_EVENT_DOUBLE_TAP_MS = 300;
+const MATRIX_CARD_LONG_PRESS_MS = 520;
+const MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE = 12;
+const MATRIX_CARD_LONG_PRESS_SUPPRESS_MS = 650;
+const MATRIX_COMPLETE_SHIMMER_DURATION_MS = 3000;
+
+function getMatrixCompleteShimmerStyle() {
+  return {
+    "--matrix-complete-shimmer-delay": `-${Date.now() % MATRIX_COMPLETE_SHIMMER_DURATION_MS}ms`,
+  } as React.CSSProperties;
+}
 const MATRIX_CARD_DENSITY_STORAGE_KEY = "creator:matrix-card-density-by-group";
+
+function getMatrixFabOriginRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const styles = window.getComputedStyle(element);
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    borderRadius: styles.borderRadius,
+    backgroundColor: styles.backgroundColor,
+    backgroundImage: styles.backgroundImage,
+    boxShadow: styles.boxShadow,
+  };
+}
 
 function normalizeMatrixSourceId(value: string | null | undefined) {
   return typeof value === "string" ? value.trim() : "";
@@ -291,6 +320,41 @@ function isMatrixEventCompleted(event: MatrixEvent): boolean {
   return event.instance.status?.trim().toLowerCase() === "completed";
 }
 
+function isMatrixHabitCompletedToday(
+  habit: Pick<HabitRow, "last_completed_at">,
+  date: Date,
+  timeZone: string
+): boolean {
+  const completedAt = parseOptionalDate(habit.last_completed_at);
+  if (!completedAt) return false;
+
+  return (
+    formatDateKeyInTimeZone(completedAt, timeZone) ===
+    formatDateKeyInTimeZone(date, timeZone)
+  );
+}
+
+function getMatrixHabitDisplayStatus(
+  habit: HabitRow,
+  date: Date,
+  timeZone: string
+): MatrixHabitDueStatus {
+  if (isMatrixHabitCompletedToday(habit, date, timeZone)) {
+    return {
+      isDue: true,
+      isOverdue: false,
+      isCompletedToday: true,
+      label: "COMPLETE",
+    };
+  }
+
+  return getMatrixHabitDueStatus(habit, date, timeZone);
+}
+
+function isMatrixDueHabitCompleted(habit: MatrixHabit): boolean {
+  return habit.dueStatus?.isCompletedToday === true;
+}
+
 function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
   return [...items].sort((a, b) => {
     const completionDifference =
@@ -310,6 +374,11 @@ function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
 
 function sortMatrixDueHabits(items: MatrixHabit[]): MatrixHabit[] {
   return [...items].sort((a, b) => {
+    const completionDifference =
+      Number(isMatrixDueHabitCompleted(a)) -
+      Number(isMatrixDueHabitCompleted(b));
+    if (completionDifference !== 0) return completionDifference;
+
     const rankDifference =
       getMatrixHabitTypeRank(a.habit_type) - getMatrixHabitTypeRank(b.habit_type);
     if (rankDifference !== 0) return rankDifference;
@@ -595,6 +664,7 @@ function buildProjectGoal({
     name: task.name,
     stage: task.stage,
     skillId: task.skill_id ?? null,
+    skillIcon: task.skill_id ? (skillIdToIcon.get(task.skill_id) ?? null) : null,
     priorityCode: task.priority ?? null,
     isNew: false,
   }));
@@ -1045,7 +1115,10 @@ function MatrixSmallEventCard({
   completed?: boolean;
 }) {
   return (
-    <div className={cn(MATRIX_LIBRARY_SMALL_CARD_CLASS, className)}>
+    <div
+      className={cn(MATRIX_LIBRARY_SMALL_CARD_CLASS, className)}
+      style={completed ? getMatrixCompleteShimmerStyle() : undefined}
+    >
       {status && !completed ? (
         <span className="pointer-events-none absolute right-1.5 top-1.5 max-w-[58%] truncate rounded-full border border-white/8 bg-black/20 px-1 py-[2px] text-[6px] font-semibold uppercase leading-none tracking-[0.06em] text-white/42">
           {status}
@@ -1158,6 +1231,7 @@ function MatrixHabitCard({
               overdue ? "related-habit-due-border" : null,
             ]
       )}
+      style={isCompleted ? getMatrixCompleteShimmerStyle() : undefined}
     >
       {status && !isCompleted ? (
         <span
@@ -1227,10 +1301,16 @@ function MatrixProjectCard({
   goal,
   glyph,
   completed = false,
+  density = "small",
+  open = false,
+  onOpenChange,
 }: {
   goal: Goal;
   glyph: string;
   completed?: boolean;
+  density?: MatrixCardDensity;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const progress = completed
     ? 100
@@ -1241,6 +1321,58 @@ function MatrixProjectCard({
     goal.monumentEmoji ||
     goal.title.slice(0, 2).toUpperCase();
 
+  if (density === "large" && completed) {
+    return (
+      <div
+        role={onOpenChange ? "button" : undefined}
+        tabIndex={onOpenChange ? 0 : undefined}
+        aria-expanded={onOpenChange ? open : undefined}
+        aria-controls={onOpenChange ? `goal-${goal.id}` : undefined}
+        onClick={() => onOpenChange?.(!open)}
+        onKeyDown={(event) => {
+          if (!onOpenChange) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onOpenChange(!open);
+        }}
+        className={cn(
+          "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4",
+          "min-h-[96px]",
+          onOpenChange ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25" : null,
+          "emerald-completed-compact",
+          "shimmer-border-complete",
+          "scale-[0.98]",
+          "origin-center"
+        )}
+        style={getMatrixCompleteShimmerStyle()}
+      >
+        <div className="relative z-[2] flex h-full min-w-0 flex-1 flex-col items-stretch">
+          <div className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.055] text-base font-semibold text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]">
+              {displayGlyph}
+            </div>
+            <h3
+              className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.4em] text-white/92"
+              title={goal.title}
+              style={{ hyphens: "auto" }}
+            >
+              {goal.title}
+            </h3>
+            <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full border border-emerald-100/[0.16] bg-emerald-950/[0.22] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]">
+              <div
+                className="progress-bar-glint relative h-full rounded-full border border-emerald-100/25 bg-gradient-to-r from-emerald-300/65 via-emerald-100/85 to-emerald-300/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22),0_0_10px_rgba(52,211,153,0.34)] transition-[width] duration-200"
+                style={{ width: `${progress}%` }}
+              >
+                <span className="progress-bar-glint-sweep" aria-hidden="true" />
+                <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-emerald-50/45" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <MatrixSmallEventCard
       glyph={displayGlyph}
@@ -1248,11 +1380,21 @@ function MatrixProjectCard({
       completed={completed}
       className={completed ? ["emerald-completed-compact", "shimmer-border-complete"].join(" ") : null}
       meta={
-        <div className="h-[6px] w-full overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24] shadow-[inset_0_1px_2px_rgba(0,0,0,0.58),_0_1px_1px_rgba(255,255,255,0.06)]">
+        <div className={cn(
+          "w-full overflow-hidden rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]",
+          progress > 0
+            ? "h-2 border border-[#16483d] bg-[linear-gradient(180deg,#1b2d28,#0d1b17)]"
+            : "h-2 border border-[#252a2a] bg-[linear-gradient(180deg,#17191b,#090a0b)]"
+        )}>
           <div
-            className="h-full rounded-[999px] bg-white/70"
+            className={cn(
+              "relative h-full rounded-full transition-[width] duration-200",
+              "bg-[linear-gradient(90deg,#0b7a5c,#059669,#0b8060)] shadow-[0_0_9px_rgba(16,185,129,0.26),inset_0_1px_0_rgba(209,250,229,0.28),inset_0_-1px_0_rgba(0,0,0,0.24)]"
+            )}
             style={{ width: `${progress}%` }}
-          />
+          >
+            <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-emerald-50/30" />
+          </div>
         </div>
       }
     />
@@ -1269,11 +1411,19 @@ function ScheduledEventCard({
   event: MatrixEvent;
   open: boolean;
   onOpenChange(open: boolean): void;
-  onComplete(instanceId: string): void;
+  onComplete(instanceId: string, nextStatus: ScheduleInstance["status"]): void;
   density: MatrixCardDensity;
 }) {
+  const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapRef = useRef<{ instanceId: string; time: number } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+  } | null>(null);
+  const suppressTapUntilRef = useRef(0);
   const isCompleted = event.instance.status === "completed";
   const cleanStatus =
     event.instance.status === "completed"
@@ -1283,11 +1433,126 @@ function ScheduledEventCard({
         : null;
 
   const completeEvent = useCallback(() => {
-    if (isCompleted) return;
-    onComplete(event.instance.id);
+    onComplete(event.instance.id, isCompleted ? "scheduled" : "completed");
   }, [event.instance.id, isCompleted, onComplete]);
 
+  const cancelLongPress = useCallback(
+    (event?: PointerEvent<HTMLDivElement>) => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
+      if (event) {
+        try {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
+        } catch {
+          // Pointer capture may already be released.
+        }
+      }
+
+      longPressStartRef.current = null;
+    },
+    []
+  );
+
+  const handleLongPressEdit = useCallback(
+    (element: HTMLElement) => {
+      if (!fabCreation) return;
+
+      if (event.instance.source_type === "PROJECT") {
+        const projectId = event.instance.source_id;
+        if (!projectId) return;
+
+        fabCreation.requestEntityEdit({
+          entityType: "PROJECT",
+          entityId: projectId,
+          instanceId: event.instance.id,
+          title: event.title,
+          originRect: getMatrixFabOriginRect(element),
+        });
+        return;
+      }
+
+      if (event.instance.source_type === "HABIT") {
+        const habitId = event.habit?.id ?? event.instance.source_id;
+        if (!habitId) return;
+
+        fabCreation.requestEntityEdit({
+          entityType: "HABIT",
+          entityId: habitId,
+          instanceId: event.instance.id,
+          title: event.title,
+          originRect: getMatrixFabOriginRect(element),
+        });
+      }
+    },
+    [event.habit?.id, event.instance.id, event.instance.source_id, event.instance.source_type, event.title, fabCreation]
+  );
+
+  const handleCardPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (!fabCreation) return;
+
+      const element = event.currentTarget;
+      const pointerId = event.pointerId;
+
+      cancelLongPress();
+      longPressStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId,
+      };
+
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        suppressTapUntilRef.current = Date.now() + MATRIX_CARD_LONG_PRESS_SUPPRESS_MS;
+        longPressStartRef.current = null;
+
+        try {
+          if (element.hasPointerCapture?.(pointerId)) {
+            element.releasePointerCapture?.(pointerId);
+          }
+        } catch {
+          // Pointer capture may already be released.
+        }
+
+        handleLongPressEdit(element);
+      }, MATRIX_CARD_LONG_PRESS_MS);
+    },
+    [cancelLongPress, fabCreation, handleLongPressEdit]
+  );
+
+  const handleCardPointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = longPressStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+
+      const deltaX = Math.abs(event.clientX - start.x);
+      const deltaY = Math.abs(event.clientY - start.y);
+
+      if (
+        deltaX > MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE ||
+        deltaY > MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE
+      ) {
+        cancelLongPress(event);
+      }
+    },
+    [cancelLongPress]
+  );
+
+  const handleClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (Date.now() < suppressTapUntilRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, []);
+
   const handleDoubleClick = useCallback(() => {
+    if (Date.now() < suppressTapUntilRef.current) return;
     completeEvent();
   }, [completeEvent]);
 
@@ -1302,9 +1567,14 @@ function ScheduledEventCard({
 
   const handleTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (Date.now() < suppressTapUntilRef.current) {
+        event.stopPropagation();
+        return;
+      }
+
       const start = touchStartRef.current;
       touchStartRef.current = null;
-      if (!start || event.changedTouches.length !== 1 || isCompleted) return;
+      if (!start || event.changedTouches.length !== 1) return;
 
       const touch = event.changedTouches[0];
       const deltaX = Math.abs(touch.clientX - start.x);
@@ -1331,7 +1601,7 @@ function ScheduledEventCard({
         time: now,
       };
     },
-    [completeEvent, isCompleted]
+    [completeEvent]
   );
 
   const scheduledGoal = useMemo<Goal | null>(() => {
@@ -1352,6 +1622,9 @@ function ScheduledEventCard({
         goal={scheduledGoal}
         glyph={event.glyph}
         completed={isCompleted}
+        density={density}
+        open={open}
+        onOpenChange={onOpenChange}
       />
     ) : (
       <GoalCard
@@ -1360,7 +1633,7 @@ function ScheduledEventCard({
         showCreatedAt={false}
         showEmojiPrefix={false}
         variant="compact"
-        completionTheme="border"
+        completionTheme="matrix"
         projectDropdownMode="tasks-only"
         open={open}
         onOpenChange={onOpenChange}
@@ -1382,10 +1655,23 @@ function ScheduledEventCard({
   return card ? (
     <div
       data-instance-id={event.instance.id}
+      onClickCapture={handleClickCapture}
       onDoubleClick={handleDoubleClick}
+      onPointerDownCapture={handleCardPointerDown}
+      onPointerMoveCapture={handleCardPointerMove}
+      onPointerUpCapture={cancelLongPress}
+      onPointerCancelCapture={cancelLongPress}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "mouse") {
+          cancelLongPress(event);
+        }
+      }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className="matrix-event-card-shell h-full"
+      className={cn(
+        "matrix-event-card-shell h-full",
+        isCompleted && event.goal ? "overflow-visible" : null
+      )}
     >
       {card}
     </div>
@@ -1395,21 +1681,208 @@ function ScheduledEventCard({
 function DueHabitCard({
   habit,
   density,
+  completing,
+  onComplete,
 }: {
   habit: MatrixHabit;
   density: MatrixCardDensity;
+  completing: boolean;
+  onComplete(habitId: string, completedToday: boolean): void;
 }) {
+  const fabCreation = useFabCreation();
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapRef = useRef<{ habitId: string; time: number } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+  } | null>(null);
+  const suppressTapUntilRef = useRef(0);
   const dueLabel =
     habit.dueStatus?.label ?? (habit.duration_minutes ? "DUE" : "DUE TODAY");
+  const isCompletedToday = isMatrixDueHabitCompleted(habit);
+
+  const cancelLongPress = useCallback(
+    (event?: PointerEvent<HTMLDivElement>) => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
+      if (event) {
+        try {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
+        } catch {
+          // Pointer capture may already be released.
+        }
+      }
+
+      longPressStartRef.current = null;
+    },
+    []
+  );
+
+  const handleCardPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (completing || !fabCreation) return;
+
+      const element = event.currentTarget;
+      const pointerId = event.pointerId;
+
+      cancelLongPress();
+      longPressStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId,
+      };
+
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        suppressTapUntilRef.current = Date.now() + MATRIX_CARD_LONG_PRESS_SUPPRESS_MS;
+        longPressStartRef.current = null;
+
+        try {
+          if (element.hasPointerCapture?.(pointerId)) {
+            element.releasePointerCapture?.(pointerId);
+          }
+        } catch {
+          // Pointer capture may already be released.
+        }
+
+        fabCreation.requestEntityEdit({
+          entityType: "HABIT",
+          entityId: habit.id,
+          title: habit.name,
+          originRect: getMatrixFabOriginRect(element),
+        });
+      }, MATRIX_CARD_LONG_PRESS_MS);
+    },
+    [cancelLongPress, completing, fabCreation, habit.id, habit.name]
+  );
+
+  const handleCardPointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = longPressStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+
+      const deltaX = Math.abs(event.clientX - start.x);
+      const deltaY = Math.abs(event.clientY - start.y);
+
+      if (
+        deltaX > MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE ||
+        deltaY > MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE
+      ) {
+        cancelLongPress(event);
+      }
+    },
+    [cancelLongPress]
+  );
+
+  const handleClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (Date.now() < suppressTapUntilRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, []);
+
+  const completeHabit = useCallback(() => {
+    if (completing || Date.now() < suppressTapUntilRef.current) return;
+    onComplete(habit.id, isCompletedToday);
+  }, [completing, habit.id, isCompletedToday, onComplete]);
+
+  const handleDoubleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      if (completing) return;
+      completeHabit();
+    },
+    [completeHabit, completing]
+  );
+
+  const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    if (completing) {
+      event.stopPropagation();
+      return;
+    }
+    if (event.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
+    const touch = event.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  }, [completing]);
+
+  const handleTouchEnd = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (completing || Date.now() < suppressTapUntilRef.current) {
+        event.stopPropagation();
+        return;
+      }
+      const start = touchStartRef.current;
+      touchStartRef.current = null;
+      if (!start || event.changedTouches.length !== 1) return;
+
+      const touch = event.changedTouches[0];
+      const deltaX = Math.abs(touch.clientX - start.x);
+      const deltaY = Math.abs(touch.clientY - start.y);
+      if (deltaX > 12 || deltaY > 12) return;
+
+      const now = Date.now();
+      const habitId = event.currentTarget.dataset.habitId ?? "";
+      const lastTap = lastTapRef.current;
+      if (
+        lastTap?.habitId === habitId &&
+        now - lastTap.time <= SCHEDULED_EVENT_DOUBLE_TAP_MS
+      ) {
+        lastTapRef.current = null;
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+        event.stopPropagation();
+        completeHabit();
+        return;
+      }
+
+      lastTapRef.current = {
+        habitId,
+        time: now,
+      };
+    },
+    [completeHabit, completing]
+  );
 
   return (
-    <div className="matrix-event-card-shell h-full">
+    <div
+      data-habit-id={habit.id}
+      onClickCapture={handleClickCapture}
+      onDoubleClick={handleDoubleClick}
+      onPointerDownCapture={handleCardPointerDown}
+      onPointerMoveCapture={handleCardPointerMove}
+      onPointerUpCapture={cancelLongPress}
+      onPointerCancelCapture={cancelLongPress}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "mouse") {
+          cancelLongPress(event);
+        }
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className={cn(
+        "matrix-event-card-shell h-full",
+        completing ? "opacity-70" : null
+      )}
+    >
       <MatrixHabitCard
         glyph={habit.glyph}
         title={habit.name}
-        pill={dueLabel}
+        pill={isCompletedToday ? "COMPLETE" : dueLabel}
         habitType={habit.habit_type}
-        overdue={habit.dueStatus?.isOverdue ?? false}
+        overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
+        completed={isCompletedToday}
         density={density}
       />
     </div>
@@ -1508,11 +1981,18 @@ function MatrixMonumentCarousel({
   matrixView,
   revealIndex = 0,
   onCompleteScheduledEvent,
+  onCompleteDueHabit,
+  completingDueHabitIds,
 }: {
   group: MatrixMonumentGroup;
   matrixView: MatrixView;
   revealIndex?: number;
-  onCompleteScheduledEvent(instanceId: string): void;
+  onCompleteScheduledEvent(
+    instanceId: string,
+    nextStatus: ScheduleInstance["status"]
+  ): void;
+  onCompleteDueHabit(habitId: string, completedToday: boolean): void;
+  completingDueHabitIds: Set<string>;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
@@ -1588,12 +2068,13 @@ function MatrixMonumentCarousel({
       ),
     [group.unscheduledDueHabits, scheduledMatrixHabitIds]
   );
+  const activeScheduledItems = group.scheduledItems;
   const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
     const panels: MatrixPanel[] = [];
-    if (group.scheduledItems.length > 0) panels.push("scheduled");
+    if (activeScheduledItems.length > 0) panels.push("scheduled");
     if (visibleUnscheduledDueHabits.length > 0) panels.push("unscheduled");
     return panels;
-  }, [group.scheduledItems.length, visibleUnscheduledDueHabits.length]);
+  }, [activeScheduledItems.length, visibleUnscheduledDueHabits.length]);
   const canSwitchMatrixPanels = availableMatrixPanels.length > 1;
   const activeMatrixPanelIndex = Math.max(
     0,
@@ -1615,8 +2096,8 @@ function MatrixMonumentCarousel({
     matrixPanel;
   const activeMatrixPanelLabel = MATRIX_PANEL_LABELS[activeMatrixPanel];
   const sortedScheduledItems = useMemo(
-    () => sortMatrixScheduledItems(group.scheduledItems),
-    [group.scheduledItems]
+    () => sortMatrixScheduledItems(activeScheduledItems),
+    [activeScheduledItems]
   );
   const sortedUnscheduledDueHabits = useMemo(
     () => sortMatrixDueHabits(visibleUnscheduledDueHabits),
@@ -1805,7 +2286,7 @@ function MatrixMonumentCarousel({
     measureActiveMatrixPanel();
   }, [
     cardDensity,
-    group.scheduledItems,
+    activeScheduledItems,
     isGroupOpen,
     measureActiveMatrixPanel,
     openGoalId,
@@ -2260,6 +2741,10 @@ function MatrixMonumentCarousel({
                                   key={habit.id}
                                   habit={habit}
                                   density={cardDensity}
+                                  completing={completingDueHabitIds.has(
+                                    habit.id
+                                  )}
+                                  onComplete={onCompleteDueHabit}
                                 />
                               ))}
                             </div>
@@ -2322,10 +2807,14 @@ function MatrixContent() {
   const [matrixView, setMatrixView] = useState<MatrixView>("monuments");
   const [isMatrixTrayOpen, setIsMatrixTrayOpen] = useState(false);
   const [matrixTrayHeight, setMatrixTrayHeight] = useState(0);
+  const [completingDueHabitIds, setCompletingDueHabitIds] = useState<
+    Set<string>
+  >(new Set());
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
+  const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
 
   const handleCompleteScheduledEvent = useCallback(
-    async (instanceId: string) => {
+    async (instanceId: string, nextStatus: ScheduleInstance["status"]) => {
       if (!user?.id) return;
 
       const supabase = getSupabaseBrowser();
@@ -2336,62 +2825,154 @@ function MatrixContent() {
 
       const { error } = await supabase
         .from("schedule_instances")
-        .update({ status: "completed" })
+        .update({ status: nextStatus })
         .eq("id", instanceId)
         .eq("user_id", user.id);
 
       if (error) {
-        console.error("Failed to complete scheduled Matrix Event", error);
+        console.error("Failed to toggle scheduled Matrix Event", error);
         return;
       }
 
+      const updateScheduledEventGroups = (
+        groups: MonumentGroup<MatrixEvent>[]
+      ) =>
+        groups.map((group) => ({
+          ...group,
+          items: group.items.map((event) =>
+            event.instance.id === instanceId
+              ? {
+                  ...event,
+                  instance: {
+                    ...event.instance,
+                    status: nextStatus,
+                  },
+                }
+              : event
+          ),
+        }));
+
       setState((current) => ({
         ...current,
-        eventGroups: current.eventGroups.map((group) => ({
-          ...group,
-          items: group.items.map((event) =>
-            event.instance.id === instanceId
-              ? {
-                  ...event,
-                  instance: {
-                    ...event.instance,
-                    status: "completed",
-                  },
-                }
-              : event
-          ),
-        })),
-        skillEventGroups: current.skillEventGroups.map((group) => ({
-          ...group,
-          items: group.items.map((event) =>
-            event.instance.id === instanceId
-              ? {
-                  ...event,
-                  instance: {
-                    ...event.instance,
-                    status: "completed",
-                  },
-                }
-              : event
-          ),
-        })),
-        blockEventGroups: current.blockEventGroups.map((group) => ({
-          ...group,
-          items: group.items.map((event) =>
-            event.instance.id === instanceId
-              ? {
-                  ...event,
-                  instance: {
-                    ...event.instance,
-                    status: "completed",
-                  },
-                }
-              : event
-          ),
-        })),
+        eventGroups: updateScheduledEventGroups(current.eventGroups),
+        skillEventGroups: updateScheduledEventGroups(current.skillEventGroups),
+        blockEventGroups: updateScheduledEventGroups(current.blockEventGroups),
       }));
     },
     [user?.id]
+  );
+
+  const handleCompleteDueHabit = useCallback(
+    async (habitId: string, completedToday: boolean) => {
+      if (!user?.id) return;
+
+      if (completingDueHabitIdsRef.current.has(habitId)) return;
+      completingDueHabitIdsRef.current.add(habitId);
+      setCompletingDueHabitIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.add(habitId);
+        return nextIds;
+      });
+
+      try {
+        const action = completedToday ? "undo" : "complete";
+        const completedAt = new Date().toISOString();
+        const response = await fetch("/api/habits/completion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            habitId,
+            completedAt,
+            timeZone,
+            action,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Habit completion toggle failed with status ${response.status}`
+          );
+        }
+
+        setState((current) => {
+          const updateHabitInGroups = (
+            groups: MonumentGroup<MatrixHabit>[]
+          ) => {
+            return groups
+              .map((group) => {
+                const items = group.items.flatMap((habit) => {
+                  if (habit.id !== habitId) return [habit];
+
+                  if (!completedToday) {
+                    return [
+                      {
+                        ...habit,
+                        last_completed_at: completedAt,
+                        next_due_override: null,
+                        dueStatus: {
+                          isDue: true,
+                          isOverdue: false,
+                          isCompletedToday: true,
+                          label: "COMPLETE" as const,
+                        },
+                      },
+                    ];
+                  }
+
+                  const undoneHabit = {
+                    ...habit,
+                    last_completed_at: null,
+                  };
+                  const dueStatus = getMatrixHabitDueStatus(
+                    undoneHabit,
+                    new Date(),
+                    timeZone
+                  );
+
+                  if (!dueStatus.isDue) return [];
+
+                  return [
+                    {
+                      ...undoneHabit,
+                      dueStatus,
+                    },
+                  ];
+                });
+
+                return {
+                  ...group,
+                  items,
+                };
+              })
+              .filter((group) => group.items.length > 0);
+          };
+
+          return {
+            ...current,
+            unscheduledDueHabitGroups: updateHabitInGroups(
+              current.unscheduledDueHabitGroups
+            ),
+            skillUnscheduledDueHabitGroups: updateHabitInGroups(
+              current.skillUnscheduledDueHabitGroups
+            ),
+            blockUnscheduledDueHabitGroups: updateHabitInGroups(
+              current.blockUnscheduledDueHabitGroups
+            ),
+          };
+        });
+      } catch (error) {
+        console.error("Failed to toggle due Matrix habit", error);
+      } finally {
+        completingDueHabitIdsRef.current.delete(habitId);
+        setCompletingDueHabitIds((currentIds) => {
+          if (!currentIds.has(habitId)) return currentIds;
+          const nextIds = new Set(currentIds);
+          nextIds.delete(habitId);
+          return nextIds;
+        });
+      }
+    },
+    [timeZone, user?.id]
   );
 
   useEffect(() => {
@@ -2632,7 +3213,9 @@ function MatrixContent() {
         }
 
         const dueHabitRows = ((allHabitsResult.data ?? []) as HabitRow[]).filter(
-          (habit) => isHabitDueToday(habit, today, timeZone)
+          (habit) =>
+            isHabitDueToday(habit, today, timeZone) ||
+            isMatrixHabitCompletedToday(habit, today, timeZone)
         );
 
         const duplicateScheduledDueHabits = dueHabitRows.filter((habit) =>
@@ -2652,7 +3235,11 @@ function MatrixContent() {
         const unscheduledDueHabits = dueHabitRows
           .filter((habit) => !scheduledTodayHabitIds.has(normalizeMatrixSourceId(habit.id)))
           .map((habit) => {
-            const dueStatus = getMatrixHabitDueStatus(habit, today, timeZone);
+            const dueStatus = getMatrixHabitDisplayStatus(
+              habit,
+              today,
+              timeZone
+            );
 
             return {
               ...habit,
@@ -2863,6 +3450,8 @@ function MatrixContent() {
                   matrixView={matrixView}
                   revealIndex={index}
                   onCompleteScheduledEvent={handleCompleteScheduledEvent}
+                  onCompleteDueHabit={handleCompleteDueHabit}
+                  completingDueHabitIds={completingDueHabitIds}
                 />
               ))}
             </div>

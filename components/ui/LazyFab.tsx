@@ -50,7 +50,7 @@ export function LazyFab(props: LazyFabProps) {
     openOnMount = false,
     hideLauncher = false,
     creationRequest = null,
-    prewarm = false,
+    prewarm = true,
     ...fabProps
   } = props;
   const wrapperProps = Object.fromEntries(
@@ -61,8 +61,8 @@ export function LazyFab(props: LazyFabProps) {
   const [shouldLoadFab, setShouldLoadFab] = React.useState(shouldOpenHeavyFab);
   const [isFabReady, setIsFabReady] = React.useState(false);
   const [openWhenReady, setOpenWhenReady] = React.useState(false);
-  const shouldRenderHeavyFab =
-    isFabReady && (openWhenReady || shouldOpenHeavyFab);
+  const isWaitingForTappedFab = openWhenReady && !isFabReady;
+  const shouldRenderHeavyFab = isFabReady;
 
   const requestFabLoad = React.useCallback(() => {
     setShouldLoadFab(true);
@@ -141,7 +141,7 @@ export function LazyFab(props: LazyFabProps) {
     );
   }
 
-  if (hideLauncher || shouldOpenHeavyFab) {
+  if (hideLauncher || (shouldOpenHeavyFab && !isWaitingForTappedFab)) {
     return null;
   }
 
@@ -151,8 +151,8 @@ export function LazyFab(props: LazyFabProps) {
         type="button"
         data-tour="fab"
         aria-label="Add new item"
-        aria-busy={openWhenReady && !isFabReady}
-        className="relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full border border-white/[0.12] text-white shadow-lg backdrop-blur-xl transition hover:scale-110 hover:border-white/[0.18] active:scale-90"
+        aria-busy={isWaitingForTappedFab}
+        className="relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full border border-white/[0.12] text-white shadow-lg backdrop-blur-xl transition hover:scale-110 hover:border-white/[0.18] active:scale-[0.97]"
         onPointerEnter={requestFabLoad}
         onFocus={requestFabLoad}
         onTouchStart={requestFabLoad}
