@@ -1440,18 +1440,23 @@ async function fetchProjectIdsForSkill(
 async function fetchHabits(
   supabase: SupabaseBrowserClient,
   userId: string,
-  skillIds: string[]
+  skillIds?: string[]
 ): Promise<FocusPomoQueueItem[]> {
-  if (skillIds.length === 0) return [];
+  if (skillIds && skillIds.length === 0) return [];
 
   let lastError: { message?: string } | null = null;
 
   for (const select of HABIT_SELECTS) {
-    const response = (await supabase
+    let query = supabase
       .from("habits")
       .select(select)
-      .eq("user_id", userId)
-      .in("skill_id", skillIds)) as QueryResponse<HabitRow>;
+      .eq("user_id", userId);
+
+    if (skillIds) {
+      query = query.in("skill_id", skillIds);
+    }
+
+    const response = (await query) as QueryResponse<HabitRow>;
 
     if (!response.error) {
       const rows = response.data ?? [];
@@ -1497,6 +1502,7 @@ async function fetchProjects(
   supabase: SupabaseBrowserClient,
   userId: string,
   params:
+    | { sourceType: "all" }
     | { sourceType: "monument"; goalIds: string[] }
     | { sourceType: "skill"; projectIds: string[] }
 ): Promise<FocusPomoQueueItem[]> {
@@ -1519,10 +1525,11 @@ async function fetchProjects(
       query = query.is("completed_at", null);
     }
 
-    query =
-      params.sourceType === "monument"
-        ? query.in("goal_id", params.goalIds)
-        : query.in("id", params.projectIds);
+    if (params.sourceType === "monument") {
+      query = query.in("goal_id", params.goalIds);
+    } else if (params.sourceType === "skill") {
+      query = query.in("id", params.projectIds);
+    }
 
     const response = (await query) as QueryResponse<ProjectRow>;
 
@@ -1568,8 +1575,8 @@ async function fetchProjects(
 }
 
 export async function fetchFocusPomoQueue(params: {
-  sourceType: QueueSourceType;
-  sourceId: string;
+  sourceType?: QueueSourceType;
+  sourceId?: string;
 }): Promise<FocusPomoQueueItem[]> {
   const supabase = getSupabaseBrowser();
 
@@ -1584,7 +1591,17 @@ export async function fetchFocusPomoQueue(params: {
   if (!user) return [];
 
   const sourceId = readString(params.sourceId);
+  if (!params.sourceType && !sourceId) {
+    const [habits, projects] = await Promise.all([
+      fetchHabits(supabase, user.id),
+      fetchProjects(supabase, user.id, { sourceType: "all" }),
+    ]);
+
+    return [...habits, ...projects].sort(compareQueueItems);
+  }
+
   if (!sourceId) return [];
+  if (!params.sourceType) return [];
 
   let skillIds: string[];
   let projectScope:

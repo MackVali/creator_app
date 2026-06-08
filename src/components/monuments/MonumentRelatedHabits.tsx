@@ -420,6 +420,7 @@ export function MonumentRelatedHabits({
   const fabCreation = useFabCreation();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [completionLoading, setCompletionLoading] = useState(false);
   const [habitsError, setHabitsError] = useState<string | null>(null);
@@ -875,6 +876,26 @@ export function MonumentRelatedHabits({
   useEffect(() => cancelRelatedHabitLongPress, [cancelRelatedHabitLongPress]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ entityType?: string }>).detail;
+      if (detail?.entityType !== "HABIT") {
+        return;
+      }
+
+      setRefreshVersion((current) => current + 1);
+    };
+
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    return () => {
+      window.removeEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadRelatedHabits = async () => {
@@ -1017,7 +1038,7 @@ export function MonumentRelatedHabits({
     return () => {
       cancelled = true;
     };
-  }, [monumentId, supabase]);
+  }, [monumentId, refreshVersion, supabase]);
 
   return (
     <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">

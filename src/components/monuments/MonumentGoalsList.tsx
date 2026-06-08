@@ -1937,7 +1937,13 @@ export function MonumentGoalsList({
 
     const handleCreatorEntitySaved = (event: Event) => {
       const detail = (event as CustomEvent<{ entityType?: string }>).detail;
-      if (detail?.entityType !== "GOAL") {
+      const entityType = detail?.entityType;
+      if (
+        entityType !== "GOAL" &&
+        entityType !== "PROJECT" &&
+        entityType !== "TASK" &&
+        entityType !== "HABIT"
+      ) {
         return;
       }
 

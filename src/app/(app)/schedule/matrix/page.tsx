@@ -19,6 +19,7 @@ import {
 } from "react";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
+import { PullRefreshShell } from "@/components/ui/PullRefreshShell";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -2805,6 +2806,7 @@ function MatrixContent() {
   );
   const [state, setState] = useState<MatrixState>(initialState);
   const [matrixView, setMatrixView] = useState<MatrixView>("monuments");
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [isMatrixTrayOpen, setIsMatrixTrayOpen] = useState(false);
   const [matrixTrayHeight, setMatrixTrayHeight] = useState(0);
   const [completingDueHabitIds, setCompletingDueHabitIds] = useState<
@@ -2974,6 +2976,36 @@ function MatrixContent() {
     },
     [timeZone, user?.id]
   );
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshVersion((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ entityType?: string }>).detail;
+      const entityType = detail?.entityType;
+      if (
+        entityType !== "GOAL" &&
+        entityType !== "PROJECT" &&
+        entityType !== "TASK" &&
+        entityType !== "HABIT"
+      ) {
+        return;
+      }
+
+      setRefreshVersion((current) => current + 1);
+    };
+
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    return () => {
+      window.removeEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -3308,7 +3340,7 @@ function MatrixContent() {
     return () => {
       cancelled = true;
     };
-  }, [timeZone, user?.id]);
+  }, [refreshVersion, timeZone, user?.id]);
 
   const matrixMonumentGroups = useMemo(
     () =>
@@ -3375,8 +3407,13 @@ function MatrixContent() {
   }, [isMatrixTrayOpen]);
 
   return (
-    <main className="min-h-screen bg-[#030406] px-4 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-1 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
+    <main className="min-h-screen bg-[#030406] text-white">
+      <PullRefreshShell
+        onRefresh={handlePullRefresh}
+        lockDocumentScroll={false}
+        contentClassName="px-4 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-1 sm:px-6 lg:px-8"
+      >
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
         <header className="flex items-center justify-between gap-3 px-1 text-zinc-500">
           <div className="flex min-w-0 items-center gap-2">
             <Link
@@ -3464,7 +3501,8 @@ function MatrixContent() {
             </MatrixCard>
           )}
         </section>
-      </div>
+        </div>
+      </PullRefreshShell>
     </main>
   );
 }

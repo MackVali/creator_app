@@ -11,7 +11,7 @@ import {
   Grid3x3,
   Target,
   Timer,
-  MoreHorizontal,
+  MoreVertical,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
@@ -421,6 +421,7 @@ export default function SkillDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<SkillProgressData | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
+  const [relatedHabitsRefreshVersion, setRelatedHabitsRefreshVersion] = useState(0);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [habitsError, setHabitsError] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
@@ -590,6 +591,26 @@ export default function SkillDetailPage() {
       window.clearInterval(intervalId);
     };
   }, [timeZone]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ entityType?: string }>).detail;
+      if (detail?.entityType !== "HABIT") {
+        return;
+      }
+
+      setRelatedHabitsRefreshVersion((current) => current + 1);
+    };
+
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    return () => {
+      window.removeEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1243,7 +1264,7 @@ export default function SkillDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, id]);
+  }, [supabase, id, relatedHabitsRefreshVersion]);
 
   const resetPullExit = useCallback(() => {
     pullStartYRef.current = null;
@@ -1331,7 +1352,7 @@ export default function SkillDetailPage() {
                     ) : (
                       <Skeleton id="skill-overview-loading" className="h-8 min-w-0 flex-1 bg-white/10 sm:h-9 md:h-10" />
                     )}
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-0.5">
                       <Skeleton className="size-9 rounded-full bg-white/10" />
                       <Skeleton className="size-9 rounded-full bg-white/10" />
                     </div>
@@ -1612,7 +1633,7 @@ export default function SkillDetailPage() {
                     <h1 id="skill-overview" className="min-w-0 flex-1 break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
                       {skill.name}
                     </h1>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-0.5">
                       <button
                         type="button"
                         aria-label={`Start focus pomo for ${skill.name}`}
@@ -1634,9 +1655,9 @@ export default function SkillDetailPage() {
                           <button
                             type="button"
                             aria-label="Skill actions"
-                            className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                            className="inline-flex h-9 w-5 items-center justify-center text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
                           >
-                            <MoreHorizontal
+                            <MoreVertical
                               className="h-4 w-4"
                               aria-hidden="true"
                             />

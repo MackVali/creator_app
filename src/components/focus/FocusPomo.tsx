@@ -2555,7 +2555,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   }, [open]);
 
   useEffect(() => {
-    if (!open || !source?.sourceId) {
+    if (!open) {
       setQueue([]);
       setQueueLoading(false);
       setQueueError(null);
@@ -2598,10 +2598,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setQueueLoading(true);
     setQueueError(null);
 
-    fetchFocusPomoQueue({
-      sourceType: source.sourceType,
-      sourceId: source.sourceId,
-    })
+    fetchFocusPomoQueue(
+      source
+        ? {
+            sourceType: source.sourceType,
+            sourceId: source.sourceId,
+          }
+        : {}
+    )
       .then((items) => {
         if (stale) return;
         setQueue(items);
@@ -2798,7 +2802,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     availableScopeOptions,
   ]);
 
-  const shouldShow = open && source !== null;
+  const shouldShow = open;
   const displaySource = shouldShow ? source : lastSource;
   const hasSelectedScope =
     selectedMonumentIds.length > 0 || selectedSkillIds.length > 0;
@@ -3174,7 +3178,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         title: "Loading focus item",
         subtitle: hasSelectedScope
           ? "Pulling eligible habits and projects for this scope."
-          : "Pulling habits and projects for this source.",
+          : displaySource
+            ? "Pulling habits and projects for this source."
+            : "Pulling all scheduled work.",
         tone: "loading",
       }
     : effectiveQueueError
@@ -3205,7 +3211,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
             badge: "QUEUE",
             title: "No focus items in this scope",
             subtitle:
-              "Add habits or projects to this Monument/Skill to run them from FocusPomo.",
+              displaySource
+                ? "Add habits or projects to this Monument/Skill to run them from FocusPomo."
+                : "Add scheduled work to run it from FocusPomo.",
             tone: "empty",
           };
 
@@ -3464,7 +3472,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         }
       }}
     >
-      {shouldShow && displaySource ? (
+      {shouldShow ? (
         <motion.div
           role="dialog"
           aria-modal="true"
@@ -3961,7 +3969,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </div>
                       <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
-                          {displaySource.icon ? (
+                          {displaySource?.icon ? (
                             <span aria-hidden="true">{displaySource.icon}</span>
                           ) : (
                             <Layers3
@@ -4172,7 +4180,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               <span className="size-8 animate-pulse rounded-lg bg-white/10" />
                             ) : (
                               <span aria-hidden="true">
-                                {currentItemIcon ?? displaySource.icon ?? "</>"}
+                                {currentItemIcon ?? displaySource?.icon ?? "</>"}
                               </span>
                             )}
                           </div>
