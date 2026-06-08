@@ -1011,10 +1011,22 @@ export function MonumentGoalsList({
       : sourceId ?? monumentId ?? null;
   const resolvedMonumentId =
     resolvedSourceType === "monument" ? resolvedSourceId : null;
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const goalsDisplayKey = `${resolvedSourceType}:${resolvedSourceId ?? "none"}:${refreshVersion}`;
+  const [goalsDisplayReadyKey, setGoalsDisplayReadyKey] = useState<
+    string | null
+  >(null);
+  const [roadmapsDisplayReadyKey, setRoadmapsDisplayReadyKey] = useState<
+    string | null
+  >(null);
   const ownerLabel = resolvedSourceType === "circle" ? "Circle" : "monument";
   const creationContext = useFabCreation();
   const toast = useToastHelpers();
   const [loading, setLoading] = useState(true);
+  const goalsDisplayReady = goalsDisplayReadyKey === goalsDisplayKey;
+  const roadmapsDisplayReady = roadmapsDisplayReadyKey === goalsDisplayKey;
+  const goalsGridLoading =
+    loading || !goalsDisplayReady || !roadmapsDisplayReady;
   const [goals, setGoals] = useState<Goal[]>([]);
   const [monumentRoadmapsWithItems, setMonumentRoadmapsWithItems] = useState<
     RoadmapWithItems[]
@@ -1022,7 +1034,6 @@ export function MonumentGoalsList({
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [roadmapOpenGoal, setRoadmapOpenGoal] = useState<Goal | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [refreshVersion, setRefreshVersion] = useState(0);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null
   );
@@ -1099,7 +1110,7 @@ export function MonumentGoalsList({
   const readyGoalIdsSignature = readyGoalIds.join("|");
 
   useEffect(() => {
-    if (loading) {
+    if (goalsGridLoading) {
       return;
     }
 
@@ -1118,7 +1129,12 @@ export function MonumentGoalsList({
         ? "1 goal ready to complete"
         : `${readyGoalIds.length} goals ready to complete`
     );
-  }, [loading, readyGoalIds.length, readyGoalIdsSignature, toast]);
+  }, [
+    goalsGridLoading,
+    readyGoalIds.length,
+    readyGoalIdsSignature,
+    toast,
+  ]);
 
   const getGoalPanelElement = useCallback((panel: GoalPanel) => {
     return panel === "completed"
@@ -1270,7 +1286,7 @@ export function MonumentGoalsList({
   );
 
   const measureActiveGoalPanel = useCallback(() => {
-    const nextHeight = loading
+    const nextHeight = goalsGridLoading
       ? getLoadingGoalPanelHeight()
       : getGoalPanelHeight(activeGoalPanel);
     if (!nextHeight) return;
@@ -1278,7 +1294,12 @@ export function MonumentGoalsList({
     setGoalPanelHeight((currentHeight) =>
       currentHeight === nextHeight ? currentHeight : nextHeight
     );
-  }, [activeGoalPanel, getGoalPanelHeight, getLoadingGoalPanelHeight, loading]);
+  }, [
+    activeGoalPanel,
+    getGoalPanelHeight,
+    getLoadingGoalPanelHeight,
+    goalsGridLoading,
+  ]);
 
   useLayoutEffect(() => {
     if (monumentView !== "goals") {
@@ -1290,7 +1311,7 @@ export function MonumentGoalsList({
     activeGoalPanel,
     goalCardDensity,
     goals,
-    loading,
+    goalsGridLoading,
     measureActiveGoalPanel,
     monumentRoadmapsWithItems,
     monumentView,
@@ -1302,7 +1323,7 @@ export function MonumentGoalsList({
   useEffect(() => {
     if (monumentView !== "goals") return;
 
-    const activePanel = loading
+    const activePanel = goalsGridLoading
       ? loadingGoalPanelRef.current
       : activeGoalPanel === "completed"
         ? completedGoalPanelRef.current
@@ -1331,7 +1352,7 @@ export function MonumentGoalsList({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measureActiveGoalPanel);
     };
-  }, [activeGoalPanel, loading, measureActiveGoalPanel, monumentView]);
+  }, [activeGoalPanel, goalsGridLoading, measureActiveGoalPanel, monumentView]);
 
   useLayoutEffect(() => {
     measureSelectedGoalsRoadmapPanel();
@@ -1340,6 +1361,7 @@ export function MonumentGoalsList({
     goalPanelHeight,
     goalCardDensity,
     goals,
+    goalsGridLoading,
     loading,
     measureSelectedGoalsRoadmapPanel,
     monumentRoadmapsWithItems,
@@ -1379,6 +1401,7 @@ export function MonumentGoalsList({
     activeGoalPanel,
     goalPanelHeight,
     goalCardDensity,
+    goalsGridLoading,
     loading,
     measureSelectedGoalsRoadmapPanel,
     monumentView,
@@ -1941,17 +1964,25 @@ export function MonumentGoalsList({
       if (!supabase || !resolvedSourceId) {
         setMonumentRoadmapsWithItems([]);
         setGoals([]);
+        setGoalsDisplayReadyKey(goalsDisplayKey);
+        setRoadmapsDisplayReadyKey(goalsDisplayKey);
         setLoading(false);
         return;
       }
       setLoading(true);
+      setGoals([]);
+      setGoalsDisplayReadyKey(null);
+      setRoadmapsDisplayReadyKey(null);
       setMonumentRoadmapsWithItems([]);
       hydratedGoalIdsRef.current.clear();
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        if (cancelled) return;
         if (!user) {
+          setGoalsDisplayReadyKey(goalsDisplayKey);
+          setRoadmapsDisplayReadyKey(goalsDisplayKey);
           setLoading(false);
           return;
         }
@@ -1959,76 +1990,98 @@ export function MonumentGoalsList({
 
         const skillsPromise = getSkillsForUser(user.id).catch(() => []);
         const roadmapsPromise =
-          resolvedSourceType === "circle"
-            ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
-            : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
-                reconcile: true,
-              });
-        const rows = await fetchGoalsWithRelationsForSource(
+          (
+            resolvedSourceType === "circle"
+              ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
+              : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
+                  reconcile: true,
+                })
+          ).catch((err) => {
+            console.error(`Error loading ${resolvedSourceType} roadmaps`, err);
+            return [] as RoadmapWithItems[];
+          });
+        const goalsPromise = fetchGoalsWithRelationsForSource(
           resolvedSourceType,
           resolvedSourceId,
           user.id
         );
+        const fullGoalsPromise = fetchGoalsFullRelationsForSource(
+          resolvedSourceType,
+          resolvedSourceId,
+          user.id
+        );
+        const fullGoalsResultPromise = fullGoalsPromise
+          .then((fullRows) => ({ fullRows, error: null }))
+          .catch((error) => ({
+            fullRows: [] as GoalRowWithRelations[],
+            error,
+          }));
+
+        const [rows, trueMonumentRoadmaps, skills, fullGoalsResult] =
+          await Promise.all([
+            goalsPromise,
+            roadmapsPromise,
+            skillsPromise,
+            fullGoalsResultPromise,
+          ]);
         if (cancelled) return;
 
         const mapped: Goal[] = sortGoalsForDisplay(
           rows.map((g) => mapGoalRowToDisplayGoal(g, new Map()))
         );
-        setGoals(mapped);
-        setLoading(false);
 
-        void roadmapsPromise
-          .then((trueMonumentRoadmaps) => {
-            if (!cancelled) {
-              setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
-            }
-          })
-          .catch((err) => {
-            console.error(`Error loading ${resolvedSourceType} roadmaps`, err);
-          });
+        setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
+        setRoadmapsDisplayReadyKey(goalsDisplayKey);
 
-        void Promise.all([
-          skillsPromise,
-          fetchGoalsFullRelationsForSource(
-            resolvedSourceType,
-            resolvedSourceId,
-            user.id
-          ),
-        ])
-          .then(([skills, fullRows]) => {
-            if (cancelled) return;
-            const skillIconLookup = new Map(
-              skills.map((skill) => [skill.id, skill.icon ?? null])
-            );
+        if (fullGoalsResult.error) {
+          console.error(
+            `Error hydrating ${resolvedSourceType} goal relations`,
+            fullGoalsResult.error
+          );
+          setGoals(mapped);
+          hydratedGoalIdsRef.current.clear();
+          setGoalsDisplayReadyKey(goalsDisplayKey);
+          setLoading(false);
+          return;
+        }
 
-            setGoals((currentGoals) => {
-              const fallbackGoalsById = new Map(
-                currentGoals.map((goal) => [goal.id, goal])
-              );
-              return sortGoalsForDisplay(
-                fullRows.map((goalRow) =>
-                  mapGoalRowToDisplayGoal(
-                    goalRow,
-                    skillIconLookup,
-                    fallbackGoalsById.get(goalRow.id)
-                  )
+        const skillIconLookup = new Map(
+          skills.map((skill) => [skill.id, skill.icon ?? null])
+        );
+
+        const fallbackGoalsById = new Map(mapped.map((goal) => [goal.id, goal]));
+        const shouldUseMappedFallback =
+          mapped.length > 0 && fullGoalsResult.fullRows.length === 0;
+        if (shouldUseMappedFallback) {
+          console.warn(
+            `Hydrated ${resolvedSourceType} goal relations returned no rows; rendering first-pass goals as fallback`
+          );
+        }
+        const hydratedGoals = shouldUseMappedFallback
+          ? mapped
+          : sortGoalsForDisplay(
+              fullGoalsResult.fullRows.map((goalRow) =>
+                mapGoalRowToDisplayGoal(
+                  goalRow,
+                  skillIconLookup,
+                  fallbackGoalsById.get(goalRow.id)
                 )
-              );
-            });
-            hydratedGoalIdsRef.current = new Set(
-              fullRows.map((goalRow) => goalRow.id)
+              )
             );
-          })
-          .catch((err) => {
-            console.error(
-              `Error hydrating ${resolvedSourceType} goal relations`,
-              err
-            );
-          });
+
+        setGoals(hydratedGoals);
+        hydratedGoalIdsRef.current = shouldUseMappedFallback
+          ? new Set()
+          : new Set(fullGoalsResult.fullRows.map((goalRow) => goalRow.id));
+        setGoalsDisplayReadyKey(goalsDisplayKey);
+        setLoading(false);
       } catch (err) {
         console.error(`Error loading ${resolvedSourceType} goals`, err);
-      } finally {
         if (!cancelled) {
+          setGoals([]);
+          setMonumentRoadmapsWithItems([]);
+          setGoalsDisplayReadyKey(goalsDisplayKey);
+          setRoadmapsDisplayReadyKey(goalsDisplayKey);
           setLoading(false);
         }
       }
@@ -2043,6 +2096,7 @@ export function MonumentGoalsList({
     resolvedSourceType,
     monumentEmoji,
     decorate,
+    goalsDisplayKey,
     mapGoalRowToDisplayGoal,
     refreshVersion,
   ]);
@@ -2538,7 +2592,7 @@ export function MonumentGoalsList({
       </div>
     );
 
-    if (loading) {
+    if (goalsGridLoading) {
       const loadingGoalsContent = (
         <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
           <div className="flex items-center justify-between gap-3">
@@ -3042,7 +3096,7 @@ export function MonumentGoalsList({
 
     return renderGoalsRoadmapViewport(goalsContent, roadmapContent);
   }, [
-    loading,
+    goalsGridLoading,
     goals,
     goalsRoadmapViewHeight,
     goalsRoadmapViewportWidth,
