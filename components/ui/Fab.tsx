@@ -4754,7 +4754,31 @@ export function Fab({
         </div>
         <div className="grid gap-1">
           {group.skills.map((skill) => (
-            <SelectItem key={skill.id} value={skill.id}>
+            <SelectItem
+              key={skill.id}
+              value={skill.id}
+              onPointerDown={(event) => {
+                const target = event.currentTarget;
+                target.dataset.pointerStartX = String(event.clientX);
+                target.dataset.pointerStartY = String(event.clientY);
+              }}
+              onPointerUp={(event) => {
+                const target = event.currentTarget;
+                const startX = Number(target.dataset.pointerStartX ?? event.clientX);
+                const startY = Number(target.dataset.pointerStartY ?? event.clientY);
+                const moved =
+                  Math.abs(event.clientX - startX) > 8 ||
+                  Math.abs(event.clientY - startY) > 8;
+
+                delete target.dataset.pointerStartX;
+                delete target.dataset.pointerStartY;
+
+                if (!moved) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
               <div className="flex items-center gap-2">
                 <span className="text-lg">{skill.icon ?? "🛠️"}</span>
                 <span>{skill.name}</span>

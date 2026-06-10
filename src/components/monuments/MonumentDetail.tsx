@@ -841,7 +841,7 @@ export function MonumentDetail({
         source={focusPomoSource}
         onClose={() => setFocusPomoSource(null)}
       />
-      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
+      <div className="relative z-20 mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
         <section
           className={cn(
             containerShell,
