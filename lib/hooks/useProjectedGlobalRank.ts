@@ -35,9 +35,9 @@ export function useProjectedGlobalRank({ goalId, priority, stage }: DraftInput):
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
 
-  const trimmedGoal = goalId?.trim();
-  const pri = priority?.trim().toUpperCase();
-  const stg = stage?.trim().toUpperCase();
+  const trimmedGoal = typeof goalId === "string" ? goalId.trim() : "";
+  const pri = typeof priority === "string" ? priority.trim().toUpperCase() : "";
+  const stg = typeof stage === "string" ? stage.trim().toUpperCase() : "";
   const ready = Boolean(trimmedGoal && pri && stg);
 
   useEffect(() => {

@@ -3579,6 +3579,9 @@ export function Fab({
     adjustHabitDuration(5),
   );
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
+  const [isGoalPickerOpen, setIsGoalPickerOpen] = useState(false);
+  const goalPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const goalPickerContentRef = useRef<HTMLDivElement | null>(null);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(() =>
     creationRequest?.type === "PROJECT" ? (creationRequest.goalId ?? null) : null,
   );
@@ -5737,6 +5740,83 @@ export function Fab({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showGoalFilters]);
+
+  const [goalPickerPosition, setGoalPickerPosition] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isGoalPickerOpen) {
+      setGoalPickerPosition(null);
+      return;
+    }
+    const handleClick = (event: MouseEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (goalPickerTriggerRef.current?.contains(target)) return;
+      if (goalPickerContentRef.current?.contains(target)) return;
+      setIsGoalPickerOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick, true);
+    return () => document.removeEventListener("mousedown", handleClick, true);
+  }, [isGoalPickerOpen]);
+
+  useEffect(() => {
+    if (!isGoalPickerOpen) return;
+    const updatePosition = () => {
+      const trigger = goalPickerTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+      const gap = 4;
+      const safeMargin = 12;
+      const desiredWidth = Math.max(220, rect.width);
+      const width = Math.min(
+        desiredWidth,
+        viewportWidth - safeMargin * 2,
+      );
+      const rawLeft = rect.left;
+      const left = Math.min(
+        Math.max(rawLeft, safeMargin),
+        Math.max(safeMargin, viewportWidth - width - safeMargin),
+      );
+      const spaceBelow = viewportHeight - rect.bottom - gap;
+      const spaceAbove = rect.top - gap;
+      const preferAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const availableSpace = preferAbove ? spaceAbove : spaceBelow;
+      const maxHeight = Math.min(
+        400,
+        Math.max(200, availableSpace - 8),
+      );
+      if (preferAbove) {
+        setGoalPickerPosition({
+          left,
+          width,
+          top: Math.max(safeMargin, rect.top - maxHeight - gap),
+          maxHeight,
+        });
+      } else {
+        setGoalPickerPosition({
+          left,
+          width,
+          top: rect.bottom + gap,
+          maxHeight,
+        });
+      }
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, { passive: true });
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition);
+    };
+  }, [isGoalPickerOpen]);
 
   useEffect(() => {
     if (!showSkillFilters) return;
@@ -8415,17 +8495,18 @@ export function Fab({
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 md:gap-4">
                     <div className="grid gap-2">
                       <Label className="sr-only">Goal</Label>
-                      <Select
-                        value={projectGoalId ?? ""}
-                        onValueChange={(v) => setProjectGoalId(v)}
-                        hideChevron
-                        triggerClassName={cn(
-                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                          projectGoalId
-                            ? "text-white/80 hover:text-blue-200"
-                            : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
-                        )}
-                        trigger={
+                      <div className="relative">
+                        <button
+                          ref={goalPickerTriggerRef}
+                          type="button"
+                          onClick={() => setIsGoalPickerOpen((v) => !v)}
+                          className={cn(
+                            "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                            projectGoalId
+                              ? "text-white/80 hover:text-blue-200"
+                              : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
+                          )}
+                        >
                           <span>
                             {projectGoalId
                               ? (goals.find((g) => g.id === projectGoalId)
@@ -8435,233 +8516,277 @@ export function Fab({
                                   : "Link to existing GOAL +"))
                               : "Link to existing GOAL +"}
                           </span>
-                        }
-                      >
-                        <SelectContent className="relative min-w-[220px]">
-                          <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
-                            <div className="relative flex items-center gap-2">
-                              <Input
-                                value={goalSearch}
-                                onChange={(e) => setGoalSearch(e.target.value)}
-                                placeholder="Search goals…"
-                                className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowGoalFilters((v) => !v)}
-                                className={cn(
-                                  "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
-                                  showGoalFilters &&
-                                    "border-blue-400/60 text-white",
-                                )}
-                                aria-label="Filter goals"
-                              >
-                                <Filter className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                          {showGoalFilters ? (
+                        </button>
+                        {isGoalPickerOpen &&
+                          typeof window !== "undefined" &&
+                          createPortal(
                             <div
-                              ref={goalFilterMenuRef}
-                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                              ref={goalPickerContentRef}
+                              className="fixed z-[2147483661] min-w-[220px] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40"
+                              style={goalPickerPosition ?? undefined}
                             >
-                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
-                                <span className="text-sm font-semibold">
-                                  Filter & Sort Goals
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowGoalFilters(false)}
-                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
-                                >
-                                  Close
-                                </button>
-                              </div>
-                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-3">
-                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                      Filter
-                                    </div>
-                                    <div className="space-y-2">
-                                      <select
-                                        value={goalFilterSkillId}
-                                        onChange={(e) =>
-                                          setGoalFilterSkillId(e.target.value)
-                                        }
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {goalFilterSkillId
-                                            ? "Skill (clear)"
-                                            : "Skill (any)"}
-                                        </option>
-                                        {skills.map((skill) => (
-                                          <option
-                                            key={skill.id}
-                                            value={skill.id}
-                                          >
-                                            {skill.name}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <select
-                                        value={goalFilterMonumentId}
-                                        onChange={(e) =>
-                                          setGoalFilterMonumentId(
-                                            e.target.value,
-                                          )
-                                        }
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {goalFilterMonumentId
-                                            ? "Monument (clear)"
-                                            : "Monument (any)"}
-                                        </option>
-                                        {monuments.map((m) => (
-                                          <option key={m.id} value={m.id}>
-                                            {(m.emoji ?? "✨") +
-                                              " " +
-                                              (m.title ?? "Monument")}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <select
-                                        value={goalFilterEnergy}
-                                        onChange={(e) =>
-                                          setGoalFilterEnergy(e.target.value)
-                                        }
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {goalFilterEnergy
-                                            ? "Energy (clear)"
-                                            : "Energy (any)"}
-                                        </option>
-                                        {ENERGY_OPTIONS_LOCAL.map((o) => (
-                                          <option key={o.value} value={o.value}>
-                                            {o.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <select
-                                        value={goalFilterPriority}
-                                        onChange={(e) =>
-                                          setGoalFilterPriority(e.target.value)
-                                        }
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {goalFilterPriority
-                                            ? "Priority (clear)"
-                                            : "Priority (any)"}
-                                        </option>
-                                        {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                                          <option key={o.value} value={o.value}>
-                                            {o.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </div>
-                                  <div className="space-y-3">
-                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                      Sort
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => setGoalSort("recent")}
-                                        className={cn(
-                                          "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
-                                          goalSort === "recent" &&
-                                            "border-blue-400/60 bg-blue-500/10 text-white",
-                                        )}
-                                      >
-                                        Recently updated
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setGoalSort("oldest")}
-                                        className={cn(
-                                          "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
-                                          goalSort === "oldest" &&
-                                            "border-blue-400/60 bg-blue-500/10 text-white",
-                                        )}
-                                      >
-                                        Oldest updated
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setGoalSort("weight")}
-                                        className={cn(
-                                          "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
-                                          goalSort === "weight" &&
-                                            "border-blue-400/60 bg-blue-500/10 text-white",
-                                        )}
-                                      >
-                                        Highest weight
-                                      </button>
-                                    </div>
+                              <div className="relative max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain">
+                                <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
+                                  <div className="relative flex items-center gap-2">
+                                    <Input
+                                      autoFocus
+                                      value={goalSearch}
+                                      onChange={(e) => setGoalSearch(e.target.value)}
+                                      onKeyDown={(e) => e.stopPropagation()}
+                                      placeholder="Search goals…"
+                                      className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowGoalFilters((v) => !v)}
+                                      className={cn(
+                                        "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
+                                        showGoalFilters &&
+                                          "border-blue-400/60 text-white",
+                                      )}
+                                      aria-label="Filter goals"
+                                    >
+                                      <Filter className="h-4 w-4" />
+                                    </button>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
-                          ) : null}
-                          {goalsLoading ? (
-                            <SelectItem value="" disabled>
-                              Loading goals…
-                            </SelectItem>
-                          ) : goals.length > 0 ? (
-                            filteredGoals.length > 0 ? (
-                              filteredGoals.map((goal) => {
-                                const circleLabel =
-                                  getCircleGoalContextLabel(goal);
-                                return (
-                                  <SelectItem key={goal.id} value={goal.id}>
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      {goal.circle_id ? (
-                                        <CircleDot
-                                          className="h-4 w-4 shrink-0 text-blue-200"
-                                          aria-hidden="true"
-                                        />
-                                      ) : (
-                                        <span className="shrink-0 text-lg">
-                                          {goal.emoji ??
-                                            goal.monumentEmoji ??
-                                            monumentEmojiMap.get(
-                                              goal.monument_id ?? "",
-                                            ) ??
-                                            "✨"}
-                                        </span>
-                                      )}
-                                      <span className="flex min-w-0 flex-col">
-                                        <span className="truncate">
-                                          {goal.name}
-                                        </span>
-                                        {circleLabel ? (
-                                          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-200/70">
-                                            {circleLabel}
-                                          </span>
-                                        ) : null}
+                                {showGoalFilters ? (
+                                  <div
+                                    ref={goalFilterMenuRef}
+                                    className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                                  >
+                                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                      <span className="text-sm font-semibold">
+                                        Filter & Sort Goals
                                       </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowGoalFilters(false)}
+                                        className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                      >
+                                        Close
+                                      </button>
                                     </div>
-                                  </SelectItem>
-                                );
-                              })
-                            ) : (
-                              <SelectItem value="" disabled>
-                                No goals match your search
-                              </SelectItem>
-                            )
-                          ) : (
-                            <SelectItem value="" disabled>
-                              No goals yet
-                            </SelectItem>
+                                    <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-3">
+                                          <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                            Filter
+                                          </div>
+                                          <div className="space-y-2">
+                                            <select
+                                              value={goalFilterSkillId}
+                                              onChange={(e) =>
+                                                setGoalFilterSkillId(e.target.value)
+                                              }
+                                              className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                            >
+                                              <option value="">
+                                                {goalFilterSkillId
+                                                  ? "Skill (clear)"
+                                                  : "Skill (any)"}
+                                              </option>
+                                              {skills.map((skill) => (
+                                                <option
+                                                  key={skill.id}
+                                                  value={skill.id}
+                                                >
+                                                  {skill.name}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <select
+                                              value={goalFilterMonumentId}
+                                              onChange={(e) =>
+                                                setGoalFilterMonumentId(
+                                                  e.target.value,
+                                                )
+                                              }
+                                              className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                            >
+                                              <option value="">
+                                                {goalFilterMonumentId
+                                                  ? "Monument (clear)"
+                                                  : "Monument (any)"}
+                                              </option>
+                                              {monuments.map((m) => (
+                                                <option key={m.id} value={m.id}>
+                                                  {(m.emoji ?? "✨") +
+                                                    " " +
+                                                    (m.title ?? "Monument")}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <select
+                                              value={goalFilterEnergy}
+                                              onChange={(e) =>
+                                                setGoalFilterEnergy(e.target.value)
+                                              }
+                                              className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                            >
+                                              <option value="">
+                                                {goalFilterEnergy
+                                                  ? "Energy (clear)"
+                                                  : "Energy (any)"}
+                                              </option>
+                                              {ENERGY_OPTIONS_LOCAL.map((o) => (
+                                                <option key={o.value} value={o.value}>
+                                                  {o.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <select
+                                              value={goalFilterPriority}
+                                              onChange={(e) =>
+                                                setGoalFilterPriority(e.target.value)
+                                              }
+                                              className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                            >
+                                              <option value="">
+                                                {goalFilterPriority
+                                                  ? "Priority (clear)"
+                                                  : "Priority (any)"}
+                                              </option>
+                                              {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                                                <option key={o.value} value={o.value}>
+                                                  {o.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </div>
+                                        <div className="space-y-3">
+                                          <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                            Sort
+                                          </div>
+                                          <div className="grid grid-cols-1 gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => setGoalSort("recent")}
+                                              className={cn(
+                                                "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                                goalSort === "recent" &&
+                                                  "border-blue-400/60 bg-blue-500/10 text-white",
+                                              )}
+                                            >
+                                              Recently updated
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setGoalSort("oldest")}
+                                              className={cn(
+                                                "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                                goalSort === "oldest" &&
+                                                  "border-blue-400/60 bg-blue-500/10 text-white",
+                                              )}
+                                            >
+                                              Oldest updated
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setGoalSort("weight")}
+                                              className={cn(
+                                                "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                                goalSort === "weight" &&
+                                                  "border-blue-400/60 bg-blue-500/10 text-white",
+                                              )}
+                                            >
+                                              Highest weight
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : null}
+                                {goalsLoading ? (
+                                  <div className="px-3 py-2 text-sm text-white/50 opacity-50">
+                                    Loading goals…
+                                  </div>
+                                ) : goals.length > 0 ? (
+                                  filteredGoals.length > 0 ? (
+                                    filteredGoals.map((goal) => {
+                                      const circleLabel =
+                                        getCircleGoalContextLabel(goal);
+                                      return (
+                                        <div
+                                          key={goal.id}
+                                          role="option"
+                                          aria-selected={
+                                            projectGoalId === goal.id
+                                          }
+                                          onPointerDown={(event) => {
+                                            const target = event.currentTarget;
+                                            target.dataset.pointerStartX = String(event.clientX);
+                                            target.dataset.pointerStartY = String(event.clientY);
+                                          }}
+                                          onClick={(event) => {
+                                            const target = event.currentTarget;
+                                            const startX = Number(target.dataset.pointerStartX ?? event.clientX);
+                                            const startY = Number(target.dataset.pointerStartY ?? event.clientY);
+                                            const moved =
+                                              Math.abs(event.clientX - startX) > 8 ||
+                                              Math.abs(event.clientY - startY) > 8;
+
+                                            delete target.dataset.pointerStartX;
+                                            delete target.dataset.pointerStartY;
+
+                                            if (moved) return;
+
+                                            setProjectGoalId(goal.id);
+                                            setIsGoalPickerOpen(false);
+                                          }}
+                                          className={cn(
+                                            "flex w-full cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white",
+                                            projectGoalId === goal.id &&
+                                              "bg-blue-500/20 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]",
+                                          )}
+                                        >
+                                          <div className="flex min-w-0 items-center gap-2">
+                                            {goal.circle_id ? (
+                                              <CircleDot
+                                                className="h-4 w-4 shrink-0 text-blue-200"
+                                                aria-hidden="true"
+                                              />
+                                            ) : (
+                                              <span className="shrink-0 text-lg">
+                                                {goal.emoji ??
+                                                  goal.monumentEmoji ??
+                                                  monumentEmojiMap.get(
+                                                    goal.monument_id ?? "",
+                                                  ) ??
+                                                  "✨"}
+                                              </span>
+                                            )}
+                                            <span className="flex min-w-0 flex-col">
+                                              <span className="truncate">
+                                                {goal.name}
+                                              </span>
+                                              {circleLabel ? (
+                                                <span className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-200/70">
+                                                  {circleLabel}
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="px-3 py-2 text-sm text-white/50 opacity-50">
+                                      No goals match your search
+                                    </div>
+                                  )
+                                ) : (
+                                  <div className="px-3 py-2 text-sm text-white/50 opacity-50">
+                                    No goals yet
+                                  </div>
+                                )}
+                              </div>
+                            </div>,
+                            document.body,
                           )}
-                        </SelectContent>
-                      </Select>
+                      </div>
                     </div>
                     <div className="flex items-start justify-end text-right">
                       {projectedRankState.status === "incomplete" ? (

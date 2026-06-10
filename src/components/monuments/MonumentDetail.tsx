@@ -880,7 +880,11 @@ export function MonumentDetail({
                 <h1 className="min-w-0 flex-1 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                   {displayMonument.title}
                 </h1>
-                <div className="flex shrink-0 items-center gap-0.5">
+                <div
+                  className="flex shrink-0 items-center gap-0.5"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
+                >
                   <button
                     type="button"
                     aria-label={`Start focus pomo for ${displayMonument.title}`}
