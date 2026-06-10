@@ -9,6 +9,7 @@ import {
   Brain,
   Brush,
   CalendarCheck,
+  ChevronLeft,
   CheckSquare,
   CircleAlert,
   CircleHelp,
@@ -178,6 +179,8 @@ type NoteEditorHeaderProps = {
   title: string;
   onIconChange: (icon: string) => void;
   onTitleChange: (title: string) => void;
+  onBack?: () => void;
+  autosaveLabel?: string;
 };
 
 export function NoteEditorHeader({
@@ -185,6 +188,8 @@ export function NoteEditorHeader({
   title,
   onIconChange,
   onTitleChange,
+  onBack,
+  autosaveLabel,
 }: NoteEditorHeaderProps) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [iconSearch, setIconSearch] = useState("");
@@ -220,6 +225,17 @@ export function NoteEditorHeader({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2.5 sm:gap-3">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/55 outline-none transition hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-emerald-300/20"
+            aria-label="Back"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+
         <div ref={pickerRef} className="relative shrink-0">
           <button
             type="button"
@@ -305,6 +321,12 @@ export function NoteEditorHeader({
           placeholder="Untitled"
           aria-label="Note title"
         />
+
+        {autosaveLabel ? (
+          <p className="shrink-0 text-[10px] font-medium leading-none text-white/35 sm:text-[11px]">
+            {autosaveLabel}
+          </p>
+        ) : null}
       </div>
 
       <div

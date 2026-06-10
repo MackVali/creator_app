@@ -226,10 +226,10 @@ export default function InboxThreadPage() {
           >
             <div className="flex max-w-[82%] flex-col gap-1">
               <div
-                className={`${bubbleShape} px-4 py-2.5 text-[0.92rem] leading-relaxed shadow-[0_18px_40px_rgba(0,0,0,0.35)] ${
+                className={`${bubbleShape} px-4 py-2.5 text-[0.92rem] leading-relaxed ${
                   isSender
                     ? "bg-white text-black"
-                    : "border border-white/10 bg-white/[0.06] text-white"
+                    : "bg-[#1c1c1e] text-white"
                 }`}
               >
                 <p className="whitespace-pre-line">{message.body}</p>
@@ -253,36 +253,49 @@ export default function InboxThreadPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#07070b] text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 pb-28 pt-3 sm:px-6">
-        <header className="sticky top-0 z-20 -mx-4 mb-2 border-b border-white/10 bg-[#07070b]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
-          <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-black text-white">
+      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 pb-24 pt-2 sm:px-6">
+        <header className="sticky top-0 z-20 -mx-4 mb-1 border-b border-white/5 bg-black/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6">
+          <div className="flex min-h-11 items-center gap-2">
             <Link
               href="/inbox"
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.28em] text-white/70 transition hover:border-white/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+              aria-label="Back to inbox"
+              className="-ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-white/55 transition hover:bg-white/5 hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
             >
-              <span className="text-[0.75rem]">←</span>
-              Back
+              <svg
+                aria-hidden="true"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="none"
+              >
+                <path
+                  d="M12.5 4.5 7 10l5.5 5.5"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                />
+              </svg>
             </Link>
             {participant ? (
-              <div className="flex min-w-0 items-center gap-3">
-                <Avatar className="h-8 w-8 border border-white/10 bg-white/5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Avatar className="h-8 w-8 bg-white/10">
                   {participant.avatarUrl ? (
                     <AvatarImage
                       src={participant.avatarUrl}
                       alt={`${participant.displayName} avatar`}
                     />
                   ) : null}
-                  <AvatarFallback className="bg-white/10 text-[0.6rem] font-semibold text-white/80">
+                  <AvatarFallback className="bg-white/10 text-[0.6rem] font-semibold text-white/75">
                     {getInitials(participant.displayName)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">
+                  <p className="truncate text-sm font-medium text-white">
                     {threadTitle}
                   </p>
                   {threadSubtitle ? (
-                    <p className="truncate text-[0.7rem] text-white/50">
+                    <p className="truncate text-[0.7rem] text-white/45">
                       {threadSubtitle}
                     </p>
                   ) : null}
@@ -294,8 +307,8 @@ export default function InboxThreadPage() {
           </div>
         </header>
 
-        <section className="flex-1 overflow-hidden rounded-[26px] border border-white/10 bg-gradient-to-br from-white/[0.04] via-transparent to-black/50 shadow-[0_24px_70px_rgba(0,0,0,0.7)]">
-          <div className="flex h-full flex-col gap-4 px-4 py-5 sm:px-6">
+        <section className="flex-1 overflow-hidden bg-black">
+          <div className="flex h-full flex-col gap-4 px-1 py-4 sm:px-2">
             {loading ? (
               <div className="space-y-2">
                 {Array.from({ length: 6 }).map((_, index) => {
@@ -308,7 +321,7 @@ export default function InboxThreadPage() {
                       <div
                         className={`h-9 ${
                           isSender ? "w-[55%]" : "w-[62%]"
-                        } rounded-3xl border border-white/5 bg-white/[0.04]`}
+                        } rounded-3xl bg-white/[0.07]`}
                       />
                     </div>
                   );
@@ -323,17 +336,9 @@ export default function InboxThreadPage() {
             ) : null}
 
             {!loading && !error && messages.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[22px] border border-white/5 bg-white/[0.03] py-10 text-center text-white/70">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-white/60">
-                  DM
-                </div>
-                <p className="text-sm font-semibold text-white">
-                  No messages yet
-                </p>
-                <p className="text-xs text-white/55">
-                  Say hello to start this conversation.
-                </p>
-              </div>
+              <p className="mt-auto px-6 pb-1 text-center text-sm text-white/35">
+                Say hello to start this conversation.
+              </p>
             ) : null}
 
             {!loading && !error && messages.length > 0 ? (
@@ -347,7 +352,7 @@ export default function InboxThreadPage() {
 
         <form
           onSubmit={handleSend}
-          className="sticky bottom-3 mt-3 flex flex-col gap-2 rounded-[18px] border border-white/10 bg-[#0a0a10]/95 p-2.5 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur"
+          className="sticky bottom-3 mt-2 flex flex-col gap-2 rounded-[18px] border border-white/10 bg-black/95 p-2 backdrop-blur"
         >
           {sendError ? (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
@@ -360,7 +365,7 @@ export default function InboxThreadPage() {
               onChange={(event) => setComposerValue(event.target.value)}
               placeholder="Write a message..."
               rows={1}
-              className="min-h-[42px] flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
+              className="min-h-[42px] flex-1 resize-none rounded-2xl border border-white/10 bg-[#1c1c1e] px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
             <button
               type="submit"

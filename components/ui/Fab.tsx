@@ -31,6 +31,7 @@ import {
   Check,
   Clock,
   Filter,
+  FileText,
   ListChecks,
   Loader2,
   Plus,
@@ -293,12 +294,24 @@ export type FabEditTarget = {
   originRect?: FabEditOriginRect | null;
 };
 type TagEntityType = CreationType;
-type CreationFormMode = "main" | "projects" | "tags" | "tasks" | "advanced";
+type CreationFormMode =
+  | "main"
+  | "projects"
+  | "tags"
+  | "tasks"
+  | "advanced"
+  | "memoForms";
 type CreationModeOption = {
   id: CreationFormMode;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 };
+type MemoCaptureActionDraft = {
+  note: boolean;
+  form: boolean;
+  photo: false;
+};
+type MemoCaptureToggleAction = "note" | "form";
 
 type FabTag = {
   id: string;
@@ -954,6 +967,7 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   ],
   HABIT: [
     { id: "main", label: "Main", icon: CircleDot },
+    { id: "memoForms", label: "Memo Forms", icon: FileText },
     { id: "advanced", label: "Advanced", icon: Settings2 },
   ],
 };
@@ -3681,6 +3695,13 @@ export function Fab({
   const [habitRecurrence, setHabitRecurrence] = useState(
     defaultHabitRecurrence,
   );
+  const [memoCaptureActions, setMemoCaptureActions] =
+    useState<MemoCaptureActionDraft>({
+      note: true,
+      form: false,
+      photo: false,
+    });
+  const [memoNoteSkillId, setMemoNoteSkillId] = useState<string | "">("");
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
@@ -3786,6 +3807,12 @@ export function Fab({
     setHabitName("");
     setHabitType(defaultHabitType);
     setHabitRecurrence(defaultHabitRecurrence);
+    setMemoCaptureActions({
+      note: true,
+      form: false,
+      photo: false,
+    });
+    setMemoNoteSkillId(habitSkillId || "");
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -3806,7 +3833,7 @@ export function Fab({
     setHabitInlineRoutineDescription("");
     setShowHabitDurationPicker(false);
     setHabitDurationPosition(null);
-  }, [defaultHabitRecurrence, defaultHabitType]);
+  }, [defaultHabitRecurrence, defaultHabitType, habitSkillId]);
   const resetHabitRoutineInlineCreation = useCallback(() => {
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
@@ -3814,6 +3841,16 @@ export function Fab({
     setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
   }, []);
+  const handleMemoCaptureActionToggle = useCallback(
+    (action: MemoCaptureToggleAction) => {
+      setMemoCaptureActions((current) => {
+        const next = { ...current, [action]: !current[action] };
+        if (!next.note && !next.form) return current;
+        return next;
+      });
+    },
+    [],
+  );
   const resetTaskFormDraft = useCallback(() => {
     setTaskName("");
     setTaskStage("PREPARE");
@@ -4921,11 +4958,8 @@ export function Fab({
       count: 0,
       last: 0,
     });
-    const handlePointerDown = (event: React.PointerEvent<HTMLInputElement>) => {
-      if (!isOpen) {
-        event.preventDefault();
-        setIsOpen?.(true);
-      }
+    const handlePointerDown = () => {
+      setIsOpen?.(true);
     };
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
       event.stopPropagation();
@@ -5317,7 +5351,12 @@ export function Fab({
       listenVisualViewport: !expanded,
     },
   );
-  const activeCreationModes = getCreationModesForType(selected);
+  const isMemoHabitCreation =
+    selected === "HABIT" && habitType?.toUpperCase() === "MEMO";
+  const previousHabitTypeRef = useRef<string | null>(null);
+  const activeCreationModes = getCreationModesForType(selected).filter(
+    (mode) => mode.id !== "memoForms" || isMemoHabitCreation,
+  );
   const creationModeClusterWidth =
     activeCreationModes.length > 0 ? activeCreationModes.length * 36 + (activeCreationModes.length - 1) * 6 : 0;
   const creationModeOverhangPos = useOverhangLT(
@@ -5429,6 +5468,28 @@ export function Fab({
       setActiveCreationMode("main");
     }
   }, [editTarget?.entityId, editTarget?.entityType, expanded, selected]);
+
+  useEffect(() => {
+    const normalizedType = habitType?.toUpperCase() ?? null;
+    const previousType = previousHabitTypeRef.current;
+    previousHabitTypeRef.current = normalizedType;
+    if (normalizedType === "MEMO" && previousType !== "MEMO") {
+      setMemoNoteSkillId(habitSkillId || "");
+    }
+  }, [habitSkillId, habitType]);
+
+  useEffect(() => {
+    if (habitType?.toUpperCase() !== "MEMO" || memoNoteSkillId || !habitSkillId) {
+      return;
+    }
+    setMemoNoteSkillId(habitSkillId);
+  }, [habitSkillId, habitType, memoNoteSkillId]);
+
+  useEffect(() => {
+    if (activeCreationMode === "memoForms" && !isMemoHabitCreation) {
+      setActiveCreationMode("main");
+    }
+  }, [activeCreationMode, isMemoHabitCreation]);
 
   useEffect(() => {
     return () => {
@@ -6144,6 +6205,11 @@ export function Fab({
     setHabitName("");
     setHabitType(defaultHabitType);
     setHabitRecurrence(defaultHabitRecurrence);
+    setMemoCaptureActions({
+      note: true,
+      form: false,
+      photo: false,
+    });
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -10098,6 +10164,218 @@ export function Fab({
                   onExactEndTimeChange: setTaskExactEndTime,
                   tagLabel: "Task Tags",
                 })}
+
+              {selected === "HABIT" && activeCreationMode === "memoForms" && (
+                <div
+                  className={cn(
+                    "grid content-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+                    expanded && "min-h-full",
+                  )}
+                  style={secondaryCreationPanelStyle}
+                >
+                  <div className="grid gap-1.5">
+                    <h3 className="text-sm font-semibold text-white">
+                      Memo Forms
+                    </h3>
+                    <p className="text-xs leading-snug text-white/55">
+                      Choose what this memo habit asks for when you complete it.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      {
+                        id: "note" as const,
+                        label: "Note",
+                        subtitle: "Free text memo",
+                        selected: memoCaptureActions.note,
+                        disabled: false,
+                      },
+                      {
+                        id: "form" as const,
+                        label: "Form",
+                        subtitle: "Structured inputs",
+                        selected: memoCaptureActions.form,
+                        disabled: false,
+                      },
+                      {
+                        id: "photo" as const,
+                        label: "Photo",
+                        subtitle: "Coming soon",
+                        selected: memoCaptureActions.photo,
+                        disabled: true,
+                      },
+                    ].map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        disabled={action.disabled}
+                        aria-pressed={action.disabled ? undefined : action.selected}
+                        onClick={() => {
+                          if (action.id === "photo") return;
+                          handleMemoCaptureActionToggle(action.id);
+                        }}
+                        className={cn(
+                          "grid min-h-[72px] content-between rounded-md border px-3 py-2.5 text-left transition",
+                          action.selected
+                            ? "border-blue-400/50 bg-blue-500/10 shadow-[0_0_0_1px_rgba(96,165,250,0.12)]"
+                            : "border-white/10 bg-black/25 hover:border-white/20 hover:bg-white/[0.04]",
+                          action.disabled &&
+                            "cursor-not-allowed border-white/10 bg-black/20 opacity-50 hover:border-white/10 hover:bg-black/20",
+                        )}
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-white">
+                            {action.label}
+                          </span>
+                          {action.selected ? (
+                            <Check className="h-3.5 w-3.5 text-blue-300" />
+                          ) : null}
+                        </span>
+                        <span className="text-[11px] leading-snug text-white/50">
+                          {action.subtitle}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  {memoCaptureActions.note ? (
+                    <div className="grid gap-2 rounded-md border border-white/10 bg-black/25 px-3 py-2.5">
+                      <div className="grid gap-0.5">
+                        <Label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                          Note destination
+                        </Label>
+                        <p className="text-[11px] leading-snug text-white/45">
+                          Defaults to this habit’s selected skill.
+                        </p>
+                      </div>
+                      <Select
+                        value={memoNoteSkillId ?? ""}
+                        onOpenChange={handleSkillDropdownOpenChange}
+                        onValueChange={(value) => {
+                          setMemoNoteSkillId(value);
+                          const skill = findSkillById(value);
+                          setSkillSearch(skill?.name ?? "");
+                          setShowSkillFilters(false);
+                        }}
+                        placeholder="Link a skill"
+                        triggerClassName="!h-12 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                        maxHeight={150}
+                        openOnTriggerFocus
+                        trigger={
+                          <SkillTrigger
+                            selectedId={memoNoteSkillId ?? null}
+                            onClearSelection={() => {
+                              setMemoNoteSkillId("");
+                              setSkillSearch("");
+                            }}
+                          />
+                        }
+                      >
+                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                          {showSkillFilters ? (
+                            <div
+                              ref={skillFilterMenuRef}
+                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            >
+                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                <span className="text-sm font-semibold">
+                                  Filter Skills
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSkillFilters(false)}
+                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Filter
+                                    </div>
+                                    <div className="space-y-2">
+                                      <select
+                                        value={skillFilterMonumentId}
+                                        onChange={(e) =>
+                                          setSkillFilterMonumentId(e.target.value)
+                                        }
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {skillFilterMonumentId
+                                            ? "Monument (clear)"
+                                            : "Monument (any)"}
+                                        </option>
+                                        {monuments.map((m) => (
+                                          <option key={m.id} value={m.id}>
+                                            {(m.emoji ?? "✨") +
+                                              " " +
+                                              (m.title ?? "Monument")}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Quick actions
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillSearch("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Reset search
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setSkillFilterMonumentId("")
+                                        }
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Clear filters
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {skillsLoading ? (
+                            <div
+                              className="px-3 py-2 text-sm text-white/70"
+                              role="status"
+                            >
+                              Loading skills…
+                            </div>
+                          ) : filteredSkills.length > 0 ? (
+                            renderGroupedSkillItems()
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-white/70">
+                              No skills found
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {!memoNoteSkillId ? (
+                        <p className="text-[11px] leading-snug text-white/40">
+                          Choose a skill to save memo notes.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {memoCaptureActions.form ? (
+                    <div className="flex h-9 items-center gap-2 rounded-md border border-white/10 bg-black/25 px-3 text-xs font-medium text-white/45">
+                      <Search className="h-3.5 w-3.5" />
+                      <span>Form picker coming next</span>
+                    </div>
+                  ) : null}
+                </div>
+              )}
 
               {selected === "HABIT" && activeCreationMode === "advanced" &&
                 renderTagPickerPanel({
