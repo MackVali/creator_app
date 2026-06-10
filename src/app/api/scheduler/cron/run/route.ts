@@ -370,24 +370,49 @@ async function claimSchedulerUser(
   staleLockBeforeIso: string,
   lockToken: string
 ) {
-  const { data, error } = await adminClient
+  const claimUpdate = {
+    scheduler_locked_at: nowIso,
+    scheduler_lock_token: lockToken,
+    last_scheduler_run_at: nowIso,
+  };
+
+  const { data: unlockedData, error: unlockedError } = await adminClient
     .from("scheduler_user_state")
-    .update({
-      scheduler_locked_at: nowIso,
-      scheduler_lock_token: lockToken,
-      last_scheduler_run_at: nowIso,
-    })
+    .update(claimUpdate)
     .eq("user_id", userId)
-    .or(`scheduler_locked_at.is.null,scheduler_locked_at.lt.${staleLockBeforeIso}`)
+    .is("scheduler_locked_at", null)
     .select("user_id")
     .maybeSingle();
 
-  if (error) {
-    console.warn("[SCHEDULER_CRON] claim failed", { userId, error });
+  if (unlockedError) {
+    console.warn("[SCHEDULER_CRON] claim failed", {
+      userId,
+      error: unlockedError,
+    });
     return false;
   }
 
-  return Boolean(data?.user_id);
+  if (unlockedData?.user_id) {
+    return true;
+  }
+
+  const { data: staleData, error: staleError } = await adminClient
+    .from("scheduler_user_state")
+    .update(claimUpdate)
+    .eq("user_id", userId)
+    .lt("scheduler_locked_at", staleLockBeforeIso)
+    .select("user_id")
+    .maybeSingle();
+
+  if (staleError) {
+    console.warn("[SCHEDULER_CRON] claim failed", {
+      userId,
+      error: staleError,
+    });
+    return false;
+  }
+
+  return Boolean(staleData?.user_id);
 }
 
 async function resolveProfileTimeZone(
