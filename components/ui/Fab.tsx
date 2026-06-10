@@ -4695,6 +4695,119 @@ export function Fab({
     resetNestedTaskDraftForm,
   ]);
 
+  const SKILL_OPTION_TAP_MOVE_THRESHOLD_PX = 8;
+
+  function SkillOptionRow({ skill }: { skill: Skill }) {
+    const { onSelect, selectedValue } = useSelectContext();
+    const pointerStateRef = React.useRef<{
+      pointerId: number;
+      startX: number;
+      startY: number;
+      moved: boolean;
+    } | null>(null);
+    const suppressClickRef = React.useRef(false);
+    const selected = selectedValue === skill.id;
+    const label = skill.name ?? "";
+    const selectSkill = () => {
+      onSelect?.(skill.id, label);
+    };
+
+    const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      pointerStateRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+      };
+    };
+
+    const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+      const state = pointerStateRef.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+      const moved =
+        Math.abs(event.clientX - state.startX) >
+          SKILL_OPTION_TAP_MOVE_THRESHOLD_PX ||
+        Math.abs(event.clientY - state.startY) >
+          SKILL_OPTION_TAP_MOVE_THRESHOLD_PX;
+      if (moved) {
+        state.moved = true;
+      }
+    };
+
+    const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+      const state = pointerStateRef.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+      pointerStateRef.current = null;
+
+      if (state.moved) {
+        suppressClickRef.current = true;
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 250);
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickRef.current = true;
+      selectSkill();
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 250);
+    };
+
+    const handlePointerCancel = () => {
+      pointerStateRef.current = null;
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 250);
+    };
+
+    const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      selectSkill();
+    };
+
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectSkill();
+    };
+
+    return (
+      <button
+        type="button"
+        role="option"
+        aria-selected={selected}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+          selected && "bg-white/10",
+        )}
+        style={{ touchAction: "pan-y" }}
+      >
+        <span className="text-lg">{skill.icon ?? "🛠️"}</span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {selected ? (
+          <Check className="h-4 w-4 shrink-0 text-white/70" aria-hidden="true" />
+        ) : null}
+      </button>
+    );
+  }
+
   const renderGroupedSkillItems = useCallback(() => {
     const UNCATEGORIZED_SKILL_GROUP_ID = "__uncategorized_skill_group__";
     const UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
@@ -4754,36 +4867,7 @@ export function Fab({
         </div>
         <div className="grid gap-1">
           {group.skills.map((skill) => (
-            <SelectItem
-              key={skill.id}
-              value={skill.id}
-              onPointerDown={(event) => {
-                const target = event.currentTarget;
-                target.dataset.pointerStartX = String(event.clientX);
-                target.dataset.pointerStartY = String(event.clientY);
-              }}
-              onPointerUp={(event) => {
-                const target = event.currentTarget;
-                const startX = Number(target.dataset.pointerStartX ?? event.clientX);
-                const startY = Number(target.dataset.pointerStartY ?? event.clientY);
-                const moved =
-                  Math.abs(event.clientX - startX) > 8 ||
-                  Math.abs(event.clientY - startY) > 8;
-
-                delete target.dataset.pointerStartX;
-                delete target.dataset.pointerStartY;
-
-                if (!moved) return;
-
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{skill.icon ?? "🛠️"}</span>
-                <span>{skill.name}</span>
-              </div>
-            </SelectItem>
+            <SkillOptionRow key={skill.id} skill={skill} />
           ))}
         </div>
       </div>
@@ -7622,15 +7706,15 @@ export function Fab({
                     </div>
                   ) : null}
                   {skillsLoading ? (
-                    <SelectItem value="__loading" disabled>
+                    <div className="px-3 py-2 text-sm text-white/70" role="status">
                       Loading skills…
-                    </SelectItem>
+                    </div>
                   ) : filteredSkills.length > 0 ? (
                     renderGroupedSkillItems()
                   ) : (
-                    <SelectItem value="__empty" disabled>
+                    <div className="px-3 py-2 text-sm text-white/70">
                       No skills found
-                    </SelectItem>
+                    </div>
                   )}
                 </SelectContent>
               </Select>
@@ -8110,15 +8194,15 @@ export function Fab({
                       </div>
                     ) : null}
                     {skillsLoading ? (
-                      <SelectItem value="__loading" disabled>
+                      <div className="px-3 py-2 text-sm text-white/70" role="status">
                         Loading skills…
-                      </SelectItem>
+                      </div>
                     ) : filteredSkills.length > 0 ? (
                       renderGroupedSkillItems()
                     ) : (
-                      <SelectItem value="__empty" disabled>
+                      <div className="px-3 py-2 text-sm text-white/70">
                         No skills found
-                      </SelectItem>
+                      </div>
                     )}
                   </SelectContent>
                 </Select>
@@ -9073,15 +9157,15 @@ export function Fab({
                           </div>
                         ) : null}
                         {skillsLoading ? (
-                          <SelectItem value="__loading" disabled>
+                          <div className="px-3 py-2 text-sm text-white/70" role="status">
                             Loading skills…
-                          </SelectItem>
+                          </div>
                         ) : filteredSkills.length > 0 ? (
                           renderGroupedSkillItems()
                         ) : (
-                          <SelectItem value="__empty" disabled>
+                          <div className="px-3 py-2 text-sm text-white/70">
                             No skills found
-                          </SelectItem>
+                          </div>
                         )}
                       </SelectContent>
                     </Select>
@@ -9505,15 +9589,15 @@ export function Fab({
                             </div>
                           ) : null}
                           {skillsLoading ? (
-                            <SelectItem value="__loading" disabled>
+                            <div className="px-3 py-2 text-sm text-white/70" role="status">
                               Loading skills…
-                            </SelectItem>
+                            </div>
                           ) : filteredSkills.length > 0 ? (
                             renderGroupedSkillItems()
                           ) : (
-                            <SelectItem value="__empty" disabled>
+                            <div className="px-3 py-2 text-sm text-white/70">
                               No skills found
-                            </SelectItem>
+                            </div>
                           )}
                         </SelectContent>
                       </Select>
@@ -9897,15 +9981,15 @@ export function Fab({
                           </div>
                         ) : null}
                         {skillsLoading ? (
-                          <SelectItem value="__loading" disabled>
+                          <div className="px-3 py-2 text-sm text-white/70" role="status">
                             Loading skills…
-                          </SelectItem>
+                          </div>
                         ) : filteredSkills.length > 0 ? (
                           renderGroupedSkillItems()
                         ) : (
-                          <SelectItem value="__empty" disabled>
+                          <div className="px-3 py-2 text-sm text-white/70">
                             No skills found
-                          </SelectItem>
+                          </div>
                         )}
                       </SelectContent>
                     </Select>
