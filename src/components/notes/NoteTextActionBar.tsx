@@ -52,7 +52,7 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
   return (
     <div
       data-note-text-action-bar
-      className="-mt-2 w-full transition-opacity duration-150"
+      className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] z-40 px-4 transition-opacity duration-150"
     >
       <div className="mx-auto max-w-4xl overflow-hidden bg-black">
         <div className="flex h-8 items-center gap-1 overflow-x-auto px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

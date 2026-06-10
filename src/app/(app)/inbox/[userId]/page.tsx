@@ -253,8 +253,8 @@ export default function InboxThreadPage() {
   );
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 pb-24 pt-2 sm:px-6">
+    <div className="h-[100dvh] min-h-screen overflow-hidden bg-black text-white">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-4 pt-2 sm:px-6">
         <header className="sticky top-0 z-20 -mx-4 mb-1 border-b border-white/5 bg-black/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex min-h-11 items-center gap-2">
             <Link
@@ -307,7 +307,7 @@ export default function InboxThreadPage() {
           </div>
         </header>
 
-        <section className="flex-1 overflow-hidden bg-black">
+        <section className="min-h-0 flex-1 overflow-hidden bg-black">
           <div className="flex h-full flex-col gap-4 px-1 py-4 sm:px-2">
             {loading ? (
               <div className="space-y-2">
@@ -352,7 +352,7 @@ export default function InboxThreadPage() {
 
         <form
           onSubmit={handleSend}
-          className="sticky bottom-3 mt-2 flex flex-col gap-2 rounded-[18px] border border-white/10 bg-black/95 p-2 backdrop-blur"
+          className="-mx-4 mt-2 flex shrink-0 flex-col gap-2 border-t border-white/10 bg-black/95 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur sm:-mx-6 sm:px-6"
         >
           {sendError ? (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">

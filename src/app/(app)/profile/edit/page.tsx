@@ -473,7 +473,8 @@ export default function ProfileEditPage() {
   };
 
   const MIN_EDITOR_ZOOM = 1;
-  const MAX_EDITOR_ZOOM = 3;
+  const MAX_EDITOR_ZOOM = 2.75;
+  const EDITOR_ZOOM_SLIDER_STEPS = 100;
   const AVATAR_EXPORT_SIZE = 1200;
 
   const getTouchDistance = (a: React.Touch, b: React.Touch) => {
@@ -487,32 +488,84 @@ export default function ProfileEditPage() {
     y: (a.clientY + b.clientY) / 2,
   });
 
+  const getEditorCropSize = useCallback(() => {
+    if (!editorFrameSize.width || !editorFrameSize.height) {
+      return 0;
+    }
+
+    return Math.min(editorFrameSize.width, editorFrameSize.height);
+  }, [editorFrameSize.height, editorFrameSize.width]);
+
+  const getEditorPointFromCenter = useCallback((point: { x: number; y: number }) => {
+    const frame = avatarEditorFrameRef.current;
+    if (!frame) {
+      return { x: 0, y: 0 };
+    }
+
+    const rect = frame.getBoundingClientRect();
+    return {
+      x: point.x - (rect.left + rect.width / 2),
+      y: point.y - (rect.top + rect.height / 2),
+    };
+  }, []);
+
+  const getOffsetForZoom = useCallback(
+    (
+      offset: { x: number; y: number },
+      currentZoom: number,
+      nextZoom: number,
+      focalPoint = { x: 0, y: 0 },
+    ) => {
+      const safeCurrentZoom = currentZoom || MIN_EDITOR_ZOOM;
+      const zoomRatio = nextZoom / safeCurrentZoom;
+
+      return {
+        x: focalPoint.x - (focalPoint.x - offset.x) * zoomRatio,
+        y: focalPoint.y - (focalPoint.y - offset.y) * zoomRatio,
+      };
+    },
+    [],
+  );
+
+  const getZoomFromSliderValue = useCallback((value: number) => {
+    const sliderRatio = Math.min(1, Math.max(0, value / EDITOR_ZOOM_SLIDER_STEPS));
+    return MIN_EDITOR_ZOOM * Math.pow(MAX_EDITOR_ZOOM / MIN_EDITOR_ZOOM, sliderRatio);
+  }, []);
+
+  const getSliderValueFromZoom = useCallback((zoomLevel: number) => {
+    const normalizedZoom = Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, zoomLevel));
+    return (
+      (Math.log(normalizedZoom / MIN_EDITOR_ZOOM) / Math.log(MAX_EDITOR_ZOOM / MIN_EDITOR_ZOOM)) *
+      EDITOR_ZOOM_SLIDER_STEPS
+    );
+  }, []);
+
   const clampEditorOffset = useCallback(
     (nextOffset: { x: number; y: number }, zoomLevel: number) => {
+      const cropSize = getEditorCropSize();
       if (
         !editorImageSize.width ||
         !editorImageSize.height ||
-        !editorFrameSize.width ||
-        !editorFrameSize.height
+        !cropSize
       ) {
         return nextOffset;
       }
 
       const baseCoverScale = Math.max(
-        editorFrameSize.width / editorImageSize.width,
-        editorFrameSize.height / editorImageSize.height,
+        cropSize / editorImageSize.width,
+        cropSize / editorImageSize.height,
       );
       const renderedWidth = editorImageSize.width * baseCoverScale * zoomLevel;
       const renderedHeight = editorImageSize.height * baseCoverScale * zoomLevel;
-      const maxOffsetX = Math.max(0, (renderedWidth - editorFrameSize.width) / 2);
-      const maxOffsetY = Math.max(0, (renderedHeight - editorFrameSize.height) / 2);
+      const maxOffsetX = Math.max(0, (renderedWidth - cropSize) / 2);
+      const maxOffsetY = Math.max(0, (renderedHeight - cropSize) / 2);
 
       return {
         x: Math.min(maxOffsetX, Math.max(-maxOffsetX, nextOffset.x)),
         y: Math.min(maxOffsetY, Math.max(-maxOffsetY, nextOffset.y)),
       };
     },
-    [editorFrameSize.height, editorFrameSize.width, editorImageSize.height, editorImageSize.width],
+    [editorImageSize.height, editorImageSize.width, getEditorCropSize],
   );
 
   const openAvatarEditorFromFile = useCallback((file: File) => {
@@ -777,10 +830,11 @@ export default function ProfileEditPage() {
     }
     if (event.touches.length === 2) {
       const [touchA, touchB] = [event.touches[0], event.touches[1]];
+      const midpoint = getTouchMidpoint(touchA, touchB);
       gestureStateRef.current = {
         mode: "pinch",
         startDistance: getTouchDistance(touchA, touchB),
-        startMidpoint: getTouchMidpoint(touchA, touchB),
+        startMidpoint: midpoint,
         startZoom: editorZoom,
         startOffset: { ...editorOffset },
       };
@@ -815,12 +869,18 @@ export default function ProfileEditPage() {
         MAX_EDITOR_ZOOM,
         Math.max(MIN_EDITOR_ZOOM, gestureStateRef.current.startZoom * zoomRatio),
       );
-      const deltaX = nextMidpoint.x - gestureStateRef.current.startMidpoint.x;
-      const deltaY = nextMidpoint.y - gestureStateRef.current.startMidpoint.y;
+      const startFocalPoint = getEditorPointFromCenter(gestureStateRef.current.startMidpoint);
+      const nextFocalPoint = getEditorPointFromCenter(nextMidpoint);
+      const focalOffset = getOffsetForZoom(
+        gestureStateRef.current.startOffset,
+        gestureStateRef.current.startZoom,
+        nextZoom,
+        startFocalPoint,
+      );
       const nextOffset = clampEditorOffset(
         {
-          x: gestureStateRef.current.startOffset.x + deltaX,
-          y: gestureStateRef.current.startOffset.y + deltaY,
+          x: focalOffset.x + nextFocalPoint.x - startFocalPoint.x,
+          y: focalOffset.y + nextFocalPoint.y - startFocalPoint.y,
         },
         nextZoom,
       );
@@ -887,12 +947,11 @@ export default function ProfileEditPage() {
   };
 
   const handleEditorZoomChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextZoom = Math.min(
-      MAX_EDITOR_ZOOM,
-      Math.max(MIN_EDITOR_ZOOM, Number(event.currentTarget.value)),
-    );
+    const nextZoom = getZoomFromSliderValue(Number(event.currentTarget.value));
     setEditorZoom(nextZoom);
-    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, nextZoom));
+    setEditorOffset((currentOffset) =>
+      clampEditorOffset(getOffsetForZoom(currentOffset, editorZoom, nextZoom), nextZoom),
+    );
   };
 
   const handleAvatarEditorCancel = () => {
@@ -930,16 +989,18 @@ export default function ProfileEditPage() {
       if (!ctx) return;
 
       const image = new Image();
-      image.src = pendingAvatarSourceUrl;
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
         image.onerror = () => reject(new Error("Failed to load selected image"));
+        image.src = pendingAvatarSourceUrl;
       });
 
       ctx.fillStyle = "#000000";
       ctx.fillRect(0, 0, outputWidth, outputHeight);
 
       const squareFrameSize = Math.min(frameWidth, frameHeight);
+      if (!squareFrameSize) return;
+
       const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
       const baseCoverScale = Math.max(
         squareFrameSize / editorImageSize.width,
@@ -1154,7 +1215,9 @@ export default function ProfileEditPage() {
   }, [
     clampEditorOffset,
     editorFrameSize.width,
+    editorFrameSize.height,
     editorImageSize.width,
+    editorImageSize.height,
     editorZoom,
     isAvatarEditorOpen,
   ]);
@@ -1188,11 +1251,122 @@ export default function ProfileEditPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0F0F12] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-200 mx-auto mb-4"></div>
-          <p className="text-zinc-400">Loading profile...</p>
-        </div>
+      <div className="min-h-screen bg-[#0F0F12] text-zinc-100" aria-busy="true">
+        <section className="w-full border-b border-white/5 bg-gradient-to-b from-[#08090E] via-[#0F0F12] to-[#0F0F12]">
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pb-4 pt-5">
+            <header className="flex items-center gap-2.5 text-white/80">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.04] text-white/35 ring-1 ring-white/10">
+                <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="h-3 w-32 rounded-full bg-white/10" />
+            </header>
+
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#15161A]/85 px-4 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-5 sm:py-5">
+              <div className="flex items-center gap-4 sm:gap-5">
+                <div className="h-24 w-24 shrink-0 rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] ring-1 ring-white/10 sm:h-28 sm:w-28">
+                  <div className="h-full w-full animate-pulse rounded-full bg-white/[0.035]" />
+                </div>
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <div className="h-2.5 w-28 rounded-full bg-white/10" />
+                  <div className="h-4 w-36 rounded-full bg-white/15" />
+                  <div className="space-y-1.5 pt-0.5">
+                    <div className="h-2.5 w-full max-w-[250px] rounded-full bg-white/[0.08]" />
+                    <div className="h-2.5 w-full max-w-[190px] rounded-full bg-white/[0.06]" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <div className="mb-3 h-2.5 w-28 rounded-full bg-white/10" />
+                <div className="flex gap-2 overflow-hidden">
+                  {[0, 1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      className="flex h-10 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3"
+                    >
+                      <div className="h-5 w-5 rounded-full bg-white/[0.07]" />
+                      <div className="h-2 w-12 rounded-full bg-white/[0.08]" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-3">
+          <Card className="border border-white/5 bg-[#15161A] py-4 shadow-xl">
+            <CardContent className="px-4 sm:px-6">
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <div className="h-3 w-20 rounded-full bg-white/10" />
+                  <div className="h-12 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                    <div className="ml-3.5 mt-[1.125rem] h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="h-3 w-20 rounded-full bg-white/10" />
+                  <div className="relative h-12 rounded-lg border border-white/5 bg-black pl-8 ring-1 ring-black">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-zinc-500">
+                      @
+                    </span>
+                    <div className="mt-[1.125rem] h-3 w-44 animate-pulse rounded-full bg-white/[0.08]" />
+                  </div>
+                  <div className="h-2.5 w-56 rounded-full bg-white/[0.07]" />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="h-3 w-10 rounded-full bg-white/10" />
+                  <div className="min-h-[100px] rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                    <div className="space-y-2 px-3.5 pt-4">
+                      <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.08]" />
+                      <div className="h-3 w-full max-w-[320px] rounded-full bg-white/[0.06]" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                      <div className="h-3 w-24 rounded-full bg-white/10" />
+                    </div>
+                    <div className="h-12 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                      <div className="ml-3.5 mt-[1.125rem] h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                      <div className="h-3 w-10 rounded-full bg-white/10" />
+                    </div>
+                    <div className="h-12 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                      <div className="ml-3.5 mt-[1.125rem] h-3 w-32 animate-pulse rounded-full bg-white/[0.08]" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="h-3 w-28 rounded-full bg-white/10" />
+                    <div className="h-2.5 w-14 rounded-full bg-emerald-400/25" />
+                  </div>
+                  <div className="h-7 w-14 rounded-full bg-emerald-500/55 p-1 shadow-lg">
+                    <div className="h-5 w-5 rounded-full bg-white/85" />
+                  </div>
+                </div>
+
+                <div className="pt-6">
+                  <div className="h-14 rounded-xl border border-stone-400/10 bg-stone-600/55 shadow-[0_16px_38px_rgba(0,0,0,0.35)]">
+                    <div className="mx-auto mt-[1.375rem] h-3 w-28 rounded-full bg-white/20" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -1204,7 +1378,7 @@ export default function ProfileEditPage() {
           <p className="text-zinc-300 mb-4">{error}</p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 border border-zinc-700"
+            className="px-4 py-2 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 border !border-black"
           >
             Back to Dashboard
           </button>
@@ -1229,12 +1403,13 @@ export default function ProfileEditPage() {
   const editorBaseCoverScale =
     editorImageSize.width && editorImageSize.height && editorFrameSize.width && editorFrameSize.height
       ? Math.max(
-          editorFrameSize.width / editorImageSize.width,
-          editorFrameSize.height / editorImageSize.height,
+          Math.min(editorFrameSize.width, editorFrameSize.height) / editorImageSize.width,
+          Math.min(editorFrameSize.width, editorFrameSize.height) / editorImageSize.height,
         )
       : 1;
-  const editorRenderedWidth = editorImageSize.width * editorBaseCoverScale;
-  const editorRenderedHeight = editorImageSize.height * editorBaseCoverScale;
+  const editorRenderedWidth = editorImageSize.width * editorBaseCoverScale * editorZoom;
+  const editorRenderedHeight = editorImageSize.height * editorBaseCoverScale * editorZoom;
+  const editorZoomSliderValue = getSliderValueFromZoom(editorZoom);
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
@@ -1431,7 +1606,7 @@ export default function ProfileEditPage() {
               </div>
               <div
                 ref={avatarEditorFrameRef}
-                className="relative mx-auto aspect-square w-full max-w-[min(100%,390px)] cursor-grab touch-none select-none overflow-hidden rounded-[26px] border border-white/10 bg-black/80 active:cursor-grabbing"
+                className="relative mx-auto aspect-square w-full max-w-[min(100%,390px)] cursor-grab touch-none select-none overflow-hidden rounded-full border border-white/10 bg-black active:cursor-grabbing"
                 onTouchStart={handleEditorTouchStart}
                 onTouchMove={handleEditorTouchMove}
                 onTouchEnd={handleEditorTouchEnd}
@@ -1445,6 +1620,7 @@ export default function ProfileEditPage() {
                   <img
                     src={pendingAvatarSourceUrl}
                     alt="Selected profile"
+                    draggable={false}
                     onLoad={(event) => {
                       setEditorImageSize({
                         width: event.currentTarget.naturalWidth,
@@ -1457,38 +1633,17 @@ export default function ProfileEditPage() {
                     style={{
                       width: `${Math.max(editorRenderedWidth, 1)}px`,
                       height: `${Math.max(editorRenderedHeight, 1)}px`,
-                      transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px)) scale(${editorZoom})`,
+                      transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px))`,
                       transformOrigin: "center center",
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                      pointerEvents: "none",
                     }}
                   />
                 ) : null}
                 <div
-                  className="pointer-events-none absolute inset-0"
-                  style={{
-                    background:
-                      "radial-gradient(circle at center, transparent 49.25%, rgba(0,0,0,0.62) 50%)",
-                  }}
-                  aria-hidden="true"
-                />
-                <div
                   className="pointer-events-none absolute inset-px rounded-full border border-white/75 shadow-[0_0_0_1px_rgba(0,0,0,0.45)_inset,0_0_30px_rgba(0,0,0,0.28)]"
                   aria-hidden="true"
-                />
-              </div>
-              <div className="space-y-2 px-1">
-                <div className="flex items-center justify-between text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">
-                  <span>Zoom</span>
-                  <span>{editorZoom.toFixed(1)}x</span>
-                </div>
-                <input
-                  type="range"
-                  min={MIN_EDITOR_ZOOM}
-                  max={MAX_EDITOR_ZOOM}
-                  step="0.01"
-                  value={editorZoom}
-                  onChange={handleEditorZoomChange}
-                  aria-label="Zoom profile photo"
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-white"
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
@@ -1552,7 +1707,7 @@ export default function ProfileEditPage() {
                   className={`h-12 text-lg bg-black text-white placeholder:text-zinc-500 ${
                     hasAttemptedSubmit && fieldErrors.name
                       ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                      : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                      : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
                   }`}
                 />
                 {hasAttemptedSubmit && fieldErrors.name ? (
@@ -1584,7 +1739,7 @@ export default function ProfileEditPage() {
                     className={`h-12 bg-black pl-8 text-lg text-white placeholder:text-zinc-500 ${
                       hasAttemptedSubmit && fieldErrors.username
                         ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                        : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                        : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
                     }`}
                   />
                 </div>
@@ -1604,7 +1759,7 @@ export default function ProfileEditPage() {
                   value={formData.bio}
                   onChange={(e) => handleInputChange("bio", e.target.value)}
                   placeholder="Tell us about yourself..."
-                  className="min-h-[100px] text-lg resize-none bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
+                  className="min-h-[100px] text-lg resize-none bg-black text-white !border-black placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
                 />
               </div>
 
@@ -1625,10 +1780,10 @@ export default function ProfileEditPage() {
                     type="date"
                     value={formData.dob}
                     onChange={(e) => handleInputChange("dob", e.target.value)}
-                    className={`h-12 w-full rounded-lg border bg-gradient-to-r from-zinc-950 to-zinc-900 text-lg text-white placeholder:text-zinc-500 transition-colors duration-200 appearance-none ${
+                    className={`h-12 w-full rounded-lg border bg-black text-lg text-white placeholder:text-zinc-500 transition-colors duration-200 appearance-none ${
                       hasAttemptedSubmit && fieldErrors.dob
                         ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                        : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                        : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
                     } pr-12 pl-4`}
                   />
                   <Calendar className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-white/70" />
@@ -1650,7 +1805,7 @@ export default function ProfileEditPage() {
                   value={formData.city}
                   onChange={(e) => handleInputChange("city", e.target.value)}
                   placeholder="Where are you located?"
-                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                  className="h-12 text-lg bg-black text-white !border-black placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
               </div>
 
@@ -1660,24 +1815,25 @@ export default function ProfileEditPage() {
                   <span className="text-sm font-semibold text-zinc-200">
                     Profile visibility
                   </span>
-                  <span
-                    className="text-xs uppercase tracking-[0.3em] text-zinc-500"
-                    aria-live="polite"
-                  >
-                    {formData.is_private ? "Private" : "Public"}
-                  </span>
-                </div>
-                <label className="inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="peer sr-only"
-                    checked={formData.is_private ?? false}
-                    onChange={(e) => handlePrivacyChange(e.target.checked)}
-                  />
-                  <span className="relative inline-flex h-6 w-12 flex-none items-center rounded-full bg-zinc-700 transition-colors duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70 peer-checked:bg-emerald-500">
-                    <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 peer-checked:translate-x-5" />
-                  </span>
-                </label>
+                    <span
+                      className={`text-xs uppercase tracking-[0.3em] transition-colors duration-300 ${
+                        formData.is_private ? "text-zinc-400" : "text-emerald-400"
+                      }`}
+                      aria-live="polite"
+                    >
+                      {formData.is_private ? "Private" : "Public"}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex h-7 w-14 cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={formData.is_private ?? false}
+                      onChange={(e) => handlePrivacyChange(e.target.checked)}
+                    />
+                    <span className="absolute inset-0 rounded-full bg-emerald-500 transition-colors duration-300 ease-out peer-checked:bg-zinc-700 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70" />
+                    <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-lg transition-transform duration-300 ease-out peer-checked:translate-x-7" />
+                  </label>
               </div>
 
               {/* Submit Button */}

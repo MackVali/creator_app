@@ -1,6 +1,3 @@
-import TopNav from "@/components/TopNav";
-import BottomNav from "@/components/BottomNav";
-import AppMain from "@/components/AppMain";
 import { ProfileProvider } from "@/components/ProfileProvider";
 import LevelUpListener from "@/components/LevelUpListener";
 import SchedulerActivityHeartbeat from "@/components/SchedulerActivityHeartbeat";
@@ -9,6 +6,7 @@ import ProfileSetupPrompt from "@/components/ProfileSetupPrompt";
 import { TourProvider } from "@/components/tour/TourProvider";
 import { AppCartProvider } from "@/components/cart/AppCartProvider";
 import { FabCreationProvider } from "@/components/ui/FabCreationContext";
+import AppShellNavVisibility from "@/components/AppShellNavVisibility";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -20,9 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <LevelUpListener />
               <SchedulerActivityHeartbeat />
               <ProfileSetupPrompt />
-              <TopNav />
-              <AppMain>{children}</AppMain>
-              <BottomNav />
+              <AppShellNavVisibility>{children}</AppShellNavVisibility>
             </FabCreationProvider>
           </ProfileProvider>
         </ToastProvider>

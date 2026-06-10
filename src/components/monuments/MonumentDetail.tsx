@@ -562,6 +562,25 @@ export function MonumentDetail({
   }, []);
 
   useEffect(() => {
+    requestAnimationFrame(() => {
+      detailScrollRef.current =
+        detailScrollRef.current ?? getScrollParent(detailSurfaceRef.current);
+
+      detailScrollRef.current?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+    });
+  }, [id]);
+
+  useEffect(() => {
     return () => {
       pullSnapAnimationRef.current?.stop();
     };
@@ -588,14 +607,13 @@ export function MonumentDetail({
     if (index === activeChargeStageIndex) return activeChargeCellFill;
     return 0;
   };
-  const totalChargeBarFillPercent = Math.min(
-    Math.max(
-      ((activeChargeStageIndex + activeChargeCellFill / 100) /
-        CHARGE_MILESTONES.length) *
-        100,
-      0
-    ),
-    100
+  const totalChargeFilledCellUnits = Math.min(
+    Math.max(activeChargeStageIndex + activeChargeCellFill / 100, 0),
+    CHARGE_MILESTONES.length
+  );
+  const totalChargeCompletedGapCount = Math.min(
+    Math.max(activeChargeStageIndex, 0),
+    CHARGE_MILESTONES.length - 1
   );
 
   const handleStartFocusPomo = () => {
@@ -835,7 +853,7 @@ export function MonumentDetail({
   return (
     <motion.main
       ref={detailSurfaceRef}
-      className="relative overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
+      className="min-h-dvh bg-black relative overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
       style={{ y: pullY, touchAction: "pan-y", willChange: "transform" }}
       onPointerDown={handlePullExitStart}
       onPointerMove={handlePullExitMove}
@@ -939,7 +957,7 @@ export function MonumentDetail({
                     </div>
                   </div>
                   <div
-                    className="relative grid h-6 max-w-[220px] grid-cols-5 gap-1.5 overflow-hidden rounded-[3px] border border-white/[0.07] bg-black/35 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),inset_0_-1px_0_rgba(0,0,0,0.42)] sm:max-w-[260px]"
+                    className="relative grid h-[11px] max-w-[220px] grid-cols-5 gap-1.5 overflow-hidden sm:max-w-[260px]"
                     aria-label={`EVO charge stage ${summary.evoLabel}`}
                   >
                     {CHARGE_MILESTONES.map((milestone, index) => {
@@ -978,13 +996,13 @@ export function MonumentDetail({
                         </div>
                       );
                     })}
-                      {totalChargeBarFillPercent > 0 ? (
+                      {totalChargeFilledCellUnits > 0 ? (
                         <span
-                          className="pointer-events-none absolute inset-y-[5px] left-1 z-[6] overflow-hidden rounded-[3px] opacity-45"
+                          className="pointer-events-none absolute inset-y-0 left-0 z-[6] overflow-hidden rounded-[3px] opacity-30"
                           style={{
-                            width: `calc((100% - 0.5rem) * ${
-                              totalChargeBarFillPercent / 100
-                            })`,
+                            width: `calc(((100% - 1.5rem) * ${
+                              totalChargeFilledCellUnits / CHARGE_MILESTONES.length
+                            }) + (${totalChargeCompletedGapCount} * 0.375rem))`,
                           }}
                           aria-hidden="true"
                         >
