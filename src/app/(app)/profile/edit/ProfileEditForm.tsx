@@ -315,7 +315,7 @@ export default function ProfileEditForm({
                   value={formData.name}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   placeholder="Enter your full name"
-                  className={errors.name ? "border-red-500" : ""}
+                  className={errors.name ? "border-red-500" : "!border-black"}
                 />
                 {hasAttemptedSubmit && errors.name && (
                   <p className="text-sm text-red-500">{errors.name}</p>
@@ -337,7 +337,7 @@ export default function ProfileEditForm({
                   }
                   placeholder="Choose a unique username"
                   className={
-                    usernameAvailable === false ? "border-red-500" : ""
+                    usernameAvailable === false ? "border-red-500" : "!border-black"
                   }
                 />
                 {usernameChecking && (
@@ -372,7 +372,7 @@ export default function ProfileEditForm({
                   type="date"
                   value={formData.dob || ""}
                   onChange={(e) => handleInputChange("dob", e.target.value)}
-                  className={errors.dob ? "border-red-500" : ""}
+                  className={errors.dob ? "border-red-500" : "!border-black"}
                 />
                 {hasAttemptedSubmit && errors.dob && (
                   <p className="text-sm text-red-500">{errors.dob}</p>
@@ -386,7 +386,7 @@ export default function ProfileEditForm({
                   value={formData.city || ""}
                   onChange={(e) => handleInputChange("city", e.target.value)}
                   placeholder="Enter your city"
-                  className={errors.city ? "border-red-500" : ""}
+                  className={errors.city ? "border-red-500" : "!border-black"}
                 />
                 {errors.city && (
                   <p className="text-sm text-red-500">{errors.city}</p>
@@ -402,7 +402,7 @@ export default function ProfileEditForm({
                 onChange={(e) => handleInputChange("bio", e.target.value)}
                 placeholder="Tell us about yourself"
                 rows={4}
-                className={errors.bio ? "border-red-500" : ""}
+                className={errors.bio ? "border-red-500" : "!border-black"}
               />
               {errors.bio && (
                 <p className="text-sm text-red-500">{errors.bio}</p>

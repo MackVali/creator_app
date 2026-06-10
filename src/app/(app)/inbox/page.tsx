@@ -473,9 +473,8 @@ export default function InboxPage() {
           {!loading && !error && !emptyState && threadRows.length > 0 ? (
             <div>
               {threadRows}
-              <button
-                type="button"
-                onClick={() => undefined}
+              <Link
+                href="/friends?tab=search"
                 className="group flex w-full items-center gap-3 px-1 py-3 text-left transition hover:bg-white/[0.03] active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
               >
                 <Avatar className="h-11 w-11 border border-white/10 bg-white/[0.04]">
@@ -504,7 +503,7 @@ export default function InboxPage() {
                     Add contacts
                   </p>
                 </div>
-              </button>
+              </Link>
             </div>
           ) : null}
 

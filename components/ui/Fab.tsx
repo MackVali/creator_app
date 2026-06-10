@@ -549,7 +549,7 @@ function GoalCampaignCreateRow({
           maxLength={8}
           aria-label="Campaign emoji"
           disabled={loading}
-          className="h-9 w-11 shrink-0 rounded-lg border-white/10 bg-black/30 px-1 text-center text-lg focus:border-blue-400/60 focus-visible:ring-0"
+          className="h-9 w-11 shrink-0 rounded-sm border-white/10 bg-black/30 px-1 text-center text-lg focus:border-zinc-500 focus-visible:ring-0"
         />
         <Input
           ref={inputRef}
@@ -558,7 +558,7 @@ function GoalCampaignCreateRow({
           onKeyDown={handleFieldKeyDown}
           placeholder="Campaign name"
           disabled={loading}
-          className="h-9 min-w-0 flex-1 rounded-lg border-white/10 bg-black/30 px-2.5 text-xs focus:border-blue-400/60 focus-visible:ring-0"
+          className="h-9 min-w-0 flex-1 rounded-sm border-white/10 bg-black/30 px-2.5 text-xs focus:border-zinc-500 focus-visible:ring-0"
         />
         <Button
           type="submit"
@@ -758,7 +758,27 @@ const FAB_ADVANCED_LABEL_CLASS =
 const FAB_ADVANCED_INPUT_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white placeholder:text-white/35 focus:border-blue-400/60 focus-visible:ring-0";
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
-  "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
+  "h-10 rounded-sm border border-zinc-700/80 bg-zinc-950 px-3.5 text-xs text-zinc-100 shadow-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-600/30";
+const FAB_CREATION_CLOSED_FIELD_CLASS =
+  "rounded-md border border-white/10 bg-white/[0.05] text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] focus:border-blue-400/60 focus:ring-0 focus-visible:ring-0";
+const FAB_CREATION_SELECT_TRIGGER_CLASS =
+  FAB_CREATION_CLOSED_FIELD_CLASS;
+const FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS =
+  "rounded-sm border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/50";
+const FAB_CREATION_SELECT_CONTENT_CLASS = "bg-zinc-950";
+const FAB_CREATION_SELECT_ITEM_BASE_CLASS =
+  "rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-white";
+const FAB_CREATION_SELECT_ITEM_SELECTED_CLASS =
+  "bg-zinc-800 text-white shadow-none ring-1 ring-zinc-700/70";
+const fabCreationSelectItemClass = (
+  isSelected: boolean,
+  className?: string,
+) =>
+  cn(
+    FAB_CREATION_SELECT_ITEM_BASE_CLASS,
+    isSelected && FAB_CREATION_SELECT_ITEM_SELECTED_CLASS,
+    className,
+  );
 const FAB_KEYBOARD_SETTLE_MS = 280;
 const FAB_KEYBOARD_MODAL_GAP = 10;
 const FAB_KEYBOARD_OFFSET_MAX_RATIO = 0.55;
@@ -3045,17 +3065,11 @@ export function Fab({
   }, []);
   const handleSkillDropdownOpenChange = useCallback(
     (open: boolean) => {
-      if (!open) return;
-      if (skillSearch || skillFilterMonumentId || filteredSkills.length === 0) {
-        resetSkillLookupState();
+      if (!open) {
+        setShowSkillFilters(false);
       }
     },
-    [
-      filteredSkills.length,
-      resetSkillLookupState,
-      skillFilterMonumentId,
-      skillSearch,
-    ],
+    [],
   );
   useEffect(() => {
     resetSkillLookupState();
@@ -3701,7 +3715,11 @@ export function Fab({
       form: false,
       photo: false,
     });
+  const [memoNoteDestinationType, setMemoNoteDestinationType] = useState<
+    "skill" | "monument"
+  >("skill");
   const [memoNoteSkillId, setMemoNoteSkillId] = useState<string | "">("");
+  const [memoNoteMonumentId, setMemoNoteMonumentId] = useState<string | "">("");
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
@@ -3812,7 +3830,9 @@ export function Fab({
       form: false,
       photo: false,
     });
+    setMemoNoteDestinationType("skill");
     setMemoNoteSkillId(habitSkillId || "");
+    setMemoNoteMonumentId("");
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -4831,8 +4851,8 @@ export function Fab({
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         className={cn(
-          "flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-          selected && "bg-white/10",
+          "flex w-full cursor-pointer select-none items-center gap-2 px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600/30",
+          fabCreationSelectItemClass(selected),
         )}
         style={{ touchAction: "pan-y" }}
       >
@@ -4952,14 +4972,20 @@ export function Fab({
     selectedId: string | null;
     onClearSelection?: () => void;
   }) {
-    const { isOpen, setIsOpen } = useSelectContext();
+    const { setIsOpen } = useSelectContext();
     const selectedSkill = findSkillById(selectedId);
     const backspaceTapRef = React.useRef<{ count: number; last: number }>({
       count: 0,
       last: 0,
     });
-    const handlePointerDown = () => {
+    const handlePointerDown = (
+      event: React.PointerEvent<HTMLInputElement>,
+    ) => {
+      event.stopPropagation();
       setIsOpen?.(true);
+    };
+    const handleClick = (event: React.MouseEvent<HTMLInputElement>) => {
+      event.stopPropagation();
     };
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
       event.stopPropagation();
@@ -4989,7 +5015,12 @@ export function Fab({
       }
     };
     return (
-      <div className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition focus-within:border-blue-400/60">
+      <div
+        className={cn(
+          "flex h-12 w-full items-center gap-3 px-3 text-sm transition focus-within:border-blue-400/60 focus-within:ring-0 md:h-14",
+          FAB_CREATION_CLOSED_FIELD_CLASS,
+        )}
+      >
         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-white/[0.08] text-lg">
           {selectedSkill?.icon ?? "🛠️"}
         </span>
@@ -4997,6 +5028,7 @@ export function Fab({
           value={skillSearch}
           readOnly={false}
           onPointerDown={handlePointerDown}
+          onClick={handleClick}
           onFocus={() => setIsOpen?.(true)}
           onChange={(e) => setSkillSearch(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -5474,6 +5506,7 @@ export function Fab({
     const previousType = previousHabitTypeRef.current;
     previousHabitTypeRef.current = normalizedType;
     if (normalizedType === "MEMO" && previousType !== "MEMO") {
+      setMemoNoteDestinationType("skill");
       setMemoNoteSkillId(habitSkillId || "");
     }
   }, [habitSkillId, habitType]);
@@ -6210,6 +6243,9 @@ export function Fab({
       form: false,
       photo: false,
     });
+    setMemoNoteDestinationType("skill");
+    setMemoNoteSkillId(habitSkillId || "");
+    setMemoNoteMonumentId("");
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -6233,7 +6269,12 @@ export function Fab({
     setTagInputValue("");
     setSaveError(null);
     resetNestedDraftState();
-  }, [defaultHabitRecurrence, defaultHabitType, resetNestedDraftState]);
+  }, [
+    defaultHabitRecurrence,
+    defaultHabitType,
+    habitSkillId,
+    resetNestedDraftState,
+  ]);
 
   type MenuPalette = {
     base: [number, number, number];
@@ -7571,13 +7612,26 @@ export function Fab({
                 <Select
                   value={draftProjectPriority}
                   onValueChange={setDraftProjectPriority}
-                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
-                  contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                  triggerClassName={cn(
+                    "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                    FAB_CREATION_SELECT_TRIGGER_CLASS,
+                  )}
+                  contentWrapperClassName={cn(
+                    FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                    "min-w-[240px] sm:min-w-[280px]",
+                  )}
                   placeholder="Priority"
                 >
-                  <SelectContent>
+                  <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                     {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                      <SelectItem key={o.value} value={o.value} label={o.label}>
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        label={o.label}
+                        className={fabCreationSelectItemClass(
+                          draftProjectPriority === o.value,
+                        )}
+                      >
                         <div className="flex w-full items-center justify-between gap-3">
                           <span>{o.label}</span>
                           <span className="w-10 text-right text-red-400">
@@ -7596,12 +7650,22 @@ export function Fab({
                 <Select
                   value={draftProjectStage}
                   onValueChange={setDraftProjectStage}
-                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                  triggerClassName={cn(
+                    "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                    FAB_CREATION_SELECT_TRIGGER_CLASS,
+                  )}
+                  contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                   placeholder="Stage"
                 >
-                  <SelectContent>
+                  <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                     {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        className={fabCreationSelectItemClass(
+                          draftProjectStage === o.value,
+                        )}
+                      >
                         {o.label}
                       </SelectItem>
                     ))}
@@ -7686,7 +7750,10 @@ export function Fab({
                 }}
                 placeholder="Link a skill"
                 triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                contentWrapperClassName={cn(
+                  FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                  "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                )}
                 maxHeight={150}
                 openOnTriggerFocus
                 trigger={
@@ -7699,7 +7766,12 @@ export function Fab({
                   />
                 }
               >
-                <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                <SelectContent
+                  className={cn(
+                    FAB_CREATION_SELECT_CONTENT_CLASS,
+                    "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                  )}
+                >
                   {showSkillFilters ? (
                     <div
                       ref={skillFilterMenuRef}
@@ -8061,13 +8133,25 @@ export function Fab({
                 <Select
                   value={draftTaskPriority}
                   onValueChange={setDraftTaskPriority}
-                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
-                  contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                  triggerClassName={cn(
+                    "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                    FAB_CREATION_SELECT_TRIGGER_CLASS,
+                  )}
+                  contentWrapperClassName={cn(
+                    FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                    "min-w-[240px] sm:min-w-[280px]",
+                  )}
                   placeholder="Priority"
                 >
-                  <SelectContent>
+                  <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                     {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        className={fabCreationSelectItemClass(
+                          draftTaskPriority === o.value,
+                        )}
+                      >
                         {o.label}
                       </SelectItem>
                     ))}
@@ -8081,12 +8165,22 @@ export function Fab({
                 <Select
                   value={draftTaskStage}
                   onValueChange={setDraftTaskStage}
-                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                  triggerClassName={cn(
+                    "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                    FAB_CREATION_SELECT_TRIGGER_CLASS,
+                  )}
+                  contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                   placeholder="Stage"
                 >
-                  <SelectContent>
+                  <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                     {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        className={fabCreationSelectItemClass(
+                          draftTaskStage === o.value,
+                        )}
+                      >
                         {o.label}
                       </SelectItem>
                     ))}
@@ -8174,7 +8268,10 @@ export function Fab({
                   }}
                   placeholder="Link a skill"
                   triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                  contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                  contentWrapperClassName={cn(
+                    FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                    "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                  )}
                   maxHeight={150}
                   openOnTriggerFocus
                   trigger={
@@ -8187,7 +8284,12 @@ export function Fab({
                     />
                   }
                 >
-                  <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                  <SelectContent
+                    className={cn(
+                      FAB_CREATION_SELECT_CONTENT_CLASS,
+                      "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                    )}
+                  >
                     {showSkillFilters ? (
                       <div
                         ref={skillFilterMenuRef}
@@ -8462,14 +8564,19 @@ export function Fab({
                       triggerClassName={cn(
                         "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                         goalRelationType && goalRelationId
-                          ? "text-white/80 hover:text-blue-200"
+                          ? "text-white/80 hover:text-zinc-200"
                           : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                       )}
                       trigger={
                         <span>{selectedGoalRelationLabel}</span>
                       }
                     >
-                      <SelectContent className="min-w-[220px]">
+                      <SelectContent
+                        className={cn(
+                          FAB_CREATION_SELECT_CONTENT_CLASS,
+                          "min-w-[220px]",
+                        )}
+                      >
                         <SelectItem
                           value="__monuments_label"
                           disabled
@@ -8478,7 +8585,11 @@ export function Fab({
                           MONUMENTS
                         </SelectItem>
                         {monumentsLoading ? (
-                          <SelectItem value="__loading" disabled>
+                          <SelectItem
+                            value="__loading"
+                            disabled
+                            className={fabCreationSelectItemClass(false)}
+                          >
                             Loading monuments…
                           </SelectItem>
                         ) : monuments.length > 0 ? (
@@ -8486,6 +8597,10 @@ export function Fab({
                             <SelectItem
                               key={monument.id}
                               value={`MONUMENT:${monument.id}`}
+                              className={fabCreationSelectItemClass(
+                                selectedGoalRelationValue ===
+                                  `MONUMENT:${monument.id}`,
+                              )}
                             >
                               <div className="flex items-center gap-2">
                                 <span className="text-lg">
@@ -8496,7 +8611,11 @@ export function Fab({
                             </SelectItem>
                           ))
                         ) : (
-                          <SelectItem value="__empty" disabled>
+                          <SelectItem
+                            value="__empty"
+                            disabled
+                            className={fabCreationSelectItemClass(false)}
+                          >
                             No monuments yet
                           </SelectItem>
                         )}
@@ -8508,7 +8627,11 @@ export function Fab({
                           CIRCLES
                         </SelectItem>
                         {manageableCirclesLoading ? (
-                          <SelectItem value="__circles_loading" disabled>
+                          <SelectItem
+                            value="__circles_loading"
+                            disabled
+                            className={fabCreationSelectItemClass(false)}
+                          >
                             Loading circles…
                           </SelectItem>
                         ) : manageableCircles.length > 0 ? (
@@ -8516,10 +8639,14 @@ export function Fab({
                             <SelectItem
                               key={circle.id}
                               value={`CIRCLE:${circle.id}`}
+                              className={fabCreationSelectItemClass(
+                                selectedGoalRelationValue ===
+                                  `CIRCLE:${circle.id}`,
+                              )}
                             >
                               <div className="flex items-center gap-2">
                                 <CircleDot
-                                  className="h-4 w-4 text-blue-200"
+                                  className="h-4 w-4 text-zinc-300"
                                   aria-hidden="true"
                                 />
                                 <span>{circle.name}</span>
@@ -8527,7 +8654,11 @@ export function Fab({
                             </SelectItem>
                           ))
                         ) : (
-                          <SelectItem value="__circles_empty" disabled>
+                          <SelectItem
+                            value="__circles_empty"
+                            disabled
+                            className={fabCreationSelectItemClass(false)}
+                          >
                             No managed circles yet
                           </SelectItem>
                         )}
@@ -8568,13 +8699,25 @@ export function Fab({
                       <Select
                         value={goalPriority}
                         onValueChange={setGoalPriority}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                        contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                        triggerClassName={cn(
+                          "h-12 md:h-14 text-[11px] uppercase tracking-[0.12em]",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={cn(
+                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                          "min-w-[240px] sm:min-w-[280px]",
+                        )}
                         placeholder="Priority"
                       >
-                        <SelectContent>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className={fabCreationSelectItemClass(
+                                goalPriority === o.value,
+                              )}
+                            >
                               {o.label}
                             </SelectItem>
                           ))}
@@ -8593,12 +8736,25 @@ export function Fab({
                             value.trim().length > 0 ? value : null,
                           );
                         }}
-                        triggerClassName="h-12 rounded-md bg-black text-left text-sm md:h-14"
-                        contentWrapperClassName="min-w-[260px] sm:min-w-[320px]"
+                        triggerClassName={cn(
+                          "h-12 text-left text-sm md:h-14",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={cn(
+                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                          "min-w-[260px] sm:min-w-[320px]",
+                        )}
                         placeholder="No campaign"
                       >
-                        <SelectContent>
-                          <SelectItem value="">No campaign</SelectItem>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                          <SelectItem
+                            value=""
+                            className={fabCreationSelectItemClass(
+                              !goalCampaignId,
+                            )}
+                          >
+                            No campaign
+                          </SelectItem>
                           <GoalCampaignCreateRow
                             active={isCreatingGoalCampaignInline}
                             value={goalInlineCampaignName}
@@ -8626,12 +8782,22 @@ export function Fab({
                             onCancel={resetGoalCampaignInlineCreation}
                           />
                           {goalCampaignsLoading ? (
-                            <SelectItem value="__loading" disabled>
+                            <SelectItem
+                              value="__loading"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
                               Loading campaigns…
                             </SelectItem>
                           ) : goalCampaignOptions.length > 0 ? (
                             goalCampaignOptions.map((campaign) => (
-                              <SelectItem key={campaign.id} value={campaign.id}>
+                              <SelectItem
+                                key={campaign.id}
+                                value={campaign.id}
+                                className={fabCreationSelectItemClass(
+                                  goalCampaignId === campaign.id,
+                                )}
+                              >
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span className="text-base">
                                     {campaign.emoji ?? FAB_DEFAULT_CAMPAIGN_EMOJI}
@@ -8641,7 +8807,11 @@ export function Fab({
                               </SelectItem>
                             ))
                           ) : (
-                            <SelectItem value="__empty" disabled>
+                            <SelectItem
+                              value="__empty"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
                               No campaigns yet
                             </SelectItem>
                           )}
@@ -8677,7 +8847,7 @@ export function Fab({
                           className={cn(
                             "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                             projectGoalId
-                              ? "text-white/80 hover:text-blue-200"
+                              ? "text-white/80 hover:text-zinc-200"
                               : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                           )}
                         >
@@ -8696,7 +8866,7 @@ export function Fab({
                           createPortal(
                             <div
                               ref={goalPickerContentRef}
-                              className="fixed z-[2147483661] min-w-[220px] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40"
+                              className="fixed z-[2147483661] min-w-[220px] overflow-hidden rounded-sm border border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/50"
                               style={goalPickerPosition ?? undefined}
                             >
                               <div className="relative max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain">
@@ -8708,7 +8878,7 @@ export function Fab({
                                       onChange={(e) => setGoalSearch(e.target.value)}
                                       onKeyDown={(e) => e.stopPropagation()}
                                       placeholder="Search goals…"
-                                      className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                                      className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-zinc-500 focus-visible:ring-0"
                                     />
                                     <button
                                       type="button"
@@ -8716,7 +8886,7 @@ export function Fab({
                                       className={cn(
                                         "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
                                         showGoalFilters &&
-                                          "border-blue-400/60 text-white",
+                                          "border-zinc-500/70 text-white",
                                       )}
                                       aria-label="Filter goals"
                                     >
@@ -8840,7 +9010,7 @@ export function Fab({
                                               className={cn(
                                                 "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
                                                 goalSort === "recent" &&
-                                                  "border-blue-400/60 bg-blue-500/10 text-white",
+                                                  "border-zinc-500/70 bg-zinc-800 text-white",
                                               )}
                                             >
                                               Recently updated
@@ -8851,7 +9021,7 @@ export function Fab({
                                               className={cn(
                                                 "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
                                                 goalSort === "oldest" &&
-                                                  "border-blue-400/60 bg-blue-500/10 text-white",
+                                                  "border-zinc-500/70 bg-zinc-800 text-white",
                                               )}
                                             >
                                               Oldest updated
@@ -8862,7 +9032,7 @@ export function Fab({
                                               className={cn(
                                                 "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
                                                 goalSort === "weight" &&
-                                                  "border-blue-400/60 bg-blue-500/10 text-white",
+                                                  "border-zinc-500/70 bg-zinc-800 text-white",
                                               )}
                                             >
                                               Highest weight
@@ -8911,15 +9081,15 @@ export function Fab({
                                             setIsGoalPickerOpen(false);
                                           }}
                                           className={cn(
-                                            "flex w-full cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white",
+                                            "flex w-full cursor-pointer select-none items-center rounded-sm px-3 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 hover:text-white",
                                             projectGoalId === goal.id &&
-                                              "bg-blue-500/20 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]",
+                                              "bg-zinc-800 text-white shadow-none ring-1 ring-zinc-700/70",
                                           )}
                                         >
                                           <div className="flex min-w-0 items-center gap-2">
                                             {goal.circle_id ? (
                                               <CircleDot
-                                                className="h-4 w-4 shrink-0 text-blue-200"
+                                                className="h-4 w-4 shrink-0 text-zinc-300"
                                                 aria-hidden="true"
                                               />
                                             ) : (
@@ -8937,7 +9107,7 @@ export function Fab({
                                                 {goal.name}
                                               </span>
                                               {circleLabel ? (
-                                                <span className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-200/70">
+                                                <span className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300/70">
                                                   {circleLabel}
                                                 </span>
                                               ) : null}
@@ -9018,16 +9188,25 @@ export function Fab({
                       <Select
                         value={projectPriority}
                         onValueChange={setProjectPriority}
-                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
-                        contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                        triggerClassName={cn(
+                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={cn(
+                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                          "min-w-[240px] sm:min-w-[280px]",
+                        )}
                         placeholder="Priority"
                       >
-                        <SelectContent>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {PRIORITY_OPTIONS_LOCAL.map((o) => (
                             <SelectItem
                               key={o.value}
                               value={o.value}
                               label={o.label}
+                              className={fabCreationSelectItemClass(
+                                projectPriority === o.value,
+                              )}
                             >
                               <div className="flex w-full items-center justify-between gap-3">
                                 <span>{o.label}</span>
@@ -9047,12 +9226,22 @@ export function Fab({
                       <Select
                         value={projectStage}
                         onValueChange={setProjectStage}
-                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                        triggerClassName={cn(
+                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         placeholder="Stage"
                       >
-                        <SelectContent>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className={fabCreationSelectItemClass(
+                                projectStage === o.value,
+                              )}
+                            >
                               {o.label}
                             </SelectItem>
                           ))}
@@ -9137,7 +9326,10 @@ export function Fab({
                       }}
                       placeholder="Link a skill"
                       triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                      contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                      contentWrapperClassName={cn(
+                        FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                        "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                      )}
                       maxHeight={150}
                       openOnTriggerFocus
                       trigger={
@@ -9150,7 +9342,12 @@ export function Fab({
                         />
                       }
                     >
-                      <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                      <SelectContent
+                        className={cn(
+                          FAB_CREATION_SELECT_CONTENT_CLASS,
+                          "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                        )}
+                      >
                         {showSkillFilters ? (
                           <div
                             ref={skillFilterMenuRef}
@@ -9266,7 +9463,7 @@ export function Fab({
                       triggerClassName={cn(
                         "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                         taskProjectId
-                          ? "text-white/80 hover:text-blue-200"
+                          ? "text-white/80 hover:text-zinc-200"
                           : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                       )}
                       trigger={
@@ -9278,7 +9475,12 @@ export function Fab({
                         </span>
                       }
                     >
-                      <SelectContent className="relative min-w-[220px]">
+                      <SelectContent
+                        className={cn(
+                          FAB_CREATION_SELECT_CONTENT_CLASS,
+                          "relative min-w-[220px]",
+                        )}
+                      >
                         <div className="sticky top-0 z-10 border-b border-white/5 bg-black/80 p-2 backdrop-blur">
                           <div className="relative flex items-center gap-2">
                             <Input
@@ -9287,7 +9489,7 @@ export function Fab({
                                 setTaskProjectSearch(e.target.value)
                               }
                               placeholder="Search projects…"
-                              className="h-9 border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                              className="h-9 border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/60 focus:border-zinc-500 focus-visible:ring-0"
                             />
                             <button
                               type="button"
@@ -9297,7 +9499,7 @@ export function Fab({
                               className={cn(
                                 "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
                                 showTaskProjectFilters &&
-                                  "border-blue-400/60 text-white",
+                                  "border-zinc-500/70 text-white",
                               )}
                               aria-label="Filter projects"
                             >
@@ -9405,17 +9607,31 @@ export function Fab({
                           </div>
                         ) : null}
                         {taskProjectsLoading ? (
-                          <SelectItem value="__loading" disabled>
+                          <SelectItem
+                            value="__loading"
+                            disabled
+                            className={fabCreationSelectItemClass(false)}
+                          >
                             Loading projects…
                           </SelectItem>
                         ) : filteredTaskProjects.length > 0 ? (
                           filteredTaskProjects.map((project) => (
-                            <SelectItem key={project.id} value={project.id}>
+                            <SelectItem
+                              key={project.id}
+                              value={project.id}
+                              className={fabCreationSelectItemClass(
+                                taskProjectId === project.id,
+                              )}
+                            >
                               {project.name}
                             </SelectItem>
                           ))
                         ) : (
-                          <SelectItem value="__empty" disabled>
+                          <SelectItem
+                            value="__empty"
+                            disabled
+                            className={fabCreationSelectItemClass(false)}
+                          >
                             {taskProjectSearch.trim().length > 0
                               ? "No projects found"
                               : "No projects yet"}
@@ -9458,13 +9674,25 @@ export function Fab({
                       <Select
                         value={taskPriority}
                         onValueChange={setTaskPriority}
-                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
-                        contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                        triggerClassName={cn(
+                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={cn(
+                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                          "min-w-[240px] sm:min-w-[280px]",
+                        )}
                         placeholder="Priority"
                       >
-                        <SelectContent>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className={fabCreationSelectItemClass(
+                                taskPriority === o.value,
+                              )}
+                            >
                               {o.label}
                             </SelectItem>
                           ))}
@@ -9478,12 +9706,22 @@ export function Fab({
                       <Select
                         value={taskStage}
                         onValueChange={setTaskStage}
-                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                        triggerClassName={cn(
+                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         placeholder="Stage"
                       >
-                        <SelectContent>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className={fabCreationSelectItemClass(
+                                taskStage === o.value,
+                              )}
+                            >
                               {o.label}
                             </SelectItem>
                           ))}
@@ -9565,7 +9803,10 @@ export function Fab({
                         }}
                         placeholder="Link a skill"
                         triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                        contentWrapperClassName={cn(
+                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                          "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                        )}
                         maxHeight={150}
                         openOnTriggerFocus
                         trigger={
@@ -9578,7 +9819,12 @@ export function Fab({
                           />
                         }
                       >
-                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                        <SelectContent
+                          className={cn(
+                            FAB_CREATION_SELECT_CONTENT_CLASS,
+                            "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                          )}
+                        >
                           {showSkillFilters ? (
                             <div
                               ref={skillFilterMenuRef}
@@ -9706,10 +9952,11 @@ export function Fab({
                         }}
                         minContentWidth={352}
                         hideChevron
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         triggerClassName={cn(
                           "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                           habitRoutineId
-                            ? "text-white/80 hover:text-blue-200"
+                            ? "text-white/80 hover:text-zinc-200"
                             : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                         )}
                         trigger={
@@ -9722,7 +9969,7 @@ export function Fab({
                           </span>
                         }
                       >
-                        <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-[#0b101b] p-2 text-sm text-white shadow-2xl shadow-black/50">
+                        <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-sm border border-zinc-700/70 bg-zinc-950 p-2 text-sm text-white shadow-2xl shadow-black/50">
                           <FabHabitRoutineCreateRow
                             active={isCreatingHabitRoutineInline}
                             value={habitInlineRoutineName}
@@ -9767,7 +10014,11 @@ export function Fab({
                             }}
                           />
                           {habitRoutinesLoading ? (
-                            <SelectItem value="__loading" disabled>
+                            <SelectItem
+                              value="__loading"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
                               Loading routines…
                             </SelectItem>
                           ) : habitRoutines.length > 0 ? (
@@ -9775,7 +10026,10 @@ export function Fab({
                               <SelectItem
                                 key={routine.id}
                                 value={routine.id}
-                                className="min-w-0 items-stretch"
+                                className={fabCreationSelectItemClass(
+                                  habitRoutineId === routine.id,
+                                  "min-w-0 items-stretch",
+                                )}
                               >
                                 <div className="flex min-w-0 flex-1 flex-col">
                                   <span className="truncate font-medium">
@@ -9790,7 +10044,11 @@ export function Fab({
                               </SelectItem>
                             ))
                           ) : (
-                            <SelectItem value="__empty" disabled>
+                            <SelectItem
+                              value="__empty"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
                               No routines yet
                             </SelectItem>
                           )}
@@ -9806,17 +10064,18 @@ export function Fab({
                         contentAlign="end"
                         minContentWidth={220}
                         maxHeight={180}
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         triggerClassName={cn(
                           "h-auto max-w-[11rem] border-0 bg-transparent p-0 text-right text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 sm:max-w-[14rem]",
                           habitCircleId
-                            ? "text-white/80 hover:text-blue-200"
+                            ? "text-white/80 hover:text-zinc-200"
                             : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                         )}
                         trigger={
                           <span className="inline-flex min-w-0 items-center gap-1.5">
                             {habitCircleId ? (
                               <CircleDot
-                                className="h-3.5 w-3.5 shrink-0 text-blue-200"
+                                className="h-3.5 w-3.5 shrink-0 text-zinc-300"
                                 aria-hidden="true"
                               />
                             ) : null}
@@ -9826,20 +10085,40 @@ export function Fab({
                           </span>
                         }
                       >
-                        <SelectContent className="w-full min-w-0 max-h-none">
-                          <SelectItem value="__none__">
+                        <SelectContent
+                          className={cn(
+                            FAB_CREATION_SELECT_CONTENT_CLASS,
+                            "w-full min-w-0 max-h-none",
+                          )}
+                        >
+                          <SelectItem
+                            value="__none__"
+                            className={fabCreationSelectItemClass(
+                              !habitCircleId,
+                            )}
+                          >
                             No Circle
                           </SelectItem>
                           {manageableCirclesLoading ? (
-                            <SelectItem value="__circles_loading" disabled>
+                            <SelectItem
+                              value="__circles_loading"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
                               Loading circles…
                             </SelectItem>
                           ) : manageableCircles.length > 0 ? (
                             manageableCircles.map((circle) => (
-                              <SelectItem key={circle.id} value={circle.id}>
+                              <SelectItem
+                                key={circle.id}
+                                value={circle.id}
+                                className={fabCreationSelectItemClass(
+                                  habitCircleId === circle.id,
+                                )}
+                              >
                                 <div className="flex items-center gap-2">
                                   <CircleDot
-                                    className="h-4 w-4 text-blue-200"
+                                    className="h-4 w-4 text-zinc-300"
                                     aria-hidden="true"
                                   />
                                   <span>{circle.name}</span>
@@ -9847,7 +10126,11 @@ export function Fab({
                               </SelectItem>
                             ))
                           ) : (
-                            <SelectItem value="__circles_empty" disabled>
+                            <SelectItem
+                              value="__circles_empty"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
                               No managed circles yet
                             </SelectItem>
                           )}
@@ -9889,12 +10172,24 @@ export function Fab({
                       <Select
                         value={habitType}
                         onValueChange={setHabitType}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        triggerClassName={cn(
+                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         placeholder="Type"
                       >
-                        <SelectContent>
-                          {HABIT_TYPE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                          {HABIT_TYPE_OPTIONS.filter(
+                            (option) => option.label.toUpperCase() !== "RELAXER",
+                          ).map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                              className={fabCreationSelectItemClass(
+                                habitType === option.value,
+                              )}
+                            >
                               {option.label}
                             </SelectItem>
                           ))}
@@ -9908,12 +10203,22 @@ export function Fab({
                       <Select
                         value={habitRecurrence}
                         onValueChange={setHabitRecurrence}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        triggerClassName={cn(
+                          "h-12 md:h-14 text-[11px] uppercase tracking-[0.12em]",
+                          FAB_CREATION_SELECT_TRIGGER_CLASS,
+                        )}
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         placeholder="Recurrence"
                       >
-                        <SelectContent>
+                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {HABIT_RECURRENCE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                              className={fabCreationSelectItemClass(
+                                habitRecurrence === option.value,
+                              )}
+                            >
                               {option.label}
                             </SelectItem>
                           ))}
@@ -9959,7 +10264,10 @@ export function Fab({
                       }}
                       placeholder="Link a skill"
                       triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                      contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                      contentWrapperClassName={cn(
+                        FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                        "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                      )}
                       maxHeight={150}
                       openOnTriggerFocus
                       trigger={
@@ -9972,7 +10280,12 @@ export function Fab({
                         />
                       }
                     >
-                      <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                      <SelectContent
+                        className={cn(
+                          FAB_CREATION_SELECT_CONTENT_CLASS,
+                          "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                        )}
+                      >
                         {showSkillFilters ? (
                           <div
                             ref={skillFilterMenuRef}
@@ -10247,125 +10560,221 @@ export function Fab({
                           Defaults to this habit’s selected skill.
                         </p>
                       </div>
-                      <Select
-                        value={memoNoteSkillId ?? ""}
-                        onOpenChange={handleSkillDropdownOpenChange}
-                        onValueChange={(value) => {
-                          setMemoNoteSkillId(value);
-                          const skill = findSkillById(value);
-                          setSkillSearch(skill?.name ?? "");
-                          setShowSkillFilters(false);
-                        }}
-                        placeholder="Link a skill"
-                        triggerClassName="!h-12 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
-                        maxHeight={150}
-                        openOnTriggerFocus
-                        trigger={
-                          <SkillTrigger
-                            selectedId={memoNoteSkillId ?? null}
-                            onClearSelection={() => {
-                              setMemoNoteSkillId("");
-                              setSkillSearch("");
+                      <div className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/30 p-1">
+                        {(["skill", "monument"] as const).map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            aria-pressed={memoNoteDestinationType === type}
+                            onClick={() => setMemoNoteDestinationType(type)}
+                            className={cn(
+                              "h-8 rounded-[4px] px-3 text-xs font-semibold transition",
+                              memoNoteDestinationType === type
+                                ? "bg-blue-500/20 text-blue-100 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.38)]"
+                                : "text-white/55 hover:bg-white/[0.05] hover:text-white/80",
+                            )}
+                          >
+                            {type === "skill" ? "Skill" : "Monument"}
+                          </button>
+                        ))}
+                      </div>
+                      {memoNoteDestinationType === "skill" ? (
+                        <>
+                          <Select
+                            value={memoNoteSkillId ?? ""}
+                            onOpenChange={handleSkillDropdownOpenChange}
+                            onValueChange={(value) => {
+                              setMemoNoteSkillId(value);
+                              const skill = findSkillById(value);
+                              setSkillSearch(skill?.name ?? "");
+                              setShowSkillFilters(false);
                             }}
-                          />
-                        }
-                      >
-                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
-                          {showSkillFilters ? (
-                            <div
-                              ref={skillFilterMenuRef}
-                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            placeholder="Link a skill"
+                            triggerClassName="!h-12 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                            contentWrapperClassName={cn(
+                              FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                              "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                            )}
+                            maxHeight={150}
+                            openOnTriggerFocus
+                            trigger={
+                              <SkillTrigger
+                                selectedId={memoNoteSkillId ?? null}
+                                onClearSelection={() => {
+                                  setMemoNoteSkillId("");
+                                  setSkillSearch("");
+                                }}
+                              />
+                            }
+                          >
+                            <SelectContent
+                              className={cn(
+                                FAB_CREATION_SELECT_CONTENT_CLASS,
+                                "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                              )}
                             >
-                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
-                                <span className="text-sm font-semibold">
-                                  Filter Skills
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowSkillFilters(false)}
-                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
+                              {showSkillFilters ? (
+                                <div
+                                  ref={skillFilterMenuRef}
+                                  className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
                                 >
-                                  Close
-                                </button>
-                              </div>
-                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-3">
-                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                      Filter
-                                    </div>
-                                    <div className="space-y-2">
-                                      <select
-                                        value={skillFilterMonumentId}
-                                        onChange={(e) =>
-                                          setSkillFilterMonumentId(e.target.value)
-                                        }
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {skillFilterMonumentId
-                                            ? "Monument (clear)"
-                                            : "Monument (any)"}
-                                        </option>
-                                        {monuments.map((m) => (
-                                          <option key={m.id} value={m.id}>
-                                            {(m.emoji ?? "✨") +
-                                              " " +
-                                              (m.title ?? "Monument")}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
+                                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                    <span className="text-sm font-semibold">
+                                      Filter Skills
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowSkillFilters(false)}
+                                      className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                    >
+                                      Close
+                                    </button>
                                   </div>
-                                  <div className="space-y-3">
-                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                      Quick actions
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => setSkillSearch("")}
-                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                      >
-                                        Reset search
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setSkillFilterMonumentId("")
-                                        }
-                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                      >
-                                        Clear filters
-                                      </button>
+                                  <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="space-y-3">
+                                        <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                          Filter
+                                        </div>
+                                        <div className="space-y-2">
+                                          <select
+                                            value={skillFilterMonumentId}
+                                            onChange={(e) =>
+                                              setSkillFilterMonumentId(
+                                                e.target.value,
+                                              )
+                                            }
+                                            className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                          >
+                                            <option value="">
+                                              {skillFilterMonumentId
+                                                ? "Monument (clear)"
+                                                : "Monument (any)"}
+                                            </option>
+                                            {monuments.map((m) => (
+                                              <option key={m.id} value={m.id}>
+                                                {(m.emoji ?? "✨") +
+                                                  " " +
+                                                  (m.title ?? "Monument")}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-3">
+                                        <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                          Quick actions
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSkillSearch("")}
+                                            className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                          >
+                                            Reset search
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setSkillFilterMonumentId("")
+                                            }
+                                            className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                          >
+                                            Clear filters
+                                          </button>
+                                        </div>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
+                              ) : null}
+                              {skillsLoading ? (
+                                <div
+                                  className="px-3 py-2 text-sm text-white/70"
+                                  role="status"
+                                >
+                                  Loading skills…
+                                </div>
+                              ) : filteredSkills.length > 0 ? (
+                                renderGroupedSkillItems()
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-white/70">
+                                  No skills found
+                                </div>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[11px] leading-snug text-white/45">
+                            Save memo notes under a skill.
+                          </p>
+                          {!memoNoteSkillId ? (
+                            <p className="text-[11px] leading-snug text-white/40">
+                              Choose a skill to save memo notes.
+                            </p>
                           ) : null}
-                          {skillsLoading ? (
-                            <div
-                              className="px-3 py-2 text-sm text-white/70"
-                              role="status"
+                        </>
+                      ) : (
+                        <>
+                          <Select
+                            value={memoNoteMonumentId}
+                            onValueChange={setMemoNoteMonumentId}
+                            placeholder="Choose a monument"
+                            triggerClassName={cn(
+                              "h-10 text-white",
+                              FAB_CREATION_SELECT_TRIGGER_CLASS,
+                            )}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                          >
+                            <SelectContent
+                              className={cn(
+                                FAB_CREATION_SELECT_CONTENT_CLASS,
+                                "min-w-[220px]",
+                              )}
                             >
-                              Loading skills…
-                            </div>
-                          ) : filteredSkills.length > 0 ? (
-                            renderGroupedSkillItems()
-                          ) : (
-                            <div className="px-3 py-2 text-sm text-white/70">
-                              No skills found
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {!memoNoteSkillId ? (
-                        <p className="text-[11px] leading-snug text-white/40">
-                          Choose a skill to save memo notes.
-                        </p>
-                      ) : null}
+                              {monumentsLoading ? (
+                                <SelectItem
+                                  value="__loading"
+                                  disabled
+                                  className={fabCreationSelectItemClass(false)}
+                                >
+                                  Loading monuments…
+                                </SelectItem>
+                              ) : monuments.length > 0 ? (
+                                monuments.map((monument) => (
+                                  <SelectItem
+                                    key={monument.id}
+                                    value={monument.id}
+                                    className={fabCreationSelectItemClass(
+                                      memoNoteMonumentId === monument.id,
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span>{monument.emoji ?? "🏛️"}</span>
+                                      <span>{monument.title ?? "Monument"}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem
+                                  value="__empty"
+                                  disabled
+                                  className={fabCreationSelectItemClass(false)}
+                                >
+                                  No monuments yet
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[11px] leading-snug text-white/45">
+                            Save memo notes under a monument.
+                          </p>
+                          {!memoNoteMonumentId ? (
+                            <p className="text-[11px] leading-snug text-white/40">
+                              Choose a monument to save memo notes.
+                            </p>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   ) : null}
                   {memoCaptureActions.form ? (
@@ -10450,6 +10859,7 @@ export function Fab({
                             locationContextsLoading ||
                             validLocationContexts.length === 0
                           }
+                          contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         >
                           <SelectTrigger
                             id="habit-advanced-location-context"
@@ -10457,25 +10867,43 @@ export function Fab({
                           >
                             <SelectValue placeholder="Anywhere" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                             {locationContextsLoading ? (
-                              <SelectItem value="__loading__" disabled>
+                              <SelectItem
+                                value="__loading__"
+                                disabled
+                                className={fabCreationSelectItemClass(false)}
+                              >
                                 Loading locations…
                               </SelectItem>
                             ) : validLocationContexts.length > 0 ? (
                               <>
-                                <SelectItem value="none">Anywhere</SelectItem>
+                                <SelectItem
+                                  value="none"
+                                  className={fabCreationSelectItemClass(
+                                    !habitLocationContextId,
+                                  )}
+                                >
+                                  Anywhere
+                                </SelectItem>
                                 {validLocationContexts.map((context) => (
                                   <SelectItem
                                     key={context.id}
                                     value={context.id}
+                                    className={fabCreationSelectItemClass(
+                                      habitLocationContextId === context.id,
+                                    )}
                                   >
                                     {context.label}
                                   </SelectItem>
                                 ))}
                               </>
                             ) : (
-                              <SelectItem value="__unavailable__" disabled>
+                              <SelectItem
+                                value="__unavailable__"
+                                disabled
+                                className={fabCreationSelectItemClass(false)}
+                              >
                                 Saved locations unavailable
                               </SelectItem>
                             )}
@@ -10498,6 +10926,7 @@ export function Fab({
                           <Select
                             value={habitDaylightPreference}
                             onValueChange={setHabitDaylightPreference}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                           >
                             <SelectTrigger
                               id="habit-advanced-daylight"
@@ -10505,11 +10934,14 @@ export function Fab({
                             >
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                               {HABIT_DAYLIGHT_ADVANCED_OPTIONS.map((option) => (
                                 <SelectItem
                                   key={option.value}
                                   value={option.value}
+                                  className={fabCreationSelectItemClass(
+                                    habitDaylightPreference === option.value,
+                                  )}
                                 >
                                   {option.label}
                                 </SelectItem>
@@ -10527,6 +10959,7 @@ export function Fab({
                           <Select
                             value={habitWindowEdgePreference}
                             onValueChange={setHabitWindowEdgePreference}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                           >
                             <SelectTrigger
                               id="habit-advanced-window-edge"
@@ -10534,12 +10967,16 @@ export function Fab({
                             >
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                               {HABIT_WINDOW_EDGE_ADVANCED_OPTIONS.map(
                                 (option) => (
                                   <SelectItem
                                     key={option.value}
                                     value={option.value}
+                                    className={fabCreationSelectItemClass(
+                                      habitWindowEdgePreference ===
+                                        option.value,
+                                    )}
                                   >
                                     {option.label}
                                   </SelectItem>

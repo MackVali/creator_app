@@ -1,6 +1,7 @@
 'use client';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   useCallback,
   useEffect,
@@ -156,9 +157,12 @@ const matchesSearchQuery = (
 };
 
 export default function ConnectTabContent() {
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useProfile();
-  const [tab, setTab] = useState<ConnectTab>('friends');
+  const [tab, setTab] = useState<ConnectTab>(() =>
+    searchParams.get('tab') === 'search' ? 'search' : 'friends'
+  );
   const [friendsView, setFriendsView] = useState<RelationshipView>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [isLoading, setIsLoading] = useState(true);
