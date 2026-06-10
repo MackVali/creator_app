@@ -741,6 +741,27 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   will-change: transform, opacity;
 }
 
+
+.evo-charge-bar-glint-sweep {
+  top: -90%;
+  bottom: -90%;
+  left: -58%;
+  width: 82%;
+  z-index: 5;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 18%,
+    rgba(255, 255, 255, 0.18) 34%,
+    rgba(255, 255, 255, 0.62) 48%,
+    rgba(255, 255, 255, 0.22) 62%,
+    rgba(255, 255, 255, 0.05) 78%,
+    transparent 92%,
+    transparent 100%
+  );
+  filter: blur(0.18px);
+}
+
 .level-progress-bar-glint-sweep {
   top: -145%;
   bottom: -145%;

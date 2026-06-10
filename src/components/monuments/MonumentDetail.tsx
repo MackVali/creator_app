@@ -18,10 +18,8 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  BatteryCharging,
   Check,
   ChevronDown,
-  Flame,
   MoreVertical,
   Plus,
   Timer,
@@ -44,6 +42,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
+import { useMonumentActivity } from "@/lib/hooks/useMonumentActivity";
 import {
   segmentedToggleActiveClassName,
   segmentedToggleButtonClassName,
@@ -86,6 +85,13 @@ const PULL_EXIT_TOUCH_ACTIVATION_PX = 5;
 const PULL_EXIT_THRESHOLD_PX = 128;
 const PULL_EXIT_FLICK_VELOCITY = 0.65;
 const PULL_EXIT_FLICK_MIN_DISTANCE_PX = 32;
+const CHARGE_MILESTONES = [
+  { label: "Lit", threshold: 1 },
+  { label: "EVO", threshold: 25 },
+  { label: "EVO 2", threshold: 75 },
+  { label: "EVO 3", threshold: 125 },
+  { label: "EVO 4", threshold: 225 },
+] as const;
 
 function getScrollParent(element: HTMLElement | null) {
   let current = element?.parentElement ?? null;
@@ -518,6 +524,7 @@ export function MonumentDetail({
 }: MonumentDetailProps) {
   const { id } = monument;
   const router = useRouter();
+  const { summary } = useMonumentActivity(id);
   const [displayMonument, setDisplayMonument] =
     useState<MonumentDetailMonument>(monument);
   const [inlineEditOpen, setInlineEditOpen] = useState(false);
@@ -566,21 +573,30 @@ export function MonumentDetail({
     "bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)]";
   const overviewBackground =
     "bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)]";
-
-  const quickFacts = [
-    {
-      label: "Streak",
-      value: "0 days",
-      description: "Build consistency to light this up.",
-      icon: Flame,
-    },
-    {
-      label: "Status",
-      value: "Not charging yet",
-      description: "No activity has been recorded for this monument yet.",
-      icon: BatteryCharging,
-    },
-  ] as const;
+  const activeChargeStageIndex = Math.max(
+    CHARGE_MILESTONES.findIndex(
+      (milestone) => milestone.label === summary.evoLabel
+    ),
+    0
+  );
+  const activeChargeCellFill = Math.min(
+    Math.max(summary.chargeProgressPercent, 0),
+    100
+  );
+  const getChargeCellFill = (index: number) => {
+    if (index < activeChargeStageIndex) return 100;
+    if (index === activeChargeStageIndex) return activeChargeCellFill;
+    return 0;
+  };
+  const totalChargeBarFillPercent = Math.min(
+    Math.max(
+      ((activeChargeStageIndex + activeChargeCellFill / 100) /
+        CHARGE_MILESTONES.length) *
+        100,
+      0
+    ),
+    100
+  );
 
   const handleStartFocusPomo = () => {
     const source: FocusPomoSource = {
@@ -590,7 +606,6 @@ export function MonumentDetail({
       icon: displayMonument.emoji,
     };
 
-    console.info("Start focus pomo", source);
     setFocusPomoSource(source);
   };
 
@@ -876,77 +891,112 @@ export function MonumentDetail({
                   </span>
                 </span>
                 <div className="flex flex-1 flex-col gap-2">
-              <div className="flex items-start justify-between gap-3">
-                <h1 className="min-w-0 flex-1 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                  {displayMonument.title}
-                </h1>
-                <div
-                  className="flex shrink-0 items-center gap-0.5"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onPointerUp={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    aria-label={`Start focus pomo for ${displayMonument.title}`}
-                    onClick={handleStartFocusPomo}
-                    className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-                  >
-                    <Timer className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <DropdownMenu
-                    open={actionsMenuOpen}
-                    onOpenChange={setActionsMenuOpen}
-                  >
-                    <DropdownMenuTrigger asChild>
+                  <div className="flex items-start justify-between gap-3">
+                    <h1 className="min-w-0 flex-1 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                      {displayMonument.title}
+                    </h1>
+                    <div
+                      className="flex shrink-0 items-center gap-0.5"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerUp={(e) => e.stopPropagation()}
+                    >
                       <button
                         type="button"
-                        aria-label="Monument actions"
-                        className="inline-flex h-9 w-5 items-center justify-center text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                        aria-label={`Start focus pomo for ${displayMonument.title}`}
+                        onClick={handleStartFocusPomo}
+                        className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
                       >
-                        <MoreVertical
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
+                        <Timer className="h-4 w-4" aria-hidden="true" />
                       </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="border-black/80 bg-black text-white shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
-                    >
-                      <DropdownMenuItem
-                        onSelect={() => setInlineEditOpen(true)}
-                        className="text-white/80 focus:bg-white/[0.06] focus:text-white"
+                      <DropdownMenu
+                        open={actionsMenuOpen}
+                        onOpenChange={setActionsMenuOpen}
                       >
-                        Edit monument
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-              <div className="grid gap-0.5 min-[380px]:grid-cols-2 sm:flex sm:flex-wrap">
-                {quickFacts.map(({ label, value, icon: Icon }) => (
-                  <div
-                    key={label}
-                    className="group flex items-center gap-0.5 rounded-full border border-black bg-white/5 px-1 py-0.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-black hover:bg-white/10 sm:gap-1 sm:px-2 sm:py-1"
-                  >
-                    <span className="flex size-3 items-center justify-center rounded-full bg-white/10 text-white/70 sm:size-5">
-                      <Icon
-                        className="h-1.5 w-1.5 sm:h-2.5 sm:w-2.5"
-                        aria-hidden="true"
-                      />
-                    </span>
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-[5px] font-semibold uppercase tracking-[0.28em] text-white/45 sm:text-[7px]">
-                        {label}
-                      </span>
-                      <span className="text-[7px] font-semibold text-white/85 sm:text-xs">
-                        {value}
-                      </span>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Monument actions"
+                            className="inline-flex h-9 w-5 items-center justify-center text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                          >
+                            <MoreVertical
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="border-black/80 bg-black text-white shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
+                        >
+                          <DropdownMenuItem
+                            onSelect={() => setInlineEditOpen(true)}
+                            className="text-white/80 focus:bg-white/[0.06] focus:text-white"
+                          >
+                            Edit monument
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div
+                    className="relative grid h-6 max-w-[220px] grid-cols-5 gap-1.5 overflow-hidden rounded-[3px] border border-white/[0.07] bg-black/35 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),inset_0_-1px_0_rgba(0,0,0,0.42)] sm:max-w-[260px]"
+                    aria-label={`EVO charge stage ${summary.evoLabel}`}
+                  >
+                    {CHARGE_MILESTONES.map((milestone, index) => {
+                      const cellFill = getChargeCellFill(index);
+                      const isCompleted = cellFill >= 100;
+                      const isActive = cellFill > 0 && cellFill < 100;
+
+                      return (
+                        <div
+                          key={milestone.label}
+                          className="relative min-w-0 overflow-hidden rounded-[3px] border border-white/[0.095] bg-[linear-gradient(180deg,#22252b_0%,#15171c_48%,#08090d_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.58),inset_0_0_8px_rgba(0,0,0,0.45)]"
+                          aria-current={isActive ? "step" : undefined}
+                        >
+                          <span
+                            className="pointer-events-none absolute inset-x-[1px] top-[1px] z-[1] h-[38%] rounded-[3px] bg-[linear-gradient(180deg,rgba(255,255,255,0.075)_0%,rgba(255,255,255,0)_100%)]"
+                            aria-hidden="true"
+                          />
+                          <span
+                            className="pointer-events-none absolute inset-0 z-[1] rounded-[3px] bg-[radial-gradient(circle_at_50%_115%,rgba(255,255,255,0.035)_0%,rgba(255,255,255,0)_46%)]"
+                            aria-hidden="true"
+                          />
+                          {isCompleted ? (
+                            <span className="absolute inset-0 z-[2] rounded-[3px] border border-zinc-200/[0.11] bg-[linear-gradient(90deg,#4d535c_0%,#646b75_52%,#535a63_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.30),0_0_5px_rgba(161,161,170,0.055)]" />
+                          ) : null}
+                          {isActive ? (
+                            <span
+                              className="absolute inset-y-0 left-0 isolate z-[3] block overflow-hidden rounded-[3px] border border-zinc-200/[0.13] bg-[linear-gradient(90deg,#505761_0%,#68707a_54%,#58606a_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-1px_0_rgba(0,0,0,0.31),0_0_6px_rgba(161,161,170,0.075)] transition-[width] duration-700 ease-out"
+                              style={{ width: `${cellFill}%` }}
+                            >
+                              <span
+                                className="pointer-events-none absolute inset-y-[-1px] right-0 z-[4] w-[3px] rounded-[3px] bg-[linear-gradient(180deg,rgba(212,212,216,0.48)_0%,rgba(161,161,170,0.46)_45%,rgba(63,63,70,0.52)_100%)] shadow-[0_0_5px_rgba(212,212,216,0.18),-3px_0_6px_rgba(228,228,231,0.07)]"
+                                aria-hidden="true"
+                              />
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                      {totalChargeBarFillPercent > 0 ? (
+                        <span
+                          className="pointer-events-none absolute inset-y-[5px] left-1 z-[6] overflow-hidden rounded-[3px] opacity-45"
+                          style={{
+                            width: `calc((100% - 0.5rem) * ${
+                              totalChargeBarFillPercent / 100
+                            })`,
+                          }}
+                          aria-hidden="true"
+                        >
+                          <span
+                            className="progress-bar-glint-sweep level-progress-bar-glint-sweep"
+                            aria-hidden="true"
+                          />
+                        </span>
+                      ) : null}
+                  </div>
+
+                </div>
               </>
             )}
           </div>

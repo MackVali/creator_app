@@ -52,11 +52,10 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
   return (
     <div
       data-note-text-action-bar
-      className="fixed inset-x-0 z-40 px-3 transition-opacity duration-150"
-      style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px))" }}
+      className="-mt-2 w-full transition-opacity duration-150"
     >
-      <div className="mx-auto max-w-4xl overflow-hidden rounded-full border border-white/[0.08] bg-[#070707]/94 shadow-[0_18px_44px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] backdrop-blur-xl">
-        <div className="flex h-11 items-center gap-1.5 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mx-auto max-w-4xl overflow-hidden bg-black">
+        <div className="flex h-8 items-center gap-1 overflow-x-auto px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TEXT_ACTIONS.map((action) => {
             const Icon = action.icon;
 
@@ -67,7 +66,7 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
                 onPointerDown={(event) => handlePointerFormat(action.command, event)}
                 onMouseDown={handleMouseDown}
                 onClick={() => handleClickFormat(action.command)}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.045] px-2.5 text-xs font-semibold text-white/78 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.075] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 active:bg-white/[0.11]"
+                className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent bg-black px-1.5 text-[11px] font-semibold text-white/70 outline-none transition hover:bg-white/[0.05] hover:text-white focus-visible:ring-1 focus-visible:ring-white/20 active:bg-white/[0.08]"
                 aria-label={`Format selected note text as ${action.label}`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -87,7 +86,7 @@ export function NoteTextActionBar({ onFormat }: NoteTextActionBarProps) {
                 type="button"
                 disabled
                 title={`${action.label} formatting is not enabled yet`}
-                className="flex h-8 shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border border-white/[0.045] bg-white/[0.02] px-2.5 text-xs font-semibold text-white/30 outline-none"
+                className="flex h-7 shrink-0 cursor-not-allowed items-center gap-1 rounded-md border border-transparent bg-black px-1.5 text-[11px] font-semibold text-white/25 outline-none"
                 aria-label={`${action.label} formatting is not enabled yet`}
               >
                 <Icon className="h-3.5 w-3.5" />

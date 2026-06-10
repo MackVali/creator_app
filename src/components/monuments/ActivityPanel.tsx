@@ -7,7 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { CheckCircle2, Pin, TriangleAlert } from "lucide-react";
+import { Pin, TriangleAlert } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -1066,7 +1066,7 @@ function MonumentXpMixDonut({
 }
 
 export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
-  const { events, loading, error, summary, notes, levelHistory, xpSkillMix } =
+  const { loading, error, summary, notes, levelHistory, xpSkillMix } =
     useMonumentActivity(monumentId);
 
   const storageKey = useMemo(
@@ -1158,7 +1158,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
     return `${raw.slice(0, 177)}…`;
   }
 
-  const hasEvents = events.length > 0;
   const monumentAnalytics = useMemo(() => {
     const currentLevelPoint = levelHistory[levelHistory.length - 1] ?? null;
     const currentLevel = currentLevelPoint?.level ?? 1;
@@ -1193,35 +1192,21 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
     };
   }, [levelHistory, xpSkillMix]);
 
-  const phases = useMemo(
-    () => [
-      {
-        label: "Foundation",
-        description: "Capture ideas and define the footprint.",
-        threshold: 20,
-      },
-      {
-        label: "Framework",
-        description: "Half your goals are carrying weight.",
-        threshold: 50,
-      },
-      {
-        label: "Finishing",
-        description: "Final goals and XP polish the structure.",
-        threshold: 80,
-      },
-      {
-        label: "Legacy",
-        description: "Charge maxed — monument stands complete.",
-        threshold: 100,
-      },
-    ],
-    []
+  const monthlyChargeXp = summary.chargeXp;
+  const chargeMilestones = [
+    { label: "Lit", threshold: 1 },
+    { label: "EVO", threshold: 25 },
+    { label: "EVO 2", threshold: 75 },
+    { label: "EVO 3", threshold: 125 },
+    { label: "EVO 4", threshold: 225 },
+  ];
+  const activeChargeStageIndex = chargeMilestones.findIndex(
+    (milestone) => milestone.label === summary.evoLabel
   );
-
-  const chargePercent = Math.min(Math.max(summary.chargePercent, 0), 100);
-
-  const thermometerHeight = Math.max(chargePercent, hasEvents ? 6 : 0);
+  const activeChargeCellFill = Math.min(
+    Math.max(summary.chargeProgressPercent, 0),
+    100
+  );
 
   return (
     <Card className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#050608] p-3 text-white shadow-[0_28px_80px_-46px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] sm:p-5 lg:p-6">
@@ -1417,98 +1402,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           )}
         </div>
 
-        <aside className="space-y-4 2xl:sticky 2xl:top-6">
-          <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#08090B] p-5 shadow-[0_18px_46px_-36px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)]">
-            <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-white/[0.06]" />
-            <div className="relative space-y-4">
-              <header className="space-y-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/48">
-                  Charge Thermometer
-                </p>
-                <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
-                  <p className="text-3xl font-semibold text-white">{chargePercent}%</p>
-                  <p className="text-xs text-white/48">
-                    charged from the past month of linked completions
-                  </p>
-                </div>
-              </header>
-              <div className="relative h-40 rounded-[22px] border border-white/[0.08] bg-[#07080A] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="relative flex h-full items-end justify-center">
-                  <div
-                    className="w-12 rounded-full border border-white/[0.10] bg-gradient-to-t from-zinc-950 via-zinc-700/65 to-zinc-200/70 shadow-[0_10px_24px_-18px_rgba(255,255,255,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] transition-all"
-                    style={{ height: `${thermometerHeight}%` }}
-                    aria-hidden="true"
-                  />
-                </div>
-              </div>
-              <ul className="relative grid gap-3">
-                {phases.map((phase) => {
-                  const reached = chargePercent >= phase.threshold;
-                  return (
-                    <li
-                      key={phase.label}
-                      className={cn(
-                        "flex items-start gap-3 rounded-2xl border px-4 py-3",
-                        reached
-                          ? "border-white/[0.14] bg-white/[0.06] text-white/82"
-                          : "border-white/[0.08] bg-[#07080A] text-white/45"
-                      )}
-                    >
-                      <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-current/40">
-                        {reached ? (
-                          <CheckCircle2 className="size-4" aria-hidden="true" />
-                        ) : (
-                          <span className="size-2 rounded-full bg-current/40" />
-                        )}
-                      </span>
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold uppercase tracking-[0.24em]">
-                          {phase.label}
-                        </p>
-                        <p className="text-xs leading-relaxed">{phase.description}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                XP logged (last 30 days)
-              </p>
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-2xl font-semibold text-white">{summary.totalXp}</p>
-                <span className="text-xs text-white/45">across {summary.xpEvents} completions</span>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                Goals completed
-              </p>
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-2xl font-semibold text-white">
-                  {summary.completedGoals}
-                  <span className="text-base text-white/45">
-                    /{summary.totalGoals}
-                  </span>
-                </p>
-                <span className="text-xs text-white/45">fueling this monument</span>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:col-span-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/45">
-                Notes captured
-              </p>
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-2xl font-semibold text-white">{summary.notesLogged}</p>
-                <span className="text-xs text-white/45">structured ideas in the archive</span>
-              </div>
-            </div>
-          </div>
-        </aside>
+        
       </div>
     </Card>
   );

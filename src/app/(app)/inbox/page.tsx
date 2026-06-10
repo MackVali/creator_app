@@ -17,13 +17,17 @@ type InboxThread = {
     senderId: string;
     recipientId: string;
     createdAt: string;
-  };
+  } | null;
+  hasMessages?: boolean;
+  previewLabel?: string;
 };
 
 type InboxResponse = {
   threads: InboxThread[];
   currentUserId: string;
 };
+
+type InboxTab = "primary" | "requests" | "saved";
 
 function formatRelativeTime(value: string | null | undefined) {
   if (!value) return "—";
@@ -68,10 +72,15 @@ export default function InboxPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"primary" | "requests">("primary");
+  const [tab, setTab] = useState<InboxTab>("primary");
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [requestsMeta] = useState({ count: 0, isLoading: false });
   const primaryTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
+  const savedTabRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchControlRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -123,8 +132,33 @@ export default function InboxPage() {
     void loadThreads();
   }, []);
 
+  useEffect(() => {
+    if (searchExpanded) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchExpanded]);
+
+  useEffect(() => {
+    if (!searchExpanded) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchControlRef.current && !searchControlRef.current.contains(event.target as Node)) {
+        setSearchExpanded(false);
+        setSearchQuery("");
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [searchExpanded]);
+
   const emptyState = !loading && threads.length === 0;
   const hasRequests = requestsMeta.count > 0;
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const isSearching = normalizedSearchQuery.length > 0;
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
@@ -132,7 +166,7 @@ export default function InboxPage() {
     }
 
     event.preventDefault();
-    const order: Array<"primary" | "requests"> = ["primary", "requests"];
+    const order: InboxTab[] = ["primary", "requests", "saved"];
     const currentIndex = order.indexOf(tab);
     const direction =
       event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
@@ -140,29 +174,69 @@ export default function InboxPage() {
     const nextTab = order[nextIndex];
 
     setTab(nextTab);
-    const targetRef = nextTab === "primary" ? primaryTabRef : requestsTabRef;
+    const targetRef =
+      nextTab === "primary"
+        ? primaryTabRef
+        : nextTab === "requests"
+          ? requestsTabRef
+          : savedTabRef;
     targetRef.current?.focus();
   };
 
+  const handleSearchToggle = () => {
+    if (!searchExpanded) {
+      setSearchExpanded(true);
+      return;
+    }
+
+    if (searchQuery) {
+      setSearchQuery("");
+      searchInputRef.current?.focus();
+      return;
+    }
+
+    setSearchExpanded(false);
+  };
+
+  const filteredThreads = useMemo(() => {
+    if (!normalizedSearchQuery) return threads;
+
+    return threads.filter((thread) => {
+      const displayName = thread.participant.displayName.toLowerCase();
+      const username = thread.participant.username?.toLowerCase() ?? "";
+
+      return (
+        displayName.includes(normalizedSearchQuery) ||
+        username.includes(normalizedSearchQuery)
+      );
+    });
+  }, [threads, normalizedSearchQuery]);
+
   const threadRows = useMemo(
     () =>
-      threads.map((thread) => {
-        const relative = formatRelativeTime(thread.latestMessage.createdAt);
+      filteredThreads.map((thread) => {
         const displayName = thread.participant.displayName;
         const username = thread.participant.username
           ? `@${thread.participant.username}`
           : null;
-        const isSender = thread.latestMessage.senderId === currentUserId;
-        const preview = thread.latestMessage.body.trim();
-        const previewLabel = preview
-          ? `${isSender ? "You: " : ""}${preview}`
-          : "Message";
+        const identityLabel = username ?? displayName;
+        const latestMessage = thread.latestMessage;
+        const relative = latestMessage
+          ? formatRelativeTime(latestMessage.createdAt)
+          : "";
+        const isSender = latestMessage?.senderId === currentUserId;
+        const preview = latestMessage?.body.trim() ?? "";
+        const previewLabel = latestMessage
+          ? preview
+            ? `${isSender ? "You: " : ""}${preview}`
+            : "Message"
+          : thread.previewLabel ?? `Say hi to ${displayName}`;
 
         return (
           <Link
             key={thread.participant.userId}
             href={`/inbox/${thread.participant.userId}`}
-            className="group flex w-full items-center gap-3 rounded-xl border border-white/5 bg-white/[0.04] px-3 py-2.5 text-left transition hover:border-white/10 hover:bg-white/[0.08] active:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="group flex w-full items-center gap-3 border-b border-white/10 px-1 py-3 text-left transition last:border-b-0 hover:bg-white/[0.04] active:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
           >
             <Avatar className="h-11 w-11 border border-white/10 bg-white/5">
               {thread.participant.avatarUrl ? (
@@ -180,17 +254,14 @@ export default function InboxPage() {
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-white">
-                    {displayName}
+                    {identityLabel}
                   </p>
-                  {username ? (
-                    <p className="truncate text-[0.7rem] text-white/45">
-                      {username}
-                    </p>
-                  ) : null}
                 </div>
-                <span className="shrink-0 text-[0.65rem] font-medium tabular-nums text-white/45">
-                  {relative}
-                </span>
+                {latestMessage ? (
+                  <span className="shrink-0 text-[0.65rem] font-medium tabular-nums text-white/45">
+                    {relative}
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 line-clamp-1 text-[0.72rem] text-white/65">
                 {previewLabel}
@@ -199,68 +270,29 @@ export default function InboxPage() {
           </Link>
         );
       }),
-    [threads, currentUserId]
+    [filteredThreads, currentUserId]
   );
 
   return (
     <div className="min-h-screen bg-[#07070b] text-white">
       <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-4 sm:px-6 sm:pt-6">
-        <header className="mb-3 space-y-3">
+        <header className="mb-4 space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[0.65rem] uppercase tracking-[0.4em] text-white/40">
-                Messages
-              </p>
-              <h1 className="text-[1.5rem] font-semibold text-white">Inbox</h1>
-            </div>
-            <button
-              type="button"
-              aria-label="Compose new message"
-              className="group inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.45)] transition hover:border-white/20 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                className="h-5 w-5 text-white/85 transition group-hover:text-white"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12.5 6.5h6v6" />
-                <path d="M12.5 6.5 6 13v5h5l6.5-6.5" />
-              </svg>
-            </button>
+            <p className="text-[0.65rem] uppercase tracking-[0.4em] text-white/40">
+              INBOX
+            </p>
           </div>
 
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              aria-label="Filter inbox"
-              className="inline-flex h-9 items-center justify-center rounded-full border border-white/10 bg-black/50 px-3 text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-            >
-              <svg
-                viewBox="0 0 20 20"
-                aria-hidden="true"
-                className="mr-1.5 h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 5h14" />
-                <path d="M6 10h8" />
-                <path d="M8.5 15h3" />
-              </svg>
-              Filters
-            </button>
-
+          <div className="flex w-full items-center gap-1.5 overflow-hidden">
             <div
               role="tablist"
               aria-label="Inbox sections"
-              className="flex items-center gap-1 rounded-full border border-white/10 bg-black/40 p-1"
+              aria-hidden={searchExpanded}
+              className={`inline-flex min-w-0 items-center gap-1.5 overflow-hidden transition-[max-width,opacity,transform] duration-200 ease-out ${
+                searchExpanded
+                  ? "pointer-events-none max-w-0 -translate-x-2 opacity-0"
+                  : "max-w-[calc(100%-38px)] translate-x-0 opacity-100"
+              }`}
             >
               <button
                 ref={primaryTabRef}
@@ -269,16 +301,16 @@ export default function InboxPage() {
                 type="button"
                 aria-selected={tab === "primary"}
                 aria-controls="primary-panel"
-                tabIndex={tab === "primary" ? 0 : -1}
+                tabIndex={searchExpanded ? -1 : tab === "primary" ? 0 : -1}
                 onClick={() => setTab("primary")}
                 onKeyDown={handleTabKeyDown}
-                className={`h-9 rounded-full px-4 text-[0.75rem] font-semibold transition ${
+                className={`rounded-md px-3 py-1.5 text-[0.72rem] font-semibold transition ${
                   tab === "primary"
-                    ? "bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60"
-                    : "text-white/60 hover:bg-white/10 hover:text-white"
+                    ? "bg-white/[0.12] text-white"
+                    : "bg-white/[0.06] text-white/50 hover:bg-white/[0.09] hover:text-white/80"
                 }`}
               >
-                Primary
+                Main
               </button>
               <button
                 ref={requestsTabRef}
@@ -287,38 +319,107 @@ export default function InboxPage() {
                 type="button"
                 aria-selected={tab === "requests"}
                 aria-controls="requests-panel"
-                tabIndex={tab === "requests" ? 0 : -1}
+                tabIndex={searchExpanded ? -1 : tab === "requests" ? 0 : -1}
                 onClick={() => setTab("requests")}
                 onKeyDown={handleTabKeyDown}
-                className={`relative h-9 rounded-full px-4 text-[0.75rem] font-semibold transition ${
+                className={`relative rounded-md px-3 py-1.5 text-[0.72rem] font-semibold transition ${
                   tab === "requests"
-                    ? "bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60"
-                    : "text-white/60 hover:bg-white/10 hover:text-white"
+                    ? "bg-white/[0.12] text-white"
+                    : "bg-white/[0.06] text-white/50 hover:bg-white/[0.09] hover:text-white/80"
                 }`}
               >
                 Requests
                 {requestsMeta.isLoading ? (
-                  <span className="ml-1 text-[0.65rem] text-white/50">…</span>
+                  <span className="ml-1 text-[0.65rem] opacity-60">...</span>
                 ) : hasRequests ? (
-                  <span className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-white text-[0.6rem] font-semibold text-black">
+                  <span
+                    className={`ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full text-[0.6rem] font-semibold ${
+                      tab === "requests"
+                        ? "bg-white/[0.18] text-white"
+                        : "bg-white/[0.12] text-white/80"
+                    }`}
+                  >
                     {requestsMeta.count}
                   </span>
                 ) : null}
               </button>
+              <button
+                ref={savedTabRef}
+                id="saved-tab"
+                role="tab"
+                type="button"
+                aria-selected={tab === "saved"}
+                aria-controls="saved-panel"
+                tabIndex={searchExpanded ? -1 : tab === "saved" ? 0 : -1}
+                onClick={() => setTab("saved")}
+                onKeyDown={handleTabKeyDown}
+                className={`rounded-md px-3 py-1.5 text-[0.72rem] font-semibold transition ${
+                  tab === "saved"
+                    ? "bg-white/[0.12] text-white"
+                    : "bg-white/[0.06] text-white/50 hover:bg-white/[0.09] hover:text-white/80"
+                }`}
+              >
+                Saved
+              </button>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
-            <div className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-white/40">
-              Search
+            <div
+              ref={searchControlRef}
+              className={`flex h-[30px] min-w-0 items-center overflow-hidden rounded-md bg-white/[0.06] text-white/60 transition-[width,flex-grow,transform,background-color] duration-200 ease-out hover:bg-white/[0.09] focus-within:bg-white/[0.09] ${
+                searchExpanded ? "w-full flex-1 translate-x-0" : "w-[30px] flex-none"
+              }`}
+            >
+              <button
+                type="button"
+                aria-label={
+                  searchExpanded
+                    ? searchQuery
+                      ? "Clear inbox search"
+                      : "Collapse inbox search"
+                    : "Search inbox"
+                }
+                aria-expanded={searchExpanded}
+                onClick={handleSearchToggle}
+                className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md text-white/65 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="8.5" cy="8.5" r="5" />
+                  <path d="m12.2 12.2 3.3 3.3" />
+                </svg>
+              </button>
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    if (searchQuery) {
+                      setSearchQuery("");
+                    } else {
+                      setSearchExpanded(false);
+                    }
+                  }
+                }}
+                placeholder="Search"
+                aria-label="Search inbox by profile name or username"
+                tabIndex={searchExpanded ? 0 : -1}
+                className={`min-w-0 flex-1 bg-transparent pr-2 text-[0.72rem] font-medium text-white transition-[opacity,transform] duration-150 ease-out placeholder:text-white/35 focus:outline-none ${
+                  searchExpanded
+                    ? "translate-x-0 opacity-100"
+                    : "translate-x-2 opacity-0"
+                }`}
+              />
             </div>
-            <div className="h-3.5 w-px bg-white/10" />
-            <input
-              type="search"
-              placeholder="Find a conversation"
-              className="w-full bg-transparent text-[0.8rem] text-white/80 placeholder:text-white/35 focus:outline-none"
-              aria-label="Search inbox"
-            />
           </div>
         </header>
 
@@ -327,14 +428,14 @@ export default function InboxPage() {
           role="tabpanel"
           aria-labelledby="primary-tab"
           hidden={tab !== "primary"}
-          className="space-y-3 rounded-[26px] border border-white/10 bg-gradient-to-br from-white/5 via-transparent to-black/40 p-3 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur sm:p-4"
+          className="space-y-3"
         >
           {loading ? (
-            <div className="space-y-2 px-1 py-6">
+            <div className="space-y-0 px-1 py-4">
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={`skeleton-${index}`}
-                  className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5"
+                  className="flex items-center gap-3 border-b border-white/10 px-1 py-3 last:border-b-0"
                 >
                   <div className="h-11 w-11 rounded-full border border-white/10 bg-white/5" />
                   <div className="flex-1 space-y-2">
@@ -369,8 +470,48 @@ export default function InboxPage() {
             </div>
           ) : null}
 
-          {!loading && !error && !emptyState ? (
-            <div className="space-y-1.5">{threadRows}</div>
+          {!loading && !error && !emptyState && threadRows.length > 0 ? (
+            <div>
+              {threadRows}
+              <button
+                type="button"
+                onClick={() => undefined}
+                className="group flex w-full items-center gap-3 px-1 py-3 text-left transition hover:bg-white/[0.03] active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+              >
+                <Avatar className="h-11 w-11 border border-white/10 bg-white/[0.04]">
+                  <AvatarFallback className="bg-white/[0.06] text-white/50">
+                    <svg
+                      viewBox="0 0 20 20"
+                      aria-hidden="true"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 4v12" />
+                      <path d="M4 10h12" />
+                    </svg>
+                  </AvatarFallback>
+                </Avatar>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-white/80">
+                    Can&apos;t find who you&apos;re looking for?
+                  </p>
+                  <p className="mt-1 text-[0.72rem] font-medium text-white/45 transition group-hover:text-white/60">
+                    Add contacts
+                  </p>
+                </div>
+              </button>
+            </div>
+          ) : null}
+
+          {!loading && !error && !emptyState && isSearching && threadRows.length === 0 ? (
+            <div className="px-1 py-6 text-sm text-white/55">
+              No matching chats.
+            </div>
           ) : null}
         </section>
 
@@ -392,6 +533,16 @@ export default function InboxPage() {
               {requestsMeta.isLoading ? "Loading" : `${requestsMeta.count} total`}
             </div>
           </div>
+        </section>
+
+        <section
+          id="saved-panel"
+          role="tabpanel"
+          aria-labelledby="saved-tab"
+          hidden={tab !== "saved"}
+          className="px-1 py-4 text-sm text-white/55"
+        >
+          No saved chats yet.
         </section>
       </div>
     </div>

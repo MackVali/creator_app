@@ -24,6 +24,7 @@ const SUCCESS_RETRY_HOURS = 20;
 const FAILURE_RETRY_HOURS = 1;
 const WRITE_THROUGH_DAYS = 14;
 const MAX_ERROR_LENGTH = 500;
+const FRIEND_MESSAGE_TTL_HOURS = 24;
 
 type SchedulerUserStateRow = {
   user_id: string;
@@ -68,6 +69,10 @@ type CronResult = {
   placedCount?: number | null;
   error?: string;
 };
+
+type FriendMessageCleanupSummary =
+  | { deletedExpiredFriendMessages: number }
+  | { deletedExpiredFriendMessagesError: string };
 
 async function handleCronRun(request: Request) {
   const cronSecret = process.env.SCHEDULER_CRON_SECRET;
@@ -152,6 +157,7 @@ async function handleCronRun(request: Request) {
       ok: true,
       dryRun: true,
       targetLocalHour: options.targetLocalHour,
+      cleanup: { deletedExpiredFriendMessages: 0 },
       selected: selected.length,
       eligible: eligible.length,
       claimed: 0,
@@ -165,6 +171,7 @@ async function handleCronRun(request: Request) {
     });
   }
 
+  const cleanup = await deleteExpiredFriendMessages(adminClient, now);
   const lockToken = crypto.randomUUID();
   const results: CronResult[] = [];
   let claimed = 0;
@@ -261,6 +268,7 @@ async function handleCronRun(request: Request) {
     ok: true,
     dryRun: false,
     targetLocalHour: options.targetLocalHour,
+    cleanup,
     selected: selected.length,
     eligible: eligible.length,
     claimed,
@@ -269,6 +277,33 @@ async function handleCronRun(request: Request) {
     skipped,
     results,
   });
+}
+
+async function deleteExpiredFriendMessages(
+  adminClient: CronClient,
+  now: Date
+): Promise<FriendMessageCleanupSummary> {
+  const expiresBeforeIso = new Date(
+    now.getTime() - FRIEND_MESSAGE_TTL_HOURS * 60 * 60 * 1000
+  ).toISOString();
+
+  const { count, error } = await adminClient
+    .from("friend_messages")
+    .delete({ count: "exact" })
+    .lt("created_at", expiresBeforeIso);
+
+  if (error) {
+    console.warn("[SCHEDULER_CRON] expired friend message cleanup failed", {
+      error,
+    });
+    return {
+      deletedExpiredFriendMessagesError: shortenErrorMessage(error.message),
+    };
+  }
+
+  return {
+    deletedExpiredFriendMessages: count ?? 0,
+  };
 }
 
 export async function POST(request: Request) {

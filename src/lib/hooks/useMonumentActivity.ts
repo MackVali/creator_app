@@ -88,6 +88,15 @@ const XP_KIND_WEIGHTS: Record<"task" | "habit" | "project" | "goal", number> = {
   goal: 5,
 };
 
+const EVO_THRESHOLDS = [
+  { xp: 0, label: "Dormant" },
+  { xp: 1, label: "Lit" },
+  { xp: 25, label: "EVO" },
+  { xp: 75, label: "EVO 2" },
+  { xp: 125, label: "EVO 3" },
+  { xp: 225, label: "EVO 4" },
+] as const;
+
 export type MonumentActivityEventType = "note" | "goal" | "xp";
 
 export interface MonumentActivityEvent {
@@ -102,6 +111,14 @@ export interface MonumentActivityEvent {
 
 export interface MonumentActivitySummary {
   chargePercent: number;
+  chargeProgressPercent: number;
+  chargeXp: number;
+  chargeStatusLabel: string;
+  evoLabel: string;
+  nextEvoLabel: string | null;
+  nextEvoXp: number | null;
+  chargeXpToNextEvo: number;
+  isChargeLit: boolean;
   totalXp: number;
   xpEvents: number;
   notesLogged: number;
@@ -140,6 +157,14 @@ interface UseMonumentActivityState {
 
 const DEFAULT_SUMMARY: MonumentActivitySummary = {
   chargePercent: 0,
+  chargeProgressPercent: 0,
+  chargeXp: 0,
+  chargeStatusLabel: "Dormant",
+  evoLabel: "Dormant",
+  nextEvoLabel: "Lit",
+  nextEvoXp: 1,
+  chargeXpToNextEvo: 1,
+  isChargeLit: false,
   totalXp: 0,
   xpEvents: 0,
   notesLogged: 0,
@@ -173,6 +198,31 @@ function getXpEventAmount(event: Pick<XpEventRow, "amount" | "kind">) {
   if (!kind || !(kind in XP_KIND_WEIGHTS)) return 0;
 
   return XP_KIND_WEIGHTS[kind as keyof typeof XP_KIND_WEIGHTS];
+}
+
+function getChargeSummary(chargeXp: number) {
+  const currentIndex = EVO_THRESHOLDS.reduce((current, threshold, index) => {
+    return chargeXp >= threshold.xp ? index : current;
+  }, 0);
+  const current = EVO_THRESHOLDS[currentIndex];
+  const next = EVO_THRESHOLDS[currentIndex + 1] ?? null;
+  const progressPercent = next
+    ? ((chargeXp - current.xp) / (next.xp - current.xp)) * 100
+    : 100;
+
+  return {
+    chargeProgressPercent: Math.min(
+      Math.max(Math.round(progressPercent), 0),
+      100
+    ),
+    chargeXp,
+    chargeStatusLabel: chargeXp >= 1 ? "Lights on" : "Dormant",
+    evoLabel: current.label,
+    nextEvoLabel: next?.label ?? null,
+    nextEvoXp: next?.xp ?? null,
+    chargeXpToNextEvo: next ? Math.max(0, next.xp - chargeXp) : 0,
+    isChargeLit: chargeXp >= 1,
+  };
 }
 
 function buildXpSkillMix(
@@ -474,9 +524,7 @@ export function useMonumentActivity(monumentId: string) {
         b.timestamp.localeCompare(a.timestamp)
       );
 
-      const windowStart = new Date();
-      windowStart.setMonth(windowStart.getMonth() - 1);
-      const windowStartMs = windowStart.getTime();
+      const windowStartMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
       const chargeEligibleXp = xpEvents.filter((xp) => {
         if (!xp.schedule_instance_id) return false;
@@ -502,10 +550,12 @@ export function useMonumentActivity(monumentId: string) {
       const completedGoals = goals.filter(isGoalCompleted).length;
       const notesLogged = notes.length;
 
-      const chargePercent = Math.min(Math.round(totalXp), 100);
+      const chargeSummary = getChargeSummary(totalXp);
+      const chargePercent = chargeSummary.chargeProgressPercent;
 
       const summary: MonumentActivitySummary = {
         chargePercent,
+        ...chargeSummary,
         totalXp,
         xpEvents: chargeEligibleXp.length,
         notesLogged,
