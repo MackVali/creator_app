@@ -518,17 +518,6 @@ function GoalCampaignCreateRow({
     }
   };
 
-  React.useEffect(() => {
-    if (!active) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [active]);
-
   if (!active) {
     return (
       <button

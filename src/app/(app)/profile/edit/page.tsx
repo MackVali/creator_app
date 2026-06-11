@@ -474,6 +474,7 @@ export default function ProfileEditPage() {
 
   const MAX_EDITOR_ZOOM = 2.75;
   const AVATAR_EXPORT_SIZE = 1200;
+  const EDITOR_CROP_GUIDE_SCALE = 0.78;
 
   type EditorSize = { width: number; height: number };
 
@@ -490,9 +491,11 @@ export default function ProfileEditPage() {
 
   const getEditorRenderMetrics = useCallback(
     (zoomLevel: number, imageSize: EditorSize = editorImageSize, frameSize: EditorSize = editorFrameSize) => {
-      const cropSize = Math.min(frameSize.width, frameSize.height);
-      if (!imageSize.width || !imageSize.height || !cropSize) {
+      const surfaceSize = Math.min(frameSize.width, frameSize.height);
+      const cropSize = surfaceSize * EDITOR_CROP_GUIDE_SCALE;
+      if (!imageSize.width || !imageSize.height || !surfaceSize) {
         return {
+          surfaceSize: 0,
           cropSize: 0,
           baseFitScale: 1,
           renderedWidth: imageSize.width || 1,
@@ -500,11 +503,12 @@ export default function ProfileEditPage() {
         };
       }
 
-      const baseFitScale = Math.min(cropSize / imageSize.width, cropSize / imageSize.height);
+      const baseFitScale = Math.min(surfaceSize / imageSize.width, surfaceSize / imageSize.height);
       const renderedWidth = imageSize.width * baseFitScale * zoomLevel;
       const renderedHeight = imageSize.height * baseFitScale * zoomLevel;
 
       return {
+        surfaceSize,
         cropSize,
         baseFitScale,
         renderedWidth,
@@ -516,18 +520,18 @@ export default function ProfileEditPage() {
 
   const getEditorMinCoverZoom = useCallback(
     (imageSize: EditorSize = editorImageSize, frameSize: EditorSize = editorFrameSize) => {
-      const cropSize = Math.min(frameSize.width, frameSize.height);
+      const { cropSize, baseFitScale } = getEditorRenderMetrics(1, imageSize, frameSize);
       if (!imageSize.width || !imageSize.height || !cropSize) {
         return 1;
       }
 
-      const baseFitScale = Math.min(cropSize / imageSize.width, cropSize / imageSize.height);
       return Math.max(
+        1,
         cropSize / (imageSize.width * baseFitScale),
         cropSize / (imageSize.height * baseFitScale),
       );
     },
-    [editorFrameSize, editorImageSize],
+    [editorFrameSize, editorImageSize, getEditorRenderMetrics],
   );
 
   const getEditorPointFromCenter = useCallback((point: { x: number; y: number }) => {
@@ -550,7 +554,7 @@ export default function ProfileEditPage() {
       nextZoom: number,
       focalPoint = { x: 0, y: 0 },
     ) => {
-      const safeCurrentZoom = currentZoom || getEditorMinCoverZoom();
+      const safeCurrentZoom = currentZoom || 1;
       const zoomRatio = nextZoom / safeCurrentZoom;
 
       return {
@@ -558,7 +562,7 @@ export default function ProfileEditPage() {
         y: focalPoint.y - (focalPoint.y - offset.y) * zoomRatio,
       };
     },
-    [getEditorMinCoverZoom],
+    [],
   );
 
   const clampEditorOffset = useCallback(
@@ -882,10 +886,9 @@ export default function ProfileEditPage() {
       const nextMidpoint = getTouchMidpoint(touchA, touchB);
       const baselineDistance = gestureStateRef.current.startDistance || nextDistance;
       const zoomRatio = nextDistance / baselineDistance;
-      const minCoverZoom = getEditorMinCoverZoom();
       const nextZoom = Math.min(
-        Math.max(MAX_EDITOR_ZOOM, minCoverZoom),
-        Math.max(minCoverZoom, gestureStateRef.current.startZoom * zoomRatio),
+        MAX_EDITOR_ZOOM,
+        Math.max(1, gestureStateRef.current.startZoom * zoomRatio),
       );
       const startFocalPoint = getEditorPointFromCenter(gestureStateRef.current.startMidpoint);
       const nextFocalPoint = getEditorPointFromCenter(nextMidpoint);
@@ -1019,18 +1022,30 @@ export default function ProfileEditPage() {
       ctx.fillStyle = "#000000";
       ctx.fillRect(0, 0, outputWidth, outputHeight);
 
-      const squareFrameSize = Math.min(frameWidth, frameHeight);
-      if (!squareFrameSize) return;
+      const surfaceSize = Math.min(frameWidth, frameHeight);
+      const cropSize = surfaceSize * EDITOR_CROP_GUIDE_SCALE;
+      if (!surfaceSize || !cropSize) return;
 
-      const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
+      const minCoverZoom = getEditorMinCoverZoom(editorImageSize, {
+        width: frameWidth,
+        height: frameHeight,
+      });
+      const exportZoom = Math.max(editorZoom, minCoverZoom);
+      const exportOffset =
+        exportZoom === editorZoom
+          ? editorOffset
+          : getOffsetForZoom(editorOffset, editorZoom, exportZoom);
+      const clampedOffset = clampEditorOffset(exportOffset, exportZoom);
       const { renderedWidth, renderedHeight } = getEditorRenderMetrics(
-        editorZoom,
+        exportZoom,
         editorImageSize,
         { width: frameWidth, height: frameHeight },
       );
-      const drawX = (squareFrameSize - renderedWidth) / 2 + clampedOffset.x;
-      const drawY = (squareFrameSize - renderedHeight) / 2 + clampedOffset.y;
-      const renderToCanvasScale = outputWidth / squareFrameSize;
+      const cropLeft = (surfaceSize - cropSize) / 2;
+      const cropTop = (surfaceSize - cropSize) / 2;
+      const drawX = (surfaceSize - renderedWidth) / 2 + clampedOffset.x - cropLeft;
+      const drawY = (surfaceSize - renderedHeight) / 2 + clampedOffset.y - cropTop;
+      const renderToCanvasScale = outputWidth / cropSize;
 
       ctx.drawImage(
         image,
@@ -1230,12 +1245,7 @@ export default function ProfileEditPage() {
       return;
     }
 
-    const minCoverZoom = getEditorMinCoverZoom();
-    const clampedZoom = Math.max(editorZoom, minCoverZoom);
-    if (clampedZoom !== editorZoom) {
-      setEditorZoom(clampedZoom);
-    }
-    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, clampedZoom));
+    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, editorZoom));
   }, [
     clampEditorOffset,
     editorFrameSize.width,
@@ -1243,7 +1253,6 @@ export default function ProfileEditPage() {
     editorImageSize.width,
     editorImageSize.height,
     editorZoom,
-    getEditorMinCoverZoom,
     isAvatarEditorOpen,
   ]);
 
@@ -1625,7 +1634,7 @@ export default function ProfileEditPage() {
               </div>
               <div
                 ref={avatarEditorFrameRef}
-                className="relative mx-auto aspect-square w-full max-w-[min(100%,390px)] cursor-grab touch-none select-none overflow-hidden rounded-full border border-white/10 bg-black active:cursor-grabbing"
+                className="relative mx-auto aspect-square w-full max-w-[min(100%,420px)] cursor-grab touch-none select-none overflow-hidden rounded-2xl border border-white/10 bg-black active:cursor-grabbing"
                 onTouchStart={handleEditorTouchStart}
                 onTouchMove={handleEditorTouchMove}
                 onTouchEnd={handleEditorTouchEndWithEvent}
@@ -1651,7 +1660,7 @@ export default function ProfileEditPage() {
                         height: event.currentTarget.naturalHeight,
                       };
                       setEditorImageSize(imageSize);
-                      setEditorZoom(getEditorMinCoverZoom(imageSize));
+                      setEditorZoom(1);
                       setEditorOffset({ x: 0, y: 0 });
                     }}
                     className="absolute left-1/2 top-1/2 max-w-none"
@@ -1667,7 +1676,21 @@ export default function ProfileEditPage() {
                   />
                 ) : null}
                 <div
-                  className="pointer-events-none absolute inset-px rounded-full border border-white/75 shadow-[0_0_0_1px_rgba(0,0,0,0.45)_inset,0_0_30px_rgba(0,0,0,0.28)]"
+                  className="pointer-events-none absolute inset-0 bg-black/45"
+                  style={{
+                    WebkitMaskImage:
+                      "radial-gradient(circle at center, transparent 0 38.5%, black 39%)",
+                    maskImage:
+                      "radial-gradient(circle at center, transparent 0 38.5%, black 39%)",
+                  }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.45)_inset,0_0_36px_rgba(0,0,0,0.34)]"
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10"
                   aria-hidden="true"
                 />
               </div>

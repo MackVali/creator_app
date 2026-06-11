@@ -884,7 +884,7 @@ function GoalCardImpl({
               onPointerUp={handleGoalPointerUp}
               onPointerCancel={handleGoalPointerCancel}
               onPointerLeave={handleGoalPointerCancel}
-              className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
+              className="flex flex-1 flex-col items-center gap-1 min-w-0 select-none text-center"
               {...shellMotionProps}
             >
               <div
@@ -1059,7 +1059,7 @@ function GoalCardImpl({
                 >
                   {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
                 </div>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 select-none">
                   <div
                     className={`flex flex-wrap items-center gap-1 text-[9px] uppercase tracking-[0.14em] ${
                       isDrawerCompactDefault
