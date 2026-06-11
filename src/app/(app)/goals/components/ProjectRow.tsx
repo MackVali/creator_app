@@ -179,6 +179,9 @@ export function ProjectRow({
   const prefersReducedMotion = useReducedMotion();
   const isCompactNested = variant === "compactNested";
   const hasTasks = project.tasks.length > 0;
+  const allTasksCompleted = project.tasks.every((task) =>
+    Boolean(task.completedAt)
+  );
   const [open, setOpen] = useState(() => (isCompactNested ? false : hasTasks));
   const toggle = useCallback(() => {
     if (!hasTasks) return;
@@ -518,6 +521,9 @@ export function ProjectRow({
         cancelSingleTap();
         skipClickRef.current = true;
         event?.preventDefault();
+        if (hasTasks && !allTasksCompleted) {
+          return;
+        }
         void toggleCompletion();
         return;
       }
@@ -525,7 +531,14 @@ export function ProjectRow({
       lastTapTimeRef.current = now;
       tapSequenceRef.current += 1;
     },
-    [cancelPendingPress, cancelSingleTap, completionPending, toggleCompletion]
+    [
+      allTasksCompleted,
+      cancelPendingPress,
+      cancelSingleTap,
+      completionPending,
+      hasTasks,
+      toggleCompletion,
+    ]
   );
 
   const displayEmoji =
@@ -562,11 +575,15 @@ export function ProjectRow({
           singleTapTimeoutRef.current = null;
           return;
         }
-        openProjectEditor();
+        if (hasTasks) {
+          toggle();
+        } else {
+          openProjectEditor();
+        }
         singleTapTimeoutRef.current = null;
       }, SINGLE_TAP_DELAY_MS);
     },
-    [cancelSingleTap, completionPending, openProjectEditor]
+    [cancelSingleTap, completionPending, hasTasks, openProjectEditor, toggle]
   );
 
   const handleChevronPointerDown = useCallback(
