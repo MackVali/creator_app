@@ -76,7 +76,14 @@ import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Json } from "@/types/supabase";
+
+type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 interface EventModalProps {
   isOpen: boolean;

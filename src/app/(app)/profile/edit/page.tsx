@@ -150,6 +150,10 @@ export default function ProfileEditPage() {
     startZoom: number;
     startOffset: { x: number; y: number };
   } | null>(null);
+  const editorZoomRef = useRef(editorZoom);
+  const editorOffsetRef = useRef(editorOffset);
+  editorZoomRef.current = editorZoom;
+  editorOffsetRef.current = editorOffset;
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [inlineSelectedPlatform, setInlineSelectedPlatform] = useState<SupportedPlatform | null>(
@@ -475,6 +479,7 @@ export default function ProfileEditPage() {
   const MAX_EDITOR_ZOOM = 2.75;
   const AVATAR_EXPORT_SIZE = 1200;
   const EDITOR_CROP_GUIDE_SCALE = 0.78;
+  const FALLBACK_EDITOR_SURFACE_SIZE = 320;
 
   type EditorSize = { width: number; height: number };
 
@@ -489,49 +494,56 @@ export default function ProfileEditPage() {
     y: (a.clientY + b.clientY) / 2,
   });
 
-  const getEditorRenderMetrics = useCallback(
-    (zoomLevel: number, imageSize: EditorSize = editorImageSize, frameSize: EditorSize = editorFrameSize) => {
-      const surfaceSize = Math.min(frameSize.width, frameSize.height);
-      const cropSize = surfaceSize * EDITOR_CROP_GUIDE_SCALE;
-      if (!imageSize.width || !imageSize.height || !surfaceSize) {
-        return {
-          surfaceSize: 0,
-          cropSize: 0,
-          baseFitScale: 1,
-          renderedWidth: 1,
-          renderedHeight: 1,
-        };
-      }
+  const getEditorSurfaceSize = useCallback((frameSize: EditorSize = editorFrameSize) => {
+    return Math.min(frameSize.width, frameSize.height) || FALLBACK_EDITOR_SURFACE_SIZE;
+  }, [editorFrameSize]);
 
-      const baseFitScale = Math.min(surfaceSize / imageSize.width, surfaceSize / imageSize.height);
-      const renderedWidth = imageSize.width * baseFitScale * zoomLevel;
-      const renderedHeight = imageSize.height * baseFitScale * zoomLevel;
-
-      return {
-        surfaceSize,
-        cropSize,
-        baseFitScale,
-        renderedWidth,
-        renderedHeight,
-      };
+  const getEditorCropSize = useCallback(
+    (frameSize: EditorSize = editorFrameSize) => {
+      return getEditorSurfaceSize(frameSize) * EDITOR_CROP_GUIDE_SCALE;
     },
-    [editorFrameSize, editorImageSize],
+    [editorFrameSize, getEditorSurfaceSize],
   );
 
-  const getEditorMinCoverZoom = useCallback(
+  const getEditorBaseCoverScale = useCallback(
     (imageSize: EditorSize = editorImageSize, frameSize: EditorSize = editorFrameSize) => {
-      const { cropSize, baseFitScale } = getEditorRenderMetrics(1, imageSize, frameSize);
+      const cropSize = getEditorCropSize(frameSize);
       if (!imageSize.width || !imageSize.height || !cropSize) {
         return 1;
       }
 
-      return Math.max(
-        1,
-        cropSize / (imageSize.width * baseFitScale),
-        cropSize / (imageSize.height * baseFitScale),
-      );
+      return Math.max(cropSize / imageSize.width, cropSize / imageSize.height);
     },
-    [editorFrameSize, editorImageSize, getEditorRenderMetrics],
+    [editorFrameSize, editorImageSize, getEditorCropSize],
+  );
+
+  const getEditorRenderState = useCallback(
+    (
+      zoomMultiplier: number,
+      imageSize: EditorSize = editorImageSize,
+      frameSize: EditorSize = editorFrameSize,
+    ) => {
+      const surfaceSize = getEditorSurfaceSize(frameSize);
+      const cropSize = getEditorCropSize(frameSize);
+      const baseCoverScale = getEditorBaseCoverScale(imageSize, frameSize);
+      const clampedZoom = Math.min(MAX_EDITOR_ZOOM, Math.max(1, zoomMultiplier || 1));
+      const renderedWidth = imageSize.width
+        ? imageSize.width * baseCoverScale * clampedZoom
+        : 1;
+      const renderedHeight = imageSize.height
+        ? imageSize.height * baseCoverScale * clampedZoom
+        : 1;
+
+      return {
+        surfaceSize,
+        cropSize,
+        baseCoverScale,
+        zoomMultiplier: clampedZoom,
+        renderedWidth,
+        renderedHeight,
+      };
+    },
+    [editorFrameSize, editorImageSize, getEditorBaseCoverScale, getEditorCropSize, getEditorSurfaceSize],
   );
 
   const getEditorPointFromCenter = useCallback((point: { x: number; y: number }) => {
@@ -566,11 +578,20 @@ export default function ProfileEditPage() {
   );
 
   const clampEditorOffset = useCallback(
-    (nextOffset: { x: number; y: number }, zoomLevel: number) => {
-      const { cropSize, renderedWidth, renderedHeight } = getEditorRenderMetrics(zoomLevel);
+    (
+      nextOffset: { x: number; y: number },
+      zoomMultiplier: number,
+      imageSize: EditorSize = editorImageSize,
+      frameSize: EditorSize = editorFrameSize,
+    ) => {
+      const { cropSize, renderedWidth, renderedHeight } = getEditorRenderState(
+        zoomMultiplier,
+        imageSize,
+        frameSize,
+      );
       if (
-        !editorImageSize.width ||
-        !editorImageSize.height ||
+        !imageSize.width ||
+        !imageSize.height ||
         !cropSize
       ) {
         return nextOffset;
@@ -584,7 +605,7 @@ export default function ProfileEditPage() {
         y: Math.min(maxOffsetY, Math.max(-maxOffsetY, nextOffset.y)),
       };
     },
-    [editorImageSize.height, editorImageSize.width, getEditorRenderMetrics],
+    [editorFrameSize, editorImageSize, getEditorRenderState],
   );
 
   const openAvatarEditorFromFile = useCallback((file: File) => {
@@ -838,26 +859,27 @@ export default function ProfileEditPage() {
   const handleEditorTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     event.preventDefault();
 
-    if (event.touches.length === 1) {
-      const touch = event.touches[0];
-      gestureStateRef.current = {
-        mode: "pan",
-        startDistance: 0,
-        startMidpoint: { x: touch.clientX, y: touch.clientY },
-        startZoom: editorZoom,
-        startOffset: { ...editorOffset },
-      };
-      return;
-    }
-    if (event.touches.length === 2) {
+    if (event.touches.length >= 2) {
       const [touchA, touchB] = [event.touches[0], event.touches[1]];
       const midpoint = getTouchMidpoint(touchA, touchB);
       gestureStateRef.current = {
         mode: "pinch",
         startDistance: getTouchDistance(touchA, touchB),
         startMidpoint: midpoint,
-        startZoom: editorZoom,
-        startOffset: { ...editorOffset },
+        startZoom: editorZoomRef.current,
+        startOffset: { ...editorOffsetRef.current },
+      };
+      return;
+    }
+
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      gestureStateRef.current = {
+        mode: "pan",
+        startDistance: 0,
+        startMidpoint: { x: touch.clientX, y: touch.clientY },
+        startZoom: editorZoomRef.current,
+        startOffset: { ...editorOffsetRef.current },
       };
     }
   };
@@ -865,6 +887,20 @@ export default function ProfileEditPage() {
   const handleEditorTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
     if (!gestureStateRef.current) return;
     event.preventDefault();
+
+    if (event.touches.length >= 2 && gestureStateRef.current.mode !== "pinch") {
+      const [touchA, touchB] = [event.touches[0], event.touches[1]];
+      const midpoint = getTouchMidpoint(touchA, touchB);
+      gestureStateRef.current = {
+        mode: "pinch",
+        startDistance: getTouchDistance(touchA, touchB),
+        startMidpoint: midpoint,
+        startZoom: editorZoomRef.current,
+        startOffset: { ...editorOffsetRef.current },
+      };
+      return;
+    }
+
     if (gestureStateRef.current.mode === "pan" && event.touches.length === 1) {
       const touch = event.touches[0];
       const deltaX = touch.clientX - gestureStateRef.current.startMidpoint.x;
@@ -874,13 +910,14 @@ export default function ProfileEditPage() {
           x: gestureStateRef.current.startOffset.x + deltaX,
           y: gestureStateRef.current.startOffset.y + deltaY,
         },
-        editorZoom,
+        editorZoomRef.current,
       );
+      editorOffsetRef.current = nextOffset;
       setEditorOffset(nextOffset);
       return;
     }
 
-    if (event.touches.length === 2) {
+    if (event.touches.length >= 2) {
       const [touchA, touchB] = [event.touches[0], event.touches[1]];
       const nextDistance = getTouchDistance(touchA, touchB);
       const nextMidpoint = getTouchMidpoint(touchA, touchB);
@@ -906,6 +943,8 @@ export default function ProfileEditPage() {
         nextZoom,
       );
 
+      editorZoomRef.current = nextZoom;
+      editorOffsetRef.current = nextOffset;
       setEditorZoom(nextZoom);
       setEditorOffset(nextOffset);
     }
@@ -926,8 +965,8 @@ export default function ProfileEditPage() {
         mode: "pan",
         startDistance: 0,
         startMidpoint: { x: touch.clientX, y: touch.clientY },
-        startZoom: editorZoom,
-        startOffset: { ...editorOffset },
+        startZoom: editorZoomRef.current,
+        startOffset: { ...editorOffsetRef.current },
       };
       return;
     }
@@ -945,8 +984,8 @@ export default function ProfileEditPage() {
       mode: "pan",
       startDistance: 0,
       startMidpoint: { x: event.clientX, y: event.clientY },
-      startZoom: editorZoom,
-      startOffset: { ...editorOffset },
+      startZoom: editorZoomRef.current,
+      startOffset: { ...editorOffsetRef.current },
     };
   };
 
@@ -962,8 +1001,9 @@ export default function ProfileEditPage() {
         x: gestureStateRef.current.startOffset.x + deltaX,
         y: gestureStateRef.current.startOffset.y + deltaY,
       },
-      editorZoom,
+      editorZoomRef.current,
     );
+    editorOffsetRef.current = nextOffset;
     setEditorOffset(nextOffset);
   };
 
@@ -1022,24 +1062,19 @@ export default function ProfileEditPage() {
       ctx.fillStyle = "#000000";
       ctx.fillRect(0, 0, outputWidth, outputHeight);
 
-      const surfaceSize = Math.min(frameWidth, frameHeight);
-      const cropSize = surfaceSize * EDITOR_CROP_GUIDE_SCALE;
+      const frameSize = { width: frameWidth, height: frameHeight };
+      const { surfaceSize, cropSize, renderedWidth, renderedHeight } = getEditorRenderState(
+        editorZoom,
+        editorImageSize,
+        frameSize,
+      );
       if (!surfaceSize || !cropSize) return;
 
-      const minCoverZoom = getEditorMinCoverZoom(editorImageSize, {
-        width: frameWidth,
-        height: frameHeight,
-      });
-      const exportZoom = Math.max(editorZoom, minCoverZoom);
-      const exportOffset =
-        exportZoom === editorZoom
-          ? editorOffset
-          : getOffsetForZoom(editorOffset, editorZoom, exportZoom);
-      const clampedOffset = clampEditorOffset(exportOffset, exportZoom);
-      const { renderedWidth, renderedHeight } = getEditorRenderMetrics(
-        exportZoom,
+      const clampedOffset = clampEditorOffset(
+        editorOffset,
+        editorZoom,
         editorImageSize,
-        { width: frameWidth, height: frameHeight },
+        frameSize,
       );
       const cropLeft = (surfaceSize - cropSize) / 2;
       const cropTop = (surfaceSize - cropSize) / 2;
@@ -1437,14 +1472,7 @@ export default function ProfileEditPage() {
   const {
     renderedWidth: editorRenderedWidth,
     renderedHeight: editorRenderedHeight,
-  } = getEditorRenderMetrics(editorZoom);
-  const isAvatarEditorReady = Boolean(
-    pendingAvatarSourceUrl &&
-      editorImageSize.width &&
-      editorImageSize.height &&
-      editorFrameSize.width &&
-      editorFrameSize.height,
-  );
+  } = getEditorRenderState(editorZoom);
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
@@ -1676,7 +1704,6 @@ export default function ProfileEditPage() {
                       height: `${Math.max(editorRenderedHeight, 1)}px`,
                       transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px))`,
                       transformOrigin: "center center",
-                      visibility: isAvatarEditorReady ? "visible" : "hidden",
                       userSelect: "none",
                       WebkitUserSelect: "none",
                       pointerEvents: "none",
