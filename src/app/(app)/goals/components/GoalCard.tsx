@@ -77,10 +77,12 @@ interface GoalCardProps {
   onDelete?(): void;
   onBoost?(): void;
   onCardClick?(): void;
+  onLongPressEdit?(): void;
   showWeight?: boolean;
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
   hideEnergyPill?: boolean;
+  hideGoalEditAction?: boolean;
   monumentContext?: boolean;
   variant?: "default" | "compact";
   drawerCompact?: boolean;
@@ -217,10 +219,12 @@ function GoalCardImpl({
   onDelete,
   onBoost,
   onCardClick,
+  onLongPressEdit,
   showWeight = true,
   showCreatedAt = true,
   showEmojiPrefix = false,
   hideEnergyPill = false,
+  hideGoalEditAction = false,
   variant = "default",
   drawerCompact = false,
   showEnergyInCompact = false,
@@ -260,6 +264,8 @@ function GoalCardImpl({
     null
   );
   const shellClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const goalLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const goalLongPressTriggeredRef = useRef(false);
   const lastShellClickAtRef = useRef(0);
   const readyToastShownGoalIdsRef = useRef<Set<string>>(new Set());
   const toast = useToastHelpers();
@@ -467,6 +473,68 @@ function GoalCardImpl({
     cancelProjectLongPress();
     projectLongPressTriggeredRef.current = false;
   }, [cancelProjectLongPress]);
+
+    const cancelGoalLongPress = useCallback(() => {
+      if (goalLongPressTimerRef.current) {
+        clearTimeout(goalLongPressTimerRef.current);
+        goalLongPressTimerRef.current = null;
+      }
+    }, []);
+
+    const startGoalLongPress = useCallback(() => {
+      const longPressEditHandler = onLongPressEdit ?? onEdit;
+
+      if (!longPressEditHandler) {
+        startProjectLongPress();
+        return;
+      }
+
+      cancelGoalLongPress();
+      goalLongPressTriggeredRef.current = false;
+      goalLongPressTimerRef.current = setTimeout(() => {
+        goalLongPressTimerRef.current = null;
+        goalLongPressTriggeredRef.current = true;
+
+        if (shellClickTimerRef.current) {
+          clearTimeout(shellClickTimerRef.current);
+          shellClickTimerRef.current = null;
+        }
+
+        longPressEditHandler();
+      }, 560);
+    }, [cancelGoalLongPress, onEdit, onLongPressEdit, startProjectLongPress]);
+
+    const handleGoalPointerUp = useCallback(
+      (event: MouseEvent<HTMLButtonElement>) => {
+        const longPressEditHandler = onLongPressEdit ?? onEdit;
+
+        if (!longPressEditHandler) {
+          handleProjectPointerUp(event);
+          return;
+        }
+
+        cancelGoalLongPress();
+        if (goalLongPressTriggeredRef.current) {
+          goalLongPressTriggeredRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      },
+      [cancelGoalLongPress, handleProjectPointerUp, onEdit, onLongPressEdit]
+    );
+
+    const handleGoalPointerCancel = useCallback(() => {
+      const longPressEditHandler = onLongPressEdit ?? onEdit;
+
+      if (!longPressEditHandler) {
+        handleProjectPointerCancel();
+        return;
+      }
+
+      cancelGoalLongPress();
+      goalLongPressTriggeredRef.current = false;
+    }, [cancelGoalLongPress, handleProjectPointerCancel, onEdit, onLongPressEdit]);
+
 
   const handleAddProject = useCallback(async (originRect?: DOMRect) => {
     if (addingProject) return;
@@ -728,10 +796,10 @@ function GoalCardImpl({
                 onClick={handleShellClick}
                 aria-expanded={onCardClick ? undefined : open}
                 aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
-                onPointerDown={startProjectLongPress}
-                onPointerUp={handleProjectPointerUp}
-                onPointerCancel={handleProjectPointerCancel}
-                onPointerLeave={handleProjectPointerCancel}
+                onPointerDown={startGoalLongPress}
+                onPointerUp={handleGoalPointerUp}
+                onPointerCancel={handleGoalPointerCancel}
+                onPointerLeave={handleGoalPointerCancel}
                 className="flex w-full items-center justify-between text-left text-sm select-none"
                 {...shellMotionProps}
               >
@@ -775,6 +843,7 @@ function GoalCardImpl({
                     onAddProject={handleAddProject}
                     addingProject={addingProject}
                     onEdit={onEdit}
+                    hideGoalEditAction={hideGoalEditAction}
                     onTaskEditOpen={onTaskEditOpen}
                     onTaskToggleCompletion={onTaskToggleCompletion}
                   />
@@ -811,10 +880,10 @@ function GoalCardImpl({
               onClick={handleShellClick}
               aria-expanded={onCardClick ? undefined : open}
               aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
-              onPointerDown={startProjectLongPress}
-              onPointerUp={handleProjectPointerUp}
-              onPointerCancel={handleProjectPointerCancel}
-              onPointerLeave={handleProjectPointerCancel}
+              onPointerDown={startGoalLongPress}
+              onPointerUp={handleGoalPointerUp}
+              onPointerCancel={handleGoalPointerCancel}
+              onPointerLeave={handleGoalPointerCancel}
               className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
               {...shellMotionProps}
             >
@@ -890,6 +959,7 @@ function GoalCardImpl({
                   onAddProject={handleAddProject}
                   addingProject={addingProject}
                   onEdit={onEdit}
+                  hideGoalEditAction={hideGoalEditAction}
                   onTaskEditOpen={onTaskEditOpen}
                   onTaskToggleCompletion={onTaskToggleCompletion}
                 />
@@ -964,10 +1034,10 @@ function GoalCardImpl({
               onClick={handleShellClick}
               aria-expanded={onCardClick ? undefined : open}
               aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
-              onPointerDown={startProjectLongPress}
-              onPointerUp={handleProjectPointerUp}
-              onPointerCancel={handleProjectPointerCancel}
-              onPointerLeave={handleProjectPointerCancel}
+              onPointerDown={startGoalLongPress}
+              onPointerUp={handleGoalPointerUp}
+              onPointerCancel={handleGoalPointerCancel}
+              onPointerLeave={handleGoalPointerCancel}
               className={`relative flex flex-1 flex-col text-left overflow-hidden ${
                 isDrawerCompactDefault ? "gap-0.5" : "gap-1 sm:gap-1.5"
               }`}
@@ -1167,13 +1237,9 @@ function GoalCardImpl({
                       document
                         .getElementById(`dropdown-${goal.id}`)
                         ?.classList.add("hidden");
-                      onClose();
-                window.requestAnimationFrame(() => {
-                  onClose();
-                window.requestAnimationFrame(() => {
-                  onEdit?.();
-                });
-                });
+                      window.requestAnimationFrame(() => {
+                        onEdit?.();
+                      });
                     }}
                   >
                     Edit
@@ -1323,6 +1389,7 @@ type CompactProjectsOverlayProps = {
   onAddProject: () => void;
   addingProject: boolean;
   onEdit?: () => void;
+  hideGoalEditAction?: boolean;
   onTaskEditOpen?: (
     task: Task,
     project: Project,
@@ -1348,6 +1415,7 @@ function CompactProjectsOverlay({
   onAddProject,
   addingProject,
   onEdit,
+  hideGoalEditAction = false,
   onTaskEditOpen,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
@@ -1399,6 +1467,10 @@ function CompactProjectsOverlay({
       : `${goal.projects.length} ${
           goal.projects.length === 1 ? "project" : "projects"
         }`;
+  const showProjectEditAction = projectDropdownMode === "tasks-only";
+  const showGoalEditAction =
+    projectDropdownMode !== "tasks-only" && !hideGoalEditAction && Boolean(onEdit);
+  const showActionMenu = showProjectEditAction || showGoalEditAction;
 
   const headerContent = (
     <div className="flex items-start justify-between gap-2 sm:gap-4">
@@ -1422,43 +1494,53 @@ function CompactProjectsOverlay({
           </p>
         </div>
       </div>
-      <div className="relative shrink-0">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Goal actions"
-              className="rounded-md p-1.5 text-white/58 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+      {showActionMenu ? (
+        <div className="relative shrink-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Goal actions"
+                className="rounded-md p-1.5 text-white/58 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+              >
+                <MoreVertical aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="z-[80] min-w-36 rounded-xl border border-white/10 bg-[#090A0C] p-1.5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
             >
-              <MoreVertical aria-hidden="true" className="h-4 w-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="z-[80] min-w-36 rounded-xl border border-white/10 bg-[#090A0C] p-1.5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
-          >
-            <DropdownMenuItem
-              className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
-              onSelect={() => {
-                if (projectDropdownMode === "tasks-only") {
-                  if (firstProject) {
-                    if (onProjectEditRequest) {
-                      onProjectEditRequest(firstProject, null);
-                      onClose();
-                      return;
+              {showProjectEditAction ? (
+                <DropdownMenuItem
+                  className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
+                  onSelect={() => {
+                    if (firstProject) {
+                      if (onProjectEditRequest) {
+                        onProjectEditRequest(firstProject, null);
+                        onClose();
+                        return;
+                      }
+                      onProjectLongPress(firstProject, null);
                     }
-                    onProjectLongPress(firstProject, null);
-                  }
-                  return;
-                }
-                onEdit?.();
-              }}
-            >
-              {projectDropdownMode === "tasks-only" ? "Edit Project" : "Edit Goal"}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+                  }}
+                >
+                  Edit Project
+                </DropdownMenuItem>
+              ) : null}
+              {showGoalEditAction ? (
+                <DropdownMenuItem
+                  className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
+                  onSelect={() => {
+                    onEdit?.();
+                  }}
+                >
+                  Edit Goal
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -1553,6 +1635,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.showCreatedAt === next.showCreatedAt &&
     prev.showEmojiPrefix === next.showEmojiPrefix &&
     prev.hideEnergyPill === next.hideEnergyPill &&
+    prev.hideGoalEditAction === next.hideGoalEditAction &&
     prev.variant === next.variant &&
     prev.open === next.open &&
     prev.onManualComplete === next.onManualComplete &&

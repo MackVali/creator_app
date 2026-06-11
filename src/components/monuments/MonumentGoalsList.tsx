@@ -2845,6 +2845,7 @@ export function MonumentGoalsList({
               completeWhenProjectsDone
               completionTheme="border"
               suppressReadyToast
+              hideGoalEditAction
               onEdit={() => handleGoalEdit(roadmapOpenGoal)}
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
