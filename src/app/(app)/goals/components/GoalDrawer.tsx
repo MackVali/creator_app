@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronDown, Plus, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { listRoadmaps, createRoadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
@@ -1454,36 +1454,38 @@ export function GoalDrawer({
             </div>
           ) : (
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-sm text-white/70 hover:text-white"
-                onClick={onClose}
-                disabled={deleteLoading}
-              >
-                Cancel
-              </Button>
-              <div className="flex w-full gap-3 sm:w-auto">
+              <div className="flex items-center gap-2">
                 {showDeleteAction ? (
                   <Button
                     type="button"
-                    variant="destructive"
-                    className="flex-1 bg-red-600 text-white hover:bg-red-500 disabled:opacity-70 sm:flex-auto"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Delete goal"
+                    className="h-10 w-10 rounded-full border border-white/10 bg-black text-white/78 hover:bg-white/[0.06] hover:text-rose-200 disabled:opacity-70"
                     onClick={handleDeleteGoal}
                     disabled={deleteLoading}
                   >
-                    Delete goal
+                    <Trash2 aria-hidden="true" className="h-4 w-4" />
                   </Button>
                 ) : null}
                 <Button
-                  type="submit"
-                  form={formId}
-                  className="flex-1 bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60 sm:flex-auto"
-                  disabled={saveDisabled || !canSubmit || deleteLoading}
+                  type="button"
+                  variant="ghost"
+                  className="text-sm text-white/70 hover:text-white"
+                  onClick={onClose}
+                  disabled={deleteLoading}
                 >
-                  Save goal
+                  Cancel
                 </Button>
               </div>
+              <Button
+                type="submit"
+                form={formId}
+                className="w-full bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60 sm:w-auto"
+                disabled={saveDisabled || !canSubmit || deleteLoading}
+              >
+                Save goal
+              </Button>
             </div>
           )}
         </SheetFooter>
