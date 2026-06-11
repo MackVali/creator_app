@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useRef, type PointerEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Plus } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
@@ -28,6 +29,16 @@ interface ProjectsDropdownProps {
 
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
+
+const completedProjectsRevealTransition = {
+  duration: 0.56,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
+
+const isProjectCompleted = (project: Project) =>
+  project.status === "Done" ||
+  project.stage === "RELEASE" ||
+  Number(project.progress ?? 0) >= 100;
 
 const energyCodeToFlameLevel = (value?: string | null): FlameLevel => {
   switch (value?.toUpperCase()) {
@@ -59,9 +70,20 @@ export function ProjectsDropdown({
   addingProject = false,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
+  const prefersReducedMotion = useReducedMotion();
+  const [showCompletedProjects, setShowCompletedProjects] = useState(false);
+
   const selectedProject = useMemo(
     () => (projectTasksOnly ? projects[0] ?? null : null),
     [projectTasksOnly, projects]
+  );
+
+  const { activeProjects, completedProjects } = useMemo(
+    () => ({
+      activeProjects: projects.filter((project) => !isProjectCompleted(project)),
+      completedProjects: projects.filter(isProjectCompleted),
+    }),
+    [projects]
   );
 
   const taskEntries = useMemo(() => {
@@ -113,16 +135,76 @@ export function ProjectsDropdown({
           )
         ) : projects.length > 0 ? (
           <div className="space-y-1 sm:space-y-1.5">
-            {projects.map((p, index) => (
-              <ProjectRow
-                key={p.id}
-                project={p}
-                projectOrder={index + 1}
-                variant="compactNested"
-                onLongPress={onProjectLongPress}
-                onUpdated={onProjectUpdated}
-              />
-            ))}
+            {activeProjects.length > 0 ? (
+              activeProjects.map((p, index) => (
+                <ProjectRow
+                  key={p.id}
+                  project={p}
+                  projectOrder={index + 1}
+                  variant="compactNested"
+                  onLongPress={onProjectLongPress}
+                  onUpdated={onProjectUpdated}
+                />
+              ))
+            ) : completedProjects.length > 0 ? (
+              <div className="px-2 py-1.5 text-xs text-white/45">
+                All projects are complete.
+              </div>
+            ) : null}
+            {completedProjects.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowCompletedProjects((current) => !current)}
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+                aria-expanded={showCompletedProjects}
+              >
+                <span>
+                  {showCompletedProjects
+                    ? `Hide completed projects (${completedProjects.length})`
+                    : `Show completed projects (${completedProjects.length})`}
+                </span>
+              </button>
+            ) : null}
+            <AnimatePresence initial={false}>
+              {showCompletedProjects ? (
+                <motion.div
+                  className="overflow-hidden"
+                  initial={
+                    prefersReducedMotion
+                      ? { opacity: 0 }
+                      : { height: 0, opacity: 0, y: -4 }
+                  }
+                  animate={
+                    prefersReducedMotion
+                      ? { opacity: 1 }
+                      : { height: "auto", opacity: 1, y: 0 }
+                  }
+                  exit={
+                    prefersReducedMotion
+                      ? { opacity: 0 }
+                      : { height: 0, opacity: 0, y: -4 }
+                  }
+                  transition={
+                    prefersReducedMotion
+                      ? { duration: 0.12, ease: "easeOut" }
+                      : completedProjectsRevealTransition
+                  }
+                >
+                  <div className="space-y-1 sm:space-y-1.5">
+                    {completedProjects.map((p, index) => (
+                      <ProjectRow
+                        key={p.id}
+                        project={p}
+                        projectOrder={activeProjects.length + index + 1}
+                        variant="compactNested"
+                        onLongPress={onProjectLongPress}
+                        onUpdated={onProjectUpdated}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">

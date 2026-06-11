@@ -69,6 +69,7 @@ export interface Database {
           anchor_type: string | null;
           anchor_value: string | null;
           anchor_start_date: string | null;
+          memo_capture_config: Json | null;
         };
         Insert: {
           id?: string;
@@ -101,6 +102,7 @@ export interface Database {
           anchor_type?: string | null;
           anchor_value?: string | null;
           anchor_start_date?: string | null;
+          memo_capture_config?: Json | null;
         };
         Update: {
           id?: string;
@@ -132,6 +134,7 @@ export interface Database {
           anchor_type?: string | null;
           anchor_value?: string | null;
           anchor_start_date?: string | null;
+          memo_capture_config?: Json | null;
         };
       };
       habit_completion_days: {

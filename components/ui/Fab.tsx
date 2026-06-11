@@ -316,6 +316,8 @@ type MemoCaptureActionDraft = {
   form: boolean;
   photo: false;
 };
+type MemoCaptureConfigJson =
+  Database["public"]["Tables"]["habits"]["Insert"]["memo_capture_config"];
 type MemoCaptureToggleAction = "note" | "form";
 type MemoFormTemplate = {
   id: string;
@@ -3740,6 +3742,35 @@ export function Fab({
       template.label.toLowerCase().includes(normalizedSearch),
     );
   }, [memoFormSearch]);
+  const buildMemoCaptureConfig = useCallback((): MemoCaptureConfigJson => {
+    if (habitType?.toUpperCase() !== "MEMO") {
+      return {};
+    }
+
+    return {
+      version: 1,
+      actions: {
+        note: memoCaptureActions.note,
+        form: memoCaptureActions.form,
+        photo: memoCaptureActions.photo,
+      },
+      noteDestination: {
+        type: memoNoteDestinationType,
+        skillId: memoNoteSkillId || null,
+        monumentId: memoNoteMonumentId || null,
+      },
+      databaseCapture: {
+        templateId: selectedMemoFormId || null,
+      },
+    };
+  }, [
+    habitType,
+    memoCaptureActions,
+    memoNoteDestinationType,
+    memoNoteMonumentId,
+    memoNoteSkillId,
+    selectedMemoFormId,
+  ]);
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
@@ -14047,6 +14078,7 @@ export function Fab({
               fixed_start_local: habitFixedTime?.fixed_start_local ?? null,
               fixed_end_local: habitFixedTime?.fixed_end_local ?? null,
               fixed_timezone: habitFixedTime?.fixed_timezone ?? null,
+              memo_capture_config: buildMemoCaptureConfig(),
             })
             .eq("id", activeEditTarget.entityId)
             .eq("user_id", user.id);
@@ -14284,6 +14316,7 @@ export function Fab({
               fixed_start_local: habitFixedTime?.fixed_start_local ?? null,
               fixed_end_local: habitFixedTime?.fixed_end_local ?? null,
               fixed_timezone: habitFixedTime?.fixed_timezone ?? null,
+              memo_capture_config: buildMemoCaptureConfig(),
             })
             .select("id")
             .single();
@@ -14539,6 +14572,7 @@ export function Fab({
     taskSkillId,
     taskStage,
     attachSelectedTagsToEntity,
+    buildMemoCaptureConfig,
     onEditClose,
     onEditSaved,
     resetFabFormState,
