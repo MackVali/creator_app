@@ -1233,7 +1233,7 @@ function GoalCardImpl({
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      console.log("🎯 Edit button clicked");
+                      console.log("🎯 Edit goal button clicked");
                       document
                         .getElementById(`dropdown-${goal.id}`)
                         ?.classList.add("hidden");
@@ -1242,39 +1242,7 @@ function GoalCardImpl({
                       });
                     }}
                   >
-                    Edit
-                  </button>
-                  {normalizedStatus !== "COMPLETED" ? (
-                    <button
-                      className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        console.log("🎯 Toggle active button clicked");
-                        document
-                          .getElementById(`dropdown-${goal.id}`)
-                          ?.classList.add("hidden");
-                        onToggleActive?.();
-                      }}
-                    >
-                      {normalizedStatus === "ACTIVE"
-                        ? "Pause Goal"
-                        : "Resume Goal"}
-                    </button>
-                  ) : null}
-                  <button
-                    className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      console.log("🎯 Delete button clicked");
-                      document
-                        .getElementById(`dropdown-${goal.id}`)
-                        ?.classList.add("hidden");
-                      onDelete?.();
-                    }}
-                  >
-                    Delete
+                    Edit Goal
                   </button>
                 </div>
               </div>

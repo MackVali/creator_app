@@ -53,6 +53,7 @@ export async function deleteGoalCascade({
     const { error: deleteProjectsError } = await supabase
       .from("projects")
       .delete()
+      .eq("user_id", userId)
       .in("id", projectIds);
 
     if (deleteProjectsError) {
@@ -63,6 +64,7 @@ export async function deleteGoalCascade({
   const { error: deleteGoalError } = await supabase
     .from("goals")
     .delete()
+    .eq("user_id", userId)
     .eq("id", goalId);
 
   if (deleteGoalError) {

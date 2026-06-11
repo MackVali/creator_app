@@ -107,6 +107,7 @@ import {
   LimitReachedError,
   getLimitCodeFromError,
 } from "@/lib/goals/persistGoalUpdate";
+import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
@@ -285,6 +286,10 @@ type CreatorEntitySavedEventDetail = {
   action: "created" | "updated" | "deleted";
   monumentId?: string | null;
 };
+type FabGoalDeleteConfirmTarget = {
+  goalName: string;
+  projectCount: number | null;
+};
 export type FabEditTarget = {
   entityType: CreationType;
   entityId: string;
@@ -312,6 +317,18 @@ type MemoCaptureActionDraft = {
   photo: false;
 };
 type MemoCaptureToggleAction = "note" | "form";
+type MemoFormTemplate = {
+  id: string;
+  label: string;
+};
+
+const MEMO_FORM_TEMPLATES: MemoFormTemplate[] = [
+  { id: "water-log", label: "Water Log" },
+  { id: "food-log", label: "Food Log" },
+  { id: "meds-log", label: "Meds Log" },
+  { id: "workout-log", label: "Workout Log" },
+  { id: "custom-form", label: "Custom Form" },
+];
 
 type FabTag = {
   id: string;
@@ -3720,6 +3737,20 @@ export function Fab({
   >("skill");
   const [memoNoteSkillId, setMemoNoteSkillId] = useState<string | "">("");
   const [memoNoteMonumentId, setMemoNoteMonumentId] = useState<string | "">("");
+  const [memoFormSearch, setMemoFormSearch] = useState("");
+  const [selectedMemoFormId, setSelectedMemoFormId] = useState<string | null>(
+    null,
+  );
+  const filteredMemoFormTemplates = useMemo(() => {
+    const normalizedSearch = memoFormSearch.trim().toLowerCase();
+    if (!normalizedSearch) {
+      return MEMO_FORM_TEMPLATES;
+    }
+
+    return MEMO_FORM_TEMPLATES.filter((template) =>
+      template.label.toLowerCase().includes(normalizedSearch),
+    );
+  }, [memoFormSearch]);
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
@@ -3833,6 +3864,8 @@ export function Fab({
     setMemoNoteDestinationType("skill");
     setMemoNoteSkillId("");
     setMemoNoteMonumentId("");
+    setMemoFormSearch("");
+    setSelectedMemoFormId(null);
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -5119,6 +5152,9 @@ export function Fab({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSavingFab, setIsSavingFab] = useState(false);
   const [isDeletingFabEntity, setIsDeletingFabEntity] = useState(false);
+  const [isPreparingGoalDelete, setIsPreparingGoalDelete] = useState(false);
+  const [goalDeleteConfirmTarget, setGoalDeleteConfirmTarget] =
+    useState<FabGoalDeleteConfirmTarget | null>(null);
   const [activeLimitCode, setActiveLimitCode] =
     useState<LimitErrorCode | null>(null);
   const fabSavePendingRef = useRef(false);
@@ -5370,7 +5406,7 @@ export function Fab({
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
   const editableDeleteTarget =
     editTarget?.entityType === selected &&
-    (selected === "PROJECT" || selected === "HABIT") &&
+    (selected === "GOAL" || selected === "PROJECT" || selected === "HABIT") &&
     editTarget.entityId
       ? editTarget
       : null;
@@ -6246,6 +6282,8 @@ export function Fab({
     setMemoNoteDestinationType("skill");
     setMemoNoteSkillId(habitSkillId || "");
     setMemoNoteMonumentId("");
+    setMemoFormSearch("");
+    setSelectedMemoFormId(null);
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -10542,32 +10580,47 @@ export function Fab({
                     ))}
                   </div>
                   {memoCaptureActions.note ? (
-                    <div className="grid gap-2 rounded-md border border-white/10 bg-black/25 px-3 py-2.5">
-                      <div className="grid gap-0.5">
-                        <Label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                          Note destination
-                        </Label>
-                        <p className="text-[11px] leading-snug text-white/45">
-                          Defaults to this habit’s selected skill.
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/30 p-1">
-                        {(["skill", "monument"] as const).map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            aria-pressed={memoNoteDestinationType === type}
-                            onClick={() => setMemoNoteDestinationType(type)}
+                    <div className="grid gap-1.5 rounded-md border border-white/10 bg-black/25 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-white">
+                          {memoNoteDestinationType === "skill"
+                            ? "Skill"
+                            : "Monument"}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Switch note destination to ${
+                            memoNoteDestinationType === "skill"
+                              ? "Monument"
+                              : "Skill"
+                          }`}
+                          aria-pressed={memoNoteDestinationType === "monument"}
+                          onClick={() =>
+                            setMemoNoteDestinationType((current) =>
+                              current === "skill" ? "monument" : "skill",
+                            )
+                          }
+                          className="rounded-full p-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
+                        >
+                          <span
                             className={cn(
-                              "h-8 rounded-[4px] px-3 text-xs font-semibold transition",
-                              memoNoteDestinationType === type
-                                ? "bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"
-                                : "text-white/55 hover:bg-white/[0.05] hover:text-white/80",
+                              "relative block h-5 w-9 rounded-full border border-white/15 bg-zinc-950 shadow-inner transition",
+                              memoNoteDestinationType === "monument"
+                                ? "border-white/15 bg-zinc-900"
+                                : "border-white/10 bg-black",
                             )}
+                            aria-hidden="true"
                           >
-                            {type === "skill" ? "Skill" : "Monument"}
-                          </button>
-                        ))}
+                            <span
+                              className={cn(
+                                "absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-zinc-200 shadow-sm transition",
+                                memoNoteDestinationType === "monument"
+                                  ? "left-[17px]"
+                                  : "left-0.5",
+                              )}
+                            />
+                          </span>
+                        </button>
                       </div>
                       {memoNoteDestinationType === "skill" ? (
                         <>
@@ -10695,11 +10748,8 @@ export function Fab({
                               )}
                             </SelectContent>
                           </Select>
-                          <p className="text-[11px] leading-snug text-white/45">
-                            Save memo notes under a skill.
-                          </p>
                           {!memoNoteSkillId ? (
-                            <p className="text-[11px] leading-snug text-white/40">
+                            <p className="text-[10px] leading-snug text-white/35">
                               Choose a skill to save memo notes.
                             </p>
                           ) : null}
@@ -10756,11 +10806,8 @@ export function Fab({
                               )}
                             </SelectContent>
                           </Select>
-                          <p className="text-[11px] leading-snug text-white/45">
-                            Save memo notes under a monument.
-                          </p>
                           {!memoNoteMonumentId ? (
-                            <p className="text-[11px] leading-snug text-white/40">
+                            <p className="text-[10px] leading-snug text-white/35">
                               Choose a monument to save memo notes.
                             </p>
                           ) : null}
@@ -10769,9 +10816,50 @@ export function Fab({
                     </div>
                   ) : null}
                   {memoCaptureActions.form ? (
-                    <div className="flex h-9 items-center gap-2 rounded-md border border-white/10 bg-black/25 px-3 text-xs font-medium text-white/45">
-                      <Search className="h-3.5 w-3.5" />
-                      <span>Form picker coming next</span>
+                    <div className="grid gap-2 rounded-md border border-white/10 bg-black/25 px-3 py-2.5">
+                      <div className="flex h-9 items-center gap-2 rounded-md border border-white/10 bg-black/30 px-2.5">
+                        <Search className="h-3.5 w-3.5 text-white/45" />
+                        <input
+                          type="search"
+                          value={memoFormSearch}
+                          onChange={(event) =>
+                            setMemoFormSearch(event.target.value)
+                          }
+                          placeholder="Search forms"
+                          className="min-w-0 flex-1 bg-transparent text-xs font-medium text-white outline-none placeholder:text-white/35"
+                        />
+                      </div>
+                      {filteredMemoFormTemplates.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {filteredMemoFormTemplates.map((template) => {
+                            const isSelected =
+                              selectedMemoFormId === template.id;
+
+                            return (
+                              <button
+                                key={template.id}
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  setSelectedMemoFormId(template.id)
+                                }
+                                className={cn(
+                                  "min-h-8 rounded-md border px-2.5 py-1.5 text-left text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                                  isSelected
+                                    ? "border-white/25 bg-zinc-900 text-white"
+                                    : "border-white/10 bg-black/20 text-white/70 hover:border-white/20 hover:bg-zinc-950 hover:text-white",
+                                )}
+                              >
+                                {template.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="px-0.5 text-[10px] leading-snug text-white/35">
+                          No forms found
+                        </p>
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -14468,67 +14556,152 @@ export function Fab({
     toast,
   ]);
 
-  const handleFabDeleteEntity = useCallback(async () => {
-    if (isDeletingFabEntity || !editableDeleteTarget) {
-      return;
-    }
+  useEffect(() => {
+    setGoalDeleteConfirmTarget(null);
+  }, [editTarget?.entityId, editTarget?.entityType]);
 
-    const { entityType, entityId } = editableDeleteTarget;
-    const typeSegment = entityType === "HABIT" ? "habit" : "project";
-    const successLabel = entityType === "HABIT" ? "Habit" : "Project";
-
-    setSaveError(null);
-    setIsDeletingFabEntity(true);
-    try {
-      const response = await fetch(
-        `/api/schedule/events/${typeSegment}/${entityId}`,
-        {
-          method: "DELETE",
-        },
-      );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(
-          payload?.error ?? `Unable to delete this ${typeSegment}`,
-        );
+  const handleFabDeleteEntity = useCallback(
+    async (options?: { confirmed?: boolean }) => {
+      if (isDeletingFabEntity || !editableDeleteTarget) {
+        return;
       }
 
-      dispatchCreatorEntitySaved({
-        entityType,
-        entityId,
-        action: "deleted",
-        monumentId: null,
-      });
-      resetFabFormState();
-      setIsDirectCreationOpen(false);
-      setExpanded(false);
-      setSelected(null);
-      setIsOpen(false);
-      onEditClose?.();
-      await notifySchedulerOfChange();
-      toast.success(`${successLabel} deleted`);
-    } catch (error) {
-      console.error("Failed to delete FAB edit entity", {
-        entityType,
-        entityId,
-        error,
-      });
-      setSaveError(
-        error instanceof Error
-          ? error.message
-          : `Unable to delete this ${typeSegment}`,
-      );
-    } finally {
-      setIsDeletingFabEntity(false);
-    }
-  }, [
-    editableDeleteTarget,
-    isDeletingFabEntity,
-    notifySchedulerOfChange,
-    onEditClose,
-    resetFabFormState,
-    toast,
-  ]);
+      const { entityType, entityId } = editableDeleteTarget;
+      const typeSegment = entityType === "HABIT" ? "habit" : "project";
+      const successLabel =
+        entityType === "GOAL"
+          ? "Goal"
+          : entityType === "HABIT"
+            ? "Habit"
+            : "Project";
+
+      setSaveError(null);
+      if (entityType === "GOAL" && !options?.confirmed) {
+        setIsPreparingGoalDelete(true);
+        try {
+          const supabase = getSupabaseBrowser();
+          if (!supabase) {
+            throw new Error("Supabase client not available");
+          }
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+          if (userError) throw userError;
+          if (!user) {
+            throw new Error("You must be signed in to delete this goal");
+          }
+
+          const { count, error: countError } = await supabase
+            .from("projects")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("goal_id", entityId);
+          if (countError) throw countError;
+
+          const fallbackName =
+            typeof editableDeleteTarget.title === "string" &&
+            editableDeleteTarget.title.trim().length > 0
+              ? editableDeleteTarget.title.trim()
+              : "this goal";
+          setGoalDeleteConfirmTarget({
+            goalName: goalName.trim() || fallbackName,
+            projectCount: count ?? null,
+          });
+        } catch (error) {
+          console.error("Failed to prepare FAB goal delete", {
+            entityType,
+            entityId,
+            error,
+          });
+          setSaveError(
+            error instanceof Error
+              ? error.message
+              : "Unable to prepare goal deletion",
+          );
+        } finally {
+          setIsPreparingGoalDelete(false);
+        }
+        return;
+      }
+
+      setIsDeletingFabEntity(true);
+      try {
+        if (entityType === "GOAL") {
+          const supabase = getSupabaseBrowser();
+          if (!supabase) {
+            throw new Error("Supabase client not available");
+          }
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+          if (userError) throw userError;
+          if (!user) {
+            throw new Error("You must be signed in to delete this goal");
+          }
+          await deleteGoalCascade({
+            supabase,
+            goalId: entityId,
+            userId: user.id,
+          });
+        } else {
+          const response = await fetch(
+            `/api/schedule/events/${typeSegment}/${entityId}`,
+            {
+              method: "DELETE",
+            },
+          );
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(
+              payload?.error ?? `Unable to delete this ${typeSegment}`,
+            );
+          }
+        }
+
+        dispatchCreatorEntitySaved({
+          entityType,
+          entityId,
+          action: "deleted",
+          monumentId: null,
+        });
+        setGoalDeleteConfirmTarget(null);
+        resetFabFormState();
+        setIsDirectCreationOpen(false);
+        setExpanded(false);
+        setSelected(null);
+        setIsOpen(false);
+        onEditClose?.();
+        await notifySchedulerOfChange();
+        toast.success(`${successLabel} deleted`);
+      } catch (error) {
+        console.error("Failed to delete FAB edit entity", {
+          entityType,
+          entityId,
+          error,
+        });
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : entityType === "GOAL"
+              ? "Unable to delete this goal"
+              : `Unable to delete this ${typeSegment}`,
+        );
+      } finally {
+        setIsDeletingFabEntity(false);
+      }
+    },
+    [
+      editableDeleteTarget,
+      goalName,
+      isDeletingFabEntity,
+      notifySchedulerOfChange,
+      onEditClose,
+      resetFabFormState,
+      toast,
+    ],
+  );
 
   const overhangCancelTapHandlers = useTapHandler(() => {
     closeExpandedPanel();
@@ -14536,14 +14709,87 @@ export function Fab({
   const overhangSaveTapHandlers = useTapHandler(() => handleFabSave(), {
     disabled: isSaveDisabled,
   });
+  const handleCancelFabGoalDelete = useCallback(() => {
+    if (isDeletingFabEntity) return;
+    setGoalDeleteConfirmTarget(null);
+  }, [isDeletingFabEntity]);
+  const handleConfirmFabGoalDelete = useCallback(() => {
+    if (!goalDeleteConfirmTarget || isDeletingFabEntity) return;
+    void handleFabDeleteEntity({ confirmed: true });
+  }, [goalDeleteConfirmTarget, handleFabDeleteEntity, isDeletingFabEntity]);
   const overhangDeleteTapHandlers = useTapHandler(
     () => {
       void handleFabDeleteEntity();
     },
     {
-      disabled: isDeletingFabEntity || !editableDeleteTarget,
+      disabled:
+        isDeletingFabEntity || isPreparingGoalDelete || !editableDeleteTarget,
     },
   );
+  const renderFabGoalDeleteInlineConfirm = (className?: string) =>
+    goalDeleteConfirmTarget ? (
+      <motion.div
+        role="alertdialog"
+        aria-labelledby="fab-goal-delete-title"
+        aria-describedby="fab-goal-delete-description"
+        className={cn(
+          "rounded-xl border border-white/10 bg-black px-3 py-2 text-white shadow-2xl",
+          className,
+        )}
+        initial={{ opacity: 0, y: 4, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 3, scale: 0.99 }}
+        transition={{ duration: 0.14, ease: "easeOut" }}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p
+              id="fab-goal-delete-title"
+              className="text-sm font-semibold leading-tight"
+            >
+              Delete this goal?
+            </p>
+            <p
+              id="fab-goal-delete-description"
+              className="mt-0.5 text-[11px] leading-4 text-white/60"
+            >
+              {goalDeleteConfirmTarget.projectCount !== null
+                ? `Deletes ${goalDeleteConfirmTarget.projectCount} ${
+                    goalDeleteConfirmTarget.projectCount === 1
+                      ? "project"
+                      : "projects"
+                  } and related tasks.`
+                : "Deletes related projects and tasks."}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancelFabGoalDelete}
+              disabled={isDeletingFabEntity}
+              className="h-7 rounded-lg px-2 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+            >
+              Keep
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmFabGoalDelete}
+              disabled={isDeletingFabEntity}
+              className="h-7 rounded-lg px-2 text-xs"
+            >
+              {isDeletingFabEntity ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        </div>
+        {saveError ? (
+          <p className="mt-2 rounded-lg border border-red-500/20 bg-red-900/30 px-2 py-1.5 text-[11px] leading-4 text-red-100">
+            {saveError}
+          </p>
+        ) : null}
+      </motion.div>
+    ) : null;
   const handleDeleteEvent = useCallback(async () => {
     if (isDeletingEvent) {
       return;
@@ -15211,6 +15457,11 @@ export function Fab({
             })
           : null}
       </div>
+      <AnimatePresence initial={false}>
+        {renderFabGoalDeleteInlineConfirm(
+          "pointer-events-auto absolute bottom-[calc(100%-0.25rem)] left-0 right-0 z-30 w-full",
+        )}
+      </AnimatePresence>
       <div className="flex items-center gap-3">
         {editableDeleteTarget ? (
           <Button
@@ -15218,7 +15469,7 @@ export function Fab({
             aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
             variant="ghost"
             size="iconSquare"
-            disabled={isDeletingFabEntity}
+            disabled={isDeletingFabEntity || isPreparingGoalDelete}
             className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation border border-white/15 bg-black text-white hover:bg-zinc-900 disabled:opacity-50"
             {...overhangDeleteTapHandlers}
           >
@@ -15735,7 +15986,7 @@ export function Fab({
                       duration: 0.18,
                       ease: "easeOut",
                     }}
-                    className="pointer-events-auto fixed flex items-center gap-3"
+                    className="pointer-events-auto fixed"
                     style={{
                       width: overhangControlWidth,
                       left: overhangPos?.left,
@@ -15753,54 +16004,63 @@ export function Fab({
                           : undefined,
                     }}
                   >
-                    {editableDeleteTarget ? (
+                    <AnimatePresence initial={false}>
+                      {renderFabGoalDeleteInlineConfirm(
+                        "absolute bottom-[calc(100%+0.5rem)] left-0 right-0 z-30 w-full",
+                      )}
+                    </AnimatePresence>
+                    <div className="flex items-center gap-3">
+                      {editableDeleteTarget ? (
+                        <Button
+                          type="button"
+                          aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
+                          variant="ghost"
+                          size="iconSquare"
+                          disabled={
+                            isDeletingFabEntity || isPreparingGoalDelete
+                          }
+                          className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation border border-white/15 bg-black text-white hover:bg-zinc-900 disabled:opacity-50"
+                          {...overhangDeleteTapHandlers}
+                        >
+                          <Trash2
+                            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                            aria-hidden="true"
+                          />
+                        </Button>
+                      ) : null}
+
                       <Button
                         type="button"
-                        aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
-                        variant="ghost"
+                        aria-label="Discard"
+                        variant="cancelSquare"
                         size="iconSquare"
-                        disabled={isDeletingFabEntity}
-                        className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation border border-white/15 bg-black text-white hover:bg-zinc-900 disabled:opacity-50"
-                        {...overhangDeleteTapHandlers}
+                        className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
+                        {...overhangCancelTapHandlers}
                       >
-                        <Trash2
+                        <X
                           className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
                           aria-hidden="true"
                         />
                       </Button>
-                    ) : null}
 
-                    <Button
-                      type="button"
-                      aria-label="Discard"
-                      variant="cancelSquare"
-                      size="iconSquare"
-                      className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
-                      {...overhangCancelTapHandlers}
-                    >
-                      <X
-                        className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-                        aria-hidden="true"
-                      />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      aria-label="Save"
-                      variant="confirmSquare"
-                      size="iconSquare"
-                      disabled={isSaveDisabled}
-                      className={cn(
-                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
-                        isSaveDisabled ? "opacity-50" : "",
-                      )}
-                      {...overhangSaveTapHandlers}
-                    >
-                      <Check
-                        className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-                        aria-hidden="true"
-                      />
-                    </Button>
+                      <Button
+                        type="button"
+                        aria-label="Save"
+                        variant="confirmSquare"
+                        size="iconSquare"
+                        disabled={isSaveDisabled}
+                        className={cn(
+                          "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
+                          isSaveDisabled ? "opacity-50" : "",
+                        )}
+                        {...overhangSaveTapHandlers}
+                      >
+                        <Check
+                          className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    </div>
                   </motion.div>,
                   document.body,
                 )

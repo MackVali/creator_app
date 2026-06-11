@@ -472,9 +472,7 @@ export default function ProfileEditPage() {
     return Object.keys(errors).length === 0;
   };
 
-  const MIN_EDITOR_ZOOM = 1;
   const MAX_EDITOR_ZOOM = 2.75;
-  const EDITOR_ZOOM_SLIDER_STEPS = 100;
   const AVATAR_EXPORT_SIZE = 1200;
 
   type EditorSize = { width: number; height: number };
@@ -516,6 +514,22 @@ export default function ProfileEditPage() {
     [editorFrameSize, editorImageSize],
   );
 
+  const getEditorMinCoverZoom = useCallback(
+    (imageSize: EditorSize = editorImageSize, frameSize: EditorSize = editorFrameSize) => {
+      const cropSize = Math.min(frameSize.width, frameSize.height);
+      if (!imageSize.width || !imageSize.height || !cropSize) {
+        return 1;
+      }
+
+      const baseFitScale = Math.min(cropSize / imageSize.width, cropSize / imageSize.height);
+      return Math.max(
+        cropSize / (imageSize.width * baseFitScale),
+        cropSize / (imageSize.height * baseFitScale),
+      );
+    },
+    [editorFrameSize, editorImageSize],
+  );
+
   const getEditorPointFromCenter = useCallback((point: { x: number; y: number }) => {
     const frame = avatarEditorFrameRef.current;
     if (!frame) {
@@ -536,7 +550,7 @@ export default function ProfileEditPage() {
       nextZoom: number,
       focalPoint = { x: 0, y: 0 },
     ) => {
-      const safeCurrentZoom = currentZoom || MIN_EDITOR_ZOOM;
+      const safeCurrentZoom = currentZoom || getEditorMinCoverZoom();
       const zoomRatio = nextZoom / safeCurrentZoom;
 
       return {
@@ -544,21 +558,8 @@ export default function ProfileEditPage() {
         y: focalPoint.y - (focalPoint.y - offset.y) * zoomRatio,
       };
     },
-    [],
+    [getEditorMinCoverZoom],
   );
-
-  const getZoomFromSliderValue = useCallback((value: number) => {
-    const sliderRatio = Math.min(1, Math.max(0, value / EDITOR_ZOOM_SLIDER_STEPS));
-    return MIN_EDITOR_ZOOM * Math.pow(MAX_EDITOR_ZOOM / MIN_EDITOR_ZOOM, sliderRatio);
-  }, []);
-
-  const getSliderValueFromZoom = useCallback((zoomLevel: number) => {
-    const normalizedZoom = Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, zoomLevel));
-    return (
-      (Math.log(normalizedZoom / MIN_EDITOR_ZOOM) / Math.log(MAX_EDITOR_ZOOM / MIN_EDITOR_ZOOM)) *
-      EDITOR_ZOOM_SLIDER_STEPS
-    );
-  }, []);
 
   const clampEditorOffset = useCallback(
     (nextOffset: { x: number; y: number }, zoomLevel: number) => {
@@ -881,9 +882,10 @@ export default function ProfileEditPage() {
       const nextMidpoint = getTouchMidpoint(touchA, touchB);
       const baselineDistance = gestureStateRef.current.startDistance || nextDistance;
       const zoomRatio = nextDistance / baselineDistance;
+      const minCoverZoom = getEditorMinCoverZoom();
       const nextZoom = Math.min(
-        MAX_EDITOR_ZOOM,
-        Math.max(MIN_EDITOR_ZOOM, gestureStateRef.current.startZoom * zoomRatio),
+        Math.max(MAX_EDITOR_ZOOM, minCoverZoom),
+        Math.max(minCoverZoom, gestureStateRef.current.startZoom * zoomRatio),
       );
       const startFocalPoint = getEditorPointFromCenter(gestureStateRef.current.startMidpoint);
       const nextFocalPoint = getEditorPointFromCenter(nextMidpoint);
@@ -971,14 +973,6 @@ export default function ProfileEditPage() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     gestureStateRef.current = null;
-  };
-
-  const handleEditorZoomChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextZoom = getZoomFromSliderValue(Number(event.currentTarget.value));
-    setEditorZoom(nextZoom);
-    setEditorOffset((currentOffset) =>
-      clampEditorOffset(getOffsetForZoom(currentOffset, editorZoom, nextZoom), nextZoom),
-    );
   };
 
   const handleAvatarEditorCancel = () => {
@@ -1236,7 +1230,12 @@ export default function ProfileEditPage() {
       return;
     }
 
-    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, editorZoom));
+    const minCoverZoom = getEditorMinCoverZoom();
+    const clampedZoom = Math.max(editorZoom, minCoverZoom);
+    if (clampedZoom !== editorZoom) {
+      setEditorZoom(clampedZoom);
+    }
+    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, clampedZoom));
   }, [
     clampEditorOffset,
     editorFrameSize.width,
@@ -1244,6 +1243,7 @@ export default function ProfileEditPage() {
     editorImageSize.width,
     editorImageSize.height,
     editorZoom,
+    getEditorMinCoverZoom,
     isAvatarEditorOpen,
   ]);
 
@@ -1429,7 +1429,6 @@ export default function ProfileEditPage() {
     renderedWidth: editorRenderedWidth,
     renderedHeight: editorRenderedHeight,
   } = getEditorRenderMetrics(editorZoom);
-  const editorZoomSliderValue = getSliderValueFromZoom(editorZoom);
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
@@ -1647,11 +1646,12 @@ export default function ProfileEditPage() {
                     alt="Selected profile"
                     draggable={false}
                     onLoad={(event) => {
-                      setEditorImageSize({
+                      const imageSize = {
                         width: event.currentTarget.naturalWidth,
                         height: event.currentTarget.naturalHeight,
-                      });
-                      setEditorZoom(1);
+                      };
+                      setEditorImageSize(imageSize);
+                      setEditorZoom(getEditorMinCoverZoom(imageSize));
                       setEditorOffset({ x: 0, y: 0 });
                     }}
                     className="absolute left-1/2 top-1/2 max-w-none"
@@ -1669,21 +1669,6 @@ export default function ProfileEditPage() {
                 <div
                   className="pointer-events-none absolute inset-px rounded-full border border-white/75 shadow-[0_0_0_1px_rgba(0,0,0,0.45)_inset,0_0_30px_rgba(0,0,0,0.28)]"
                   aria-hidden="true"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="avatar-editor-zoom" className="text-sm text-zinc-300">
-                  Zoom
-                </Label>
-                <input
-                  id="avatar-editor-zoom"
-                  type="range"
-                  min={0}
-                  max={EDITOR_ZOOM_SLIDER_STEPS}
-                  step={1}
-                  value={editorZoomSliderValue}
-                  onChange={handleEditorZoomChange}
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-white"
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
