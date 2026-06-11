@@ -86,6 +86,7 @@ interface GoalCardProps {
   monumentContext?: boolean;
   variant?: "default" | "compact";
   drawerCompact?: boolean;
+  campaignDrawerRowVisual?: boolean;
   showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
@@ -227,6 +228,7 @@ function GoalCardImpl({
   hideGoalEditAction = false,
   variant = "default",
   drawerCompact = false,
+  campaignDrawerRowVisual = false,
   showEnergyInCompact = false,
   monumentContext = false,
   onProjectUpdated,
@@ -254,6 +256,8 @@ function GoalCardImpl({
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const isDrawerCompactDefault = drawerCompact && variant === "default";
+  const usesCampaignDrawerRowVisual =
+    campaignDrawerRowVisual && isDrawerCompactDefault;
   const defaultCardRef = useRef<HTMLDivElement | null>(null);
   const drawerCompactDropdownContentRef = useRef<HTMLDivElement | null>(null);
   const latestDrawerCompactDropdownHeightRef = useRef(0);
@@ -985,7 +989,9 @@ function GoalCardImpl({
 
   const defaultContainerClass = [
     isDrawerCompactDefault
-      ? "group relative mb-1 h-full overflow-hidden rounded-lg goal-card p-1.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:rounded-xl sm:p-2"
+      ? usesCampaignDrawerRowVisual
+        ? "group relative mb-1 h-full overflow-hidden rounded-lg p-1.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:rounded-xl sm:p-2"
+        : "group relative mb-1 h-full overflow-hidden rounded-lg goal-card p-1.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:rounded-xl sm:p-2"
       : "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
     completedClass,
     manualCompleteRejected ? goalManualCompleteRejectClass : "",
@@ -994,11 +1000,15 @@ function GoalCardImpl({
     .join(" ");
   const shellStateClass = open
     ? isCompleted && !isBorderOnlyCompleted
-      ? isDrawerCompactDefault
-        ? "border border-emerald-300/50 bg-emerald-950/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      ? usesCampaignDrawerRowVisual
+        ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)]"
+        : isDrawerCompactDefault
+        ? "habit-card--completed habit-card--completed-gem border border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)]"
         : "border border-emerald-300/55 shadow-[0_24px_44px_-28px_rgba(16,185,129,0.48),inset_0_1px_0_rgba(255,255,255,0.07)]"
-      : isDrawerCompactDefault
-        ? "border border-white/10 bg-[linear-gradient(180deg,rgba(66,66,66,0.16)_0%,rgba(28,28,28,0.72)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      : usesCampaignDrawerRowVisual
+        ? "border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        : isDrawerCompactDefault
+        ? "border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         : "border border-white/16 bg-white/[0.04] shadow-[0_24px_44px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.06)]"
     : isCompleted && !isBorderOnlyCompleted
       ? "border border-emerald-400/28 shadow-[0_16px_28px_-24px_rgba(16,185,129,0.32),inset_0_1px_0_rgba(255,255,255,0.04)]"
@@ -1254,7 +1264,7 @@ function GoalCardImpl({
               <motion.div
                 className={
                   isDrawerCompactDefault
-                    ? "mt-0.5 origin-top overflow-hidden rounded-lg border border-white/8 bg-black/10 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
+                    ? "mt-1 origin-top overflow-hidden rounded-md border border-transparent bg-transparent p-0 shadow-none"
                     : "origin-top overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm"
                 }
                 layout={
@@ -1605,6 +1615,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.hideEnergyPill === next.hideEnergyPill &&
     prev.hideGoalEditAction === next.hideGoalEditAction &&
     prev.variant === next.variant &&
+    prev.campaignDrawerRowVisual === next.campaignDrawerRowVisual &&
     prev.open === next.open &&
     prev.onManualComplete === next.onManualComplete &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&

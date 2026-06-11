@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 function safeDateTimeFormat(
   locale: string | undefined,
   tz: string | null | undefined,
-  options: any
+  options: Intl.DateTimeFormatOptions
 ) {
   if (!tz) {
     throw new Error("TZ_NULL_SENTINEL");

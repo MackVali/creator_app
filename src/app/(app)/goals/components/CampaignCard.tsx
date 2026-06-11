@@ -32,12 +32,17 @@ import {
 } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { FabEditTarget } from "@/components/ui/Fab";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { useToastHelpers } from "@/components/ui/toast";
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
-import type { ProjectCardMorphOrigin } from "./ProjectRow";
+import {
+  ProjectRowTaskInteractionsProvider,
+  type ProjectCardMorphOrigin,
+} from "./ProjectRow";
+import { ProjectsDropdown } from "./ProjectsDropdown";
 
 const cardSpringTransition = {
   type: "spring",
@@ -227,6 +232,7 @@ function DraggableGoalCard({
   const readyToastShownGoalIdsRef = useRef<Set<string>>(new Set());
   const [manualCompleteRejected, setManualCompleteRejected] = useState(false);
   const toast = useToastHelpers();
+  const fabCreation = useFabCreation();
 
   // Debug logging for drag start
   useEffect(() => {
@@ -344,8 +350,12 @@ function DraggableGoalCard({
   ]);
 
   const handleClosedRowClick = useCallback(() => {
+    if (wasDraggingRef.current) return;
+
+    const nextOpen = !isOpen;
+
     if (!onGoalManualComplete) {
-      onOpenChange?.(true);
+      onOpenChange?.(nextOpen);
       return;
     }
 
@@ -367,9 +377,9 @@ function DraggableGoalCard({
     }
     rowClickTimerRef.current = window.setTimeout(() => {
       rowClickTimerRef.current = null;
-      onOpenChange?.(true);
+      onOpenChange?.(nextOpen);
     }, 330);
-  }, [handleManualCompleteAttempt, onGoalManualComplete, onOpenChange]);
+  }, [handleManualCompleteAttempt, isOpen, onGoalManualComplete, onOpenChange]);
 
   const handleOpenedGoalChange = useCallback(
     (nextOpen: boolean) => {
@@ -466,6 +476,88 @@ function DraggableGoalCard({
     [handleClosedRowClick]
   );
 
+  const isCampaignGoalRowHoused = campaignDrawerRow;
+  const campaignGoalContainerClass = `relative overflow-hidden rounded-lg border text-white transition hover:border-white/18 sm:rounded-xl ${
+    manualCompleteRejected
+      ? goalManualCompleteRejectClass
+      : isCompleted
+      ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+  }`;
+
+  const compactGoalRow = (
+    <motion.button
+      type="button"
+      aria-expanded={campaignDrawerRow ? Boolean(isOpen) : undefined}
+      onPointerDown={handleClosedRowPointerDown}
+      onPointerUp={handleClosedRowPointerRelease}
+      onPointerCancel={handleClosedRowPointerRelease}
+      onPointerLeave={handleClosedRowPointerRelease}
+      onClick={handleClosedRowClickEvent}
+      className={`relative flex w-full items-center gap-2 px-2 py-1.5 text-left text-white transition hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:px-2.5 sm:py-2 ${
+        isCampaignGoalRowHoused
+          ? "rounded-lg border border-transparent bg-transparent shadow-none sm:rounded-xl"
+          : manualCompleteRejected
+          ? goalManualCompleteRejectClass
+          : isCompleted
+          ? "habit-card--completed habit-card--completed-gem rounded-lg border border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)] sm:rounded-xl"
+          : "rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 sm:rounded-xl"
+      }`}
+      {...shellMotionProps}
+      layout={prefersReducedMotion ? undefined : "size"}
+      variants={prefersReducedMotion ? undefined : collapsedGoalMotion}
+      initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+      animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+      exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+      transition={
+        prefersReducedMotion
+          ? { duration: 0.12 }
+          : { layout: goalExpansionTransition }
+      }
+    >
+      <div
+        className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
+          "border border-white/12 bg-black/35 text-white/82"
+        }`}
+        {...attributes}
+        {...listeners}
+        data-goal-drag-handle="true"
+        aria-label="Drag goal to reorder"
+        onClickCapture={(event) => {
+          if (!wasDraggingRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        {displayEmoji}
+      </div>
+
+      <p
+        className={`min-w-0 flex-1 truncate text-[12px] font-medium leading-tight sm:text-[13px] ${
+          isCompleted ? "text-emerald-50" : "text-white/84"
+        }`}
+        title={goal.title}
+      >
+        {goal.title}
+      </p>
+
+      <ChevronDown
+        aria-hidden="true"
+        className={`h-4 w-4 shrink-0 text-white/45 transition-transform duration-200 ${
+          isOpen ? "rotate-180" : ""
+        }`}
+      />
+
+      <span
+        className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
+          "border-white/10 bg-black/35 text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        }`}
+      >
+        {index + 1}
+      </span>
+    </motion.button>
+  );
+
   return (
     <div
       ref={setNodeRef}
@@ -487,119 +579,134 @@ function DraggableGoalCard({
             : { layout: rowLayoutTransition }
         }
       >
-        <AnimatePresence initial={false}>
-          {shouldRenderOpenGoal ? (
-            <motion.div
-              className="overflow-hidden"
-              layout={prefersReducedMotion ? undefined : "size"}
-              variants={prefersReducedMotion ? undefined : openedGoalVariants}
-              initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-              animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-              exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
-              transition={
-                prefersReducedMotion
-                  ? { duration: 0.12 }
-                  : { layout: rowLayoutTransition }
-              }
-            >
-              <GoalCard
-                goal={goal}
-                showWeight={false}
-                showCreatedAt={false}
-                showEmojiPrefix={false}
-                hideEnergyPill={hideEnergyPill}
-                variant="default"
-                drawerCompact
-                open={controlledGoalOpen}
-                onOpenChange={handleOpenedGoalChange}
-                onEdit={onGoalEdit ? handleGoalEdit : undefined}
-                onToggleActive={
-                  onGoalToggleActive
-                    ? () => onGoalToggleActive(goal)
-                    : undefined
+        {campaignDrawerRow ? (
+          <motion.div
+            className={campaignGoalContainerClass}
+            layout={prefersReducedMotion ? undefined : "size"}
+            transition={
+              prefersReducedMotion
+                ? { duration: 0.12 }
+                : { layout: rowLayoutTransition }
+            }
+          >
+            {compactGoalRow}
+            <AnimatePresence initial={false}>
+              {isOpen ? (
+                <motion.div
+                  className="overflow-hidden border-t border-white/8"
+                  layout={prefersReducedMotion ? undefined : "size"}
+                  variants={
+                    prefersReducedMotion ? undefined : openedGoalVariants
+                  }
+                  initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+                  animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+                  exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                  transition={
+                    prefersReducedMotion
+                      ? { duration: 0.12 }
+                      : { layout: rowLayoutTransition }
+                  }
+                >
+                  <ProjectRowTaskInteractionsProvider
+                    value={{
+                      goalId: goal.id,
+                    }}
+                  >
+                    <ProjectsDropdown
+                      id={`goal-${goal.id}`}
+                      goalTitle={goal.title}
+                      projects={goal.projects}
+                      loading={false}
+                      onProjectLongPress={
+                        onProjectEditOpen
+                          ? (project, origin) =>
+                              onProjectEditOpen(
+                                {
+                                  entityType: "PROJECT",
+                                  entityId: project.id,
+                                  title: project.name,
+                                  originRect: origin
+                                    ? {
+                                        top: origin.y,
+                                        left: origin.x,
+                                        width: origin.width,
+                                        height: origin.height,
+                                      }
+                                    : null,
+                                },
+                                project.id,
+                                goal.id,
+                                origin
+                              )
+                          : undefined
+                      }
+                      goalId={goal.id}
+                      projectTasksOnly={false}
+                      addingProject={false}
+                      onAddProject={(originRect) =>
+                        fabCreation?.requestProjectCreation(
+                          goal.id,
+                          originRect ?? null
+                        )
+                      }
+                    />
+                  </ProjectRowTaskInteractionsProvider>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </motion.div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {shouldRenderOpenGoal ? (
+              <motion.div
+                className="overflow-hidden"
+                layout={prefersReducedMotion ? undefined : "size"}
+                variants={prefersReducedMotion ? undefined : openedGoalVariants}
+                initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+                animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+                exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                transition={
+                  prefersReducedMotion
+                    ? { duration: 0.12 }
+                    : { layout: rowLayoutTransition }
                 }
-                onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
-                onProjectEditOpen={
-                  onProjectEditOpen
-                    ? (target, project, origin) =>
-                        onProjectEditOpen(target, project.id, goal.id, origin)
-                    : undefined
-                }
-                monumentContext={monumentContext}
-                onManualComplete={onGoalManualComplete}
-                completeWhenProjectsDone
-                completionTheme="emerald"
-                suppressReadyToast={suppressReadyToast}
-              />
-            </motion.div>
-          ) : (
-            <motion.button
-              type="button"
-              onPointerDown={handleClosedRowPointerDown}
-              onPointerUp={handleClosedRowPointerRelease}
-              onPointerCancel={handleClosedRowPointerRelease}
-              onPointerLeave={handleClosedRowPointerRelease}
-              onClick={handleClosedRowClickEvent}
-              className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
-                manualCompleteRejected
-                  ? goalManualCompleteRejectClass
-                  : isCompleted
-                  ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)]"
-                  : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-              }`}
-              {...shellMotionProps}
-              layout={prefersReducedMotion ? undefined : "size"}
-              variants={prefersReducedMotion ? undefined : collapsedGoalMotion}
-              initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-              animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-              exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
-              transition={
-                prefersReducedMotion
-                  ? { duration: 0.12 }
-                  : { layout: goalExpansionTransition }
-              }
-            >
-              <div
-                className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
-                  "border border-white/12 bg-black/35 text-white/82"
-                }`}
-                {...attributes}
-                {...listeners}
-                data-goal-drag-handle="true"
-                aria-label="Drag goal to reorder"
-                onClickCapture={(event) => {
-                  if (!wasDraggingRef.current) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
               >
-                {displayEmoji}
-              </div>
-
-              <p
-                className={`min-w-0 flex-1 truncate text-[12px] font-medium leading-tight sm:text-[13px] ${
-                  isCompleted ? "text-emerald-50" : "text-white/84"
-                }`}
-                title={goal.title}
-              >
-                {goal.title}
-              </p>
-
-              <ChevronDown
-                aria-hidden="true"
-                className="h-4 w-4 shrink-0 text-white/45"
-              />
-
-              <span
-                className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
-                  "border-white/10 bg-black/35 text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                }`}
-              >
-                {index + 1}
-              </span>
-            </motion.button>
-          )}
-        </AnimatePresence>
+                <GoalCard
+                  goal={goal}
+                  showWeight={false}
+                  showCreatedAt={false}
+                  showEmojiPrefix={false}
+                  hideEnergyPill={hideEnergyPill}
+                  variant="default"
+                  drawerCompact
+                  campaignDrawerRowVisual
+                  open={controlledGoalOpen}
+                  onOpenChange={handleOpenedGoalChange}
+                  onEdit={onGoalEdit ? handleGoalEdit : undefined}
+                  onToggleActive={
+                    onGoalToggleActive
+                      ? () => onGoalToggleActive(goal)
+                      : undefined
+                  }
+                  onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
+                  onProjectEditOpen={
+                    onProjectEditOpen
+                      ? (target, project, origin) =>
+                          onProjectEditOpen(target, project.id, goal.id, origin)
+                      : undefined
+                  }
+                  monumentContext={monumentContext}
+                  onManualComplete={onGoalManualComplete}
+                  completeWhenProjectsDone
+                  completionTheme="emerald"
+                  suppressReadyToast={suppressReadyToast}
+                />
+              </motion.div>
+            ) : (
+              compactGoalRow
+            )}
+          </AnimatePresence>
+        )}
       </motion.div>
     </div>
   );

@@ -498,8 +498,8 @@ export default function ProfileEditPage() {
           surfaceSize: 0,
           cropSize: 0,
           baseFitScale: 1,
-          renderedWidth: imageSize.width || 1,
-          renderedHeight: imageSize.height || 1,
+          renderedWidth: 1,
+          renderedHeight: 1,
         };
       }
 
@@ -1438,6 +1438,13 @@ export default function ProfileEditPage() {
     renderedWidth: editorRenderedWidth,
     renderedHeight: editorRenderedHeight,
   } = getEditorRenderMetrics(editorZoom);
+  const isAvatarEditorReady = Boolean(
+    pendingAvatarSourceUrl &&
+      editorImageSize.width &&
+      editorImageSize.height &&
+      editorFrameSize.width &&
+      editorFrameSize.height,
+  );
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
@@ -1669,6 +1676,7 @@ export default function ProfileEditPage() {
                       height: `${Math.max(editorRenderedHeight, 1)}px`,
                       transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px))`,
                       transformOrigin: "center center",
+                      visibility: isAvatarEditorReady ? "visible" : "hidden",
                       userSelect: "none",
                       WebkitUserSelect: "none",
                       pointerEvents: "none",

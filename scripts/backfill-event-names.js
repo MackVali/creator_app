@@ -1,17 +1,23 @@
-const dotenv = require('dotenv')
-const { createClient } = require('@supabase/supabase-js')
+let supabase
 
-dotenv.config({ path: '.env.local' })
+async function initializeSupabase() {
+  const [{ default: dotenv }, { createClient }] = await Promise.all([
+    import('dotenv'),
+    import('@supabase/supabase-js'),
+  ])
 
-const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  dotenv.config({ path: '.env.local' })
 
-if (!supabaseUrl || !serviceRoleKey) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in the environment')
-  process.exit(1)
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in the environment')
+    process.exit(1)
+  }
+
+  supabase = createClient(supabaseUrl, serviceRoleKey)
 }
-
-const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 async function fetchMissingInstances() {
   const [nullResult, emptyResult] = await Promise.all([
@@ -59,6 +65,8 @@ async function fetchNames(table, ids) {
 }
 
 async function main() {
+  await initializeSupabase()
+
   const instances = await fetchMissingInstances()
   if (instances.length === 0) {
     console.log('No schedule_instances without an event_name were found')
