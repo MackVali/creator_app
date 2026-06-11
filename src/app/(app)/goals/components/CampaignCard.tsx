@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent,
+  type PointerEvent,
 } from "react";
 import { Check, ChevronDown, MoreVertical, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -216,6 +218,10 @@ function DraggableGoalCard({
   } = useSortable({ id: goal.id });
   const wasDraggingRef = useRef(false);
   const rowClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closedRowLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const closedRowLongPressTriggeredRef = useRef(false);
   const lastRowClickAtRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readyToastShownGoalIdsRef = useRef<Set<string>>(new Set());
@@ -287,6 +293,9 @@ function DraggableGoalCard({
       }
       if (rowClickTimerRef.current !== null) {
         window.clearTimeout(rowClickTimerRef.current);
+      }
+      if (closedRowLongPressTimerRef.current !== null) {
+        window.clearTimeout(closedRowLongPressTimerRef.current);
       }
       if (rejectTimerRef.current !== null) {
         window.clearTimeout(rejectTimerRef.current);
@@ -402,6 +411,61 @@ function DraggableGoalCard({
     closeGoalDetailAfterFabOpen(() => handleOpenedGoalChange(false));
   }, [goal, handleOpenedGoalChange, onGoalEdit]);
 
+  const cancelClosedRowLongPress = useCallback(() => {
+    if (closedRowLongPressTimerRef.current === null) return;
+    window.clearTimeout(closedRowLongPressTimerRef.current);
+    closedRowLongPressTimerRef.current = null;
+  }, []);
+
+  const handleClosedRowPointerDown = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      if (!onGoalEdit) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-goal-drag-handle='true']")
+      ) {
+        return;
+      }
+
+      cancelClosedRowLongPress();
+      closedRowLongPressTriggeredRef.current = false;
+      closedRowLongPressTimerRef.current = window.setTimeout(() => {
+        closedRowLongPressTimerRef.current = null;
+        closedRowLongPressTriggeredRef.current = true;
+        if (rowClickTimerRef.current !== null) {
+          window.clearTimeout(rowClickTimerRef.current);
+          rowClickTimerRef.current = null;
+        }
+        handleGoalEdit();
+      }, 520);
+    },
+    [cancelClosedRowLongPress, handleGoalEdit, onGoalEdit]
+  );
+
+  const handleClosedRowPointerRelease = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      cancelClosedRowLongPress();
+      if (!closedRowLongPressTriggeredRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [cancelClosedRowLongPress]
+  );
+
+  const handleClosedRowClickEvent = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      if (closedRowLongPressTriggeredRef.current) {
+        closedRowLongPressTriggeredRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      handleClosedRowClick();
+    },
+    [handleClosedRowClick]
+  );
+
   return (
     <div
       ref={setNodeRef}
@@ -471,7 +535,11 @@ function DraggableGoalCard({
           ) : (
             <motion.button
               type="button"
-              onClick={handleClosedRowClick}
+              onPointerDown={handleClosedRowPointerDown}
+              onPointerUp={handleClosedRowPointerRelease}
+              onPointerCancel={handleClosedRowPointerRelease}
+              onPointerLeave={handleClosedRowPointerRelease}
+              onClick={handleClosedRowClickEvent}
               className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
                 manualCompleteRejected
                   ? goalManualCompleteRejectClass
@@ -497,6 +565,7 @@ function DraggableGoalCard({
                 }`}
                 {...attributes}
                 {...listeners}
+                data-goal-drag-handle="true"
                 aria-label="Drag goal to reorder"
                 onClickCapture={(event) => {
                   if (!wasDraggingRef.current) return;
@@ -1296,7 +1365,14 @@ function CampaignDrawer({
                       setOpenGoalId(null);
                     }
                   }}
-                  onGoalEdit={onGoalEdit}
+                  onGoalEdit={
+                    onGoalEdit
+                      ? (goal) => {
+                          onGoalEdit(goal);
+                          onClose();
+                        }
+                      : undefined
+                  }
                   onGoalToggleActive={onGoalToggleActive}
                   onGoalDelete={onGoalDelete}
                   onGoalManualComplete={handleGoalManualComplete}

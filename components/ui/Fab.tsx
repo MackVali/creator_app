@@ -3831,7 +3831,7 @@ export function Fab({
       photo: false,
     });
     setMemoNoteDestinationType("skill");
-    setMemoNoteSkillId(habitSkillId || "");
+    setMemoNoteSkillId("");
     setMemoNoteMonumentId("");
     setHabitDuration("15");
     setHabitEnergy("LOW");
@@ -3853,7 +3853,7 @@ export function Fab({
     setHabitInlineRoutineDescription("");
     setShowHabitDurationPicker(false);
     setHabitDurationPosition(null);
-  }, [defaultHabitRecurrence, defaultHabitType, habitSkillId]);
+  }, [defaultHabitRecurrence, defaultHabitType]);
   const resetHabitRoutineInlineCreation = useCallback(() => {
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
@@ -10219,7 +10219,7 @@ export function Fab({
                                 habitRecurrence === option.value,
                               )}
                             >
-                              {option.label}
+                              {option.label === "NO SET CADENCE" ? "NONE" : option.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -10481,39 +10481,33 @@ export function Fab({
               {selected === "HABIT" && activeCreationMode === "memoForms" && (
                 <div
                   className={cn(
-                    "grid content-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+                    "grid content-start gap-3 rounded-none px-0 py-2",
                     expanded && "min-h-full",
                   )}
                   style={secondaryCreationPanelStyle}
                 >
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1">
                     <h3 className="text-sm font-semibold text-white">
                       Memo Forms
                     </h3>
-                    <p className="text-xs leading-snug text-white/55">
-                      Choose what this memo habit asks for when you complete it.
-                    </p>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       {
                         id: "note" as const,
                         label: "Note",
-                        subtitle: "Free text memo",
                         selected: memoCaptureActions.note,
                         disabled: false,
                       },
                       {
                         id: "form" as const,
                         label: "Form",
-                        subtitle: "Structured inputs",
                         selected: memoCaptureActions.form,
                         disabled: false,
                       },
                       {
                         id: "photo" as const,
                         label: "Photo",
-                        subtitle: "Coming soon",
                         selected: memoCaptureActions.photo,
                         disabled: true,
                       },
@@ -10528,9 +10522,9 @@ export function Fab({
                           handleMemoCaptureActionToggle(action.id);
                         }}
                         className={cn(
-                          "grid min-h-[72px] content-between rounded-md border px-3 py-2.5 text-left transition",
+                          "flex min-h-11 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition",
                           action.selected
-                            ? "border-blue-400/50 bg-blue-500/10 shadow-[0_0_0_1px_rgba(96,165,250,0.12)]"
+                            ? "border-white/20 bg-zinc-900/70"
                             : "border-white/10 bg-black/25 hover:border-white/20 hover:bg-white/[0.04]",
                           action.disabled &&
                             "cursor-not-allowed border-white/10 bg-black/20 opacity-50 hover:border-white/10 hover:bg-black/20",
@@ -10541,11 +10535,8 @@ export function Fab({
                             {action.label}
                           </span>
                           {action.selected ? (
-                            <Check className="h-3.5 w-3.5 text-blue-300" />
+                            <Check className="h-3.5 w-3.5 text-white/70" />
                           ) : null}
-                        </span>
-                        <span className="text-[11px] leading-snug text-white/50">
-                          {action.subtitle}
                         </span>
                       </button>
                     ))}
@@ -10570,7 +10561,7 @@ export function Fab({
                             className={cn(
                               "h-8 rounded-[4px] px-3 text-xs font-semibold transition",
                               memoNoteDestinationType === type
-                                ? "bg-blue-500/20 text-blue-100 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.38)]"
+                                ? "bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"
                                 : "text-white/55 hover:bg-white/[0.05] hover:text-white/80",
                             )}
                           >
@@ -10943,8 +10934,8 @@ export function Fab({
                                     habitDaylightPreference === option.value,
                                   )}
                                 >
-                                  {option.label}
-                                </SelectItem>
+                              {option.label}
+                            </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -10978,7 +10969,7 @@ export function Fab({
                                         option.value,
                                     )}
                                   >
-                                    {option.label}
+                            {option.label}
                                   </SelectItem>
                                 ),
                               )}
@@ -17955,12 +17946,12 @@ function FabNexus({
                     key={option.value}
                     value={option.value}
                     className="text-[10px] uppercase text-white/60"
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
           </div>
         </div>
       ) : null}
