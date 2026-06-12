@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { NotebookPen } from "lucide-react";
+import { Dumbbell, NotebookPen } from "lucide-react";
+import { Icon } from "@iconify/react";
 import { cn } from "@/lib/utils";
 import type { Note } from "@/lib/types/note";
 
@@ -17,6 +18,52 @@ interface NoteCardProps {
   childCount?: number;
 }
 
+type StarterNoteCardIconKey = "stomach" | "dumbbell";
+
+function getStarterNoteCardIconKey(note: Note): StarterNoteCardIconKey | null {
+  const metadata = note.metadata;
+  if (!metadata || metadata.lockedSystemNote !== true) {
+    return null;
+  }
+
+  if (metadata.iconKey === "stomach" || metadata.iconKey === "dumbbell") {
+    return metadata.iconKey;
+  }
+
+  if (metadata.systemNoteKey === "health-starter") return "stomach";
+  if (metadata.systemNoteKey === "fitness-starter") return "dumbbell";
+
+  return null;
+}
+
+function NoteCardIcon({ iconKey }: { iconKey: StarterNoteCardIconKey | null }) {
+  if (iconKey === "stomach") {
+    return (
+      <Icon
+        icon="game-icons:stomach"
+        className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (iconKey === "dumbbell") {
+    return (
+      <Dumbbell
+        className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <NotebookPen
+      className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4"
+      aria-hidden="true"
+    />
+  );
+}
+
 export function NoteCard({ note, skillId, childCount = 0 }: NoteCardProps) {
   const noteTitle = note.title?.trim();
   const displayTitle =
@@ -28,6 +75,7 @@ export function NoteCard({ note, skillId, childCount = 0 }: NoteCardProps) {
           .find((line) => line.length > 0) ?? "Open this note to add a title.";
 
   const hasChildren = childCount > 0;
+  const starterNoteIconKey = getStarterNoteCardIconKey(note);
 
   return (
     <Link
@@ -42,10 +90,7 @@ export function NoteCard({ note, skillId, childCount = 0 }: NoteCardProps) {
       >
         <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10">
-            <NotebookPen
-              className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4"
-              aria-hidden="true"
-            />
+            <NoteCardIcon iconKey={starterNoteIconKey} />
           </div>
           <div className="flex w-full min-w-0 items-center justify-center">
             <span

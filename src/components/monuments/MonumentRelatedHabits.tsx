@@ -15,6 +15,7 @@ import { Grid2x2, Grid3x3 } from "lucide-react";
 
 import FlameEmber from "@/components/FlameEmber";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
@@ -26,6 +27,7 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import type { Database } from "@/types/supabase";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 import {
   addDaysInTimeZone,
@@ -59,6 +61,7 @@ interface HabitSummary {
   anchorStartDate: string | null;
   nextDueOverride: string | null;
   habitType: string | null;
+  memoCaptureConfig: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
   skillId: string | null;
   skillIcon: string | null;
 }
@@ -183,6 +186,7 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
   return {
     id: habit.id,
     name: habit.name,
+    memoCaptureConfig: habit.memoCaptureConfig ?? null,
     durationMinutes: null,
     createdAt: habit.createdAt,
     updatedAt: habit.updatedAt,
@@ -393,6 +397,9 @@ function formatHabitRecord(
     anchorStartDate: readString(habitRecord.anchor_start_date),
     nextDueOverride: readString(habitRecord.next_due_override),
     habitType: readString(habitRecord.habit_type),
+    memoCaptureConfig:
+      (habitRecord.memo_capture_config as HabitSummary["memoCaptureConfig"]) ??
+      null,
     skillId,
     skillIcon: skillId ? skillIconById.get(skillId) ?? null : null,
   } satisfies HabitSummary;
@@ -433,6 +440,8 @@ export function MonumentRelatedHabits({
   const [pendingRelatedHabitIds, setPendingRelatedHabitIds] = useState<
     Set<string>
   >(() => new Set());
+  const [memoCompletionState, setMemoCompletionState] =
+    useState<HabitSummary | null>(null);
   const timeZone = useMemo(() => {
     try {
       return normalizeTimeZone(
@@ -481,6 +490,7 @@ export function MonumentRelatedHabits({
   const pendingRelatedHabitActionsRef = useRef(
     new Map<string, { action: "complete" | "undo"; dateKey: string }>()
   );
+  const bypassMemoCaptureRef = useRef(false);
   const completionStateDateKeyRef = useRef<string | null>(null);
   const decoratedHabits = useMemo(
     () =>
@@ -636,6 +646,15 @@ export function MonumentRelatedHabits({
       const action = wasCompleted ? "undo" : "complete";
       const completedAt = new Date().toISOString();
 
+      if (
+        !bypassMemoCaptureRef.current &&
+        action === "complete" &&
+        normalizeRelatedHabitType(habitBeforeUpdate.habitType) === "MEMO"
+      ) {
+        setMemoCompletionState(habitBeforeUpdate);
+        return;
+      }
+
       setCompletionError(null);
       setPendingRelatedHabitIds((previous) => {
         const next = new Set(previous);
@@ -753,6 +772,18 @@ export function MonumentRelatedHabits({
       toast,
     ]
   );
+
+  const handleMemoCompletionSubmitted = useCallback(async () => {
+    if (!memoCompletionState) return;
+
+    bypassMemoCaptureRef.current = true;
+    try {
+      await handleRelatedHabitCompletionToggle(memoCompletionState.id);
+      setMemoCompletionState(null);
+    } finally {
+      bypassMemoCaptureRef.current = false;
+    }
+  }, [handleRelatedHabitCompletionToggle, memoCompletionState]);
 
   const handleRelatedHabitTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>, habitId: string) => {
@@ -1003,7 +1034,7 @@ export function MonumentRelatedHabits({
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, skill_id"
+            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, skill_id"
           )
           .eq("user_id", userId)
           .in("skill_id", skillIds)
@@ -1041,6 +1072,7 @@ export function MonumentRelatedHabits({
   }, [monumentId, refreshVersion, supabase]);
 
   return (
+    <>
     <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
       <CardHeader className="relative px-6 pt-3 pb-1">
@@ -1247,6 +1279,27 @@ export function MonumentRelatedHabits({
         )}
       </CardContent>
     </Card>
+    <MemoCompletionDialog
+      open={Boolean(memoCompletionState)}
+      context={
+        memoCompletionState
+          ? {
+              habitId: memoCompletionState.id,
+              habitName: memoCompletionState.name,
+              habitType: memoCompletionState.habitType,
+              skillId: memoCompletionState.skillId,
+              skillIcon: memoCompletionState.skillIcon,
+              memoCaptureConfig: memoCompletionState.memoCaptureConfig,
+              completionDate: new Date().toISOString(),
+            }
+          : null
+      }
+      onOpenChange={(open) => {
+        if (!open) setMemoCompletionState(null);
+      }}
+      onCompleted={handleMemoCompletionSubmitted}
+    />
+    </>
   );
 }
 

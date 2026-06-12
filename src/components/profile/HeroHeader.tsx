@@ -21,7 +21,6 @@ import {
   useCallback,
   useId,
   useRef,
-  useState,
   type ChangeEvent,
   type MouseEvent,
   type ReactNode,
@@ -30,10 +29,18 @@ import {
 import { Profile } from "@/lib/types";
 
 import RelationshipViewBar, {
-  RelationshipView,
   RelationshipViewCounts,
+  type RelationshipStatItem,
 } from "@/components/friends/RelationshipViewBar";
 import SocialPillsRow from "./SocialPillsRow";
+
+type ProfileStatView = "following" | "followers" | "offers";
+
+const PROFILE_STAT_ITEMS: readonly RelationshipStatItem<ProfileStatView>[] = [
+  { value: "following", label: "Following" },
+  { value: "followers", label: "Followers" },
+  { value: "offers", label: "Offers" },
+];
 
 const QUICK_ACTION_ICON_MAP: Record<string, LucideIcon> = {
   watch: PlayCircle,
@@ -77,6 +84,7 @@ interface HeroHeaderProps {
   onAvatarChange?: (file: File) => Promise<void> | void;
   isAvatarUploading?: boolean;
   relationshipCounts?: RelationshipViewCounts;
+  onProfileStatSelect?: (view: ProfileStatView) => void;
 }
 
 export default function HeroHeader({
@@ -89,9 +97,9 @@ export default function HeroHeader({
   onAvatarChange,
   isAvatarUploading = false,
   relationshipCounts,
+  onProfileStatSelect,
 }: HeroHeaderProps) {
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const [relationshipView, setRelationshipView] = useState<RelationshipView>("friends");
 
   const getInitials = (name: string | null, username: string) => {
     if (name) {
@@ -301,12 +309,17 @@ export default function HeroHeader({
 
 
         <div className="flex flex-col gap-1">
-          <div className="px-6 sm:px-8">
+          <div className="w-full">
             <RelationshipViewBar
-              value={relationshipView}
-              onChange={setRelationshipView}
+              value={null}
+              onChange={onProfileStatSelect}
               counts={relationshipCounts}
-              className="mx-auto w-full max-w-[420px]"
+              items={PROFILE_STAT_ITEMS}
+              className="mx-auto w-full max-w-none"
+              itemClassName="px-1.5 sm:px-3"
+              countClassName="text-white"
+              labelClassName="text-[0.56rem] font-medium normal-case tracking-normal text-white/55 sm:text-[0.62rem]"
+              uppercaseLabels={false}
             />
           </div>
           {hasRelationshipExtras ? (

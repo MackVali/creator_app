@@ -35,6 +35,7 @@ import type { FabEditTarget } from "@/components/ui/Fab";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { useToastHelpers } from "@/components/ui/toast";
+import { teardownFabViewportState } from "@/components/ui/fabViewportCleanup";
 
 import type { Goal, Project } from "../types";
 import { GoalCard } from "./GoalCard";
@@ -166,6 +167,21 @@ const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(closeGoalDetail);
   });
+};
+
+const queueFabViewportTeardown = () => {
+  if (typeof window === "undefined") {
+    teardownFabViewportState();
+    return;
+  }
+
+  teardownFabViewportState();
+  window.requestAnimationFrame(() => {
+    teardownFabViewportState();
+  });
+  window.setTimeout(() => {
+    teardownFabViewportState();
+  }, 320);
 };
 
 type CampaignDetails = {
@@ -1171,6 +1187,10 @@ function CampaignDrawer({
   const [campaignEditError, setCampaignEditError] = useState<string | null>(
     null
   );
+  const handleClose = useCallback(() => {
+    queueFabViewportTeardown();
+    onClose();
+  }, [onClose]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1349,6 +1369,7 @@ function CampaignDrawer({
     body.style.overflow = "hidden";
     return () => {
       body.style.overflow = original;
+      queueFabViewportTeardown();
     };
   }, []);
 
@@ -1540,7 +1561,7 @@ function CampaignDrawer({
                     onGoalEdit
                       ? (goal) => {
                           onGoalEdit(goal);
-                          onClose();
+                          handleClose();
                         }
                       : undefined
                   }
@@ -1573,7 +1594,7 @@ function CampaignDrawer({
         type="button"
         className={`fixed inset-0 z-[60] ${isMobile ? "bg-black/70" : "bg-black/50"}`}
         aria-label="Close goals overlay"
-        onClick={onClose}
+        onClick={handleClose}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -1581,7 +1602,7 @@ function CampaignDrawer({
       />
       <div
         className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-4 py-10" : "px-6 py-12"}`}
-        onClick={onClose}
+        onClick={handleClose}
       >
         <motion.div
           role="dialog"

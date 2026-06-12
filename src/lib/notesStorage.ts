@@ -2,6 +2,16 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCurrentUserId } from "@/lib/auth";
 import type { Note } from "@/lib/types/note";
 import type { Database } from "@/types/supabase";
+import type {
+  NoteDatabaseDefinition,
+  NoteDatabaseDefinitions,
+  NoteDatabaseEntries,
+  NoteDatabaseEntry,
+} from "@/components/notes/NoteSlashTextarea";
+import {
+  DEFAULT_MEMO_DATABASE_TARGETS,
+  getDefaultMemoDatabaseTarget,
+} from "@/lib/skillStarterNotes";
 
 const NOTES_TABLE = "notes";
 
@@ -24,6 +34,12 @@ type DeleteSkillNoteResult = {
   success: boolean;
   locked: boolean;
   error: string | null;
+};
+
+type CreateMemoDatabaseEntryResult = {
+  success: boolean;
+  error: string | null;
+  noteId: string | null;
 };
 
 export type NoteWithChildren = {
@@ -73,6 +89,78 @@ function isLockedSystemNoteMetadata(metadata: unknown) {
     !Array.isArray(metadata) &&
     (metadata as { lockedSystemNote?: unknown }).lockedSystemNote === true
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function buildDatabaseMarker(title: string, databaseId: string) {
+  return `[Database: ${title}](creator-database:${databaseId})`;
+}
+
+function buildMemoDatabaseEntryId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `entry-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+}
+
+function getMemoDatabaseNoteMetadata(currentMetadata: unknown) {
+  const current = isRecord(currentMetadata) ? currentMetadata : {};
+  const currentDatabases = isRecord(current.databases) ? current.databases : {};
+  const currentEntries = isRecord(current.databaseEntries)
+    ? current.databaseEntries
+    : {};
+  const databases: NoteDatabaseDefinitions = {
+    ...currentDatabases,
+  } as NoteDatabaseDefinitions;
+  const databaseEntries: NoteDatabaseEntries = {
+    ...currentEntries,
+  } as NoteDatabaseEntries;
+
+  for (const target of DEFAULT_MEMO_DATABASE_TARGETS) {
+    const existingDatabase: Partial<NoteDatabaseDefinition> = isRecord(
+      currentDatabases[target.databaseId],
+    )
+      ? (currentDatabases[target.databaseId] as Partial<NoteDatabaseDefinition>)
+      : {};
+
+    databases[target.databaseId] = {
+      ...target.database,
+      ...existingDatabase,
+      id: target.database.id,
+      title: target.database.title,
+      titleFieldId: target.database.titleFieldId,
+      fields: target.database.fields,
+      views: target.database.views,
+      activeViewId: target.database.activeViewId,
+      pinnedSurface: "body",
+      lockedSystemDatabase: true,
+      systemDatabaseKey: target.id,
+      iconKey: target.database.iconKey,
+    };
+
+    if (!Array.isArray(databaseEntries[target.databaseId])) {
+      databaseEntries[target.databaseId] = [];
+    }
+  }
+
+  return {
+    ...current,
+    icon: typeof current.icon === "string" ? current.icon : "DB",
+    iconKey: typeof current.iconKey === "string" ? current.iconKey : "database",
+    lockedSystemNote: true,
+    systemNoteKey: "memo-database-captures",
+    databases,
+    databaseEntries,
+  };
+}
+
+function buildMemoDatabaseNoteContent() {
+  return DEFAULT_MEMO_DATABASE_TARGETS.map((target) =>
+    buildDatabaseMarker(target.label, target.databaseId),
+  ).join("\n\n");
 }
 
 export async function getNotes(
@@ -400,6 +488,149 @@ export async function createMemoNoteForHabit(
       siblingOrder: nextSequence,
     },
   );
+}
+
+export async function createMemoDatabaseEntryForHabit(
+  skillId: string,
+  habitId: string,
+  habitName: string,
+  targetId: string,
+  values: Record<string, unknown>,
+): Promise<CreateMemoDatabaseEntryResult> {
+  if (!skillId) {
+    return {
+      success: false,
+      error: "Link this MEMO habit to a skill to capture database entries.",
+      noteId: null,
+    };
+  }
+
+  const target = getDefaultMemoDatabaseTarget(targetId);
+  if (!target) {
+    return {
+      success: false,
+      error: "Choose Nutrition, Hydration, or Fitness before saving this MEMO.",
+      noteId: null,
+    };
+  }
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return { success: false, error: "Supabase client unavailable.", noteId: null };
+  }
+
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    return { success: false, error: "You must be signed in.", noteId: null };
+  }
+
+  const content = buildMemoDatabaseNoteContent();
+  let noteId: string | null = null;
+  let currentMetadata: unknown = null;
+
+  const { data: existingNotes, error: readError } = await supabase
+    .from(NOTES_TABLE)
+    .select("id,metadata")
+    .eq("user_id", userId)
+    .eq("skill_id", skillId)
+    .is("parent_note_id", null)
+    .contains("metadata", { systemNoteKey: "memo-database-captures" })
+    .limit(1);
+
+  if (readError) {
+    console.error("Failed to locate memo database note", {
+      error: readError,
+      skillId,
+      habitId,
+    });
+    return { success: false, error: "Unable to open MEMO databases.", noteId: null };
+  }
+
+  const existingNote =
+    (existingNotes as Array<{ id: string; metadata: unknown }> | null)?.[0] ?? null;
+  if (existingNote) {
+    noteId = existingNote.id;
+    currentMetadata = existingNote.metadata;
+  } else {
+    const createdNote = await createSkillNote(
+      skillId,
+      { title: "MEMO Databases", content },
+      {
+        metadata: getMemoDatabaseNoteMetadata(null),
+        requireContent: true,
+      },
+    );
+
+    if (!createdNote) {
+      return {
+        success: false,
+        error: "Unable to create MEMO databases for this skill.",
+        noteId: null,
+      };
+    }
+
+    noteId = createdNote.id;
+    currentMetadata = createdNote.metadata;
+  }
+
+  if (!noteId) {
+    return { success: false, error: "Unable to open MEMO databases.", noteId: null };
+  }
+
+  const metadata = getMemoDatabaseNoteMetadata(currentMetadata);
+  const entries = metadata.databaseEntries;
+  const now = new Date().toISOString();
+  const nextEntry: NoteDatabaseEntry = {
+    id: buildMemoDatabaseEntryId(),
+    createdAt: now,
+    updatedAt: now,
+    values: {
+      ...values,
+      memoHabitId: habitId,
+      memoHabitName: habitName.trim() || "Memo",
+    },
+  };
+
+  entries[target.databaseId] = [...(entries[target.databaseId] ?? []), nextEntry];
+  metadata.databaseEntries = entries;
+
+  const { error: updateError } = await supabase
+    .from(NOTES_TABLE)
+    .update({
+      title: "MEMO Databases",
+      content,
+      metadata,
+      updated_at: now,
+    } as never)
+    .eq("user_id", userId)
+    .eq("skill_id", skillId)
+    .eq("id", noteId);
+
+  if (updateError) {
+    console.error("Failed to save memo database entry", {
+      error: updateError,
+      skillId,
+      habitId,
+      targetId,
+      noteId,
+    });
+    return {
+      success: false,
+      error: "Unable to save this database entry right now.",
+      noteId,
+    };
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("creator:pinned-body-databases-changed"));
+    window.dispatchEvent(
+      new CustomEvent("creator:skill-notes-changed", {
+        detail: { skillId, noteId },
+      }),
+    );
+  }
+
+  return { success: true, error: null, noteId };
 }
 
 function sortNotesForHierarchy(notes: Note[]): Note[] {

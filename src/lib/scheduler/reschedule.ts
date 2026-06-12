@@ -3622,7 +3622,7 @@ export async function scheduleBacklog(
     if (!projectId) return null;
     const def = projectItemMap[projectId];
     if (!def) return null;
-    let duration = Number(def.duration_min ?? 0);
+    const duration = Number(def.duration_min ?? 0);
     if (!Number.isFinite(duration) || duration <= 0) return null;
     const energyResolved = (inst.energy_resolved ?? def.energy ?? "NO")
       .toString()
@@ -11195,7 +11195,7 @@ export async function fetchCompatibleWindowsForItem(
     occurrenceDate: Date;
   }> | null = null;
   const trackFilters = Boolean(options?.trackFilterCounters);
-  let filterCounters: PlacementFilterWaterfall | null = trackFilters
+  const filterCounters: PlacementFilterWaterfall | null = trackFilters
     ? {
         totalWindows: 0,
         dayTypeIncompatible: 0,

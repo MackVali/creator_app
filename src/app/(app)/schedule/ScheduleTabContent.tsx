@@ -139,8 +139,7 @@ import {
   type SchedulerModeSelection,
   type SchedulerModeType,
 } from "@/lib/scheduler/modes";
-import { createMemoNoteForHabit } from "@/lib/notesStorage";
-import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
+import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { scheduleTourSteps } from "@/lib/tours/scheduleTour";
 import { useTour } from "@/components/tour/TourProvider";
 import {
@@ -991,6 +990,7 @@ type HabitTimelinePlacement = {
   habitName: string;
   habitType: HabitScheduleItem["habitType"];
   skillId: string | null;
+  memoCaptureConfig: HabitScheduleItem["memoCaptureConfig"];
   practiceContextId: string | null;
   currentStreakDays: number;
   instanceId: string | null;
@@ -1004,11 +1004,16 @@ type HabitTimelinePlacement = {
   truncated: boolean;
 };
 
-type MemoNoteDraftState = {
+type MemoCompletionDraftState = {
   habitId: string;
   habitName: string;
+  habitType: HabitScheduleItem["habitType"];
   skillId: string | null;
+  skillIcon: string | null;
+  memoCaptureConfig: HabitScheduleItem["memoCaptureConfig"];
   dateKey: string;
+  instanceId: string | null;
+  completionIso: string;
 };
 
 type EditingSnapshot = {
@@ -1648,6 +1653,7 @@ function computeHabitPlacementsForDay({
         habitName: habit.name,
         habitType: habit.habitType,
         skillId: habit.skillId ?? null,
+        memoCaptureConfig: habit.memoCaptureConfig ?? null,
         practiceContextId:
           normalizedHabitType === "PRACTICE"
             ? (resolvedPracticeContextId ?? null)
@@ -3129,11 +3135,8 @@ export default function ScheduleTabContent({
   }, [stopZoomAnimation]);
   const hasLoadedHabitCompletionState = useRef(false);
   const lastTimelineChromeHeightRef = useRef(0);
-  const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(
-    null
-  );
-  const [memoNoteSaving, setMemoNoteSaving] = useState(false);
-  const [memoNoteError, setMemoNoteError] = useState<string | null>(null);
+  const [memoCompletionState, setMemoCompletionState] =
+    useState<MemoCompletionDraftState | null>(null);
 
   const hasInitializedRef = useRef(false);
   const prevUserIdRef = useRef<string | null>(null);
@@ -3300,9 +3303,7 @@ export default function ScheduleTabContent({
   }, [initialDateWasValid, stableTimeZone, effectiveTimeZone, profileLoading]);
 
   useEffect(() => {
-    setMemoNoteState(null);
-    setMemoNoteError(null);
-    setMemoNoteSaving(false);
+    setMemoCompletionState(null);
   }, [dayViewDateKey]);
   const timeZoneShortName = useMemo(() => {
     try {
@@ -5539,13 +5540,22 @@ export default function ScheduleTabContent({
           placement.habitType ?? "HABIT"
         } pending=${isPending} nextStatus=${plannedNextStatus}`
       );
-      if (placement.habitType === "MEMO") {
-        setMemoNoteError(null);
-        setMemoNoteState({
+      const completionTimestamp =
+        isValidDate(placement.end) &&
+        typeof placement.end.toISOString === "function"
+          ? placement.end.toISOString()
+          : completionTimestampForDateKey(dateKey);
+      if (placement.habitType === "MEMO" && plannedNextStatus === "completed") {
+        setMemoCompletionState({
           habitId: placement.habitId,
           habitName: placement.habitName,
+          habitType: placement.habitType,
           skillId: placement.skillId,
+          skillIcon: null,
+          memoCaptureConfig: placement.memoCaptureConfig ?? null,
           dateKey,
+          instanceId: placement.instanceId,
+          completionIso: completionTimestamp,
         });
         return;
       }
@@ -5563,11 +5573,6 @@ export default function ScheduleTabContent({
           nextStatus === "completed" ? "completed" : "scheduled";
         void handleToggleInstanceCompletion(instanceId, targetStatus);
       } else {
-        const completionTimestamp =
-          isValidDate(placement.end) &&
-          typeof placement.end.toISOString === "function"
-            ? placement.end.toISOString()
-            : completionTimestampForDateKey(dateKey);
         const action = nextStatus === "completed" ? "complete" : "undo";
         void recordHabitCompletionRemote({
           habitId: placement.habitId,
@@ -5594,78 +5599,35 @@ export default function ScheduleTabContent({
     setEditingSnapshot(null);
   }, []);
 
-  useEffect(() => {
-    if (!memoNoteState) {
-      setMemoNoteError(null);
+  const handleMemoCompletionSubmitted = useCallback(async () => {
+    if (!memoCompletionState) return;
+
+    updateHabitCompletionStatus(
+      memoCompletionState.dateKey,
+      memoCompletionState.habitId,
+      "completed"
+    );
+    if (memoCompletionState.instanceId) {
+      triggerCompletionBounce(memoCompletionState.instanceId);
+      await handleToggleInstanceCompletion(
+        memoCompletionState.instanceId,
+        "completed"
+      );
+    } else {
+      await recordHabitCompletionRemote({
+        habitId: memoCompletionState.habitId,
+        completedAt: memoCompletionState.completionIso,
+        action: "complete",
+      });
     }
-  }, [memoNoteState]);
-
-  const handleCloseMemoSheet = useCallback(() => {
-    if (memoNoteSaving) return;
-    setMemoNoteState(null);
-  }, [memoNoteSaving]);
-
-  const handleMemoSave = useCallback(
-    async (content: string) => {
-      if (!memoNoteState) return;
-      const skillId = memoNoteState.skillId;
-      if (!skillId) {
-        setMemoNoteError("Assign a skill to this memo habit to save notes.");
-        return;
-      }
-
-      const trimmedContent = content.trim();
-      if (!trimmedContent) {
-        setMemoNoteError("Write a note before saving this memo.");
-        return;
-      }
-
-      setMemoNoteSaving(true);
-      setMemoNoteError(null);
-      try {
-        const note = await createMemoNoteForHabit(
-          skillId,
-          memoNoteState.habitId,
-          memoNoteState.habitName,
-          trimmedContent
-        );
-        if (!note) {
-          setMemoNoteError(
-            "Unable to save your memo right now. Please try again."
-          );
-          return;
-        }
-
-        updateHabitCompletionStatus(
-          memoNoteState.dateKey,
-          memoNoteState.habitId,
-          "completed"
-        );
-        const completionIso = completionTimestampForDateKey(
-          memoNoteState.dateKey
-        );
-        void recordHabitCompletionRemote({
-          habitId: memoNoteState.habitId,
-          completedAt: completionIso,
-          action: "complete",
-        });
-        setMemoNoteState(null);
-      } catch (error) {
-        console.error("Failed to save memo note", error);
-        setMemoNoteError(
-          "Something went wrong while saving this memo. Please try again."
-        );
-      } finally {
-        setMemoNoteSaving(false);
-      }
-    },
-    [
-      memoNoteState,
-      updateHabitCompletionStatus,
-      completionTimestampForDateKey,
-      recordHabitCompletionRemote,
-    ]
-  );
+    setMemoCompletionState(null);
+  }, [
+    handleToggleInstanceCompletion,
+    memoCompletionState,
+    recordHabitCompletionRemote,
+    triggerCompletionBounce,
+    updateHabitCompletionStatus,
+  ]);
 
   const handleToggleBacklogTaskCompletion = useCallback(
     async (taskId: string) => {
@@ -9938,14 +9900,13 @@ export default function ScheduleTabContent({
           </div>
         </div>
       </ProtectedRoute>
-      <MemoNoteSheet
-        open={Boolean(memoNoteState)}
-        habitName={memoNoteState?.habitName ?? ""}
-        skillId={memoNoteState?.skillId ?? null}
-        saving={memoNoteSaving}
-        error={memoNoteError}
-        onClose={handleCloseMemoSheet}
-        onSubmit={handleMemoSave}
+      <MemoCompletionDialog
+        open={Boolean(memoCompletionState)}
+        context={memoCompletionState}
+        onOpenChange={(open) => {
+          if (!open) setMemoCompletionState(null);
+        }}
+        onCompleted={handleMemoCompletionSubmitted}
       />
       <JumpToDateSheet
         open={isJumpToDateOpen}

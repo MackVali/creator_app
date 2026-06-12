@@ -4,8 +4,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Capacitor } from "@capacitor/core";
-import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
-import type { CameraPermissionState, CameraPermissionType } from "@capacitor/camera";
+import {
+  Camera as CapacitorCamera,
+  CameraResultType,
+  CameraSource,
+  MediaTypeSelection,
+} from "@capacitor/camera";
+import type { CameraPermissionState, CameraPermissionType, MediaResult } from "@capacitor/camera";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -34,6 +39,10 @@ import SocialPillsRow from "@/components/profile/SocialPillsRow";
 
 type AvatarPhotoSource = "camera" | "photos";
 type AvatarPermissionResult = "granted" | "limited" | "denied";
+type PhotoLibraryPermissionState = CameraPermissionState | "restricted" | undefined;
+
+const PHOTO_LIBRARY_SETTINGS_MESSAGE =
+  "Photo library access is needed to choose a profile photo. Enable Photos access in iOS Settings and try again.";
 
 const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
   "instagram",
@@ -85,7 +94,7 @@ function getImageFileExtension(format?: string) {
 
 function base64ToBlob(base64: string, mimeType: string) {
   const byteCharacters = window.atob(base64);
-  const byteArrays: Uint8Array[] = [];
+  const byteArrays: BlobPart[] = [];
 
   for (let offset = 0; offset < byteCharacters.length; offset += 512) {
     const slice = byteCharacters.slice(offset, offset + 512);
@@ -103,6 +112,36 @@ function base64ToBlob(base64: string, mimeType: string) {
 
 function isPromptableCameraPermission(permission: CameraPermissionState) {
   return permission === "prompt" || permission === "prompt-with-rationale";
+}
+
+function isUsablePhotoLibraryPermission(permission: PhotoLibraryPermissionState) {
+  return permission === "granted" || permission === "limited";
+}
+
+function isDeniedPhotoLibraryPermission(permission: PhotoLibraryPermissionState) {
+  return permission === "denied" || permission === "restricted";
+}
+
+async function blobFromNativeMediaResult(media: MediaResult) {
+  const format = media.metadata?.format ?? "jpeg";
+  const mimeType = getImageMimeType(format);
+  const mediaUrl = media.webPath ?? media.uri;
+
+  if (mediaUrl) {
+    const response = await fetch(mediaUrl);
+    if (!response.ok) {
+      throw new Error(`Unable to read selected photo: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    return blob.type ? blob : blob.slice(0, blob.size, mimeType);
+  }
+
+  if (media.thumbnail) {
+    return base64ToBlob(media.thumbnail, mimeType);
+  }
+
+  throw new Error("Selected photo did not include readable image data");
 }
 
 export default function ProfileEditPage() {
@@ -661,12 +700,37 @@ export default function ProfileEditPage() {
         return "granted";
       }
 
-      const permission: CameraPermissionType = source === "camera" ? "camera" : "photos";
-      const permissionLabel = source === "camera" ? "camera" : "photo library";
+      if (source === "photos") {
+        try {
+          const status = await CapacitorCamera.checkPermissions();
+          const permissionState = status.photos as PhotoLibraryPermissionState;
+
+          console.info("[EditProfilePhoto] iOS Photos permission status", {
+            photos: permissionState,
+          });
+
+          if (isUsablePhotoLibraryPermission(permissionState)) {
+            return permissionState;
+          }
+
+          if (isDeniedPhotoLibraryPermission(permissionState)) {
+            setError(PHOTO_LIBRARY_SETTINGS_MESSAGE);
+            return "denied";
+          }
+        } catch (permissionError) {
+          console.info(
+            "[EditProfilePhoto] iOS Photos permission check failed; opening picker anyway.",
+            permissionError,
+          );
+        }
+
+        return "granted";
+      }
+
+      const permission: CameraPermissionType = "camera";
+      const permissionLabel = "camera";
       const permissionMessage =
-        source === "camera"
-          ? "Camera access is needed to take a profile photo. Enable camera access in Settings and try again."
-          : "Photo library access is needed to choose a profile photo. Enable photo access in Settings and try again.";
+        "Camera access is needed to take a profile photo. Enable camera access in Settings and try again.";
 
       try {
         let status = await CapacitorCamera.checkPermissions();
@@ -679,10 +743,6 @@ export default function ProfileEditPage() {
 
         if (permissionState === "granted") {
           return "granted";
-        }
-
-        if (source === "photos" && permissionState === "limited") {
-          return "limited";
         }
 
         setError(permissionMessage);
@@ -707,8 +767,47 @@ export default function ProfileEditPage() {
         return;
       }
 
+      if (source === "photos") {
+        const mediaResults = await CapacitorCamera.chooseFromGallery({
+          mediaType: MediaTypeSelection.Photo,
+          allowMultipleSelection: false,
+          quality: 85,
+          correctOrientation: true,
+        });
+        const media = mediaResults.results[0];
+
+        if (!media) {
+          setError("We couldn't read that photo. Please try another image.");
+          return;
+        }
+
+        let blob: Blob;
+        try {
+          blob = await blobFromNativeMediaResult(media);
+        } catch (conversionError) {
+          console.error("Error converting selected profile photo:", conversionError);
+          setError("We couldn't process that photo. Please try another image.");
+          return;
+        }
+
+        if (!blob.size) {
+          setError("We couldn't read that photo. Please try another image.");
+          return;
+        }
+
+        const format = media.metadata?.format ?? "jpeg";
+        const mimeType = blob.type || getImageMimeType(format);
+        const extension = getImageFileExtension(format);
+        const file = new File([blob], `avatar-${source}-${Date.now()}.${extension}`, {
+          type: mimeType,
+        });
+
+        openAvatarEditorFromFile(file);
+        return;
+      }
+
       const photo = await CapacitorCamera.getPhoto({
-        source: source === "camera" ? CameraSource.Camera : CameraSource.Photos,
+        source: CameraSource.Camera,
         resultType: CameraResultType.Base64,
         quality: 85,
         correctOrientation: true,
@@ -750,7 +849,7 @@ export default function ProfileEditPage() {
       setError(
         source === "camera"
           ? "We couldn't open the camera. Check camera permission and try again."
-          : "We couldn't open your photo library. Check photo permission and try again.",
+          : PHOTO_LIBRARY_SETTINGS_MESSAGE,
       );
     } finally {
       setAvatarSourceLoading(null);

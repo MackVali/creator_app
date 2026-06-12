@@ -31,8 +31,18 @@ type NativeContactsPlugin = {
   }) => Promise<GetContactsResult>;
 };
 
+export type ContactImportIdentifier = {
+  name: string | null;
+  emails: string[];
+  phones: string[];
+};
+
 type NativeContactsResult =
-  | { status: "ready"; totalContacts: number }
+  | {
+      status: "ready";
+      totalContacts: number;
+      contacts: ContactImportIdentifier[];
+    }
   | { status: "empty"; message: string }
   | { status: "denied"; message: string }
   | { status: "unsupported"; message: string };
@@ -47,6 +57,74 @@ function hasDeniedContactsPermission(status: ContactsPermissionStatus) {
   return status.contacts === "denied" || status.readContacts === "denied";
 }
 
+function readString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readContactName(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const display = readString(record.display);
+  if (display) {
+    return display;
+  }
+
+  const parts = [
+    readString(record.given),
+    readString(record.middle),
+    readString(record.family),
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" ") : null;
+}
+
+function readContactEmails(values: unknown[] | undefined) {
+  const emails = new Set<string>();
+
+  for (const value of values ?? []) {
+    const raw =
+      typeof value === "string"
+        ? value
+        : value && typeof value === "object"
+          ? readString((value as Record<string, unknown>).address)
+          : "";
+    const normalized = raw.trim().toLowerCase();
+
+    if (normalized.includes("@")) {
+      emails.add(normalized);
+    }
+  }
+
+  return Array.from(emails);
+}
+
+function readContactPhones(values: unknown[] | undefined) {
+  const phones = new Set<string>();
+
+  for (const value of values ?? []) {
+    const raw =
+      typeof value === "string"
+        ? value
+        : value && typeof value === "object"
+          ? readString((value as Record<string, unknown>).number)
+          : "";
+    const normalized = raw.replace(/[^\d+]/g, "");
+
+    if (normalized.replace(/\D/g, "").length >= 7) {
+      phones.add(normalized);
+    }
+  }
+
+  return Array.from(phones);
+}
+
 export async function readNativeContactsForImport(): Promise<NativeContactsResult> {
   if (typeof window === "undefined" || !Capacitor.isNativePlatform()) {
     return {
@@ -57,6 +135,7 @@ export async function readNativeContactsForImport(): Promise<NativeContactsResul
   }
 
   if (!Capacitor.isPluginAvailable("Contacts")) {
+    // Expected native bridge: a Contacts plugin compatible with @capacitor-community/contacts.
     return {
       status: "unsupported",
       message:
@@ -100,5 +179,20 @@ export async function readNativeContactsForImport(): Promise<NativeContactsResul
     };
   }
 
-  return { status: "ready", totalContacts };
+  const contacts = (result.contacts ?? [])
+    .map((contact) => ({
+      name: readContactName(contact.name),
+      emails: readContactEmails(contact.emails),
+      phones: readContactPhones(contact.phones),
+    }))
+    .filter((contact) => contact.emails.length || contact.phones.length);
+
+  if (contacts.length === 0) {
+    return {
+      status: "empty",
+      message: "No contacts with email or phone details were found.",
+    };
+  }
+
+  return { status: "ready", totalContacts, contacts };
 }

@@ -15,12 +15,24 @@ export type SkillStarterNote = {
   content: string;
   metadata: {
     icon: string;
+    iconKey: SkillStarterNoteIconKey;
     lockedSystemNote: true;
     systemNoteKey: string;
     databases: NoteDatabaseDefinitions;
     databaseEntries: Record<string, []>;
   };
 };
+
+export type DefaultMemoDatabaseTargetId = "nutrition" | "hydration" | "fitness";
+
+export type DefaultMemoDatabaseTarget = {
+  id: DefaultMemoDatabaseTargetId;
+  label: string;
+  databaseId: string;
+  database: NoteDatabaseDefinition;
+};
+
+type SkillStarterNoteIconKey = "stomach" | "dumbbell";
 
 type StarterNoteLike = {
   id?: string | null;
@@ -97,6 +109,7 @@ function database(
   id: string,
   title: string,
   systemDatabaseKey: string,
+  iconKey: string,
   fields: NoteDatabaseFieldDefinition[],
 ): NoteDatabaseDefinition {
   const titleFieldId = fields.find((item) => item.isTitle)?.id ?? fields[0]?.id;
@@ -112,6 +125,7 @@ function database(
     pinnedSurface: "body",
     lockedSystemDatabase: true,
     systemDatabaseKey,
+    iconKey,
   };
 }
 
@@ -119,6 +133,7 @@ function buildStarterNote(
   kind: SkillStarterKind,
   title: string,
   icon: string,
+  iconKey: SkillStarterNoteIconKey,
   databases: NoteDatabaseDefinition[],
 ): SkillStarterNote {
   return {
@@ -128,6 +143,7 @@ function buildStarterNote(
     content: databases.map((item) => databaseMarker(item.title, item.id)).join("\n\n"),
     metadata: {
       icon,
+      iconKey,
       lockedSystemNote: true,
       systemNoteKey: `${kind}-starter`,
       databases: Object.fromEntries(databases.map((item) => [item.id, item])),
@@ -136,31 +152,84 @@ function buildStarterNote(
   };
 }
 
-const NUTRITION_DATABASE_ID = "starter-health-nutrition";
-const HYDRATION_DATABASE_ID = "starter-health-hydration";
-const FITNESS_DATABASE_ID = "starter-fitness-fitness";
+export const NUTRITION_DATABASE_ID = "starter-health-nutrition";
+export const HYDRATION_DATABASE_ID = "starter-health-hydration";
+export const FITNESS_DATABASE_ID = "starter-fitness-fitness";
 
-const HEALTH_STARTER_NOTE = buildStarterNote("health", "Health", "🩺", [
-  database(NUTRITION_DATABASE_ID, "Nutrition", "nutrition", [
+const NUTRITION_DATABASE = database(
+  NUTRITION_DATABASE_ID,
+  "Nutrition",
+  "nutrition",
+  "stomach",
+  [
     field(NUTRITION_DATABASE_ID, "name", "Name", "text", true),
     field(NUTRITION_DATABASE_ID, "calories", "Calories", "number"),
     field(NUTRITION_DATABASE_ID, "protein", "Protein", "number"),
     field(NUTRITION_DATABASE_ID, "notes", "Notes", "longText"),
-  ]),
-  database(HYDRATION_DATABASE_ID, "Hydration", "hydration", [
+  ],
+);
+
+const HYDRATION_DATABASE = database(
+  HYDRATION_DATABASE_ID,
+  "Hydration",
+  "hydration",
+  "droplet",
+  [
     field(HYDRATION_DATABASE_ID, "name", "Name", "text", true),
     field(HYDRATION_DATABASE_ID, "amount", "Amount", "number"),
     field(HYDRATION_DATABASE_ID, "notes", "Notes", "longText"),
-  ]),
-]);
+  ],
+);
 
-const FITNESS_STARTER_NOTE = buildStarterNote("fitness", "Fitness", "💪", [
-  database(FITNESS_DATABASE_ID, "Fitness", "fitness", [
+const FITNESS_DATABASE = database(
+  FITNESS_DATABASE_ID,
+  "Fitness",
+  "fitness",
+  "dumbbell",
+  [
     field(FITNESS_DATABASE_ID, "name", "Name", "text", true),
     field(FITNESS_DATABASE_ID, "workout", "Workout", "text"),
     field(FITNESS_DATABASE_ID, "sets-reps-duration", "Sets/Reps or Duration", "text"),
     field(FITNESS_DATABASE_ID, "notes", "Notes", "longText"),
-  ]),
+  ],
+);
+
+export const DEFAULT_MEMO_DATABASE_TARGETS: DefaultMemoDatabaseTarget[] = [
+  {
+    id: "nutrition",
+    label: "Nutrition",
+    databaseId: NUTRITION_DATABASE_ID,
+    database: NUTRITION_DATABASE,
+  },
+  {
+    id: "hydration",
+    label: "Hydration",
+    databaseId: HYDRATION_DATABASE_ID,
+    database: HYDRATION_DATABASE,
+  },
+  {
+    id: "fitness",
+    label: "Fitness",
+    databaseId: FITNESS_DATABASE_ID,
+    database: FITNESS_DATABASE,
+  },
+];
+
+export function getDefaultMemoDatabaseTarget(
+  targetId: string | null | undefined,
+): DefaultMemoDatabaseTarget | null {
+  return (
+    DEFAULT_MEMO_DATABASE_TARGETS.find((target) => target.id === targetId) ?? null
+  );
+}
+
+const HEALTH_STARTER_NOTE = buildStarterNote("health", "Health", "🩺", "stomach", [
+  NUTRITION_DATABASE,
+  HYDRATION_DATABASE,
+]);
+
+const FITNESS_STARTER_NOTE = buildStarterNote("fitness", "Fitness", "💪", "dumbbell", [
+  FITNESS_DATABASE,
 ]);
 
 const STARTER_NOTES: Record<SkillStarterKind, SkillStarterNote> = {
@@ -225,12 +294,14 @@ export function getSkillStarterNoteMetadataRepair(
       typeof currentMetadata.icon === "string" && currentMetadata.icon.trim()
         ? currentMetadata.icon
         : starterNote.metadata.icon,
+    iconKey: starterNote.metadata.iconKey,
     lockedSystemNote: true,
     systemNoteKey: starterNote.metadata.systemNoteKey,
   };
   let changed =
     currentMetadata.lockedSystemNote !== true ||
     currentMetadata.systemNoteKey !== starterNote.metadata.systemNoteKey ||
+    currentMetadata.iconKey !== starterNote.metadata.iconKey ||
     nextMetadata.icon !== currentMetadata.icon;
 
   const currentDatabases = isRecord(currentMetadata.databases)
@@ -250,6 +321,7 @@ export function getSkillStarterNoteMetadataRepair(
       id: starterDatabase.id,
       lockedSystemDatabase: true,
       systemDatabaseKey: starterDatabase.systemDatabaseKey,
+      iconKey: starterDatabase.iconKey,
       pinnedSurface: "body" as const,
     };
 
@@ -258,6 +330,7 @@ export function getSkillStarterNoteMetadataRepair(
     if (
       currentDatabase.lockedSystemDatabase !== true ||
       currentDatabase.systemDatabaseKey !== starterDatabase.systemDatabaseKey ||
+      currentDatabase.iconKey !== starterDatabase.iconKey ||
       currentDatabase.pinnedSurface !== "body"
     ) {
       changed = true;

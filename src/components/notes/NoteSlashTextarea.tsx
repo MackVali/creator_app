@@ -206,6 +206,7 @@ export type NoteDatabaseDefinition = {
   pinnedSurface?: "body";
   lockedSystemDatabase?: boolean;
   systemDatabaseKey?: string;
+  iconKey?: string;
 };
 
 export type NoteDatabaseDefinitions = Record<string, NoteDatabaseDefinition>;

@@ -69,8 +69,10 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useToastHelpers } from "./toast";
+import { teardownFabViewportState } from "./fabViewportCleanup";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
+import { DEFAULT_MEMO_DATABASE_TARGETS } from "@/lib/skillStarterNotes";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getProjectsForUser, type Project } from "@/lib/queries/projects";
@@ -319,18 +321,16 @@ type MemoCaptureActionDraft = {
 type MemoCaptureConfigJson =
   Database["public"]["Tables"]["habits"]["Insert"]["memo_capture_config"];
 type MemoCaptureToggleAction = "note" | "form";
-type MemoFormTemplate = {
+type MemoDatabaseTargetOption = {
   id: string;
   label: string;
 };
 
-const MEMO_FORM_TEMPLATES: MemoFormTemplate[] = [
-  { id: "water-log", label: "Water Log" },
-  { id: "food-log", label: "Food Log" },
-  { id: "meds-log", label: "Meds Log" },
-  { id: "workout-log", label: "Workout Log" },
-  { id: "custom-form", label: "Custom Form" },
-];
+const MEMO_DATABASE_TARGET_OPTIONS: MemoDatabaseTargetOption[] =
+  DEFAULT_MEMO_DATABASE_TARGETS.map((target) => ({
+    id: target.id,
+    label: target.label,
+  }));
 
 type FabTag = {
   id: string;
@@ -828,6 +828,54 @@ const getClampedVisualViewportKeyboardInset = () => {
     window.innerHeight * FAB_KEYBOARD_OFFSET_MAX_RATIO,
   );
   return Math.min(heightLoss, maxKeyboardOffset);
+};
+
+const isFabTextEntryElement = (
+  element: Element | null,
+): element is HTMLElement => {
+  if (!element) return false;
+  const htmlElement = element as HTMLElement;
+  if (htmlElement.isContentEditable) return true;
+  if (element instanceof HTMLTextAreaElement) return true;
+  if (element instanceof HTMLInputElement) {
+    return !["button", "submit", "reset", "checkbox", "radio"].includes(
+      element.type,
+    );
+  }
+  return false;
+};
+
+const isFabKeyboardTextEntryElement = (element: HTMLElement): boolean => {
+  if (element.isContentEditable) return true;
+  if (element instanceof HTMLTextAreaElement) return true;
+  if (element instanceof HTMLInputElement) {
+    const type = element.type.toLowerCase();
+    return [
+      "",
+      "email",
+      "number",
+      "password",
+      "search",
+      "tel",
+      "text",
+      "url",
+    ].includes(type);
+  }
+  return false;
+};
+
+const getFabTextEntryTarget = (
+  target: EventTarget | null,
+): HTMLElement | null => {
+  if (typeof Element === "undefined" || !(target instanceof Element)) {
+    return null;
+  }
+
+  const element = target.closest(
+    'input, textarea, [contenteditable="true"]',
+  );
+
+  return isFabTextEntryElement(element) ? element : null;
 };
 
 const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
@@ -3706,17 +3754,16 @@ export function Fab({
   const [memoNoteSkillId, setMemoNoteSkillId] = useState<string | "">("");
   const [memoNoteMonumentId, setMemoNoteMonumentId] = useState<string | "">("");
   const [memoFormSearch, setMemoFormSearch] = useState("");
-  const [selectedMemoFormId, setSelectedMemoFormId] = useState<string | null>(
-    null,
-  );
-  const filteredMemoFormTemplates = useMemo(() => {
+  const [selectedMemoDatabaseTargetId, setSelectedMemoDatabaseTargetId] =
+    useState<string | null>(null);
+  const filteredMemoDatabaseTargets = useMemo(() => {
     const normalizedSearch = memoFormSearch.trim().toLowerCase();
     if (!normalizedSearch) {
-      return MEMO_FORM_TEMPLATES;
+      return MEMO_DATABASE_TARGET_OPTIONS;
     }
 
-    return MEMO_FORM_TEMPLATES.filter((template) =>
-      template.label.toLowerCase().includes(normalizedSearch),
+    return MEMO_DATABASE_TARGET_OPTIONS.filter((target) =>
+      target.label.toLowerCase().includes(normalizedSearch),
     );
   }, [memoFormSearch]);
   const buildMemoCaptureConfig = useCallback((): MemoCaptureConfigJson => {
@@ -3737,7 +3784,7 @@ export function Fab({
         monumentId: memoNoteMonumentId || null,
       },
       databaseCapture: {
-        templateId: selectedMemoFormId || null,
+        targetId: selectedMemoDatabaseTargetId || null,
       },
     };
   }, [
@@ -3746,7 +3793,7 @@ export function Fab({
     memoNoteDestinationType,
     memoNoteMonumentId,
     memoNoteSkillId,
-    selectedMemoFormId,
+    selectedMemoDatabaseTargetId,
   ]);
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
@@ -3862,7 +3909,7 @@ export function Fab({
     setMemoNoteSkillId("");
     setMemoNoteMonumentId("");
     setMemoFormSearch("");
-    setSelectedMemoFormId(null);
+    setSelectedMemoDatabaseTargetId(null);
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -3893,13 +3940,20 @@ export function Fab({
   }, []);
   const handleMemoCaptureActionToggle = useCallback(
     (action: MemoCaptureToggleAction) => {
+      if (
+        action === "form" &&
+        !memoCaptureActions.form &&
+        !selectedMemoDatabaseTargetId
+      ) {
+        setSelectedMemoDatabaseTargetId("nutrition");
+      }
       setMemoCaptureActions((current) => {
         const next = { ...current, [action]: !current[action] };
         if (!next.note && !next.form) return current;
         return next;
       });
     },
-    [],
+    [memoCaptureActions.form, selectedMemoDatabaseTargetId],
   );
   const resetTaskFormDraft = useCallback(() => {
     setTaskName("");
@@ -5468,32 +5522,11 @@ export function Fab({
     visualViewportKeyboardInset,
   ]);
   const clearFabBodyClassOwners = useCallback(() => {
-    if (typeof document === "undefined" || typeof window === "undefined") {
-      return;
-    }
-
-    const creatorWindow = window as unknown as Window & Record<string, unknown>;
-    const keyboardOwners = creatorWindow[
-      "__CREATOR_FAB_KEYBOARD_ACTIVE_OWNERS__"
-    ];
-    const panelOwners = creatorWindow["__CREATOR_FAB_PANEL_ACTIVE_OWNERS__"];
-
-    if (keyboardOwners instanceof Set) {
-      keyboardOwners.delete(fabKeyboardOwnerId);
-      document.body.classList.toggle(
-        "fab-keyboard-active",
-        keyboardOwners.size > 0,
-      );
-    } else {
-      document.body.classList.remove("fab-keyboard-active");
-    }
-
-    if (panelOwners instanceof Set) {
-      panelOwners.delete(fabPanelChromeOwnerId);
-      document.body.classList.toggle("fab-panel-active", panelOwners.size > 0);
-    } else {
-      document.body.classList.remove("fab-panel-active");
-    }
+    teardownFabViewportState({
+      keyboardOwnerId: fabKeyboardOwnerId,
+      panelOwnerId: fabPanelChromeOwnerId,
+      blurActiveElement: false,
+    });
   }, [fabKeyboardOwnerId, fabPanelChromeOwnerId]);
   const resetFabViewportState = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -5930,24 +5963,12 @@ export function Fab({
       setIsFabInputFocused(false);
       return;
     }
-    const isTextEntryElement = (el: Element | null) => {
-      if (!el) return false;
-      const editable = (el as HTMLElement).isContentEditable;
-      if (editable) return true;
-      if (el instanceof HTMLTextAreaElement) return true;
-      if (el instanceof HTMLInputElement) {
-        return !["button", "submit", "reset", "checkbox", "radio"].includes(
-          el.type,
-        );
-      }
-      return false;
-    };
     const isFocusedInsideFabPanel = () => {
       const activeElement = document.activeElement;
       return (
         Boolean(activeElement) &&
         Boolean(panelRef.current?.contains(activeElement)) &&
-        isTextEntryElement(activeElement)
+        isFabTextEntryElement(activeElement)
       );
     };
     const setFocusedWithDelay = (focused: boolean) => {
@@ -5969,7 +5990,7 @@ export function Fab({
       setFocusedWithDelay(
         Boolean(target) &&
           Boolean(panelRef.current?.contains(target)) &&
-          isTextEntryElement(target),
+          isFabTextEntryElement(target),
       );
     };
     const handleFocusOut = () => {
@@ -6367,7 +6388,7 @@ export function Fab({
     setMemoNoteSkillId(habitSkillId || "");
     setMemoNoteMonumentId("");
     setMemoFormSearch("");
-    setSelectedMemoFormId(null);
+    setSelectedMemoDatabaseTargetId(null);
     setHabitDuration("15");
     setHabitEnergy("LOW");
     setHabitGoalId("");
@@ -10909,23 +10930,23 @@ export function Fab({
                           onChange={(event) =>
                             setMemoFormSearch(event.target.value)
                           }
-                          placeholder="Search forms"
+                          placeholder="Search databases"
                           className="min-w-0 flex-1 bg-transparent text-xs font-medium text-white outline-none placeholder:text-white/35"
                         />
                       </div>
-                      {filteredMemoFormTemplates.length > 0 ? (
+                      {filteredMemoDatabaseTargets.length > 0 ? (
                         <div className="grid grid-cols-2 gap-1.5">
-                          {filteredMemoFormTemplates.map((template) => {
+                          {filteredMemoDatabaseTargets.map((target) => {
                             const isSelected =
-                              selectedMemoFormId === template.id;
+                              selectedMemoDatabaseTargetId === target.id;
 
                             return (
                               <button
-                                key={template.id}
+                                key={target.id}
                                 type="button"
                                 aria-pressed={isSelected}
                                 onClick={() =>
-                                  setSelectedMemoFormId(template.id)
+                                  setSelectedMemoDatabaseTargetId(target.id)
                                 }
                                 className={cn(
                                   "min-h-8 rounded-md border px-2.5 py-1.5 text-left text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
@@ -10934,14 +10955,14 @@ export function Fab({
                                     : "border-white/10 bg-black/20 text-white/70 hover:border-white/20 hover:bg-zinc-950 hover:text-white",
                                 )}
                               >
-                                {template.label}
+                                {target.label}
                               </button>
                             );
                           })}
                         </div>
                       ) : (
                         <p className="px-0.5 text-[10px] leading-snug text-white/35">
-                          No forms found
+                          No databases found
                         </p>
                       )}
                     </div>
@@ -12001,6 +12022,61 @@ export function Fab({
     setRescheduleTarget(null);
   };
 
+  const scrollFabTextEntryIntoView = useCallback((element: HTMLElement) => {
+    if (typeof window === "undefined") return;
+
+    const scrollBody =
+      panelRef.current?.querySelector<HTMLElement>("[data-fab-scroll-body]") ??
+      panelRef.current;
+
+    if (!scrollBody || !scrollBody.contains(element)) return;
+
+    const alignInsideFabScrollBody = () => {
+      if (!scrollBody.isConnected || !element.isConnected) return;
+
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight;
+      const bodyRect = scrollBody.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const topLimit = Math.max(bodyRect.top, 0) + 16;
+      const bottomLimit = Math.min(bodyRect.bottom, viewportHeight) - 20;
+
+      if (bottomLimit <= topLimit) return;
+
+      if (elementRect.bottom > bottomLimit) {
+        scrollBody.scrollTop += elementRect.bottom - bottomLimit;
+        return;
+      }
+
+      if (elementRect.top < topLimit) {
+        scrollBody.scrollTop -= topLimit - elementRect.top;
+      }
+    };
+
+    window.requestAnimationFrame(alignInsideFabScrollBody);
+    window.setTimeout(alignInsideFabScrollBody, 80);
+    window.setTimeout(alignInsideFabScrollBody, FAB_KEYBOARD_SETTLE_MS);
+  }, []);
+
+  const focusFabTextEntryWithoutViewportScroll = useCallback(
+    (element: HTMLElement) => {
+      if (typeof window === "undefined") {
+        element.focus();
+        return;
+      }
+
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      element.focus({ preventScroll: true });
+      window.scrollTo({ left: scrollX, top: scrollY, behavior: "auto" });
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ left: scrollX, top: scrollY, behavior: "auto" });
+      });
+      scrollFabTextEntryIntoView(element);
+    },
+    [scrollFabTextEntryIntoView],
+  );
+
   const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (!swipeUpToOpen) return;
     if (interpretWheelGesture(event.deltaY)) {
@@ -12012,30 +12088,37 @@ export function Fab({
   const handleExpandedPointerDownCapture = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!expanded) return;
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
+      const textEntry = getFabTextEntryTarget(event.target);
+      if (!textEntry || !panelRef.current?.contains(textEntry)) return;
 
-      // Never force-focus on touch/pencil: on iOS Safari this can consume the first tap,
-      // which makes fields feel like they require a second tap before typing.
-      const pt = event.pointerType;
-      if (pt && pt !== "mouse") {
+      if (event.pointerType && event.pointerType !== "mouse") {
+        if (!isFabKeyboardTextEntryElement(textEntry)) {
+          return;
+        }
+        if (document.activeElement !== textEntry) {
+          event.preventDefault();
+          focusFabTextEntryWithoutViewportScroll(textEntry);
+        }
         return;
       }
 
-      // Desktop-only focus assistance for actual text-entry controls.
-      const tag = target.tagName;
-      const isTextInput =
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        target.isContentEditable;
-
-      if (isTextInput) {
-        target.focus({ preventScroll: true });
-      }
+      focusFabTextEntryWithoutViewportScroll(textEntry);
     },
-    [expanded],
+    [expanded, focusFabTextEntryWithoutViewportScroll],
   );
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const textEntry = getFabTextEntryTarget(event.target);
+      if (!textEntry || !panelRef.current?.contains(textEntry)) return;
+      scrollFabTextEntryIntoView(textEntry);
+    };
+
+    document.addEventListener("focusin", handleFocusIn, true);
+    return () => document.removeEventListener("focusin", handleFocusIn, true);
+  }, [expanded, scrollFabTextEntryIntoView]);
 
   useEffect(() => {
     if (selected !== "PROJECT") return;
@@ -15492,6 +15575,10 @@ export function Fab({
     expanded && isKeyboardVisible
       ? Math.round(stableSafeBottom + FAB_KEYBOARD_MODAL_GAP)
       : Math.round(stableSafeBottom + 8);
+  const centeredMobileCreationPanelTop =
+    shouldUseCenteredMobileCreationPanel && stableViewportHeight
+      ? Math.round(stableViewportHeight / 2)
+      : undefined;
   const centeredMobileCreationPanelMaxHeight =
     "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 3rem)";
   const renderAttachedCreationControls = () => (
@@ -15631,15 +15718,19 @@ export function Fab({
                       menuClassName,
                   )}
                   style={
-                    expanded &&
-                      shouldAttachCreationControls &&
-                      !shouldUseCenteredCreationPanel &&
-                      !shouldUseCenteredEditModal
+                    expanded && shouldUseCenteredMobileCreationPanel
                       ? {
-                          bottom: attachedCreationPanelBottom,
-                          marginBottom: 0,
+                          top: centeredMobileCreationPanelTop,
                         }
-                      : undefined
+                      : expanded &&
+                          shouldAttachCreationControls &&
+                          !shouldUseCenteredCreationPanel &&
+                          !shouldUseCenteredEditModal
+                        ? {
+                            bottom: attachedCreationPanelBottom,
+                            marginBottom: 0,
+                          }
+                        : undefined
                   }
                 >
               <motion.div
