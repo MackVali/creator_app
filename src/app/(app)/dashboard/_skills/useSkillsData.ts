@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 export interface Category {
@@ -146,39 +146,89 @@ export function groupByCategory(skills: Skill[]): Record<string, Skill[]> {
   }, {});
 }
 
+const DASHBOARD_SEED_TIMEOUT_MS = 8000;
+const DASHBOARD_SKILLS_SOFT_LOADING_MS = 12000;
+
+async function seedDashboardWithTimeout() {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, DASHBOARD_SEED_TIMEOUT_MS);
+
+  try {
+    await fetch("/api/dashboard", {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 export function useSkillsData() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [skillsByCategory, setSkillsByCategory] = useState<Record<string, Skill[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const loadIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const loadId = loadIdRef.current + 1;
+    loadIdRef.current = loadId;
+    let softLoadingTimedOut = false;
+    const isCurrentLoad = () => loadIdRef.current === loadId;
+    const setSafeEmptyState = () => {
+      if (!isCurrentLoad()) return;
+      setCategories([]);
+      setSkillsByCategory({});
+      setError(null);
+    };
+
     setIsLoading(true);
+    const softLoadingTimeoutId = window.setTimeout(() => {
+      softLoadingTimedOut = true;
+      setSafeEmptyState();
+      if (isCurrentLoad()) setIsLoading(false);
+    }, DASHBOARD_SKILLS_SOFT_LOADING_MS);
+
     try {
       const supabase = getSupabaseBrowser();
       if (!supabase) throw new Error("Supabase client not available");
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("No user");
+      let userId: string | null = null;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        userId = user?.id ?? null;
+      } catch {
+        setSafeEmptyState();
+        return;
+      }
+
+      if (!userId) {
+        setSafeEmptyState();
+        return;
+      }
       let [cats, skills] = await Promise.all([
-        fetchCategories(user.id).catch(() => []),
-        fetchSkills(user.id).catch(() => []),
+        fetchCategories(userId).catch(() => []),
+        fetchSkills(userId).catch(() => []),
       ]);
 
       if (cats.length === 0 && skills.length === 0) {
         try {
-          await fetch("/api/dashboard", { cache: "no-store" });
+          await seedDashboardWithTimeout();
         } catch {
           // ignore seed failures; we'll continue to re-fetch below
         }
 
         [cats, skills] = await Promise.all([
-          fetchCategories(user.id).catch(() => []),
-          fetchSkills(user.id).catch(() => []),
+          fetchCategories(userId).catch(() => []),
+          fetchSkills(userId).catch(() => []),
         ]);
       }
       const grouped = groupByCategory(skills);
+      if (!isCurrentLoad()) return;
+      setError(null);
       setSkillsByCategory(grouped);
       if (cats.length > 0) {
         setCategories(cats);
@@ -189,9 +239,13 @@ export function useSkillsData() {
         setCategories([]);
       }
     } catch (e) {
+      if (!isCurrentLoad()) return;
       setError(e as Error);
     } finally {
-      setIsLoading(false);
+      window.clearTimeout(softLoadingTimeoutId);
+      if (isCurrentLoad() && !softLoadingTimedOut) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
