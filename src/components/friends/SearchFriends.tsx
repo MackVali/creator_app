@@ -41,6 +41,9 @@ const getDiscoveryIdentityKey = (
   return normalizedUsername || profile.id;
 };
 
+const followButtonClass =
+  "inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-white/[0.14] px-3 text-[12px] font-semibold text-white/85 transition hover:border-white/10 hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.97]";
+
 export default function SearchFriends({
   data,
   discoveryProfiles = [],
@@ -444,45 +447,63 @@ export default function SearchFriends({
 
   const discoveryResultsList = actionableDiscovery.length ? (
     <div className="space-y-2">
-      {actionableDiscovery.map((profile) => (
-        <article
-          key={profile.id}
-          className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85"
-        >
-          <Link
-            href={profile.profileUrl ?? `/profile/${profile.username}`}
-            className="group flex min-w-0 flex-1 items-center gap-3 rounded-2xl pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+      {actionableDiscovery.map((profile) => {
+        const followLabel =
+          profile.status === "sending"
+            ? "Following…"
+            : profile.status === "following" || profile.status === "friends"
+              ? "Following"
+              : "Follow";
+
+        return (
+          <article
+            key={profile.id}
+            className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85"
           >
-            {profile.avatarUrl && profile.avatarUrl !== DEFAULT_AVATAR_URL ? (
-              <Image
-                src={profile.avatarUrl}
-                alt={`${profile.displayName} avatar`}
-                width={48}
-                height={48}
-                className="h-12 w-12 rounded-full object-cover opacity-80 grayscale-[10%]"
-              />
-            ) : (
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white/34 ring-1 ring-white/8">
-                <User className="h-6 w-6" aria-hidden="true" />
-                <span className="sr-only">{profile.displayName} avatar</span>
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-[13px] font-semibold text-white transition-colors group-hover:text-white/90">
-                  {profile.displayName}
-                </p>
-                <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                  {profile.mutualFriends} mutual
+            <Link
+              href={profile.profileUrl ?? `/profile/${profile.username}`}
+              className="group flex min-w-0 flex-1 items-center gap-3 rounded-2xl pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
+              {profile.avatarUrl && profile.avatarUrl !== DEFAULT_AVATAR_URL ? (
+                <Image
+                  src={profile.avatarUrl}
+                  alt={`${profile.displayName} avatar`}
+                  width={48}
+                  height={48}
+                  className="h-12 w-12 rounded-full object-cover opacity-80 grayscale-[10%]"
+                />
+              ) : (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white/34 ring-1 ring-white/8">
+                  <User className="h-6 w-6" aria-hidden="true" />
+                  <span className="sr-only">{profile.displayName} avatar</span>
                 </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-[13px] font-semibold text-white transition-colors group-hover:text-white/90">
+                    {profile.displayName}
+                  </p>
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                    {profile.mutualFriends} mutual
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-white/65 transition-colors group-hover:text-white/80">
+                  @{profile.username}
+                </p>
               </div>
-              <p className="mt-0.5 truncate text-xs text-white/65 transition-colors group-hover:text-white/80">
-                @{profile.username}
-              </p>
-            </div>
-          </Link>
-        </article>
-      ))}
+            </Link>
+            <button
+              type="button"
+              onClick={() => handleFollow(profile)}
+              disabled={profile.status !== "idle"}
+              className={followButtonClass}
+              aria-label={`${followLabel} ${profile.username}`}
+            >
+              {followLabel}
+            </button>
+          </article>
+        );
+      })}
     </div>
   ) : (
     <p className="text-xs text-white/60">

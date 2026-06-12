@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 type InboxThread = {
@@ -17,6 +25,7 @@ type InboxThread = {
     senderId: string;
     recipientId: string;
     createdAt: string;
+    readAt?: string | null;
   } | null;
   hasMessages?: boolean;
   previewLabel?: string;
@@ -27,7 +36,14 @@ type InboxResponse = {
   currentUserId: string;
 };
 
+type InboxSearchResponse = {
+  results?: InboxThread[];
+  currentUserId: string;
+};
+
 type InboxTab = "primary" | "requests" | "saved";
+
+const INBOX_REFRESH_REQUEST_KEY = "premium-app:inbox-refresh-requested";
 
 function formatRelativeTime(value: string | null | undefined) {
   if (!value) return "—";
@@ -68,13 +84,19 @@ function getInitials(label: string) {
 }
 
 export default function InboxPage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [hasLoadedThreads, setHasLoadedThreads] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<InboxTab>("primary");
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<InboxThread[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [requestsMeta] = useState({ count: 0, isLoading: false });
   const primaryTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
@@ -82,6 +104,7 @@ export default function InboxPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchControlRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
+  const threadsRef = useRef<InboxThread[]>([]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -92,45 +115,75 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
-    const loadThreads = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    threadsRef.current = threads;
+  }, [threads]);
 
-        const response = await fetch("/api/inbox/threads", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-        });
+  const loadThreads = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(data?.error ?? "Unable to load inbox.");
-        }
+      const response = await fetch("/api/inbox/threads", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
 
-        const data = (await response.json()) as InboxResponse;
-        if (!isMountedRef.current) return;
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? "Unable to load inbox.");
+      }
 
-        setThreads(data.threads ?? []);
-        setCurrentUserId(data.currentUserId ?? null);
-      } catch (err) {
-        if (!isMountedRef.current) return;
-        const message =
-          err instanceof Error ? err.message : "Unable to load inbox.";
-        setError(message);
+      const data = (await response.json()) as InboxResponse;
+      if (!isMountedRef.current) return;
+
+      const nextThreads = data.threads ?? [];
+      threadsRef.current = nextThreads;
+      setThreads(nextThreads);
+      setCurrentUserId(data.currentUserId ?? null);
+      setHasLoadedThreads(true);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const message =
+        err instanceof Error ? err.message : "Unable to load inbox.";
+      setError(message);
+
+      if (threadsRef.current.length === 0) {
         setThreads([]);
         setCurrentUserId(null);
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-        }
       }
-    };
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  const consumeRefreshRequest = useCallback(() => {
+    try {
+      if (sessionStorage.getItem(INBOX_REFRESH_REQUEST_KEY) !== "1") {
+        return false;
+      }
+
+      sessionStorage.removeItem(INBOX_REFRESH_REQUEST_KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    consumeRefreshRequest();
+    void loadThreads();
+  }, [consumeRefreshRequest, loadThreads]);
+
+  useEffect(() => {
+    if (pathname !== "/inbox" || !consumeRefreshRequest()) return;
 
     void loadThreads();
-  }, []);
+  }, [consumeRefreshRequest, loadThreads, pathname]);
 
   useEffect(() => {
     if (searchExpanded) {
@@ -155,10 +208,11 @@ export default function InboxPage() {
     };
   }, [searchExpanded]);
 
-  const emptyState = !loading && threads.length === 0;
+  const showInitialLoading = loading && !hasLoadedThreads;
   const hasRequests = requestsMeta.count > 0;
-  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const isSearching = normalizedSearchQuery.length > 0;
+  const trimmedSearchQuery = searchQuery.trim();
+  const isSearching = trimmedSearchQuery.length > 0;
+  const emptyState = hasLoadedThreads && threads.length === 0 && !isSearching;
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
@@ -198,23 +252,85 @@ export default function InboxPage() {
     setSearchExpanded(false);
   };
 
-  const filteredThreads = useMemo(() => {
-    if (!normalizedSearchQuery) return threads;
+  const handleThreadSelect = useCallback(
+    (userId: string) => {
+      router.push(`/inbox/${userId}`);
 
-    return threads.filter((thread) => {
-      const displayName = thread.participant.displayName.toLowerCase();
-      const username = thread.participant.username?.toLowerCase() ?? "";
+      if (searchExpanded || searchQuery) {
+        setSearchExpanded(false);
+        setSearchQuery("");
+      }
+    },
+    [router, searchExpanded, searchQuery]
+  );
 
-      return (
-        displayName.includes(normalizedSearchQuery) ||
-        username.includes(normalizedSearchQuery)
-      );
-    });
-  }, [threads, normalizedSearchQuery]);
+  useEffect(() => {
+    if (!isSearching) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setSearchLoading(true);
+        setSearchError(null);
+
+        const response = await fetch(
+          `/api/inbox/threads?q=${encodeURIComponent(trimmedSearchQuery)}`,
+          {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? "Unable to search inbox.");
+        }
+
+        const data = (await response.json()) as InboxSearchResponse;
+        if (!isMountedRef.current || controller.signal.aborted) return;
+
+        setSearchResults(data.results ?? []);
+        setCurrentUserId(data.currentUserId ?? null);
+      } catch (err) {
+        if (
+          !isMountedRef.current ||
+          controller.signal.aborted ||
+          (err instanceof DOMException && err.name === "AbortError")
+        ) {
+          return;
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Unable to search inbox.";
+        setSearchError(message);
+        setSearchResults([]);
+      } finally {
+        if (isMountedRef.current && !controller.signal.aborted) {
+          setSearchLoading(false);
+        }
+      }
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [isSearching, trimmedSearchQuery]);
+
+  const visibleRows = isSearching ? searchResults : threads;
 
   const threadRows = useMemo(
     () =>
-      filteredThreads.map((thread) => {
+      visibleRows.map((thread) => {
         const displayName = thread.participant.displayName;
         const username = thread.participant.username
           ? `@${thread.participant.username}`
@@ -236,6 +352,23 @@ export default function InboxPage() {
           <Link
             key={thread.participant.userId}
             href={`/inbox/${thread.participant.userId}`}
+            onPointerDown={
+              isSearching
+                ? (event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    handleThreadSelect(thread.participant.userId);
+                  }
+                : undefined
+            }
+            onClick={
+              isSearching
+                ? (event) => {
+                    event.preventDefault();
+                    handleThreadSelect(thread.participant.userId);
+                  }
+                : undefined
+            }
             className="group flex w-full items-center gap-3 border-b border-white/10 px-1 py-3 text-left transition last:border-b-0 hover:bg-white/[0.04] active:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
           >
             <Avatar className="h-11 w-11 border border-white/10 bg-white/5">
@@ -270,7 +403,7 @@ export default function InboxPage() {
           </Link>
         );
       }),
-    [filteredThreads, currentUserId]
+    [visibleRows, currentUserId, handleThreadSelect, isSearching]
   );
 
   return (
@@ -430,7 +563,7 @@ export default function InboxPage() {
           hidden={tab !== "primary"}
           className="space-y-3"
         >
-          {loading ? (
+          {showInitialLoading ? (
             <div className="space-y-0 px-1 py-4">
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
@@ -454,7 +587,13 @@ export default function InboxPage() {
             </div>
           ) : null}
 
-          {!loading && !error && emptyState ? (
+          {searchError ? (
+            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {searchError}
+            </div>
+          ) : null}
+
+          {!error && emptyState ? (
             <div className="flex flex-col items-center gap-3 rounded-[22px] border border-white/5 bg-white/[0.03] px-6 py-14 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-white/60">
                 DM
@@ -470,46 +609,69 @@ export default function InboxPage() {
             </div>
           ) : null}
 
-          {!loading && !error && !emptyState && threadRows.length > 0 ? (
+          {!showInitialLoading && !emptyState && threadRows.length > 0 ? (
             <div>
               {threadRows}
-              <Link
-                href="/friends?tab=search"
-                className="group flex w-full items-center gap-3 px-1 py-3 text-left transition hover:bg-white/[0.03] active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
-              >
-                <Avatar className="h-11 w-11 border border-white/10 bg-white/[0.04]">
-                  <AvatarFallback className="bg-white/[0.06] text-white/50">
-                    <svg
-                      viewBox="0 0 20 20"
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M10 4v12" />
-                      <path d="M4 10h12" />
-                    </svg>
-                  </AvatarFallback>
-                </Avatar>
+              {!isSearching ? (
+                <Link
+                  href="/friends?tab=search"
+                  className="group flex w-full items-center gap-3 px-1 py-3 text-left transition hover:bg-white/[0.03] active:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                >
+                  <Avatar className="h-11 w-11 border border-white/10 bg-white/[0.04]">
+                    <AvatarFallback className="bg-white/[0.06] text-white/50">
+                      <svg
+                        viewBox="0 0 20 20"
+                        aria-hidden="true"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M10 4v12" />
+                        <path d="M4 10h12" />
+                      </svg>
+                    </AvatarFallback>
+                  </Avatar>
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-white/80">
-                    Can&apos;t find who you&apos;re looking for?
-                  </p>
-                  <p className="mt-1 text-[0.72rem] font-medium text-white/45 transition group-hover:text-white/60">
-                    Add contacts
-                  </p>
-                </div>
-              </Link>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white/80">
+                      Can&apos;t find who you&apos;re looking for?
+                    </p>
+                    <p className="mt-1 text-[0.72rem] font-medium text-white/45 transition group-hover:text-white/60">
+                      Add contacts
+                    </p>
+                  </div>
+                </Link>
+              ) : null}
             </div>
           ) : null}
 
-          {!loading && !error && !emptyState && isSearching && threadRows.length === 0 ? (
+          {!showInitialLoading && !emptyState && isSearching && searchLoading ? (
+            <div className="space-y-0 px-1 py-4">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div
+                  key={`search-skeleton-${index}`}
+                  className="flex items-center gap-3 border-b border-white/10 px-1 py-3 last:border-b-0"
+                >
+                  <div className="h-11 w-11 rounded-full border border-white/10 bg-white/5" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-2/5 rounded-full bg-white/10" />
+                    <div className="h-2.5 w-3/5 rounded-full bg-white/5" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {!showInitialLoading &&
+          !emptyState &&
+          isSearching &&
+          !searchLoading &&
+          threadRows.length === 0 ? (
             <div className="px-1 py-6 text-sm text-white/55">
-              No matching chats.
+              No matching CREATOR chats.
             </div>
           ) : null}
         </section>

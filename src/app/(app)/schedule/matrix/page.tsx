@@ -201,6 +201,8 @@ const MATRIX_CARD_LONG_PRESS_MS = 520;
 const MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE = 12;
 const MATRIX_CARD_LONG_PRESS_SUPPRESS_MS = 650;
 const MATRIX_COMPLETE_SHIMMER_DURATION_MS = 3000;
+const MATRIX_LOADING_ROW_COUNT = 8;
+const MATRIX_GROUP_REVEAL_EASE = [0.22, 1, 0.36, 1] as const;
 
 function getMatrixCompleteShimmerStyle() {
   return {
@@ -583,7 +585,7 @@ function getMatrixHabitDueStatus(
   const isOverdue =
     todayEvaluation.isDue &&
     typeof overdueStartMs === "number" &&
-    date.getTime() - overdueStartMs >= MS_PER_DAY;
+    date.getTime() - overdueStartMs >= MS_PER_DAY * 7;
 
   return {
     isDue: todayEvaluation.isDue,
@@ -1050,36 +1052,42 @@ function MatrixCard({
 }
 
 function MatrixLoadingRows() {
+  const loadingRows = Array.from(
+    { length: MATRIX_LOADING_ROW_COUNT },
+    (_, index) => ({
+      labelWidth: `${72 + (index % 4) * 14}px`,
+    })
+  );
+
   return (
-    <div className="space-y-2.5 px-1">
-      {Array.from({ length: 8 }).map((_, index) => (
-        <MatrixCard
+    <div className="space-y-1.5 px-0.5 py-0.5">
+      {loadingRows.map((row, index) => (
+        <div
           key={index}
-          className="p-3 sm:p-4 before:pointer-events-none before:absolute before:inset-x-4 before:top-0 before:h-px before:bg-white/[0.045]"
+          className="flex min-h-6 animate-pulse items-center justify-between gap-2 px-0.5"
         >
-          <div className="flex min-h-8 animate-pulse items-center justify-between gap-3 px-0 sm:px-1">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
-                <div className="absolute inset-1.5 rounded-lg bg-white/[0.035]" />
-                <div className="absolute left-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-white/[0.075]" />
-              </div>
-              <div className="min-w-0">
-                <div
-                  className="h-3.5 rounded-full bg-white/[0.08] shadow-[0_0_18px_-12px_rgba(255,255,255,0.45)]"
-                  style={{ width: `${104 + (index % 4) * 18}px` }}
-                />
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <div className="h-5 w-14 rounded-full border border-white/8 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]" />
-              <div className="h-7 w-7 rounded-lg border border-white/8 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
-            </div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="grid h-4 w-4 shrink-0 place-items-center rounded-md bg-white/[0.045]">
+              <span className="h-1.5 w-1.5 rounded-full bg-white/[0.09]" />
+            </span>
+            <span
+              className="h-2 rounded-full bg-white/[0.075] shadow-[0_0_18px_-12px_rgba(255,255,255,0.45)]"
+              style={{ width: row.labelWidth }}
+            />
           </div>
-        </MatrixCard>
+
+          {index === 0 ? (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="h-4 w-12 rounded-full border border-white/8 bg-white/[0.045] sm:w-14" />
+              <span className="h-5 w-5 rounded-md border border-white/8 bg-white/[0.035]" />
+            </div>
+          ) : null}
+        </div>
       ))}
     </div>
   );
 }
+
 
 function MatrixSmallEventCard({
   glyph,
@@ -1992,9 +2000,13 @@ function MatrixGroupLabel({
   return (
     <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 px-0.5">
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="grid h-4 w-4 shrink-0 place-items-center text-[10px] leading-none text-white/45">
+        <span className="grid h-5 w-4 shrink-0 place-items-center overflow-visible text-[10px] leading-none text-white/45">
           {useEnergyIcon && group.energyLevel ? (
-            <FlameEmber level={group.energyLevel} size="sm" />
+            <FlameEmber
+              level={group.energyLevel}
+              size="xs"
+              className="h-3.5 w-3.5 shrink-0 overflow-visible"
+            />
           ) : (
             (group.emoji ?? "◇")
           )}
@@ -2004,11 +2016,92 @@ function MatrixGroupLabel({
         </span>
       </div>
       {rightControls ? (
-        <div className="flex shrink-0 items-center gap-1.5">{rightControls}</div>
+        <div
+          className="flex shrink-0 items-center gap-1.5"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {rightControls}
+        </div>
       ) : null}
     </div>
   );
 }
+
+const MATRIX_GROUP_REVEAL_BASE_DELAY_SECONDS = 1.15;
+const MATRIX_GROUP_REVEAL_STAGGER_SECONDS = 0.85;
+const MATRIX_GROUP_REVEAL_DURATION_SECONDS = 1.25;
+const MATRIX_GROUP_REVEAL_BUFFER_SECONDS = 0.28;
+
+function MatrixRevealGroupSection({
+  index,
+  label,
+  children,
+  collapsed,
+  onToggle,
+}: {
+  index: number;
+  label: ReactNode;
+  children: ReactNode;
+  collapsed: boolean;
+  onToggle(): void;
+}) {
+  return (
+    <section className="space-y-1.5">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+        className="block w-full min-w-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+      >
+        {label}
+      </button>
+      <motion.div
+        initial={{
+          height: 0,
+          opacity: 0,
+          y: -8,
+        }}
+        animate={
+          collapsed
+            ? {
+                height: 0,
+                opacity: 0,
+                y: -8,
+              }
+            : {
+                height: "auto",
+                opacity: 1,
+                y: 0,
+              }
+        }
+        transition={{
+          delay: collapsed
+            ? 0
+            : MATRIX_GROUP_REVEAL_BASE_DELAY_SECONDS +
+              index * MATRIX_GROUP_REVEAL_STAGGER_SECONDS,
+          height: {
+            duration: MATRIX_GROUP_REVEAL_DURATION_SECONDS,
+            ease: MATRIX_GROUP_REVEAL_EASE,
+          },
+          opacity: {
+            duration: collapsed ? 0.24 : 0.62,
+            ease: "easeOut",
+          },
+          y: {
+            duration: collapsed ? 0.42 : 1.05,
+            ease: MATRIX_GROUP_REVEAL_EASE,
+          },
+        }}
+        className="overflow-hidden"
+        data-matrix-reveal-row
+      >
+        {children}
+      </motion.div>
+    </section>
+  );
+}
+
 
 function MatrixGridCarousel({
   groups,
@@ -2029,9 +2122,14 @@ function MatrixGridCarousel({
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [collapsedMatrixGroupKeys, setCollapsedMatrixGroupKeys] = useState<
+    Set<string>
+  >(() => new Set());
   const [matrixPanelHeight, setMatrixPanelHeight] = useState<number | null>(
     null
   );
+  const [isInitialMatrixRevealActive, setIsInitialMatrixRevealActive] =
+    useState(false);
   const [matrixPanelDragOffset, setMatrixPanelDragOffset] = useState(0);
   const [matrixPanelViewportWidth, setMatrixPanelViewportWidth] = useState(0);
   const [matrixPanelTransitionEnabled, setMatrixPanelTransitionEnabled] =
@@ -2039,6 +2137,10 @@ function MatrixGridCarousel({
   const matrixPanelViewportRef = useRef<HTMLDivElement | null>(null);
   const scheduledPanelRef = useRef<HTMLDivElement | null>(null);
   const unscheduledPanelRef = useRef<HTMLDivElement | null>(null);
+  const initialMatrixRevealActiveRef = useRef(false);
+  const initialMatrixRevealTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const matrixPanelWheelLockedRef = useRef(false);
   const matrixPanelWheelCooldownRef = useRef<ReturnType<
     typeof setTimeout
@@ -2102,6 +2204,18 @@ function MatrixGridCarousel({
     availableMatrixPanels[0] ??
     matrixPanel;
   const activeMatrixPanelLabel = MATRIX_PANEL_LABELS[activeMatrixPanel];
+  const activeMatrixRevealGroupCount =
+    activeMatrixPanel === "unscheduled"
+      ? activeUnscheduledDueHabitGroups.length
+      : activeScheduledGroups.length;
+  const activeMatrixRevealGroupSignature = useMemo(() => {
+    const activeGroups =
+      activeMatrixPanel === "unscheduled"
+        ? activeUnscheduledDueHabitGroups
+        : activeScheduledGroups;
+
+    return activeGroups.map(({ group }) => group.key).join("|");
+  }, [activeMatrixPanel, activeScheduledGroups, activeUnscheduledDueHabitGroups]);
   const matrixLibraryGridClass =
     cardDensity === "small"
       ? MATRIX_LIBRARY_SMALL_GRID_CLASS
@@ -2136,6 +2250,8 @@ function MatrixGridCarousel({
   );
 
   const measureActiveMatrixPanel = useCallback(() => {
+    if (initialMatrixRevealActiveRef.current) return;
+
     const nextHeight = getMatrixPanelHeight(matrixPanel);
     if (!nextHeight) return;
 
@@ -2167,6 +2283,18 @@ function MatrixGridCarousel({
       setCardDensity("large");
     }
   }, [cardDensityPreferenceKey]);
+
+  const handleMatrixGroupToggle = useCallback((groupKey: string) => {
+    setCollapsedMatrixGroupKeys((currentKeys) => {
+      const nextKeys = new Set(currentKeys);
+      if (nextKeys.has(groupKey)) {
+        nextKeys.delete(groupKey);
+      } else {
+        nextKeys.add(groupKey);
+      }
+      return nextKeys;
+    });
+  }, []);
 
   const handleCardDensityToggle = useCallback(() => {
     setCardDensity((currentDensity) => {
@@ -2290,21 +2418,83 @@ function MatrixGridCarousel({
   ]);
 
   useEffect(() => {
+    if (initialMatrixRevealTimeoutRef.current) {
+      clearTimeout(initialMatrixRevealTimeoutRef.current);
+      initialMatrixRevealTimeoutRef.current = null;
+    }
+
+    if (activeMatrixRevealGroupCount <= 0) {
+      initialMatrixRevealActiveRef.current = false;
+      setIsInitialMatrixRevealActive(false);
+      return;
+    }
+
+    initialMatrixRevealActiveRef.current = true;
+    setIsInitialMatrixRevealActive(true);
+
+    const revealWindowMs =
+      (MATRIX_GROUP_REVEAL_BASE_DELAY_SECONDS +
+        Math.max(0, activeMatrixRevealGroupCount - 1) *
+          MATRIX_GROUP_REVEAL_STAGGER_SECONDS +
+        MATRIX_GROUP_REVEAL_DURATION_SECONDS +
+        MATRIX_GROUP_REVEAL_BUFFER_SECONDS) *
+      1000;
+
+    initialMatrixRevealTimeoutRef.current = setTimeout(() => {
+      initialMatrixRevealTimeoutRef.current = null;
+      initialMatrixRevealActiveRef.current = false;
+      setIsInitialMatrixRevealActive(false);
+
+      if (typeof window === "undefined") {
+        measureActiveMatrixPanel();
+        return;
+      }
+
+      window.requestAnimationFrame(measureActiveMatrixPanel);
+    }, revealWindowMs);
+
+    return () => {
+      if (initialMatrixRevealTimeoutRef.current) {
+        clearTimeout(initialMatrixRevealTimeoutRef.current);
+        initialMatrixRevealTimeoutRef.current = null;
+      }
+    };
+  }, [
+    activeMatrixPanel,
+    activeMatrixRevealGroupCount,
+    activeMatrixRevealGroupSignature,
+    measureActiveMatrixPanel,
+  ]);
+
+  useEffect(() => {
     const activePanel =
       matrixPanel === "unscheduled"
         ? unscheduledPanelRef.current
         : scheduledPanelRef.current;
 
-    if (!activePanel) return;
+    if (!activePanel || isInitialMatrixRevealActive) return;
 
-    measureActiveMatrixPanel();
+    let animationFrameId: number | null = null;
+    const schedulePanelMeasurement = () => {
+      if (typeof window === "undefined") {
+        measureActiveMatrixPanel();
+        return;
+      }
+
+      if (animationFrameId !== null) return;
+
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        measureActiveMatrixPanel();
+      });
+    };
+
+    schedulePanelMeasurement();
 
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
-        : new ResizeObserver(() => {
-            measureActiveMatrixPanel();
-          });
+        : new ResizeObserver(schedulePanelMeasurement);
     resizeObserver?.observe(activePanel);
 
     if (typeof window === "undefined") {
@@ -2313,12 +2503,15 @@ function MatrixGridCarousel({
       };
     }
 
-    window.addEventListener("resize", measureActiveMatrixPanel);
+    window.addEventListener("resize", schedulePanelMeasurement);
     return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
       resizeObserver?.disconnect();
-      window.removeEventListener("resize", measureActiveMatrixPanel);
+      window.removeEventListener("resize", schedulePanelMeasurement);
     };
-  }, [matrixPanel, measureActiveMatrixPanel]);
+  }, [isInitialMatrixRevealActive, matrixPanel, measureActiveMatrixPanel]);
 
   useEffect(() => {
     return () => {
@@ -2528,7 +2721,11 @@ function MatrixGridCarousel({
     <section className="min-w-0">
       <div
         className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[300ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-        style={matrixPanelHeight ? { height: matrixPanelHeight } : undefined}
+        style={
+          !isInitialMatrixRevealActive && matrixPanelHeight
+            ? { height: matrixPanelHeight }
+            : undefined
+        }
         onPointerDown={handleMatrixPanelPointerDown}
         onPointerUp={handleMatrixPanelPointerEnd}
         onTouchStart={handleMatrixPanelTouchStart}
@@ -2540,9 +2737,17 @@ function MatrixGridCarousel({
           matrixPanelDragStartRef.current = null;
         }}
       >
-        <div ref={matrixPanelViewportRef} className="absolute inset-0">
+        <div
+          ref={matrixPanelViewportRef}
+          className={cn(
+            isInitialMatrixRevealActive ? "relative" : "absolute inset-0"
+          )}
+        >
           <div
-            className="flex h-full transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className={cn(
+              "flex transition-transform duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              isInitialMatrixRevealActive ? "items-start" : "h-full"
+            )}
             style={{
               transform: `translate3d(${matrixPanelTrackTransform}px, 0, 0)`,
               transitionDuration:
@@ -2555,7 +2760,10 @@ function MatrixGridCarousel({
             {availableMatrixPanels.map((panel) => (
               <div
                 key={panel}
-                className="h-full shrink-0 overflow-hidden"
+                className={cn(
+                  "shrink-0 overflow-hidden",
+                  isInitialMatrixRevealActive ? null : "h-full"
+                )}
                 style={{
                   width: `${100 / Math.max(1, availableMatrixPanels.length)}%`,
                 }}
@@ -2566,16 +2774,23 @@ function MatrixGridCarousel({
                     className="space-y-2 px-0.5 py-0.5"
                   >
                     {activeScheduledGroups.map(({ group, items }, index) => (
-                      <section key={group.key} className="space-y-1.5">
-                        <MatrixGroupLabel
-                          group={group}
-                          matrixView={matrixView}
-                          rightControls={
-                            panel === activeMatrixPanel && index === 0
-                              ? matrixGridHeaderControls
-                              : undefined
-                          }
-                        />
+                      <MatrixRevealGroupSection
+                        key={group.key}
+                        index={index}
+                        collapsed={collapsedMatrixGroupKeys.has(group.key)}
+                        onToggle={() => handleMatrixGroupToggle(group.key)}
+                        label={
+                          <MatrixGroupLabel
+                            group={group}
+                            matrixView={matrixView}
+                            rightControls={
+                              panel === activeMatrixPanel && index === 0
+                                ? matrixGridHeaderControls
+                                : undefined
+                            }
+                          />
+                        }
+                      >
                         <div
                           className={cn(
                             matrixLibraryGridClass,
@@ -2604,7 +2819,7 @@ function MatrixGridCarousel({
                             />
                           ))}
                         </div>
-                      </section>
+                      </MatrixRevealGroupSection>
                     ))}
                   </div>
                 ) : (
@@ -2614,16 +2829,23 @@ function MatrixGridCarousel({
                   >
                     {activeUnscheduledDueHabitGroups.map(
                       ({ group, items }, index) => (
-                        <section key={group.key} className="space-y-1.5">
-                          <MatrixGroupLabel
-                            group={group}
-                            matrixView={matrixView}
-                            rightControls={
-                              panel === activeMatrixPanel && index === 0
-                                ? matrixGridHeaderControls
-                                : undefined
-                            }
-                          />
+                        <MatrixRevealGroupSection
+                          key={group.key}
+                          index={index}
+                          collapsed={collapsedMatrixGroupKeys.has(group.key)}
+                          onToggle={() => handleMatrixGroupToggle(group.key)}
+                          label={
+                            <MatrixGroupLabel
+                              group={group}
+                              matrixView={matrixView}
+                              rightControls={
+                                panel === activeMatrixPanel && index === 0
+                                  ? matrixGridHeaderControls
+                                  : undefined
+                              }
+                            />
+                          }
+                        >
                           <div
                             className={cn(
                               matrixLibraryGridClass,
@@ -2642,7 +2864,7 @@ function MatrixGridCarousel({
                               />
                             ))}
                           </div>
-                        </section>
+                        </MatrixRevealGroupSection>
                       )
                     )}
                   </div>
@@ -3368,10 +3590,10 @@ function MatrixContent() {
         ) : null}
 
         <section>
-          {state.loading ? (
-            <MatrixLoadingRows />
-          ) : activeMatrixGroups.length ? (
-            <MatrixCard className="p-3 sm:p-4">
+          <MatrixCard className="p-3 sm:p-4">
+            {state.loading ? (
+              <MatrixLoadingRows />
+            ) : activeMatrixGroups.length ? (
               <MatrixGridCarousel
                 groups={activeMatrixGroups}
                 matrixView={matrixView}
@@ -3379,15 +3601,13 @@ function MatrixContent() {
                 onCompleteDueHabit={handleCompleteDueHabit}
                 completingDueHabitIds={completingDueHabitIds}
               />
-            </MatrixCard>
-          ) : (
-            <MatrixCard className="p-4">
+            ) : (
               <div className="grid gap-3 sm:grid-cols-2">
                 <EmptyPanel label="No scheduled Events found for today." />
                 <EmptyPanel label="No due habits are waiting outside scheduled Events." />
               </div>
-            </MatrixCard>
-          )}
+            )}
+          </MatrixCard>
         </section>
         </div>
       </PullRefreshShell>

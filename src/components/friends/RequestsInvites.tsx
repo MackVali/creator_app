@@ -18,6 +18,9 @@ const actionButtonClass =
 const mutedButtonClass =
   "rounded-xl px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-40";
 
+const followButtonClass =
+  "inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-white/[0.14] px-3 text-[12px] font-semibold text-white/85 transition hover:border-white/10 hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.97]";
+
 type RequestsInvitesProps = {
   requests: FriendRequest[];
   invites: SentInvite[];
@@ -35,7 +38,7 @@ type RequestsInvitesProps = {
 };
 
 type RequestStatus = "pending" | "accepted" | "declined";
-type SuggestionStatus = "idle" | "requested";
+type SuggestionStatus = "idle" | "sending" | "following";
 
 type CircleInvite = {
   id: string;
@@ -77,6 +80,7 @@ export default function RequestsInvites({
     suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
   );
   const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
 
   useEffect(() => {
     setRequestState(requests.map((req) => ({ ...req, status: "pending" })));
@@ -187,14 +191,52 @@ export default function RequestsInvites({
     }
   };
 
-  const handleSendInvite = (id: string) => {
+  const handleSendInvite = async (suggestion: SuggestionState) => {
+    if (suggestion.status !== "idle") {
+      return;
+    }
+
+    setSuggestionError(null);
     setSuggestionState((prev) =>
-      prev.map((suggestion) =>
-        suggestion.id === id
-          ? { ...suggestion, status: "requested" }
-          : suggestion
+      prev.map((item) =>
+        item.id === suggestion.id ? { ...item, status: "sending" } : item
       )
     );
+
+    try {
+      const response = await fetch("/api/friends", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username: suggestion.username }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to follow right now.");
+      }
+
+      setSuggestionState((prev) =>
+        prev.map((item) =>
+          item.id === suggestion.id ? { ...item, status: "following" } : item
+        )
+      );
+      await onRequestResolved?.();
+    } catch (error) {
+      console.error("Failed to follow suggested profile", error);
+      setSuggestionState((prev) =>
+        prev.map((item) =>
+          item.id === suggestion.id ? { ...item, status: "idle" } : item
+        )
+      );
+      setSuggestionError(
+        error instanceof Error ? error.message : "Unable to follow right now."
+      );
+    }
   };
 
   return (
@@ -443,40 +485,61 @@ export default function RequestsInvites({
           </div>
         </header>
         <div className="space-y-2">
-          {suggestionState.map((suggestion) => (
-            <article
-              key={suggestion.id}
-              className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85"
-            >
-              {suggestion.avatarUrl && suggestion.avatarUrl !== DEFAULT_AVATAR_URL ? (
-                <Image
-                  src={suggestion.avatarUrl}
-                  alt={`${suggestion.displayName} avatar`}
-                  width={48}
-                  height={48}
-                  className="h-12 w-12 rounded-full object-cover"
-                />
-              ) : (
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white/34 ring-1 ring-white/8">
-                  <User className="h-6 w-6" aria-hidden="true" />
-                  <span className="sr-only">{suggestion.displayName} avatar</span>
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate text-[13px] font-semibold text-white">
-                    {suggestion.displayName}
-                  </p>
-                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                    {suggestion.mutualFriends} mutual
+          {suggestionError ? (
+            <p className="px-1 text-xs text-rose-300">{suggestionError}</p>
+          ) : null}
+          {suggestionState.map((suggestion) => {
+            const followLabel =
+              suggestion.status === "sending"
+                ? "Following…"
+                : suggestion.status === "following"
+                  ? "Following"
+                  : "Follow";
+
+            return (
+              <article
+                key={suggestion.id}
+                className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)] transition hover:border-white/10 hover:bg-[#050506]/85"
+              >
+                {suggestion.avatarUrl && suggestion.avatarUrl !== DEFAULT_AVATAR_URL ? (
+                  <Image
+                    src={suggestion.avatarUrl}
+                    alt={`${suggestion.displayName} avatar`}
+                    width={48}
+                    height={48}
+                    className="h-12 w-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white/34 ring-1 ring-white/8">
+                    <User className="h-6 w-6" aria-hidden="true" />
+                    <span className="sr-only">{suggestion.displayName} avatar</span>
                   </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-[13px] font-semibold text-white">
+                      {suggestion.displayName}
+                    </p>
+                    <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                      {suggestion.mutualFriends} mutual
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-white/65">
+                    @{suggestion.username}
+                  </p>
                 </div>
-                <p className="mt-0.5 truncate text-xs text-white/65">
-                  @{suggestion.username}
-                </p>
-              </div>
-            </article>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => void handleSendInvite(suggestion)}
+                  disabled={suggestion.status !== "idle"}
+                  className={followButtonClass}
+                  aria-label={`${followLabel} ${suggestion.username}`}
+                >
+                  {followLabel}
+                </button>
+              </article>
+            );
+          })}
         </div>
 
         <div className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
