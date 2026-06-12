@@ -32,7 +32,7 @@ async function main() {
     endMs: new Date(row.end_utc).getTime(),
   }));
 
-  let overlaps = [] as Array<{
+  const overlaps = [] as Array<{
     a: typeof instances[number];
     b: typeof instances[number];
   }>;

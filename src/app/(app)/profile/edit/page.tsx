@@ -1714,14 +1714,14 @@ export default function ProfileEditPage() {
                   className="pointer-events-none absolute inset-0 bg-black/45"
                   style={{
                     WebkitMaskImage:
-                      "radial-gradient(circle at center, transparent 0 38.5%, black 39%)",
+                      "radial-gradient(circle at center, transparent 0 39%, rgba(0,0,0,0.35) 41%, black 48%)",
                     maskImage:
-                      "radial-gradient(circle at center, transparent 0 38.5%, black 39%)",
+                      "radial-gradient(circle at center, transparent 0 39%, rgba(0,0,0,0.35) 41%, black 48%)",
                   }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.45)_inset,0_0_36px_rgba(0,0,0,0.34)]"
+                  className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/85"
                   aria-hidden="true"
                 />
                 <div

@@ -2,14 +2,14 @@
 
 import type { User } from "@supabase/supabase-js";
 import { createPortal } from "react-dom";
-import { Dumbbell, Droplet, Menu, Utensils } from "lucide-react";
+import { Dumbbell, Droplet, Menu, Table2, Utensils } from "lucide-react";
 import { Icon } from "@iconify/react";
 import TopNavAvatar from "./TopNavAvatar";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +24,83 @@ type RoleMetadata = {
   roles?: unknown;
   is_admin?: unknown;
 };
+
+type PinnedBodyDatabase = {
+  databaseId: string;
+  title: string;
+  noteId: string;
+  skillId: string | null;
+};
+
+type NoteMetadataWithDatabases = {
+  databases?: unknown;
+};
+
+type NoteDatabaseMetadataDefinition = {
+  id?: unknown;
+  title?: unknown;
+  pinnedSurface?: unknown;
+};
+
+const BODY_FALLBACK_ROWS = [
+  {
+    label: "Nutrition",
+    Icon: Utensils,
+  },
+  {
+    label: "Hydration",
+    Icon: Droplet,
+  },
+  {
+    label: "Fitness",
+    Icon: Dumbbell,
+  },
+];
+
+function getPinnedBodyDatabasesFromMetadata({
+  metadata,
+  noteId,
+  skillId,
+}: {
+  metadata: unknown;
+  noteId: string;
+  skillId: string | null;
+}): PinnedBodyDatabase[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return [];
+  }
+
+  const databases = (metadata as NoteMetadataWithDatabases).databases;
+  if (!databases || typeof databases !== "object" || Array.isArray(databases)) {
+    return [];
+  }
+
+  return Object.entries(databases as Record<string, NoteDatabaseMetadataDefinition>).flatMap(
+    ([databaseId, definition]) => {
+      if (!definition || typeof definition !== "object") {
+        return [];
+      }
+
+      if (definition.pinnedSurface !== "body") {
+        return [];
+      }
+
+      const definitionId = typeof definition.id === "string" ? definition.id : databaseId;
+      const title = typeof definition.title === "string" && definition.title.trim()
+        ? definition.title.trim()
+        : "Untitled Database";
+
+      return [
+        {
+          databaseId: definitionId,
+          title,
+          noteId,
+          skillId,
+        },
+      ];
+    },
+  );
+}
 
 function normalizeRole(value: string) {
   return value
@@ -70,6 +147,7 @@ function userIsTopNavAdmin(user: User | null) {
 
 export default function TopNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const shouldHideNav =
     pathname?.startsWith("/schedule") &&
     pathname !== "/schedule/matrix" &&
@@ -77,6 +155,7 @@ export default function TopNav() {
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [pinnedBodyDatabases, setPinnedBodyDatabases] = useState<PinnedBodyDatabase[]>([]);
   const [isCartQuickViewOpen, setIsCartQuickViewOpen] = useState(false);
   const [isBodyMenuOpen, setIsBodyMenuOpen] = useState(false);
   const [isBodyPortalReady, setIsBodyPortalReady] = useState(false);
@@ -148,6 +227,7 @@ export default function TopNav() {
 
   useEffect(() => {
     if (!supabase || shouldHideNav) {
+      setPinnedBodyDatabases([]);
       return;
     }
 
@@ -162,9 +242,73 @@ export default function TopNav() {
     getUserEmail();
   }, [shouldHideNav, supabase]);
 
+  useEffect(() => {
+    if (!supabase || shouldHideNav || !currentUser?.id) {
+      setPinnedBodyDatabases([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadPinnedBodyDatabases = async () => {
+      const { data, error } = await supabase
+        .from("notes")
+        .select("id, skill_id, metadata")
+        .eq("user_id", currentUser.id)
+        .not("metadata", "is", null);
+
+      if (isCancelled) {
+        return;
+      }
+
+      if (error) {
+        console.error("Failed to load pinned body note databases", { error });
+        setPinnedBodyDatabases([]);
+        return;
+      }
+
+      const pinnedDatabases = (data ?? []).flatMap((note) =>
+        getPinnedBodyDatabasesFromMetadata({
+          metadata: note.metadata,
+          noteId: note.id,
+          skillId: note.skill_id ?? null,
+        }),
+      );
+
+      setPinnedBodyDatabases(pinnedDatabases);
+    };
+
+    loadPinnedBodyDatabases();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentUser?.id, shouldHideNav, supabase]);
+
   if (shouldHideNav) {
     return null;
   }
+
+  const bodyPanelRows =
+    pinnedBodyDatabases.length > 0
+      ? pinnedBodyDatabases.map((database) => ({
+          key: `${database.noteId}:${database.databaseId}`,
+          label: database.title,
+          Icon: Table2,
+          onClick: () => {
+            setIsBodyMenuOpen(false);
+
+            if (database.skillId) {
+              router.push(`/skills/${database.skillId}/notes/${database.noteId}`);
+            }
+          },
+        }))
+      : BODY_FALLBACK_ROWS.map((row) => ({
+          key: row.label,
+          label: row.label,
+          Icon: row.Icon,
+          onClick: () => setIsBodyMenuOpen(false),
+        }));
 
   const bodyIntakePanel = isBodyMenuOpen ? (
     <div
@@ -174,24 +318,12 @@ export default function TopNav() {
       style={{ top: "calc(env(safe-area-inset-top, 0px) + 3.75rem)" }}
     >
       <div className="flex flex-col gap-1">
-        {[
-          {
-            label: "Nutrition",
-            Icon: Utensils,
-          },
-          {
-            label: "Hydration",
-            Icon: Droplet,
-          },
-          {
-            label: "Fitness",
-            Icon: Dumbbell,
-          },
-        ].map(({ label, Icon }) => (
+        {bodyPanelRows.map(({ key, label, Icon, onClick }) => (
           <button
-            key={label}
+            key={key}
             type="button"
             aria-label={label}
+            onClick={onClick}
             className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-white/85 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070707]"
           >
             <Icon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
@@ -226,15 +358,6 @@ export default function TopNav() {
               align="start"
               className="bg-[#111111] border-[#2A2A2A] text-[#E6E6E6]"
             >
-              <DropdownMenuItem asChild>
-                <Link href="/analytics">Analytics</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/help">Help</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/settings">Settings</Link>
-              </DropdownMenuItem>
               {userIsTopNavAdmin(currentUser) ? (
                 <DropdownMenuItem asChild>
                   <Link href="/schedule/priorities" className="text-zinc-500">
@@ -244,13 +367,22 @@ export default function TopNav() {
               ) : null}
               <DropdownMenuItem asChild>
                 <Link href="/focus-pomo" className="text-zinc-500">
-                  PomoFocus
+                  FocusPomo
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/schedule/matrix" className="text-zinc-500">
                   Matrix
                 </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/analytics">Analytics</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/settings">Settings</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/help">Help</Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

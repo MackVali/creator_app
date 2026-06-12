@@ -203,6 +203,7 @@ export type NoteDatabaseDefinition = {
   fields: NoteDatabaseFieldDefinition[];
   views?: NoteDatabaseViewDefinition[];
   activeViewId?: string;
+  pinnedSurface?: "body";
 };
 
 export type NoteDatabaseDefinitions = Record<string, NoteDatabaseDefinition>;
@@ -2336,6 +2337,21 @@ function NoteSlashTextarea({
     }));
   }
 
+  function toggleDatabaseBodyPin(databaseId: string) {
+    updateDatabaseDefinition(databaseId, (currentDefinition) => {
+      if (currentDefinition.pinnedSurface === "body") {
+        const nextDefinition = { ...currentDefinition };
+        delete nextDefinition.pinnedSurface;
+        return nextDefinition;
+      }
+
+      return {
+        ...currentDefinition,
+        pinnedSurface: "body",
+      };
+    });
+  }
+
   function addDatabaseField(databaseId: string) {
     updateDatabaseDefinition(databaseId, (currentDefinition) => {
       const nextField = createDefaultDatabaseField();
@@ -3346,6 +3362,15 @@ function NoteSlashTextarea({
                   className="mt-1 w-full border-0 bg-transparent p-0 text-xl font-semibold leading-7 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
                   aria-label="Database title"
                 />
+                <button
+                  type="button"
+                  onClick={() => toggleDatabaseBodyPin(activeDatabaseDefinition.id)}
+                  className="mt-2 inline-flex h-7 items-center rounded-full border border-white/[0.1] bg-white/[0.035] px-2.5 text-[11px] font-semibold text-white/54 outline-none transition hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/35"
+                >
+                  {activeDatabaseDefinition.pinnedSurface === "body"
+                    ? "Pinned to stomach menu"
+                    : "Pin to stomach menu"}
+                </button>
               </div>
               <button
                 type="button"

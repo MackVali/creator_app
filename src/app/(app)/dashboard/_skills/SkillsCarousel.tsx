@@ -24,6 +24,11 @@ import {
 import { updateCatOrder } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { createRecord, updateRecord } from "@/lib/db";
+import { createSkillNote, getNotes } from "@/lib/notesStorage";
+import {
+  getSkillStarterNote,
+  hasMatchingSkillStarterNote,
+} from "@/lib/skillStarterNotes";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
@@ -1500,6 +1505,33 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
         console.error("Error creating skill:", error);
         toast.error("Error", error?.message || "Failed to create skill");
         return false;
+      }
+
+      const starterNote = getSkillStarterNote(data.name);
+      if (starterNote) {
+        void (async () => {
+          try {
+            const existingNotes = await getNotes(data.id);
+            if (hasMatchingSkillStarterNote(existingNotes, starterNote)) {
+              return;
+            }
+
+            await createSkillNote(
+              data.id,
+              {
+                title: starterNote.title,
+                content: starterNote.content,
+              },
+              { metadata: starterNote.metadata },
+            );
+          } catch (starterNoteError) {
+            console.error("Failed to create starter skill note", {
+              error: starterNoteError,
+              skillId: data.id,
+              skillName: data.name,
+            });
+          }
+        })();
       }
 
       setExistingSkillSortItems((previous) => {
