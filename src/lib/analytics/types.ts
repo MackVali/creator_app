@@ -20,7 +20,7 @@ export type Insight = {
   why?: string;
   action: {
     type: "create_blocks" | "open_planner" | "filter";
-    payload?: any;
+    payload?: unknown;
   };
 };
 

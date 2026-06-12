@@ -8,6 +8,7 @@ export const DEFAULT_HABIT_DURATION_MIN = 15;
 export type HabitScheduleItem = {
   id: string;
   name: string;
+  memoCaptureConfig: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
   durationMinutes: number | null;
   createdAt: string | null;
   updatedAt: string | null;
@@ -52,6 +53,7 @@ export type HabitScheduleItem = {
 type HabitRecord = {
   id: string;
   name?: string | null;
+  memo_capture_config?: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
   duration_minutes?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -147,7 +149,7 @@ export async function fetchHabitsForSchedule(
   const locationJoin = "location_context:location_contexts(id, value, label)";
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`;
   const skillJoin = "skill:skills(monument_id)";
-  const baseColumns = `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, fixed_start_local, fixed_end_local, fixed_timezone, ${windowJoin}`;
+  const baseColumns = `id, name, memo_capture_config, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, fixed_start_local, fixed_end_local, fixed_timezone, ${windowJoin}`;
   const extendedColumns = `${baseColumns}, goal_id, completion_target`;
 
   let supportsGoalMetadata = cachedGoalMetadataSupport !== "unsupported";
@@ -223,6 +225,7 @@ export async function fetchHabitsForSchedule(
   return (data ?? []).map((record: HabitRecord) => ({
     id: record.id,
     name: record.name ?? "Untitled habit",
+    memoCaptureConfig: record.memo_capture_config ?? null,
     durationMinutes: record.duration_minutes ?? null,
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,

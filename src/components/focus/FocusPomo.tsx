@@ -76,6 +76,7 @@ type ScopeOption = {
   id: string;
   name: string;
   icon?: string | null;
+  monumentId?: string | null;
 };
 
 type ConstraintOption = ScopeOption & {
@@ -570,7 +571,8 @@ function buildGroupedGoalOptions(
 function makeScopeOption(
   id: string | null,
   name: string | null,
-  icon?: string | null
+  icon?: string | null,
+  monumentId?: string | null
 ): ScopeOption | null {
   const optionName = name ?? id;
   if (!optionName) return null;
@@ -579,6 +581,7 @@ function makeScopeOption(
     id: id ?? nameScopeId(optionName),
     name: optionName,
     icon: icon ?? null,
+    monumentId: monumentId ?? null,
   };
 }
 
@@ -590,8 +593,15 @@ function mergeScopeOption(
 
   const existingById = options.get(option.id);
   if (existingById) {
-    if (!existingById.icon && option.icon) {
-      options.set(option.id, { ...existingById, icon: option.icon });
+    if (
+      (!existingById.icon && option.icon) ||
+      (!existingById.monumentId && option.monumentId)
+    ) {
+      options.set(option.id, {
+        ...existingById,
+        icon: existingById.icon ?? option.icon,
+        monumentId: existingById.monumentId ?? option.monumentId ?? null,
+      });
     }
     return;
   }
@@ -604,8 +614,15 @@ function mergeScopeOption(
   );
 
   if (existingByName) {
-    if (!existingByName.icon && option.icon) {
-      options.set(existingByName.id, { ...existingByName, icon: option.icon });
+    if (
+      (!existingByName.icon && option.icon) ||
+      (!existingByName.monumentId && option.monumentId)
+    ) {
+      options.set(existingByName.id, {
+        ...existingByName,
+        icon: existingByName.icon ?? option.icon,
+        monumentId: existingByName.monumentId ?? option.monumentId ?? null,
+      });
     }
     return;
   }
@@ -684,6 +701,96 @@ function mergeConstraintOption(
   }
 
   options.set(option.id, option);
+}
+
+function isNameBasedConstraintOption(option: ConstraintOption): boolean {
+  return option.id.startsWith("name:");
+}
+
+function campaignOptionRelationKeys(option: ConstraintOption): string[] {
+  return uniqueScopeValues([
+    relationIdMatchKey("campaign", option.id),
+    relationMatchKey("campaign", option.name),
+    ...(option.matchKeys ?? []).filter(
+      (key) =>
+        key.startsWith("campaign-id:") ||
+        key.startsWith("campaign:") ||
+        key.startsWith("goal-id:") ||
+        key.startsWith("monument-id:") ||
+        key.startsWith("circle-id:") ||
+        key.startsWith("roadmap-id:")
+    ),
+  ]);
+}
+
+function campaignOptionsShareRelation(
+  first: ConstraintOption,
+  second: ConstraintOption
+): boolean {
+  const firstKeys = new Set(
+    campaignOptionRelationKeys(first).map(normalizeScopeName)
+  );
+  return campaignOptionRelationKeys(second).some((key) =>
+    firstKeys.has(normalizeScopeName(key))
+  );
+}
+
+function mergeCampaignOptionValues(
+  base: ConstraintOption,
+  incoming: ConstraintOption
+): ConstraintOption {
+  return {
+    ...base,
+    icon: base.icon ?? incoming.icon ?? null,
+    color: base.color ?? incoming.color ?? null,
+    monumentId: base.monumentId ?? incoming.monumentId ?? null,
+    monumentName: base.monumentName ?? incoming.monumentName ?? null,
+    monumentIcon: base.monumentIcon ?? incoming.monumentIcon ?? null,
+    matchKeys: uniqueScopeValues([
+      base.id,
+      nameScopeId(base.name),
+      relationIdMatchKey("campaign", base.id),
+      relationMatchKey("campaign", base.name),
+      ...(base.matchKeys ?? []),
+      incoming.id,
+      nameScopeId(incoming.name),
+      relationIdMatchKey("campaign", incoming.id),
+      relationMatchKey("campaign", incoming.name),
+      ...(incoming.matchKeys ?? []),
+    ]),
+  };
+}
+
+function mergeCampaignConstraintOption(
+  options: Map<string, ConstraintOption>,
+  option: ConstraintOption | null
+) {
+  if (!option) return;
+
+  const normalizedName = normalizeScopeName(option.name);
+  const existing =
+    options.get(option.id) ??
+    Array.from(options.values()).find(
+      (current) => normalizeScopeName(current.name) === normalizedName
+    ) ??
+    Array.from(options.values()).find((current) =>
+      campaignOptionsShareRelation(current, option)
+    );
+
+  if (!existing) {
+    options.set(option.id, option);
+    return;
+  }
+
+  const base =
+    isNameBasedConstraintOption(existing) && !isNameBasedConstraintOption(option)
+      ? option
+      : existing;
+  const incoming = base === existing ? option : existing;
+  const merged = mergeCampaignOptionValues(base, incoming);
+
+  if (existing.id !== merged.id) options.delete(existing.id);
+  options.set(merged.id, merged);
 }
 
 function sortConstraintOptions(options: ConstraintOption[]): ConstraintOption[] {
@@ -1210,14 +1317,24 @@ function getItemCampaignOptions(item: FocusPomoQueueItem): ConstraintOption[] {
     readScopeString(record.campaign_emoji) ??
     readScopeString(record.campaignEmoji) ??
     readScopeIconFromRecord(campaign);
-  const directName = directNames.find(Boolean) ?? null;
+  const uniqueDirectIds = uniqueScopeValues(directIds);
+  const uniqueDirectNames = Array.from(
+    new Map(
+      directNames
+        .filter((name): name is string => Boolean(name))
+        .map((name) => [normalizeScopeName(name), name])
+    ).values()
+  );
+  const directName = uniqueDirectNames[0] ?? null;
 
-  directIds.forEach((id) => {
+  uniqueDirectIds.forEach((id) => {
     mergeConstraintOption(options, makeConstraintOption(id, directName, directIcon));
   });
-  directNames.forEach((name) => {
-    mergeConstraintOption(options, makeConstraintOption(null, name, directIcon));
-  });
+  if (uniqueDirectIds.length === 0) {
+    uniqueDirectNames.forEach((name) => {
+      mergeConstraintOption(options, makeConstraintOption(null, name, directIcon));
+    });
+  }
 
   for (const option of readConstraintArrayOptions(
     item,
@@ -1360,7 +1477,7 @@ function deriveConstraintOptions(
       mergeConstraintOption(goals, option)
     );
     getItemCampaignOptions(item).forEach((option) =>
-      mergeConstraintOption(campaigns, option)
+      mergeCampaignConstraintOption(campaigns, option)
     );
     getItemRoutineOptions(item).forEach((option) =>
       mergeConstraintOption(routines, option)
@@ -1382,6 +1499,16 @@ function mergeConstraintOptions(
   const options = new Map<string, ConstraintOption>();
   primary.forEach((option) => mergeConstraintOption(options, option));
   fallback.forEach((option) => mergeConstraintOption(options, option));
+  return sortConstraintOptions(Array.from(options.values()));
+}
+
+function mergeCampaignConstraintOptions(
+  primary: ConstraintOption[],
+  fallback: ConstraintOption[]
+): ConstraintOption[] {
+  const options = new Map<string, ConstraintOption>();
+  primary.forEach((option) => mergeCampaignConstraintOption(options, option));
+  fallback.forEach((option) => mergeCampaignConstraintOption(options, option));
   return sortConstraintOptions(Array.from(options.values()));
 }
 
@@ -1634,35 +1761,34 @@ function itemMatchesScope(
 
   if (!hasMonumentScope && !hasSkillScope) return true;
 
+  let matchesMonumentScope = false;
+  let matchesSkillScope = false;
+
   if (hasMonumentScope) {
     const monumentIds = getItemMonumentIds(item, source);
     const monumentNames = getItemMonumentNames(item, source).map(
       normalizeScopeName
     );
-    const hasMatch =
+    matchesMonumentScope =
       selectedMonumentIds.some(
         (id) =>
           monumentIds.includes(id) ||
           monumentNames.includes(normalizeSelectedScopeIdName(id))
       ) || selectedMonumentNames.some((name) => monumentNames.includes(name));
-
-    if (!hasMatch) return false;
   }
 
   if (hasSkillScope) {
     const skillIds = getItemSkillIds(item, source);
     const skillNames = getItemSkillNames(item, source).map(normalizeScopeName);
-    const hasMatch =
+    matchesSkillScope =
       selectedSkillIds.some(
         (id) =>
           skillIds.includes(id) ||
           skillNames.includes(normalizeSelectedScopeIdName(id))
       ) || selectedSkillNames.some((name) => skillNames.includes(name));
-
-    if (!hasMatch) return false;
   }
 
-  return true;
+  return matchesMonumentScope || matchesSkillScope;
 }
 
 function optionMatchKeys(option: ScopeOption | ConstraintOption): string[] {
@@ -1697,6 +1823,15 @@ function selectedGroupMatchesItem(
   const normalizedItemKeys = itemKeys.map(normalizeScopeName);
   return selectedKeys.some((key) =>
     normalizedItemKeys.includes(normalizeScopeName(key))
+  );
+}
+
+function selectedGroupHasItemMatch(
+  itemKeys: string[],
+  selectedKeys: string[]
+): boolean {
+  return (
+    selectedKeys.length > 0 && selectedGroupMatchesItem(itemKeys, selectedKeys)
   );
 }
 
@@ -1779,24 +1914,37 @@ function getItemCampaignMatchKeys(
   ]);
 }
 
-function itemMatchesExecutionConstraints(
+type SelectedExecutionScopeOptions = {
+  source: FocusPomoSource | null | undefined;
+  selectedMonumentIds: string[];
+  selectedSkillIds: string[];
+  selectedMonumentNames: string[];
+  selectedSkillNames: string[];
+  selectedTagKeys: string[];
+  selectedGoalKeys: string[];
+  selectedCampaignKeys: string[];
+  selectedRoutineKeys: string[];
+};
+
+function itemMatchesSelectedExecutionScope(
   item: FocusPomoQueueItem,
-  options: {
-    source: FocusPomoSource | null | undefined;
-    selectedMonumentIds: string[];
-    selectedSkillIds: string[];
-    selectedMonumentNames: string[];
-    selectedSkillNames: string[];
-    selectedTagKeys: string[];
-    selectedGoalKeys: string[];
-    selectedCampaignKeys: string[];
-    selectedRoutineKeys: string[];
-    enabledItemTypes: FocusExecutionItemType[];
-    enabledHabitTypes: string[] | null;
-  }
+  options: SelectedExecutionScopeOptions
 ): boolean {
+  const hasMonumentOrSkillScope =
+    options.selectedMonumentIds.length > 0 ||
+    options.selectedSkillIds.length > 0;
+  const hasSelectedScopeSource =
+    hasMonumentOrSkillScope ||
+    options.selectedTagKeys.length > 0 ||
+    options.selectedGoalKeys.length > 0 ||
+    options.selectedCampaignKeys.length > 0 ||
+    options.selectedRoutineKeys.length > 0;
+
+  if (!hasSelectedScopeSource) return true;
+
   if (
-    !itemMatchesScope(item, {
+    hasMonumentOrSkillScope &&
+    itemMatchesScope(item, {
       source: options.source,
       selectedMonumentIds: options.selectedMonumentIds,
       selectedSkillIds: options.selectedSkillIds,
@@ -1804,49 +1952,69 @@ function itemMatchesExecutionConstraints(
       selectedSkillNames: options.selectedSkillNames,
     })
   ) {
-    return false;
+    return true;
   }
 
   if (
-    !itemMatchesExecutionFilters(item, {
-      enabledItemTypes: options.enabledItemTypes,
-      enabledHabitTypes: options.enabledHabitTypes,
+    selectedGroupHasItemMatch(
+      relationOptionKeys(getItemTagOptions(item)),
+      options.selectedTagKeys
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    selectedGroupHasItemMatch(
+      relationOptionKeys(getItemGoalOptions(item)),
+      options.selectedGoalKeys
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    selectedGroupHasItemMatch(
+      getItemCampaignMatchKeys(item, options.source),
+      options.selectedCampaignKeys
+    )
+  ) {
+    return true;
+  }
+
+  return selectedGroupHasItemMatch(
+    relationOptionKeys(getItemRoutineOptions(item)),
+    options.selectedRoutineKeys
+  );
+}
+
+function itemMatchesExecutionConstraints(
+  item: FocusPomoQueueItem,
+  options: SelectedExecutionScopeOptions & {
+    enabledItemTypes: FocusExecutionItemType[];
+    enabledHabitTypes: string[] | null;
+  }
+): boolean {
+  if (
+    !itemMatchesSelectedExecutionScope(item, {
+      source: options.source,
+      selectedMonumentIds: options.selectedMonumentIds,
+      selectedSkillIds: options.selectedSkillIds,
+      selectedMonumentNames: options.selectedMonumentNames,
+      selectedSkillNames: options.selectedSkillNames,
+      selectedTagKeys: options.selectedTagKeys,
+      selectedGoalKeys: options.selectedGoalKeys,
+      selectedCampaignKeys: options.selectedCampaignKeys,
+      selectedRoutineKeys: options.selectedRoutineKeys,
     })
   ) {
     return false;
   }
 
-  if (
-    !selectedGroupMatchesItem(
-      relationOptionKeys(getItemTagOptions(item)),
-      options.selectedTagKeys
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    !selectedGroupMatchesItem(
-      relationOptionKeys(getItemGoalOptions(item)),
-      options.selectedGoalKeys
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    !selectedGroupMatchesItem(
-      getItemCampaignMatchKeys(item, options.source),
-      options.selectedCampaignKeys
-    )
-  ) {
-    return false;
-  }
-
-  return selectedGroupMatchesItem(
-    relationOptionKeys(getItemRoutineOptions(item)),
-    options.selectedRoutineKeys
-  );
+  return itemMatchesExecutionFilters(item, {
+    enabledItemTypes: options.enabledItemTypes,
+    enabledHabitTypes: options.enabledHabitTypes,
+  });
 }
 
 function getScopeSummary(
@@ -2495,7 +2663,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
             ? sortScopeOptions(
                 skillsResult.value
                   .map((skill) =>
-                    makeScopeOption(skill.id, skill.name, skill.icon ?? null)
+                    makeScopeOption(
+                      skill.id,
+                      skill.name,
+                      skill.icon ?? null,
+                      skill.monument_id ?? null
+                    )
                   )
                   .filter((option): option is ScopeOption => Boolean(option))
               )
@@ -2806,7 +2979,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const displaySource = shouldShow ? source : lastSource;
   const hasSelectedScope =
     selectedMonumentIds.length > 0 || selectedSkillIds.length > 0;
-  const effectiveQueue = hasSelectedScope ? scopeQueue : queue;
+  const effectiveQueue = hasSelectedScope
+    ? mergeScopeQueueItems([...queue, ...scopeQueue])
+    : queue;
   const effectiveQueueLoading = hasSelectedScope
     ? scopeQueueLoading
     : queueLoading;
@@ -2844,7 +3019,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     monumentOptions,
     selectedMonumentIds
   );
-  const campaignOptions = mergeConstraintOptions(
+  const campaignOptions = mergeCampaignConstraintOptions(
     availableConstraintOptions.campaigns,
     queueDerivedConstraintOptions.campaigns
   );
@@ -2913,14 +3088,24 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     effectiveSelectedRoutineIds,
     selectedRoutineOptions
   );
-  const scopeFilteredQueue = hasSelectedScope
+  const hasSelectedExecutionScope =
+    hasSelectedScope ||
+    selectedTagKeys.length > 0 ||
+    selectedGoalKeys.length > 0 ||
+    selectedCampaignKeys.length > 0 ||
+    selectedRoutineKeys.length > 0;
+  const scopeFilteredQueue = hasSelectedExecutionScope
     ? effectiveQueue.filter((item) =>
-        itemMatchesScope(item, {
+        itemMatchesSelectedExecutionScope(item, {
           source: displaySource,
           selectedMonumentIds,
           selectedSkillIds,
           selectedMonumentNames,
           selectedSkillNames,
+          selectedTagKeys,
+          selectedGoalKeys,
+          selectedCampaignKeys,
+          selectedRoutineKeys,
         })
       )
     : effectiveQueue;
@@ -3339,12 +3524,79 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setIsRunLogExpanded(false);
   };
 
+  const resetScopeRunState = () => {
+    setActiveIndex(0);
+    setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
+  };
+
+  const getSkillIdsForMonument = (monumentId: string) =>
+    availableScopeOptions.skills
+      .filter((option) => option.monumentId === monumentId)
+      .map((option) => option.id);
+
+  const reconcileMonumentScopesForSkills = (
+    currentMonumentIds: string[],
+    nextSkillIds: string[]
+  ) => {
+    const selectedSkillSet = new Set(nextSkillIds);
+    const monumentIdsWithSkills = uniqueScopeValues(
+      availableScopeOptions.skills.map((option) => option.monumentId ?? null)
+    );
+    const nextMonumentIds = currentMonumentIds.filter((monumentId) => {
+      if (!monumentIdsWithSkills.includes(monumentId)) return true;
+
+      const skillIds = getSkillIdsForMonument(monumentId);
+      return (
+        skillIds.length > 0 &&
+        skillIds.every((skillId) => selectedSkillSet.has(skillId))
+      );
+    });
+
+    for (const monumentId of monumentIdsWithSkills) {
+      const skillIds = getSkillIdsForMonument(monumentId);
+      if (
+        skillIds.length > 0 &&
+        skillIds.every((skillId) => selectedSkillSet.has(skillId)) &&
+        !nextMonumentIds.includes(monumentId)
+      ) {
+        nextMonumentIds.push(monumentId);
+      }
+    }
+
+    return nextMonumentIds;
+  };
+
   const toggleMonumentScope = (id: string) => {
-    toggleSelectedId(setSelectedMonumentIds, id);
+    const selected = selectedMonumentIds.includes(id);
+    const skillIds = getSkillIdsForMonument(id);
+
+    setSelectedMonumentIds((current) =>
+      selected
+        ? current.filter((selectedId) => selectedId !== id)
+        : current.includes(id)
+          ? current
+          : [...current, id]
+    );
+    setSelectedSkillIds((current) =>
+      selected
+        ? current.filter((selectedId) => !skillIds.includes(selectedId))
+        : uniqueScopeValues([...current, ...skillIds])
+    );
+    resetScopeRunState();
   };
 
   const toggleSkillScope = (id: string) => {
-    toggleSelectedId(setSelectedSkillIds, id);
+    const nextSkillIds = selectedSkillIds.includes(id)
+      ? selectedSkillIds.filter((selectedId) => selectedId !== id)
+      : [...selectedSkillIds, id];
+
+    setSelectedSkillIds(nextSkillIds);
+    setSelectedMonumentIds((current) =>
+      reconcileMonumentScopesForSkills(current, nextSkillIds)
+    );
+    resetScopeRunState();
   };
 
   const toggleItemType = (type: FocusExecutionItemType) => {
@@ -3555,13 +3807,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
               <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0">
                 {!hasRunStarted ? (
-                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
-                    <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
+                  <section className="relative mx-auto w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                    <div className="overflow-clip rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
                   <AnimatePresence initial={false}>
                     {scopeOpen ? (
                       <motion.div
                         id={executionScopePanelId}
-                        className="overflow-hidden border-b border-black/40 bg-black/25 px-3 py-3 sm:px-4 sm:py-4"
+                        className="flex max-h-[min(62dvh,38rem)] flex-col overflow-hidden border-b border-black/40 bg-black/25 px-3 py-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4"
                         initial={
                           prefersReducedMotion
                             ? { opacity: 0 }
@@ -3582,7 +3834,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           ease: [0.22, 1, 0.36, 1],
                         }}
                       >
-                        <div className="max-h-[min(50dvh,30rem)] space-y-3 overflow-y-auto pr-1 sm:max-h-[min(58dvh,34rem)] sm:space-y-4">
+                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 sm:space-y-4">
                           <div className="flex items-center justify-between gap-2 sm:gap-3">
                             <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
                               Focus Scope
@@ -3956,13 +4208,23 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
-                      <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                      <div
+                        className={
+                          scopeOpen
+                            ? "sticky bottom-0 z-20 border-b border-t border-black/40 bg-black/90 px-2.5 py-1.5 backdrop-blur sm:px-3 sm:py-2"
+                            : "border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2"
+                        }
+                      >
                         <button
                           type="button"
                           onClick={() => setScopeOpen((current) => !current)}
                           aria-expanded={scopeOpen}
                           aria-controls={executionScopePanelId}
-                          className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                          className={
+                            scopeOpen
+                              ? "inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
+                              : "inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                          }
                         >
                           {scopeOpen ? "Done" : "Adjust"}
                         </button>
@@ -4070,7 +4332,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                   </section>
                 ) : null}
 
-                <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px]">
+                <section className="relative mx-auto w-full max-w-3xl overflow-visible rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px]">
                   <div className="relative overflow-hidden rounded-[19px] border border-black/60 bg-zinc-950/80 px-3 pb-3 pt-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_28px_rgba(255,255,255,0.025),inset_0_-20px_36px_rgba(0,0,0,0.48)] sm:rounded-[25px] sm:px-6 sm:py-5">
                     <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(135deg,rgba(255,255,255,0.065),transparent_24%,rgba(255,255,255,0.022)_74%,rgba(0,0,0,0.32)),radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.045),transparent_34%)]" />
                     <div className="pointer-events-none absolute inset-x-10 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-white/28 to-transparent" />
@@ -4233,7 +4495,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 </section>
 
                 {currentItem || activeCardLoading ? (
-                  <div className="relative overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                  <div className="relative overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
                     <motion.div
                       layout
                       className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]"

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { updateMyOnboarding } from "@/lib/db/profiles";
+import {
+  getSkillStarterNote,
+  hasMatchingSkillStarterNote,
+} from "@/lib/skillStarterNotes";
 
 export const runtime = "nodejs";
 
@@ -175,13 +179,66 @@ export async function POST(request: Request) {
   const { data: insertedSkills, error: skillsError } = await supabase
     .from("skills")
     .insert(skillsToInsert)
-    .select("id");
+    .select("id,name,icon");
 
   if (skillsError) {
     return NextResponse.json(
       { error: "Failed to insert skills" },
       { status: 500 }
     );
+  }
+
+  const skillsWithStarterNotes = (insertedSkills ?? [])
+    .map((skill) => {
+      const starterNote = getSkillStarterNote(skill.name);
+      return starterNote ? { skill, starterNote } : null;
+    })
+    .filter(Boolean) as Array<{
+    skill: { id: string; name: string; icon: string | null };
+    starterNote: NonNullable<ReturnType<typeof getSkillStarterNote>>;
+  }>;
+
+  if (skillsWithStarterNotes.length > 0) {
+    const skillIds = skillsWithStarterNotes.map(({ skill }) => skill.id);
+    const { data: existingNotes, error: existingNotesError } = await supabase
+      .from("notes")
+      .select("skill_id,title,metadata")
+      .eq("user_id", user.id)
+      .in("skill_id", skillIds);
+
+    if (existingNotesError) {
+      console.error(
+        "[onboarding/skills/seed] Failed to check starter notes",
+        existingNotesError
+      );
+    } else {
+      const notesToInsert = skillsWithStarterNotes
+        .filter(({ skill, starterNote }) => {
+          const notesForSkill = (existingNotes ?? []).filter(
+            (note) => note.skill_id === skill.id
+          );
+          return !hasMatchingSkillStarterNote(notesForSkill, starterNote);
+        })
+        .map(({ skill, starterNote }) => ({
+          user_id: user.id,
+          skill_id: skill.id,
+          title: starterNote.title,
+          content: starterNote.content,
+          metadata: starterNote.metadata,
+        }));
+
+      if (notesToInsert.length > 0) {
+        const { error: starterNotesError } = await supabase
+          .from("notes")
+          .insert(notesToInsert);
+        if (starterNotesError) {
+          console.error(
+            "[onboarding/skills/seed] Failed to insert starter notes",
+            starterNotesError
+          );
+        }
+      }
+    }
   }
 
   try {
