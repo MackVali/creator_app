@@ -204,6 +204,8 @@ export type NoteDatabaseDefinition = {
   views?: NoteDatabaseViewDefinition[];
   activeViewId?: string;
   pinnedSurface?: "body";
+  lockedSystemDatabase?: boolean;
+  systemDatabaseKey?: string;
 };
 
 export type NoteDatabaseDefinitions = Record<string, NoteDatabaseDefinition>;
@@ -2058,6 +2060,19 @@ function NoteSlashTextarea({
 
   function removeSegment(segmentIndex: number) {
     const removedSegment = segments[segmentIndex];
+    const removedDatabaseDefinition =
+      removedSegment?.type === "database"
+        ? databaseDefinitions?.[removedSegment.databaseId]
+        : null;
+
+    if (removedDatabaseDefinition?.lockedSystemDatabase === true) {
+      console.warn("This system database is locked.", {
+        databaseId: removedSegment.databaseId,
+        systemDatabaseKey: removedDatabaseDefinition.systemDatabaseKey,
+      });
+      return;
+    }
+
     const nextSegments = segments.filter((_, index) => index !== segmentIndex);
     const nextValue = serializeNoteSegments(nextSegments);
     const parsedNextSegments = parseNoteSegments(nextValue);
@@ -2921,6 +2936,7 @@ function NoteSlashTextarea({
                 normalizedDatabaseDefinitions[segment.databaseId] ??
                 createDefaultDatabaseDefinition(segment);
               const displayTitle = getDatabaseDisplayTitle(definition?.title ?? segment.title);
+              const isLockedSystemDatabase = definition.lockedSystemDatabase === true;
               const entries = databaseEntries?.[segment.databaseId] ?? [];
               const activeView = getActiveDatabaseView(definition);
               const visibleFields = getVisibleDatabaseFields(definition);
@@ -3090,7 +3106,16 @@ function NoteSlashTextarea({
                     </button>
                     <button
                       type="button"
-                      aria-label={`Open database builder for ${displayTitle}. Press Backspace or Delete to remove.`}
+                      aria-label={
+                        isLockedSystemDatabase
+                          ? `Open database builder for locked system database ${displayTitle}.`
+                          : `Open database builder for ${displayTitle}. Press Backspace or Delete to remove.`
+                      }
+                      title={
+                        isLockedSystemDatabase
+                          ? "This system database is locked."
+                          : undefined
+                      }
                       ref={(node) => {
                         if (node) {
                           blockButtonRefs.current.set(index, node);
@@ -3106,14 +3131,16 @@ function NoteSlashTextarea({
                     </button>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  aria-label={`Remove database block ${displayTitle}`}
-                  onClick={() => removeSegment(index)}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/35 opacity-100 outline-none transition hover:bg-white/[0.07] hover:text-white/70 focus-visible:bg-white/[0.07] focus-visible:text-white/75 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                {isLockedSystemDatabase ? null : (
+                  <button
+                    type="button"
+                    aria-label={`Remove database block ${displayTitle}`}
+                    onClick={() => removeSegment(index)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/35 opacity-100 outline-none transition hover:bg-white/[0.07] hover:text-white/70 focus-visible:bg-white/[0.07] focus-visible:text-white/75 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>,
               );
@@ -3365,9 +3392,17 @@ function NoteSlashTextarea({
                 <button
                   type="button"
                   onClick={() => toggleDatabaseBodyPin(activeDatabaseDefinition.id)}
-                  className="mt-2 inline-flex h-7 items-center rounded-full border border-white/[0.1] bg-white/[0.035] px-2.5 text-[11px] font-semibold text-white/54 outline-none transition hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/35"
+                  disabled={activeDatabaseDefinition.lockedSystemDatabase === true}
+                  title={
+                    activeDatabaseDefinition.lockedSystemDatabase === true
+                      ? "This system database is locked."
+                      : undefined
+                  }
+                  className="mt-2 inline-flex h-7 items-center rounded-full border border-white/[0.1] bg-white/[0.035] px-2.5 text-[11px] font-semibold text-white/54 outline-none transition hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed disabled:text-white/28 disabled:hover:border-white/[0.1] disabled:hover:bg-white/[0.035]"
                 >
-                  {activeDatabaseDefinition.pinnedSurface === "body"
+                  {activeDatabaseDefinition.lockedSystemDatabase === true
+                    ? "System database pinned"
+                    : activeDatabaseDefinition.pinnedSurface === "body"
                     ? "Pinned to stomach menu"
                     : "Pin to stomach menu"}
                 </button>

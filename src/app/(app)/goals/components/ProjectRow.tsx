@@ -419,8 +419,20 @@ export function ProjectRow({
     const fallbackStage = localStage && localStage !== "RELEASE" ? localStage : lastActiveStage;
     const nextStage = shouldComplete ? "RELEASE" : fallbackStage || "BUILD";
     const completedAt = shouldComplete ? new Date().toISOString() : null;
+    const previousStatus = localStatus;
+    const previousStage = localStage;
+    const nextStatus = projectStageToStatus(nextStage);
 
     setCompletionPending(true);
+    if (shouldComplete && localStage && localStage !== "RELEASE") {
+      setLastActiveStage(localStage);
+    } else if (!shouldComplete && nextStage && nextStage !== "RELEASE") {
+      setLastActiveStage(nextStage);
+    }
+    setLocalStatus(nextStatus);
+    setLocalStage(nextStage);
+    onUpdated?.(project.id, { status: nextStatus, stage: nextStage });
+
     const { error } = await supabase
       .from("projects")
       .update({ stage: nextStage, completed_at: completedAt })
@@ -428,19 +440,12 @@ export function ProjectRow({
     setCompletionPending(false);
     if (error) {
       console.error("Failed to toggle project completion", error);
+      setLocalStatus(previousStatus);
+      setLocalStage(previousStage);
+      onUpdated?.(project.id, { status: previousStatus, stage: previousStage });
       return;
     }
 
-    const nextStatus = projectStageToStatus(nextStage);
-    if (shouldComplete && localStage && localStage !== "RELEASE") {
-      setLastActiveStage(localStage);
-    } else if (!shouldComplete && nextStage && nextStage !== "RELEASE") {
-      setLastActiveStage(nextStage);
-    }
-
-    setLocalStatus(nextStatus);
-    setLocalStage(nextStage);
-    onUpdated?.(project.id, { status: nextStatus, stage: nextStage });
     if (shouldComplete) {
       void recordProjectCompletion(
         {

@@ -2133,23 +2133,24 @@ export function MonumentGoalsList({
 
   const handleProjectUpdated = useCallback(
     (goalId: string, projectId: string, updates: Partial<Project>) => {
-      setGoals((prev) =>
-        prev.map((goal) => {
-          if (goal.id !== goalId) return goal;
-          const existingProject = goal.projects.find(
-            (project) => project.id === projectId
-          );
-          return {
-            ...goal,
-            projects: existingProject
-              ? goal.projects.map((project) =>
-                  project.id === projectId
-                    ? { ...project, ...updates }
-                    : project
-                )
-              : [...goal.projects, buildProjectFromUpdates(projectId, updates)],
-          };
-        })
+      const updateGoalProject = (goal: Goal) => {
+        if (goal.id !== goalId) return goal;
+        const existingProject = goal.projects.find(
+          (project) => project.id === projectId
+        );
+        return {
+          ...goal,
+          projects: existingProject
+            ? goal.projects.map((project) =>
+                project.id === projectId ? { ...project, ...updates } : project
+              )
+            : [...goal.projects, buildProjectFromUpdates(projectId, updates)],
+        };
+      };
+
+      setGoals((prev) => prev.map(updateGoalProject));
+      setRoadmapOpenGoal((current) =>
+        current?.id === goalId ? updateGoalProject(current) : current
       );
       void refreshGoalStatus(goalId);
     },
@@ -2916,6 +2917,7 @@ export function MonumentGoalsList({
                   variant="compact"
                   onGoalEdit={handleRoadmapGoalEdit}
                   onProjectEditOpen={handleProjectEditOpen}
+                  onProjectUpdated={handleProjectUpdated}
                   onGoalManualComplete={handleManualGoalComplete}
                   // Opens the Campaign Drawer ADD GOAL flow through the shared FAB creation request.
                   onAddGoal={handleCampaignAddGoal}

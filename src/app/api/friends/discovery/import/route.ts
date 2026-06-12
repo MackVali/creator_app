@@ -10,8 +10,7 @@ const BodySchema = z.object({
     .number()
     .int()
     .min(0)
-    .max(100_000)
-    .optional(),
+    .max(100_000),
 });
 
 export async function POST(request: Request) {
@@ -63,15 +62,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const desiredTotal = totalContacts ?? existingRow?.total_contacts ?? 0;
-
   const { data: upsertedRow, error: upsertError } = await supabase
     .from("friend_contact_imports")
     .upsert(
       {
         id: existingRow?.id,
         user_id: user.id,
-        total_contacts: desiredTotal,
+        total_contacts: totalContacts,
         imported_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }

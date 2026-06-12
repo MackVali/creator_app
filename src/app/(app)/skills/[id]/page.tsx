@@ -52,6 +52,7 @@ import {
   type SkillProgressData,
   type SkillProgressRow,
 } from "@/lib/skills/skillProgress";
+import { backfillSkillStarterNote } from "@/lib/skillStarterNotes";
 
 interface Skill {
   id: string;
@@ -482,6 +483,7 @@ export default function SkillDetailPage() {
   }, []);
   const relatedHabitLongPressTimerRef = useRef<number | null>(null);
   const relatedHabitSuppressCompletionUntilRef = useRef(0);
+  const starterBackfillKeysRef = useRef<Set<string>>(new Set());
   const previousRelatedHabitStateRef = useRef(
     new Map<
       string,
@@ -1194,7 +1196,19 @@ export default function SkillDetailPage() {
             setError("Failed to load skill");
             setHabitsLoading(false);
           } else {
-            setSkill(data);
+            const loadedSkill = data as Skill;
+            setSkill(loadedSkill);
+            if (userId) {
+              const backfillKey = `${userId}:${loadedSkill.id}`;
+              if (!starterBackfillKeysRef.current.has(backfillKey)) {
+                starterBackfillKeysRef.current.add(backfillKey);
+                void backfillSkillStarterNote({
+                  userId,
+                  skillId: loadedSkill.id,
+                  skillName: loadedSkill.name,
+                });
+              }
+            }
             setLoading(false);
             void fetchRelatedHabits(userId);
             void fetchSkillProgress(userId);

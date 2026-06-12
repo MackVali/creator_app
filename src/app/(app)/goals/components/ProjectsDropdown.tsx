@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import { Plus } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
@@ -29,6 +36,7 @@ interface ProjectsDropdownProps {
 
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
+const PROJECT_COMPLETION_REBUCKET_DELAY_MS = 650;
 
 const completedProjectsRevealTransition = {
   duration: 0.56,
@@ -72,6 +80,42 @@ export function ProjectsDropdown({
 }: ProjectsDropdownProps) {
   const prefersReducedMotion = useReducedMotion();
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
+  const [rebucketDelayedProjectIds, setRebucketDelayedProjectIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const rebucketTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map()
+  );
+
+  useEffect(() => {
+    const timers = rebucketTimersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const currentProjectIds = new Set(projects.map((project) => project.id));
+    setRebucketDelayedProjectIds((current) => {
+      let changed = false;
+      const next = new Set(current);
+
+      current.forEach((projectId) => {
+        if (!currentProjectIds.has(projectId)) {
+          next.delete(projectId);
+          changed = true;
+          const timer = rebucketTimersRef.current.get(projectId);
+          if (timer) {
+            clearTimeout(timer);
+            rebucketTimersRef.current.delete(projectId);
+          }
+        }
+      });
+
+      return changed ? next : current;
+    });
+  }, [projects]);
 
   const selectedProject = useMemo(
     () => (projectTasksOnly ? projects[0] ?? null : null),
@@ -80,10 +124,61 @@ export function ProjectsDropdown({
 
   const { activeProjects, completedProjects } = useMemo(
     () => ({
-      activeProjects: projects.filter((project) => !isProjectCompleted(project)),
-      completedProjects: projects.filter(isProjectCompleted),
+      activeProjects: projects.filter(
+        (project) =>
+          !isProjectCompleted(project) || rebucketDelayedProjectIds.has(project.id)
+      ),
+      completedProjects: projects.filter(
+        (project) =>
+          isProjectCompleted(project) && !rebucketDelayedProjectIds.has(project.id)
+      ),
     }),
-    [projects]
+    [projects, rebucketDelayedProjectIds]
+  );
+
+  const handleProjectUpdated = useCallback(
+    (projectId: string, updates: Partial<Project>) => {
+      const isCompleting =
+        updates.status === "Done" ||
+        updates.stage === "RELEASE" ||
+        Number(updates.progress ?? Number.NaN) >= 100;
+
+      const existingTimer = rebucketTimersRef.current.get(projectId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        rebucketTimersRef.current.delete(projectId);
+      }
+
+      if (isCompleting) {
+        setRebucketDelayedProjectIds((current) => {
+          const next = new Set(current);
+          next.add(projectId);
+          return next;
+        });
+
+        const timer = setTimeout(() => {
+          rebucketTimersRef.current.delete(projectId);
+          setRebucketDelayedProjectIds((current) => {
+            if (!current.has(projectId)) return current;
+            const next = new Set(current);
+            next.delete(projectId);
+            return next;
+          });
+        }, PROJECT_COMPLETION_REBUCKET_DELAY_MS);
+
+        rebucketTimersRef.current.set(projectId, timer);
+      } else {
+        setRebucketDelayedProjectIds((current) => {
+          if (!current.has(projectId)) return current;
+          const next = new Set(current);
+          next.delete(projectId);
+          return next;
+        });
+      }
+
+      onProjectUpdated?.(projectId, updates);
+    },
+    [onProjectUpdated]
   );
 
   const taskEntries = useMemo(() => {
@@ -143,7 +238,7 @@ export function ProjectsDropdown({
                   projectOrder={index + 1}
                   variant="compactNested"
                   onLongPress={onProjectLongPress}
-                  onUpdated={onProjectUpdated}
+                  onUpdated={handleProjectUpdated}
                 />
               ))
             ) : completedProjects.length > 0 ? (
@@ -198,7 +293,7 @@ export function ProjectsDropdown({
                         projectOrder={activeProjects.length + index + 1}
                         variant="compactNested"
                         onLongPress={onProjectLongPress}
-                        onUpdated={onProjectUpdated}
+                        onUpdated={handleProjectUpdated}
                       />
                     ))}
                   </div>

@@ -90,6 +90,26 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    const handleSkillNotesChanged = (event: Event) => {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+
+      const changedSkillId =
+        typeof event.detail?.skillId === "string" ? event.detail.skillId : null;
+      if (changedSkillId === skillId) {
+        setReloadToken((current) => current + 1);
+      }
+    };
+
+    window.addEventListener("creator:skill-notes-changed", handleSkillNotesChanged);
+    return () => {
+      window.removeEventListener("creator:skill-notes-changed", handleSkillNotesChanged);
+    };
+  }, [skillId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -115,7 +135,7 @@ export function NotesGrid({ skillId }: NotesGridProps) {
     return () => {
       isMounted = false;
     };
-  }, [skillId]);
+  }, [skillId, reloadToken]);
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
