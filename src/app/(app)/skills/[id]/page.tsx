@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
+import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { useToastHelpers } from "@/components/ui/toast";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import FlameEmber from "@/components/FlameEmber";
@@ -53,6 +54,7 @@ import {
   type SkillProgressRow,
 } from "@/lib/skills/skillProgress";
 import { backfillSkillStarterNote } from "@/lib/skillStarterNotes";
+import type { Database } from "@/types/supabase";
 
 interface Skill {
   id: string;
@@ -82,6 +84,7 @@ interface HabitSummary {
   anchorStartDate: string | null;
   nextDueOverride: string | null;
   habitType: string | null;
+  memoCaptureConfig: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -230,6 +233,7 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
   return {
     id: habit.id,
     name: habit.name,
+    memoCaptureConfig: habit.memoCaptureConfig ?? null,
     durationMinutes: null,
     createdAt: habit.createdAt,
     updatedAt: habit.updatedAt,
@@ -435,6 +439,8 @@ export default function SkillDetailPage() {
   const [pendingRelatedHabitIds, setPendingRelatedHabitIds] = useState<
     Set<string>
   >(() => new Set());
+  const [memoCompletionState, setMemoCompletionState] =
+    useState<HabitSummary | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
@@ -496,6 +502,7 @@ export default function SkillDetailPage() {
   const pendingRelatedHabitActionsRef = useRef(
     new Map<string, { action: "complete" | "undo"; dateKey: string }>()
   );
+  const bypassMemoCaptureRef = useRef(false);
   const completionStateDateKeyRef = useRef<string | null>(null);
   const pullStartYRef = useRef<number | null>(null);
   const pullExitTriggeredRef = useRef(false);
@@ -716,6 +723,15 @@ export default function SkillDetailPage() {
       const action = wasCompleted ? "undo" : "complete";
       const completedAt = new Date().toISOString();
 
+      if (
+        !bypassMemoCaptureRef.current &&
+        action === "complete" &&
+        normalizeRelatedHabitType(habitBeforeUpdate.habitType) === "MEMO"
+      ) {
+        setMemoCompletionState(habitBeforeUpdate);
+        return;
+      }
+
       setCompletionError(null);
       setPendingRelatedHabitIds((previous) => {
         const next = new Set(previous);
@@ -833,6 +849,18 @@ export default function SkillDetailPage() {
       toast,
     ]
   );
+
+  const handleMemoCompletionSubmitted = useCallback(async () => {
+    if (!memoCompletionState) return;
+
+    bypassMemoCaptureRef.current = true;
+    try {
+      await handleRelatedHabitCompletionToggle(memoCompletionState.id);
+      setMemoCompletionState(null);
+    } finally {
+      bypassMemoCaptureRef.current = false;
+    }
+  }, [handleRelatedHabitCompletionToggle, memoCompletionState]);
 
   const handleRelatedHabitTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>, habitId: string) => {
@@ -971,7 +999,7 @@ export default function SkillDetailPage() {
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type"
+            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config"
           )
           .eq("user_id", userId)
           .eq("skill_id", id)
@@ -983,7 +1011,7 @@ export default function SkillDetailPage() {
 
         if (!cancelled) {
           const formattedHabits = (habitsData ?? [])
-            .map((habit) => {
+            .map((habit): HabitSummary | null => {
               if (!habit) return null;
 
               const habitRecord = habit as {
@@ -1001,6 +1029,7 @@ export default function SkillDetailPage() {
                 anchor_start_date?: unknown;
                 next_due_override?: unknown;
                 habit_type?: unknown;
+                memo_capture_config?: unknown;
               };
 
               const habitId =
@@ -1080,6 +1109,9 @@ export default function SkillDetailPage() {
                 anchorStartDate,
                 nextDueOverride,
                 habitType,
+                memoCaptureConfig:
+                  (habitRecord.memo_capture_config as HabitSummary["memoCaptureConfig"]) ??
+                  null,
               } satisfies HabitSummary;
             })
             .filter((habit): habit is HabitSummary => habit !== null);
@@ -1605,6 +1637,7 @@ export default function SkillDetailPage() {
   };
 
   return (
+    <>
     <main
       className="px-4 pb-6 pt-3 sm:px-6 sm:pt-4 lg:px-8"
       onPointerDown={handlePullExitStart}
@@ -1983,5 +2016,26 @@ export default function SkillDetailPage() {
         </div>
       </div>
     </main>
+    <MemoCompletionDialog
+      open={Boolean(memoCompletionState)}
+      context={
+        memoCompletionState
+          ? {
+              habitId: memoCompletionState.id,
+              habitName: memoCompletionState.name,
+              habitType: memoCompletionState.habitType,
+              skillId: id,
+              skillIcon: skill?.icon ?? null,
+              memoCaptureConfig: memoCompletionState.memoCaptureConfig,
+              completionDate: new Date().toISOString(),
+            }
+          : null
+      }
+      onOpenChange={(open) => {
+        if (!open) setMemoCompletionState(null);
+      }}
+      onCompleted={handleMemoCompletionSubmitted}
+    />
+    </>
   );
 }

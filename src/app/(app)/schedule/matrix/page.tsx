@@ -18,6 +18,7 @@ import {
 } from "react";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
+import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { PullRefreshShell } from "@/components/ui/PullRefreshShell";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -106,6 +107,7 @@ type HabitRow = Pick<
   | "daylight_preference"
   | "window_edge_preference"
   | "next_due_override"
+  | "memo_capture_config"
 >;
 
 type MatrixEvent = {
@@ -121,6 +123,7 @@ type MatrixEvent = {
 type MatrixHabit = HabitRow & {
   monumentId: string | null;
   skillIds: string[];
+  skillIcon: string | null;
   glyph: string;
   dueStatus?: MatrixHabitDueStatus;
 };
@@ -456,6 +459,7 @@ function toScheduleHabit(habit: HabitRow): HabitScheduleItem {
   return {
     id: habit.id,
     name: habit.name,
+    memoCaptureConfig: habit.memo_capture_config ?? null,
     durationMinutes: habit.duration_minutes,
     createdAt: habit.created_at,
     updatedAt: habit.updated_at,
@@ -759,56 +763,53 @@ function buildMatrixEvents({
             monumentIdToEmoji,
           })
         : null;
-      return [
-        {
-          instance,
-          title: instance.event_name ?? project?.name ?? "Untitled project",
-          monumentId,
-          skillIds: project ? getProjectSkillIds(project) : [],
-          glyph: monumentId
-            ? (monumentIdToEmoji.get(monumentId) ?? "◇")
-            : "◇",
-          goal: projectGoal,
-          habit: null,
-        },
-      ];
+      const event: MatrixEvent = {
+        instance,
+        title: instance.event_name ?? project?.name ?? "Untitled project",
+        monumentId,
+        skillIds: project ? getProjectSkillIds(project) : [],
+        glyph: monumentId ? (monumentIdToEmoji.get(monumentId) ?? "◇") : "◇",
+        goal: projectGoal,
+        habit: null,
+      };
+      return [event];
     }
 
     if (instance.source_type !== "HABIT") return [];
 
     const habit = habits.get(instance.source_id);
-    const habitGlyph =
+    const habitSkillIcon =
       habit?.skill_id ? skillIdToIcon.get(habit.skill_id) : null;
     const dueStatus = habit
       ? getMatrixHabitDueStatus(habit, date, timeZone)
       : undefined;
-    return [
-      {
-        instance,
-        title: instance.event_name ?? habit?.name ?? "Untitled habit",
-        monumentId: resolveHabitMonumentId({
-          habit,
-          goals,
-          skillIdToMonumentId,
-        }),
-        skillIds: habit?.skill_id ? [habit.skill_id] : [],
-        glyph: habitGlyph ?? getHabitFallbackGlyph(habit?.habit_type),
-        goal: null,
-        habit: habit
-          ? {
-              ...habit,
-              monumentId: resolveHabitMonumentId({
-                habit,
-                goals,
-                skillIdToMonumentId,
-              }),
-              skillIds: habit.skill_id ? [habit.skill_id] : [],
-              glyph: habitGlyph ?? getHabitFallbackGlyph(habit.habit_type),
-              dueStatus,
-            }
-          : null,
-      },
-    ];
+    const event: MatrixEvent = {
+      instance,
+      title: instance.event_name ?? habit?.name ?? "Untitled habit",
+      monumentId: resolveHabitMonumentId({
+        habit,
+        goals,
+        skillIdToMonumentId,
+      }),
+      skillIds: habit?.skill_id ? [habit.skill_id] : [],
+      glyph: habitSkillIcon ?? getHabitFallbackGlyph(habit?.habit_type),
+      goal: null,
+      habit: habit
+        ? {
+            ...habit,
+            monumentId: resolveHabitMonumentId({
+              habit,
+              goals,
+              skillIdToMonumentId,
+            }),
+            skillIds: habit.skill_id ? [habit.skill_id] : [],
+            skillIcon: habitSkillIcon ?? null,
+            glyph: habitSkillIcon ?? getHabitFallbackGlyph(habit.habit_type),
+            dueStatus,
+          }
+        : null,
+    };
+    return [event];
   });
 }
 
@@ -2926,10 +2927,18 @@ function MatrixContent() {
   const [completingDueHabitIds, setCompletingDueHabitIds] = useState<
     Set<string>
   >(new Set());
+  const [memoCompletionState, setMemoCompletionState] = useState<{
+    habit: MatrixHabit;
+    source: "scheduled" | "due";
+    instanceId?: string;
+    completedToday?: boolean;
+    completionDate: string;
+  } | null>(null);
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
   const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
+  const bypassMemoCaptureRef = useRef(false);
 
-  const handleCompleteScheduledEvent = useCallback(
+  const commitScheduledEventCompletion = useCallback(
     async (instanceId: string, nextStatus: ScheduleInstance["status"]) => {
       if (!user?.id) return;
 
@@ -2978,9 +2987,102 @@ function MatrixContent() {
     [user?.id]
   );
 
+  const findMatrixHabit = useCallback(
+    (habitId: string): MatrixHabit | null => {
+      const groupSets = [
+        state.unscheduledDueHabitGroups,
+        state.skillUnscheduledDueHabitGroups,
+        state.blockUnscheduledDueHabitGroups,
+      ];
+      for (const groups of groupSets) {
+        for (const group of groups) {
+          const habit = group.items.find((item) => item.id === habitId);
+          if (habit) return habit;
+        }
+      }
+      const eventGroupSets = [
+        state.eventGroups,
+        state.skillEventGroups,
+        state.blockEventGroups,
+      ];
+      for (const groups of eventGroupSets) {
+        for (const group of groups) {
+          const event = group.items.find((item) => item.habit?.id === habitId);
+          if (event?.habit) return event.habit;
+        }
+      }
+      return null;
+    },
+    [
+      state.blockEventGroups,
+      state.blockUnscheduledDueHabitGroups,
+      state.eventGroups,
+      state.skillEventGroups,
+      state.skillUnscheduledDueHabitGroups,
+      state.unscheduledDueHabitGroups,
+    ]
+  );
+
+  const findMatrixEvent = useCallback(
+    (instanceId: string): MatrixEvent | null => {
+      const groupSets = [
+        state.eventGroups,
+        state.skillEventGroups,
+        state.blockEventGroups,
+      ];
+      for (const groups of groupSets) {
+        for (const group of groups) {
+          const event = group.items.find(
+            (item) => item.instance.id === instanceId
+          );
+          if (event) return event;
+        }
+      }
+      return null;
+    },
+    [state.blockEventGroups, state.eventGroups, state.skillEventGroups]
+  );
+
+  const handleCompleteScheduledEvent = useCallback(
+    (instanceId: string, nextStatus: ScheduleInstance["status"]) => {
+      const event = findMatrixEvent(instanceId);
+      if (
+        nextStatus === "completed" &&
+        event?.habit &&
+        normalizeRelatedHabitType(event.habit.habit_type) === "MEMO"
+      ) {
+        setMemoCompletionState({
+          habit: event.habit,
+          source: "scheduled",
+          instanceId,
+          completionDate: new Date().toISOString(),
+        });
+        return;
+      }
+      void commitScheduledEventCompletion(instanceId, nextStatus);
+    },
+    [commitScheduledEventCompletion, findMatrixEvent]
+  );
+
   const handleCompleteDueHabit = useCallback(
     async (habitId: string, completedToday: boolean) => {
       if (!user?.id) return;
+
+      const habit = findMatrixHabit(habitId);
+      if (
+        !bypassMemoCaptureRef.current &&
+        !completedToday &&
+        habit &&
+        normalizeRelatedHabitType(habit.habit_type) === "MEMO"
+      ) {
+        setMemoCompletionState({
+          habit,
+          source: "due",
+          completedToday,
+          completionDate: new Date().toISOString(),
+        });
+        return;
+      }
 
       if (completingDueHabitIdsRef.current.has(habitId)) return;
       completingDueHabitIdsRef.current.add(habitId);
@@ -3088,7 +3190,7 @@ function MatrixContent() {
         });
       }
     },
-    [timeZone, user?.id]
+    [findMatrixHabit, timeZone, user?.id]
   );
 
   const handlePullRefresh = useCallback(async () => {
@@ -3204,7 +3306,7 @@ function MatrixContent() {
               ? supabase
                   .from("habits")
                   .select(
-                    "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
+                    "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
                   )
                   .eq("user_id", userId)
                   .in("id", Array.from(scheduledHabitIds))
@@ -3212,7 +3314,7 @@ function MatrixContent() {
             supabase
               .from("habits")
               .select(
-                "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
+                "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
               )
               .eq("user_id", userId),
             supabase
@@ -3399,6 +3501,9 @@ function MatrixContent() {
                 ? (skillIdToIcon.get(habit.skill_id) ??
                   getHabitFallbackGlyph(habit.habit_type))
                 : getHabitFallbackGlyph(habit.habit_type),
+              skillIcon: habit.skill_id
+                ? (skillIdToIcon.get(habit.skill_id) ?? null)
+                : null,
               skillIds: habit.skill_id ? [habit.skill_id] : [],
             };
           })
@@ -3489,6 +3594,37 @@ function MatrixContent() {
       : matrixView === "skills"
         ? matrixSkillGroups
         : matrixMonumentGroups;
+
+  const handleMemoCompletionSubmitted = useCallback(async () => {
+    if (!memoCompletionState) return;
+
+    if (memoCompletionState.source === "scheduled") {
+      if (memoCompletionState.instanceId) {
+        await commitScheduledEventCompletion(
+          memoCompletionState.instanceId,
+          "completed"
+        );
+      }
+      setMemoCompletionState(null);
+      return;
+    }
+
+    bypassMemoCaptureRef.current = true;
+    try {
+      await handleCompleteDueHabit(
+        memoCompletionState.habit.id,
+        memoCompletionState.completedToday ?? false
+      );
+      setMemoCompletionState(null);
+    } finally {
+      bypassMemoCaptureRef.current = false;
+    }
+  }, [
+    commitScheduledEventCompletion,
+    handleCompleteDueHabit,
+    memoCompletionState,
+  ]);
+
   useLayoutEffect(() => {
     if (!isMatrixTrayOpen) return;
 
@@ -3521,6 +3657,7 @@ function MatrixContent() {
   }, [isMatrixTrayOpen]);
 
   return (
+    <>
     <main className="min-h-screen bg-[#030406] text-white">
       <PullRefreshShell
         onRefresh={handlePullRefresh}
@@ -3612,6 +3749,27 @@ function MatrixContent() {
         </div>
       </PullRefreshShell>
     </main>
+    <MemoCompletionDialog
+      open={Boolean(memoCompletionState)}
+      context={
+        memoCompletionState
+          ? {
+              habitId: memoCompletionState.habit.id,
+              habitName: memoCompletionState.habit.name,
+              habitType: memoCompletionState.habit.habit_type,
+              skillId: memoCompletionState.habit.skill_id,
+              skillIcon: memoCompletionState.habit.skillIcon,
+              memoCaptureConfig: memoCompletionState.habit.memo_capture_config,
+              completionDate: memoCompletionState.completionDate,
+            }
+          : null
+      }
+      onOpenChange={(open) => {
+        if (!open) setMemoCompletionState(null);
+      }}
+      onCompleted={handleMemoCompletionSubmitted}
+    />
+    </>
   );
 }
 

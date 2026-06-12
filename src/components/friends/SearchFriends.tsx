@@ -35,6 +35,12 @@ type DiscoveryProfileState = DiscoveryProfile & {
   status: "idle" | "sending" | "following" | "friends";
 };
 
+type ContactInviteRow = {
+  id: string;
+  name: string;
+  detail: string;
+};
+
 const getDiscoveryIdentityKey = (
   profile: DiscoveryProfile | DiscoveryProfileState
 ) => {
@@ -62,6 +68,12 @@ export default function SearchFriends({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryProfileState[]>([]);
   const [contactsImported, setContactsImported] = useState(false);
+  const [contactInviteRows, setContactInviteRows] = useState<ContactInviteRow[]>(
+    []
+  );
+  const [pendingContactInviteId, setPendingContactInviteId] = useState<
+    string | null
+  >(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -186,6 +198,7 @@ export default function SearchFriends({
         const payload = (await response.json()) as {
           contactImport?: { imported?: boolean };
           discoveryProfiles?: DiscoveryProfile[];
+          unmatchedContacts?: ContactInviteRow[];
         };
 
         if (ignore) return;
@@ -196,6 +209,10 @@ export default function SearchFriends({
 
         if (payload.discoveryProfiles?.length) {
           syncDiscoveryProfiles(payload.discoveryProfiles);
+        }
+
+        if (payload.unmatchedContacts?.length) {
+          setContactInviteRows(payload.unmatchedContacts);
         }
       } catch (error) {
         console.error("Failed to load discovery metadata", error);
@@ -294,7 +311,9 @@ export default function SearchFriends({
 
   const trimmedQuery = effectiveQuery.trim();
   const hasQuery = trimmedQuery.length > 0;
-  const shouldShowDiscovery = uniqueDiscovery.length > 0 || hasQuery;
+  const hasContactInviteRows = contactInviteRows.length > 0;
+  const shouldShowDiscovery =
+    uniqueDiscovery.length > 0 || hasContactInviteRows || hasQuery;
   const shouldHideLocalInput = embedded || hideLocalInput;
   const shouldHideInviteTools = embedded || hideInviteTools;
 
@@ -385,7 +404,10 @@ export default function SearchFriends({
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ totalContacts: nativeContacts.totalContacts }),
+          body: JSON.stringify({
+            totalContacts: nativeContacts.totalContacts,
+            contacts: nativeContacts.contacts,
+          }),
         });
 
         if (!response.ok) {
@@ -395,11 +417,27 @@ export default function SearchFriends({
           throw new Error(payload?.error ?? "Unable to import contacts.");
         }
 
+        const payload = (await response.json()) as {
+          matchedProfiles?: DiscoveryProfile[];
+          unmatchedContacts?: ContactInviteRow[];
+        };
+        const matchedProfiles = payload.matchedProfiles ?? [];
+        const unmatchedContacts = payload.unmatchedContacts ?? [];
+
+        if (matchedProfiles.length) {
+          syncDiscoveryProfiles([...matchedProfiles, ...uniqueDiscovery]);
+        }
+
+        setContactInviteRows(unmatchedContacts);
         setContactsImported(true);
         setImportNotice(
-          `${nativeContacts.totalContacts} contact${
-            nativeContacts.totalContacts === 1 ? "" : "s"
-          } imported. We’ll surface matches as soon as they land.`
+          matchedProfiles.length || unmatchedContacts.length
+            ? `${matchedProfiles.length} CREATOR match${
+                matchedProfiles.length === 1 ? "" : "es"
+              } found. ${unmatchedContacts.length} contact${
+                unmatchedContacts.length === 1 ? "" : "s"
+              } ready to invite.`
+            : "No contacts found on CREATOR yet."
         );
       } catch (error) {
         console.error("Contact import failed", error);
@@ -408,6 +446,56 @@ export default function SearchFriends({
         );
       } finally {
         setIsImporting(false);
+      }
+    })();
+  };
+
+  const handleInviteContact = (contact: ContactInviteRow) => {
+    if (pendingContactInviteId) return;
+
+    setPendingContactInviteId(contact.id);
+    setImportError(null);
+    setImportNotice(null);
+
+    void (async () => {
+      const inviteUrl =
+        typeof window !== "undefined"
+          ? new URL("/friends", window.location.origin).toString()
+          : "https://trycreator.app/friends";
+      const inviteText = `Join me on CREATOR: ${inviteUrl}`;
+
+      try {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({
+            title: "Join CREATOR",
+            text: inviteText,
+            url: inviteUrl,
+          });
+          setImportNotice(`Invite ready for ${contact.name}.`);
+          return;
+        }
+
+        if (
+          typeof navigator !== "undefined" &&
+          navigator.clipboard?.writeText
+        ) {
+          await navigator.clipboard.writeText(inviteText);
+          setImportNotice("Invite link copied.");
+          return;
+        }
+
+        setImportError("Sharing is not supported on this device.");
+      } catch (error) {
+        if ((error as DOMException)?.name === "AbortError") {
+          return;
+        }
+
+        console.error("Failed to invite contact", error);
+        setImportError(
+          error instanceof Error ? error.message : "Unable to invite right now."
+        );
+      } finally {
+        setPendingContactInviteId(null);
       }
     })();
   };
@@ -540,6 +628,43 @@ export default function SearchFriends({
     </p>
   );
 
+  const contactInviteResultsList = hasContactInviteRows ? (
+    <div className="space-y-2">
+      {contactInviteRows.map((contact) => {
+        const isInviting = pendingContactInviteId === contact.id;
+
+        return (
+          <article
+            key={contact.id}
+            className="flex min-h-[56px] items-center gap-3 rounded-none border border-black/80 bg-black/70 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.38)]"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white/34 ring-1 ring-white/8">
+              <User className="h-6 w-6" aria-hidden="true" />
+              <span className="sr-only">{contact.name} avatar</span>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-white">
+                {contact.name}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-white/65">
+                {contact.detail}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleInviteContact(contact)}
+              disabled={Boolean(pendingContactInviteId)}
+              className={followButtonClass}
+              aria-label={`Invite ${contact.name}`}
+            >
+              {isInviting ? "Inviting..." : "Invite"}
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  ) : null;
+
   const discoveryPanel = embedded ? (
     <section className="space-y-3 border-t border-white/10 pt-5">
       <div className="flex items-center justify-between">
@@ -585,6 +710,20 @@ export default function SearchFriends({
           ) : null}
           {discoveryResultsList}
         </div>
+
+        {contactInviteResultsList ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                Contacts to invite
+              </h3>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-white/50">
+                {contactInviteRows.length}
+              </span>
+            </div>
+            {contactInviteResultsList}
+          </div>
+        ) : null}
 
         {shouldHideInviteTools ? null : (
           <div className="grid gap-3 sm:grid-cols-2">

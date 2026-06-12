@@ -2,7 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { createPortal } from "react-dom";
-import { Dumbbell, Droplet, Menu, Table2, Utensils } from "lucide-react";
+import { Dumbbell, Droplet, Menu, Table2 } from "lucide-react";
 import { Icon } from "@iconify/react";
 import TopNavAvatar from "./TopNavAvatar";
 import { useProfile } from "@/lib/hooks/useProfile";
@@ -30,6 +30,8 @@ type PinnedBodyDatabase = {
   title: string;
   noteId: string;
   skillId: string;
+  iconKey: BodyDatabaseIconKey;
+  systemDatabaseKey: string | null;
 };
 
 type NoteMetadataWithDatabases = {
@@ -39,23 +41,105 @@ type NoteMetadataWithDatabases = {
 type NoteDatabaseMetadataDefinition = {
   id?: unknown;
   title?: unknown;
+  iconKey?: unknown;
   pinnedSurface?: unknown;
+  systemDatabaseKey?: unknown;
 };
+
+type BodyDatabaseIconKey = "stomach" | "droplet" | "dumbbell" | "table";
 
 const BODY_FALLBACK_ROWS = [
   {
     label: "Nutrition",
-    Icon: Utensils,
+    iconKey: "stomach",
   },
   {
     label: "Hydration",
-    Icon: Droplet,
+    iconKey: "droplet",
   },
   {
     label: "Fitness",
-    Icon: Dumbbell,
+    iconKey: "dumbbell",
   },
-];
+] satisfies { label: string; iconKey: BodyDatabaseIconKey }[];
+
+const BODY_DATABASE_SORT_ORDER = new Map([
+  ["nutrition", 0],
+  ["hydration", 1],
+  ["fitness", 2],
+]);
+
+function normalizeBodyDatabaseKey(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function getBodyDatabasePriority(database: {
+  title: string;
+  systemDatabaseKey?: string | null;
+}) {
+  const systemKeyPriority = BODY_DATABASE_SORT_ORDER.get(
+    normalizeBodyDatabaseKey(database.systemDatabaseKey),
+  );
+  if (systemKeyPriority !== undefined) {
+    return systemKeyPriority;
+  }
+
+  return BODY_DATABASE_SORT_ORDER.get(normalizeBodyDatabaseKey(database.title)) ?? 3;
+}
+
+function sortPinnedBodyDatabases(databases: PinnedBodyDatabase[]) {
+  return [...databases].sort((a, b) => {
+    const priorityDelta = getBodyDatabasePriority(a) - getBodyDatabasePriority(b);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+
+    return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+  });
+}
+
+function getBodyDatabaseIconKey({
+  iconKey,
+  systemDatabaseKey,
+  title,
+}: {
+  iconKey: unknown;
+  systemDatabaseKey: string | null;
+  title: string;
+}): BodyDatabaseIconKey {
+  if (iconKey === "stomach" || iconKey === "droplet" || iconKey === "dumbbell") {
+    return iconKey;
+  }
+
+  const normalizedSystemKey = normalizeBodyDatabaseKey(systemDatabaseKey);
+  if (normalizedSystemKey === "nutrition") return "stomach";
+  if (normalizedSystemKey === "hydration") return "droplet";
+  if (normalizedSystemKey === "fitness") return "dumbbell";
+
+  const normalizedTitle = normalizeBodyDatabaseKey(title);
+  if (normalizedTitle === "nutrition") return "stomach";
+  if (normalizedTitle === "hydration") return "droplet";
+  if (normalizedTitle === "fitness") return "dumbbell";
+
+  return "table";
+}
+
+function BodyPanelRowIcon({ iconKey }: { iconKey: BodyDatabaseIconKey }) {
+  if (iconKey === "stomach") {
+    return (
+      <Icon
+        icon="game-icons:stomach"
+        className="h-4 w-4 shrink-0 text-zinc-400"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  const LucideIcon =
+    iconKey === "droplet" ? Droplet : iconKey === "dumbbell" ? Dumbbell : Table2;
+
+  return <LucideIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />;
+}
 
 function getPinnedBodyDatabasesFromMetadata({
   metadata,
@@ -93,6 +177,10 @@ function getPinnedBodyDatabasesFromMetadata({
       const title = typeof definition.title === "string" && definition.title.trim()
         ? definition.title.trim()
         : "Untitled Database";
+      const systemDatabaseKey =
+        typeof definition.systemDatabaseKey === "string"
+          ? definition.systemDatabaseKey
+          : null;
 
       return [
         {
@@ -100,6 +188,12 @@ function getPinnedBodyDatabasesFromMetadata({
           title,
           noteId,
           skillId,
+          iconKey: getBodyDatabaseIconKey({
+            iconKey: definition.iconKey,
+            systemDatabaseKey,
+            title,
+          }),
+          systemDatabaseKey,
         },
       ];
     },
@@ -279,7 +373,7 @@ export default function TopNav() {
         }),
       );
 
-      setPinnedBodyDatabases(pinnedDatabases);
+      setPinnedBodyDatabases(sortPinnedBodyDatabases(pinnedDatabases));
     };
 
     const handlePinnedBodyDatabasesChanged = () => {
@@ -310,7 +404,7 @@ export default function TopNav() {
       ? pinnedBodyDatabases.map((database) => ({
           key: `${database.noteId}:${database.databaseId}`,
           label: database.title,
-          Icon: Table2,
+          iconKey: database.iconKey,
           onClick: () => {
             setIsBodyMenuOpen(false);
             router.push(`/skills/${database.skillId}/notes/${database.noteId}`);
@@ -319,7 +413,7 @@ export default function TopNav() {
       : BODY_FALLBACK_ROWS.map((row) => ({
           key: row.label,
           label: row.label,
-          Icon: row.Icon,
+          iconKey: row.iconKey,
           onClick: () => setIsBodyMenuOpen(false),
         }));
 
@@ -331,7 +425,7 @@ export default function TopNav() {
       style={{ top: "calc(env(safe-area-inset-top, 0px) + 3.75rem)" }}
     >
       <div className="flex flex-col gap-1">
-        {bodyPanelRows.map(({ key, label, Icon, onClick }) => (
+        {bodyPanelRows.map(({ key, label, iconKey, onClick }) => (
           <button
             key={key}
             type="button"
@@ -339,7 +433,7 @@ export default function TopNav() {
             onClick={onClick}
             className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-white/85 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070707]"
           >
-            <Icon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
+            <BodyPanelRowIcon iconKey={iconKey} />
             <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
             <span
               className="relative ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/40 text-[8px] font-semibold text-white/80"

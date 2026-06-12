@@ -12,6 +12,7 @@ import {
   ProfileOffer,
   SocialLink,
 } from "@/lib/types";
+import { emitProfileModuleEvent } from "@/lib/analytics";
 import {
   getProfileByHandle,
   getProfileLinks,
@@ -35,6 +36,10 @@ import ServiceCarousel from "@/components/profile/ServiceCarousel";
 import ProfileDetailSheet, {
   ProfileDetailSheetItem,
 } from "@/components/profile/ProfileDetailSheet";
+import ProfileRelationshipPopup, {
+  type ProfileOfferPopupRow,
+  type ProfileRelationshipView,
+} from "@/components/profile/ProfileRelationshipPopup";
 import {
   resolveListingImage,
   resolveProductKind,
@@ -74,6 +79,8 @@ export default function ProfileByHandlePage() {
   const [respondingRequest, setRespondingRequest] = useState(false);
   const [relationshipCounts, setRelationshipCounts] = useState<RelationshipViewCounts | null>(null);
   const [detailSheetItem, setDetailSheetItem] = useState<ProfileDetailSheetItem | null>(null);
+  const [relationshipPopupView, setRelationshipPopupView] =
+    useState<ProfileRelationshipView | null>(null);
 
   const openProductSheet = useCallback((product: SourceListing) => {
     setDetailSheetItem({ type: "product", data: product });
@@ -85,6 +92,17 @@ export default function ProfileByHandlePage() {
 
   const closeDetailSheet = useCallback(() => {
     setDetailSheetItem(null);
+  }, []);
+
+  const handleProfileStatSelect = useCallback(
+    (view: ProfileRelationshipView) => {
+      setRelationshipPopupView(view);
+    },
+    [],
+  );
+
+  const closeRelationshipPopup = useCallback(() => {
+    setRelationshipPopupView(null);
   }, []);
   const { addItem: addCartItem, itemCount: cartItemCount } = useAppCart();
 
@@ -655,6 +673,62 @@ export default function ProfileByHandlePage() {
     [modules],
   );
 
+  const activeContentCards = useMemo(
+    () => linkCardsModule?.cards.filter((card) => card.is_active !== false) ?? [],
+    [linkCardsModule?.cards],
+  );
+
+  const offerPopupRows = useMemo<ProfileOfferPopupRow[]>(() => {
+    const productRows: ProfileOfferPopupRow[] = sourceProducts.map((product) => ({
+      id: `product-${product.id}`,
+      label: product.title.trim() || "Untitled product",
+      typeLabel: "Product",
+      onSelect: () => openProductSheet(product),
+    }));
+
+    const serviceRows: ProfileOfferPopupRow[] = serviceOffers.map((service) => ({
+      id: `service-${service.id}`,
+      label: service.title.trim() || "Untitled service",
+      typeLabel: "Service",
+      onSelect: () => openServiceSheet(service),
+    }));
+
+    const contentRows: ProfileOfferPopupRow[] = activeContentCards.map((card) => ({
+      id: `content-${card.id}`,
+      label: card.title.trim() || card.url,
+      typeLabel: "Content",
+      href: card.url,
+      external: true,
+      onSelect: () => {
+        if (!linkCardsModule) return;
+
+        emitProfileModuleEvent({
+          moduleId: linkCardsModule.id,
+          moduleType: linkCardsModule.type,
+          action: "link_card_click",
+          label: card.id,
+          metadata: {
+            href: card.url,
+          },
+        });
+      },
+    }));
+
+    return [...productRows, ...serviceRows, ...contentRows];
+  }, [
+    activeContentCards,
+    linkCardsModule,
+    openProductSheet,
+    openServiceSheet,
+    serviceOffers,
+    sourceProducts,
+  ]);
+
+  const offerPopupError = useMemo(() => {
+    const errors = [sourceProductsError, serviceOffersError].filter(Boolean);
+    return errors.length > 0 ? errors.join(" ") : null;
+  }, [serviceOffersError, sourceProductsError]);
+
   const socialsData = useMemo(() => {
     const data: Record<string, string | undefined> = {};
 
@@ -675,6 +749,22 @@ export default function ProfileByHandlePage() {
 
     return data;
   }, [linkedAccounts, socialLinks]);
+
+  const profileStatCounts = useMemo<RelationshipViewCounts>(() => {
+    const offerCount = sourceProducts.length + serviceOffers.length + activeContentCards.length;
+
+    return {
+      following: relationshipCounts?.following ?? 0,
+      followers: relationshipCounts?.followers ?? 0,
+      offers: offerCount,
+    };
+  }, [
+    relationshipCounts?.followers,
+    relationshipCounts?.following,
+    activeContentCards.length,
+    serviceOffers.length,
+    sourceProducts.length,
+  ]);
 
   if (loading) {
     return <ProfileSkeleton />;
@@ -724,7 +814,8 @@ export default function ProfileByHandlePage() {
           isOwner={isOwner}
           onAvatarChange={handleAvatarChange}
           isAvatarUploading={isAvatarUploading}
-          relationshipCounts={relationshipCounts ?? undefined}
+          relationshipCounts={profileStatCounts}
+          onProfileStatSelect={handleProfileStatSelect}
         />
 
         <div className="mx-auto mt-6 w-full max-w-5xl space-y-12 bg-black px-4 pb-20">
@@ -758,6 +849,16 @@ export default function ProfileByHandlePage() {
           cartCount={cartItemCount}
           isOwner={isOwner}
           onProductAddToCart={handleAddProductToCart}
+        />
+        <ProfileRelationshipPopup
+          username={profile.username}
+          ownerDisplayName={profile.name}
+          ownerAvatarUrl={profile.avatar_url}
+          view={relationshipPopupView}
+          offerRows={offerPopupRows}
+          offersLoading={sourceProductsLoading || serviceOffersLoading}
+          offersError={offerPopupError}
+          onClose={closeRelationshipPopup}
         />
       </main>
     </div>

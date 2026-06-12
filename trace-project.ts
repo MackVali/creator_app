@@ -1,6 +1,7 @@
 import { fetchCompatibleWindowsForItem } from './src/lib/scheduler/reschedule';
 
 (async () => {
+  const supabase = {} as Parameters<typeof fetchCompatibleWindowsForItem>[0];
   const dayWindow = {
     id: 'win-daytype',
     label: 'Day Type',
@@ -19,7 +20,7 @@ import { fetchCompatibleWindowsForItem } from './src/lib/scheduler/reschedule';
     location_context_name: null,
   };
   const result = await fetchCompatibleWindowsForItem(
-    {} as any,
+    supabase,
     new Date('2024-01-02T00:00:00Z'),
     {
       energy: 'NO',
