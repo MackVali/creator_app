@@ -1165,12 +1165,18 @@ export function MonumentRelatedHabits({
                     onPointerUp={cancelRelatedHabitLongPress}
                     onPointerCancel={cancelRelatedHabitLongPress}
                     onPointerLeave={handleRelatedHabitPointerLeave}
+                    onSelectStart={(event) => event.preventDefault()}
                     onDoubleClick={(event) =>
                       handleRelatedHabitDoubleClick(event, habit.id)
                     }
                     onTouchEnd={(event) =>
                       handleRelatedHabitTouchEnd(event, habit.id)
                     }
+                    style={{
+                      WebkitTouchCallout: "none",
+                      WebkitUserSelect: "none",
+                      userSelect: "none",
+                    }}
                   >
                     {showStreakBadge ? (
                       <span
@@ -1191,7 +1197,7 @@ export function MonumentRelatedHabits({
                         <span className="tracking-normal">{streakLabel}</span>
                       </span>
                     ) : null}
-                    <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
+                    <div className="relative z-[2] flex min-h-0 flex-1 select-none flex-col items-center justify-between gap-1 text-center">
                       <span
                         className={clsx(
                           "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
@@ -1206,10 +1212,10 @@ export function MonumentRelatedHabits({
                       >
                         {habitSkillIcon}
                       </span>
-                      <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                      <div className="flex min-h-0 w-full min-w-0 flex-1 select-none items-center justify-center">
                         <span
                           className={clsx(
-                            "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
+                            "line-clamp-3 w-full min-w-0 select-none break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
                             isSmallRelatedHabitDensity
                               ? "text-[8px] sm:text-[9px]"
                               : "text-[9px] sm:text-[10px]"
