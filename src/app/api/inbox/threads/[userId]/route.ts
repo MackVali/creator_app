@@ -8,6 +8,7 @@ type ThreadMessage = {
   sender_id: string;
   recipient_id: string;
   created_at: string;
+  read_at: string | null;
 };
 
 type ThreadProfile = {
@@ -42,16 +43,28 @@ export async function GET(
     }
 
     const participantId = params.userId;
+    const messageCutoffIso = getFriendMessageCutoffIso();
 
-    const { data: messages, error: messagesError } = await supabase
+    const messagesQuery = supabase
       .from("friend_messages")
-      .select("id, body, sender_id, recipient_id, created_at")
+      .select("id, body, sender_id, recipient_id, created_at, read_at")
       .or(
         `and(sender_id.eq.${user.id},recipient_id.eq.${participantId}),and(sender_id.eq.${participantId},recipient_id.eq.${user.id})`
       )
-      .gte("created_at", getFriendMessageCutoffIso())
+      .gte("created_at", messageCutoffIso)
       .order("created_at", { ascending: true })
       .limit(500);
+
+    const profileQuery = supabase
+      .from("profiles")
+      .select("user_id, username, name, avatar_url")
+      .eq("user_id", participantId)
+      .single();
+
+    const [
+      { data: messages, error: messagesError },
+      { data: profile, error: profileError },
+    ] = await Promise.all([messagesQuery, profileQuery]);
 
     if (messagesError) {
       console.error("Failed to load inbox thread messages", messagesError);
@@ -60,12 +73,6 @@ export async function GET(
         { status: 500 }
       );
     }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, username, name, avatar_url")
-      .eq("user_id", participantId)
-      .single();
 
     if (profileError) {
       console.error("Failed to load thread participant profile", profileError);
@@ -78,6 +85,29 @@ export async function GET(
       participantProfile?.username ||
       fallbackLabel;
     const threadMessages = (messages ?? []) as ThreadMessage[];
+    const unreadIncomingMessages = threadMessages.filter(
+      (message) =>
+        message.sender_id === participantId &&
+        message.recipient_id === user.id &&
+        message.read_at === null
+    );
+    let readAtForOpenedMessages: string | null = null;
+
+    if (unreadIncomingMessages.length > 0) {
+      readAtForOpenedMessages = new Date().toISOString();
+      const { error: markReadError } = await supabase
+        .from("friend_messages")
+        .update({ read_at: readAtForOpenedMessages })
+        .eq("recipient_id", user.id)
+        .eq("sender_id", participantId)
+        .gte("created_at", messageCutoffIso)
+        .is("read_at", null);
+
+      if (markReadError) {
+        console.error("Failed to mark inbox thread messages as read", markReadError);
+        readAtForOpenedMessages = null;
+      }
+    }
 
     return NextResponse.json({
       currentUserId: user.id,
@@ -94,6 +124,13 @@ export async function GET(
           senderId: message.sender_id,
           recipientId: message.recipient_id,
           createdAt: message.created_at,
+          readAt:
+            message.read_at ??
+            (readAtForOpenedMessages &&
+            message.sender_id === participantId &&
+            message.recipient_id === user.id
+              ? readAtForOpenedMessages
+              : null),
         })),
     });
   } catch (error) {

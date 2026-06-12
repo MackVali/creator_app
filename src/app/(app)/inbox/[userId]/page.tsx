@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -11,6 +10,8 @@ type ThreadMessage = {
   senderId: string;
   recipientId: string;
   createdAt: string;
+  readAt?: string | null;
+  isPending?: boolean;
 };
 
 type ThreadParticipant = {
@@ -25,6 +26,8 @@ type ThreadResponse = {
   participant: ThreadParticipant;
   messages: ThreadMessage[];
 };
+
+const INBOX_REFRESH_REQUEST_KEY = "premium-app:inbox-refresh-requested";
 
 function formatRelativeTime(value: string | null | undefined) {
   if (!value) return "";
@@ -66,6 +69,7 @@ function getInitials(label: string) {
 
 export default function InboxThreadPage() {
   const params = useParams<{ userId: string }>();
+  const router = useRouter();
   const participantId = params?.userId;
 
   const [participant, setParticipant] = useState<ThreadParticipant | null>(
@@ -79,6 +83,7 @@ export default function InboxThreadPage() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const composerEditVersionRef = useRef(0);
 
   const loadThread = useCallback(async () => {
     if (!participantId) return;
@@ -121,13 +126,36 @@ export default function InboxThreadPage() {
   }, [loadThread]);
 
   useEffect(() => {
+    router.prefetch("/inbox");
+  }, [router]);
+
+  useEffect(() => {
     if (!endRef.current) return;
     endRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
 
+  const handleBackToInbox = useCallback(() => {
+    try {
+      sessionStorage.setItem(INBOX_REFRESH_REQUEST_KEY, "1");
+    } catch {
+      // Navigation should still proceed if session storage is unavailable.
+    }
+
+    const historyState = window.history.state as { idx?: number } | null;
+
+    if (typeof historyState?.idx === "number" && historyState.idx > 0) {
+      router.back();
+      return;
+    }
+
+    router.push("/inbox");
+  }, [router]);
+
   const handleSend = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (sending) return;
+    const submittedComposerValue = composerValue;
+    const composerEditVersionAtSubmit = composerEditVersionRef.current;
     const trimmed = composerValue.trim();
     if (!trimmed) return;
     if (!participant?.username || !participant?.userId || !currentUserId) {
@@ -135,9 +163,23 @@ export default function InboxThreadPage() {
       return;
     }
 
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticCreatedAt = new Date().toISOString();
+    const optimisticMessage: ThreadMessage = {
+      id: optimisticId,
+      body: trimmed,
+      senderId: currentUserId,
+      recipientId: participant.userId,
+      createdAt: optimisticCreatedAt,
+      readAt: null,
+      isPending: true,
+    };
+
     try {
       setSending(true);
       setSendError(null);
+      setComposerValue("");
+      setMessages((prev) => [...prev, optimisticMessage]);
 
       const response = await fetch(
         `/api/friends/${encodeURIComponent(participant.username)}/messages`,
@@ -160,27 +202,36 @@ export default function InboxThreadPage() {
       }
 
       const data = (await response.json()) as {
-        message?: { id: string; createdAt: string };
+        message?: { id: string; createdAt: string; readAt?: string | null };
       };
 
       const createdAt = data.message?.createdAt ?? new Date().toISOString();
       const id = data.message?.id ?? `${Date.now()}`;
+      const readAt = data.message?.readAt ?? null;
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id,
-          body: trimmed,
-          senderId: currentUserId,
-          recipientId: participant.userId,
-          createdAt,
-        },
-      ]);
-      setComposerValue("");
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === optimisticId
+            ? {
+                ...message,
+                id,
+                createdAt,
+                readAt,
+                isPending: false,
+              }
+            : message
+        )
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unable to send message.";
       setSendError(message);
+      setMessages((prev) =>
+        prev.filter((message) => message.id !== optimisticId)
+      );
+      if (composerEditVersionRef.current === composerEditVersionAtSubmit) {
+        setComposerValue(submittedComposerValue);
+      }
     } finally {
       setSending(false);
     }
@@ -201,6 +252,17 @@ export default function InboxThreadPage() {
         const isSameAsNext = nextMessage?.senderId === message.senderId;
         const timeLabel = formatRelativeTime(message.createdAt);
         const showTimestamp = Boolean(timeLabel) && !isSameAsNext;
+        const statusLabel = isSender
+          ? message.isPending
+            ? "Sending…"
+            : message.readAt
+              ? "Read"
+              : "Sent"
+          : null;
+        const metaLabel = [statusLabel, showTimestamp ? timeLabel : null]
+          .filter(Boolean)
+          .join(" · ");
+        const showMeta = Boolean(metaLabel) && !isSameAsNext;
 
         const spacingClass =
           index === 0 ? "mt-0" : isSameAsPrev ? "mt-1" : "mt-3";
@@ -228,13 +290,13 @@ export default function InboxThreadPage() {
               <div
                 className={`${bubbleShape} px-4 py-2.5 text-[0.92rem] leading-relaxed ${
                   isSender
-                    ? "bg-white text-black"
-                    : "bg-[#1c1c1e] text-white"
+                    ? "bg-[#343438] text-white"
+                    : "bg-[#242428] text-white/95"
                 }`}
               >
                 <p className="whitespace-pre-line">{message.body}</p>
               </div>
-              {showTimestamp ? (
+              {showMeta ? (
                 <p
                   className={`px-1 text-[0.65rem] tracking-wide ${
                     isSender
@@ -242,7 +304,7 @@ export default function InboxThreadPage() {
                       : "text-left text-white/35"
                   }`}
                 >
-                  {timeLabel}
+                  {metaLabel}
                 </p>
               ) : null}
             </div>
@@ -257,9 +319,10 @@ export default function InboxThreadPage() {
       <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-4 pt-2 sm:px-6">
         <header className="sticky top-0 z-20 -mx-4 mb-1 border-b border-white/5 bg-black/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex min-h-11 items-center gap-2">
-            <Link
-              href="/inbox"
+            <button
+              type="button"
               aria-label="Back to inbox"
+              onClick={handleBackToInbox}
               className="-ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-white/55 transition hover:bg-white/5 hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
             >
               <svg
@@ -276,7 +339,7 @@ export default function InboxThreadPage() {
                   strokeWidth="2"
                 />
               </svg>
-            </Link>
+            </button>
             {participant ? (
               <div className="flex min-w-0 items-center gap-2.5">
                 <Avatar className="h-8 w-8 bg-white/10">
@@ -362,7 +425,10 @@ export default function InboxThreadPage() {
           <div className="flex items-end gap-2">
             <textarea
               value={composerValue}
-              onChange={(event) => setComposerValue(event.target.value)}
+              onChange={(event) => {
+                composerEditVersionRef.current += 1;
+                setComposerValue(event.target.value);
+              }}
               placeholder="Write a message..."
               rows={1}
               className="min-h-[42px] flex-1 resize-none rounded-2xl border border-white/10 bg-[#1c1c1e] px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"

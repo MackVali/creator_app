@@ -88,7 +88,7 @@ export async function POST(
         sender_id: senderId,
         recipient_id: recipientId,
       })
-      .select("id, created_at")
+      .select("id, created_at, read_at")
       .single();
 
     if (error) {
@@ -104,6 +104,7 @@ export async function POST(
       message: {
         id: data.id,
         createdAt: data.created_at,
+        readAt: data.read_at ?? null,
       },
     });
   } catch (error) {

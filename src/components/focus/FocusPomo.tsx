@@ -4205,30 +4205,32 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </section>
                           ) : null}
                         </div>
+                        <div className="shrink-0 border-t border-black/40 bg-black/35 px-0 py-2 sm:py-3">
+                          <button
+                            type="button"
+                            onClick={() => setScopeOpen(false)}
+                            aria-controls={executionScopePanelId}
+                            className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
+                          >
+                            Done
+                          </button>
+                        </div>
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
-                      <div
-                        className={
-                          scopeOpen
-                            ? "sticky bottom-0 z-20 border-b border-t border-black/40 bg-black/90 px-2.5 py-1.5 backdrop-blur sm:px-3 sm:py-2"
-                            : "border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2"
-                        }
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setScopeOpen((current) => !current)}
-                          aria-expanded={scopeOpen}
-                          aria-controls={executionScopePanelId}
-                          className={
-                            scopeOpen
-                              ? "inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
-                              : "inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
-                          }
-                        >
-                          {scopeOpen ? "Done" : "Adjust"}
-                        </button>
-                      </div>
+                      {!scopeOpen ? (
+                        <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                          <button
+                            type="button"
+                            onClick={() => setScopeOpen(true)}
+                            aria-expanded={scopeOpen}
+                            aria-controls={executionScopePanelId}
+                            className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                          >
+                            Adjust
+                          </button>
+                        </div>
+                      ) : null}
                       <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
                           {displaySource?.icon ? (
