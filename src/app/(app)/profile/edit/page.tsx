@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Capacitor } from "@capacitor/core";
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
+import type { CameraPermissionState, CameraPermissionType } from "@capacitor/camera";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -32,6 +33,7 @@ import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
 
 type AvatarPhotoSource = "camera" | "photos";
+type AvatarPermissionResult = "granted" | "limited" | "denied";
 
 const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
   "instagram",
@@ -97,6 +99,10 @@ function base64ToBlob(base64: string, mimeType: string) {
   }
 
   return new Blob(byteArrays, { type: mimeType });
+}
+
+function isPromptableCameraPermission(permission: CameraPermissionState) {
+  return permission === "prompt" || permission === "prompt-with-rationale";
 }
 
 export default function ProfileEditPage() {
@@ -649,12 +655,58 @@ export default function ProfileEditPage() {
     }
   }, []);
 
+  const ensureNativeAvatarPhotoPermission = useCallback(
+    async (source: AvatarPhotoSource): Promise<AvatarPermissionResult> => {
+      if (Capacitor.getPlatform() !== "ios") {
+        return "granted";
+      }
+
+      const permission: CameraPermissionType = source === "camera" ? "camera" : "photos";
+      const permissionLabel = source === "camera" ? "camera" : "photo library";
+      const permissionMessage =
+        source === "camera"
+          ? "Camera access is needed to take a profile photo. Enable camera access in Settings and try again."
+          : "Photo library access is needed to choose a profile photo. Enable photo access in Settings and try again.";
+
+      try {
+        let status = await CapacitorCamera.checkPermissions();
+        let permissionState = status[permission];
+
+        if (isPromptableCameraPermission(permissionState)) {
+          status = await CapacitorCamera.requestPermissions({ permissions: [permission] });
+          permissionState = status[permission];
+        }
+
+        if (permissionState === "granted") {
+          return "granted";
+        }
+
+        if (source === "photos" && permissionState === "limited") {
+          return "limited";
+        }
+
+        setError(permissionMessage);
+        return "denied";
+      } catch (permissionError) {
+        console.error(`Error checking ${permissionLabel} permission:`, permissionError);
+        setError(`We couldn't check ${permissionLabel} permission. Please try again.`);
+        return "denied";
+      }
+    },
+    [],
+  );
+
   const handleCapacitorAvatarPhoto = async (source: AvatarPhotoSource) => {
     setAvatarSourceLoading(source);
     setError(null);
     setIsAvatarSourceDialogOpen(false);
 
     try {
+      const permissionResult = await ensureNativeAvatarPhotoPermission(source);
+      if (permissionResult === "denied") {
+        return;
+      }
+
       const photo = await CapacitorCamera.getPhoto({
         source: source === "camera" ? CameraSource.Camera : CameraSource.Photos,
         resultType: CameraResultType.Base64,

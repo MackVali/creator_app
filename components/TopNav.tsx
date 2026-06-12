@@ -29,7 +29,7 @@ type PinnedBodyDatabase = {
   databaseId: string;
   title: string;
   noteId: string;
-  skillId: string | null;
+  skillId: string;
 };
 
 type NoteMetadataWithDatabases = {
@@ -66,6 +66,10 @@ function getPinnedBodyDatabasesFromMetadata({
   noteId: string;
   skillId: string | null;
 }): PinnedBodyDatabase[] {
+  if (!skillId) {
+    return [];
+  }
+
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return [];
   }
@@ -278,10 +282,22 @@ export default function TopNav() {
       setPinnedBodyDatabases(pinnedDatabases);
     };
 
+    const handlePinnedBodyDatabasesChanged = () => {
+      void loadPinnedBodyDatabases();
+    };
+
     loadPinnedBodyDatabases();
+    window.addEventListener(
+      "creator:pinned-body-databases-changed",
+      handlePinnedBodyDatabasesChanged,
+    );
 
     return () => {
       isCancelled = true;
+      window.removeEventListener(
+        "creator:pinned-body-databases-changed",
+        handlePinnedBodyDatabasesChanged,
+      );
     };
   }, [currentUser?.id, shouldHideNav, supabase]);
 
@@ -297,10 +313,7 @@ export default function TopNav() {
           Icon: Table2,
           onClick: () => {
             setIsBodyMenuOpen(false);
-
-            if (database.skillId) {
-              router.push(`/skills/${database.skillId}/notes/${database.noteId}`);
-            }
+            router.push(`/skills/${database.skillId}/notes/${database.noteId}`);
           },
         }))
       : BODY_FALLBACK_ROWS.map((row) => ({

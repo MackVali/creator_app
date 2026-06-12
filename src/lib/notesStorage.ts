@@ -20,6 +20,12 @@ type UpdateSkillNoteOptions = {
   siblingOrder?: number | null;
 };
 
+type DeleteSkillNoteResult = {
+  success: boolean;
+  locked: boolean;
+  error: string | null;
+};
+
 export type NoteWithChildren = {
   note: Note;
   children: Note[];
@@ -58,6 +64,15 @@ function normalizeText(value: string | null | undefined) {
   if (value == null) return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function isLockedSystemNoteMetadata(metadata: unknown) {
+  return (
+    Boolean(metadata) &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as { lockedSystemNote?: unknown }).lockedSystemNote === true
+  );
 }
 
 export async function getNotes(
@@ -246,6 +261,65 @@ export async function updateSkillNote(
   }
 
   return data ? mapRowToSkillNote(data) : null;
+}
+
+export async function deleteSkillNote(
+  skillId: string,
+  noteId: string,
+): Promise<DeleteSkillNoteResult> {
+  if (!skillId || !noteId) {
+    return { success: false, locked: false, error: "Missing note." };
+  }
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return { success: false, locked: false, error: "Supabase client unavailable." };
+  }
+
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    return { success: false, locked: false, error: "You must be signed in." };
+  }
+
+  const { data: existingNote, error: readError } = await supabase
+    .from(NOTES_TABLE)
+    .select("id,metadata")
+    .eq("user_id", userId)
+    .eq("skill_id", skillId)
+    .eq("id", noteId)
+    .maybeSingle();
+
+  if (readError) {
+    console.error("Failed to inspect skill note before delete", {
+      error: readError,
+      skillId,
+      noteId,
+    });
+    return { success: false, locked: false, error: "Unable to delete note." };
+  }
+
+  if (!existingNote) {
+    return { success: false, locked: false, error: "Note not found." };
+  }
+
+  if (isLockedSystemNoteMetadata(existingNote.metadata)) {
+    console.warn("This system note is locked.", { skillId, noteId });
+    return { success: false, locked: true, error: "This system note is locked." };
+  }
+
+  const { error: deleteError } = await supabase
+    .from(NOTES_TABLE)
+    .delete()
+    .eq("user_id", userId)
+    .eq("skill_id", skillId)
+    .eq("id", noteId);
+
+  if (deleteError) {
+    console.error("Failed to delete skill note", { error: deleteError, skillId, noteId });
+    return { success: false, locked: false, error: "Unable to delete note." };
+  }
+
+  return { success: true, locked: false, error: null };
 }
 
 export async function createMemoNoteForHabit(

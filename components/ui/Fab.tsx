@@ -2507,29 +2507,6 @@ export function Fab({
       editTarget?.entityType === "TASK";
     setEditHydrating(Boolean(shouldHydrateEditTarget && editTarget?.entityId));
   }, [editTarget?.entityId, editTarget?.entityType, editTarget?.instanceId]);
-  const closeExpandedPanel = useCallback(() => {
-    if (creationSelectionTimeoutRef.current !== null) {
-      window.clearTimeout(creationSelectionTimeoutRef.current);
-      creationSelectionTimeoutRef.current = null;
-    }
-    if (mobileCreationFocusTimeoutRef.current !== null) {
-      window.clearTimeout(mobileCreationFocusTimeoutRef.current);
-      mobileCreationFocusTimeoutRef.current = null;
-    }
-    mobileCreationFocusTypeRef.current = null;
-    setPressedCreationType(null);
-    setCreationSpawnOrigin(null);
-    setCreationRevealGeometry(null);
-    setExpanded(false);
-    setSelected(null);
-    setPendingCreationNameFocus(null);
-    openingCreationRequestIdRef.current = null;
-    setIsDirectCreationOpen(false);
-    setIsOpen(false);
-    if (editTarget) {
-      onEditClose?.();
-    }
-  }, [editTarget, onEditClose]);
   const [creationMainShellHeights, setCreationMainShellHeights] = useState<
     Partial<Record<CreationType, number>>
   >({});
@@ -5490,6 +5467,93 @@ export function Fab({
     viewportHeight,
     visualViewportKeyboardInset,
   ]);
+  const clearFabBodyClassOwners = useCallback(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+
+    const creatorWindow = window as unknown as Window & Record<string, unknown>;
+    const keyboardOwners = creatorWindow[
+      "__CREATOR_FAB_KEYBOARD_ACTIVE_OWNERS__"
+    ];
+    const panelOwners = creatorWindow["__CREATOR_FAB_PANEL_ACTIVE_OWNERS__"];
+
+    if (keyboardOwners instanceof Set) {
+      keyboardOwners.delete(fabKeyboardOwnerId);
+      document.body.classList.toggle(
+        "fab-keyboard-active",
+        keyboardOwners.size > 0,
+      );
+    } else {
+      document.body.classList.remove("fab-keyboard-active");
+    }
+
+    if (panelOwners instanceof Set) {
+      panelOwners.delete(fabPanelChromeOwnerId);
+      document.body.classList.toggle("fab-panel-active", panelOwners.size > 0);
+    } else {
+      document.body.classList.remove("fab-panel-active");
+    }
+  }, [fabKeyboardOwnerId, fabPanelChromeOwnerId]);
+  const resetFabViewportState = useCallback(() => {
+    if (typeof window !== "undefined") {
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
+      if (fabKeyboardSettleTimeoutRef.current !== null) {
+        window.clearTimeout(fabKeyboardSettleTimeoutRef.current);
+        fabKeyboardSettleTimeoutRef.current = null;
+      }
+      if (mobileCreationFocusTimeoutRef.current !== null) {
+        window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+        mobileCreationFocusTimeoutRef.current = null;
+      }
+    }
+
+    if (typeof document !== "undefined") {
+      const activeElement = document.activeElement;
+      if (
+        activeElement instanceof HTMLElement &&
+        panelRef.current?.contains(activeElement)
+      ) {
+        activeElement.blur();
+      }
+    }
+
+    mobileCreationFocusTypeRef.current = null;
+    wasFabKeyboardActiveRawRef.current = false;
+    setKeyboardLift(0);
+    setVisualViewportKeyboardInset(0);
+    setIsFabInputFocused(false);
+    setIsFabKeyboardSettling(false);
+    setMobileFabPanelHeight(null);
+    setAttachedCreationControlsHeight(null);
+    setViewportHeight(null);
+    clearFabBodyClassOwners();
+  }, [clearFabBodyClassOwners]);
+  const closeExpandedPanel = useCallback(
+    (options?: { notifyEditClose?: boolean }) => {
+      if (creationSelectionTimeoutRef.current !== null) {
+        window.clearTimeout(creationSelectionTimeoutRef.current);
+        creationSelectionTimeoutRef.current = null;
+      }
+      resetFabViewportState();
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setExpanded(false);
+      setSelected(null);
+      setPendingCreationNameFocus(null);
+      openingCreationRequestIdRef.current = null;
+      setIsDirectCreationOpen(false);
+      setIsOpen(false);
+      if (options?.notifyEditClose ?? Boolean(editTarget)) {
+        onEditClose?.();
+      }
+    },
+    [editTarget, onEditClose, resetFabViewportState],
+  );
   const isFabKeyboardActiveRaw =
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
   const shouldUseDirectCreationModal =
@@ -11930,10 +11994,7 @@ export function Fab({
       );
     }
 
-    setIsOpen(false);
-    setIsDirectCreationOpen(false);
-    setExpanded(false);
-    setSelected(null);
+    closeExpandedPanel({ notifyEditClose: false });
     setAiOpen(false);
     setOverlayOpen(false);
     setOverlayPickerOpen(false);
@@ -13852,10 +13913,7 @@ export function Fab({
             monumentId: goalRelationResolution.selectedMonumentId,
           });
           resetFabFormState();
-          setIsDirectCreationOpen(false);
-          setExpanded(false);
-          setSelected(null);
-          setIsOpen(false);
+          closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
           toast.success("Goal updated");
@@ -13941,10 +13999,7 @@ export function Fab({
             monumentId: null,
           });
           resetFabFormState();
-          setIsDirectCreationOpen(false);
-          setExpanded(false);
-          setSelected(null);
-          setIsOpen(false);
+          closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
           toast.success("Project updated");
@@ -14003,10 +14058,7 @@ export function Fab({
             monumentId: null,
           });
           resetFabFormState();
-          setIsDirectCreationOpen(false);
-          setExpanded(false);
-          setSelected(null);
-          setIsOpen(false);
+          closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
           toast.success("Task updated");
@@ -14104,10 +14156,7 @@ export function Fab({
             monumentId: null,
           });
           resetFabFormState();
-          setIsDirectCreationOpen(false);
-          setExpanded(false);
-          setSelected(null);
-          setIsOpen(false);
+          closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
           toast.success("Habit updated");
@@ -14456,10 +14505,7 @@ export function Fab({
         }
         openingCreationRequestIdRef.current = null;
         resetFabFormState();
-        setIsDirectCreationOpen(false);
-        setExpanded(false);
-        setSelected(null);
-        setIsOpen(false);
+        closeExpandedPanel({ notifyEditClose: false });
         const successLabel =
           createdType === "GOAL"
             ? "Goal"
@@ -14573,6 +14619,7 @@ export function Fab({
     taskStage,
     attachSelectedTagsToEntity,
     buildMemoCaptureConfig,
+    closeExpandedPanel,
     onEditClose,
     onEditSaved,
     resetFabFormState,
@@ -14691,10 +14738,7 @@ export function Fab({
         });
         setGoalDeleteConfirmTarget(null);
         resetFabFormState();
-        setIsDirectCreationOpen(false);
-        setExpanded(false);
-        setSelected(null);
-        setIsOpen(false);
+        closeExpandedPanel({ notifyEditClose: false });
         onEditClose?.();
         await notifySchedulerOfChange();
         toast.success(`${successLabel} deleted`);
@@ -14719,6 +14763,7 @@ export function Fab({
       editableDeleteTarget,
       goalName,
       isDeletingFabEntity,
+      closeExpandedPanel,
       notifySchedulerOfChange,
       onEditClose,
       resetFabFormState,
@@ -14911,7 +14956,7 @@ export function Fab({
       window.clearTimeout(mobileCreationFocusTimeoutRef.current);
       mobileCreationFocusTimeoutRef.current = null;
     }
-    mobileCreationFocusTypeRef.current = null;
+    resetFabViewportState();
     setPressedCreationType(null);
     setCreationSpawnOrigin(null);
     setCreationRevealGeometry(null);
@@ -14922,6 +14967,7 @@ export function Fab({
     editTarget,
     isDirectCreationOpen,
     isOpen,
+    resetFabViewportState,
   ]);
 
   const shouldRenderNeighbor = isDragging && dragTargetPage !== null;

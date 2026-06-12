@@ -36,7 +36,7 @@ import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { useToastHelpers } from "@/components/ui/toast";
 
-import type { Goal } from "../types";
+import type { Goal, Project } from "../types";
 import { GoalCard } from "./GoalCard";
 import {
   ProjectRowTaskInteractionsProvider,
@@ -187,6 +187,7 @@ function DraggableGoalCard({
   onGoalToggleActive,
   onGoalDelete,
   onProjectEditOpen,
+  onProjectUpdated,
   monumentContext,
   hideEnergyPill,
   campaignDrawerRow = false,
@@ -201,6 +202,11 @@ function DraggableGoalCard({
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
   onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
+  onProjectUpdated?: (
+    goalId: string,
+    projectId: string,
+    updates: Partial<Project>
+  ) => void;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -642,6 +648,9 @@ function DraggableGoalCard({
                       }
                       goalId={goal.id}
                       projectTasksOnly={false}
+                      onProjectUpdated={(projectId, updates) =>
+                        onProjectUpdated?.(goal.id, projectId, updates)
+                      }
                       addingProject={false}
                       onAddProject={(originRect) =>
                         fabCreation?.requestProjectCreation(
@@ -694,6 +703,9 @@ function DraggableGoalCard({
                       ? (target, project, origin) =>
                           onProjectEditOpen(target, project.id, goal.id, origin)
                       : undefined
+                  }
+                  onProjectUpdated={(projectId, updates) =>
+                    onProjectUpdated?.(goal.id, projectId, updates)
                   }
                   monumentContext={monumentContext}
                   onManualComplete={onGoalManualComplete}
@@ -749,6 +761,11 @@ interface CampaignCardProps {
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
   onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
+  onProjectUpdated?: (
+    goalId: string,
+    projectId: string,
+    updates: Partial<Project>
+  ) => void;
   onRoadmapOrderSaved?: () => void | Promise<void>;
   onCampaignDetailsSaved?: (
     campaignId: string,
@@ -775,6 +792,7 @@ function CampaignCardImpl({
   onGoalToggleActive,
   onGoalDelete,
   onGoalManualComplete,
+  onProjectUpdated,
   onProjectEditOpen,
   monumentContext = false,
   suppressReadyToast = false,
@@ -878,6 +896,25 @@ function CampaignCardImpl({
     [localGoals, savePriorityRanks, onRoadmapOrderSaved]
   );
 
+  const handleProjectUpdated = useCallback(
+    (goalId: string, projectId: string, updates: Partial<Project>) => {
+      setLocalGoals((currentGoals) =>
+        currentGoals.map((currentGoal) =>
+          currentGoal.id === goalId
+            ? {
+                ...currentGoal,
+                projects: currentGoal.projects.map((project) =>
+                  project.id === projectId ? { ...project, ...updates } : project
+                ),
+              }
+            : currentGoal
+        )
+      );
+      onProjectUpdated?.(goalId, projectId, updates);
+    },
+    [onProjectUpdated]
+  );
+
   const hasGoals = goals.length > 0;
   const shellMotionProps = prefersReducedMotion
     ? {}
@@ -941,6 +978,7 @@ function CampaignCardImpl({
                 onGoalToggleActive={onGoalToggleActive}
                 onGoalDelete={onGoalDelete}
                 onGoalManualComplete={onGoalManualComplete}
+                onProjectUpdated={handleProjectUpdated}
                 onProjectEditOpen={onProjectEditOpen}
                 monumentContext={monumentContext}
                 suppressReadyToast={suppressReadyToast}
@@ -1042,6 +1080,7 @@ function CampaignCardImpl({
                                 onGoalDelete={onGoalDelete}
                                 onGoalManualComplete={onGoalManualComplete}
                                 onProjectEditOpen={onProjectEditOpen}
+                                onProjectUpdated={handleProjectUpdated}
                                 suppressReadyToast={suppressReadyToast}
                               />
                             </div>
@@ -1076,6 +1115,11 @@ type CampaignDrawerProps = {
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
   onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
+  onProjectUpdated?: (
+    goalId: string,
+    projectId: string,
+    updates: Partial<Project>
+  ) => void;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -1101,6 +1145,7 @@ function CampaignDrawer({
   onGoalToggleActive,
   onGoalDelete,
   onGoalManualComplete,
+  onProjectUpdated,
   onProjectEditOpen,
   monumentContext,
   suppressReadyToast = false,
@@ -1199,6 +1244,25 @@ function CampaignDrawer({
       setOpenGoalId((current) => (current === goal.id ? null : current));
     },
     [onGoalManualComplete]
+  );
+
+  const handleProjectUpdated = useCallback(
+    (goalId: string, projectId: string, updates: Partial<Project>) => {
+      setLocalGoals((currentGoals) =>
+        currentGoals.map((currentGoal) =>
+          currentGoal.id === goalId
+            ? {
+                ...currentGoal,
+                projects: currentGoal.projects.map((project) =>
+                  project.id === projectId ? { ...project, ...updates } : project
+                ),
+              }
+            : currentGoal
+        )
+      );
+      onProjectUpdated?.(goalId, projectId, updates);
+    },
+    [onProjectUpdated]
   );
 
   const openCampaignEditForm = useCallback(() => {
@@ -1484,6 +1548,7 @@ function CampaignDrawer({
                   onGoalDelete={onGoalDelete}
                   onGoalManualComplete={handleGoalManualComplete}
                   onProjectEditOpen={onProjectEditOpen}
+                  onProjectUpdated={handleProjectUpdated}
                   monumentContext={monumentContext}
                   hideEnergyPill
                   campaignDrawerRow
@@ -1571,6 +1636,7 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.goals === next.goals &&
     prev.monumentContext === next.monumentContext &&
     prev.suppressReadyToast === next.suppressReadyToast &&
+    prev.onProjectUpdated === next.onProjectUpdated &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onGoalManualComplete === next.onGoalManualComplete &&
     prev.onAddGoal === next.onAddGoal &&

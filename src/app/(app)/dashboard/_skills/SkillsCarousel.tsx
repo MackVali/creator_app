@@ -24,11 +24,7 @@ import {
 import { updateCatOrder } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { createRecord, updateRecord } from "@/lib/db";
-import { createSkillNote, getNotes } from "@/lib/notesStorage";
-import {
-  getSkillStarterNote,
-  hasMatchingSkillStarterNote,
-} from "@/lib/skillStarterNotes";
+import { backfillSkillStarterNote, getSkillStarterNote } from "@/lib/skillStarterNotes";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
@@ -46,6 +42,19 @@ type CommunitySkill = {
   slug?: string | null;
   searchAliases?: string[];
   categoryName?: string | null;
+};
+
+type StarterBackfillSkill = {
+  id: string;
+  name: string | null;
+};
+
+type SkillSortQueryRow = {
+  id: string;
+  name: string;
+  cat_id: string | null;
+  global_skill_id?: string | null;
+  sort_order?: number | null;
 };
 
 const POPULAR_COMMUNITY_SKILLS = [
@@ -599,6 +608,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   const communityResultsScrollSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outerSwipeBlockedByCommunityRef = useRef(false);
   const outerSwipeBlockedScrollLeftRef = useRef<number | null>(null);
+  const starterBackfillKeysRef = useRef<Set<string>>(new Set());
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
 
@@ -1010,6 +1020,29 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     return () => cancelAnimationFrame(frame);
   }, [activeCommunitySkillCategoryIndex, communitySkillPickerOpen]);
 
+  const backfillStarterNotesForSkills = useCallback(
+    (userId: string, skills: StarterBackfillSkill[]) => {
+      for (const skill of skills) {
+        if (!getSkillStarterNote(skill.name)) {
+          continue;
+        }
+
+        const backfillKey = `${userId}:${skill.id}`;
+        if (starterBackfillKeysRef.current.has(backfillKey)) {
+          continue;
+        }
+
+        starterBackfillKeysRef.current.add(backfillKey);
+        void backfillSkillStarterNote({
+          userId,
+          skillId: skill.id,
+          skillName: skill.name,
+        });
+      }
+    },
+    [],
+  );
+
   const loadExistingSkillSortItems = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
@@ -1029,31 +1062,33 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
 
       if (error) {
         const skillRows = await getSkillsForUser(user.id);
-
-        setExistingSkillSortItems(
-          (skillRows || []).map((skill) => ({
-            id: skill.id,
-            name: skill.name,
-            cat_id: skill.cat_id,
-            sort_order: skill.sort_order ?? null,
-          }))
-        );
-        return;
-      }
-
-      setExistingSkillSortItems(
-        (data || []).map((skill) => ({
+        const nextSkillSortItems = (skillRows || []).map((skill) => ({
           id: skill.id,
           name: skill.name,
           cat_id: skill.cat_id,
-          global_skill_id: skill.global_skill_id ?? null,
           sort_order: skill.sort_order ?? null,
-        }))
-      );
+        }));
+
+        setExistingSkillSortItems(nextSkillSortItems);
+        void backfillStarterNotesForSkills(user.id, nextSkillSortItems);
+        return;
+      }
+
+      const skillSortRows = (data || []) as SkillSortQueryRow[];
+      const nextSkillSortItems = skillSortRows.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        cat_id: skill.cat_id,
+        global_skill_id: skill.global_skill_id ?? null,
+        sort_order: skill.sort_order ?? null,
+      }));
+
+      setExistingSkillSortItems(nextSkillSortItems);
+      void backfillStarterNotesForSkills(user.id, nextSkillSortItems);
     } catch (error) {
       console.error("Error loading skill sort data:", error);
     }
-  }, []);
+  }, [backfillStarterNotesForSkills]);
 
   useEffect(() => {
     void loadExistingSkillSortItems();
@@ -1507,32 +1542,11 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
         return false;
       }
 
-      const starterNote = getSkillStarterNote(data.name);
-      if (starterNote) {
-        void (async () => {
-          try {
-            const existingNotes = await getNotes(data.id);
-            if (hasMatchingSkillStarterNote(existingNotes, starterNote)) {
-              return;
-            }
-
-            await createSkillNote(
-              data.id,
-              {
-                title: starterNote.title,
-                content: starterNote.content,
-              },
-              { metadata: starterNote.metadata },
-            );
-          } catch (starterNoteError) {
-            console.error("Failed to create starter skill note", {
-              error: starterNoteError,
-              skillId: data.id,
-              skillName: data.name,
-            });
-          }
-        })();
-      }
+      void backfillSkillStarterNote({
+        userId: data.user_id,
+        skillId: data.id,
+        skillName: data.name,
+      });
 
       setExistingSkillSortItems((previous) => {
         if (previous.some((existing) => existing.id === data.id)) {

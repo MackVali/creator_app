@@ -7,6 +7,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import FriendsList from "./FriendsList";
 import type { DiscoveryProfile, Friend } from "@/types/friends";
 import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
+import { readNativeContactsForImport } from "@/lib/friends/nativeContacts";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type SearchFriendsProps = {
@@ -62,6 +63,7 @@ export default function SearchFriends({
   const [discovery, setDiscovery] = useState<DiscoveryProfileState[]>([]);
   const [contactsImported, setContactsImported] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -357,32 +359,57 @@ export default function SearchFriends({
 
     setIsImporting(true);
     setImportError(null);
+    setImportNotice(null);
 
-    void fetch("/api/friends/discovery/import", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({}),
-    })
-      .then(async (response) => {
+    void (async () => {
+      try {
+        const nativeContacts = await readNativeContactsForImport();
+
+        if (nativeContacts.status === "unsupported") {
+          setImportError(nativeContacts.message);
+          return;
+        }
+
+        if (nativeContacts.status === "denied") {
+          setImportError(nativeContacts.message);
+          return;
+        }
+
+        if (nativeContacts.status === "empty") {
+          setImportNotice(nativeContacts.message);
+          return;
+        }
+
+        const response = await fetch("/api/friends/discovery/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ totalContacts: nativeContacts.totalContacts }),
+        });
+
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as
             | { error?: string }
             | null;
           throw new Error(payload?.error ?? "Unable to import contacts.");
         }
+
         setContactsImported(true);
-      })
-      .catch((error) => {
+        setImportNotice(
+          `${nativeContacts.totalContacts} contact${
+            nativeContacts.totalContacts === 1 ? "" : "s"
+          } imported. We’ll surface matches as soon as they land.`
+        );
+      } catch (error) {
         console.error("Contact import failed", error);
         setImportError(
           error instanceof Error ? error.message : "Unable to import contacts."
         );
-      })
-      .finally(() => {
+      } finally {
         setIsImporting(false);
-      });
+      }
+    })();
   };
 
   const handleSendInvite = (event: FormEvent<HTMLFormElement>) => {
@@ -561,33 +588,40 @@ export default function SearchFriends({
 
         {shouldHideInviteTools ? null : (
           <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={handleImportContacts}
-              disabled={isImporting}
-              className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
-                {contactsImported
-                  ? "Imported"
-                  : isImporting
-                    ? "Importing…"
-                    : "Import contacts"}
-              </span>
-              <p className="text-sm font-semibold text-white">
-                {contactsImported
-                  ? "Your contacts were added"
-                  : "Pull in your address book"}
-              </p>
-              <p className="text-xs text-white/60">
-                {contactsImported
-                  ? "We’ll surface matches as soon as they land."
-                  : "Discover existing fans and collaborators from your email list."}
-              </p>
-            </button>
-            {importError ? (
-              <p className="text-xs text-rose-300">{importError}</p>
-            ) : null}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleImportContacts}
+                disabled={isImporting}
+                className="flex w-full flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+                  {contactsImported
+                    ? "Imported"
+                    : isImporting
+                      ? "Importing…"
+                      : "Import contacts"}
+                </span>
+                <p className="text-sm font-semibold text-white">
+                  {contactsImported
+                    ? "Your contacts were added"
+                    : "Pull in your address book"}
+                </p>
+                <p className="text-xs text-white/60">
+                  {contactsImported
+                    ? "We’ll surface matches as soon as they land."
+                    : "Discover existing fans and collaborators from your email list."}
+                </p>
+              </button>
+              {importError ? (
+                <p className="text-xs text-rose-300">{importError}</p>
+              ) : null}
+              {importNotice ? (
+                <p className="text-xs font-semibold text-white/75">
+                  {importNotice}
+                </p>
+              ) : null}
+            </div>
 
             <form
               onSubmit={handleSendInvite}

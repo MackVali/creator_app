@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { updateMyOnboarding } from "@/lib/db/profiles";
 import {
+  findMatchingSkillStarterNote,
   getSkillStarterNote,
-  hasMatchingSkillStarterNote,
+  getSkillStarterNoteMetadataRepair,
 } from "@/lib/skillStarterNotes";
 
 export const runtime = "nodejs";
@@ -199,46 +200,79 @@ export async function POST(request: Request) {
   }>;
 
   if (skillsWithStarterNotes.length > 0) {
-    const skillIds = skillsWithStarterNotes.map(({ skill }) => skill.id);
-    const { data: existingNotes, error: existingNotesError } = await supabase
-      .from("notes")
-      .select("skill_id,title,metadata")
-      .eq("user_id", user.id)
-      .in("skill_id", skillIds);
+    await Promise.all(
+      skillsWithStarterNotes.map(async ({ skill, starterNote }) => {
+        const { data: existingNotes, error: existingNotesError } = await supabase
+          .from("notes")
+          .select("id,title,content,metadata")
+          .eq("user_id", user.id)
+          .eq("skill_id", skill.id);
 
-    if (existingNotesError) {
-      console.error(
-        "[onboarding/skills/seed] Failed to check starter notes",
-        existingNotesError
-      );
-    } else {
-      const notesToInsert = skillsWithStarterNotes
-        .filter(({ skill, starterNote }) => {
-          const notesForSkill = (existingNotes ?? []).filter(
-            (note) => note.skill_id === skill.id
+        if (existingNotesError) {
+          console.error(
+            "[onboarding/skills/seed] Failed to check starter notes",
+            {
+              error: existingNotesError,
+              skillId: skill.id,
+              skillName: skill.name,
+            },
           );
-          return !hasMatchingSkillStarterNote(notesForSkill, starterNote);
-        })
-        .map(({ skill, starterNote }) => ({
+          return;
+        }
+
+        const matchingStarterNote = findMatchingSkillStarterNote(
+          existingNotes ?? [],
+          starterNote,
+        );
+
+        if (matchingStarterNote) {
+          const repairedMetadata = getSkillStarterNoteMetadataRepair(
+            matchingStarterNote,
+            starterNote,
+          );
+          if (matchingStarterNote.id && repairedMetadata) {
+            const { error: repairError } = await supabase
+              .from("notes")
+              .update({ metadata: repairedMetadata })
+              .eq("user_id", user.id)
+              .eq("skill_id", skill.id)
+              .eq("id", matchingStarterNote.id);
+
+            if (repairError) {
+              console.error(
+                "[onboarding/skills/seed] Failed to repair starter note locks",
+                {
+                  error: repairError,
+                  skillId: skill.id,
+                  skillName: skill.name,
+                  noteId: matchingStarterNote.id,
+                },
+              );
+            }
+          }
+          return;
+        }
+
+        const { error: starterNoteError } = await supabase.from("notes").insert({
           user_id: user.id,
           skill_id: skill.id,
           title: starterNote.title,
           content: starterNote.content,
           metadata: starterNote.metadata,
-        }));
+        });
 
-      if (notesToInsert.length > 0) {
-        const { error: starterNotesError } = await supabase
-          .from("notes")
-          .insert(notesToInsert);
-        if (starterNotesError) {
+        if (starterNoteError) {
           console.error(
-            "[onboarding/skills/seed] Failed to insert starter notes",
-            starterNotesError
+            "[onboarding/skills/seed] Failed to insert starter note",
+            {
+              error: starterNoteError,
+              skillId: skill.id,
+              skillName: skill.name,
+            },
           );
         }
-      }
-    }
+      }),
+    );
   }
 
   try {
