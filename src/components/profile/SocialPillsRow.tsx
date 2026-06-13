@@ -64,10 +64,10 @@ export default function SocialPillsRow({
 
   const rowClasses =
     layout === "vertical"
-      ? "flex flex-col items-center gap-3"
+      ? "flex flex-col items-center gap-1.5"
       : editMode
-        ? "-mx-2 flex snap-x snap-mandatory items-center gap-2.5 overflow-x-auto overflow-y-visible px-2 pb-2 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
-        : "-mx-2 flex snap-x snap-mandatory items-center gap-4 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
+        ? "-mx-2 flex snap-x snap-mandatory items-center gap-1.5 overflow-x-auto overflow-y-visible px-2 pb-2 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+        : "-mx-2 flex snap-x snap-mandatory items-center gap-1.5 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
 
   if (!hasSocials && !editMode) {
     if (layout === "vertical") {

@@ -1310,10 +1310,8 @@ export function MonumentGoalsList({
       type="button"
       aria-label={isSmallGoalCardDensity ? "Use large cards" : "Use small cards"}
       onClick={handleGoalCardDensityToggle}
-      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 ${
-        isSmallGoalCardDensity
-          ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
-          : ""
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:border-white/20 focus-visible:bg-white/[0.06] focus-visible:outline-none ${
+        isSmallGoalCardDensity ? "text-zinc-300" : ""
       }`}
     >
       {isSmallGoalCardDensity ? (

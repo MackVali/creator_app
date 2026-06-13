@@ -31,15 +31,15 @@ type SwipeHostRoute = MainTabRouteHref;
 type SwipeDirection = "left" | "right";
 type SwipeTargetRoute = MainTabRouteHref;
 
-const AXIS_LOCK_DISTANCE = 32;
-const VERTICAL_LOCK_DISTANCE = 14;
-const HORIZONTAL_DOMINANCE_RATIO = 1.5;
+const AXIS_LOCK_DISTANCE = 16;
+const VERTICAL_LOCK_DISTANCE = 12;
+const HORIZONTAL_DOMINANCE_RATIO = 1.12;
 const EDGE_RESISTANCE = 0.2;
 const DRAG_FOLLOW = 1;
-const MIN_COMMIT_DISTANCE = 110;
-const COMMIT_DISTANCE_RATIO = 0.35;
-const MIN_FLICK_DISTANCE = 110;
-const COMMIT_VELOCITY = 1.6;
+const MIN_COMMIT_DISTANCE = 92;
+const COMMIT_DISTANCE_RATIO = 0.25;
+const MIN_FLICK_DISTANCE = 48;
+const COMMIT_VELOCITY = 0.75;
 const COMMIT_ANIMATION_DURATION = 0.12;
 const COMMIT_FALLBACK_TIMEOUT_MS = 2200;
 
@@ -148,7 +148,10 @@ function isInteractiveTarget(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest(IGNORE_TARGET_SELECTOR));
 }
 
-function isScrollableGestureSurface(target: EventTarget | null, boundary: Element | null) {
+function isHorizontalScrollableGestureSurface(
+  target: EventTarget | null,
+  boundary: Element | null
+) {
   if (!(target instanceof Element)) return false;
 
   let node: Element | null = target;
@@ -157,15 +160,12 @@ function isScrollableGestureSurface(target: EventTarget | null, boundary: Elemen
     const canScrollX =
       /(auto|scroll|overlay)/.test(style.overflowX) &&
       node.scrollWidth > node.clientWidth + 8;
-    const canScrollY =
-      /(auto|scroll|overlay)/.test(style.overflowY) &&
-      node.scrollHeight > node.clientHeight + 8;
     const isKnownHorizontalSurface =
       node.getAttribute("aria-roledescription") === "carousel" ||
       node.classList.contains("scroll-snap") ||
       style.touchAction.includes("pan-x");
 
-    if (canScrollX || canScrollY || isKnownHorizontalSurface) {
+    if (canScrollX || isKnownHorizontalSurface) {
       return true;
     }
 
@@ -629,7 +629,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     if (!swipeHostRoute) return;
     if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
     if (isInteractiveTarget(event.target)) return;
-    if (isScrollableGestureSurface(event.target, rootRef.current)) return;
+    if (isHorizontalScrollableGestureSurface(event.target, rootRef.current)) return;
 
     stopAnimation();
     removeWindowListeners();

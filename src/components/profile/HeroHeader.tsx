@@ -15,7 +15,7 @@ import {
   User,
 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useId,
@@ -123,6 +123,7 @@ export default function HeroHeader({
   followedByTotalCount = 0,
   actionButtons,
 }: HeroHeaderProps) {
+  const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const getInitials = (name: string | null, username: string) => {
@@ -180,11 +181,13 @@ export default function HeroHeader({
   const followedByNameUsers = followedByPreviewUsers.slice(0, 2);
   const followedByTotal = Math.max(followedByTotalCount, followedByPreviewUsers.length);
   const followedByOtherCount = Math.max(followedByTotal - followedByNameUsers.length, 0);
-  const hasFollowedByPreview = followedByPreviewUsers.length > 0;
+  const hasFollowedByPreview = !isOwner && followedByPreviewUsers.length > 0;
   const actionButtonBaseClass =
     "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md px-3 text-[0.82rem] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-45";
   const actionButtonClass =
     `${actionButtonBaseClass} border border-black bg-white/[0.14] text-white/90 hover:border-black hover:bg-white/[0.2] disabled:hover:border-black disabled:hover:bg-white/[0.14]`;
+  const professionalDashboardButtonClass =
+    "inline-flex min-h-[3.4rem] w-full flex-col items-start justify-center rounded-md border border-black bg-white/[0.14] px-3 py-2 text-left transition hover:border-black hover:bg-white/[0.2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
   const handleAvatarClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -208,6 +211,14 @@ export default function HeroHeader({
     },
     [onAvatarChange],
   );
+
+  const handleFollowedByPreviewClick = useCallback(() => {
+    onProfileStatSelect?.("followers");
+  }, [onProfileStatSelect]);
+
+  const handleProfessionalDashboardClick = useCallback(() => {
+    router.push("/dashboard");
+  }, [router]);
 
   return (
     <section className="w-full bg-black text-white mt-0">
@@ -402,21 +413,24 @@ export default function HeroHeader({
           ) : null}
 
           {hasFollowedByPreview ? (
-            <div className="flex items-center gap-2.5 pt-0 text-left text-[0.78rem] font-medium leading-snug text-white/70 sm:text-[0.82rem]">
-              <div className="flex shrink-0 -space-x-2">
+            <button
+              type="button"
+              onClick={handleFollowedByPreviewClick}
+              className="group flex w-full items-center gap-2.5 pt-0 text-left text-[0.78rem] font-medium leading-snug text-white/70 transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:text-[0.82rem]"
+              aria-label={`Open ${displayName}'s followers`}
+            >
+              <span className="flex shrink-0 -space-x-2">
                 {followedByPreviewUsers.map((follower) => {
-                  const profileHref = `/profile/${encodeURIComponent(follower.username)}`;
                   const fallbackInitials = (follower.displayName || follower.username)
                     .trim()
                     .slice(0, 2)
                     .toUpperCase();
 
                   return (
-                    <Link
+                    <span
                       key={follower.id}
-                      href={profileHref}
-                      className="relative block h-6 w-6 overflow-hidden rounded-full border-2 border-black bg-zinc-900 ring-1 ring-white/10 transition hover:z-10 hover:ring-white/35 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-                      aria-label={`View ${follower.displayName || follower.username}'s profile`}
+                      className="relative block h-6 w-6 overflow-hidden rounded-full border-2 border-black bg-zinc-900 ring-1 ring-white/10 transition group-hover:z-10 group-hover:ring-white/35"
+                      aria-hidden="true"
                     >
                       {follower.avatarUrl ? (
                         <Image
@@ -432,57 +446,70 @@ export default function HeroHeader({
                           {fallbackInitials || <User className="h-3 w-3" aria-hidden="true" />}
                         </span>
                       )}
-                    </Link>
+                    </span>
                   );
                 })}
-              </div>
-              <p className="min-w-0 flex-1">
+              </span>
+              <span className="min-w-0 flex-1">
                 <span>Followed by </span>
                 {followedByNameUsers.map((follower, index) => {
-                  const profileHref = `/profile/${encodeURIComponent(follower.username)}`;
                   const separator =
                     index === 0 ? "" : followedByOtherCount > 0 ? ", " : " and ";
 
                   return (
                     <span key={follower.id}>
                       {separator}
-                      <Link
-                        href={profileHref}
-                        className="font-semibold text-white/88 transition hover:text-white focus-visible:outline-none focus-visible:underline"
-                      >
+                      <span className="font-semibold text-white/88">
                         {follower.username}
-                      </Link>
+                      </span>
                     </span>
                   );
                 })}
                 {followedByOtherCount > 0 ? (
                   <span>{` and ${followedByOtherCount} ${followedByOtherCount === 1 ? "other" : "others"}`}</span>
                 ) : null}
-              </p>
-            </div>
+              </span>
+            </button>
           ) : null}
 
           {actionButtons ? (
-            <div className="grid grid-cols-2 gap-2 pt-3">
-              <button
-                type="button"
-                onClick={actionButtons.onPrimaryClick}
-                disabled={actionButtons.primaryDisabled || actionButtons.primaryBusy}
-                aria-label={actionButtons.primaryAriaLabel ?? actionButtons.primaryLabel}
-                aria-busy={actionButtons.primaryBusy || undefined}
-                className={actionButtonClass}
-              >
-                {actionButtons.primaryLabel}
-              </button>
-              <button
-                type="button"
-                onClick={actionButtons.onSecondaryClick}
-                disabled={actionButtons.secondaryDisabled}
-                aria-label={actionButtons.secondaryAriaLabel ?? actionButtons.secondaryLabel}
-                className={actionButtonClass}
-              >
-                {actionButtons.secondaryLabel}
-              </button>
+            <div className={`flex flex-col gap-2 ${isOwner ? "pt-0" : "pt-3"}`}>
+              {isOwner ? (
+                <button
+                  type="button"
+                  onClick={handleProfessionalDashboardClick}
+                  aria-label="Open professional dashboard"
+                  className={professionalDashboardButtonClass}
+                >
+                  <span className="text-[0.86rem] font-semibold leading-tight text-white/95">
+                    Professional dashboard
+                  </span>
+                  <span className="mt-0.5 text-[0.68rem] font-medium leading-tight text-white/52">
+                    0 views in the last 30 days
+                  </span>
+                </button>
+              ) : null}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={actionButtons.onPrimaryClick}
+                  disabled={actionButtons.primaryDisabled || actionButtons.primaryBusy}
+                  aria-label={actionButtons.primaryAriaLabel ?? actionButtons.primaryLabel}
+                  aria-busy={actionButtons.primaryBusy || undefined}
+                  className={actionButtonClass}
+                >
+                  {actionButtons.primaryLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={actionButtons.onSecondaryClick}
+                  disabled={actionButtons.secondaryDisabled}
+                  aria-label={actionButtons.secondaryAriaLabel ?? actionButtons.secondaryLabel}
+                  className={actionButtonClass}
+                >
+                  {actionButtons.secondaryLabel}
+                </button>
+              </div>
             </div>
           ) : null}
 

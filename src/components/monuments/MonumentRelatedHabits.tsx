@@ -1569,7 +1569,7 @@ export function MonumentRelatedHabits({
                   {relatedHabitPages.map((page) => (
                     <div
                       key={page.id}
-                      className="h-full shrink-0 overflow-hidden"
+                      className="h-full shrink-0 overflow-visible px-2 pt-2 pb-3"
                       style={{ width: `${relatedHabitPanelWidthPercent}%` }}
                     >
                       <div

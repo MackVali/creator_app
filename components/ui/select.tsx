@@ -26,6 +26,11 @@ const SELECT_TRIGGER_DISPLAY_NAME = "SelectTrigger";
 const MOBILE_SCROLL_STYLE = {
   WebkitOverflowScrolling: "touch",
 } as React.CSSProperties;
+const stopSelectMenuGesturePropagation = (
+  event: React.SyntheticEvent<HTMLElement>
+) => {
+  event.stopPropagation();
+};
 
 type SelectTriggerChildInfo = {
   className?: string;
@@ -387,11 +392,15 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
             ? createPortal(
                 <div
                   ref={contentRef}
+                  data-select-scroll-root
                   className={cn(
                     "fixed z-[2147483651] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
                     "overscroll-contain overflow-y-auto overflow-x-hidden touch-pan-y",
                     contentWrapperClassName
                   )}
+                  onWheel={stopSelectMenuGesturePropagation}
+                  onTouchMove={stopSelectMenuGesturePropagation}
+                  onPointerMove={stopSelectMenuGesturePropagation}
                   style={{
                     ...MOBILE_SCROLL_STYLE,
                     left: contentPosition.left,
@@ -420,11 +429,15 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           {isOpen && disablePortal ? (
             <div
               ref={contentRef}
+              data-select-scroll-root
               className={cn(
                 "absolute z-[2147483651] mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
                 "overscroll-contain overflow-y-auto overflow-x-hidden touch-pan-y",
                 contentWrapperClassName
               )}
+              onWheel={stopSelectMenuGesturePropagation}
+              onTouchMove={stopSelectMenuGesturePropagation}
+              onPointerMove={stopSelectMenuGesturePropagation}
               style={MOBILE_SCROLL_STYLE}
             >
               {React.Children.map(children, (child) => {
@@ -491,10 +504,14 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
     return (
       <div
         ref={ref}
+        data-select-scroll-content
         className={cn(
           "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y",
           className
         )}
+        onWheel={stopSelectMenuGesturePropagation}
+        onTouchMove={stopSelectMenuGesturePropagation}
+        onPointerMove={stopSelectMenuGesturePropagation}
         style={MOBILE_SCROLL_STYLE}
       >
         {React.Children.map(children, (child) => {
