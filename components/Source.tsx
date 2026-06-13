@@ -4317,6 +4317,11 @@ export default function Source() {
 
 type SheetMode = "create" | "edit"
 
+const sourceListingSheetContentClassName =
+  "no-default-close w-full !max-w-[30rem] !max-h-[min(80dvh,42rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
+const sourceListingSheetBodyClassName =
+  "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4"
+
 type SourceProductSheetProps = {
   mode: SheetMode
   listing: SourceListing | null
@@ -4397,12 +4402,12 @@ function SourceProductSheet({
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
-        className="no-default-close inset-0 w-full max-w-none rounded-none border-none bg-zinc-950 text-zinc-100 gap-0"
+        side="center"
+        className={sourceListingSheetContentClassName}
       >
-        <form className="flex h-full flex-col" onSubmit={onSubmit}>
-          <div className="border-b border-zinc-900/70 px-5 py-3">
-            <div className="flex items-center gap-3">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <div className="shrink-0 border-b border-zinc-900/70 px-4 py-3">
+            <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="ghost"
@@ -4417,8 +4422,8 @@ function SourceProductSheet({
                 {listingTypeLabels[listingType]}
               </div>
             </div>
-            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{title}</p>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
+            <p className="mt-2 text-lg font-semibold leading-tight text-zinc-100">{title}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
               <Badge
                 className={cn(
                   "rounded-full border px-2 py-0.5 text-[10px]",
@@ -4436,8 +4441,8 @@ function SourceProductSheet({
               </div>
             )}
           </div>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
-            <div className="space-y-3">
+          <div className={sourceListingSheetBodyClassName}>
+            <div className="space-y-2">
               <input
                 ref={imageInputRef}
                 type="file"
@@ -4445,8 +4450,8 @@ function SourceProductSheet({
                 className="sr-only"
                 onChange={onImageChange}
               />
-              <div className="space-y-3">
-                <div className="relative h-56 w-full overflow-hidden rounded-[2rem] border border-zinc-900/70 bg-zinc-900/60">
+              <div className="space-y-2">
+                <div className="relative h-36 w-full overflow-hidden rounded-xl border border-zinc-900/70 bg-zinc-900/60 sm:h-40">
                   {coverImagePreview ? (
                     <img
                       src={coverImagePreview}
@@ -4459,7 +4464,7 @@ function SourceProductSheet({
                     </div>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     variant="secondary"
@@ -4489,7 +4494,7 @@ function SourceProductSheet({
                 )}
               </div>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <FieldStack label="Title" htmlFor="product-detail-title">
                 <Input
                   id="product-detail-title"
@@ -4537,7 +4542,7 @@ function SourceProductSheet({
                 </Select>
               </FieldStack>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <FieldStack label="Price" htmlFor="product-detail-price">
                   <Input
                     id="product-detail-price"
@@ -4597,12 +4602,12 @@ function SourceProductSheet({
                 )}
                 </FieldStack>
               {isPhysicalProduct && (
-                <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                <div className="space-y-3 border-t border-zinc-900/70 pt-3">
                   <FormSubheading
                     title="Fulfillment & inventory"
                     description="Track stock and how Source should reserve this item before it ships."
                   />
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <FieldStack
                       label="Inventory count"
                       htmlFor="product-detail-inventory"
@@ -4653,17 +4658,18 @@ function SourceProductSheet({
             </div>
           </div>
 
-          <SheetFooter className="border-t border-zinc-900/70 px-6 py-5">
-            <div className="flex flex-wrap items-center gap-3">
+          <SheetFooter className="shrink-0 border-t border-zinc-900/70 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
+                size="sm"
                 onClick={() => onOpenChange(false)}
                 disabled={isBusy}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isBusy}>
+              <Button type="submit" size="sm" disabled={isBusy}>
                 {isBusy ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="size-4 animate-spin" />
@@ -4767,12 +4773,12 @@ function SourceServiceSheet({
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
-        className="no-default-close inset-0 w-full max-w-none rounded-none border-none bg-zinc-950 text-zinc-100 gap-0"
+        side="center"
+        className={sourceListingSheetContentClassName}
       >
-        <form className="flex h-full flex-col" onSubmit={onSubmit}>
-          <div className="border-b border-zinc-900/70 px-5 py-3">
-            <div className="flex items-center gap-3">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <div className="shrink-0 border-b border-zinc-900/70 px-4 py-3">
+            <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="ghost"
@@ -4787,8 +4793,8 @@ function SourceServiceSheet({
                 {listingTypeLabels[listingType]}
               </div>
             </div>
-            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{title}</p>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
+            <p className="mt-2 text-lg font-semibold leading-tight text-zinc-100">{title}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
               <Badge
                 className={cn(
                   "rounded-full border px-2 py-0.5 text-[10px]",
@@ -4806,8 +4812,8 @@ function SourceServiceSheet({
               </div>
             )}
           </div>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
-            <div className="space-y-3">
+          <div className={sourceListingSheetBodyClassName}>
+            <div className="space-y-2">
               <input
                 ref={imageInputRef}
                 type="file"
@@ -4815,8 +4821,8 @@ function SourceServiceSheet({
                 className="sr-only"
                 onChange={onImageChange}
               />
-              <div className="space-y-3">
-                <div className="relative h-56 w-full overflow-hidden rounded-[2rem] border border-zinc-900/70 bg-zinc-900/60">
+              <div className="space-y-2">
+                <div className="relative h-36 w-full overflow-hidden rounded-xl border border-zinc-900/70 bg-zinc-900/60 sm:h-40">
                   {coverImagePreview ? (
                     <img
                       src={coverImagePreview}
@@ -4829,7 +4835,7 @@ function SourceServiceSheet({
                     </div>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     variant="secondary"
@@ -4859,7 +4865,7 @@ function SourceServiceSheet({
                 )}
               </div>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <FieldStack label="Title" htmlFor="service-detail-title">
                 <Input
                   id="service-detail-title"
@@ -4886,7 +4892,7 @@ function SourceServiceSheet({
                 />
               </FieldStack>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <FieldStack
                   label="Price"
                   htmlFor="service-detail-price"
@@ -4991,7 +4997,7 @@ function SourceServiceSheet({
               )}
 
               {(serviceDetailIsFlatRate || serviceDetailIsCustomQuote) && (
-                <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                <div className="space-y-3 border-t border-zinc-900/70 pt-3">
                   <FormSubheading
                     title={
                       serviceDetailIsFlatRate
@@ -5066,17 +5072,18 @@ function SourceServiceSheet({
             </div>
           </div>
 
-          <SheetFooter className="border-t border-zinc-900/70 px-6 py-5">
-            <div className="flex flex-wrap items-center gap-3">
+          <SheetFooter className="shrink-0 border-t border-zinc-900/70 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
+                size="sm"
                 onClick={() => onOpenChange(false)}
                 disabled={isBusy}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isBusy}>
+              <Button type="submit" size="sm" disabled={isBusy}>
                 {isBusy ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="size-4 animate-spin" />

@@ -73,12 +73,15 @@ interface HabitSummary {
   routineId: string | null;
   routineName: string | null;
   routineDescription: string | null;
+  routineIcon: string | null;
+  routinePosition: number | null;
 }
 
 interface RoutineMetadata {
   id: string;
   name: string | null;
   description: string | null;
+  icon: string | null;
 }
 
 type HabitDueStatus = {
@@ -105,9 +108,9 @@ const RELATED_HABIT_GRID_CLASS =
 const RELATED_HABIT_SMALL_GRID_CLASS =
   "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 const RELATED_HABIT_PAGE_GRID_CLASS =
-  "grid grid-cols-3 gap-2.5 pb-7 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+  "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
-  "grid grid-cols-4 gap-1.5 pb-7 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+  "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -389,6 +392,17 @@ function readString(value: unknown): string | null {
     : null;
 }
 
+function readNumber(value: unknown): number | null {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : NaN;
+
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function formatHabitRecord(
   habit: unknown,
   skillIconById: Map<string, string | null>,
@@ -435,6 +449,8 @@ function formatHabitRecord(
     routineId,
     routineName: routine?.name ?? null,
     routineDescription: routine?.description ?? null,
+    routineIcon: routine?.icon ?? null,
+    routinePosition: readNumber(habitRecord.routine_position),
   } satisfies HabitSummary;
 }
 
@@ -462,6 +478,10 @@ function formatRoutineRecord(routine: unknown): RoutineMetadata | null {
     id: routineId,
     name: readString(routineRecord.name),
     description: readString(routineRecord.description),
+    icon:
+      readString(routineRecord.icon) ??
+      readString(routineRecord.emoji) ??
+      readString(routineRecord.icon_emoji),
   };
 }
 
@@ -473,14 +493,27 @@ async function fetchRoutineMetadataById(
   const uniqueRoutineIds = Array.from(new Set(routineIds.filter(Boolean)));
   if (uniqueRoutineIds.length === 0) return new Map();
 
-  const { data, error } = await supabase
-    .from("habit_routines")
-    .select("id, name, description")
-    .eq("user_id", userId)
-    .in("id", uniqueRoutineIds);
+  const selectColumns = [
+    "id, name, description, icon, emoji, icon_emoji",
+    "id, name, description, icon, emoji",
+    "id, name, description, icon",
+    "id, name, description, emoji",
+    "id, name, description",
+  ];
 
-  if (error) {
-    return new Map();
+  let data: unknown[] | null = null;
+
+  for (const columns of selectColumns) {
+    const { data: routinesData, error } = await supabase
+      .from("habit_routines")
+      .select(columns)
+      .eq("user_id", userId)
+      .in("id", uniqueRoutineIds);
+
+    if (!error) {
+      data = routinesData ?? [];
+      break;
+    }
   }
 
   return new Map(
@@ -549,6 +582,7 @@ export function MonumentRelatedHabits({
       }
     >()
   );
+  const loadedRelatedHabitsMonumentIdRef = useRef<string | null>(null);
   const relatedHabitGridClass =
     relatedHabitCardDensity === "small"
       ? RELATED_HABIT_SMALL_GRID_CLASS
@@ -593,6 +627,14 @@ export function MonumentRelatedHabits({
       currentDensity === "large" ? "small" : "large"
     );
   }, []);
+  const handleRoutineAddHabit = useCallback(
+    (routine: RelatedRoutineCardRoutine) => {
+      fabCreation?.requestHabitCreation(null, {
+        routineId: routine.id,
+      });
+    },
+    [fabCreation]
+  );
   const pendingRelatedHabitActionsRef = useRef(
     new Map<string, { action: "complete" | "undo"; dateKey: string }>()
   );
@@ -642,8 +684,14 @@ export function MonumentRelatedHabits({
       const routineHabit = {
         id: habit.id,
         name: habit.name,
-        dueLabel: habit.dueLabel,
+        dueLabel: completedRelatedHabitIds.has(habit.id)
+          ? "COMPLETE"
+          : habit.dueLabel,
         skillIcon: habit.skillIcon,
+        completed: completedRelatedHabitIds.has(habit.id),
+        pending: pendingRelatedHabitIds.has(habit.id),
+        routinePosition: habit.routinePosition,
+        currentStreakDays: habit.currentStreakDays,
       };
 
       if (existing) {
@@ -661,6 +709,7 @@ export function MonumentRelatedHabits({
         id: habit.routineId,
         name: routineName,
         description: habit.routineDescription,
+        icon: habit.routineIcon,
         habits: [routineHabit],
         dueRank: habit.dueRank,
         typeRank: getHabitTypePriority(habit.habitType),
@@ -671,7 +720,7 @@ export function MonumentRelatedHabits({
     return Array.from(routineMap.values()).sort((first, second) =>
       first.name.localeCompare(second.name, undefined, { sensitivity: "base" })
     );
-  }, [decoratedHabits]);
+  }, [completedRelatedHabitIds, decoratedHabits, pendingRelatedHabitIds]);
   const relatedHabitPages = useMemo(() => {
     const routineItems = relatedRoutines.map((routine) => ({
       kind: "routine" as const,
@@ -1260,6 +1309,7 @@ export function MonumentRelatedHabits({
         if (action === "undo") {
           previousRelatedHabitStateRef.current.delete(habitId);
         }
+        setRefreshVersion((current) => current + 1);
       } catch (completionUpdateErr) {
         console.error(
           "Failed to update monument related habit completion:",
@@ -1319,6 +1369,13 @@ export function MonumentRelatedHabits({
       bypassMemoCaptureRef.current = false;
     }
   }, [handleRelatedHabitCompletionToggle, memoCompletionState]);
+
+  const handleRoutineHabitCompletionToggle = useCallback(
+    (habitId: string) => {
+      return handleRelatedHabitCompletionToggle(habitId);
+    },
+    [handleRelatedHabitCompletionToggle]
+  );
 
   const handleRelatedHabitTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>, habitId: string) => {
@@ -1448,7 +1505,7 @@ export function MonumentRelatedHabits({
 
     const handleCreatorEntitySaved = (event: Event) => {
       const detail = (event as CustomEvent<{ entityType?: string }>).detail;
-      if (detail?.entityType !== "HABIT") {
+      if (detail?.entityType !== "HABIT" && detail?.entityType !== "ROUTINE") {
         return;
       }
 
@@ -1465,22 +1522,29 @@ export function MonumentRelatedHabits({
     let cancelled = false;
 
     const loadRelatedHabits = async () => {
+      const shouldPreserveRelatedHabitState =
+        loadedRelatedHabitsMonumentIdRef.current === monumentId;
+
       if (!supabase || !monumentId) {
+        loadedRelatedHabitsMonumentIdRef.current = null;
         setRelatedHabits([]);
         setHabitsLoading(false);
         setCompletionLoading(false);
         return;
       }
 
-      setHabitsLoading(true);
-      setCompletionLoading(false);
       setHabitsError(null);
       setCompletionError(null);
-      setRelatedHabits([]);
-      setCompletedRelatedHabitIds(new Set());
-      setPendingRelatedHabitIds(new Set());
-      previousRelatedHabitStateRef.current.clear();
-      pendingRelatedHabitActionsRef.current.clear();
+      setCompletionLoading(false);
+
+      if (!shouldPreserveRelatedHabitState) {
+        setHabitsLoading(true);
+        setRelatedHabits([]);
+        setCompletedRelatedHabitIds(new Set());
+        setPendingRelatedHabitIds(new Set());
+        previousRelatedHabitStateRef.current.clear();
+        pendingRelatedHabitActionsRef.current.clear();
+      }
 
       try {
         const { data: authData, error: authError } =
@@ -1495,6 +1559,7 @@ export function MonumentRelatedHabits({
 
         if (!userId) {
           if (!cancelled) {
+            loadedRelatedHabitsMonumentIdRef.current = monumentId;
             setRelatedHabits([]);
           }
           return;
@@ -1561,6 +1626,7 @@ export function MonumentRelatedHabits({
 
         if (skillIds.length === 0) {
           if (!cancelled) {
+            loadedRelatedHabitsMonumentIdRef.current = monumentId;
             setRelatedHabits([]);
           }
           return;
@@ -1569,9 +1635,10 @@ export function MonumentRelatedHabits({
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, skill_id, routine_id"
+            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, skill_id, routine_id, routine_position"
           )
           .eq("user_id", userId)
+          .is("circle_id", null)
           .in("skill_id", skillIds)
           .order("name", { ascending: true });
 
@@ -1599,13 +1666,18 @@ export function MonumentRelatedHabits({
               formatHabitRecord(habit, skillIconById, routineById)
             )
             .filter((habit): habit is HabitSummary => habit !== null);
-          setCompletionLoading(formattedHabits.length > 0);
+          loadedRelatedHabitsMonumentIdRef.current = monumentId;
+          setCompletionLoading(
+            shouldPreserveRelatedHabitState ? false : formattedHabits.length > 0
+          );
           setRelatedHabits(formattedHabits);
         }
       } catch (err) {
         if (!cancelled) {
           console.error("Error fetching monument related habits:", err);
-          setRelatedHabits([]);
+          if (!shouldPreserveRelatedHabitState) {
+            setRelatedHabits([]);
+          }
           setHabitsError("Unable to load related habits right now.");
         }
       } finally {
@@ -1660,7 +1732,7 @@ export function MonumentRelatedHabits({
         </div>
       </CardHeader>
       <CardContent className="relative pt-0 pb-4">
-        {habitsLoading || completionLoading ? (
+        {habitsLoading || (completionLoading && relatedHabits.length === 0) ? (
           <div className={relatedHabitGridClass}>
             {Array.from({ length: 3 }).map((_, index) => (
               <Skeleton
@@ -1687,7 +1759,7 @@ export function MonumentRelatedHabits({
             ) : null}
             <div
               ref={relatedHabitPagerRef}
-              className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="relative w-full overflow-x-clip overflow-y-visible touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
               style={
                 relatedHabitPageHeight
                   ? { height: relatedHabitPageHeight }
@@ -1724,7 +1796,7 @@ export function MonumentRelatedHabits({
                   {relatedHabitPages.map((page) => (
                     <div
                       key={page.id}
-                      className="h-full shrink-0 overflow-visible px-2 pt-2"
+                      className="h-full shrink-0 overflow-visible"
                       style={{ width: `${relatedHabitPanelWidthPercent}%` }}
                     >
                       <div
@@ -1740,6 +1812,10 @@ export function MonumentRelatedHabits({
                                 key={`routine-${item.routine.id}`}
                                 routine={item.routine}
                                 density={relatedHabitCardDensity}
+                                onHabitCompletionToggle={
+                                  handleRoutineHabitCompletionToggle
+                                }
+                                onAddHabit={handleRoutineAddHabit}
                               />
                             );
                           }
@@ -1891,10 +1967,7 @@ export function MonumentRelatedHabits({
               </div>
             </div>
             {relatedHabitPages.length > 1 ? (
-              <div
-                className="flex items-center justify-center gap-1.5 pt-1"
-                style={{ marginTop: "-20px" }}
-              >
+              <div className="flex items-center justify-center gap-1.5 pt-1">
                 {relatedHabitPages.map((page, index) => {
                   const isActive = index === activeRelatedHabitPageIndex;
 

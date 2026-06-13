@@ -497,12 +497,14 @@ export async function GET(request: NextRequest) {
           .from("habits")
           .select("id, created_at, name, routine_id")
           .eq("user_id", user.id)
+          .is("circle_id", null)
           .order("created_at", { ascending: false }),
       () =>
         supabase
           .from("habits")
           .select("id, created_at, name")
           .eq("user_id", user.id)
+          .is("circle_id", null)
           .order("created_at", { ascending: false })
     ),
     queryWithFallback(
@@ -1282,6 +1284,7 @@ export async function GET(request: NextRequest) {
               .from("habits")
               .select("id, name")
               .eq("user_id", user.id)
+              .is("circle_id", null)
               .in("id", habitIds)
           : null;
 

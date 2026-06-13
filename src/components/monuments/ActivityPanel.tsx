@@ -821,7 +821,7 @@ function MonumentXpMixDonut({
               cy={centerY}
               r={radius}
               fill="none"
-              stroke="#151922"
+              stroke="#18181b"
               strokeWidth={separatorWidth}
             />
             {hasMix ? (
@@ -843,7 +843,7 @@ function MonumentXpMixDonut({
                     <path
                       d={path}
                       fill="none"
-                      stroke="#070a0f"
+                      stroke="#09090b"
                       strokeWidth={separatorWidth}
                       strokeLinecap="butt"
                     />
@@ -982,7 +982,7 @@ function MonumentXpMixDonut({
               cx={centerX}
               cy={centerY}
               r={radius - strokeWidth / 2 - 4}
-              fill="#070a0f"
+              fill="#09090b"
               filter={`url(#${shadowId}-center-shadow)`}
             />
             <circle
@@ -1012,7 +1012,7 @@ function MonumentXpMixDonut({
       </div>
 
       {hasMix ? (
-        <div className="min-w-0 rounded-xl border border-zinc-800 bg-[#080b11] p-3">
+        <div className="min-w-0 rounded-xl border border-zinc-800 bg-[#09090b] p-3">
           <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
@@ -1030,11 +1030,11 @@ function MonumentXpMixDonut({
             {displayMix.map((item) => (
               <div
                 key={item.skillId}
-                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/55 px-2 py-1.5"
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-zinc-800 bg-[#0f0f10] px-2 py-1.5"
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <span
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-xs text-zinc-300"
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-[#09090b] text-xs text-zinc-300"
                     aria-hidden="true"
                   >
                     {item.skillIcon || item.skillName.charAt(0).toUpperCase()}
@@ -1326,36 +1326,36 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                       </dl>
                     </header>
 
-                    <dl className="mt-3 grid grid-cols-[0.85fr_1.2fr_0.95fr] gap-2 border-t border-white/[0.06] pt-3 text-left">
-                      <div className="min-w-0 px-2.5 py-2.5">
-                        <dt className="whitespace-nowrap text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
+                    <dl className="mt-3 grid grid-cols-[minmax(0,1.15fr)_minmax(0,1.15fr)_minmax(0,1.7fr)] gap-2 border-t border-white/[0.06] pt-3 text-left">
+                      <div className="min-w-0 px-2 py-2.5">
+                        <dt className="whitespace-nowrap text-[8px] font-semibold uppercase leading-tight tracking-[0.16em] text-white/38 sm:text-[9px]">
                           Total XP
                         </dt>
-                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
+                        <dd className="mt-1 whitespace-nowrap text-sm font-semibold leading-tight text-white/82">
                           {formatCompactNumber(
                             monumentAnalytics.currentTotalXp
                           )}
                         </dd>
                       </div>
-                      <div className="min-w-0 px-2.5 py-2.5">
-                        <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
-                          Total events
+                      <div className="min-w-0 px-2 py-2.5">
+                        <dt className="whitespace-nowrap text-[9px] font-semibold uppercase leading-tight tracking-[0.16em] text-white/38">
+                          Events
                         </dt>
-                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
+                        <dd className="mt-1 whitespace-nowrap text-sm font-semibold leading-tight text-white/82">
                           {formatCompactNumber(
                             monumentAnalytics.skillEventCount
                           )}
                         </dd>
                       </div>
                       <div className="min-w-0 px-2.5 py-2.5">
-                        <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
+                        <dt className="text-[9px] font-semibold uppercase leading-tight tracking-[0.22em] text-white/38">
                           Top skill
                         </dt>
-                        <dd className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-none text-white/82">
+                        <dd className="mt-1 flex min-w-0 items-start gap-1.5 text-sm font-semibold leading-tight text-white/82">
                           <span className="flex size-5 shrink-0 items-center justify-center text-xs text-white/78">
                             {monumentAnalytics.topSkillIcon}
                           </span>
-                          <span className="min-w-0 truncate">
+                          <span className="min-w-0 break-words">
                             {monumentAnalytics.topSkillName}
                           </span>
                         </dd>

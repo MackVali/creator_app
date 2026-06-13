@@ -643,7 +643,7 @@ function AnalyticsTabs({
             onClick={() => onViewChange(tab.id)}
             aria-pressed={isActive}
             className={classNames(
-              "shrink-0 py-1 text-xs font-medium leading-none text-white/60 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 motion-reduce:transition-none sm:text-sm",
+              "shrink-0 py-1 text-sm font-medium leading-none text-white/60 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 motion-reduce:transition-none sm:text-base",
               isActive && "text-white"
             )}
           >
@@ -2259,6 +2259,15 @@ function OverviewLineChart({
   const activeIndex = Math.min(tooltip.index, points.length - 1);
   const activePoint = tooltip.visible ? points[activeIndex] ?? null : null;
   const yTickValues = buildYTickValues(yMax);
+  const yAxisLabels = yTickValues.map((value) => {
+    const ratio = yMax === 0 ? 0 : value / yMax;
+    const y = padding.top + trendHeight - ratio * trendHeight;
+
+    return {
+      value,
+      top: (y / height) * 100,
+    };
+  });
   const svgPoints = points.map((point, index) => {
     const x =
       points.length === 1
@@ -2294,6 +2303,7 @@ function OverviewLineChart({
       label: formatTrendXAxisLabel(points[index]?.date, range),
       weekday: formatTrendWeekdayLabel(points[index]?.date, range),
     }));
+  const yAxisLabelLeft = ((padding.left - 10) / width) * 100;
   const showTooltip = (index: number, left: number, top: number) => {
     setTooltip({
       index,
@@ -2407,15 +2417,6 @@ function OverviewLineChart({
                     stroke="rgba(82,82,91,0.3)"
                     strokeDasharray="3 6"
                   />
-                  <text
-                    x={padding.left - 10}
-                    y={y + 5}
-                    textAnchor="end"
-                    fill="rgba(161,161,170,0.76)"
-                    fontSize="11"
-                  >
-                    {formatCompactNumber(value)}
-                  </text>
                 </g>
               );
             })}
@@ -2536,41 +2537,55 @@ function OverviewLineChart({
                   stroke="rgba(63,63,70,0.55)"
                   strokeDasharray="4 6"
                 />
-                <text
-                  x={padding.left + chartWidth / 2}
-                  y={padding.top + trendHeight * 0.46}
-                  textAnchor="middle"
-                  fill="rgba(161,161,170,0.88)"
-                  fontSize="13"
-                >
-                  No XP recorded in this range
-                </text>
               </g>
             )}
 
-            {xLabels.map((label, index) => (
-              <text
-                key={`${label.label}-${index}`}
-                x={label.x}
-                y={height - 34}
-                textAnchor="middle"
-                fill="rgba(161,161,170,0.9)"
-                fontSize="11"
-              >
-                <tspan x={label.x} dy="0">
-                  {label.label}
-                </tspan>
-                <tspan
-                  x={label.x}
-                  dy="12"
-                  fill="rgba(113,113,122,0.92)"
-                  fontSize="10"
-                >
-                  {label.weekday}
-                </tspan>
-              </text>
-            ))}
           </svg>
+
+          <div className="pointer-events-none absolute inset-0 select-none">
+            {isEmpty ? (
+              <div
+                className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-medium text-zinc-400/90"
+                style={{
+                  left: `${((padding.left + chartWidth / 2) / width) * 100}%`,
+                  top: `${((padding.top + trendHeight * 0.46) / height) * 100}%`,
+                }}
+              >
+                No XP recorded in this range
+              </div>
+            ) : null}
+
+            {yAxisLabels.map((label) => (
+              <div
+                key={`y-axis-${label.value}`}
+                className="absolute -translate-y-1/2 -translate-x-full whitespace-nowrap text-[11px] font-medium leading-none text-zinc-400/80 tabular-nums"
+                style={{
+                  left: `${yAxisLabelLeft}%`,
+                  top: `${label.top}%`,
+                }}
+              >
+                {formatCompactNumber(label.value)}
+              </div>
+            ))}
+
+            {xLabels.map((label, index) => (
+              <div
+                key={`${label.label}-${index}`}
+                className="absolute -translate-x-1/2 text-center leading-none"
+                style={{
+                  left: `${(label.x / width) * 100}%`,
+                  top: `${((height - 34) / height) * 100}%`,
+                }}
+              >
+                <div className="whitespace-nowrap text-[11px] font-medium text-zinc-400/90 tabular-nums">
+                  {label.label}
+                </div>
+                <div className="mt-1 whitespace-nowrap text-[10px] font-medium text-zinc-500/95">
+                  {label.weekday}
+                </div>
+              </div>
+            ))}
+          </div>
 
           <div className="pointer-events-none absolute inset-0">
             <div className="relative h-full">

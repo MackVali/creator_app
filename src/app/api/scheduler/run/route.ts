@@ -488,7 +488,11 @@ async function buildSchedulerDebugDisplay(
     ),
     safeSelect(
       "habits",
-      client.from("habits").select("id, name").eq("user_id", userId)
+      client
+        .from("habits")
+        .select("id, name")
+        .eq("user_id", userId)
+        .is("circle_id", null)
     ),
     safeSelect(
       "time blocks",

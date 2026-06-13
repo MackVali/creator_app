@@ -71,6 +71,7 @@ export interface Database {
           anchor_start_date: string | null;
           memo_capture_config: Json | null;
           routine_id: string | null;
+          routine_position: number | null;
         };
         Insert: {
           id?: string;
@@ -105,6 +106,7 @@ export interface Database {
           anchor_start_date?: string | null;
           memo_capture_config?: Json | null;
           routine_id?: string | null;
+          routine_position?: number | null;
         };
         Update: {
           id?: string;
@@ -138,6 +140,7 @@ export interface Database {
           anchor_start_date?: string | null;
           memo_capture_config?: Json | null;
           routine_id?: string | null;
+          routine_position?: number | null;
         };
       };
       habit_routines: {
@@ -148,6 +151,7 @@ export interface Database {
           user_id: string;
           name: string;
           description: string | null;
+          icon: string | null;
         };
         Insert: {
           id?: string;
@@ -156,6 +160,7 @@ export interface Database {
           user_id: string;
           name: string;
           description?: string | null;
+          icon?: string | null;
         };
         Update: {
           id?: string;
@@ -164,6 +169,7 @@ export interface Database {
           user_id?: string;
           name?: string;
           description?: string | null;
+          icon?: string | null;
         };
       };
       habit_completion_days: {
@@ -1589,6 +1595,13 @@ export interface Database {
           p_username: string;
         };
         Returns: string | null;
+      };
+      save_routine_habit_order: {
+        Args: {
+          p_routine_id: string;
+          p_habit_ids: string[];
+        };
+        Returns: undefined;
       };
     };
     Enums: {

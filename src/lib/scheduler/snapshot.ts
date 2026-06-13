@@ -145,6 +145,7 @@ async function fetchHabitGoalMap(
     .from("habits")
     .select("id, goal_id")
     .eq("user_id", userId)
+    .is("circle_id", null)
     .not("goal_id", "is", null);
   if (error) throw error;
   const map = new Map<string, string>();

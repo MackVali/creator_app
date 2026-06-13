@@ -475,7 +475,7 @@ export async function listRoadmapsWithItems(
   const campaignGoalsByCampaignId = new Map<string, RoadmapCampaignGoal[]>();
   for (const campaignGoal of campaignGoalRows ?? []) {
     const goal = campaignGoalsByGoalId.get(campaignGoal.goal_id);
-    if (!goal || isRoadmapGoalCompleted(goal)) {
+    if (!goal) {
       continue;
     }
     const campaignContext = campaignContextById.get(campaignGoal.campaign_id);

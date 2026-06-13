@@ -117,6 +117,22 @@ type RoutineOption = {
   id: string;
   name: string;
   description: string | null;
+  icon?: string | null;
+};
+
+type RoutineInsertQuery = {
+  insert: (payload: {
+    user_id: string;
+    name: string;
+    icon: string;
+  }) => {
+    select: (columns: "id") => {
+      single: () => Promise<{
+        data: { id?: string } | null;
+        error: unknown;
+      }>;
+    };
+  };
 };
 
 type RoutineSelectOption = {
@@ -1676,7 +1692,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
           const { data, error: routinesError } = await supabase
             .from("habit_routines")
-            .select("id, name, description")
+            .select("id, name, description, icon")
             .eq("user_id", user.id)
             .order("name", { ascending: true });
 
@@ -2562,13 +2578,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             return;
           }
 
-          // TODO: Persist newRoutineEmoji when habit_routines has an emoji/icon column.
+          const routineIcon = newRoutineEmoji.trim() || DEFAULT_ROUTINE_EMOJI;
+          const routineInsertQuery = supabase.from(
+            "habit_routines",
+          ) as unknown as RoutineInsertQuery;
           const { data: routineData, error: routineInsertError } =
-            await supabase
-              .from("habit_routines")
+            await routineInsertQuery
               .insert({
                 user_id: user.id,
                 name: routineName,
+                icon: routineIcon,
               })
               .select("id")
               .single();

@@ -1013,6 +1013,18 @@ const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
 const FAB_DEFAULT_CAMPAIGN_EMOJI = "🎯";
 const FAB_DEFAULT_ROUTINE_EMOJI = "🔁";
 
+type FabHabitRoutineOption = {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+};
+
+const getHabitRoutineIcon = (
+  routine?: Pick<FabHabitRoutineOption, "icon"> | null,
+) =>
+  routine?.icon?.trim() || FAB_DEFAULT_ROUTINE_EMOJI;
+
 const normalizeTagName = (value: string) =>
   collapseWhitespace(value).toLowerCase();
 
@@ -3813,9 +3825,9 @@ export function Fab({
   const [habitFixedEndTime, setHabitFixedEndTime] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
   const [habitCircleId, setHabitCircleId] = useState<string | "">("");
-  const [habitRoutines, setHabitRoutines] = useState<
-    { id: string; name: string; description?: string | null }[]
-  >([]);
+  const [habitRoutines, setHabitRoutines] = useState<FabHabitRoutineOption[]>(
+    [],
+  );
   const [habitRoutinesLoading, setHabitRoutinesLoading] = useState(false);
   const [isCreatingHabitRoutineInline, setIsCreatingHabitRoutineInline] =
     useState(false);
@@ -3829,6 +3841,14 @@ export function Fab({
   >(null);
   const [habitInlineRoutineDescription, setHabitInlineRoutineDescription] =
     useState("");
+  const selectedHabitRoutine = useMemo(
+    () =>
+      habitRoutineId
+        ? (habitRoutines.find((routine) => routine.id === habitRoutineId) ??
+          null)
+        : null,
+    [habitRoutineId, habitRoutines],
+  );
   const selectedHabitCircle = useMemo(
     () =>
       habitCircleId ? (manageableCircleById.get(habitCircleId) ?? null) : null,
@@ -10116,13 +10136,16 @@ export function Fab({
                             : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                         )}
                         trigger={
-                          <span>
-                            {habitRoutineId
-                              ? (habitRoutines.find(
-                                  (r) => r.id === habitRoutineId,
-                                )?.name ?? "Link to existing ROUTINE +")
-                              : "Link to existing ROUTINE +"}
-                          </span>
+                          selectedHabitRoutine ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span aria-hidden="true">
+                                {getHabitRoutineIcon(selectedHabitRoutine)}
+                              </span>
+                              <span>{selectedHabitRoutine.name}</span>
+                            </span>
+                          ) : (
+                            <span>Link to existing ROUTINE +</span>
+                          )
                         }
                       >
                         <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-sm border border-zinc-700/70 bg-zinc-950 p-2 text-sm text-white shadow-2xl shadow-black/50">
@@ -10190,6 +10213,7 @@ export function Fab({
                                   id: string;
                                   name: string | null;
                                   description: string | null;
+                                  icon: string | null;
                                 };
                                 const habitRoutinesTable = supabase.from(
                                   "habit_routines",
@@ -10198,6 +10222,7 @@ export function Fab({
                                     user_id: string;
                                     name: string;
                                     description: string | null;
+                                    icon: string | null;
                                   }) => {
                                     select: (columns: string) => {
                                       single: () => Promise<{
@@ -10216,8 +10241,11 @@ export function Fab({
                                         routineDescription.length > 0
                                           ? routineDescription
                                           : null,
+                                      icon: getHabitRoutineIcon({
+                                        icon: habitInlineRoutineEmoji,
+                                      }),
                                     })
-                                    .select("id, name, description")
+                                    .select("id, name, description, icon")
                                     .single();
 
                                 if (routineError) throw routineError;
@@ -10235,6 +10263,7 @@ export function Fab({
                                     (routineDescription.length > 0
                                       ? routineDescription
                                       : null),
+                                  icon: getHabitRoutineIcon(routineData),
                                 };
                                 setHabitRoutines((current) =>
                                   [
@@ -10288,15 +10317,23 @@ export function Fab({
                                   "min-w-0 items-stretch",
                                 )}
                               >
-                                <div className="flex min-w-0 flex-1 flex-col">
-                                  <span className="truncate font-medium">
-                                    {routine.name}
+                                <div className="flex min-w-0 flex-1 items-start gap-2">
+                                  <span
+                                    className="flex h-6 w-6 shrink-0 items-center justify-center text-base leading-none"
+                                    aria-hidden="true"
+                                  >
+                                    {getHabitRoutineIcon(routine)}
                                   </span>
-                                  {routine.description ? (
-                                    <span className="line-clamp-2 whitespace-normal break-words text-xs text-white/60">
-                                      {routine.description}
+                                  <div className="flex min-w-0 flex-1 flex-col">
+                                    <span className="truncate font-medium">
+                                      {routine.name}
                                     </span>
-                                  ) : null}
+                                    {routine.description ? (
+                                      <span className="line-clamp-2 whitespace-normal break-words text-xs text-white/60">
+                                        {routine.description}
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </div>
                               </SelectItem>
                             ))
@@ -11534,8 +11571,97 @@ export function Fab({
     openingCreationRequestIdRef.current = creationRequest.id;
     resetFabFormState();
     setProjectGoalId(creationRequest.goalId ?? null);
+    if (creationRequest.type === "GOAL") {
+      const requestedCampaignId = creationRequest.campaignId ?? null;
+      setGoalCampaignId(requestedCampaignId);
+
+      if (requestedCampaignId) {
+        const requestId = creationRequest.id;
+        const hydrateRequestedCampaign = async () => {
+          try {
+            const supabase = getSupabaseBrowser();
+            if (!supabase) return;
+
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: campaignData, error: campaignError } = await supabase
+              .from("campaigns")
+              .select(
+                "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+              )
+              .eq("id", requestedCampaignId)
+              .eq("user_id", user.id)
+              .maybeSingle();
+            if (campaignError) throw campaignError;
+            if (
+              handledCreationRequestIdRef.current !== requestId ||
+              !campaignData
+            ) {
+              return;
+            }
+
+            const campaign = campaignData as FabGoalCampaignContextRow;
+            const campaignOption: GoalCampaignOption = {
+              ...campaign,
+              scheduling_state: campaign.scheduling_state ?? "ACTIVE",
+            };
+            setGoalCampaigns((current) =>
+              current.some((item) => item.id === campaignOption.id)
+                ? current
+                : [...current, campaignOption],
+            );
+            setGoalCampaignId(campaignOption.id);
+
+            let hydratedMonumentId = campaign.primary_monument_id ?? "";
+            let hydratedCircleId = hydratedMonumentId
+              ? ""
+              : (campaign.primary_circle_id ?? "");
+
+            if (!hydratedMonumentId && !hydratedCircleId && campaign.roadmap_id) {
+              const { data: roadmapData, error: roadmapError } = await supabase
+                .from("roadmaps")
+                .select("id, monument_id, circle_id")
+                .eq("id", campaign.roadmap_id)
+                .eq("user_id", user.id)
+                .maybeSingle();
+              if (roadmapError) throw roadmapError;
+              if (handledCreationRequestIdRef.current !== requestId) return;
+
+              const roadmap = roadmapData as FabRoadmapContextRow | null;
+              hydratedMonumentId = roadmap?.monument_id ?? "";
+              hydratedCircleId = hydratedMonumentId
+                ? ""
+                : (roadmap?.circle_id ?? "");
+            }
+
+            if (hydratedMonumentId) {
+              setGoalMonumentId(hydratedMonumentId);
+              setGoalCircleId("");
+              setGoalRelationType("MONUMENT");
+              setGoalRelationId(hydratedMonumentId);
+            } else if (hydratedCircleId) {
+              setGoalMonumentId("");
+              setGoalCircleId(hydratedCircleId);
+              setGoalRelationType("CIRCLE");
+              setGoalRelationId(hydratedCircleId);
+            }
+          } catch (error) {
+            console.error("Failed to hydrate requested goal campaign", error);
+          }
+        };
+
+        void hydrateRequestedCampaign();
+      }
+    }
     if (creationRequest.type === "TASK") {
       setTaskProjectId(creationRequest.projectId ?? "");
+    }
+    if (creationRequest.type === "HABIT") {
+      setHabitRoutineId(creationRequest.routineId ?? "");
+      setHabitSkillId(creationRequest.skillId ?? "");
     }
     setActiveCreationMode("main");
     handleEventClickRef.current(creationRequest.type, null, {
@@ -13033,7 +13159,7 @@ export function Fab({
         }
         const { data, error } = await supabase
           .from("habit_routines")
-          .select("id, name, description")
+          .select("id, name, description, icon")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
         if (error) throw error;
@@ -14304,6 +14430,7 @@ export function Fab({
                   trimmedRoutineDescription.length > 0
                     ? trimmedRoutineDescription
                     : null,
+                icon: getHabitRoutineIcon({ icon: habitInlineRoutineEmoji }),
               })
               .select("id")
               .single();
@@ -14526,6 +14653,7 @@ export function Fab({
                   trimmedRoutineDescription.length > 0
                     ? trimmedRoutineDescription
                     : null,
+                icon: getHabitRoutineIcon({ icon: habitInlineRoutineEmoji }),
               })
               .select("id")
               .single();
@@ -14761,6 +14889,7 @@ export function Fab({
     habitFixedStartTime,
     habitGoalId,
     habitInlineRoutineDescription,
+    habitInlineRoutineEmoji,
     habitInlineRoutineName,
     habitLocationContextId,
     habitRecurrence,

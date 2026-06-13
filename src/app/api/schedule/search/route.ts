@@ -277,7 +277,8 @@ export async function GET(request: NextRequest) {
     .select(
       "id,name,habit_type,skill_id,current_streak_days,updated_at,created_at"
     )
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .is("circle_id", null);
   if (likeQuery) {
     projectQuery = projectQuery.ilike("name", likeQuery);
     habitQuery = habitQuery.ilike("name", likeQuery);

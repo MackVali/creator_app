@@ -1050,6 +1050,7 @@ export function HabitEditSheet({
             .select(buildHabitSelectColumns(includeGoalMetadata))
             .eq("id", habitId)
             .eq("user_id", user.id)
+            .is("circle_id", null)
             .single();
 
           if (!habitResponse.error) {
@@ -1611,7 +1612,8 @@ export function HabitEditSheet({
           .from("habits")
           .update(payload)
           .eq("id", habitId)
-          .eq("user_id", user.id);
+          .eq("user_id", user.id)
+          .is("circle_id", null);
 
         if (updateError) {
           throw updateError;

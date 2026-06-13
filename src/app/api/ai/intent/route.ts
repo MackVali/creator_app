@@ -504,10 +504,16 @@ export async function POST(request: NextRequest) {
     const goals =
       goalsResponse.error || !goalsResponse.data
         ? []
-        : goalsResponse.data.map((goal: any) => ({
-            ...goal,
-            monumentEmoji: goal?.monument?.emoji ?? null,
-          }));
+        : goalsResponse.data.map(
+            (
+              goal: Record<string, unknown> & {
+                monument?: { emoji?: string | null } | null;
+              }
+            ) => ({
+              ...goal,
+              monumentEmoji: goal?.monument?.emoji ?? null,
+            })
+          );
     if (goalsResponse.error) {
       console.error(
         "AI intent snapshot error loading goals",
@@ -553,6 +559,7 @@ export async function POST(request: NextRequest) {
         .from("habits")
         .select("id,name,duration_minutes,updated_at")
         .eq("user_id", user.id)
+        .is("circle_id", null)
         .order("updated_at", { ascending: false })
         .limit(10),
     ]);

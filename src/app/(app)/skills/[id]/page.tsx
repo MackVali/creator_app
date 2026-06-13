@@ -99,12 +99,15 @@ interface HabitSummary {
   routineId: string | null;
   routineName: string | null;
   routineDescription: string | null;
+  routineIcon: string | null;
+  routinePosition: number | null;
 }
 
 interface RoutineMetadata {
   id: string;
   name: string | null;
   description: string | null;
+  icon: string | null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -157,9 +160,9 @@ const RELATED_HABIT_GRID_CLASS =
 const RELATED_HABIT_SMALL_GRID_CLASS =
   "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 const RELATED_HABIT_PAGE_GRID_CLASS =
-  "grid grid-cols-3 gap-2.5 pb-7 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+  "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
-  "grid grid-cols-4 gap-1.5 pb-7 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+  "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -209,6 +212,17 @@ function readString(value: unknown): string | null {
     : null;
 }
 
+function readNumber(value: unknown): number | null {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : NaN;
+
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function formatRoutineRecord(routine: unknown): RoutineMetadata | null {
   if (!routine || typeof routine !== "object") return null;
   const routineRecord = routine as Record<string, unknown>;
@@ -219,6 +233,10 @@ function formatRoutineRecord(routine: unknown): RoutineMetadata | null {
     id: routineId,
     name: readString(routineRecord.name),
     description: readString(routineRecord.description),
+    icon:
+      readString(routineRecord.icon) ??
+      readString(routineRecord.emoji) ??
+      readString(routineRecord.icon_emoji),
   };
 }
 
@@ -230,14 +248,27 @@ async function fetchRoutineMetadataById(
   const uniqueRoutineIds = Array.from(new Set(routineIds.filter(Boolean)));
   if (uniqueRoutineIds.length === 0) return new Map();
 
-  const { data, error } = await supabase
-    .from("habit_routines")
-    .select("id, name, description")
-    .eq("user_id", userId)
-    .in("id", uniqueRoutineIds);
+  const selectColumns = [
+    "id, name, description, icon, emoji, icon_emoji",
+    "id, name, description, icon, emoji",
+    "id, name, description, icon",
+    "id, name, description, emoji",
+    "id, name, description",
+  ];
 
-  if (error) {
-    return new Map();
+  let data: unknown[] | null = null;
+
+  for (const columns of selectColumns) {
+    const { data: routinesData, error } = await supabase
+      .from("habit_routines")
+      .select(columns)
+      .eq("user_id", userId)
+      .in("id", uniqueRoutineIds);
+
+    if (!error) {
+      data = routinesData ?? [];
+      break;
+    }
   }
 
   return new Map(
@@ -598,9 +629,19 @@ export default function SkillDetailPage() {
       currentDensity === "large" ? "small" : "large"
     );
   }, []);
+  const handleRoutineAddHabit = useCallback(
+    (routine: RelatedRoutineCardRoutine) => {
+      fabCreation?.requestHabitCreation(null, {
+        routineId: routine.id,
+        skillId: id,
+      });
+    },
+    [fabCreation, id]
+  );
   const relatedHabitLongPressTimerRef = useRef<number | null>(null);
   const relatedHabitSuppressCompletionUntilRef = useRef(0);
   const starterBackfillKeysRef = useRef<Set<string>>(new Set());
+  const loadedRelatedHabitsSkillIdRef = useRef<string | null>(null);
   const previousRelatedHabitStateRef = useRef(
     new Map<
       string,
@@ -667,8 +708,14 @@ export default function SkillDetailPage() {
       const routineHabit = {
         id: habit.id,
         name: habit.name,
-        dueLabel: habit.dueLabel,
+        dueLabel: completedRelatedHabitIds.has(habit.id)
+          ? "COMPLETE"
+          : habit.dueLabel,
         skillIcon: skill?.icon ?? null,
+        completed: completedRelatedHabitIds.has(habit.id),
+        pending: pendingRelatedHabitIds.has(habit.id),
+        routinePosition: habit.routinePosition,
+        currentStreakDays: habit.currentStreakDays,
       };
 
       if (existing) {
@@ -686,6 +733,7 @@ export default function SkillDetailPage() {
         id: habit.routineId,
         name: routineName,
         description: habit.routineDescription,
+        icon: habit.routineIcon,
         habits: [routineHabit],
         dueRank: habit.dueRank,
         typeRank: getHabitTypePriority(habit.habitType),
@@ -696,7 +744,12 @@ export default function SkillDetailPage() {
     return Array.from(routineMap.values()).sort((first, second) =>
       first.name.localeCompare(second.name, undefined, { sensitivity: "base" })
     );
-  }, [decoratedHabits, skill?.icon]);
+  }, [
+    completedRelatedHabitIds,
+    decoratedHabits,
+    pendingRelatedHabitIds,
+    skill?.icon,
+  ]);
   const relatedHabitPages = useMemo(() => {
     const routineItems = relatedRoutines.map((routine) => ({
       kind: "routine" as const,
@@ -1148,7 +1201,7 @@ export default function SkillDetailPage() {
 
     const handleCreatorEntitySaved = (event: Event) => {
       const detail = (event as CustomEvent<{ entityType?: string }>).detail;
-      if (detail?.entityType !== "HABIT") {
+      if (detail?.entityType !== "HABIT" && detail?.entityType !== "ROUTINE") {
         return;
       }
 
@@ -1342,6 +1395,7 @@ export default function SkillDetailPage() {
         if (action === "undo") {
           previousRelatedHabitStateRef.current.delete(habitId);
         }
+        setRelatedHabitsRefreshVersion((current) => current + 1);
       } catch (completionUpdateErr) {
         console.error(
           "Failed to update related habit completion:",
@@ -1401,6 +1455,13 @@ export default function SkillDetailPage() {
       bypassMemoCaptureRef.current = false;
     }
   }, [handleRelatedHabitCompletionToggle, memoCompletionState]);
+
+  const handleRoutineHabitCompletionToggle = useCallback(
+    (habitId: string) => {
+      return handleRelatedHabitCompletionToggle(habitId);
+    },
+    [handleRelatedHabitCompletionToggle]
+  );
 
   const handleRelatedHabitTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>, habitId: string) => {
@@ -1539,9 +1600,10 @@ export default function SkillDetailPage() {
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, routine_id"
+            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, routine_id, routine_position"
           )
           .eq("user_id", userId)
+          .is("circle_id", null)
           .eq("skill_id", id)
           .order("name", { ascending: true });
 
@@ -1585,6 +1647,7 @@ export default function SkillDetailPage() {
                 habit_type?: unknown;
                 memo_capture_config?: unknown;
                 routine_id?: unknown;
+                routine_position?: unknown;
               };
 
               const habitId =
@@ -1675,6 +1738,8 @@ export default function SkillDetailPage() {
                 routineId,
                 routineName: routine?.name ?? null,
                 routineDescription: routine?.description ?? null,
+                routineIcon: routine?.icon ?? null,
+                routinePosition: readNumber(habitRecord.routine_position),
               } satisfies HabitSummary;
             })
             .filter((habit): habit is HabitSummary => habit !== null);
@@ -1747,20 +1812,28 @@ export default function SkillDetailPage() {
     async function load() {
       if (!supabase || !id) return;
 
-      setLoading(true);
+      const shouldPreserveRelatedHabitState =
+        loadedRelatedHabitsSkillIdRef.current === id;
+
+      if (!shouldPreserveRelatedHabitState) {
+        setLoading(true);
+      }
       setError(null);
       setHabitsError(null);
       setCompletionError(null);
-      setSkill(null);
-      setRelatedHabits([]);
-      setCompletedRelatedHabitIds(new Set());
-      setPendingRelatedHabitIds(new Set());
-      previousRelatedHabitStateRef.current.clear();
-      pendingRelatedHabitActionsRef.current.clear();
-      setHabitsLoading(true);
-      setProgress(null);
-      setCategories([]);
-      setMonuments([]);
+
+      if (!shouldPreserveRelatedHabitState) {
+        setSkill(null);
+        setRelatedHabits([]);
+        setCompletedRelatedHabitIds(new Set());
+        setPendingRelatedHabitIds(new Set());
+        previousRelatedHabitStateRef.current.clear();
+        pendingRelatedHabitActionsRef.current.clear();
+        setHabitsLoading(true);
+        setProgress(null);
+        setCategories([]);
+        setMonuments([]);
+      }
 
       try {
         const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -1792,6 +1865,7 @@ export default function SkillDetailPage() {
             setHabitsLoading(false);
           } else {
             const loadedSkill = data as Skill;
+            loadedRelatedHabitsSkillIdRef.current = id;
             setSkill(loadedSkill);
             if (userId) {
               const backfillKey = `${userId}:${loadedSkill.id}`;
@@ -2423,7 +2497,7 @@ export default function SkillDetailPage() {
                     ) : null}
                     <div
                       ref={relatedHabitPagerRef}
-                      className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                      className="relative w-full overflow-x-clip overflow-y-visible touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
                       style={
                         relatedHabitPageHeight
                           ? { height: relatedHabitPageHeight }
@@ -2460,7 +2534,7 @@ export default function SkillDetailPage() {
                           {relatedHabitPages.map((page) => (
                             <div
                               key={page.id}
-                              className="h-full shrink-0 overflow-visible px-2 pt-2"
+                              className="h-full shrink-0 overflow-visible"
                               style={{
                                 width: `${relatedHabitPanelWidthPercent}%`,
                               }}
@@ -2480,6 +2554,10 @@ export default function SkillDetailPage() {
                                         routine={item.routine}
                                         density={relatedHabitCardDensity}
                                         fallbackIcon={skill.icon || "💡"}
+                                        onHabitCompletionToggle={
+                                          handleRoutineHabitCompletionToggle
+                                        }
+                                        onAddHabit={handleRoutineAddHabit}
                                       />
                                     );
                                   }
@@ -2646,10 +2724,7 @@ export default function SkillDetailPage() {
                       </div>
                     </div>
                     {relatedHabitPages.length > 1 ? (
-                      <div
-                        className="flex items-center justify-center gap-1.5 pt-1"
-                        style={{ marginTop: "-20px" }}
-                      >
+                      <div className="flex items-center justify-center gap-1.5 pt-1">
                         {relatedHabitPages.map((page, index) => {
                           const isActive =
                             index === activeRelatedHabitPageIndex;
