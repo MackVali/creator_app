@@ -1,6 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  type CSSProperties,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   MonumentDetail,
@@ -32,6 +37,9 @@ export function MonumentGridWithSharedTransition({
 
   const previousFocus = useRef<HTMLElement | null>(null);
   const previousBodyOverflow = useRef<string | null>(null);
+  const [detailOverlayHeight, setDetailOverlayHeight] = useState<number | null>(
+    null
+  );
 
   useEffect(() => {
     if (!activeId) {
@@ -52,6 +60,51 @@ export function MonumentGridWithSharedTransition({
   }, [activeId]);
 
   useEffect(() => {
+    if (!activeId) {
+      setDetailOverlayHeight(null);
+      return;
+    }
+
+    const isFabKeyboardHandlingViewport = () => {
+      const activeElement = document.activeElement;
+      return (
+        document.body.classList.contains("fab-keyboard-active") ||
+        (activeElement instanceof Element &&
+          Boolean(activeElement.closest("[data-fab-overlay]")))
+      );
+    };
+
+    const updateStableOverlayHeight = () => {
+      if (isFabKeyboardHandlingViewport()) return;
+
+      const nextHeight = Math.max(
+        window.innerHeight || 0,
+        window.visualViewport?.height ?? 0
+      );
+      if (nextHeight > 0) {
+        setDetailOverlayHeight(Math.round(nextHeight));
+      }
+    };
+
+    updateStableOverlayHeight();
+    window.addEventListener("resize", updateStableOverlayHeight);
+    window.addEventListener("orientationchange", updateStableOverlayHeight);
+    window.visualViewport?.addEventListener("resize", updateStableOverlayHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateStableOverlayHeight);
+      window.removeEventListener(
+        "orientationchange",
+        updateStableOverlayHeight
+      );
+      window.visualViewport?.removeEventListener(
+        "resize",
+        updateStableOverlayHeight
+      );
+    };
+  }, [activeId]);
+
+  useEffect(() => {
     const closeActiveDetail = () => setActiveId(null);
 
     window.addEventListener(CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT, closeActiveDetail);
@@ -67,6 +120,12 @@ export function MonumentGridWithSharedTransition({
     if (typeof window === "undefined") return;
     window.dispatchEvent(new CustomEvent(OPEN_MONUMENT_DIALOG_EVENT));
   };
+
+  const detailOverlayStyle = {
+    "--monument-detail-overlay-height": detailOverlayHeight
+      ? `${detailOverlayHeight}px`
+      : "100dvh",
+  } as CSSProperties;
 
   const renderNewMonumentCard = () => (
     <button
@@ -147,7 +206,8 @@ export function MonumentGridWithSharedTransition({
               layoutId={`card-${selected.id}`}
               role="dialog"
               aria-modal="true"
-              className="app-card relative h-[100dvh] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              className="app-card relative h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              style={detailOverlayStyle}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}

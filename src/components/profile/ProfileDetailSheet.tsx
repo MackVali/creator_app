@@ -40,7 +40,7 @@ interface ProfileDetailSheetProps {
 }
 
 const SheetRow = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.24em] text-white/[0.55]">
+  <div className="flex items-center justify-between gap-2.5 text-[9px] leading-tight uppercase tracking-[0.2em] text-white/[0.55]">
     <span>{label}</span>
     <span className="max-w-[58%] text-right font-semibold text-white/90">{value}</span>
   </div>
@@ -53,7 +53,7 @@ const DetailMedia = ({
   image: string | null;
   title: string;
 }) => (
-  <div className="relative h-full w-full overflow-hidden rounded-[18px] bg-zinc-900 shadow-[inset_0_-24px_44px_rgba(0,0,0,0.26)]">
+  <div className="relative h-full w-full overflow-hidden rounded-[14px] bg-zinc-900 shadow-[inset_0_-18px_34px_rgba(0,0,0,0.24)]">
     {image ? (
       <img
         src={image}
@@ -63,7 +63,7 @@ const DetailMedia = ({
       />
     ) : (
       <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_48%),linear-gradient(145deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))]">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/[0.35]">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/[0.35]">
           No image
         </span>
       </div>
@@ -280,57 +280,57 @@ export default function ProfileDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-label={`${title} ${detailTypeLabel} details`}
-        className="relative z-10 mx-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[460px] flex-col overflow-hidden rounded-t-[26px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.97)_56%,rgba(33,34,40,0.9)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:rounded-[26px]"
+        className="relative z-10 mx-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[22px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.97)_56%,rgba(33,34,40,0.9)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:rounded-[24px]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="absolute left-1/2 top-2.5 z-20 -translate-x-1/2">
-          <span className="block h-1 w-10 rounded-full bg-white/[0.24]" />
+        <div className="absolute left-1/2 top-2 z-20 -translate-x-1/2">
+          <span className="block h-0.5 w-9 rounded-full bg-white/[0.24]" />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pt-6 pb-4 [-webkit-overflow-scrolling:touch] sm:px-4">
-          <div className="space-y-3.5">
-            <div className="rounded-[22px] bg-black/20 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-              <div className="relative aspect-[25/18] max-h-[300px]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-5 pb-3 [-webkit-overflow-scrolling:touch] sm:px-3.5">
+          <div className="space-y-2.5">
+            <div className="mx-auto w-full max-w-[304px] rounded-[18px] bg-black/20 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:max-w-[320px]">
+              <div className="relative aspect-[23/18]">
                 <DetailMedia image={image} title={title} />
               </div>
             </div>
 
-            <div className="space-y-1 px-1">
-              <p className="text-xl font-semibold leading-tight text-white sm:text-2xl">
+            <div className="space-y-0.5 px-0.5">
+              <p className="text-lg font-semibold leading-tight text-white sm:text-xl">
                 {title}
               </p>
-              <p className="text-base font-semibold text-amber-300 sm:text-lg">{priceLabel}</p>
+              <p className="text-sm font-semibold text-amber-300 sm:text-base">{priceLabel}</p>
               {description ? (
-                <p className="text-sm leading-6 text-white/[0.68]">{description}</p>
+                <p className="text-xs leading-5 text-white/[0.68]">{description}</p>
               ) : null}
             </div>
 
             {isProduct ? (
               <>
                 {showFulfillmentBlock ? (
-                  <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <div className="flex items-start justify-between gap-2.5">
                       <div>
-                        <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                        <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
                           Fulfillment
                         </p>
-                        <p className="text-sm font-semibold text-white/90">
+                        <p className="text-xs font-semibold text-white/90">
                           {productKindLabel ?? "Physical fulfillment"}
                         </p>
                       </div>
                       {productKindLabel ? (
-                        <span className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60">
+                        <span className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/60">
                           {productKindLabel}
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-3 space-y-2.5">
+                    <div className="mt-2.5 space-y-2">
                       {productFulfillmentRows.map((row) => (
                         <SheetRow key={row.label} label={row.label} value={row.value} />
                       ))}
                     </div>
                     {allowsMultipleUnits ? (
-                      <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-amber-200/75">
+                      <p className="mt-2.5 text-[9px] leading-4 uppercase tracking-[0.18em] text-amber-200/75">
                         Multiple units supported - quantity picker arriving with the cart
                         experience.
                       </p>
@@ -339,19 +339,19 @@ export default function ProfileDetailSheet({
                 ) : null}
 
                 {isDigitalProduct ? (
-                  <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <div className="flex items-start justify-between gap-2.5">
                       <div>
-                        <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                        <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
                           Delivery
                         </p>
-                        <p className="text-sm font-semibold text-white/90">Digital product</p>
+                        <p className="text-xs font-semibold text-white/90">Digital product</p>
                       </div>
-                      <span className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60">
+                      <span className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/60">
                         {productKindLabel ?? "Digital"}
                       </span>
                     </div>
-                    <p className="mt-2.5 text-sm leading-6 text-white/[0.68]">
+                    <p className="mt-2 text-xs leading-5 text-white/[0.68]">
                       Instant deliverables are sent straight to your inbox once checkout is
                       complete.
                     </p>
@@ -359,44 +359,44 @@ export default function ProfileDetailSheet({
                 ) : null}
               </>
             ) : (
-              <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex items-start justify-between gap-3">
+              <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <div className="flex items-start justify-between gap-2.5">
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                    <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
                       Service mode
                     </p>
-                    <p className="text-sm font-semibold text-white/90">{serviceModeLabel}</p>
+                    <p className="text-xs font-semibold text-white/90">{serviceModeLabel}</p>
                   </div>
-                  <span className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60">
+                  <span className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/60">
                     {serviceModeLabel}
                   </span>
                 </div>
-                <p className="mt-2.5 text-sm leading-6 text-white/[0.68]">
+                <p className="mt-2 text-xs leading-5 text-white/[0.68]">
                   {SERVICE_MODE_NOTES[serviceMode]}
                 </p>
                 {serviceModeRows.length > 0 ? (
-                  <div className="mt-3 flex flex-col gap-2.5">
+                  <div className="mt-2.5 flex flex-col gap-2">
                     {serviceModeRows.map((row) => (
                       <SheetRow key={row.label} label={row.label} value={row.value} />
                     ))}
                   </div>
                 ) : null}
                 {serviceMode === "flat_rate" && serviceDeliverables ? (
-                  <div className="mt-3 space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                  <div className="mt-2.5 space-y-0.5">
+                    <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
                       Deliverables
                     </p>
-                    <p className="text-sm leading-6 text-white/[0.68] whitespace-pre-line">
+                    <p className="text-xs leading-5 text-white/[0.68] whitespace-pre-line">
                       {serviceDeliverables}
                     </p>
                   </div>
                 ) : null}
                 {serviceMode === "custom_quote" && serviceRequirements ? (
-                  <div className="mt-3 space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                  <div className="mt-2.5 space-y-0.5">
+                    <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
                       Requirements
                     </p>
-                    <p className="text-sm leading-6 text-white/[0.68] whitespace-pre-line">
+                    <p className="text-xs leading-5 text-white/[0.68] whitespace-pre-line">
                       {serviceRequirements}
                     </p>
                   </div>
@@ -405,8 +405,8 @@ export default function ProfileDetailSheet({
             )}
 
             {detailRows.length > 0 ? (
-              <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex flex-col gap-2.5">
+              <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <div className="flex flex-col gap-2">
                   {detailRows.map((row) => (
                     <SheetRow key={row.label} label={row.label} value={row.value} />
                   ))}
@@ -415,11 +415,11 @@ export default function ProfileDetailSheet({
             ) : null}
 
             {!isProduct && serviceTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {serviceTags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-white/[0.65]"
+                    className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/[0.65]"
                   >
                     {tag}
                   </span>
@@ -429,38 +429,38 @@ export default function ProfileDetailSheet({
           </div>
         </div>
 
-        <div className="flex-shrink-0 border-t border-white/[0.07] bg-black/[0.18] px-3.5 py-3.5 sm:px-4">
-          <div className="space-y-2.5">
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              <Button size="lg" className="w-full" onClick={handlePrimaryClick}>
+        <div className="flex-shrink-0 border-t border-white/[0.07] bg-black/[0.18] px-3 py-3 sm:px-3.5">
+          <div className="space-y-2">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button size="sm" className="w-full text-xs" onClick={handlePrimaryClick}>
                 {primaryActionLabel}
               </Button>
               <Button
-                size="lg"
+                size="sm"
                 variant="outline"
-                className="w-full text-white"
+                className="w-full text-xs text-white"
                 onClick={handleSecondaryClick}
               >
                 {secondaryActionLabel}
               </Button>
             </div>
             {cartCount && cartCount > 0 ? (
-              <p className="text-center text-[10px] uppercase tracking-[0.32em] text-white/40">
+              <p className="text-center text-[9px] uppercase tracking-[0.24em] text-white/40">
                 {cartCount} item{cartCount === 1 ? "" : "s"} in cart
               </p>
             ) : null}
             {ctaFeedback ? (
               <p
-                className={`text-center text-sm ${
+                className={`text-center text-xs ${
                   isOwnerFeedback
-                    ? "rounded-xl border border-amber-200/40 bg-amber-200/10 px-3 py-2 font-semibold text-amber-100"
+                    ? "rounded-lg border border-amber-200/40 bg-amber-200/10 px-2.5 py-1.5 font-semibold text-amber-100"
                     : "font-semibold text-white/90"
                 }`}
               >
                 {ctaFeedback}
               </p>
             ) : (
-              <p className="text-center text-[10px] uppercase tracking-[0.3em] text-white/40">
+              <p className="text-center text-[9px] uppercase tracking-[0.24em] text-white/40">
                 Commerce experience coming soon
               </p>
             )}
