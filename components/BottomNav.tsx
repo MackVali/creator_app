@@ -3,7 +3,7 @@
 import { Blocks, Calendar, LayoutDashboard, Users } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ComponentType } from "react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import BottomBarNav from "./BottomBarNav";
 import { LazyFab } from "@/components/ui/LazyFab";
 import { shouldHideBottomChrome } from "@/components/appChromeVisibility";
@@ -37,6 +37,10 @@ const bottomNavItems = MAIN_TAB_ROUTES.map((item) => {
   };
 });
 
+const bottomNavPrefetchHrefs = Array.from(
+  new Set([...bottomNavItems.map((item) => item.href), "/", "/profile"])
+);
+
 function isMonumentDetailOverlayOpen() {
   return (
     typeof document !== "undefined" &&
@@ -47,12 +51,11 @@ function isMonumentDetailOverlayOpen() {
 export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const shouldHideNav = shouldHideBottomChrome(pathname);
 
   useEffect(() => {
-    bottomNavItems.forEach((item) => {
-      router.prefetch(item.href);
+    bottomNavPrefetchHrefs.forEach((href) => {
+      router.prefetch(href);
     });
   }, [router]);
 
@@ -77,7 +80,6 @@ export default function BottomNav() {
             : "bottom-0"
         }`}
         data-bottom-nav
-        aria-busy={isPending}
       >
         <div className="relative">
           <div data-bottom-nav-bar>
@@ -88,23 +90,21 @@ export default function BottomNav() {
                 href === "/dashboard" && isMonumentDetailOverlayOpen()
               }
               onNavigate={(href) => {
-                startTransition(() => {
-                  const targetHref = href as MainTabRouteHref;
+                const targetHref = href as MainTabRouteHref;
 
-                  if (targetHref === "/dashboard" && isMonumentDetailOverlayOpen()) {
-                    window.dispatchEvent(
-                      new CustomEvent(CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT)
-                    );
-                    return;
-                  }
+                if (targetHref === "/dashboard" && isMonumentDetailOverlayOpen()) {
+                  window.dispatchEvent(
+                    new CustomEvent(CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT)
+                  );
+                  return;
+                }
 
-                  if (targetHref === "/dashboard" && !isPersistentMainTabRoute(pathname)) {
-                    router.replace(targetHref);
-                    return;
-                  }
+                if (targetHref === "/dashboard" && !isPersistentMainTabRoute(pathname)) {
+                  router.replace(targetHref);
+                  return;
+                }
 
-                  navigateMainTabRoute(targetHref, router.push);
-                });
+                navigateMainTabRoute(targetHref, router.push);
               }}
               onPrefetch={(href) => router.prefetch(href)}
             />

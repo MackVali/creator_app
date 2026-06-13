@@ -1551,7 +1551,7 @@ export default function GoalsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="relative min-h-screen overflow-hidden bg-[#05040b] text-white">
+      <div className="app-goals-bg relative min-h-screen overflow-hidden">
         <div className="pointer-events-none absolute inset-0 -z-10">
           <div className="absolute inset-0 bg-gradient-to-b from-[#12040b] via-[#080304] to-[#010000]" />
           <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-rose-600/35 blur-[200px]" />
@@ -1577,17 +1577,17 @@ export default function GoalsPage() {
             onSkill={setSkill}
           />
           {loading ? (
-            <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur">
+            <div className="app-panel rounded-[32px] p-8 backdrop-blur">
               <LoadingSkeleton />
             </div>
           ) : filteredGoals.length === 0 && campaignCards.length === 0 ? (
-            <div className="rounded-[32px] border border-dashed border-white/20 bg-white/[0.02] p-10 text-center backdrop-blur">
+            <div className="app-panel rounded-[32px] border-dashed p-10 text-center backdrop-blur">
               <EmptyState onCreate={() => setDrawer(true)} />
             </div>
           ) : (
             <div className="relative">
               {(visibleGoals.length > 0 || campaignCards.length > 0) && (
-                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
+                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-[var(--muted)] sm:hidden">
                   Swipe to browse
                   <ArrowRight className="h-3 w-3" />
                 </div>
@@ -1660,7 +1660,7 @@ export default function GoalsPage() {
                         Math.min(filteredGoals.length, prev + GOAL_BATCH_SIZE)
                       )
                     }
-                    className="rounded-full border border-white/20 bg-white/[0.05] px-6 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40 hover:bg-white/[0.08]"
+                    className="app-button rounded-full px-6 py-2 text-xs font-semibold uppercase tracking-[0.3em] transition"
                   >
                     See more goals
                   </button>
@@ -1669,10 +1669,10 @@ export default function GoalsPage() {
               {roadmapsWithItems.length > 0 ? (
                 <div className="mt-8 space-y-4">
                   <div className="space-y-1">
-                    <h2 className="text-lg font-semibold text-white">
+                    <h2 className="text-lg font-semibold text-[var(--text)]">
                       Campaign Roadmap Preview
                     </h2>
-                    <p className="text-sm text-white/60">
+                    <p className="text-sm text-[var(--muted)]">
                       Temporary mixed roadmap reader. Legacy roadmap cards are still active above.
                     </p>
                   </div>

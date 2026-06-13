@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { PostgrestError } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 
@@ -108,6 +109,30 @@ type RoutineSelectOption = {
   label: string;
   description?: string | null;
   disabled?: boolean;
+};
+
+type HabitLoadRecord = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  habit_type: string | null;
+  recurrence: string | null;
+  recurrence_days: unknown;
+  duration_minutes: number | null;
+  energy: string | null;
+  routine_id: string | null;
+  skill_id: string | null;
+  daylight_preference: string | null;
+  window_edge_preference: string | null;
+  window_id: string | null;
+  location_context_id: string | null;
+  goal_id?: string | null;
+  completion_target?: number | null;
+};
+
+type HabitLoadResponse = {
+  data: HabitLoadRecord | null;
+  error: PostgrestError | null;
 };
 
 interface GoalOption {
@@ -601,7 +626,7 @@ export default function EditHabitPage() {
         }
 
         let includeGoalMetadata = true;
-        let habitResponse: { data: any; error: any } | null = null;
+        let habitResponse: HabitLoadResponse | null = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
           habitResponse = await supabase

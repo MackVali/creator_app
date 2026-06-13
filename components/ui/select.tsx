@@ -12,7 +12,7 @@ function getLabelText(children: React.ReactNode): string {
         return [String(child)];
       }
 
-      if (React.isValidElement(child) && "props" in child && child.props) {
+      if (React.isValidElement<{ children?: React.ReactNode }>(child)) {
         return extract(child.props.children);
       }
 
@@ -23,6 +23,9 @@ function getLabelText(children: React.ReactNode): string {
 }
 
 const SELECT_TRIGGER_DISPLAY_NAME = "SelectTrigger";
+const MOBILE_SCROLL_STYLE = {
+  WebkitOverflowScrolling: "touch",
+} as React.CSSProperties;
 
 type SelectTriggerChildInfo = {
   className?: string;
@@ -60,9 +63,9 @@ const getSelectTriggerChildInfo = (
 
   React.Children.forEach(children, (child) => {
     if (info) return;
-    if (!React.isValidElement(child)) return;
+    if (!React.isValidElement<SelectProps>(child)) return;
 
-    const displayName = getComponentDisplayName(child.type);
+    const displayName = getComponentDisplayName(child.type as React.ElementType);
     if (displayName === SELECT_TRIGGER_DISPLAY_NAME) {
       info = {
         className: child.props.className,
@@ -148,8 +151,23 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       [children]
     );
 
+    const updateOpen = React.useCallback(
+      (next: boolean) => {
+        setIsOpen(next);
+        if (!next) {
+          openedViaFocusRef.current = false;
+          suppressFocusOpenRef.current = true;
+          setTimeout(() => {
+            suppressFocusOpenRef.current = false;
+          }, 150);
+        }
+        onOpenChange?.(next);
+      },
+      [onOpenChange]
+    );
+
     React.useEffect(() => {
-      const handlePointerDown = (event: PointerEvent) => {
+      const handlePointerDown = (event: Event) => {
         const target = event.target as Node;
         const clickedTrigger = containerRef.current?.contains(target);
         const clickedContent = contentRef.current?.contains(target);
@@ -165,7 +183,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         document.removeEventListener("pointerdown", handlePointerDown);
         document.removeEventListener("mousedown", handlePointerDown);
       };
-    }, []);
+    }, [updateOpen]);
 
     const updateContentPosition = React.useCallback(() => {
       if (!isOpen) return;
@@ -232,18 +250,6 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       };
     }, [isOpen, updateContentPosition]);
 
-    const updateOpen = (next: boolean) => {
-      setIsOpen(next);
-      if (!next) {
-        openedViaFocusRef.current = false;
-        suppressFocusOpenRef.current = true;
-        setTimeout(() => {
-          suppressFocusOpenRef.current = false;
-        }, 150);
-      }
-      onOpenChange?.(next);
-    };
-
     const handleSelect = (nextValue: string, label: string) => {
       setSelectedValue(nextValue);
       setSelectedLabel(label);
@@ -281,13 +287,18 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       const findLabel = (nodes: React.ReactNode): string | null => {
         let match: string | null = null;
         React.Children.forEach(nodes, (child) => {
-          if (match || !React.isValidElement(child)) {
+          if (
+            match ||
+            !React.isValidElement<SelectItemProps & { children?: React.ReactNode }>(
+              child
+            )
+          ) {
             return;
           }
 
           if (child.type === SelectItem && child.props.value === value) {
             match = child.props.label ?? getLabelText(child.props.children);
-          } else if (child.props && "children" in child.props) {
+          } else if (child.props.children) {
             match = findLabel(child.props.children);
           }
         });
@@ -378,10 +389,11 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
                   ref={contentRef}
                   className={cn(
                     "fixed z-[2147483651] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
-                    "overscroll-contain overflow-y-auto overflow-x-hidden",
+                    "overscroll-contain overflow-y-auto overflow-x-hidden touch-pan-y",
                     contentWrapperClassName
                   )}
                   style={{
+                    ...MOBILE_SCROLL_STYLE,
                     left: contentPosition.left,
                     width: contentPosition.width,
                     top: contentPosition.top,
@@ -391,7 +403,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
                 >
                   {React.Children.map(children, (child) => {
                     if (
-                      React.isValidElement(child) &&
+                      React.isValidElement<SelectContentProps>(child) &&
                       child.type === SelectContent
                     ) {
                       return React.cloneElement(child, {
@@ -410,13 +422,14 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
               ref={contentRef}
               className={cn(
                 "absolute z-[2147483651] mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
-                "overscroll-contain overflow-y-auto overflow-x-hidden",
+                "overscroll-contain overflow-y-auto overflow-x-hidden touch-pan-y",
                 contentWrapperClassName
               )}
+              style={MOBILE_SCROLL_STYLE}
             >
               {React.Children.map(children, (child) => {
                 if (
-                  React.isValidElement(child) &&
+                  React.isValidElement<SelectContentProps>(child) &&
                   child.type === SelectContent
                 ) {
                   return React.cloneElement(child, {
@@ -479,12 +492,15 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       <div
         ref={ref}
         className={cn(
-          "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain",
+          "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y",
           className
         )}
+        style={MOBILE_SCROLL_STYLE}
       >
         {React.Children.map(children, (child) => {
-          if (!React.isValidElement(child)) return child;
+          if (!React.isValidElement<Partial<SelectItemProps>>(child)) {
+            return child;
+          }
           return React.cloneElement(child, {
             onSelect: onSelectFn,
             selectedValue: selectedVal,
@@ -518,6 +534,24 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
     const resolvedSelectedValue = selectedValue ?? context.selectedValue;
     const isDisabled = Boolean(disabled);
     const touchHandledRef = React.useRef(false);
+    const touchStartRef = React.useRef<{
+      pointerId: number;
+      x: number;
+      y: number;
+      moved: boolean;
+    } | null>(null);
+
+    const selectValue = React.useCallback(() => {
+      if (isDisabled) return;
+      resolvedOnSelect?.(value, labelText || value);
+    }, [isDisabled, labelText, resolvedOnSelect, value]);
+    const suppressNextClick = React.useCallback(() => {
+      touchHandledRef.current = true;
+      if (typeof window === "undefined") return;
+      window.setTimeout(() => {
+        touchHandledRef.current = false;
+      }, 350);
+    }, []);
 
     return (
       <div
@@ -532,20 +566,50 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
         role="option"
         data-tour={dataTour}
         aria-disabled={isDisabled}
+        aria-selected={resolvedSelectedValue === value}
         onPointerDown={(event) => {
           if (event.pointerType !== "touch") return;
           if (isDisabled) return;
+          touchStartRef.current = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            moved: false,
+          };
+        }}
+        onPointerMove={(event) => {
+          if (event.pointerType !== "touch") return;
+          const start = touchStartRef.current;
+          if (!start || start.pointerId !== event.pointerId) return;
+          const deltaX = Math.abs(event.clientX - start.x);
+          const deltaY = Math.abs(event.clientY - start.y);
+          if (deltaX > 8 || deltaY > 8) {
+            start.moved = true;
+          }
+        }}
+        onPointerCancel={(event) => {
+          if (event.pointerType !== "touch") return;
+          touchStartRef.current = null;
+        }}
+        onPointerUp={(event) => {
+          if (event.pointerType !== "touch") return;
+          const start = touchStartRef.current;
+          touchStartRef.current = null;
+          if (!start || start.pointerId !== event.pointerId) return;
+          if (start.moved) {
+            suppressNextClick();
+            return;
+          }
           event.preventDefault();
-          touchHandledRef.current = true;
-          resolvedOnSelect?.(value, labelText || value);
+          suppressNextClick();
+          selectValue();
         }}
         onClick={() => {
           if (touchHandledRef.current) {
             touchHandledRef.current = false;
             return;
           }
-          if (isDisabled) return;
-          resolvedOnSelect?.(value, labelText || value);
+          selectValue();
         }}
       >
         {children}

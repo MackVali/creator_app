@@ -132,7 +132,7 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
   );
 
   return (
-    <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
+    <div className="app-profile-bg relative min-h-screen pb-[env(safe-area-inset-bottom)]">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
         <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
@@ -144,12 +144,12 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4">
           <header className="flex flex-col gap-4 text-center sm:flex-row sm:items-start sm:justify-between sm:text-left">
             <div className="space-y-3">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+              <span className="app-button inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted)]">
                 Preview
               </span>
               <div>
-                <h1 className="text-3xl font-semibold text-white sm:text-4xl">Your public profile</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/65 sm:text-base">
+                <h1 className="text-3xl font-semibold text-[var(--text)] sm:text-4xl">Your public profile</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--muted)] sm:text-base">
                   This live preview mirrors what visitors see on your bio link page. Use the quick actions below to edit details or curate new links.
                 </p>
               </div>
@@ -160,7 +160,7 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
                 asChild
                 size="sm"
                 variant="outline"
-                className="self-center rounded-full border-white/20 bg-white/5 text-white hover:border-white/40 hover:bg-white/10"
+                className="app-button self-center rounded-full"
               >
                 <Link href={`/profile/${profile.username}`} target="_blank" rel="noopener noreferrer">
                   View live page
@@ -177,17 +177,17 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
           <section className="mx-auto mt-6 w-full max-w-5xl px-1 pb-12 sm:mt-10">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold text-white">
+                <h2 className="text-2xl font-semibold text-[var(--text)]">
                   Modular link & media blocks
                 </h2>
-                <p className="mt-1 text-sm text-white/55">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Drag, reorder, and curate immersive modules to orchestrate your narrative.
                 </p>
               </div>
 
               {activeModuleCount > 0 ? (
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
-                  <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
+                <span className="app-button inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium shadow-[0_10px_25px_rgba(15,23,42,0.12)]">
+                  <span className="inline-block h-2 w-2 rounded-full bg-[var(--muted)]" />
                   {activeModuleCount} {activeModuleCount === 1 ? "active module" : "active modules"}
                 </span>
               ) : null}
@@ -212,12 +212,12 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
       </main>
 
       <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
-        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/15 bg-black/70 px-4 py-3 text-sm text-white shadow-[0_18px_36px_rgba(2,6,23,0.55)] backdrop-blur">
+        <div className="app-panel pointer-events-auto flex flex-wrap items-center justify-center gap-3 rounded-full px-4 py-3 text-sm shadow-[0_18px_36px_rgba(2,6,23,0.16)] backdrop-blur">
           <Button
             asChild
             size="sm"
             variant="secondary"
-            className="rounded-full bg-white px-5 text-black shadow-[0_10px_30px_rgba(15,23,42,0.45)] hover:bg-white/90"
+            className="rounded-full bg-[var(--text)] px-5 text-[var(--bg)] shadow-[0_10px_30px_rgba(15,23,42,0.18)] hover:opacity-90"
           >
             <Link href="/profile/edit">
               <Edit3 className="h-4 w-4" />
@@ -228,7 +228,7 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
             asChild
             size="sm"
             variant="outline"
-            className="rounded-full border-white/25 bg-white/5 px-5 text-white hover:border-white/50 hover:bg-white/10"
+            className="app-button rounded-full px-5"
           >
             <Link href="/profile/linked-accounts">
               <Link2 className="h-4 w-4" />

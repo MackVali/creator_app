@@ -39,11 +39,6 @@ export function navigateMainTabRoute(
   href: MainTabRouteHref,
   pushRoute: (href: MainTabRouteHref) => void
 ) {
-  if (isPersistentMainTabRoute(href) && typeof window !== "undefined") {
-    window.history.pushState(null, "", href);
-    return;
-  }
-
   pushRoute(href);
 }
 

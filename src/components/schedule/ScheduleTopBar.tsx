@@ -77,13 +77,13 @@ export function ScheduleTopBar({
   }, [onHeightChange]);
 
   const iconButtonClass =
-    "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_22px_rgba(0,0,0,0.24)] backdrop-blur-xl transition-colors hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/[0.08]";
+    "app-button inline-flex h-9 w-9 items-center justify-center rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_22px_rgba(0,0,0,0.12)] backdrop-blur-xl transition-colors hover:border-[var(--border)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30";
 
   const rescheduleButtonClass =
     "group relative hidden sm:inline-flex items-center gap-2 rounded-full bg-[var(--accent-red)] px-5 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(190,18,60,0.45)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(190,18,60,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none";
 
   const debugButtonClass =
-    "hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-semibold text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
+    "app-button hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.12)] backdrop-blur-xl transition hover:border-[var(--border)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
 
   const safeAreaPadding: CSSProperties = {
     paddingTop: "calc(0.45rem + env(safe-area-inset-top, 0px))",
@@ -94,13 +94,13 @@ export function ScheduleTopBar({
 
   return (
     <header
-      className="fixed inset-x-0 top-0 z-[120] flex items-center justify-between gap-2 bg-[var(--surface-elevated)] shadow-sm border-b border-[var(--hairline)]"
+      className="app-surface-elevated fixed inset-x-0 top-0 z-[120] flex items-center justify-between gap-2 shadow-sm border-b border-[var(--hairline)]"
       style={safeAreaPadding}
       ref={headerRef}
     >
       <div className="flex items-center gap-2">
         <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
-          <ChevronLeft className="h-5 w-5 text-zinc-400" />
+          <ChevronLeft className="h-5 w-5 text-[var(--muted)]" />
         </button>
         <button
           type="button"
@@ -109,21 +109,21 @@ export function ScheduleTopBar({
           aria-label="Open jump to date"
           className={iconButtonClass}
         >
-          <Calendar className="h-5 w-5 text-zinc-400" />
+          <Calendar className="h-5 w-5 text-[var(--muted)]" />
         </button>
       </div>
-      <div className="flex items-center justify-center gap-1.5 px-2 leading-none text-zinc-200">
+      <div className="flex items-center justify-center gap-1.5 px-2 leading-none text-[var(--text)]">
         {weekdayLabel ? (
-          <span className="text-sm font-black tracking-tight text-zinc-100">
+          <span className="text-sm font-black tracking-tight text-[var(--text)]">
             {weekdayLabel}
           </span>
         ) : null}
         {monthLabel ? (
-          <span className="text-sm font-black uppercase tracking-tight text-zinc-300">
+          <span className="text-sm font-black uppercase tracking-tight text-[var(--muted)]">
             {monthLabel}
           </span>
         ) : null}
-        <span className="text-sm font-black tracking-tight text-zinc-100">
+        <span className="text-sm font-black tracking-tight text-[var(--text)]">
           {year}
         </span>
       </div>
@@ -153,7 +153,7 @@ export function ScheduleTopBar({
               className={`sm:hidden ${iconButtonClass}`}
             >
               <RefreshCcw
-                className={`h-5 w-5 text-zinc-400 ${
+                className={`h-5 w-5 text-[var(--muted)] ${
                   isRescheduling ? "animate-spin" : ""
                 }`}
               />
@@ -166,7 +166,7 @@ export function ScheduleTopBar({
           aria-label="Open schedule debug"
           className={debugButtonClass}
         >
-          <Bug className="h-4 w-4 text-zinc-400" />
+          <Bug className="h-4 w-4 text-[var(--muted)]" />
           <span>Schedule Debug</span>
         </button>
         <button
@@ -175,7 +175,7 @@ export function ScheduleTopBar({
           aria-label="Schedule Debug"
           className={cn(iconButtonClass, "sm:hidden")}
         >
-          <Bug className="h-5 w-5 text-zinc-400" />
+          <Bug className="h-5 w-5 text-[var(--muted)]" />
         </button>
       </div>
     </header>

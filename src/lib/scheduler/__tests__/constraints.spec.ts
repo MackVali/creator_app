@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { passesTimeBlockConstraints } from "../constraints";
 import { fetchCompatibleWindowsForItem } from "../reschedule";
 import type { WindowLite } from "../repo";
+import type { Database } from "../../../../types/supabase";
+
+type SchedulerClient = SupabaseClient<Database>;
 
 describe("passesTimeBlockConstraints", () => {
   it("allows when allow_all flags are true", () => {
@@ -136,7 +140,7 @@ describe("fetchCompatibleWindowsForItem with constraints", () => {
     ];
 
     const result = await fetchCompatibleWindowsForItem(
-      {} as any,
+      {} as SchedulerClient,
       new Date("2024-01-01T00:00:00Z"),
       { energy: "NO", duration_min: 30, skillId: "skill-a" },
       "UTC",
@@ -159,7 +163,7 @@ describe("fetchCompatibleWindowsForItem with constraints", () => {
     ];
 
     const result = await fetchCompatibleWindowsForItem(
-      {} as any,
+      {} as SchedulerClient,
       new Date("2024-01-01T00:00:00Z"),
       { energy: "NO", duration_min: 30, skillIds: ["skill-x"] },
       "UTC",

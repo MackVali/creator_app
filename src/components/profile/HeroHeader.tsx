@@ -10,11 +10,12 @@ import {
   ShieldCheck,
   Handshake,
   Headphones,
-  MapPin,
   PlayCircle,
   ShoppingBag,
+  User,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   useCallback,
   useId,
@@ -33,6 +34,25 @@ import RelationshipViewBar, {
 import SocialPillsRow from "./SocialPillsRow";
 
 type ProfileStatView = "following" | "followers" | "offers";
+
+export type FollowedByPreviewUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+export type ProfileHeaderActionButtons = {
+  primaryLabel: string;
+  primaryAriaLabel?: string;
+  primaryDisabled?: boolean;
+  primaryBusy?: boolean;
+  onPrimaryClick: () => void;
+  secondaryLabel: string;
+  secondaryAriaLabel?: string;
+  secondaryDisabled?: boolean;
+  onSecondaryClick: () => void;
+};
 
 const PROFILE_STAT_ITEMS: readonly RelationshipStatItem<ProfileStatView>[] = [
   { value: "following", label: "Following" },
@@ -83,6 +103,9 @@ interface HeroHeaderProps {
   isAvatarUploading?: boolean;
   relationshipCounts?: RelationshipViewCounts;
   onProfileStatSelect?: (view: ProfileStatView) => void;
+  followedByUsers?: FollowedByPreviewUser[];
+  followedByTotalCount?: number;
+  actionButtons?: ProfileHeaderActionButtons;
 }
 
 export default function HeroHeader({
@@ -96,6 +119,9 @@ export default function HeroHeader({
   isAvatarUploading = false,
   relationshipCounts,
   onProfileStatSelect,
+  followedByUsers = [],
+  followedByTotalCount = 0,
+  actionButtons,
 }: HeroHeaderProps) {
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -130,9 +156,7 @@ export default function HeroHeader({
   const bioText = bioSegments.length ? bioSegments.join(" • ") : null;
 
   const pronouns = profile.pronouns?.trim() || null;
-  const locationDisplay = (profile.location_display ?? profile.city)?.trim() || null;
-  const heroImageSizes =
-    "(min-width: 1024px) 176px, (min-width: 640px) 160px, (min-width: 420px) 128px, 96px";
+  const heroImageSizes = "(min-width: 420px) 104px, 92px";
   const hasSocialLinks = Object.values(socials ?? {}).some((url) => url && url !== "#");
   const partnerBadges = (profile.partner_badges ?? [])
     .filter((badge) => badge && badge.label?.trim())
@@ -152,6 +176,15 @@ export default function HeroHeader({
   const tooltipIdBase = useId();
   const avatarButtonClass =
     "absolute inset-0 z-10 rounded-full transition duration-200 disabled:cursor-not-allowed disabled:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black";
+  const followedByPreviewUsers = followedByUsers.slice(0, 3);
+  const followedByNameUsers = followedByPreviewUsers.slice(0, 2);
+  const followedByTotal = Math.max(followedByTotalCount, followedByPreviewUsers.length);
+  const followedByOtherCount = Math.max(followedByTotal - followedByNameUsers.length, 0);
+  const hasFollowedByPreview = followedByPreviewUsers.length > 0;
+  const actionButtonBaseClass =
+    "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md px-3 text-[0.82rem] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-45";
+  const actionButtonClass =
+    `${actionButtonBaseClass} border border-black bg-white/[0.14] text-white/90 hover:border-black hover:bg-white/[0.2] disabled:hover:border-black disabled:hover:bg-white/[0.14]`;
 
   const handleAvatarClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -178,35 +211,23 @@ export default function HeroHeader({
 
   return (
     <section className="w-full bg-black text-white mt-0">
-      <div className="mx-auto flex max-w-5xl flex-col px-4 pb-6 pt-2 sm:px-6 sm:pb-8">
-        <div className="flex min-h-11 w-full items-center justify-between gap-3 text-white/75">
+      <div className="mx-auto flex max-w-5xl flex-col px-4 pb-6 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] sm:px-6 sm:pb-8">
+        <div className="flex min-h-[3.125rem] w-full items-center justify-between gap-3 py-1 text-white/75 sm:min-h-[3.625rem]">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {onBack ? (
               <button
                 type="button"
                 onClick={onBack}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                className="inline-flex h-[2.375rem] w-[2.375rem] shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
               >
-                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                <ChevronLeft className="h-[1.3rem] w-[1.3rem]" aria-hidden="true" />
                 <span className="sr-only">Back</span>
               </button>
             ) : null}
-            <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
-              <p className="min-w-0 shrink truncate text-sm font-semibold leading-tight text-white/90">
+            <div className="flex min-w-0 items-center whitespace-nowrap">
+              <p className="min-w-0 shrink truncate text-[1.0625rem] font-semibold leading-tight text-white/95 sm:text-[1.15rem]">
                 @{profile.username}
               </p>
-              {locationDisplay ? (
-                <>
-                  <span className="h-1 w-1 shrink-0 rounded-full bg-white/35" aria-hidden="true" />
-                  <p
-                    className="flex min-w-0 shrink items-center gap-1 text-[0.68rem] font-medium uppercase leading-tight tracking-[0.16em] text-white/55"
-                    aria-label={`Located in ${locationDisplay}`}
-                  >
-                    <MapPin className="h-3 w-3 shrink-0 text-white/45" aria-hidden="true" />
-                    <span className="min-w-0 truncate">{locationDisplay}</span>
-                  </p>
-                </>
-              ) : null}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -215,18 +236,18 @@ export default function HeroHeader({
               <button
                 type="button"
                 onClick={onShare}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                className="inline-flex h-[2.375rem] w-[2.375rem] shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
               >
-                <Share2 className="h-4 w-4" aria-hidden="true" />
+                <Share2 className="h-[1.3rem] w-[1.3rem]" aria-hidden="true" />
                 <span className="sr-only">Share profile</span>
               </button>
             ) : null}
           </div>
         </div>
 
-        <div className="pt-4 sm:pt-6">
-          <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-4 min-[420px]:grid-cols-[8rem_minmax(0,1fr)] sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-x-6 lg:grid-cols-[11rem_minmax(0,1fr)]">
-            <div className="relative h-24 w-24 overflow-hidden rounded-full min-[420px]:h-32 min-[420px]:w-32 sm:h-40 sm:w-40 lg:h-44 lg:w-44">
+        <div className="pt-2 sm:pt-3">
+          <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] items-center gap-x-3.5 gap-y-3 min-[420px]:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-x-5">
+            <div className="relative h-[5.75rem] w-[5.75rem] overflow-hidden rounded-full min-[420px]:h-[6.5rem] min-[420px]:w-[6.5rem]">
               {profile.avatar_url ? (
                 <Image
                   src={profile.avatar_url}
@@ -265,56 +286,40 @@ export default function HeroHeader({
             </div>
 
             <div className="flex min-w-0 flex-col items-start text-left">
-              <h1 className="max-w-full truncate text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
+              <h1 className="relative -top-1 max-w-full truncate pl-[1.125rem] text-base font-semibold leading-tight tracking-tight text-white min-[420px]:pl-5 sm:text-[1.0625rem]">
                 {displayName}
               </h1>
-              <div className="mt-1.5 flex max-w-full flex-wrap items-center justify-start gap-x-2 gap-y-1 text-sm text-white/60">
-                <span className="max-w-full truncate font-medium text-white/75">
-                  @{profile.username}
-                </span>
-                {locationDisplay ? (
-                  <>
-                    <span className="h-1 w-1 rounded-full bg-white/35" aria-hidden="true" />
-                    <span
-                      className="inline-flex min-w-0 items-center gap-1"
-                      aria-label={`Located in ${locationDisplay}`}
-                    >
-                      <MapPin className="h-3.5 w-3.5 shrink-0 text-white/45" aria-hidden="true" />
-                      <span className="min-w-0 truncate">{locationDisplay}</span>
-                    </span>
-                  </>
-                ) : null}
-              </div>
 
-              {hasSocialLinks ? (
-                <div className="mt-3 w-full max-w-full">
-                  <SocialPillsRow socials={socials || {}} />
-                </div>
-              ) : null}
-
-              <div className="mt-4 w-full max-w-2xl">
+              <div className="mt-2.5 w-full max-w-full">
                 <RelationshipViewBar
                   value={null}
                   onChange={onProfileStatSelect}
                   counts={relationshipCounts}
                   items={PROFILE_STAT_ITEMS}
-                  className="w-full border border-white/10"
-                  itemClassName="px-1.5 sm:px-4"
-                  countClassName="text-white"
-                  labelClassName="text-[0.62rem] font-medium normal-case tracking-normal text-white/55 sm:text-[0.68rem]"
+                  className="!w-full max-w-full !items-stretch !gap-1.5 !rounded-none !bg-transparent !px-0 !py-0 min-[420px]:!gap-2"
+                  itemClassName="!flex-1 !items-center !gap-0.5 !rounded-none !bg-transparent !px-1 !py-0 text-center hover:!bg-transparent"
+                  countClassName="!text-[0.95rem] !font-semibold !leading-none !tracking-normal text-white sm:!text-base"
+                  labelClassName="text-[0.62rem] font-medium leading-tight normal-case tracking-normal text-white/55 sm:text-[0.66rem]"
                   uppercaseLabels={false}
                 />
               </div>
-              {bioText ? (
-                <p className="mt-3 max-w-2xl text-left text-sm font-semibold leading-relaxed tracking-tight text-white/60 sm:text-base">
-                  {bioText}
-                </p>
-              ) : null}
             </div>
           </div>
+
+          {bioText ? (
+            <p className="mt-2.5 w-full text-left text-sm font-medium leading-relaxed tracking-tight text-white/60 sm:text-[0.95rem]">
+              {bioText}
+            </p>
+          ) : null}
+
+          {hasSocialLinks ? (
+            <div className="mt-3 w-full [&>div]:!justify-start">
+              <SocialPillsRow socials={socials || {}} />
+            </div>
+          ) : null}
         </div>
 
-        <div className="flex flex-col gap-1 pt-5 sm:pt-6">
+        <div className="flex flex-col gap-1 pt-2.5 sm:pt-3">
           {hasRelationshipExtras ? (
             <section className="flex flex-col space-y-1 px-6 py-3 text-center text-white sm:px-8">
 
@@ -394,6 +399,91 @@ export default function HeroHeader({
               </ul>
             ) : null}
             </section>
+          ) : null}
+
+          {hasFollowedByPreview ? (
+            <div className="flex items-center gap-2.5 pt-0 text-left text-[0.78rem] font-medium leading-snug text-white/70 sm:text-[0.82rem]">
+              <div className="flex shrink-0 -space-x-2">
+                {followedByPreviewUsers.map((follower) => {
+                  const profileHref = `/profile/${encodeURIComponent(follower.username)}`;
+                  const fallbackInitials = (follower.displayName || follower.username)
+                    .trim()
+                    .slice(0, 2)
+                    .toUpperCase();
+
+                  return (
+                    <Link
+                      key={follower.id}
+                      href={profileHref}
+                      className="relative block h-6 w-6 overflow-hidden rounded-full border-2 border-black bg-zinc-900 ring-1 ring-white/10 transition hover:z-10 hover:ring-white/35 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                      aria-label={`View ${follower.displayName || follower.username}'s profile`}
+                    >
+                      {follower.avatarUrl ? (
+                        <Image
+                          src={follower.avatarUrl}
+                          alt=""
+                          fill
+                          sizes="24px"
+                          unoptimized
+                          className="rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center bg-zinc-900 text-[0.58rem] font-semibold text-white/50">
+                          {fallbackInitials || <User className="h-3 w-3" aria-hidden="true" />}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+              <p className="min-w-0 flex-1">
+                <span>Followed by </span>
+                {followedByNameUsers.map((follower, index) => {
+                  const profileHref = `/profile/${encodeURIComponent(follower.username)}`;
+                  const separator =
+                    index === 0 ? "" : followedByOtherCount > 0 ? ", " : " and ";
+
+                  return (
+                    <span key={follower.id}>
+                      {separator}
+                      <Link
+                        href={profileHref}
+                        className="font-semibold text-white/88 transition hover:text-white focus-visible:outline-none focus-visible:underline"
+                      >
+                        {follower.username}
+                      </Link>
+                    </span>
+                  );
+                })}
+                {followedByOtherCount > 0 ? (
+                  <span>{` and ${followedByOtherCount} ${followedByOtherCount === 1 ? "other" : "others"}`}</span>
+                ) : null}
+              </p>
+            </div>
+          ) : null}
+
+          {actionButtons ? (
+            <div className="grid grid-cols-2 gap-2 pt-3">
+              <button
+                type="button"
+                onClick={actionButtons.onPrimaryClick}
+                disabled={actionButtons.primaryDisabled || actionButtons.primaryBusy}
+                aria-label={actionButtons.primaryAriaLabel ?? actionButtons.primaryLabel}
+                aria-busy={actionButtons.primaryBusy || undefined}
+                className={actionButtonClass}
+              >
+                {actionButtons.primaryLabel}
+              </button>
+              <button
+                type="button"
+                onClick={actionButtons.onSecondaryClick}
+                disabled={actionButtons.secondaryDisabled}
+                aria-label={actionButtons.secondaryAriaLabel ?? actionButtons.secondaryLabel}
+                className={actionButtonClass}
+              >
+                {actionButtons.secondaryLabel}
+              </button>
+            </div>
           ) : null}
 
         </div>

@@ -34,7 +34,7 @@ export const LevelBanner = forwardRef<LevelBannerHandle, LevelBannerProps>(
     const hasBadges = prestigeBadges.length > 0;
 
     const renderedBadges = loading && !progress ? (
-      <span className="text-xs font-medium uppercase tracking-[0.2em] text-white/50">
+      <span className="text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
         Syncing…
       </span>
     ) : hasBadges ? (
@@ -54,33 +54,33 @@ export const LevelBanner = forwardRef<LevelBannerHandle, LevelBannerProps>(
     return (
       <div
         className={cn(
-          "card relative mx-4 mt-4 overflow-hidden p-4 shadow-[0_20px_42px_-28px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.045)]",
-          "border border-white/10 bg-[#0A0B0F]/88",
+          "relative mx-4 mt-4 overflow-hidden rounded-[var(--radius)] p-4 shadow-[0_20px_42px_-28px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.045)]",
+          "app-card",
           className,
         )}
         aria-live="polite"
       >
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.045),transparent_32%,rgba(0,0,0,0.28)_78%)]" />
-        <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-3 text-white">
+        <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-3 text-[var(--text)]">
           <span
             role="img"
             aria-label="Level mark"
-            className="flex h-5 w-5 items-center justify-center text-lg text-zinc-200 drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+            className="flex h-5 w-5 items-center justify-center text-lg text-[var(--text)] drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]"
           >
             💠
           </span>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 text-lg leading-none">{renderedBadges}</div>
-            <span className="font-extrabold text-[20px] tracking-wide text-white">
+            <span className="font-extrabold text-[20px] tracking-wide text-[var(--text)]">
               LEVEL {levelLabel}
             </span>
           </div>
-          <span className="text-xs font-medium text-white/60">
+          <span className="text-xs font-medium text-[var(--muted)]">
             {remainingLabel === "--" ? "Loading" : `${remainingLabel} XP to next level`}
           </span>
         </div>
         <div className="relative z-[1]">
-          <div className="h-[15px] w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)] backdrop-blur-sm">
+          <div className="h-[15px] w-full overflow-hidden rounded-full border border-[var(--border)] bg-[var(--subtle-surface)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.18)] backdrop-blur-sm">
             <div
               className="progress-bar-glint relative h-full rounded-full border border-white/[0.16] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)] transition-[width] duration-700 ease-out"
               style={{ width: `${progressPercent}%` }}
