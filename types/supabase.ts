@@ -70,6 +70,7 @@ export interface Database {
           anchor_value: string | null;
           anchor_start_date: string | null;
           memo_capture_config: Json | null;
+          routine_id: string | null;
         };
         Insert: {
           id?: string;
@@ -103,6 +104,7 @@ export interface Database {
           anchor_value?: string | null;
           anchor_start_date?: string | null;
           memo_capture_config?: Json | null;
+          routine_id?: string | null;
         };
         Update: {
           id?: string;
@@ -135,6 +137,33 @@ export interface Database {
           anchor_value?: string | null;
           anchor_start_date?: string | null;
           memo_capture_config?: Json | null;
+          routine_id?: string | null;
+        };
+      };
+      habit_routines: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          name: string;
+          description: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          name?: string;
+          description?: string | null;
         };
       };
       habit_completion_days: {

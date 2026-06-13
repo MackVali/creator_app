@@ -1,11 +1,12 @@
 "use client";
 
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import styles from "./Folder.module.css";
 
 type PaperOffset = { x: number; y: number };
+type CSSVariableStyle = CSSProperties & Record<`--${string}`, string | number>;
 
 type FolderProps = {
   color?: string;
@@ -15,6 +16,7 @@ type FolderProps = {
   label?: ReactNode;
   className?: string;
   bareItems?: boolean;
+  ariaLabel?: string;
 };
 
 const MAX_ITEMS = 5;
@@ -62,6 +64,7 @@ export function Folder({
   label,
   className,
   bareItems = false,
+  ariaLabel,
 }: FolderProps) {
   const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
   const positions = computePositions(visibleItems.length);
@@ -80,6 +83,12 @@ export function Folder({
       }
       return !prev;
     });
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    handleClick();
   };
 
   const handlePaperMouseMove = (event: MouseEvent<HTMLDivElement>, index: number) => {
@@ -104,17 +113,17 @@ export function Folder({
     });
   };
 
-  const folderStyle: CSSProperties = {
-    ["--folder-color" as string]: color,
-    ["--folder-back-color" as string]: folderBackColor,
+  const folderStyle: CSSVariableStyle = {
+    "--folder-color": color,
+    "--folder-back-color": folderBackColor,
   };
 
   if (gradient) {
-    folderStyle["--folder-gradient" as string] = gradient;
+    folderStyle["--folder-gradient"] = gradient;
   }
 
-  const wrapperStyle: CSSProperties = {
-    ["--folder-scale" as string]: size,
+  const wrapperStyle: CSSVariableStyle = {
+    "--folder-scale": size,
   };
 
   return (
@@ -123,26 +132,27 @@ export function Folder({
         className={cn(styles.folder, open && styles.open)}
         style={folderStyle}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={ariaLabel}
       >
         <div className={styles.folderBack}>
           {visibleItems.map((item, index) => {
-            const magnetStyle: CSSProperties = {
-              ["--paper-position" as string]: `${positions[index] ?? 0}`,
-              ["--paper-color" as string]:
+            const magnetStyle: CSSVariableStyle = {
+              "--paper-position": `${positions[index] ?? 0}`,
+              "--paper-color":
                 paperColors[index] ?? paperColors[paperColors.length - 1],
-              ["--paper-z" as string]: `${Math.round(
+              "--paper-z": `${Math.round(
                 MAX_ITEMS - Math.abs(positions[index] ?? 0)
               )}`,
-              ["--paper-delay" as string]: `${index * 0.04}s`,
+              "--paper-delay": `${index * 0.04}s`,
             };
 
             if (open) {
-              magnetStyle["--magnet-x" as string] = `${
-                paperOffsets[index]?.x ?? 0
-              }px`;
-              magnetStyle["--magnet-y" as string] = `${
-                paperOffsets[index]?.y ?? 0
-              }px`;
+              magnetStyle["--magnet-x"] = `${paperOffsets[index]?.x ?? 0}px`;
+              magnetStyle["--magnet-y"] = `${paperOffsets[index]?.y ?? 0}px`;
             }
 
             return (

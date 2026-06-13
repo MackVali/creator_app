@@ -2,40 +2,33 @@
 
 import LinkedAccountsForm from "./LinkedAccountsForm";
 import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-
-const pageStyles =
-  "relative mx-auto w-full max-w-4xl space-y-10 rounded-[32px] border border-border/40 bg-gradient-to-br from-background/80 via-background/40 to-background/70 p-8 shadow-[0_35px_80px_-40px_rgba(15,23,42,0.5)] backdrop-blur";
+import { useRouter } from "next/navigation";
 
 export default function LinkedAccountsPage() {
-  return (
-    <div className="relative mx-auto flex w-full max-w-5xl justify-center px-4 py-10 sm:py-14">
-      <div className={pageStyles}>
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-3">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
-              Profile Suite
-            </span>
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                Curate your connected presence
-              </h1>
-              <p className="max-w-xl text-sm text-muted-foreground/80 sm:text-base">
-                Add the platforms your audience already knows and loves. We’ll showcase them with
-                premium styling so your personality shines everywhere.
-              </p>
-            </div>
-          </div>
-          <Button asChild variant="outline" size="sm" className="self-start border-border/50 bg-background/80">
-            <Link href="/profile">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to profile
-            </Link>
-          </Button>
-        </div>
+  const router = useRouter();
 
+  return (
+    <div className="app-bg app-settings-bg min-h-screen">
+      <header className="app-top-nav sticky top-0 z-10 border-b backdrop-blur">
+        <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
+          <button
+            type="button"
+            aria-label="Back to settings"
+            onClick={() => router.push("/settings")}
+            className="inline-flex h-9 w-9 items-center justify-center text-[var(--text)] transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <h1 className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-lg font-semibold leading-tight text-[var(--text)]">
+            Linked accounts
+          </h1>
+          <span className="h-9 w-9 shrink-0" aria-hidden="true" />
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl px-4 pb-16 pt-4">
         <LinkedAccountsForm />
-      </div>
+      </main>
     </div>
   );
 }
