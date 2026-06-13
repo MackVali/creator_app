@@ -519,7 +519,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             )}
 
             {/* Social Media Links */}
-            <div className="mb-8 flex flex-wrap justify-center gap-3">
+            <div className="mb-8 flex flex-wrap justify-center gap-1.5">
               {socialLinks.length > 0 ? (
                 socialLinks.map((link) => {
                   const definition = getSocialIconDefinition(link.platform);

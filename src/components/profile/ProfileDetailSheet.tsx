@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Product/service detail media should match the compact profile card treatment. */
+
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -38,31 +40,9 @@ interface ProfileDetailSheetProps {
 }
 
 const SheetRow = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.4em] text-white/60">
+  <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.24em] text-white/[0.55]">
     <span>{label}</span>
-    <span className="max-w-[55%] text-right font-semibold text-white/90">{value}</span>
-  </div>
-);
-
-const DetailHeader = ({
-  badgeLabel,
-  onClose,
-}: {
-  badgeLabel: string;
-  onClose: () => void;
-}) => (
-  <div className="flex items-center justify-between px-6 pt-5 pb-2">
-    <span className="text-[10px] font-semibold uppercase tracking-[0.6em] text-white/60">
-      {badgeLabel}
-    </span>
-    <button
-      type="button"
-      onClick={onClose}
-      aria-label={`Close ${badgeLabel} details`}
-      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.45em] text-white/70 transition hover:border-white/40 hover:text-white"
-    >
-      Close
-    </button>
+    <span className="max-w-[58%] text-right font-semibold text-white/90">{value}</span>
   </div>
 );
 
@@ -73,15 +53,22 @@ const DetailMedia = ({
   image: string | null;
   title: string;
 }) => (
-  <div className="relative h-full w-full overflow-hidden rounded-[24px] border border-white/10 bg-white/5 shadow-[inset_0_0_40px_rgba(0,0,0,0.45)]">
+  <div className="relative h-full w-full overflow-hidden rounded-[18px] bg-zinc-900 shadow-[inset_0_-24px_44px_rgba(0,0,0,0.26)]">
     {image ? (
-      <img src={image} alt={title} className="h-full w-full object-cover" loading="lazy" />
+      <img
+        src={image}
+        alt={title}
+        className="h-full w-full object-cover object-center"
+        loading="lazy"
+      />
     ) : (
-      <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.45em] text-white/40">
-        No cover
+      <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_48%),linear-gradient(145deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))]">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/[0.35]">
+          No image
+        </span>
       </div>
     )}
-    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/[0.35] via-transparent to-white/[0.04]" />
   </div>
 );
 
@@ -116,6 +103,21 @@ export default function ProfileDetailSheet({
       document.documentElement.style.overflow = previousHtmlOverflow;
     };
   }, [item]);
+
+  useEffect(() => {
+    if (!item) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [item, onClose]);
 
   useEffect(() => {
     if (!ctaFeedback) {
@@ -228,7 +230,7 @@ export default function ProfileDetailSheet({
     serviceModeRows.push({ label: "Turnaround", value: serviceTurnaround });
   }
 
-  const badgeLabel = isProduct ? "Product" : "Service";
+  const detailTypeLabel = isProduct ? "product" : "service";
 
   const servicePrimaryActionLabel =
     serviceMode === "bookable"
@@ -272,46 +274,44 @@ export default function ProfileDetailSheet({
       : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-4 sm:px-6">
-      <div className="absolute inset-0 bg-black/75" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-3 pb-3 sm:items-center sm:p-6">
+      <div className="absolute inset-0 bg-black/[0.78] backdrop-blur-[2px]" onClick={onClose} />
       <section
         role="dialog"
         aria-modal="true"
-        aria-label={`${badgeLabel} details`}
-        className="relative z-10 mx-auto flex h-[min(95dvh,940px)] w-full max-w-3xl flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-neutral-950/95 shadow-[0_30px_120px_rgba(0,0,0,0.95)] sm:rounded-[32px]"
+        aria-label={`${title} ${detailTypeLabel} details`}
+        className="relative z-10 mx-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[460px] flex-col overflow-hidden rounded-t-[26px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.97)_56%,rgba(33,34,40,0.9)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:rounded-[26px]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="absolute left-1/2 top-3 -translate-x-1/2">
-          <span className="block h-1.5 w-12 rounded-full bg-white/30" />
+        <div className="absolute left-1/2 top-2.5 z-20 -translate-x-1/2">
+          <span className="block h-1 w-10 rounded-full bg-white/[0.24]" />
         </div>
 
-        <DetailHeader badgeLabel={badgeLabel} onClose={onClose} />
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-6 [-webkit-overflow-scrolling:touch]">
-          <div className="space-y-5">
-            <div className="mx-auto w-full max-w-[520px]">
-              <div className="relative aspect-[3/2]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pt-6 pb-4 [-webkit-overflow-scrolling:touch] sm:px-4">
+          <div className="space-y-3.5">
+            <div className="rounded-[22px] bg-black/20 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+              <div className="relative aspect-[25/18] max-h-[300px]">
                 <DetailMedia image={image} title={title} />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <p className="text-2xl font-semibold leading-tight text-white sm:text-[2.4rem]">
+            <div className="space-y-1 px-1">
+              <p className="text-xl font-semibold leading-tight text-white sm:text-2xl">
                 {title}
               </p>
-              <p className="text-xl font-semibold text-amber-300 sm:text-2xl">{priceLabel}</p>
+              <p className="text-base font-semibold text-amber-300 sm:text-lg">{priceLabel}</p>
               {description ? (
-                <p className="text-sm leading-relaxed text-white/70">{description}</p>
+                <p className="text-sm leading-6 text-white/[0.68]">{description}</p>
               ) : null}
             </div>
 
             {isProduct ? (
               <>
                 {showFulfillmentBlock ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                  <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                        <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
                           Fulfillment
                         </p>
                         <p className="text-sm font-semibold text-white/90">
@@ -319,19 +319,19 @@ export default function ProfileDetailSheet({
                         </p>
                       </div>
                       {productKindLabel ? (
-                        <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                        <span className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60">
                           {productKindLabel}
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-4 space-y-3">
+                    <div className="mt-3 space-y-2.5">
                       {productFulfillmentRows.map((row) => (
                         <SheetRow key={row.label} label={row.label} value={row.value} />
                       ))}
                     </div>
                     {allowsMultipleUnits ? (
-                      <p className="mt-3 text-xs uppercase tracking-[0.45em] text-amber-200/80">
-                        Multiple units supported—quantity picker arriving with the cart
+                      <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-amber-200/75">
+                        Multiple units supported - quantity picker arriving with the cart
                         experience.
                       </p>
                     ) : null}
@@ -339,19 +339,19 @@ export default function ProfileDetailSheet({
                 ) : null}
 
                 {isDigitalProduct ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                  <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                        <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
                           Delivery
                         </p>
                         <p className="text-sm font-semibold text-white/90">Digital product</p>
                       </div>
-                      <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                      <span className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60">
                         {productKindLabel ?? "Digital"}
                       </span>
                     </div>
-                    <p className="mt-3 text-sm leading-relaxed text-white/70">
+                    <p className="mt-2.5 text-sm leading-6 text-white/[0.68]">
                       Instant deliverables are sent straight to your inbox once checkout is
                       complete.
                     </p>
@@ -359,42 +359,44 @@ export default function ProfileDetailSheet({
                 ) : null}
               </>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+              <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
                       Service mode
                     </p>
                     <p className="text-sm font-semibold text-white/90">{serviceModeLabel}</p>
                   </div>
-                  <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                  <span className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60">
                     {serviceModeLabel}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-white/70">{SERVICE_MODE_NOTES[serviceMode]}</p>
+                <p className="mt-2.5 text-sm leading-6 text-white/[0.68]">
+                  {SERVICE_MODE_NOTES[serviceMode]}
+                </p>
                 {serviceModeRows.length > 0 ? (
-                  <div className="mt-4 flex flex-col gap-3">
+                  <div className="mt-3 flex flex-col gap-2.5">
                     {serviceModeRows.map((row) => (
                       <SheetRow key={row.label} label={row.label} value={row.value} />
                     ))}
                   </div>
                 ) : null}
                 {serviceMode === "flat_rate" && serviceDeliverables ? (
-                  <div className="mt-4 space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                  <div className="mt-3 space-y-1">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
                       Deliverables
                     </p>
-                    <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">
+                    <p className="text-sm leading-6 text-white/[0.68] whitespace-pre-line">
                       {serviceDeliverables}
                     </p>
                   </div>
                 ) : null}
                 {serviceMode === "custom_quote" && serviceRequirements ? (
-                  <div className="mt-4 space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                  <div className="mt-3 space-y-1">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-white/50">
                       Requirements
                     </p>
-                    <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">
+                    <p className="text-sm leading-6 text-white/[0.68] whitespace-pre-line">
                       {serviceRequirements}
                     </p>
                   </div>
@@ -403,8 +405,8 @@ export default function ProfileDetailSheet({
             )}
 
             {detailRows.length > 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                <div className="flex flex-col gap-3">
+              <div className="rounded-[18px] border border-white/10 bg-black/[0.18] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <div className="flex flex-col gap-2.5">
                   {detailRows.map((row) => (
                     <SheetRow key={row.label} label={row.label} value={row.value} />
                   ))}
@@ -417,7 +419,7 @@ export default function ProfileDetailSheet({
                 {serviceTags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] uppercase tracking-[0.4em] text-white/70"
+                    className="rounded-full border border-white/[0.15] px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-white/[0.65]"
                   >
                     {tag}
                   </span>
@@ -427,9 +429,9 @@ export default function ProfileDetailSheet({
           </div>
         </div>
 
-        <div className="flex-shrink-0 border-t border-white/5 bg-gradient-to-t from-neutral-900/90 via-neutral-950/70 to-transparent px-6 py-5">
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex-shrink-0 border-t border-white/[0.07] bg-black/[0.18] px-3.5 py-3.5 sm:px-4">
+          <div className="space-y-2.5">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               <Button size="lg" className="w-full" onClick={handlePrimaryClick}>
                 {primaryActionLabel}
               </Button>
@@ -443,7 +445,7 @@ export default function ProfileDetailSheet({
               </Button>
             </div>
             {cartCount && cartCount > 0 ? (
-              <p className="text-center text-[10px] uppercase tracking-[0.8em] text-white/40">
+              <p className="text-center text-[10px] uppercase tracking-[0.32em] text-white/40">
                 {cartCount} item{cartCount === 1 ? "" : "s"} in cart
               </p>
             ) : null}
@@ -458,7 +460,7 @@ export default function ProfileDetailSheet({
                 {ctaFeedback}
               </p>
             ) : (
-              <p className="text-center text-xs uppercase tracking-[0.6em] text-white/40">
+              <p className="text-center text-[10px] uppercase tracking-[0.3em] text-white/40">
                 Commerce experience coming soon
               </p>
             )}

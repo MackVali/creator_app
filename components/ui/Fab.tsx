@@ -6417,6 +6417,7 @@ export function Fab({
     base: [number, number, number];
     highlight: [number, number, number];
     lowlight: [number, number, number];
+    border?: [number, number, number];
   };
 
   const MENU_PALETTES: readonly MenuPalette[] = [
@@ -6434,6 +6435,7 @@ export function Fab({
       base: [10, 12, 24],
       highlight: [86, 60, 140],
       lowlight: [4, 6, 18],
+      border: [63, 63, 70],
     },
   ];
 
@@ -6452,8 +6454,11 @@ export function Fab({
     return `radial-gradient(circle at top, rgba(${hr}, ${hg}, ${hb}, 0.65), rgba(${r}, ${g}, ${b}, 0.15) 45%), linear-gradient(160deg, rgba(${hr}, ${hg}, ${hb}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${lr}, ${lg}, ${lb}, 0.98) 100%)`;
   };
 
-  const createPaletteBorderColor = (palette: MenuPalette) =>
-    `rgba(${palette.highlight[0]}, ${palette.highlight[1]}, ${palette.highlight[2]}, 0.35)`;
+  const createPaletteBorderColor = (palette: MenuPalette) => {
+    const border = palette.border ?? palette.highlight;
+    const alpha = palette.border ? 0.45 : 0.35;
+    return `rgba(${border[0]}, ${border[1]}, ${border[2]}, ${alpha})`;
+  };
 
   const MENU_BOX_SHADOW =
     "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
@@ -15066,6 +15071,8 @@ export function Fab({
     isDragging && dragTargetPage !== null
       ? getMenuPalette(dragTargetPage)
       : restingPalette;
+  const restingBorder = restingPalette.border ?? restingPalette.highlight;
+  const targetBorder = targetPalette.border ?? targetPalette.highlight;
   const baseR = useTransform(dragProgress, (value) =>
     lerp(restingPalette.base[0], targetPalette.base[0], value),
   );
@@ -15093,13 +15100,29 @@ export function Fab({
   const lowlightB = useTransform(dragProgress, (value) =>
     lerp(restingPalette.lowlight[2], targetPalette.lowlight[2], value),
   );
+  const borderR = useTransform(dragProgress, (value) =>
+    lerp(restingBorder[0], targetBorder[0], value),
+  );
+  const borderG = useTransform(dragProgress, (value) =>
+    lerp(restingBorder[1], targetBorder[1], value),
+  );
+  const borderB = useTransform(dragProgress, (value) =>
+    lerp(restingBorder[2], targetBorder[2], value),
+  );
+  const borderAlpha = useTransform(dragProgress, (value) =>
+    lerp(
+      restingPalette.border ? 0.45 : 0.35,
+      targetPalette.border ? 0.45 : 0.35,
+      value,
+    ),
+  );
   // Background blends from drag motion value so color transitions stay continuous during interactive paging.
   const blendedBackgroundImage = useMotionTemplate`
     radial-gradient(circle at top, rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.65), rgba(${baseR}, ${baseG}, ${baseB}, 0.15) 45%),
     linear-gradient(160deg, rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.95) 0%, rgba(${baseR}, ${baseG}, ${baseB}, 0.97) 50%, rgba(${lowlightR}, ${lowlightG}, ${lowlightB}, 0.98) 100%)
   `;
   const blendedBorderColor = useMotionTemplate`
-    rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.35)
+    rgba(${borderR}, ${borderG}, ${borderB}, ${borderAlpha})
   `;
   const isBlendingGradient = isDragging && dragTargetPage !== null;
   const dragConstraintLeft = -normalizedStageWidth;
