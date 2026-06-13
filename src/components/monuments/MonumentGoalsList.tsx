@@ -884,7 +884,7 @@ async function fetchTrueRoadmapsForCircle(
   const campaignGoalsByCampaignId = new Map<string, RoadmapCampaignGoal[]>();
   for (const campaignGoal of campaignGoalRows) {
     const goal = campaignGoalsByGoalId.get(campaignGoal.goal_id);
-    if (!goal || isRoadmapDisplayGoalCompleted(goal)) continue;
+    if (!goal) continue;
     const campaignContext = campaignContextById.get(campaignGoal.campaign_id);
     if (
       campaignContext &&
@@ -2372,9 +2372,12 @@ export function MonumentGoalsList({
     [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
-  const handleCampaignAddGoal = useCallback(() => {
-    creationContext?.requestGoalCreation(null);
-  }, [creationContext]);
+  const handleCampaignAddGoal = useCallback(
+    (campaignId: string) => {
+      creationContext?.requestGoalCreation(null, campaignId);
+    },
+    [creationContext]
+  );
 
   const handleManualGoalComplete = useCallback(
     async (goal: Goal) => {
@@ -2874,16 +2877,17 @@ export function MonumentGoalsList({
                 return null;
               }
 
-              const filteredGoals = campaign.goals.filter(
-                (goal) =>
-                  isRoadmapGoalLinkedToCurrentSource(goal) &&
-                  filterRoadmapGoalBySection(goal, section)
+              const linkedGoals = campaign.goals.filter(
+                isRoadmapGoalLinkedToCurrentSource
               );
-              if (filteredGoals.length === 0) {
+              const goalsForSection = linkedGoals.filter((goal) =>
+                filterRoadmapGoalBySection(goal, section)
+              );
+              if (goalsForSection.length === 0) {
                 return null;
               }
 
-              const displayGoals = filteredGoals.map((goal) =>
+              const displayGoals = linkedGoals.map((goal) =>
                 buildCampaignDisplayGoal(goal, campaign)
               );
               const campaignRoadmap: Roadmap = {
@@ -2894,7 +2898,7 @@ export function MonumentGoalsList({
                   campaign.primary_monument_id ?? roadmap.monument_id ?? null,
                 circle_id:
                   campaign.primary_circle_id ?? roadmap.circle_id ?? null,
-                goals: filteredGoals.map((goal) => ({
+                goals: linkedGoals.map((goal) => ({
                   id: goal.id,
                   name: goal.name,
                   emoji: goal.emoji ?? null,

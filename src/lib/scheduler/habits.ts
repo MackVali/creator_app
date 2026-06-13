@@ -172,11 +172,13 @@ export async function fetchHabitsForSchedule(
     }
     const selected = table.select(columns) as {
       eq?: (column: string, value: string) => unknown;
+      is?: (column: string, value: null) => unknown;
     };
     if (!selected || typeof selected.eq !== "function") {
       return emptyResponse();
     }
-    const filtered = selected.eq("user_id", userId) as {
+    const userFiltered = selected.eq("user_id", userId) as {
+      is?: (column: string, value: null) => unknown;
       order?: (
         column: string,
         options: { ascending: boolean }
@@ -185,6 +187,18 @@ export async function fetchHabitsForSchedule(
         error: PostgrestError | null;
       }>;
     };
+    const filtered =
+      userFiltered && typeof userFiltered.is === "function"
+        ? (userFiltered.is("circle_id", null) as {
+            order?: (
+              column: string,
+              options: { ascending: boolean }
+            ) => Promise<{
+              data: HabitRecord[] | null;
+              error: PostgrestError | null;
+            }>;
+          })
+        : userFiltered;
     if (!filtered || typeof filtered.order !== "function") {
       return emptyResponse();
     }

@@ -155,6 +155,34 @@ const campaignDrawerOpenedGoalMotion = {
   },
 } as const;
 
+const completedGoalsRevealMotion = {
+  hidden: {
+    opacity: 0,
+    height: 0,
+    y: -8,
+  },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: {
+      height: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
+      opacity: { duration: 0.32, ease: "easeOut", delay: 0.08 },
+      y: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
+    },
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    y: -6,
+    transition: {
+      height: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
+      opacity: { duration: 0.24, ease: "easeOut" },
+      y: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
+    },
+  },
+} as const;
+
 const goalManualCompleteRejectClass =
   "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]";
 
@@ -192,6 +220,10 @@ type CampaignDetails = {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function isCampaignDrawerGoalCompleted(goal: Goal): boolean {
+  return normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
 }
 
 function DraggableGoalCard({
@@ -740,7 +772,13 @@ function DraggableGoalCard({
   );
 }
 
-function AddGoalButton({ onAddGoal }: { onAddGoal?: () => void }) {
+function AddGoalButton({
+  campaignId,
+  onAddGoal,
+}: {
+  campaignId: string;
+  onAddGoal?: (campaignId: string) => void;
+}) {
   if (!onAddGoal) return null;
 
   return (
@@ -752,7 +790,7 @@ function AddGoalButton({ onAddGoal }: { onAddGoal?: () => void }) {
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        onAddGoal();
+        onAddGoal(campaignId);
       }}
       className="relative flex w-full items-center gap-2 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] px-2 py-1.5 text-left text-white transition shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2"
     >
@@ -771,7 +809,7 @@ interface CampaignCardProps {
   goalCount: number;
   goals: Goal[];
   onClick?(): void;
-  onAddGoal?: () => void;
+  onAddGoal?: (campaignId: string) => void;
   variant?: "default" | "compact";
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
@@ -1111,7 +1149,7 @@ function CampaignCardImpl({
                   )}
 
                   {onAddGoal ? (
-                    <AddGoalButton onAddGoal={onAddGoal} />
+                    <AddGoalButton campaignId={roadmap.id} onAddGoal={onAddGoal} />
                   ) : null}
                 </div>
               </div>
@@ -1145,7 +1183,7 @@ type CampaignDrawerProps = {
   monumentContext?: boolean;
   suppressReadyToast?: boolean;
   onGoalsReordered?: (goals: Goal[]) => void | Promise<void>;
-  onAddGoal?: () => void;
+  onAddGoal?: (campaignId: string) => void;
   onCampaignDetailsSaved?: (
     campaignId: string,
     details: CampaignDetails
@@ -1173,6 +1211,7 @@ function CampaignDrawer({
   const prefersReducedMotion = useReducedMotion();
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [showCompletedGoals, setShowCompletedGoals] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isEditingCampaign, setIsEditingCampaign] = useState(false);
   const [displayCampaignName, setDisplayCampaignName] = useState(roadmap.title);
@@ -1227,6 +1266,20 @@ function CampaignDrawer({
     setLocalGoals(goals);
   }, [goals]);
 
+  const activeGoals = localGoals.filter(
+    (goal) => !isCampaignDrawerGoalCompleted(goal)
+  );
+  const completedGoals = localGoals.filter(isCampaignDrawerGoalCompleted);
+  const visibleDrawerGoals = showCompletedGoals
+    ? [...activeGoals, ...completedGoals]
+    : activeGoals;
+
+  useEffect(() => {
+    if (completedGoals.length === 0) {
+      setShowCompletedGoals(false);
+    }
+  }, [completedGoals.length]);
+
   useEffect(() => {
     setDisplayCampaignName(roadmap.title);
     setDisplayCampaignEmoji(roadmap.emoji ?? null);
@@ -1245,6 +1298,14 @@ function CampaignDrawer({
       setOpenGoalId(null);
     }
   }, [localGoals, openGoalId]);
+
+  useEffect(() => {
+    if (!openGoalId || showCompletedGoals) return;
+    const openGoal = localGoals.find((goal) => goal.id === openGoalId);
+    if (openGoal && isCampaignDrawerGoalCompleted(openGoal)) {
+      setOpenGoalId(null);
+    }
+  }, [localGoals, openGoalId, showCompletedGoals]);
 
   const handleGoalManualComplete = useCallback(
     async (goal: Goal) => {
@@ -1283,6 +1344,48 @@ function CampaignDrawer({
       onProjectUpdated?.(goalId, projectId, updates);
     },
     [onProjectUpdated]
+  );
+
+  const handleDrawerDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      console.log("🎯 Drag ended:", event);
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const draggedGoal = localGoals.find((goal) => goal.id === active.id);
+      const overGoal = localGoals.find((goal) => goal.id === over.id);
+      if (!draggedGoal || !overGoal) return;
+
+      const draggingCompleted = isCampaignDrawerGoalCompleted(draggedGoal);
+      const overCompleted = isCampaignDrawerGoalCompleted(overGoal);
+      if (draggingCompleted !== overCompleted) return;
+
+      const goalsToReorder = draggingCompleted ? completedGoals : activeGoals;
+      const oldIndex = goalsToReorder.findIndex((g) => g.id === active.id);
+      const newIndex = goalsToReorder.findIndex((g) => g.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return;
+
+      console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+      const reorderedGroup = arrayMove(goalsToReorder, oldIndex, newIndex);
+      const reordered = draggingCompleted
+        ? [...activeGoals, ...reorderedGroup]
+        : [...reorderedGroup, ...completedGoals];
+      const updatedGoals = reordered.map((goal, index) => ({
+        ...goal,
+        priorityRank: index + 1,
+      }));
+
+      setLocalGoals(updatedGoals);
+      await savePriorityRanks(updatedGoals);
+      await onGoalsReordered?.(updatedGoals);
+    },
+    [
+      activeGoals,
+      completedGoals,
+      localGoals,
+      onGoalsReordered,
+      savePriorityRanks,
+    ]
   );
 
   const openCampaignEditForm = useCallback(() => {
@@ -1377,6 +1480,7 @@ function CampaignDrawer({
 
   const regionId = `roadmap-${roadmap.id}`;
   const headingId = `${regionId}-overlay-title`;
+  const completedGoalsRegionId = `${regionId}-completed-goals`;
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 640 : true;
   const computedMaxWidth =
@@ -1514,6 +1618,43 @@ function CampaignDrawer({
     </div>
   );
 
+  const completedGoalsToggleLabel = `${
+    showCompletedGoals ? "Hide completed Goals" : "Show completed Goals"
+  } (${completedGoals.length})`;
+
+  const renderDrawerGoalCard = (goal: Goal, index: number) => (
+    <DraggableGoalCard
+      key={goal.id}
+      goal={goal}
+      index={index}
+      isOpen={openGoalId === goal.id}
+      onOpenChange={(isOpen) => {
+        if (isOpen) {
+          setOpenGoalId(goal.id);
+        } else if (openGoalId === goal.id) {
+          setOpenGoalId(null);
+        }
+      }}
+      onGoalEdit={
+        onGoalEdit
+          ? (goal) => {
+              onGoalEdit(goal);
+              handleClose();
+            }
+          : undefined
+      }
+      onGoalToggleActive={onGoalToggleActive}
+      onGoalDelete={onGoalDelete}
+      onGoalManualComplete={handleGoalManualComplete}
+      onProjectEditOpen={onProjectEditOpen}
+      onProjectUpdated={handleProjectUpdated}
+      monumentContext={monumentContext}
+      hideEnergyPill
+      campaignDrawerRow
+      suppressReadyToast={suppressReadyToast}
+    />
+  );
+
   const listArea = (
     <div className="flex min-h-0 flex-1 flex-col px-3 pb-4 sm:px-5">
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5">
@@ -1523,65 +1664,55 @@ function CampaignDrawer({
           onDragStart={(event) => {
             console.log("🎯 Drag started:", event.active.id);
           }}
-          onDragEnd={async (event) => {
-            console.log("🎯 Drag ended:", event);
-            const { active, over } = event;
-            if (over && active.id !== over.id) {
-              const oldIndex = localGoals.findIndex((g) => g.id === active.id);
-              const newIndex = localGoals.findIndex((g) => g.id === over.id);
-              console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-              const reordered = arrayMove(localGoals, oldIndex, newIndex).map(
-                (goal, index) => ({
-                  ...goal,
-                  priorityRank: index + 1,
-                })
-              );
-              setLocalGoals(reordered);
-              await savePriorityRanks(reordered);
-              await onGoalsReordered?.(reordered);
-            }
-          }}
+          onDragEnd={handleDrawerDragEnd}
         >
-          <SortableContext items={localGoals.map((g) => g.id)}>
+          <SortableContext items={visibleDrawerGoals.map((g) => g.id)}>
             <div className="flex flex-col gap-1 sm:gap-1.5">
-              {localGoals.map((goal, index) => (
-                <DraggableGoalCard
-                  key={goal.id}
-                  goal={goal}
-                  index={index}
-                  isOpen={openGoalId === goal.id}
-                  onOpenChange={(isOpen) => {
-                    if (isOpen) {
-                      setOpenGoalId(goal.id);
-                    } else if (openGoalId === goal.id) {
-                      setOpenGoalId(null);
-                    }
-                  }}
-                  onGoalEdit={
-                    onGoalEdit
-                      ? (goal) => {
-                          onGoalEdit(goal);
-                          handleClose();
-                        }
-                      : undefined
+              {activeGoals.map((goal, index) =>
+                renderDrawerGoalCard(goal, index)
+              )}
+
+              {completedGoals.length > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={showCompletedGoals}
+                  aria-controls={completedGoalsRegionId}
+                  onClick={() =>
+                    setShowCompletedGoals((current) => !current)
                   }
-                  onGoalToggleActive={onGoalToggleActive}
-                  onGoalDelete={onGoalDelete}
-                  onGoalManualComplete={handleGoalManualComplete}
-                  onProjectEditOpen={onProjectEditOpen}
-                  onProjectUpdated={handleProjectUpdated}
-                  monumentContext={monumentContext}
-                  hideEnergyPill
-                  campaignDrawerRow
-                  suppressReadyToast={suppressReadyToast}
-                />
-              ))}
+                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+                >
+                  <span>{completedGoalsToggleLabel}</span>
+                </button>
+              ) : null}
+
+              <AnimatePresence initial={false}>
+                {showCompletedGoals ? (
+                  <motion.div
+                    id={completedGoalsRegionId}
+                    className="flex flex-col gap-1 overflow-hidden sm:gap-1.5"
+                    initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+                    animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+                    exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                    variants={
+                      prefersReducedMotion ? undefined : completedGoalsRevealMotion
+                    }
+                    transition={
+                      prefersReducedMotion ? { duration: 0.12 } : undefined
+                    }
+                  >
+                    {completedGoals.map((goal, index) =>
+                      renderDrawerGoalCard(goal, activeGoals.length + index)
+                    )}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </div>
           </SortableContext>
         </DndContext>
       </div>
       <div className="mt-1.5 shrink-0 sm:mt-2">
-        <AddGoalButton onAddGoal={onAddGoal} />
+        <AddGoalButton campaignId={roadmap.id} onAddGoal={onAddGoal} />
       </div>
     </div>
   );

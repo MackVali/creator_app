@@ -3309,6 +3309,7 @@ function MatrixContent() {
                     "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
                   )
                   .eq("user_id", userId)
+                  .is("circle_id", null)
                   .in("id", Array.from(scheduledHabitIds))
               : Promise.resolve({ data: [], error: null }),
             supabase
@@ -3316,7 +3317,8 @@ function MatrixContent() {
               .select(
                 "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
               )
-              .eq("user_id", userId),
+              .eq("user_id", userId)
+              .is("circle_id", null),
             supabase
               .from("goals")
               .select("id, name, monument_id")

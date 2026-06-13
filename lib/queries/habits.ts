@@ -418,6 +418,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
       `${selectColumns}, location_context:location_contexts(id, value, label), skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)`
     )
     .eq("user_id", userId)
+    .is("circle_id", null)
     .order("updated_at", { ascending: false });
 
   let habitRows: HabitRecord[] = [];
@@ -435,6 +436,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
           `${baseColumns}, location_context:location_contexts(id, value, label), skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)`
         )
         .eq("user_id", userId)
+        .is("circle_id", null)
         .order("updated_at", { ascending: false });
 
       if (fallback.error) {

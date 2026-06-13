@@ -1450,7 +1450,8 @@ async function fetchHabits(
     let query = supabase
       .from("habits")
       .select(select)
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .is("circle_id", null);
 
     if (skillIds) {
       query = query.in("skill_id", skillIds);

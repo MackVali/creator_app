@@ -498,6 +498,7 @@ export default function NexusPage() {
                 .from("habits")
                 .select("*")
                 .eq("user_id", user.id)
+                .is("circle_id", null)
                 .order("created_at", { ascending: false })
                 .range(from, to)
             ),

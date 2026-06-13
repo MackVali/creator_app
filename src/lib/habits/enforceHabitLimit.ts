@@ -33,7 +33,8 @@ export async function enforceHabitLimit({
   const { count, error: habitCountError } = await supabase
     .from("habits")
     .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .is("circle_id", null);
 
   if (habitCountError) {
     throw habitCountError;

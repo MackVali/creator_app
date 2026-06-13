@@ -2202,7 +2202,8 @@ async function fetchUserHabitTypeOptions(
   const { data, error } = await supabase
     .from("habits")
     .select("habit_type")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .is("circle_id", null);
 
   if (error) throw error;
 

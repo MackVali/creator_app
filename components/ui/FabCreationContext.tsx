@@ -21,16 +21,22 @@ export type FabCreationOriginRect = {
 
 export type FabCreationRequest = {
   id: number;
-  type: "GOAL" | "PROJECT" | "TASK";
+  type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
   goalId?: string | null;
+  campaignId?: string | null;
   projectId?: string | null;
+  routineId?: string | null;
+  skillId?: string | null;
   originRect?: FabCreationOriginRect | null;
 };
 
 type FabCreationContextValue = {
   creationRequest: FabCreationRequest | null;
   editRequest: FabEditTarget | null;
-  requestGoalCreation: (originRect?: FabCreationOriginRect | null) => void;
+  requestGoalCreation: (
+    originRect?: FabCreationOriginRect | null,
+    campaignId?: string | null
+  ) => void;
   requestProjectCreation: (
     goalId?: string | null,
     originRect?: FabCreationOriginRect | null
@@ -39,6 +45,13 @@ type FabCreationContextValue = {
     projectId?: string | null,
     goalId?: string | null,
     originRect?: FabCreationOriginRect | null
+  ) => void;
+  requestHabitCreation: (
+    originRect?: FabCreationOriginRect | null,
+    defaults?: {
+      routineId?: string | null;
+      skillId?: string | null;
+    } | null
   ) => void;
   requestEntityEdit: (target: FabEditTarget) => void;
 };
@@ -52,12 +65,16 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
   const nextRequestIdRef = useRef(0);
 
   const requestGoalCreation = useCallback(
-    (originRect?: FabCreationOriginRect | null) => {
+    (
+      originRect?: FabCreationOriginRect | null,
+      campaignId?: string | null
+    ) => {
       nextRequestIdRef.current += 1;
       setCreationRequest({
         id: nextRequestIdRef.current,
         type: "GOAL",
         goalId: null,
+        campaignId: campaignId ?? null,
         originRect: originRect ?? null,
       });
     },
@@ -92,6 +109,26 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const requestHabitCreation = useCallback(
+    (
+      originRect?: FabCreationOriginRect | null,
+      defaults?: {
+        routineId?: string | null;
+        skillId?: string | null;
+      } | null
+    ) => {
+      nextRequestIdRef.current += 1;
+      setCreationRequest({
+        id: nextRequestIdRef.current,
+        type: "HABIT",
+        routineId: defaults?.routineId ?? null,
+        skillId: defaults?.skillId ?? null,
+        originRect: originRect ?? null,
+      });
+    },
+    []
+  );
+
   const requestEntityEdit = useCallback((target: FabEditTarget) => {
     setEditRequest({ ...target });
   }, []);
@@ -107,6 +144,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       requestGoalCreation,
       requestProjectCreation,
       requestTaskCreation,
+      requestHabitCreation,
       requestEntityEdit,
     }),
     [
@@ -115,6 +153,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       requestGoalCreation,
       requestProjectCreation,
       requestTaskCreation,
+      requestHabitCreation,
       requestEntityEdit,
     ],
   );
