@@ -119,8 +119,8 @@ function getSwipeTarget(
 
   const targetIndex =
     direction === "left"
-      ? (currentIndex - 1 + swipeRoutes.length) % swipeRoutes.length
-      : (currentIndex + 1) % swipeRoutes.length;
+      ? (currentIndex + 1) % swipeRoutes.length
+      : (currentIndex - 1 + swipeRoutes.length) % swipeRoutes.length;
   return swipeRoutes[targetIndex] ?? null;
 }
 

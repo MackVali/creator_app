@@ -1314,7 +1314,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                       </p>
 
                       <dl className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
-                        <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-[#050607] px-3 py-3">
+                        <div className="min-w-0 px-3 py-3">
                           <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.24em] text-white/42">
                             Current level
                           </dt>
@@ -1322,7 +1322,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                             {monumentAnalytics.currentLevel}
                           </dd>
                         </div>
-                        <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-[#050607] px-3 py-3">
+                        <div className="min-w-0 px-3 py-3">
                           <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.24em] text-white/42">
                             Skill XP
                           </dt>
@@ -1336,7 +1336,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                     </header>
 
                     <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.06] pt-3 text-left">
-                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                      <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
                           Total Monument XP
                         </dt>
@@ -1346,7 +1346,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                           )}
                         </dd>
                       </div>
-                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                      <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
                           XP to next
                         </dt>
@@ -1354,7 +1354,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                           {formatCompactNumber(monumentAnalytics.xpToNextLevel)}
                         </dd>
                       </div>
-                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                      <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
                           Points
                         </dt>
@@ -1365,7 +1365,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                     </dl>
 
                     <dl className="mt-3 grid grid-cols-2 gap-2 text-left">
-                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                      <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
                           Total events
                         </dt>
@@ -1375,12 +1375,12 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                           )}
                         </dd>
                       </div>
-                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                      <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
                           Top skill
                         </dt>
                         <dd className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-none text-white/82">
-                          <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.07] bg-black/40 text-xs text-white/78">
+                          <span className="flex size-5 shrink-0 items-center justify-center text-xs text-white/78">
                             {monumentAnalytics.topSkillIcon}
                           </span>
                           <span className="min-w-0 truncate">

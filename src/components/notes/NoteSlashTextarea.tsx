@@ -26,6 +26,7 @@ import {
   List,
   ListChecks,
   Minus,
+  Pin,
   Plus,
   X,
   Table2,
@@ -3128,7 +3129,7 @@ function NoteSlashTextarea({
                       onKeyDown={(event) => handleBlockKeyDown(event, index)}
                       className="flex h-8 items-center justify-center rounded-md border border-white/[0.08] bg-black/20 px-2.5 text-xs font-semibold text-white/60 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-white/78 focus-visible:border-emerald-300/35 focus-visible:bg-white/[0.075]"
                     >
-                      Open builder
+                      Open
                     </button>
                   </div>
                 </div>
@@ -3214,7 +3215,7 @@ function NoteSlashTextarea({
 
       {activeEntryDatabaseDefinition ? (
         <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/62 px-3 pb-3 pt-10 backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-label={`Add entry to ${getDatabaseDisplayTitle(activeEntryDatabaseDefinition.title)}`}
@@ -3365,7 +3366,7 @@ function NoteSlashTextarea({
 
       {activeDatabaseDefinition ? (
         <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/62 px-3 pb-3 pt-10 backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-label={`Database builder for ${getDatabaseDisplayTitle(activeDatabaseDefinition.title)}`}
@@ -3394,18 +3395,40 @@ function NoteSlashTextarea({
                   type="button"
                   onClick={() => toggleDatabaseBodyPin(activeDatabaseDefinition.id)}
                   disabled={activeDatabaseDefinition.lockedSystemDatabase === true}
+                  aria-pressed={
+                    activeDatabaseDefinition.lockedSystemDatabase === true ||
+                    activeDatabaseDefinition.pinnedSurface === "body"
+                  }
+                  aria-label={
+                    activeDatabaseDefinition.lockedSystemDatabase === true
+                      ? "System database pinned"
+                      : activeDatabaseDefinition.pinnedSurface === "body"
+                        ? "Unpin from stomach menu"
+                        : "Pin to stomach menu"
+                  }
                   title={
                     activeDatabaseDefinition.lockedSystemDatabase === true
                       ? "This system database is locked."
-                      : undefined
+                      : activeDatabaseDefinition.pinnedSurface === "body"
+                        ? "Unpin from stomach menu"
+                        : "Pin to stomach menu"
                   }
-                  className="mt-2 inline-flex h-7 items-center rounded-full border border-white/[0.1] bg-white/[0.035] px-2.5 text-[11px] font-semibold text-white/54 outline-none transition hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed disabled:text-white/28 disabled:hover:border-white/[0.1] disabled:hover:bg-white/[0.035]"
+                  className={`mt-2 inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+                    activeDatabaseDefinition.lockedSystemDatabase === true ||
+                    activeDatabaseDefinition.pinnedSurface === "body"
+                      ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                      : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
+                  }`}
                 >
-                  {activeDatabaseDefinition.lockedSystemDatabase === true
-                    ? "System database pinned"
-                    : activeDatabaseDefinition.pinnedSurface === "body"
-                    ? "Pinned to stomach menu"
-                    : "Pin to stomach menu"}
+                  <Pin
+                    className="h-4 w-4"
+                    fill={
+                      activeDatabaseDefinition.lockedSystemDatabase === true ||
+                      activeDatabaseDefinition.pinnedSurface === "body"
+                        ? "currentColor"
+                        : "none"
+                    }
+                  />
                 </button>
               </div>
               <button
