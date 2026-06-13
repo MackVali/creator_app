@@ -10,6 +10,7 @@ import {
   isCircleDetailRoute,
   shouldHideBottomChrome,
 } from "@/components/appChromeVisibility";
+import { CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT } from "@/components/command/events";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import {
   MAIN_TAB_ROUTES,
@@ -48,6 +49,13 @@ function isMonumentDetailOverlayOpen() {
   return (
     typeof document !== "undefined" &&
     document.body.classList.contains("monument-detail-open")
+  );
+}
+
+function isCommandCircleDetailOverlayOpen() {
+  return (
+    typeof document !== "undefined" &&
+    document.body.classList.contains("command-circle-detail-open")
   );
 }
 
@@ -93,10 +101,22 @@ export default function BottomNav() {
               currentPath={currentBottomNavPath}
               shouldHandleActiveClick={(href) =>
                 href === "/dashboard" &&
-                (isCircleDetail || isMonumentDetailOverlayOpen())
+                (isCircleDetail ||
+                  isMonumentDetailOverlayOpen() ||
+                  isCommandCircleDetailOverlayOpen())
               }
               onNavigate={(href) => {
                 const targetHref = href as MainTabRouteHref;
+
+                if (
+                  targetHref === "/dashboard" &&
+                  isCommandCircleDetailOverlayOpen()
+                ) {
+                  window.dispatchEvent(
+                    new CustomEvent(CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT)
+                  );
+                  return;
+                }
 
                 if (targetHref === "/dashboard" && isMonumentDetailOverlayOpen()) {
                   window.dispatchEvent(

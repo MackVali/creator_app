@@ -39,7 +39,7 @@ export default function CommandTabContent() {
       onRefresh={handleRefresh}
       refreshRef={commandSectionRef}
     >
-      <main className="pb-20">
+      <main className="app-dashboard-bg pb-20">
         <LevelBanner ref={levelBannerRef} />
 
         <MonumentContainer ref={monumentContainerRef} />

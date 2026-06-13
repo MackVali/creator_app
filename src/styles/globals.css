@@ -200,6 +200,78 @@
     0 2px 7px rgba(24, 24, 27, 0.08);
 }
 
+:root[data-theme="light"] .app-dashboard-bg {
+  background-color: #9d9e97;
+  background-image:
+    radial-gradient(90% 58% at 50% -14%, rgba(63, 63, 63, 0.2), transparent 64%),
+    radial-gradient(72% 62% at 100% 2%, rgba(24, 24, 27, 0.12), transparent 58%),
+    linear-gradient(180deg, #adaea7 0%, #a3a49d 44%, #979891 100%);
+  background-attachment: fixed;
+  min-height: calc(100dvh - 4rem);
+  color: #18181b;
+}
+
+:root[data-theme="light"] [data-main-tab-panel="/dashboard"],
+:root[data-theme="light"] [data-main-tab-preview="/dashboard"] {
+  background: #9d9e97;
+  color: #18181b;
+}
+
+:root[data-theme="light"] .app-dashboard-panel {
+  background:
+    radial-gradient(94% 120% at 50% -48%, rgba(255, 255, 255, 0.24), transparent 58%),
+    linear-gradient(180deg, #d2d3cc 0%, #c5c6bf 100%);
+  border-color: rgba(39, 39, 42, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
+    0 18px 40px rgba(24, 24, 27, 0.2),
+    0 2px 8px rgba(24, 24, 27, 0.1);
+}
+
+:root[data-theme="light"] .app-dashboard-level-banner-glow {
+  background:
+    radial-gradient(82% 160% at 50% -72%, rgba(255, 255, 255, 0.26), transparent 56%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), transparent 36%, rgba(39, 39, 42, 0.12) 100%);
+}
+
+:root[data-theme="light"] .app-dashboard-monuments-panel {
+  border-radius: calc(var(--radius) + 2px);
+}
+
+:root[data-theme="light"] .app-dashboard-monument-card {
+  background:
+    radial-gradient(120% 90% at 50% -42%, rgba(255, 255, 255, 0.2), transparent 62%),
+    linear-gradient(180deg, #d0d1ca 0%, #c2c3bc 100%);
+  border-color: rgba(39, 39, 42, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
+    0 12px 26px rgba(24, 24, 27, 0.18),
+    0 2px 7px rgba(24, 24, 27, 0.1);
+}
+
+:root[data-theme="light"] .app-dashboard-monument-card:hover {
+  background:
+    radial-gradient(120% 90% at 50% -42%, rgba(255, 255, 255, 0.24), transparent 62%),
+    linear-gradient(180deg, #d6d7d0 0%, #c8c9c2 100%);
+  border-color: rgba(39, 39, 42, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
+    0 16px 32px rgba(24, 24, 27, 0.22),
+    0 3px 9px rgba(24, 24, 27, 0.12);
+}
+
+:root[data-theme="light"] .app-dashboard-monument-skeleton {
+  background:
+    linear-gradient(180deg, rgba(209, 210, 203, 0.84), rgba(190, 191, 184, 0.72));
+  border: 1px solid rgba(39, 39, 42, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 22px rgba(24, 24, 27, 0.12);
+}
+
 :root[data-theme="light"] .app-nav-menu {
   background: rgba(199, 200, 193, 0.98);
   border-color: rgba(39, 39, 42, 0.28);

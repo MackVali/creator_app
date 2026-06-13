@@ -4321,6 +4321,10 @@ const sourceListingSheetContentClassName =
   "no-default-close w-full !max-w-[30rem] !max-h-[min(80dvh,42rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
 const sourceListingSheetBodyClassName =
   "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4"
+const sourceListingFormControlClassName =
+  "border-zinc-800/70 bg-zinc-900/60 text-zinc-300 placeholder:text-zinc-500 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+const sourceListingSelectTriggerClassName =
+  "text-zinc-300"
 
 type SourceProductSheetProps = {
   mode: SheetMode
@@ -4407,22 +4411,7 @@ function SourceProductSheet({
       >
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
           <div className="shrink-0 border-b border-zinc-900/70 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={isBusy}
-              >
-                <X className="h-4 w-4" />
-                Close
-              </Button>
-              <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
-                {listingTypeLabels[listingType]}
-              </div>
-            </div>
-            <p className="mt-2 text-lg font-semibold leading-tight text-zinc-100">{title}</p>
+            <p className="text-lg font-semibold leading-tight text-zinc-100">{title}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
               <Badge
                 className={cn(
@@ -4503,7 +4492,7 @@ function SourceProductSheet({
                   placeholder="Product title"
                   required
                   disabled={isBusy}
-                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  className={sourceListingFormControlClassName}
                 />
               </FieldStack>
 
@@ -4517,7 +4506,7 @@ function SourceProductSheet({
                   rows={4}
                   placeholder="Describe what this product does"
                   disabled={isBusy}
-                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  className={sourceListingFormControlClassName}
                 />
               </FieldStack>
 
@@ -4530,6 +4519,7 @@ function SourceProductSheet({
                   id="product-detail-kind"
                   value={formState.productKind}
                   onValueChange={(value) => onFieldChange("productKind", value)}
+                  triggerClassName={sourceListingSelectTriggerClassName}
                   disablePortal
                 >
                   <SelectContent>
@@ -4555,7 +4545,7 @@ function SourceProductSheet({
                     }
                     placeholder="49.99"
                     disabled={isBusy}
-                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    className={sourceListingFormControlClassName}
                   />
                 </FieldStack>
                 <FieldStack label="Currency" htmlFor="product-detail-currency">
@@ -4568,7 +4558,7 @@ function SourceProductSheet({
                     placeholder="USD"
                     maxLength={3}
                     disabled={isBusy}
-                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    className={sourceListingFormControlClassName}
                   />
                 </FieldStack>
               </div>
@@ -4585,6 +4575,7 @@ function SourceProductSheet({
                       onAvailabilityChange(value as SourceListing["status"])
                     }
                     placeholder="Draft"
+                    triggerClassName={sourceListingSelectTriggerClassName}
                     disablePortal
                   >
                     <SelectContent>
@@ -4624,7 +4615,7 @@ function SourceProductSheet({
                         }
                         placeholder="0"
                         disabled={isBusy}
-                        className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                        className={sourceListingFormControlClassName}
                       />
                     </FieldStack>
                     <FieldStack
@@ -4638,6 +4629,7 @@ function SourceProductSheet({
                         onValueChange={(value) =>
                           onFieldChange("quantityBehavior", value)
                         }
+                        triggerClassName={sourceListingSelectTriggerClassName}
                         disablePortal
                       >
                         <SelectContent>
@@ -4778,22 +4770,7 @@ function SourceServiceSheet({
       >
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
           <div className="shrink-0 border-b border-zinc-900/70 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={isBusy}
-              >
-                <X className="h-4 w-4" />
-                Close
-              </Button>
-              <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
-                {listingTypeLabels[listingType]}
-              </div>
-            </div>
-            <p className="mt-2 text-lg font-semibold leading-tight text-zinc-100">{title}</p>
+            <p className="text-lg font-semibold leading-tight text-zinc-100">{title}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
               <Badge
                 className={cn(
@@ -4874,7 +4851,7 @@ function SourceServiceSheet({
                   placeholder="Service title"
                   required
                   disabled={isBusy}
-                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  className={sourceListingFormControlClassName}
                 />
               </FieldStack>
 
@@ -4888,7 +4865,7 @@ function SourceServiceSheet({
                   rows={4}
                   placeholder="Describe what this service includes"
                   disabled={isBusy}
-                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  className={sourceListingFormControlClassName}
                 />
               </FieldStack>
 
@@ -4907,7 +4884,7 @@ function SourceServiceSheet({
                     onChange={(event) => onFieldChange("price", event.target.value)}
                     placeholder="49.99"
                     disabled={isBusy}
-                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    className={sourceListingFormControlClassName}
                   />
                 </FieldStack>
                 <FieldStack label="Currency" htmlFor="service-detail-currency">
@@ -4920,7 +4897,7 @@ function SourceServiceSheet({
                     placeholder="USD"
                     maxLength={3}
                     disabled={isBusy}
-                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    className={sourceListingFormControlClassName}
                   />
                 </FieldStack>
               </div>
@@ -4937,6 +4914,7 @@ function SourceServiceSheet({
                       onAvailabilityChange(value as SourceListing["status"])
                     }
                     placeholder="Draft"
+                    triggerClassName={sourceListingSelectTriggerClassName}
                     disablePortal
                   >
                     <SelectContent>
@@ -4963,6 +4941,7 @@ function SourceServiceSheet({
                   id="service-detail-mode"
                   value={formState.serviceMode}
                   onValueChange={(value) => onFieldChange("serviceMode", value)}
+                  triggerClassName={sourceListingSelectTriggerClassName}
                   disablePortal
                 >
                   <SelectContent>
@@ -4991,7 +4970,7 @@ function SourceServiceSheet({
                     }
                     placeholder="30"
                     disabled={isBusy}
-                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    className={sourceListingFormControlClassName}
                   />
                 </FieldStack>
               )}
@@ -5028,7 +5007,7 @@ function SourceServiceSheet({
                       }
                       placeholder="2 business days"
                       disabled={isBusy}
-                      className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                      className={sourceListingFormControlClassName}
                     />
                   </FieldStack>
                   {serviceDetailIsFlatRate && (
@@ -5046,7 +5025,7 @@ function SourceServiceSheet({
                         rows={3}
                         placeholder="Done-for-you deliverables"
                         disabled={isBusy}
-                        className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                        className={sourceListingFormControlClassName}
                       />
                     </FieldStack>
                   )}
@@ -5064,7 +5043,7 @@ function SourceServiceSheet({
                       rows={3}
                       placeholder="Resources or files we need"
                       disabled={isBusy}
-                      className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                      className={sourceListingFormControlClassName}
                     />
                   </FieldStack>
                 </div>

@@ -1603,7 +1603,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
             </div>
           )}
           </div>
-        <div className="flex items-center justify-center gap-1.5">
+        <div className="mt-2 flex items-center justify-center gap-1.5">
           {(["active", "completed"] as const).map((panel) => {
             const isActive = projectSection === panel;
             return (

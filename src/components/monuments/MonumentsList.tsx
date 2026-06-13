@@ -118,12 +118,12 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
 
     if (loading) {
       return (
-        <div className="px-4">
+        <div className="app-dashboard-monuments-panel px-4">
           <div className="grid grid-cols-4 gap-1">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton
                 key={i}
-                className="aspect-square w-full rounded-2xl bg-white/[0.06]"
+                className="app-dashboard-monument-skeleton aspect-square w-full rounded-2xl bg-white/[0.06]"
               />
             ))}
           </div>

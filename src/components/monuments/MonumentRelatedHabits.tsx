@@ -93,6 +93,19 @@ type DecoratedRelatedRoutine = RelatedRoutineCardRoutine & {
   typeRank: number;
   sortName: string;
 };
+type RelatedHabitPageItem =
+  | {
+      kind: "routine";
+      routine: DecoratedRelatedRoutine;
+    }
+  | {
+      kind: "habit";
+      habit: HabitSummary & {
+        normalizedHabitType: string;
+        dueLabel: string;
+        dueRank: number;
+      };
+    };
 type RelatedHabitCardDensity = "large" | "small";
 type RelatedHabitPageSwipeAxis = "horizontal" | "vertical" | null;
 
@@ -103,6 +116,8 @@ const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
 const RELATED_HABIT_DOUBLE_TAP_MS = 350;
 const RELATED_HABIT_LONG_PRESS_MS = 300;
 const RELATED_HABIT_LONG_PRESS_SUPPRESS_MS = 1_000;
+const RELATED_HABIT_COMPLETED_MOVE_DELAY_MS = 850;
+const RELATED_HABIT_COMPLETED_COLLAPSE_MS = 320;
 const RELATED_HABIT_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_GRID_CLASS =
@@ -111,6 +126,12 @@ const RELATED_HABIT_PAGE_GRID_CLASS =
   "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
   "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+const RELATED_HABIT_COMPLETED_CARD_CLASS =
+  "border-emerald-800/80 !bg-[#070b0d] !bg-[radial-gradient(circle_at_16%_0%,rgba(45,212,191,0.12),transparent_34%),radial-gradient(circle_at_88%_18%,rgba(16,185,129,0.10),transparent_36%),linear-gradient(135deg,rgba(6,78,59,0.22),rgba(3,12,14,0)_42%),linear-gradient(180deg,#11161a_0%,#090d10_55%,#050708_100%)] bg-clip-padding outline outline-1 -outline-offset-4 outline-emerald-400/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(45,212,191,0.22),inset_0_-10px_18px_rgba(0,0,0,0.34),0_0_0_1px_rgba(2,44,34,0.72),0_0_18px_-11px_rgba(16,185,129,0.58),0_10px_24px_-20px_rgba(0,0,0,0.85)]";
+const RELATED_HABIT_COMPLETED_SHIMMER_CLASS =
+  "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(45deg,rgba(2,44,34,0.42),rgba(5,150,105,0.50),rgba(52,211,153,0.58),rgba(16,185,129,0.48),rgba(2,44,34,0.42))] bg-[length:400%_400%] p-[3px] opacity-85 animate-[steel-shimmer_3s_ease-in-out_infinite] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
+const RELATED_HABIT_COMPLETED_FACET_CLASS =
+  "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(135deg,rgba(2,44,34,0.95),transparent_18%)_top_left/42%_42%_no-repeat,linear-gradient(225deg,rgba(6,95,70,0.86),transparent_18%)_top_right/42%_42%_no-repeat,linear-gradient(45deg,rgba(3,67,54,0.90),transparent_18%)_bottom_left/42%_42%_no-repeat,linear-gradient(315deg,rgba(20,184,166,0.28),transparent_18%)_bottom_right/42%_42%_no-repeat] p-[2px] shadow-[inset_0_0_0_1px_rgba(5,150,105,0.36),inset_0_0_0_2px_rgba(2,44,34,0.50)] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -139,6 +160,10 @@ function normalizeRecurrenceDays(value: unknown): number[] | null {
 function normalizeRelatedHabitType(value: string | null | undefined): string {
   const normalized = value?.trim().toUpperCase() || "HABIT";
   return normalized === "ASYNC" ? "SYNC" : normalized;
+}
+
+function isRelatedHabitDueLabel(value: string | null | undefined): boolean {
+  return value === "DUE" || value === "OVERDUE";
 }
 
 function normalizeRelatedHabitStreakDays(value: unknown): number {
@@ -545,6 +570,12 @@ export function MonumentRelatedHabits({
   const [pendingRelatedHabitIds, setPendingRelatedHabitIds] = useState<
     Set<string>
   >(() => new Set());
+  const [pendingCompletedRelatedHabitIds, setPendingCompletedRelatedHabitIds] =
+    useState<Set<string>>(() => new Set());
+  const [
+    collapsingCompletedRelatedHabitIds,
+    setCollapsingCompletedRelatedHabitIds,
+  ] = useState<Set<string>>(() => new Set());
   const [memoCompletionState, setMemoCompletionState] =
     useState<HabitSummary | null>(null);
   const timeZone = useMemo(() => {
@@ -568,6 +599,14 @@ export function MonumentRelatedHabits({
     habitId: string;
     timestamp: number;
   } | null>(null);
+  const pendingCompletedRelatedHabitIdsRef = useRef<Set<string>>(new Set());
+  const collapsingCompletedRelatedHabitIdsRef = useRef<Set<string>>(new Set());
+  const pendingCompletedRelatedHabitMoveTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
+  const collapsingCompletedRelatedHabitTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
   const [pressedRelatedHabitId, setPressedRelatedHabitId] = useState<
     string | null
   >(null);
@@ -634,6 +673,132 @@ export function MonumentRelatedHabits({
       });
     },
     [fabCreation]
+  );
+  const clearPendingCompletedRelatedHabitMove = useCallback(
+    (habitId: string) => {
+      const pendingTimer =
+        pendingCompletedRelatedHabitMoveTimersRef.current.get(habitId);
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        pendingCompletedRelatedHabitMoveTimersRef.current.delete(habitId);
+      }
+
+      const collapsingTimer =
+        collapsingCompletedRelatedHabitTimersRef.current.get(habitId);
+      if (collapsingTimer) {
+        clearTimeout(collapsingTimer);
+        collapsingCompletedRelatedHabitTimersRef.current.delete(habitId);
+      }
+
+      setPendingCompletedRelatedHabitIds((current) => {
+        if (!current.has(habitId)) return current;
+
+        const next = new Set(current);
+        next.delete(habitId);
+        pendingCompletedRelatedHabitIdsRef.current = next;
+        return next;
+      });
+      setCollapsingCompletedRelatedHabitIds((current) => {
+        if (!current.has(habitId)) return current;
+
+        const next = new Set(current);
+        next.delete(habitId);
+        collapsingCompletedRelatedHabitIdsRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+  const clearAllPendingCompletedRelatedHabitMoves = useCallback(() => {
+    for (const timer of pendingCompletedRelatedHabitMoveTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    for (const timer of collapsingCompletedRelatedHabitTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    pendingCompletedRelatedHabitMoveTimersRef.current.clear();
+    collapsingCompletedRelatedHabitTimersRef.current.clear();
+    pendingCompletedRelatedHabitIdsRef.current = new Set();
+    collapsingCompletedRelatedHabitIdsRef.current = new Set();
+    setPendingCompletedRelatedHabitIds(new Set());
+    setCollapsingCompletedRelatedHabitIds(new Set());
+  }, []);
+  const schedulePendingCompletedRelatedHabitMove = useCallback(
+    (habitId: string) => {
+      const existingPendingTimer =
+        pendingCompletedRelatedHabitMoveTimersRef.current.get(habitId);
+      if (existingPendingTimer) {
+        clearTimeout(existingPendingTimer);
+        pendingCompletedRelatedHabitMoveTimersRef.current.delete(habitId);
+      }
+
+      const existingCollapsingTimer =
+        collapsingCompletedRelatedHabitTimersRef.current.get(habitId);
+      if (existingCollapsingTimer) {
+        clearTimeout(existingCollapsingTimer);
+        collapsingCompletedRelatedHabitTimersRef.current.delete(habitId);
+      }
+
+      setCollapsingCompletedRelatedHabitIds((current) => {
+        if (!current.has(habitId)) return current;
+
+        const next = new Set(current);
+        next.delete(habitId);
+        collapsingCompletedRelatedHabitIdsRef.current = next;
+        return next;
+      });
+      setPendingCompletedRelatedHabitIds((current) => {
+        if (current.has(habitId)) return current;
+
+        const next = new Set(current);
+        next.add(habitId);
+        pendingCompletedRelatedHabitIdsRef.current = next;
+        return next;
+      });
+
+      const pendingTimer = setTimeout(() => {
+        pendingCompletedRelatedHabitMoveTimersRef.current.delete(habitId);
+        setPendingCompletedRelatedHabitIds((current) => {
+          if (!current.has(habitId)) return current;
+
+          const next = new Set(current);
+          next.delete(habitId);
+          pendingCompletedRelatedHabitIdsRef.current = next;
+          return next;
+        });
+        setCollapsingCompletedRelatedHabitIds((current) => {
+          if (current.has(habitId)) return current;
+
+          const next = new Set(current);
+          next.add(habitId);
+          collapsingCompletedRelatedHabitIdsRef.current = next;
+          return next;
+        });
+
+        const collapsingTimer = setTimeout(() => {
+          collapsingCompletedRelatedHabitTimersRef.current.delete(habitId);
+          setCollapsingCompletedRelatedHabitIds((current) => {
+            if (!current.has(habitId)) return current;
+
+            const next = new Set(current);
+            next.delete(habitId);
+            collapsingCompletedRelatedHabitIdsRef.current = next;
+            return next;
+          });
+        }, RELATED_HABIT_COMPLETED_COLLAPSE_MS);
+
+        collapsingCompletedRelatedHabitTimersRef.current.set(
+          habitId,
+          collapsingTimer
+        );
+      }, RELATED_HABIT_COMPLETED_MOVE_DELAY_MS);
+
+      pendingCompletedRelatedHabitMoveTimersRef.current.set(
+        habitId,
+        pendingTimer
+      );
+    },
+    []
   );
   const pendingRelatedHabitActionsRef = useRef(
     new Map<string, { action: "complete" | "undo"; dateKey: string }>()
@@ -722,50 +887,117 @@ export function MonumentRelatedHabits({
     );
   }, [completedRelatedHabitIds, decoratedHabits, pendingRelatedHabitIds]);
   const relatedHabitPages = useMemo(() => {
-    const routineItems = relatedRoutines.map((routine) => ({
-      kind: "routine" as const,
-      routine,
-    }));
-    const habitItems = standaloneDecoratedHabits.map((habit) => ({
-      kind: "habit" as const,
-      habit,
-    }));
+    const sortRelatedHabitPageItems = (
+      first: RelatedHabitPageItem,
+      second: RelatedHabitPageItem
+    ) => {
+      const firstDueRank =
+        first.kind === "routine" ? first.routine.dueRank : first.habit.dueRank;
+      const secondDueRank =
+        second.kind === "routine"
+          ? second.routine.dueRank
+          : second.habit.dueRank;
+      if (firstDueRank !== secondDueRank) {
+        return firstDueRank - secondDueRank;
+      }
+
+      const firstTypeRank =
+        first.kind === "routine"
+          ? first.routine.typeRank
+          : getHabitTypePriority(first.habit.habitType);
+      const secondTypeRank =
+        second.kind === "routine"
+          ? second.routine.typeRank
+          : getHabitTypePriority(second.habit.habitType);
+      if (firstTypeRank !== secondTypeRank) {
+        return firstTypeRank - secondTypeRank;
+      }
+
+      const firstName =
+        first.kind === "routine" ? first.routine.sortName : first.habit.name;
+      const secondName =
+        second.kind === "routine" ? second.routine.sortName : second.habit.name;
+      return firstName.localeCompare(secondName, undefined, {
+        sensitivity: "base",
+      });
+    };
+
+    const isStandaloneHabitDue = (
+      habit: (typeof standaloneDecoratedHabits)[number]
+    ) => {
+      const isMovingToCompleted =
+        pendingCompletedRelatedHabitIds.has(habit.id) ||
+        collapsingCompletedRelatedHabitIds.has(habit.id);
+
+      return (
+        isMovingToCompleted ||
+        (!completedRelatedHabitIds.has(habit.id) &&
+          isRelatedHabitDueLabel(habit.dueLabel))
+      );
+    };
+    const isRoutineHabitDue = (
+      habit: RelatedRoutineCardRoutine["habits"][number]
+    ) => !habit.completed && isRelatedHabitDueLabel(habit.dueLabel);
+
+    const dueRoutineItems = relatedRoutines
+      .filter((routine) => routine.habits.some(isRoutineHabitDue))
+      .map((routine) => ({
+        kind: "routine" as const,
+        routine,
+      }));
+    const notDueRoutineItems = relatedRoutines
+      .filter((routine) =>
+        routine.habits.some((habit) => !isRoutineHabitDue(habit))
+      )
+      .map((routine) => ({
+        kind: "routine" as const,
+        routine,
+      }));
+    const dueHabitItems = standaloneDecoratedHabits
+      .filter(isStandaloneHabitDue)
+      .map((habit) => ({
+        kind: "habit" as const,
+        habit,
+      }));
+    const notDueHabitItems = standaloneDecoratedHabits
+      .filter(
+        (habit) =>
+          !isStandaloneHabitDue(habit) &&
+          !pendingCompletedRelatedHabitIds.has(habit.id) &&
+          !collapsingCompletedRelatedHabitIds.has(habit.id)
+      )
+      .map((habit) => ({
+        kind: "habit" as const,
+        habit,
+      }));
 
     return [
       {
-        id: "routines-and-habits",
-        items: [...routineItems, ...habitItems].sort((first, second) => {
-          const firstDueRank =
-            first.kind === "routine" ? first.routine.dueRank : first.habit.dueRank;
-          const secondDueRank =
-            second.kind === "routine" ? second.routine.dueRank : second.habit.dueRank;
-          if (firstDueRank !== secondDueRank) {
-            return firstDueRank - secondDueRank;
-          }
-
-          const firstTypeRank =
-            first.kind === "routine"
-              ? first.routine.typeRank
-              : getHabitTypePriority(first.habit.habitType);
-          const secondTypeRank =
-            second.kind === "routine"
-              ? second.routine.typeRank
-              : getHabitTypePriority(second.habit.habitType);
-          if (firstTypeRank !== secondTypeRank) {
-            return firstTypeRank - secondTypeRank;
-          }
-
-          const firstName =
-            first.kind === "routine" ? first.routine.sortName : first.habit.name;
-          const secondName =
-            second.kind === "routine" ? second.routine.sortName : second.habit.name;
-          return firstName.localeCompare(secondName, undefined, {
-            sensitivity: "base",
-          });
-        }),
+        id: "due",
+        label: "Due",
+        ariaLabel: "Show due habits",
+        emptyMessage: "No due habits right now.",
+        items: [...dueRoutineItems, ...dueHabitItems].sort(
+          sortRelatedHabitPageItems
+        ),
       },
-    ].filter((page) => page.items.length > 0);
-  }, [relatedRoutines, standaloneDecoratedHabits]);
+      {
+        id: "not-due-completed",
+        label: "Not due / Completed",
+        ariaLabel: "Show not due and completed habits",
+        emptyMessage: "No not due or completed habits yet.",
+        items: [...notDueRoutineItems, ...notDueHabitItems].sort(
+          sortRelatedHabitPageItems
+        ),
+      },
+    ];
+  }, [
+    collapsingCompletedRelatedHabitIds,
+    completedRelatedHabitIds,
+    pendingCompletedRelatedHabitIds,
+    relatedRoutines,
+    standaloneDecoratedHabits,
+  ]);
   const relatedHabitPageBaseTransform =
     relatedHabitPagerViewportWidth > 0
       ? -activeRelatedHabitPageIndex * relatedHabitPagerViewportWidth
@@ -780,11 +1012,6 @@ export function MonumentRelatedHabits({
           )
         )
       : 0;
-  const relatedHabitTrackWidthPercent =
-    Math.max(relatedHabitPages.length, 1) * 100;
-  const relatedHabitPanelWidthPercent =
-    100 / Math.max(relatedHabitPages.length, 1);
-
   const getRelatedHabitPageHeight = useCallback(
     (index: number) => {
       if (relatedHabitPages.length === 0) return;
@@ -886,9 +1113,11 @@ export function MonumentRelatedHabits({
     measureActiveRelatedHabitPage();
   }, [
     activeRelatedHabitPageIndex,
+    collapsingCompletedRelatedHabitIds,
     completedRelatedHabitIds,
     isSmallRelatedHabitDensity,
     measureActiveRelatedHabitPage,
+    pendingCompletedRelatedHabitIds,
     pendingRelatedHabitIds,
     relatedHabitPages,
   ]);
@@ -1108,6 +1337,46 @@ export function MonumentRelatedHabits({
   }, []);
 
   useEffect(() => {
+    const pendingMoveTimers =
+      pendingCompletedRelatedHabitMoveTimersRef.current;
+    const collapsingTimers = collapsingCompletedRelatedHabitTimersRef.current;
+
+    return () => {
+      for (const timer of pendingMoveTimers.values()) {
+        clearTimeout(timer);
+      }
+      for (const timer of collapsingTimers.values()) {
+        clearTimeout(timer);
+      }
+      pendingMoveTimers.clear();
+      collapsingTimers.clear();
+      pendingCompletedRelatedHabitIdsRef.current = new Set();
+      collapsingCompletedRelatedHabitIdsRef.current = new Set();
+    };
+  }, []);
+
+  useEffect(() => {
+    const relatedHabitIds = new Set(relatedHabits.map((habit) => habit.id));
+    const movingHabitIds = new Set([
+      ...pendingCompletedRelatedHabitIdsRef.current,
+      ...collapsingCompletedRelatedHabitIdsRef.current,
+    ]);
+
+    for (const habitId of movingHabitIds) {
+      if (
+        !relatedHabitIds.has(habitId) ||
+        !completedRelatedHabitIds.has(habitId)
+      ) {
+        clearPendingCompletedRelatedHabitMove(habitId);
+      }
+    }
+  }, [
+    clearPendingCompletedRelatedHabitMove,
+    completedRelatedHabitIds,
+    relatedHabits,
+  ]);
+
+  useEffect(() => {
     const syncCurrentDateKey = () => {
       const nextDateKey = formatDateKeyInTimeZone(new Date(), timeZone);
       setCurrentDateKey((previousDateKey) =>
@@ -1216,7 +1485,14 @@ export function MonumentRelatedHabits({
 
   const handleRelatedHabitCompletionToggle = useCallback(
     async (habitId: string) => {
-      if (!currentUserId || pendingRelatedHabitIds.has(habitId)) {
+      const isPendingCompletedMove =
+        pendingCompletedRelatedHabitIdsRef.current.has(habitId) ||
+        collapsingCompletedRelatedHabitIdsRef.current.has(habitId);
+
+      if (
+        !currentUserId ||
+        (pendingRelatedHabitIds.has(habitId) && !isPendingCompletedMove)
+      ) {
         return;
       }
 
@@ -1229,6 +1505,12 @@ export function MonumentRelatedHabits({
       const wasCompleted = completedRelatedHabitIds.has(habitId);
       const action = wasCompleted ? "undo" : "complete";
       const completedAt = new Date().toISOString();
+      const shouldDelayCompletedMove =
+        action === "complete" &&
+        !habitBeforeUpdate.routineId &&
+        isRelatedHabitDueLabel(
+          computeHabitDueStatus(habitBeforeUpdate, timeZone).label
+        );
 
       if (
         !bypassMemoCaptureRef.current &&
@@ -1256,6 +1538,11 @@ export function MonumentRelatedHabits({
         action,
         dateKey: currentDateKey,
       });
+      if (shouldDelayCompletedMove) {
+        schedulePendingCompletedRelatedHabitMove(habitId);
+      } else if (action === "undo") {
+        clearPendingCompletedRelatedHabitMove(habitId);
+      }
 
       setCompletedRelatedHabitIds((previous) => {
         const next = new Set(previous);
@@ -1337,6 +1624,7 @@ export function MonumentRelatedHabits({
         );
         if (!wasCompleted) {
           previousRelatedHabitStateRef.current.delete(habitId);
+          clearPendingCompletedRelatedHabitMove(habitId);
         }
       } finally {
         pendingRelatedHabitActionsRef.current.delete(habitId);
@@ -1348,11 +1636,13 @@ export function MonumentRelatedHabits({
       }
     },
     [
+      clearPendingCompletedRelatedHabitMove,
       completedRelatedHabitIds,
       currentDateKey,
       currentUserId,
       pendingRelatedHabitIds,
       relatedHabits,
+      schedulePendingCompletedRelatedHabitMove,
       timeZone,
       toast,
     ]
@@ -1544,6 +1834,7 @@ export function MonumentRelatedHabits({
         setPendingRelatedHabitIds(new Set());
         previousRelatedHabitStateRef.current.clear();
         pendingRelatedHabitActionsRef.current.clear();
+        clearAllPendingCompletedRelatedHabitMoves();
       }
 
       try {
@@ -1692,7 +1983,12 @@ export function MonumentRelatedHabits({
     return () => {
       cancelled = true;
     };
-  }, [monumentId, refreshVersion, supabase]);
+  }, [
+    clearAllPendingCompletedRelatedHabitMoves,
+    monumentId,
+    refreshVersion,
+    supabase,
+  ]);
 
   return (
     <>
@@ -1759,7 +2055,7 @@ export function MonumentRelatedHabits({
             ) : null}
             <div
               ref={relatedHabitPagerRef}
-              className="relative w-full overflow-x-clip overflow-y-visible touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
               style={
                 relatedHabitPageHeight
                   ? { height: relatedHabitPageHeight }
@@ -1778,15 +2074,13 @@ export function MonumentRelatedHabits({
             >
               <div className="absolute inset-0">
                 <div
-                  className="flex h-full transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                  className="flex h-full w-full transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
                   style={{
-                    width: `${relatedHabitTrackWidthPercent}%`,
                     transform:
                       relatedHabitPagerViewportWidth > 0
                         ? `translate3d(${relatedHabitPageTrackTransform}px, 0, 0)`
                         : `translate3d(${
-                            -activeRelatedHabitPageIndex *
-                            relatedHabitPanelWidthPercent
+                            -activeRelatedHabitPageIndex * 100
                           }%, 0, 0)`,
                     transitionDuration: relatedHabitPageDragOffset
                       ? "0ms"
@@ -1796,20 +2090,28 @@ export function MonumentRelatedHabits({
                   {relatedHabitPages.map((page) => (
                     <div
                       key={page.id}
-                      className="h-full shrink-0 overflow-visible"
-                      style={{ width: `${relatedHabitPanelWidthPercent}%` }}
+                      className="h-full w-full min-w-full shrink-0 overflow-hidden"
                     >
                       <div
                         ref={(element) => {
                           relatedHabitPagePanelRefs.current[page.id] = element;
                         }}
-                        className={relatedHabitPageGridClass}
+                        className={
+                          page.items.length > 0
+                            ? relatedHabitPageGridClass
+                            : "min-h-[120px]"
+                        }
                       >
-                        {page.items.map((item) => {
+                        {page.items.length === 0 ? (
+                          <div className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+                            {page.emptyMessage}
+                          </div>
+                        ) : (
+                          page.items.map((item) => {
                           if (item.kind === "routine") {
                             return (
                               <RelatedRoutineCard
-                                key={`routine-${item.routine.id}`}
+                                key={`${page.id}-routine-${item.routine.id}`}
                                 routine={item.routine}
                                 density={relatedHabitCardDensity}
                                 onHabitCompletionToggle={
@@ -1821,11 +2123,17 @@ export function MonumentRelatedHabits({
                           }
 
                           const habit = item.habit;
+                          const isPendingCompletedMove =
+                            pendingCompletedRelatedHabitIds.has(habit.id) ||
+                            collapsingCompletedRelatedHabitIds.has(habit.id);
+                          const isCollapsingCompletedMove =
+                            collapsingCompletedRelatedHabitIds.has(habit.id);
                           const isHabitCompletedToday =
-                            completedRelatedHabitIds.has(habit.id);
-                          const isHabitPending = pendingRelatedHabitIds.has(
-                            habit.id
-                          );
+                            completedRelatedHabitIds.has(habit.id) ||
+                            isPendingCompletedMove;
+                          const isHabitPending =
+                            pendingRelatedHabitIds.has(habit.id) &&
+                            !isPendingCompletedMove;
                           const streakDays = habit.currentStreakDays ?? 0;
                           const showStreakBadge = streakDays >= 2;
                           const streakLabel = `${streakDays}x`;
@@ -1834,9 +2142,8 @@ export function MonumentRelatedHabits({
                           const habitPillLabel = isHabitCompletedToday
                             ? "COMPLETE"
                             : habit.dueLabel;
-                          const habitStateBorderClass = isHabitCompletedToday
-                            ? "shimmer-border-complete"
-                            : isHabitOverdue
+                          const habitStateBorderClass =
+                            !isHabitCompletedToday && isHabitOverdue
                               ? "related-habit-due-border"
                               : null;
                           const habitPillClass = isHabitCompletedToday
@@ -1845,77 +2152,89 @@ export function MonumentRelatedHabits({
                               ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
                               : "border-white/10 bg-white/[0.06] text-white/65";
 
-                        return (
-                          <div
-                            key={habit.id}
-                            className={clsx(
-                              "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
-                              isSmallRelatedHabitDensity
-                                ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-                                : "min-h-[96px] rounded-2xl p-3 sm:p-4",
-                              isHabitCompletedToday
-                                ? "emerald-completed-compact"
-                                : [
-                                    getHabitCardTypeClass(
-                                      habit.normalizedHabitType
-                                    ),
-                                    getHabitCardBorderClass(
-                                      habit.normalizedHabitType
-                                    ),
-                                  ],
-                              isHabitPending
-                                ? "pointer-events-none cursor-default opacity-75"
-                                : "cursor-pointer",
-                              pressedRelatedHabitId === habit.id
-                                ? "scale-[0.985] translate-y-px brightness-95"
-                                : null,
-                              habitStateBorderClass
-                            )}
-                            role="button"
-                            tabIndex={isHabitPending ? -1 : 0}
-                            aria-pressed={isHabitCompletedToday}
-                            aria-disabled={isHabitPending}
-                            aria-label={`${habit.name}. ${habitPillLabel}. Double tap to ${
-                              isHabitCompletedToday ? "undo" : "complete"
-                            }.`}
-                            title={`${habit.name} - ${habitPillLabel}. Double tap to ${
-                              isHabitCompletedToday ? "undo" : "complete"
-                            }.`}
-                            onPointerDown={(event) =>
-                              handleRelatedHabitPointerDown(event, habit)
-                            }
-                            onPointerUp={cancelRelatedHabitLongPress}
-                            onPointerCancel={cancelRelatedHabitLongPress}
-                            onPointerLeave={handleRelatedHabitPointerLeave}
-                            onDoubleClick={(event) =>
-                              handleRelatedHabitDoubleClick(event, habit.id)
-                            }
-                            onTouchEnd={(event) =>
-                              handleRelatedHabitTouchEnd(event, habit.id)
-                            }
-                          >
-                            {showStreakBadge ? (
-                              <span
-                                className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
-                                aria-label={`${streakDays} habit streak`}
-                              >
-                                <FlameEmber
-                                  level={
-                                    streakDays >= 7
-                                      ? "HIGH"
-                                      : streakDays >= 4
-                                        ? "MEDIUM"
-                                        : "LOW"
-                                  }
-                                  size="sm"
-                                  className="scale-90 drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
-                                />
-                                <span className="tracking-normal">
-                                  {streakLabel}
+                          const habitCard = (
+                            <div
+                              key={`${page.id}-habit-${habit.id}`}
+                              className={clsx(
+                                "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                                isSmallRelatedHabitDensity
+                                  ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+                                  : "min-h-[96px] rounded-2xl p-3 sm:p-4",
+                                isHabitCompletedToday
+                                  ? RELATED_HABIT_COMPLETED_CARD_CLASS
+                                  : [
+                                      getHabitCardTypeClass(
+                                        habit.normalizedHabitType
+                                      ),
+                                      getHabitCardBorderClass(
+                                        habit.normalizedHabitType
+                                      ),
+                                    ],
+                                isHabitPending
+                                  ? "pointer-events-none cursor-default opacity-75"
+                                  : "cursor-pointer",
+                                pressedRelatedHabitId === habit.id
+                                  ? "scale-[0.985] translate-y-px brightness-95"
+                                  : null,
+                                habitStateBorderClass
+                              )}
+                              role="button"
+                              tabIndex={isHabitPending ? -1 : 0}
+                              aria-pressed={isHabitCompletedToday}
+                              aria-disabled={isHabitPending}
+                              aria-label={`${habit.name}. ${habitPillLabel}. Double tap to ${
+                                isHabitCompletedToday ? "undo" : "complete"
+                              }.`}
+                              title={`${habit.name} - ${habitPillLabel}. Double tap to ${
+                                isHabitCompletedToday ? "undo" : "complete"
+                              }.`}
+                              onPointerDown={(event) =>
+                                handleRelatedHabitPointerDown(event, habit)
+                              }
+                              onPointerUp={cancelRelatedHabitLongPress}
+                              onPointerCancel={cancelRelatedHabitLongPress}
+                              onPointerLeave={handleRelatedHabitPointerLeave}
+                              onDoubleClick={(event) =>
+                                handleRelatedHabitDoubleClick(event, habit.id)
+                              }
+                              onTouchEnd={(event) =>
+                                handleRelatedHabitTouchEnd(event, habit.id)
+                              }
+                            >
+                              {isHabitCompletedToday ? (
+                                <>
+                                  <span
+                                    className={RELATED_HABIT_COMPLETED_SHIMMER_CLASS}
+                                    aria-hidden="true"
+                                  />
+                                  <span
+                                    className={RELATED_HABIT_COMPLETED_FACET_CLASS}
+                                    aria-hidden="true"
+                                  />
+                                </>
+                              ) : null}
+                              {showStreakBadge ? (
+                                <span
+                                  className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
+                                  aria-label={`${streakDays} habit streak`}
+                                >
+                                  <FlameEmber
+                                    level={
+                                      streakDays >= 7
+                                        ? "HIGH"
+                                        : streakDays >= 4
+                                          ? "MEDIUM"
+                                          : "LOW"
+                                    }
+                                    size="sm"
+                                    className="scale-90 drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                                  />
+                                  <span className="tracking-normal">
+                                    {streakLabel}
+                                  </span>
                                 </span>
-                              </span>
-                            ) : null}
-                            <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
+                              ) : null}
+                              <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
                               <span
                                 className={clsx(
                                   "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
@@ -1958,8 +2277,36 @@ export function MonumentRelatedHabits({
                               </div>
                             </div>
                           </div>
-                        );
-                        })}
+                          );
+
+                          if (!isPendingCompletedMove) {
+                            return habitCard;
+                          }
+
+                          return (
+                            <div
+                              key={`${page.id}-habit-${habit.id}`}
+                              className={clsx(
+                                "grid transition-[grid-template-rows,opacity,transform] duration-[320ms] ease-[cubic-bezier(0.33,0,0.2,1)]",
+                                isCollapsingCompletedMove
+                                  ? "pointer-events-none grid-rows-[0fr] overflow-hidden translate-y-2 opacity-0"
+                                  : "grid-rows-[1fr] overflow-visible translate-y-0 opacity-100"
+                              )}
+                            >
+                              <div
+                                className={clsx(
+                                  "min-h-0",
+                                  isCollapsingCompletedMove
+                                    ? "overflow-hidden"
+                                    : "overflow-visible"
+                                )}
+                              >
+                                {habitCard}
+                              </div>
+                            </div>
+                          );
+                        })
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1975,7 +2322,7 @@ export function MonumentRelatedHabits({
                     <button
                       key={page.id}
                       type="button"
-                      aria-label={`Show related habit page ${index + 1}`}
+                      aria-label={page.ariaLabel}
                       aria-current={isActive ? "true" : undefined}
                       onClick={() => handleRelatedHabitPageChange(index)}
                       className={clsx(

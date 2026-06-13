@@ -447,6 +447,51 @@ export default function NotePage() {
     router.push(`/skills/${skillId}/notes/${subpageId}`);
   }
 
+  async function handleOpenDatabase(databaseId: string) {
+    const targetNoteId = currentNoteId ?? (noteId !== "new" ? noteId : null);
+    if (targetNoteId) {
+      router.push(`/skills/${skillId}/notes/${targetNoteId}/databases/${databaseId}`);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const metadata = buildNoteMetadata(noteMetadata, noteIcon);
+      const saved = await createSkillNote(
+        skillId,
+        {
+          title: noteTitle.trim() || "Untitled",
+          content: noteContent,
+        },
+        { metadata, parentNoteId: selectedParentId },
+      );
+
+      if (!saved) return;
+
+      setCurrentNoteId(saved.id);
+      setNoteMetadata(saved.metadata ?? metadata);
+      setLastSavedSnapshot(
+        createSaveSnapshot({
+          title: saved.title ?? noteTitle,
+          content: saved.content ?? noteContent,
+          icon: noteIcon,
+          parentNoteId: saved.parentNoteId ?? selectedParentId,
+          metadata: buildNoteMetadata(saved.metadata ?? metadata, noteIcon),
+        }),
+      );
+      router.push(`/skills/${skillId}/notes/${saved.id}/databases/${databaseId}`);
+    } catch (error) {
+      console.error("Failed to save skill note before opening database", {
+        error,
+        skillId,
+        noteId,
+        databaseId,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function handleDatabaseDefinitionsChange(databases: NoteDatabaseDefinitions) {
     setNoteMetadata((current) => ({ ...(current ?? {}), databases }));
   }
@@ -531,6 +576,7 @@ export default function NotePage() {
                 onCreateSubpage={handleCreateSubpage}
                 onSubpageCreated={handleSubpageCreated}
                 onOpenSubpage={handleOpenSubpage}
+                onOpenDatabase={handleOpenDatabase}
                 placeholder="Start typing, or press / for commands…"
                 className="min-h-[62vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
                 aria-label="Note editor"
