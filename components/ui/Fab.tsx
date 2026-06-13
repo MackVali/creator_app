@@ -607,10 +607,11 @@ type FabHabitRoutineCreateRowProps = {
   value: string;
   emoji: string;
   error: string | null;
+  loading?: boolean;
   onStart: () => void;
   onChange: (value: string) => void;
   onEmojiChange: (value: string) => void;
-  onSubmit: () => boolean;
+  onSubmit: () => Promise<boolean> | boolean;
   onCancel: () => void;
 };
 
@@ -619,6 +620,7 @@ function FabHabitRoutineCreateRow({
   value,
   emoji,
   error,
+  loading = false,
   onStart,
   onChange,
   onEmojiChange,
@@ -696,10 +698,10 @@ function FabHabitRoutineCreateRow({
     >
       <form
         className="flex w-full min-w-0 items-center gap-1.5"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (onSubmit()) {
+          if (await onSubmit()) {
             setIsOpen?.(false);
           }
         }}
@@ -710,6 +712,7 @@ function FabHabitRoutineCreateRow({
           onKeyDown={handleFieldKeyDown}
           maxLength={8}
           aria-label="Routine emoji"
+          disabled={loading}
           className="h-9 w-11 shrink-0 rounded-lg border-white/[0.08] bg-[#05070b] px-1 text-center text-lg focus:border-white/25 focus-visible:ring-0"
         />
         <Input
@@ -719,20 +722,26 @@ function FabHabitRoutineCreateRow({
           onKeyDown={handleFieldKeyDown}
           placeholder="Routine name"
           aria-label="Routine name"
+          disabled={loading}
           className="h-9 min-w-0 flex-1 rounded-lg border-white/[0.08] bg-[#05070b] px-2.5 text-xs focus:border-white/25 focus-visible:ring-0"
         />
         <Button
           type="submit"
           size="icon"
-          disabled={trimmedValue.length === 0}
+          disabled={loading || trimmedValue.length === 0}
           className="h-9 w-9 shrink-0 rounded-lg border border-white/[0.08] bg-black/30 text-white hover:bg-white/[0.08] disabled:opacity-50"
-          aria-label="Use new routine"
+          aria-label="Save routine"
         >
-          <Check className="h-4 w-4" aria-hidden="true" />
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Check className="h-4 w-4" aria-hidden="true" />
+          )}
         </Button>
         <Button
           type="button"
           size="icon"
+          disabled={loading}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -3814,6 +3823,7 @@ export function Fab({
   const [habitInlineRoutineEmoji, setHabitInlineRoutineEmoji] = useState(
     FAB_DEFAULT_ROUTINE_EMOJI,
   );
+  const [habitRoutineCreating, setHabitRoutineCreating] = useState(false);
   const [habitRoutineCreateError, setHabitRoutineCreateError] = useState<
     string | null
   >(null);
@@ -3920,6 +3930,7 @@ export function Fab({
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
+    setHabitRoutineCreating(false);
     setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
     setShowHabitDurationPicker(false);
@@ -3929,6 +3940,7 @@ export function Fab({
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
+    setHabitRoutineCreating(false);
     setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
   }, []);
@@ -6399,6 +6411,7 @@ export function Fab({
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
+    setHabitRoutineCreating(false);
     setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
 
@@ -10118,6 +10131,7 @@ export function Fab({
                             value={habitInlineRoutineName}
                             emoji={habitInlineRoutineEmoji}
                             error={habitRoutineCreateError}
+                            loading={habitRoutineCreating}
                             onStart={() => {
                               setHabitRoutineId("");
                               setIsCreatingHabitRoutineInline(true);
@@ -10135,7 +10149,10 @@ export function Fab({
                               setHabitInlineRoutineEmoji(value);
                               setHabitRoutineCreateError(null);
                             }}
-                            onSubmit={() => {
+                            onSubmit={async () => {
+                              if (habitRoutineCreating) {
+                                return false;
+                              }
                               const routineName =
                                 habitInlineRoutineName.trim();
                               if (!routineName) {
@@ -10144,12 +10161,109 @@ export function Fab({
                                 );
                                 return false;
                               }
-                              setHabitRoutineId("");
-                              setIsCreatingHabitRoutineInline(true);
-                              setHabitInlineRoutineName(routineName);
-                              setHabitInlineRoutineDescription("");
+                              const supabase = getSupabaseBrowser();
+                              if (!supabase) {
+                                setHabitRoutineCreateError(
+                                  "Supabase client not available.",
+                                );
+                                return false;
+                              }
+
+                              setHabitRoutineCreating(true);
                               setHabitRoutineCreateError(null);
-                              return true;
+
+                              try {
+                                const {
+                                  data: { user },
+                                  error: userError,
+                                } = await supabase.auth.getUser();
+                                if (userError) throw userError;
+                                if (!user) {
+                                  throw new Error(
+                                    "You need to be signed in to create a routine.",
+                                  );
+                                }
+
+                                const routineDescription =
+                                  habitInlineRoutineDescription.trim();
+                                type CreatedHabitRoutineRow = {
+                                  id: string;
+                                  name: string | null;
+                                  description: string | null;
+                                };
+                                const habitRoutinesTable = supabase.from(
+                                  "habit_routines",
+                                ) as unknown as {
+                                  insert: (values: {
+                                    user_id: string;
+                                    name: string;
+                                    description: string | null;
+                                  }) => {
+                                    select: (columns: string) => {
+                                      single: () => Promise<{
+                                        data: CreatedHabitRoutineRow | null;
+                                        error: unknown;
+                                      }>;
+                                    };
+                                  };
+                                };
+                                const { data: routineData, error: routineError } =
+                                  await habitRoutinesTable
+                                    .insert({
+                                      user_id: user.id,
+                                      name: routineName,
+                                      description:
+                                        routineDescription.length > 0
+                                          ? routineDescription
+                                          : null,
+                                    })
+                                    .select("id, name, description")
+                                    .single();
+
+                                if (routineError) throw routineError;
+                                if (!routineData?.id) {
+                                  throw new Error(
+                                    "Routine creation did not return an id.",
+                                  );
+                                }
+
+                                const createdRoutine = {
+                                  id: routineData.id,
+                                  name: routineData.name ?? routineName,
+                                  description:
+                                    routineData.description ??
+                                    (routineDescription.length > 0
+                                      ? routineDescription
+                                      : null),
+                                };
+                                setHabitRoutines((current) =>
+                                  [
+                                    createdRoutine,
+                                    ...current.filter(
+                                      (routine) =>
+                                        routine.id !== createdRoutine.id,
+                                    ),
+                                  ].sort((a, b) =>
+                                    a.name.localeCompare(b.name),
+                                  ),
+                                );
+                                setHabitRoutineId(createdRoutine.id);
+                                resetHabitRoutineInlineCreation();
+                                return true;
+                              } catch (error) {
+                                console.error(
+                                  "Failed to create habit routine",
+                                  error,
+                                );
+                                setHabitRoutineCreateError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Unable to create this routine.",
+                                );
+                                return false;
+                              } finally {
+                                setHabitRoutineCreating(false);
+                              }
                             }}
                             onCancel={() => {
                               setHabitRoutineId("");

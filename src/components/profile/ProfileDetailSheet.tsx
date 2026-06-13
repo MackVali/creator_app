@@ -39,10 +39,19 @@ interface ProfileDetailSheetProps {
   isOwner?: boolean;
 }
 
-const SheetRow = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center justify-between gap-2.5 text-[9px] leading-tight uppercase tracking-[0.2em] text-white/[0.55]">
-    <span>{label}</span>
-    <span className="max-w-[58%] text-right font-semibold text-white/90">{value}</span>
+const DetailChip = ({ label, value }: { label: string; value: string }) => (
+  <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/[0.055] px-2 py-1 text-[10px] leading-tight text-white/[0.72]">
+    <span className="shrink-0 text-white/[0.42]">{label}</span>
+    <span className="min-w-0 font-medium text-white/[0.82]">{value}</span>
+  </span>
+);
+
+const DetailNote = ({ label, value }: { label: string; value: string }) => (
+  <div className="space-y-1">
+    <p className="text-[10px] font-medium text-white/[0.46]">{label}</p>
+    <p className="whitespace-pre-line text-[12px] leading-[1.5] text-white/[0.68]">
+      {value}
+    </p>
   </div>
 );
 
@@ -78,6 +87,10 @@ const SERVICE_MODE_NOTES: Record<ServiceMode, string> = {
   custom_quote: "Share your brief so the creator can reply with a scoped quote and next steps.",
 };
 
+const DETAIL_SHEET_WIDTH_CLASS = "w-full max-w-[304px] sm:max-w-[320px]";
+const DETAIL_SHEET_CTA_CLASS =
+  "h-8 w-full border border-white/10 bg-zinc-800 text-xs font-medium text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-white/15 hover:bg-zinc-700 active:bg-zinc-900";
+
 export default function ProfileDetailSheet({
   item,
   onClose,
@@ -94,13 +107,18 @@ export default function ProfileDetailSheet({
 
     const previousBodyOverflow = document.body.style.overflow;
     const previousHtmlOverflow = document.documentElement.style.overflow;
+    const hadModalOpenClass = document.body.classList.contains("modal-open");
 
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
+    document.body.classList.add("modal-open");
 
     return () => {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousHtmlOverflow;
+      if (!hadModalOpenClass) {
+        document.body.classList.remove("modal-open");
+      }
     };
   }, [item]);
 
@@ -204,18 +222,13 @@ export default function ProfileDetailSheet({
   const detailRows: { label: string; value: string }[] = [];
 
   if (isProduct) {
-    detailRows.push({
-      label: "Status",
-      value: item.data.status === "published" ? "Live" : "Draft",
-    });
-  } else {
-    if (serviceDurationLabel) {
-      detailRows.push({ label: "Duration", value: serviceDurationLabel });
+    if (productKindLabel) {
+      detailRows.push({ label: "Type", value: productKindLabel });
     }
 
-    if (serviceAvailabilityLabel) {
-      detailRows.push({ label: "Availability", value: serviceAvailabilityLabel });
-    }
+    productFulfillmentRows.forEach((row) => detailRows.push(row));
+  } else {
+    detailRows.push({ label: "Mode", value: serviceModeLabel });
 
     if (serviceCtaLabel) {
       detailRows.push({ label: "CTA", value: serviceCtaLabel });
@@ -223,14 +236,16 @@ export default function ProfileDetailSheet({
   }
 
   const serviceModeRows: { label: string; value: string }[] = [];
-  if (serviceMode === "bookable" && serviceDurationLabel) {
-    serviceModeRows.push({ label: "Duration", value: serviceDurationLabel });
-  }
   if (serviceMode !== "bookable" && serviceTurnaround) {
     serviceModeRows.push({ label: "Turnaround", value: serviceTurnaround });
   }
 
   const detailTypeLabel = isProduct ? "product" : "service";
+  const summaryMeta = isProduct
+    ? [priceLabel, item.data.status === "published" ? "Live" : "Draft"]
+    : [priceLabel, serviceDurationLabel, serviceAvailabilityLabel].filter(
+        (value): value is string => Boolean(value),
+      );
 
   const servicePrimaryActionLabel =
     serviceMode === "bookable"
@@ -274,193 +289,167 @@ export default function ProfileDetailSheet({
       : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center px-3 pb-3 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto px-3 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:p-6">
       <div className="absolute inset-0 bg-black/[0.78] backdrop-blur-[2px]" onClick={onClose} />
       <section
         role="dialog"
         aria-modal="true"
         aria-label={`${title} ${detailTypeLabel} details`}
-        className="relative z-10 mx-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[22px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.97)_56%,rgba(33,34,40,0.9)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:rounded-[24px]"
+        className={`relative z-10 mx-auto flex max-h-[calc(100dvh_-_5.75rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] ${DETAIL_SHEET_WIDTH_CLASS} flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.97)_56%,rgba(33,34,40,0.9)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:max-h-[calc(100dvh_-_3rem)] sm:rounded-[24px]`}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="absolute left-1/2 top-2 z-20 -translate-x-1/2">
-          <span className="block h-0.5 w-9 rounded-full bg-white/[0.24]" />
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-5 pb-3 [-webkit-overflow-scrolling:touch] sm:px-3.5">
-          <div className="space-y-2.5">
-            <div className="mx-auto w-full max-w-[304px] rounded-[18px] bg-black/20 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:max-w-[320px]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-0 pb-2 pt-2 [-webkit-overflow-scrolling:touch]">
+          <div className="space-y-2">
+            <div
+              className={`mx-auto ${DETAIL_SHEET_WIDTH_CLASS} rounded-[18px] bg-black/20 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]`}
+            >
               <div className="relative aspect-[23/18]">
                 <DetailMedia image={image} title={title} />
               </div>
             </div>
 
-            <div className="space-y-0.5 px-0.5">
-              <p className="text-lg font-semibold leading-tight text-white sm:text-xl">
-                {title}
-              </p>
-              <p className="text-sm font-semibold text-amber-300 sm:text-base">{priceLabel}</p>
-              {description ? (
-                <p className="text-xs leading-5 text-white/[0.68]">{description}</p>
-              ) : null}
-            </div>
-
-            {isProduct ? (
-              <>
-                {showFulfillmentBlock ? (
-                  <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <div className="flex items-start justify-between gap-2.5">
-                      <div>
-                        <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
-                          Fulfillment
-                        </p>
-                        <p className="text-xs font-semibold text-white/90">
-                          {productKindLabel ?? "Physical fulfillment"}
-                        </p>
-                      </div>
-                      {productKindLabel ? (
-                        <span className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/60">
-                          {productKindLabel}
+            <div className={`mx-auto ${DETAIL_SHEET_WIDTH_CLASS} px-2`}>
+              <div className="space-y-2.5">
+                <div className="space-y-1.5">
+                  <p className="text-[1.02rem] font-semibold leading-tight text-white sm:text-[1.08rem]">
+                    {title}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium text-white/[0.58]">
+                    {summaryMeta.map((value, index) => (
+                      <span key={`${value}-${index}`} className="flex items-center gap-2">
+                        {index > 0 ? (
+                          <span className="h-1 w-1 rounded-full bg-white/[0.22]" />
+                        ) : null}
+                        <span className={index === 0 ? "text-amber-300" : undefined}>
+                          {value}
                         </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-2.5 space-y-2">
-                      {productFulfillmentRows.map((row) => (
-                        <SheetRow key={row.label} label={row.label} value={row.value} />
-                      ))}
-                    </div>
-                    {allowsMultipleUnits ? (
-                      <p className="mt-2.5 text-[9px] leading-4 uppercase tracking-[0.18em] text-amber-200/75">
-                        Multiple units supported - quantity picker arriving with the cart
-                        experience.
+                      </span>
+                    ))}
+                  </div>
+                  {description ? (
+                    <p className="pt-0.5 text-[12px] leading-[1.55] text-white/[0.68]">
+                      {description}
+                    </p>
+                  ) : null}
+                </div>
+
+                {isProduct ? (
+                  <>
+                    {detailRows.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {detailRows.map((row) => (
+                          <DetailChip
+                            key={`${row.label}-${row.value}`}
+                            label={row.label}
+                            value={row.value}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {isDigitalProduct ? (
+                      <DetailNote
+                        label="Delivery"
+                        value="Instant deliverables are sent straight to your inbox once checkout is complete."
+                      />
+                    ) : null}
+
+                    {showFulfillmentBlock && allowsMultipleUnits ? (
+                      <p className="text-[11px] leading-4 text-amber-200/70">
+                        Multiple units supported. Quantity controls arrive with cart.
                       </p>
                     ) : null}
-                  </div>
-                ) : null}
-
-                {isDigitalProduct ? (
-                  <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <div className="flex items-start justify-between gap-2.5">
-                      <div>
-                        <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
-                          Delivery
-                        </p>
-                        <p className="text-xs font-semibold text-white/90">Digital product</p>
+                  </>
+                ) : (
+                  <>
+                    {detailRows.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {detailRows.map((row) => (
+                          <DetailChip
+                            key={`${row.label}-${row.value}`}
+                            label={row.label}
+                            value={row.value}
+                          />
+                        ))}
                       </div>
-                      <span className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/60">
-                        {productKindLabel ?? "Digital"}
-                      </span>
+                    ) : null}
+                    <p className="text-[12px] leading-[1.5] text-white/[0.68]">
+                      {SERVICE_MODE_NOTES[serviceMode]}
+                    </p>
+                    {serviceModeRows.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {serviceModeRows.map((row) => (
+                          <DetailChip
+                            key={`${row.label}-${row.value}`}
+                            label={row.label}
+                            value={row.value}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="space-y-2">
+                      {serviceMode === "flat_rate" && serviceDeliverables ? (
+                        <DetailNote label="Deliverables" value={serviceDeliverables} />
+                      ) : null}
+                      {serviceMode === "custom_quote" && serviceRequirements ? (
+                        <DetailNote label="Requirements" value={serviceRequirements} />
+                      ) : null}
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-white/[0.68]">
-                      Instant deliverables are sent straight to your inbox once checkout is
-                      complete.
-                    </p>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex items-start justify-between gap-2.5">
-                  <div>
-                    <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
-                      Service mode
-                    </p>
-                    <p className="text-xs font-semibold text-white/90">{serviceModeLabel}</p>
-                  </div>
-                  <span className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/60">
-                    {serviceModeLabel}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-white/[0.68]">
-                  {SERVICE_MODE_NOTES[serviceMode]}
-                </p>
-                {serviceModeRows.length > 0 ? (
-                  <div className="mt-2.5 flex flex-col gap-2">
-                    {serviceModeRows.map((row) => (
-                      <SheetRow key={row.label} label={row.label} value={row.value} />
+                  </>
+                )}
+
+                {!isProduct && serviceTags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {serviceTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-white/[0.05] px-1.5 py-0.5 text-[9px] text-white/[0.52]"
+                      >
+                        {tag}
+                      </span>
                     ))}
                   </div>
                 ) : null}
-                {serviceMode === "flat_rate" && serviceDeliverables ? (
-                  <div className="mt-2.5 space-y-0.5">
-                    <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
-                      Deliverables
-                    </p>
-                    <p className="text-xs leading-5 text-white/[0.68] whitespace-pre-line">
-                      {serviceDeliverables}
-                    </p>
-                  </div>
-                ) : null}
-                {serviceMode === "custom_quote" && serviceRequirements ? (
-                  <div className="mt-2.5 space-y-0.5">
-                    <p className="text-[9px] uppercase tracking-[0.22em] text-white/50">
-                      Requirements
-                    </p>
-                    <p className="text-xs leading-5 text-white/[0.68] whitespace-pre-line">
-                      {serviceRequirements}
-                    </p>
-                  </div>
-                ) : null}
               </div>
-            )}
-
-            {detailRows.length > 0 ? (
-              <div className="rounded-[14px] border border-white/10 bg-black/[0.18] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex flex-col gap-2">
-                  {detailRows.map((row) => (
-                    <SheetRow key={row.label} label={row.label} value={row.value} />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {!isProduct && serviceTags.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {serviceTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-white/[0.15] px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-white/[0.65]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            ) : null}
+            </div>
           </div>
         </div>
 
-        <div className="flex-shrink-0 border-t border-white/[0.07] bg-black/[0.18] px-3 py-3 sm:px-3.5">
-          <div className="space-y-2">
+        <div className="flex-shrink-0 bg-black/[0.1] px-0 pb-[calc(0.55rem+env(safe-area-inset-bottom,0px))] pt-2 sm:pb-2.5">
+          <div className={`mx-auto ${DETAIL_SHEET_WIDTH_CLASS} space-y-1.5 px-2`}>
             <div className="grid gap-2 sm:grid-cols-2">
-              <Button size="sm" className="w-full text-xs" onClick={handlePrimaryClick}>
+              <Button
+                size="sm"
+                className={DETAIL_SHEET_CTA_CLASS}
+                onClick={handlePrimaryClick}
+              >
                 {primaryActionLabel}
               </Button>
               <Button
                 size="sm"
-                variant="outline"
-                className="w-full text-xs text-white"
+                className={DETAIL_SHEET_CTA_CLASS}
                 onClick={handleSecondaryClick}
               >
                 {secondaryActionLabel}
               </Button>
             </div>
             {cartCount && cartCount > 0 ? (
-              <p className="text-center text-[9px] uppercase tracking-[0.24em] text-white/40">
+              <p className="text-center text-[10px] text-white/[0.42]">
                 {cartCount} item{cartCount === 1 ? "" : "s"} in cart
               </p>
             ) : null}
             {ctaFeedback ? (
               <p
-                className={`text-center text-xs ${
+                className={`text-center text-[11px] ${
                   isOwnerFeedback
-                    ? "rounded-lg border border-amber-200/40 bg-amber-200/10 px-2.5 py-1.5 font-semibold text-amber-100"
-                    : "font-semibold text-white/90"
+                    ? "rounded-md bg-amber-200/10 px-2 py-1 font-medium text-amber-100"
+                    : "font-medium text-white/[0.82]"
                 }`}
               >
                 {ctaFeedback}
               </p>
             ) : (
-              <p className="text-center text-[9px] uppercase tracking-[0.24em] text-white/40">
+              <p className="text-center text-[10px] text-white/[0.38]">
                 Commerce experience coming soon
               </p>
             )}

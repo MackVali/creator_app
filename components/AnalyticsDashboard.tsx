@@ -251,7 +251,6 @@ const ANALYTICS_TABS: Array<{ id: AnalyticsView; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "execution", label: "Execution" },
   { id: "habits", label: "Habits" },
-  { id: "system-health", label: "System Health" },
 ];
 
 const ANALYTICS_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
@@ -526,15 +525,6 @@ export default function AnalyticsDashboard({
           )}
         </SectionCard>
       </div>
-    );
-  } else if (activeView === "system-health") {
-    activeContent = (
-      <SectionCard
-        title="System health"
-        description="This section is being rebuilt from trustworthy analytics data."
-      >
-        <DataNotice copy="System health analytics are being rebuilt from trustworthy analytics data." />
-      </SectionCard>
     );
   }
 
@@ -2228,6 +2218,7 @@ function OverviewLineChart({
   points: AnalyticsOverviewDailyPoint[];
   range: AnalyticsRange;
 }) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<{
     index: number;
     left: number;
@@ -2347,6 +2338,31 @@ function OverviewLineChart({
     setTooltip((current) => ({ ...current, visible: false }));
   };
 
+  useEffect(() => {
+    if (!tooltip.visible) {
+      return;
+    }
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const chart = chartRef.current;
+      const target = event.target;
+
+      if (!chart || !(target instanceof Node) || chart.contains(target)) {
+        return;
+      }
+
+      setTooltip((current) =>
+        current.visible ? { ...current, visible: false } : current
+      );
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [tooltip.visible]);
+
   return (
     <div className="px-3 py-3.5 sm:px-4 sm:py-4">
       <div className="flex items-center justify-between gap-3">
@@ -2366,7 +2382,7 @@ function OverviewLineChart({
       </div>
 
       <div className="mt-4 space-y-3">
-        <div className="relative" data-overview-line-chart>
+        <div ref={chartRef} className="relative" data-overview-line-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             preserveAspectRatio="none"
@@ -3192,14 +3208,6 @@ function SectionCard({
   );
 }
 
-function DataNotice({ copy }: { copy: string }) {
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-500 sm:px-3 sm:py-2 sm:text-xs">
-      {copy}
-    </div>
-  );
-}
-
 function EmptyCopy({ copy }: { copy: string }) {
   return (
     <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/60 px-3 py-4 text-center text-xs text-zinc-500 sm:px-4 sm:py-5 sm:text-sm">
@@ -3220,8 +3228,7 @@ function AnalyticsPaywallState({ onUpgrade }: { onUpgrade: () => void }) {
         </h3>
         <p className="mt-2 text-sm leading-6 text-zinc-300 sm:text-base">
           Analytics are part of CREATOR Pro. Upgrade to see your execution
-          trends, schedule performance, skill progress, and system health in one
-          place.
+          trends, schedule performance, and skill progress in one place.
         </p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button

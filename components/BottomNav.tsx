@@ -6,7 +6,10 @@ import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import BottomBarNav from "./BottomBarNav";
 import { LazyFab } from "@/components/ui/LazyFab";
-import { shouldHideBottomChrome } from "@/components/appChromeVisibility";
+import {
+  isCircleDetailRoute,
+  shouldHideBottomChrome,
+} from "@/components/appChromeVisibility";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import {
   MAIN_TAB_ROUTES,
@@ -52,6 +55,8 @@ export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const shouldHideNav = shouldHideBottomChrome(pathname);
+  const isCircleDetail = isCircleDetailRoute(pathname);
+  const currentBottomNavPath = isCircleDetail ? "/dashboard" : pathname;
 
   useEffect(() => {
     bottomNavPrefetchHrefs.forEach((href) => {
@@ -85,9 +90,10 @@ export default function BottomNav() {
           <div data-bottom-nav-bar>
             <BottomBarNav
               items={bottomNavItems}
-              currentPath={pathname}
+              currentPath={currentBottomNavPath}
               shouldHandleActiveClick={(href) =>
-                href === "/dashboard" && isMonumentDetailOverlayOpen()
+                href === "/dashboard" &&
+                (isCircleDetail || isMonumentDetailOverlayOpen())
               }
               onNavigate={(href) => {
                 const targetHref = href as MainTabRouteHref;
