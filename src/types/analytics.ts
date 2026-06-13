@@ -3,8 +3,7 @@ export type AnalyticsRange = "1d" | "7d" | "30d" | "90d";
 export type AnalyticsView =
   | "overview"
   | "execution"
-  | "habits"
-  | "system-health";
+  | "habits";
 
 export type AnalyticsKpiId =
   | "skill_xp"
