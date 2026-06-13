@@ -48,11 +48,24 @@ type Circle = {
   id: string;
   owner_user_id: string;
   name: string;
+  icon_emoji: string | null;
   circle_type: CircleType;
   status: string;
   description: string | null;
   created_at: string;
   updated_at: string;
+  viewerRole?: string | null;
+  activeMemberCount?: number;
+  memberPreview?: CircleMemberPreview[];
+};
+
+type CircleMemberPreview = {
+  userId: string;
+  role: string;
+  displayName: string;
+  username: string | null;
+  avatarUrl: string | null;
+  initials: string;
 };
 
 type CircleInvite = {
@@ -81,33 +94,6 @@ type CircleInvite = {
     avatar_url: string | null;
   } | null;
 };
-
-const circleTemplates = [
-  {
-    name: 'Household',
-    type: 'Example: Shared home system',
-    members: '4 members',
-    role: 'Owner',
-    status: 'Template',
-    chips: ['Members', 'Roles', 'Invites'],
-  },
-  {
-    name: 'Studio Team',
-    type: 'Example: Creative operations',
-    members: '6 members',
-    role: 'Manager',
-    status: 'Template',
-    chips: ['Members', 'Roles', 'Trust'],
-  },
-  {
-    name: 'Clients',
-    type: 'Example: Service relationships',
-    members: '3 members',
-    role: 'Operator',
-    status: 'Template',
-    chips: ['People', 'Access', 'Invites'],
-  },
-];
 
 const circleTypeChips: Record<CircleType, string[]> = {
   HOUSEHOLD: ['Members', 'Roles', 'Invites'],
@@ -194,6 +180,7 @@ export default function ConnectTabContent() {
   const [showCreateCircleForm, setShowCreateCircleForm] = useState(false);
   const [newCircleName, setNewCircleName] = useState('');
   const [newCircleType, setNewCircleType] = useState<CircleType>('CUSTOM');
+  const [expandedCircleId, setExpandedCircleId] = useState<string | null>(null);
   const [tabSearchQuery, setTabSearchQuery] = useState('');
   const canCreateCircle = userHasAppManagerAccess(user);
   const followingTabRef = useRef<HTMLButtonElement>(null);
@@ -676,20 +663,6 @@ export default function ConnectTabContent() {
     [circles, normalizedTabSearchQuery]
   );
 
-  const filteredCircleTemplates = useMemo(
-    () =>
-      circleTemplates.filter((circle) =>
-        matchesSearchQuery(normalizedTabSearchQuery, [
-          circle.name,
-          circle.type,
-          circle.role,
-          circle.status,
-          ...circle.chips,
-        ])
-      ),
-    [normalizedTabSearchQuery]
-  );
-
   const tabSearchPlaceholder =
     tab === 'requests'
       ? 'Search requests'
@@ -988,72 +961,57 @@ export default function ConnectTabContent() {
         hidden={tab !== 'circles'}
       >
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.14),transparent_34%),linear-gradient(135deg,rgba(18,18,18,0.96),rgba(0,0,0,0.92))] p-6 shadow-2xl shadow-black/50">
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/50">
+          {canCreateCircle ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateCircleForm((current) => !current);
+                  setCreateCircleError(null);
+                }}
+                className="h-10 rounded-full border border-white/10 bg-white/[0.06] px-4 text-sm font-semibold text-white/75 transition hover:bg-white/10 hover:text-white"
+              >
+                {showCreateCircleForm ? 'Close Form' : 'Create Circle'}
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-black/55 p-4 shadow-xl shadow-black/30">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/45">
                 CREATOR MANAGER
               </p>
-              <h2 className="max-w-2xl text-2xl font-semibold leading-tight text-white sm:text-3xl">
-                Circles turn your connections into shared responsibility
-                systems.
-              </h2>
-              <p className="max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
-                Build households, teams, client groups, or crews. Keep people,
-                roles, invites, and trust in one place.
+              <h3 className="mt-2 text-lg font-semibold leading-tight text-white">
+                Create Circles with Manager access
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Circles are for coordinating people, roles, invites, and
+                command availability. Manager access keeps those tools out of
+                the way until your account is ready to use them.
               </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {[
+                  'Create Circles',
+                  'Manage roles and invites',
+                  'Send command availability offers',
+                  'Use the Command dashboard',
+                ].map((benefit) => (
+                  <div
+                    key={benefit}
+                    className="flex items-center gap-2 text-sm font-medium text-white/75"
+                  >
+                    <Check className="h-4 w-4 shrink-0 text-emerald-300" />
+                    <span>{benefit}</span>
+                  </div>
+                ))}
+              </div>
+              <Link
+                href="/settings/billing"
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-black/90 transition hover:bg-white/90"
+              >
+                Manage access
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
-            {canCreateCircle ? (
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateCircleForm((current) => !current);
-                    setCreateCircleError(null);
-                  }}
-                  className="h-11 rounded-full bg-white px-5 text-sm font-semibold text-black/90 transition hover:bg-white/90"
-                >
-                  {showCreateCircleForm ? 'Close Form' : 'Create Circle'}
-                </button>
-              </div>
-            ) : (
-              <div className="mt-5 max-w-2xl rounded-2xl border border-white/10 bg-stone-950/70 p-4 shadow-xl shadow-black/35 ring-1 ring-white/[0.03]">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/45">
-                  CREATOR MANAGER
-                </p>
-                <h3 className="mt-2 text-lg font-semibold leading-tight text-white">
-                  Create Circles with Manager access
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-white/60">
-                  Circles are for coordinating people, roles, invites, and
-                  command availability. Manager access keeps those tools out of
-                  the way until your account is ready to use them.
-                </p>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {[
-                    'Create Circles',
-                    'Manage roles and invites',
-                    'Send command availability offers',
-                    'Use the Command dashboard',
-                  ].map((benefit) => (
-                    <div
-                      key={benefit}
-                      className="flex items-center gap-2 text-sm font-medium text-white/75"
-                    >
-                      <Check className="h-4 w-4 shrink-0 text-emerald-300" />
-                      <span>{benefit}</span>
-                    </div>
-                  ))}
-                </div>
-                <Link
-                  href="/settings/billing"
-                  className="mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-black/90 transition hover:bg-white/90"
-                >
-                  Manage access
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            )}
-          </div>
+          )}
 
           {canCreateCircle && showCreateCircleForm ? (
             <form
@@ -1178,124 +1136,31 @@ export default function ConnectTabContent() {
           ) : null}
 
           {canCreateCircle && !isLoadingCircles && !circlesError ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              {circles.length > 0
-                ? filteredCircles.map((circle) => (
-                    <article
+            circles.length > 0 ? (
+              filteredCircles.length > 0 ? (
+                <div className="space-y-2">
+                  {filteredCircles.map((circle) => (
+                    <CircleOverviewRow
                       key={circle.id}
-                      className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-xl shadow-black/30"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-base font-semibold text-white">
-                            {circle.name}
-                          </h3>
-                          <p className="mt-1 text-xs font-medium uppercase tracking-[0.18em] text-white/45">
-                            {circle.circle_type}
-                          </p>
-                        </div>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70">
-                          {circle.status}
-                        </span>
-                      </div>
-
-                      <p className="mt-4 min-h-12 text-sm leading-6 text-white/60">
-                        {circle.description?.trim() ||
-                          circleTypeFallbacks[circle.circle_type]}
-                      </p>
-
-                      <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/5">
-                          <p className="text-xs text-white/45">Type</p>
-                          <p className="mt-1 font-semibold text-white">
-                            {circle.circle_type}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/5">
-                          <p className="text-xs text-white/45">Role</p>
-                          <p className="mt-1 font-semibold text-white">
-                            Owner
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {circleTypeChips[circle.circle_type].map((chip) => (
-                          <span
-                            key={chip}
-                            className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-medium text-white/60 ring-1 ring-white/10"
-                          >
-                            {chip}
-                          </span>
-                        ))}
-                      </div>
-
-                      <Link
-                        href={`/friends/circles/${circle.id}`}
-                        className="mt-5 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white"
-                      >
-                        Open Circle
-                      </Link>
-                    </article>
-                  ))
-                : filteredCircleTemplates.map((circle) => (
-                    <article
-                      key={circle.name}
-                      className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-xl shadow-black/30"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-base font-semibold text-white">
-                            {circle.name}
-                          </h3>
-                          <p className="mt-1 text-xs font-medium uppercase tracking-[0.18em] text-white/45">
-                            {circle.type}
-                          </p>
-                        </div>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70">
-                          {circle.status}
-                        </span>
-                      </div>
-
-                      <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/5">
-                          <p className="text-xs text-white/45">Members</p>
-                          <p className="mt-1 font-semibold text-white">
-                            {circle.members}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/5">
-                          <p className="text-xs text-white/45">Role</p>
-                          <p className="mt-1 font-semibold text-white">
-                            {circle.role}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {circle.chips.map((chip) => (
-                          <span
-                            key={chip}
-                            className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-medium text-white/60 ring-1 ring-white/10"
-                          >
-                            {chip}
-                          </span>
-                        ))}
-                      </div>
-                    </article>
+                      circle={circle}
+                      isExpanded={expandedCircleId === circle.id}
+                      onToggle={() =>
+                        setExpandedCircleId((current) =>
+                          current === circle.id ? null : circle.id
+                        )
+                      }
+                    />
                   ))}
-            </div>
+                </div>
+              ) : (
+                <p className="px-1 text-sm text-white/50">No matches.</p>
+              )
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-black/55 p-5 text-center text-sm text-white/60 shadow-xl shadow-black/30">
+                No circles yet.
+              </div>
+            )
           ) : null}
-
-          <div className="rounded-2xl border border-white/10 bg-black/45 p-4 shadow-lg shadow-black/30">
-            <h3 className="text-sm font-semibold text-white">
-              Connect is the trust layer
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-white/60">
-              Circles define who is connected, which roles they hold, and who
-              can be invited into the relationship system.
-            </p>
-          </div>
           {tab === 'circles' && hasTabSearchQuery ? (
             <SearchFriends
               data={sortedFriends}
@@ -1318,6 +1183,169 @@ type ProfileOverviewProps = {
   email: string;
   initials: string;
 };
+
+type CircleOverviewRowProps = {
+  circle: Circle;
+  isExpanded: boolean;
+  onToggle: () => void;
+};
+
+function CircleOverviewRow({
+  circle,
+  isExpanded,
+  onToggle,
+}: CircleOverviewRowProps) {
+  const icon = circle.icon_emoji?.trim() || circle.name.charAt(0).toUpperCase();
+  const memberPreview = circle.memberPreview ?? [];
+  const activeMemberCount = circle.activeMemberCount ?? memberPreview.length;
+  const roleLabel = circle.viewerRole === 'OWNER' ? 'Owner' : circle.viewerRole;
+
+  return (
+    <article className="overflow-hidden rounded-2xl border border-white/10 bg-black/55 shadow-xl shadow-black/30">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isExpanded}
+        className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-base font-semibold text-white shadow-inner shadow-black/25">
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold leading-5 text-white">
+            {circle.name}
+          </span>
+          <CircleMemberAvatars
+            members={memberPreview}
+            totalCount={activeMemberCount}
+          />
+        </span>
+        <ChevronDown
+          className={`mt-1 h-4 w-4 shrink-0 text-white/45 transition ${
+            isExpanded ? 'rotate-180 text-white/70' : ''
+          }`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {isExpanded ? (
+        <div className="border-t border-white/10 px-4 py-4">
+          <p className="text-sm leading-6 text-white/62">
+            {circle.description?.trim() ||
+              circleTypeFallbacks[circle.circle_type]}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <CircleMetaPill label={circle.circle_type} />
+            <CircleMetaPill label={circle.status} />
+            {roleLabel ? <CircleMetaPill label={roleLabel} /> : null}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {circleTypeChips[circle.circle_type].map((chip) => (
+              <CircleMetaPill key={chip} label={chip} muted />
+            ))}
+          </div>
+          <Link
+            href={`/friends/circles/${circle.id}`}
+            className="mt-4 inline-flex h-9 items-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-white/72 transition hover:bg-white/10 hover:text-white"
+          >
+            Open Circle
+          </Link>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function CircleMetaPill({
+  label,
+  muted = false,
+}: {
+  label: string;
+  muted?: boolean;
+}) {
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+        muted
+          ? 'bg-white/[0.045] text-white/52 ring-1 ring-white/10'
+          : 'border border-white/10 bg-white/[0.06] text-white/68'
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function CircleMemberAvatars({
+  members,
+  totalCount,
+}: {
+  members: CircleMemberPreview[];
+  totalCount: number;
+}) {
+  const visibleMembers = members.slice(0, 3);
+  const hiddenCount = Math.max(totalCount - visibleMembers.length, 0);
+
+  if (totalCount === 0) {
+    return (
+      <span className="mt-2 block text-xs font-medium text-white/40">
+        No active members
+      </span>
+    );
+  }
+
+  return (
+    <span className="mt-2 flex items-center">
+      {visibleMembers.map((member, index) => (
+        <CircleMemberAvatar
+          key={member.userId}
+          member={member}
+          index={index}
+        />
+      ))}
+      {hiddenCount > 0 ? (
+        <span
+          className="-ml-2 flex h-7 min-w-7 items-center justify-center rounded-full border border-black bg-white px-1.5 text-[10px] font-bold text-black shadow-sm"
+          aria-label={`${hiddenCount} more members`}
+        >
+          +{hiddenCount}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function CircleMemberAvatar({
+  member,
+  index,
+}: {
+  member: CircleMemberPreview;
+  index: number;
+}) {
+  const marginClass = index === 0 ? '' : '-ml-2';
+
+  if (member.avatarUrl) {
+    return (
+      <Image
+        src={member.avatarUrl}
+        alt={member.displayName}
+        width={28}
+        height={28}
+        unoptimized
+        className={`${marginClass} h-7 w-7 rounded-full border border-black object-cover shadow-sm`}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`${marginClass} flex h-7 w-7 items-center justify-center rounded-full border border-black bg-white/[0.12] text-[10px] font-bold text-white shadow-sm`}
+      aria-label={member.displayName}
+    >
+      {member.initials || member.displayName.charAt(0).toUpperCase()}
+    </span>
+  );
+}
 
 function ProfileOverview({
   profile,

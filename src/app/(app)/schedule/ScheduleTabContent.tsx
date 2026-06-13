@@ -7888,16 +7888,6 @@ export default function ScheduleTabContent({
                 "0 12px 28px rgba(0, 0, 0, 0.48)",
                 "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
               ].join(", ");
-              const memoShadow = [
-                "0 22px 44px rgba(76, 29, 149, 0.42)",
-                "0 10px 24px rgba(59, 7, 100, 0.36)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.14)",
-              ].join(", ");
-              const memoCompletedShadow = [
-                "0 24px 48px rgba(124, 58, 237, 0.42)",
-                "0 12px 28px rgba(88, 28, 135, 0.34)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
-              ].join(", ");
               const completedShadow = [
                 "0 22px 38px rgba(0, 0, 0, 0.34)",
                 "0 9px 18px rgba(3, 83, 45, 0.22)",
@@ -7925,17 +7915,11 @@ export default function ScheduleTabContent({
                 habitTypeClass = "habit-card--type-sync";
               }
 
-              if (normalizedHabitType === "MEMO") {
-                if (isHabitCompleted) {
-                  cardShadow = memoCompletedShadow;
-                  cardOutline = "1px solid rgba(216, 180, 254, 0.55)";
-                  habitBorderClass = "border-purple-200/65";
-                } else {
-                  cardShadow = memoShadow;
-                  cardOutline = "1px solid rgba(147, 51, 234, 0.5)";
-                  habitBorderClass = "border-purple-300/55";
-                }
-              } else if (normalizedHabitType === "SYNC" && isHabitCompleted) {
+              if (
+                (normalizedHabitType === "SYNC" ||
+                  normalizedHabitType === "MEMO") &&
+                isHabitCompleted
+              ) {
                 cardShadow = syncCompletedShadow;
                 cardOutline = "1px solid rgba(10, 60, 44, 0.52)";
                 habitBorderClass = "border-emerald-300/25";
@@ -7959,7 +7943,10 @@ export default function ScheduleTabContent({
                 cardShadow = practiceShadow;
                 cardOutline = "1px solid rgba(8, 8, 12, 0.92)";
                 habitBorderClass = "border-slate-500/50";
-              } else if (normalizedHabitType === "SYNC") {
+              } else if (
+                normalizedHabitType === "SYNC" ||
+                normalizedHabitType === "MEMO"
+              ) {
                 cardShadow = syncShadow;
                 cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
                 habitBorderClass = "border-amber-200/45";
@@ -9583,7 +9570,7 @@ export default function ScheduleTabContent({
                   let habitTypeClass = "habit-card--type-default";
                   if (normalizedHabitType === "MEMO") {
                     habitTypeClass = "habit-card--type-memo";
-                    habitBorderClass = "border-purple-300/55";
+                    habitBorderClass = "border-amber-200/45";
                   } else if (normalizedHabitType === "CHORE") {
                     habitTypeClass = "habit-card--type-chore";
                     habitBorderClass = "border-rose-200/45";

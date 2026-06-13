@@ -215,12 +215,43 @@ export async function GET(request: NextRequest) {
           ? message.recipient_id
           : message.sender_id;
 
-      if (otherUserId && otherUserId !== user.id && !latestMessagesByUserId.has(otherUserId)) {
+      if (
+        otherUserId &&
+        otherUserId !== user.id &&
+        !latestMessagesByUserId.has(otherUserId)
+      ) {
         latestMessagesByUserId.set(otherUserId, message);
       }
     });
 
-    const participantIds = Array.from(latestMessagesByUserId.keys());
+    const { data: outgoingRows, error: outgoingError } = await supabase
+      .from("friend_connections")
+      .select(
+        "friend_user_id, friend_username, friend_display_name, friend_avatar_url"
+      )
+      .eq("user_id", user.id);
+
+    if (outgoingError) {
+      console.error("Failed to load inbox friend connections", outgoingError);
+      return NextResponse.json(
+        { error: "Failed to load inbox" },
+        { status: 500 }
+      );
+    }
+
+    const outgoingConnections = (outgoingRows ?? []) as FriendConnectionRow[];
+    const friendParticipantIds = outgoingConnections
+      .map((connection) => connection.friend_user_id)
+      .filter(
+        (id): id is string =>
+          typeof id === "string" &&
+          id.trim().length > 0 &&
+          id !== user.id &&
+          id !== "null"
+      );
+    const participantIds = Array.from(
+      new Set([...latestMessagesByUserId.keys(), ...friendParticipantIds])
+    );
 
     if (participantIds.length === 0) {
       return NextResponse.json({ threads: [], currentUserId: user.id });
@@ -239,23 +270,6 @@ export async function GET(request: NextRequest) {
     const profilesByUserId = new Map(
       profiles.map((profile) => [profile.user_id, profile])
     );
-
-    const { data: outgoingRows, error: outgoingError } = await supabase
-      .from("friend_connections")
-      .select(
-        "friend_user_id, friend_username, friend_display_name, friend_avatar_url"
-      )
-      .eq("user_id", user.id);
-
-    if (outgoingError) {
-      console.error("Failed to load inbox friend connections", outgoingError);
-      return NextResponse.json(
-        { error: "Failed to load inbox" },
-        { status: 500 }
-      );
-    }
-
-    const outgoingConnections = (outgoingRows ?? []) as FriendConnectionRow[];
     const outgoingConnectionsByUserId = new Map(
       outgoingConnections
         .filter((connection) => typeof connection.friend_user_id === "string")
@@ -276,10 +290,6 @@ export async function GET(request: NextRequest) {
           username ||
           fallbackLabel;
 
-        if (!latestMessage) {
-          return null;
-        }
-
         return {
           participant: {
             userId: participantId,
@@ -288,21 +298,29 @@ export async function GET(request: NextRequest) {
             avatarUrl:
               profile?.avatar_url ?? connection?.friend_avatar_url ?? null,
           },
-          latestMessage: {
-            id: latestMessage.id,
-            body: latestMessage.body,
-            senderId: latestMessage.sender_id,
-            recipientId: latestMessage.recipient_id,
-            createdAt: latestMessage.created_at,
-            readAt: latestMessage.read_at,
-          },
-          hasMessages: true,
+          latestMessage: latestMessage
+            ? {
+                id: latestMessage.id,
+                body: latestMessage.body,
+                senderId: latestMessage.sender_id,
+                recipientId: latestMessage.recipient_id,
+                createdAt: latestMessage.created_at,
+                readAt: latestMessage.read_at,
+              }
+            : null,
+          hasMessages: Boolean(latestMessage),
+          previewLabel: latestMessage ? undefined : "Start a conversation",
         };
       })
-      .filter((thread): thread is InboxThread => Boolean(thread))
       .sort((a, b) => {
-        return (b.latestMessage?.createdAt ?? "").localeCompare(
-          a.latestMessage?.createdAt ?? ""
+        if (a.latestMessage || b.latestMessage) {
+          return (b.latestMessage?.createdAt ?? "").localeCompare(
+            a.latestMessage?.createdAt ?? ""
+          );
+        }
+
+        return a.participant.displayName.localeCompare(
+          b.participant.displayName
         );
       });
 

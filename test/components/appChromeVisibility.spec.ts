@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isIndividualInboxThreadRoute,
   isIndividualNoteRoute,
   shouldHideBottomChrome,
   shouldUseFocusedEditorSpacing,
@@ -24,5 +25,18 @@ describe("appChromeVisibility", () => {
       expect(isIndividualNoteRoute(pathname)).toBe(false);
       expect(shouldUseFocusedEditorSpacing(pathname)).toBe(false);
     }
+  });
+
+  it("treats individual inbox threads as focused full-screen routes", () => {
+    for (const pathname of ["/inbox/user-1", "/inbox/user-1/"]) {
+      expect(isIndividualInboxThreadRoute(pathname)).toBe(true);
+      expect(shouldHideBottomChrome(pathname)).toBe(true);
+      expect(shouldUseFocusedEditorSpacing(pathname)).toBe(true);
+    }
+  });
+
+  it("keeps the inbox list in the normal app chrome flow", () => {
+    expect(isIndividualInboxThreadRoute("/inbox")).toBe(false);
+    expect(shouldUseFocusedEditorSpacing("/inbox")).toBe(false);
   });
 });

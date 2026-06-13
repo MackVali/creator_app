@@ -17,6 +17,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
+import Image from "next/image"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   ExternalLink,
@@ -4326,6 +4327,84 @@ const sourceListingFormControlClassName =
 const sourceListingSelectTriggerClassName =
   "text-zinc-300"
 
+type SourceListingCoverImageFieldProps = {
+  title: string
+  coverImagePreview: string | null
+  imageInputRef: RefObject<HTMLInputElement>
+  onImageChange(event: ChangeEvent<HTMLInputElement>): void
+  onImageRemove(): void
+  imageUploadError: string | null
+  isImageUploading: boolean
+}
+
+function SourceListingCoverImageField({
+  title,
+  coverImagePreview,
+  imageInputRef,
+  onImageChange,
+  onImageRemove,
+  imageUploadError,
+  isImageUploading,
+}: SourceListingCoverImageFieldProps) {
+  return (
+    <div className="space-y-2">
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={onImageChange}
+      />
+      <div className="mx-auto w-full max-w-[14rem]">
+        <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-950 shadow-sm">
+          {coverImagePreview ? (
+            <Image
+              src={coverImagePreview}
+              alt={`${title} cover`}
+              fill
+              sizes="14rem"
+              unoptimized
+              className="h-full w-full object-cover object-center"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-zinc-950 px-4 text-center text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+              No image selected
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => imageInputRef.current?.click()}
+          disabled={isImageUploading}
+        >
+          {coverImagePreview ? "Replace cover image" : "Upload cover image"}
+        </Button>
+        {coverImagePreview && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onImageRemove}
+            disabled={isImageUploading}
+          >
+            Remove image
+          </Button>
+        )}
+        {isImageUploading && (
+          <span className="text-xs text-zinc-400">Uploading image…</span>
+        )}
+      </div>
+      {imageUploadError && (
+        <p className="text-center text-xs text-red-400">{imageUploadError}</p>
+      )}
+    </div>
+  )
+}
+
 type SourceProductSheetProps = {
   mode: SheetMode
   listing: SourceListing | null
@@ -4431,58 +4510,15 @@ function SourceProductSheet({
             )}
           </div>
           <div className={sourceListingSheetBodyClassName}>
-            <div className="space-y-2">
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={onImageChange}
-              />
-              <div className="space-y-2">
-                <div className="relative h-36 w-full overflow-hidden rounded-xl border border-zinc-900/70 bg-zinc-900/60 sm:h-40">
-                  {coverImagePreview ? (
-                    <img
-                      src={coverImagePreview}
-                      alt={`${title} cover`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-                      No image selected
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => imageInputRef.current?.click()}
-                    disabled={isImageUploading}
-                  >
-                    {coverImagePreview ? "Replace cover image" : "Upload cover image"}
-                  </Button>
-                  {coverImagePreview && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={onImageRemove}
-                      disabled={isImageUploading}
-                    >
-                      Remove image
-                    </Button>
-                  )}
-                  {isImageUploading && (
-                    <span className="text-xs text-zinc-400">Uploading image…</span>
-                  )}
-                </div>
-                {imageUploadError && (
-                  <p className="text-xs text-red-400">{imageUploadError}</p>
-                )}
-              </div>
-            </div>
+            <SourceListingCoverImageField
+              title={title}
+              coverImagePreview={coverImagePreview}
+              imageInputRef={imageInputRef}
+              onImageChange={onImageChange}
+              onImageRemove={onImageRemove}
+              imageUploadError={imageUploadError}
+              isImageUploading={isImageUploading}
+            />
             <div className="space-y-3">
               <FieldStack label="Title" htmlFor="product-detail-title">
                 <Input
@@ -4790,58 +4826,15 @@ function SourceServiceSheet({
             )}
           </div>
           <div className={sourceListingSheetBodyClassName}>
-            <div className="space-y-2">
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={onImageChange}
-              />
-              <div className="space-y-2">
-                <div className="relative h-36 w-full overflow-hidden rounded-xl border border-zinc-900/70 bg-zinc-900/60 sm:h-40">
-                  {coverImagePreview ? (
-                    <img
-                      src={coverImagePreview}
-                      alt={`${title} cover`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-                      No image selected
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => imageInputRef.current?.click()}
-                    disabled={isImageUploading}
-                  >
-                    {coverImagePreview ? "Replace cover image" : "Upload cover image"}
-                  </Button>
-                  {coverImagePreview && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={onImageRemove}
-                      disabled={isImageUploading}
-                    >
-                      Remove image
-                    </Button>
-                  )}
-                  {isImageUploading && (
-                    <span className="text-xs text-zinc-400">Uploading image…</span>
-                  )}
-                </div>
-                {imageUploadError && (
-                  <p className="text-xs text-red-400">{imageUploadError}</p>
-                )}
-              </div>
-            </div>
+            <SourceListingCoverImageField
+              title={title}
+              coverImagePreview={coverImagePreview}
+              imageInputRef={imageInputRef}
+              onImageChange={onImageChange}
+              onImageRemove={onImageRemove}
+              imageUploadError={imageUploadError}
+              isImageUploading={isImageUploading}
+            />
             <div className="space-y-3">
               <FieldStack label="Title" htmlFor="service-detail-title">
                 <Input

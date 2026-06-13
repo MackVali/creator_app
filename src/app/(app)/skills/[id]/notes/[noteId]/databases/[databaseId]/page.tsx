@@ -145,10 +145,10 @@ export default function SkillNoteDatabasePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 pb-[calc(8rem_+_env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] text-white sm:pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
-      <div className="mx-auto w-full max-w-6xl">
+    <main className="min-h-screen bg-[#020202] px-3 pb-[calc(6rem_+_env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] text-white sm:px-5 sm:pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] lg:px-8">
+      <div className="flex min-h-[calc(100vh-7rem)] w-full flex-col">
         {isLoading ? (
-          <section className="rounded-[22px] border border-white/[0.08] bg-[#050505]/92 p-4 text-sm text-white/60 sm:p-5">
+          <section className="w-full rounded-[18px] border border-white/[0.08] bg-[#050505]/92 p-4 text-sm text-white/60 sm:p-5">
             Loading database...
           </section>
         ) : (

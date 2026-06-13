@@ -14,10 +14,11 @@ export default function AppMain({ children }: { children: ReactNode }) {
   const shouldHideBottomNav = shouldHideBottomChrome(pathname);
   const isFocusedEditor = shouldUseFocusedEditorSpacing(pathname);
   const isCompactTop = shouldUseCompactTopSpacing(pathname);
+  const isDashboardRoute = pathname === "/dashboard";
 
   return (
     <main
-      className={`app-bg flex-1 ${
+      className={`app-bg ${isDashboardRoute ? "app-dashboard-bg" : ""} flex-1 ${
         shouldHideBottomNav || isFocusedEditor
           ? "pb-[env(safe-area-inset-bottom)]"
           : "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"

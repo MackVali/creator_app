@@ -190,25 +190,14 @@
 
 .habit-card--type-memo {
   --habit-card-scheduled-bg: radial-gradient(
-      circle at 8% -18%,
-      rgba(126, 34, 206, 0.26),
-      transparent 60%
+      circle at 12% -20%,
+      rgba(226, 232, 240, 0.34),
+      transparent 58%
     ),
     linear-gradient(
-      138deg,
-      rgba(24, 13, 38, 0.98) 0%,
-      rgba(55, 29, 84, 0.95) 48%,
-      rgba(88, 46, 128, 0.72) 100%
-    );
-  --habit-card-completed-bg: radial-gradient(
-      circle at 10% -18%,
-      rgba(216, 180, 254, 0.4),
-      transparent 60%
-    ),
-    linear-gradient(
-      138deg,
-      rgba(76, 29, 149, 0.95) 0%,
-      rgba(124, 58, 237, 0.88) 48%,
-      rgba(192, 132, 252, 0.78) 100%
+      135deg,
+      rgba(82, 82, 91, 0.98) 0%,
+      rgba(113, 113, 122, 0.95) 48%,
+      rgba(161, 161, 170, 0.9) 100%
     );
 }

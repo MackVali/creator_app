@@ -10,10 +10,14 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type PointerEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+} from "framer-motion";
+import { createPortal } from "react-dom";
 import {
   BarChart3,
   BriefcaseBusiness,
@@ -29,7 +33,6 @@ import {
   MoreVertical,
   ShieldCheck,
   Target,
-  Trash2,
   Users,
   X,
   type LucideIcon,
@@ -141,11 +144,34 @@ type CircleDetailView = "goals" | "roadmap";
 type MemberConstraintField = "skill_constraint_ids" | "location_context_ids";
 type OfferMode = "FIXED" | "FLEXIBLE";
 type CircleHabitCardDensity = "large" | "small";
+type MeasuredCircleRect = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
+type CircleAppViewportRect = {
+  top: number;
+  bottom: number;
+  height: number;
+};
+type CircleDetailTransition = {
+  circleId: string;
+  phase: "opening" | "open" | "closing";
+  sourceRect: MeasuredCircleRect;
+  targetRect: MeasuredCircleRect;
+  appViewportRect: CircleAppViewportRect;
+  sourceBorderRadius: number;
+  targetBorderRadius: number;
+  closeRect: MeasuredCircleRect | null;
+};
 
 const CIRCLE_HABIT_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const CIRCLE_HABIT_SMALL_GRID_CLASS =
   "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+const CIRCLE_CARD_BORDER_RADIUS = 16;
+const CIRCLE_DETAIL_BORDER_RADIUS = 24;
 
 type OwnerSkillOption = {
   id: string;
@@ -259,23 +285,93 @@ const offerTypeOptions = [
   { label: "Template", value: "TEMPLATE", disabled: true },
 ] as const;
 
-const PULL_EXIT_THRESHOLD_PX = 56;
-
-function isInteractivePullTarget(target: EventTarget | null) {
-  return (
-    target instanceof HTMLElement &&
-    Boolean(
-      target.closest(
-        "a,button,input,select,textarea,[role='button'],[role='menuitem']",
-      ),
-    )
-  );
-}
-
 type OfferWeekdayValue = (typeof offerWeekdays)[number]["value"];
 
 function formatMemberCount(count: number) {
   return `${count} ${count === 1 ? "member" : "members"}`;
+}
+
+function measureCircleRect(rect: DOMRect): MeasuredCircleRect {
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function getCircleAppViewportRect(): CircleAppViewportRect {
+  const viewportHeight = window.innerHeight || 0;
+  const topNav = document.querySelector<HTMLElement>(".app-top-nav");
+  const bottomNav = document.querySelector<HTMLElement>("[data-bottom-nav]");
+
+  let viewportTop = 0;
+  let viewportBottom = viewportHeight;
+
+  if (topNav) {
+    const topNavRect = topNav.getBoundingClientRect();
+
+    if (topNavRect.bottom > 0 && topNavRect.top < viewportHeight) {
+      viewportTop = Math.max(0, Math.min(topNavRect.bottom, viewportHeight));
+    }
+  }
+
+  if (bottomNav) {
+    const bottomNavRect = bottomNav.getBoundingClientRect();
+
+    if (bottomNavRect.top < viewportHeight && bottomNavRect.bottom > 0) {
+      viewportBottom = Math.max(
+        viewportTop,
+        Math.min(bottomNavRect.top, viewportHeight),
+      );
+    }
+  }
+
+  return {
+    top: viewportTop,
+    bottom: viewportBottom,
+    height: Math.max(0, viewportBottom - viewportTop),
+  };
+}
+
+function getCircleDetailPopupRect(
+  appViewportRect = getCircleAppViewportRect(),
+): MeasuredCircleRect {
+  const viewportWidth = window.innerWidth || 0;
+
+  const horizontalInset =
+    viewportWidth >= 1280
+      ? 64
+      : viewportWidth >= 1024
+        ? 48
+        : viewportWidth >= 640
+          ? 32
+          : 12;
+
+  const maxWidth =
+    viewportWidth >= 1280
+      ? 1160
+      : viewportWidth >= 1024
+        ? 960
+        : viewportWidth >= 640
+          ? 640
+          : 420;
+
+  const availableWidth = Math.max(260, viewportWidth - horizontalInset * 2);
+  const width = Math.min(maxWidth, availableWidth);
+
+  return {
+    top: appViewportRect.top,
+    left: Math.max(horizontalInset, (viewportWidth - width) / 2),
+    width,
+    height: appViewportRect.height,
+  };
+}
+
+function getElementBorderRadius(element: HTMLElement) {
+  const radius = Number.parseFloat(getComputedStyle(element).borderRadius);
+
+  return Number.isFinite(radius) ? radius : CIRCLE_CARD_BORDER_RADIUS;
 }
 
 function normalizeStringArray(value: unknown) {
@@ -859,39 +955,37 @@ function MemberAvatar({
   );
 }
 
-function CircleCard({
-  circle,
-  isSelected,
-  onSelect,
-}: {
-  circle: CommandCircle;
-  isSelected: boolean;
-  onSelect: () => void;
-}) {
+const CircleCard = forwardRef<
+  HTMLButtonElement,
+  {
+    circle: CommandCircle;
+    isHidden: boolean;
+    onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
+  }
+>(function CircleCard({ circle, isHidden, onSelect }, ref) {
   const memberCount = circle.activeMemberCount ?? 0;
   const members = circle.memberPreview ?? [];
   const role = circle.viewerRole?.toUpperCase() ?? null;
   const circleIcon = getCircleIconDisplay(circle.icon_emoji);
 
   return (
-    <motion.button
+    <button
+      ref={ref}
       type="button"
-      layoutId={`command-circle-card-${circle.id}`}
       onClick={onSelect}
       className={cn(
-        "group relative min-h-[156px] overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.13),transparent_32%),linear-gradient(145deg,rgba(25,25,28,0.96),rgba(5,5,6,0.98))] p-4 text-left shadow-[0_24px_70px_rgba(0,0,0,0.42)] transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
-        isSelected && "border-white/30",
+        "group relative min-h-[156px] overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.13),transparent_32%),linear-gradient(145deg,rgba(25,25,28,0.96),rgba(5,5,6,0.98))] p-4 text-left shadow-[0_24px_70px_rgba(0,0,0,0.42)] transition-colors duration-200 hover:border-white/20 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+        isHidden && "pointer-events-none opacity-0",
       )}
     >
       <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <motion.h2
-            layoutId={`command-circle-title-${circle.id}`}
+          <h2
             className="truncate text-lg font-semibold text-white"
           >
             {circle.name}
-          </motion.h2>
+          </h2>
         </div>
         {role && elevatedRoles.has(role) ? (
           <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white/58">
@@ -932,9 +1026,9 @@ function CircleCard({
           )}
         </span>
       </div>
-    </motion.button>
+    </button>
   );
-}
+});
 
 function PlaceholderAction({ children }: { children: ReactNode }) {
   return (
@@ -2232,7 +2326,7 @@ function CircleMemberFloatingDetail({
       role="dialog"
       aria-modal="true"
       aria-labelledby={`circle-member-profile-${member.id}`}
-      className="relative z-10 flex h-[100dvh] max-h-none w-[calc(100%-1.5rem)] max-w-2xl flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#08090c]/95 shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl"
+      className="relative z-10 flex h-full min-h-0 max-h-none w-[calc(100%-1.5rem)] max-w-2xl flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#08090c]/95 shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl"
       initial={{ opacity: 0, y: 22, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.97 }}
@@ -2930,41 +3024,31 @@ function CircleHabitsPanel({
   );
 }
 
-function EditCircleModal({
+function InlineCircleHeaderEditor({
   circle,
-  onClose,
+  onCancel,
   onSaved,
-  onDeleted,
 }: {
   circle: CommandCircle;
-  onClose: () => void;
+  onCancel: () => void;
   onSaved: (circle: CircleUpdate) => void;
-  onDeleted: (circleId: string) => void;
 }) {
   const [name, setName] = useState(circle.name);
   const [iconEmoji, setIconEmoji] = useState(circle.icon_emoji?.trim() ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const canDelete = deleteConfirmation === circle.name;
-  const isBusy = isSaving || isDeleting;
 
   useEffect(() => {
     setName(circle.name);
     setIconEmoji(circle.icon_emoji?.trim() ?? "");
     setIsSaving(false);
     setSaveError(null);
-    setDeleteConfirmation("");
-    setIsDeleting(false);
-    setDeleteError(null);
   }, [circle.id, circle.name, circle.icon_emoji]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (isDeleting) {
+    if (isSaving) {
       return;
     }
 
@@ -2979,7 +3063,6 @@ function EditCircleModal({
     try {
       setIsSaving(true);
       setSaveError(null);
-      setDeleteError(null);
 
       const response = await fetch(
         `/api/circles/${encodeURIComponent(circle.id)}`,
@@ -3010,7 +3093,6 @@ function EditCircleModal({
           icon_emoji: trimmedIconEmoji || null,
         },
       );
-      onClose();
     } catch (error) {
       setSaveError(
         error instanceof Error ? error.message : "Unable to update Circle.",
@@ -3020,196 +3102,63 @@ function EditCircleModal({
     }
   }
 
-  async function handleDelete() {
-    if (!canDelete || isSaving || isDeleting) {
-      return;
-    }
-
-    let didDelete = false;
-
-    try {
-      setIsDeleting(true);
-      setSaveError(null);
-      setDeleteError(null);
-
-      const response = await fetch(
-        `/api/circles/${encodeURIComponent(circle.id)}`,
-        {
-          method: "DELETE",
-        },
-      );
-
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(data?.error ?? "Unable to delete Circle.");
-      }
-
-      didDelete = true;
-      onDeleted(circle.id);
-    } catch (error) {
-      setDeleteError(
-        error instanceof Error ? error.message : "Unable to delete Circle.",
-      );
-    } finally {
-      if (!didDelete) {
-        setIsDeleting(false);
-      }
-    }
-  }
-
   return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" }}
+    <form
+      onSubmit={handleSubmit}
+      className="relative z-10 flex min-w-0 flex-1 flex-col gap-3 sm:pl-10 sm:pr-10 lg:pl-9 lg:pr-9"
     >
-      <button
-        type="button"
-        aria-label="Close Edit Circle"
-        onClick={onClose}
-        disabled={isBusy}
-        className="absolute inset-0 cursor-default bg-black/68 backdrop-blur-[3px]"
-      />
-      <motion.form
-        onSubmit={handleSubmit}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`edit-circle-title-${circle.id}`}
-        className="relative z-10 flex max-h-[calc(100%-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#08090c]/95 text-white shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl sm:max-h-[calc(100%-3rem)]"
-        initial={{ opacity: 0, y: 18, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 14, scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 430, damping: 38, mass: 0.8 }}
-      >
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 bg-white/[0.025] p-5">
-          <div>
-            <h3
-              id={`edit-circle-title-${circle.id}`}
-              className="text-base font-semibold text-white"
-            >
-              Edit Circle
-            </h3>
-          </div>
-          <button
-            type="button"
-            aria-label="Close Edit Circle"
-            onClick={onClose}
-            disabled={isBusy}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/65 backdrop-blur transition hover:border-white/25 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="grid gap-5 overflow-y-auto p-5">
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/52">
-              Circle name
-            </span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/28 focus:border-white/28 focus:bg-black/60"
-              maxLength={80}
-              disabled={isBusy}
-            />
-          </label>
-
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/52">
-              Circle icon
-            </span>
-            <input
-              value={iconEmoji}
-              onChange={(event) => setIconEmoji(event.target.value)}
-              placeholder="House, studio, team, etc."
-              className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/28 focus:border-white/28 focus:bg-black/60"
-              maxLength={24}
-              disabled={isBusy}
-            />
-          </label>
-
+      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+        <input
+          aria-label="Circle icon"
+          value={iconEmoji}
+          onChange={(event) => setIconEmoji(event.target.value)}
+          placeholder={getCircleInitials(circle.name)}
+          className="flex h-12 w-12 shrink-0 rounded-2xl border border-white/12 bg-[#09090b] text-center text-lg font-semibold text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] outline-none transition placeholder:text-white/32 focus:border-white/30 focus:ring-2 focus:ring-white/15 sm:h-14 sm:w-14 sm:text-xl"
+          maxLength={24}
+          disabled={isSaving}
+        />
+        <div className="min-w-0 flex-1 space-y-2">
+          <input
+            aria-label="Circle name"
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="h-10 w-full min-w-0 rounded-xl border border-white/10 bg-white/[0.06] px-3 text-xl font-semibold tracking-tight text-white outline-none transition placeholder:text-white/35 focus:border-white/30 focus:ring-2 focus:ring-white/15 sm:h-12 sm:text-2xl"
+            placeholder="Name your Circle"
+            maxLength={80}
+            disabled={isSaving}
+          />
           {saveError ? (
-            <p className="rounded-2xl border border-rose-300/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-              {saveError}
-            </p>
+            <p className="text-xs font-medium text-red-200">{saveError}</p>
           ) : null}
-
-          <section className="rounded-2xl border border-rose-300/20 bg-[#17090d] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <div>
-              <h4 className="text-sm font-semibold text-rose-100">
-                Danger Zone
-              </h4>
-              <p className="mt-2 text-sm leading-6 text-rose-100/65">
-                This removes the Circle from your dashboard and active Circle
-                views. It does not delete related roadmap, campaign, goal,
-                project, task, or member records.
-              </p>
-            </div>
-            <label className="mt-4 grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-100/55">
-                Type this Circle name to confirm
-              </span>
-              <code className="break-words rounded-xl border border-rose-200/10 bg-black/30 px-3 py-2 text-sm font-semibold text-rose-50/85">
-                {circle.name}
-              </code>
-              <input
-                value={deleteConfirmation}
-                onChange={(event) => {
-                  setDeleteConfirmation(event.target.value);
-                  setDeleteError(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                  }
-                }}
-                className="h-10 rounded-2xl border border-rose-200/15 bg-black/45 px-3 text-sm font-semibold text-rose-50 outline-none transition placeholder:text-rose-100/28 focus:border-rose-200/35 focus:bg-black/60"
-                disabled={isBusy}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-            {deleteError ? (
-              <p className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                {deleteError}
-              </p>
-            ) : null}
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={handleDelete}
-              disabled={!canDelete || isBusy}
-              className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-full border border-rose-200/20 bg-rose-500/[0.14] px-4 text-sm font-semibold text-rose-100 transition hover:border-rose-200/35 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-rose-200/10 disabled:bg-rose-500/[0.08] disabled:text-rose-100/40"
+              onClick={onCancel}
+              disabled={isSaving}
+              aria-label="Cancel circle edit"
+              className="flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/72 shadow-xl transition hover:border-white/22 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
             >
-              <Trash2 className="h-4 w-4" aria-hidden="true" />
-              {isDeleting ? "Deleting..." : "Delete Circle"}
+              <X
+                className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                aria-hidden="true"
+              />
             </button>
-          </section>
+            <button
+              type="submit"
+              disabled={isSaving}
+              aria-label={isSaving ? "Saving circle" : "Save circle"}
+              className="flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-white/18 bg-white/10 text-white shadow-xl transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+            >
+              <Check
+                className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
         </div>
-
-        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-white/10 bg-black/30 p-4 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isBusy}
-            className="h-10 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/72 transition hover:border-white/22 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isBusy}
-            className="h-10 rounded-full border border-white/18 bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/88 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </motion.form>
-    </motion.div>
+      </div>
+    </form>
   );
 }
 
@@ -3217,12 +3166,10 @@ function CircleCommandDetail({
   circle,
   onClose,
   onCircleUpdated,
-  onCircleDeleted,
 }: {
   circle: CommandCircle;
   onClose: () => void;
   onCircleUpdated: (circle: CircleUpdate) => void;
-  onCircleDeleted: (circleId: string) => void;
 }) {
   const members = circle.memberPreview ?? [];
   const memberCount = circle.activeMemberCount ?? 0;
@@ -3242,42 +3189,20 @@ function CircleCommandDetail({
     string | null
   >(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [inlineEditOpen, setInlineEditOpen] = useState(false);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null,
   );
   const detailScrollRef = useRef<HTMLElement | null>(null);
-  const pullStartYRef = useRef<number | null>(null);
-  const pullExitTriggeredRef = useRef(false);
-  const pullPointerIdRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     detailScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [circle.id]);
-
-  useEffect(() => {
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousHtmlOverscroll =
-      document.documentElement.style.overscrollBehavior;
-    const previousBodyOverscroll = document.body.style.overscrollBehavior;
-
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overscrollBehavior = "none";
-    document.body.style.overscrollBehavior = "none";
-
-    return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overscrollBehavior =
-        previousHtmlOverscroll;
-      document.body.style.overscrollBehavior = previousBodyOverscroll;
-    };
-  }, []);
 
   useEffect(() => {
     setCircleView("goals");
     setSelectedMemberId(null);
-    setIsEditOpen(false);
+    setInlineEditOpen(false);
     setFabEditTarget(null);
     setMemberConstraintActionId(null);
   }, [circle.id]);
@@ -3496,66 +3421,6 @@ function CircleCommandDetail({
   const canMakeOffer = elevatedRoles.has(role);
   const canEditWorkProfile = role === "OWNER" || role === "MANAGER";
   const circleIcon = getCircleIconDisplay(circle.icon_emoji);
-  const pullExitBlocked =
-    isEditOpen || Boolean(selectedMember) || Boolean(fabEditTarget);
-
-  const isDetailAtTop = useCallback(
-    () => (detailScrollRef.current?.scrollTop ?? 0) <= 2,
-    [],
-  );
-
-  const resetPullExit = useCallback(() => {
-    pullStartYRef.current = null;
-    pullExitTriggeredRef.current = false;
-    pullPointerIdRef.current = null;
-  }, []);
-
-  const handlePullExitStart = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      if (
-        pullExitBlocked ||
-        (event.pointerType !== "touch" && event.pointerType !== "mouse") ||
-        !isDetailAtTop() ||
-        isInteractivePullTarget(event.target)
-      ) {
-        resetPullExit();
-        return;
-      }
-
-      pullStartYRef.current = event.clientY;
-      pullExitTriggeredRef.current = false;
-      pullPointerIdRef.current = event.pointerId;
-    },
-    [isDetailAtTop, pullExitBlocked, resetPullExit],
-  );
-
-  const handlePullExitMove = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      const pullStartY = pullStartYRef.current;
-
-      if (
-        pullExitBlocked ||
-        pullStartY === null ||
-        pullExitTriggeredRef.current ||
-        pullPointerIdRef.current !== event.pointerId ||
-        !isDetailAtTop()
-      ) {
-        return;
-      }
-
-      const pullDistance = event.clientY - pullStartY;
-
-      if (pullDistance > PULL_EXIT_THRESHOLD_PX) {
-        pullExitTriggeredRef.current = true;
-        pullStartYRef.current = null;
-        pullPointerIdRef.current = null;
-        onClose();
-      }
-    },
-    [isDetailAtTop, onClose, pullExitBlocked],
-  );
-
-  const handlePullExitEnd = resetPullExit;
 
   useEffect(() => {
     if (!selectedMemberId) {
@@ -3576,24 +3441,12 @@ function CircleCommandDetail({
   }, [selectedMemberId]);
 
   return (
-    <motion.div
-      layoutId={`command-circle-card-${circle.id}`}
-      role="dialog"
-      aria-modal="true"
-      className="relative h-[100dvh] max-h-none w-full max-w-[min(100vw,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] overscroll-contain sm:max-w-[min(100vw,640px)] md:rounded-3xl lg:max-w-[min(100vw,960px)] xl:max-w-[min(100vw,1160px)]"
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ type: "spring", stiffness: 480, damping: 42, mass: 0.9 }}
-    >
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
       <main
-        key={circle.id}
         ref={detailScrollRef}
-        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8" style={{ paddingTop: 0 }}
-        onPointerDown={handlePullExitStart}
-        onPointerMove={handlePullExitMove}
-        onPointerUp={handlePullExitEnd}
-        onPointerCancel={handlePullExitEnd}
+        key={circle.id}
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8"
+        style={{ paddingTop: 0 }}
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden pt-0 sm:gap-6">
           <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] px-3 pb-3 pt-1.5 text-white shadow-[0_24px_70px_-42px_rgba(0,0,0,0.82)] sm:px-4 sm:pb-3.5 sm:pt-2 md:rounded-3xl">
@@ -3601,74 +3454,101 @@ function CircleCommandDetail({
               <div className="absolute inset-x-16 -top-20 h-40 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_70%)] blur-3xl" />
               <div className="absolute bottom-0 right-0 h-40 w-40 translate-x-1/4 translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_60%)] blur-3xl" />
             </div>
-            <div className="relative z-10 flex flex-row items-center gap-3 sm:gap-4 sm:pl-10 sm:pr-10 lg:pl-9 lg:pr-9">
-              <span
-                className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/18 bg-gradient-to-b from-[#040404] via-[#08080a] to-black text-lg font-semibold text-white shadow-[0_18px_34px_rgba(0,0,0,0.58)] sm:h-14 sm:w-14 sm:text-xl"
-                aria-label={`Circle: ${circle.name}`}
-              >
+            {inlineEditOpen ? (
+              <InlineCircleHeaderEditor
+                circle={circle}
+                onCancel={() => setInlineEditOpen(false)}
+                onSaved={(updatedCircle) => {
+                  onCircleUpdated(updatedCircle);
+                  setInlineEditOpen(false);
+                }}
+              />
+            ) : (
+              <div className="relative z-10 flex flex-row items-center gap-3 sm:gap-4 sm:pl-10 sm:pr-10 lg:pl-9 lg:pr-9">
                 <span
-                  aria-hidden="true"
-                  className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.55),_rgba(255,255,255,0.05))]"
-                />
-                <span
-                  aria-hidden="true"
-                  className="absolute inset-[2px] rounded-[18px] bg-gradient-to-b from-white/20 via-white/5 to-white/0 opacity-80"
-                />
-                <span
-                  className={cn(
-                    "relative z-10 drop-shadow-[0_6px_12px_rgba(0,0,0,0.5)]",
-                    circleIcon &&
-                      "max-w-10 truncate text-center text-base leading-none sm:max-w-11 sm:text-lg",
-                  )}
+                  className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/18 bg-gradient-to-b from-[#040404] via-[#08080a] to-black text-lg font-semibold text-white shadow-[0_18px_34px_rgba(0,0,0,0.58)] sm:h-14 sm:w-14 sm:text-xl"
+                  aria-label={`Circle: ${circle.name}`}
                 >
-                  {circleIcon ?? getCircleInitials(circle.name)}
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.55),_rgba(255,255,255,0.05))]"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-[2px] rounded-[18px] bg-gradient-to-b from-white/20 via-white/5 to-white/0 opacity-80"
+                  />
+                  <span
+                    className={cn(
+                      "relative z-10 drop-shadow-[0_6px_12px_rgba(0,0,0,0.5)]",
+                      circleIcon &&
+                        "max-w-10 truncate text-center text-base leading-none sm:max-w-11 sm:text-lg",
+                    )}
+                  >
+                    {circleIcon ?? getCircleInitials(circle.name)}
+                  </span>
                 </span>
-              </span>
-              <div className="flex min-w-0 flex-1 items-start gap-3">
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="min-w-0">
-                    <motion.h2
-                      layoutId={`command-circle-title-${circle.id}`}
-                      className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl"
-                    >
-                      {circle.name}
-                    </motion.h2>
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <div className="min-w-0">
+                      <h2
+                        className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl"
+                      >
+                        {circle.name}
+                      </h2>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <AvatarStack
+                        members={members}
+                        fallbackName={circle.name}
+                      />
+                      <span className="truncate text-xs font-semibold text-white/68 sm:text-sm">
+                        {formatMemberCount(memberCount)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <AvatarStack members={members} fallbackName={circle.name} />
-                    <span className="truncate text-xs font-semibold text-white/68 sm:text-sm">
-                      {formatMemberCount(memberCount)}
-                    </span>
+
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      aria-label="Close Circle detail"
+                      onClick={onClose}
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+
+                    {isOwner ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Circle actions"
+                            className="flex h-10 w-10 items-center justify-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 data-[state=open]:bg-white/[0.08] data-[state=open]:text-white"
+                          >
+                            <MoreVertical
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          sideOffset={8}
+                          className="min-w-[160px] rounded-md border border-white/10 bg-[#050507] p-1 text-white shadow-[0_18px_45px_rgba(0,0,0,0.5)]"
+                        >
+                          <DropdownMenuItem
+                            onSelect={() => setInlineEditOpen(true)}
+                            className="cursor-default rounded px-2.5 py-2 text-sm font-medium text-white/80 outline-none transition focus:bg-white/[0.06] focus:text-white data-[highlighted]:bg-white/[0.06] data-[highlighted]:text-white"
+                          >
+                            Edit circle
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
                   </div>
                 </div>
-
-                {isOwner ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label="Circle actions"
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 data-[state=open]:bg-white/[0.08] data-[state=open]:text-white"
-                      >
-                        <MoreVertical className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      sideOffset={8}
-                      className="min-w-[160px] rounded-md border border-white/10 bg-[#050507] p-1 text-white shadow-[0_18px_45px_rgba(0,0,0,0.5)]"
-                    >
-                      <DropdownMenuItem
-                        onSelect={() => setIsEditOpen(true)}
-                        className="cursor-default rounded px-2.5 py-2 text-sm font-medium text-white/80 outline-none transition focus:bg-white/[0.06] focus:text-white data-[highlighted]:bg-white/[0.06] data-[highlighted]:text-white"
-                      >
-                        Edit circle
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
               </div>
-            </div>
+            )}
           </section>
 
           <div className="grid w-full grid-cols-1 gap-5 lg:gap-6 xl:auto-rows-min xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
@@ -3717,23 +3597,9 @@ function CircleCommandDetail({
         portalToBody
       />
       <AnimatePresence>
-        {isEditOpen ? (
-          <EditCircleModal
-            circle={circle}
-            onClose={() => setIsEditOpen(false)}
-            onSaved={onCircleUpdated}
-            onDeleted={(circleId) => {
-              setIsEditOpen(false);
-              onCircleDeleted(circleId);
-              onClose();
-            }}
-          />
-        ) : null}
-      </AnimatePresence>
-      <AnimatePresence>
         {selectedMember ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
+            className="absolute inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -3760,7 +3626,7 @@ function CircleCommandDetail({
           </motion.div>
         ) : null}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
 
@@ -3788,10 +3654,17 @@ export const CommandCirclesSection = forwardRef<
     string | null
   >(null);
   const [activeCircleId, setActiveCircleId] = useState<string | null>(null);
+  const [circleTransition, setCircleTransition] =
+    useState<CircleDetailTransition | null>(null);
+  const circleCardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const previousFocus = useRef<HTMLElement | null>(null);
+  const previousBodyOverflow = useRef<string | null>(null);
+  const previousHtmlOverscroll = useRef<string | null>(null);
+  const previousBodyOverscroll = useRef<string | null>(null);
 
   const activeCircle =
     circles.find((circle) => circle.id === activeCircleId) ?? null;
+  const isCircleDetailMounted = activeCircle !== null;
 
   const loadCircles = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -3882,13 +3755,184 @@ export const CommandCirclesSection = forwardRef<
     [loadCircles, loadIncomingOffers],
   );
 
+  const setCircleCardRef = useCallback(
+    (circleId: string, node: HTMLButtonElement | null) => {
+      if (node) {
+        circleCardRefs.current.set(circleId, node);
+      } else {
+        circleCardRefs.current.delete(circleId);
+      }
+    },
+    [],
+  );
+
+  const getCircleCardRect = useCallback((circleId: string) => {
+    const sourceCard = circleCardRefs.current.get(circleId);
+
+    if (!sourceCard) {
+      return null;
+    }
+
+    const rect = sourceCard.getBoundingClientRect();
+
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    return measureCircleRect(rect);
+  }, []);
+
+  const openCircleDetail = useCallback(
+    (circleId: string, event: MouseEvent<HTMLButtonElement>) => {
+      const sourceElement = event.currentTarget;
+      const sourceRect = measureCircleRect(
+        sourceElement.getBoundingClientRect(),
+      );
+
+      if (sourceRect.width <= 0 || sourceRect.height <= 0) {
+        return;
+      }
+
+      const appViewportRect = getCircleAppViewportRect();
+      const targetRect = getCircleDetailPopupRect(appViewportRect);
+
+      setCircleTransition({
+        circleId,
+        phase: "opening",
+        sourceRect,
+        targetRect,
+        appViewportRect,
+        sourceBorderRadius: getElementBorderRadius(sourceElement),
+        targetBorderRadius:
+          window.innerWidth >= 768
+            ? CIRCLE_DETAIL_BORDER_RADIUS
+            : CIRCLE_CARD_BORDER_RADIUS,
+        closeRect: null,
+      });
+      setActiveCircleId(circleId);
+    },
+    [],
+  );
+
+  const closeCircleDetail = useCallback(() => {
+    if (!activeCircleId) {
+      return;
+    }
+
+    const closeRect = getCircleCardRect(activeCircleId);
+
+    setCircleTransition((currentTransition) => {
+      if (!currentTransition || currentTransition.phase === "closing") {
+        return currentTransition;
+      }
+
+      return {
+        ...currentTransition,
+        phase: "closing",
+        closeRect,
+      };
+    });
+  }, [activeCircleId, getCircleCardRect]);
+
+  const handleCircleShellAnimationComplete = useCallback(() => {
+    if (!circleTransition) {
+      return;
+    }
+
+    if (circleTransition.phase === "opening") {
+      setCircleTransition({
+        ...circleTransition,
+        phase: "open",
+      });
+      return;
+    }
+
+    if (circleTransition.phase === "closing") {
+      setActiveCircleId(null);
+      setCircleTransition(null);
+    }
+  }, [circleTransition]);
+
+  useEffect(() => {
+    if (!isCircleDetailMounted) {
+      return;
+    }
+
+    const updateCircleDetailTargetRect = () => {
+      setCircleTransition((currentTransition) => {
+        if (!currentTransition || currentTransition.phase === "closing") {
+          return currentTransition;
+        }
+
+        const appViewportRect = getCircleAppViewportRect();
+
+        return {
+          ...currentTransition,
+          targetRect: getCircleDetailPopupRect(appViewportRect),
+          appViewportRect,
+          targetBorderRadius:
+            window.innerWidth >= 768
+              ? CIRCLE_DETAIL_BORDER_RADIUS
+              : CIRCLE_CARD_BORDER_RADIUS,
+        };
+      });
+    };
+
+    window.addEventListener("resize", updateCircleDetailTargetRect);
+    window.addEventListener("orientationchange", updateCircleDetailTargetRect);
+
+    return () => {
+      window.removeEventListener("resize", updateCircleDetailTargetRect);
+      window.removeEventListener(
+        "orientationchange",
+        updateCircleDetailTargetRect,
+      );
+    };
+  }, [isCircleDetailMounted]);
+
+  useEffect(() => {
+    if (!isCircleDetailMounted || circleTransition?.phase === "closing") {
+      return;
+    }
+
+    setCircleTransition((currentTransition) => {
+      if (!currentTransition || currentTransition.phase === "closing") {
+        return currentTransition;
+      }
+
+      const appViewportRect = getCircleAppViewportRect();
+
+      return {
+        ...currentTransition,
+        targetRect: getCircleDetailPopupRect(appViewportRect),
+        appViewportRect,
+      };
+    });
+  }, [circleTransition?.phase, isCircleDetailMounted]);
+
+  const circleShellRect =
+    circleTransition?.phase === "closing"
+      ? (circleTransition.closeRect ?? circleTransition.targetRect)
+      : circleTransition?.targetRect;
+  const circleShellIsFallbackClose =
+    circleTransition?.phase === "closing" && !circleTransition.closeRect;
+  const circleShellBorderRadius =
+    circleTransition?.phase === "closing" && circleTransition.closeRect
+      ? circleTransition.sourceBorderRadius
+      : (circleTransition?.targetBorderRadius ?? CIRCLE_DETAIL_BORDER_RADIUS);
+  const circleDetailContentVisible = circleTransition?.phase === "open";
+  const isCircleSourceCardHidden =
+    circleTransition !== null &&
+    circleTransition.circleId === activeCircleId &&
+    circleTransition.phase !== "open";
+
   useImperativeHandle(
     ref,
     () => ({
       refresh: refreshCommandData,
-      isDetailOpen: () => activeCircleId !== null,
+      isDetailOpen: () => isCircleDetailMounted,
     }),
-    [activeCircleId, refreshCommandData],
+    [isCircleDetailMounted, refreshCommandData],
   );
 
   const handleOfferResponse = useCallback(
@@ -3969,7 +4013,7 @@ export const CommandCirclesSection = forwardRef<
   }, [loadIncomingOffers]);
 
   useEffect(() => {
-    const closeActiveDetail = () => setActiveCircleId(null);
+    const closeActiveDetail = () => closeCircleDetail();
 
     window.addEventListener(
       CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT,
@@ -3982,25 +4026,37 @@ export const CommandCirclesSection = forwardRef<
         closeActiveDetail,
       );
     };
-  }, []);
+  }, [closeCircleDetail]);
 
   useEffect(() => {
-    if (!activeCircleId) {
+    if (!isCircleDetailMounted) {
       previousFocus.current?.focus();
       return;
     }
 
     previousFocus.current = document.activeElement as HTMLElement;
-    const previousBodyOverflow = document.body.style.overflow;
+    previousBodyOverflow.current = document.body.style.overflow;
+    previousHtmlOverscroll.current =
+      document.documentElement.style.overscrollBehavior;
+    previousBodyOverscroll.current = document.body.style.overscrollBehavior;
 
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+    document.body.style.overscrollBehavior = "none";
     document.body.classList.add("command-circle-detail-open");
 
     return () => {
-      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overflow = previousBodyOverflow.current ?? "";
+      document.documentElement.style.overscrollBehavior =
+        previousHtmlOverscroll.current ?? "";
+      document.body.style.overscrollBehavior =
+        previousBodyOverscroll.current ?? "";
+      previousBodyOverflow.current = null;
+      previousHtmlOverscroll.current = null;
+      previousBodyOverscroll.current = null;
       document.body.classList.remove("command-circle-detail-open");
     };
-  }, [activeCircleId]);
+  }, [isCircleDetailMounted]);
 
   if (
     !isLoading &&
@@ -4014,6 +4070,76 @@ export const CommandCirclesSection = forwardRef<
   }
 
   const shouldShowCircles = isLoading || !!error || circles.length > 0;
+  const circleDetailOverlay =
+    activeCircle && circleTransition && circleShellRect ? (
+      <div
+        className="pointer-events-none fixed inset-x-0 z-40 overflow-hidden"
+        style={{
+          top: circleTransition.appViewportRect.top,
+          height: circleTransition.appViewportRect.height,
+        }}
+      >
+        <motion.div
+          className="pointer-events-auto absolute inset-0 bg-black/60 backdrop-blur-md"
+          initial={{ opacity: 0 }}
+          animate={{
+            opacity: circleTransition.phase === "closing" ? 0 : 1,
+          }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        />
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          className="app-card pointer-events-auto fixed flex min-h-0 flex-col overflow-hidden border border-white/10 bg-[#050507] shadow-[0_38px_120px_rgba(0,0,0,0.72)] ring-1 ring-white/[0.06]"
+          initial={{
+            top: circleTransition.sourceRect.top,
+            left: circleTransition.sourceRect.left,
+            width: circleTransition.sourceRect.width,
+            height: circleTransition.sourceRect.height,
+            borderRadius: circleTransition.sourceBorderRadius,
+            opacity: 1,
+            scale: 1,
+          }}
+          animate={{
+            top: circleShellRect.top,
+            left: circleShellRect.left,
+            width: circleShellRect.width,
+            height: circleShellRect.height,
+            borderRadius: circleShellBorderRadius,
+            opacity: circleShellIsFallbackClose ? 0 : 1,
+            scale: circleShellIsFallbackClose ? 0.96 : 1,
+          }}
+          transition={{
+            type: "spring",
+            stiffness: 520,
+            damping: 44,
+            mass: 0.9,
+          }}
+          onAnimationComplete={handleCircleShellAnimationComplete}
+        >
+          <motion.div
+            className="h-full min-h-0 w-full overflow-hidden"
+            initial={false}
+            animate={{ opacity: circleDetailContentVisible ? 1 : 0 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+          >
+            <CircleCommandDetail
+              circle={activeCircle}
+              onClose={closeCircleDetail}
+              onCircleUpdated={(updatedCircle) => {
+                setCircles((currentCircles) =>
+                  currentCircles.map((circle) =>
+                    circle.id === updatedCircle.id
+                      ? { ...circle, ...updatedCircle }
+                      : circle,
+                  ),
+                );
+              }}
+            />
+          </motion.div>
+        </motion.div>
+      </div>
+    ) : null;
 
   return (
     <section className={cn("relative text-white", className)}>
@@ -4065,47 +4191,22 @@ export const CommandCirclesSection = forwardRef<
             {circles.map((circle) => (
               <CircleCard
                 key={circle.id}
+                ref={(node) => setCircleCardRef(circle.id, node)}
                 circle={circle}
-                isSelected={activeCircleId === circle.id}
-                onSelect={() => setActiveCircleId(circle.id)}
+                isHidden={
+                  isCircleSourceCardHidden &&
+                  circleTransition?.circleId === circle.id
+                }
+                onSelect={(event) => openCircleDetail(circle.id, event)}
               />
             ))}
           </div>
         ) : null}
       </div>
 
-      <AnimatePresence>
-        {activeCircle ? (
-          <motion.div
-            key="command-circle-overlay"
-            className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-black/65 px-0 pb-0 pt-0 backdrop-blur-md sm:px-0 sm:pb-0 sm:pt-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-          >
-            <CircleCommandDetail
-              circle={activeCircle}
-              onClose={() => setActiveCircleId(null)}
-              onCircleUpdated={(updatedCircle) => {
-                setCircles((currentCircles) =>
-                  currentCircles.map((circle) =>
-                    circle.id === updatedCircle.id
-                      ? { ...circle, ...updatedCircle }
-                      : circle,
-                  ),
-                );
-              }}
-              onCircleDeleted={(circleId) => {
-                setActiveCircleId(null);
-                setCircles((currentCircles) =>
-                  currentCircles.filter((circle) => circle.id !== circleId),
-                );
-              }}
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      {circleDetailOverlay && typeof document !== "undefined"
+        ? createPortal(circleDetailOverlay, document.body)
+        : null}
     </section>
   );
 });

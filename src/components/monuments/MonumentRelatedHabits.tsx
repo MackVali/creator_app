@@ -117,7 +117,6 @@ const RELATED_HABIT_DOUBLE_TAP_MS = 350;
 const RELATED_HABIT_LONG_PRESS_MS = 300;
 const RELATED_HABIT_LONG_PRESS_SUPPRESS_MS = 1_000;
 const RELATED_HABIT_COMPLETED_MOVE_DELAY_MS = 850;
-const RELATED_HABIT_COMPLETED_COLLAPSE_MS = 320;
 const RELATED_HABIT_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_GRID_CLASS =
@@ -370,7 +369,7 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
   if (normalized === "CHORE") {
     return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
   }
-  if (normalized === "SYNC") {
+  if (normalized === "SYNC" || normalized === "MEMO") {
     return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(113,113,122,0.22),transparent_58%),linear-gradient(135deg,rgba(16,18,22,0.98)_0%,rgba(39,43,51,0.94)_48%,rgba(70,77,89,0.68)_100%)]";
   }
   if (normalized === "PRACTICE") {
@@ -379,19 +378,15 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
   if (normalized === "RELAXER") {
     return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(6,95,70,0.34),transparent_60%),linear-gradient(138deg,rgba(3,24,18,0.98)_0%,rgba(5,68,51,0.94)_48%,rgba(6,95,70,0.74)_100%)]";
   }
-  if (normalized === "MEMO") {
-    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(126,34,206,0.26),transparent_60%),linear-gradient(138deg,rgba(24,13,38,0.98)_0%,rgba(55,29,84,0.95)_48%,rgba(88,46,128,0.72)_100%)]";
-  }
   return "!bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.2),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)]";
 }
 
 function getHabitCardBorderClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return "border-rose-200/45";
-  if (normalized === "SYNC") return "border-zinc-300/35";
+  if (normalized === "SYNC" || normalized === "MEMO") return "border-zinc-300/35";
   if (normalized === "PRACTICE") return "border-slate-500/50";
   if (normalized === "RELAXER") return "border-emerald-200/60";
-  if (normalized === "MEMO") return "border-purple-300/55";
   return "border-black/70";
 }
 
@@ -766,31 +761,6 @@ export function MonumentRelatedHabits({
           pendingCompletedRelatedHabitIdsRef.current = next;
           return next;
         });
-        setCollapsingCompletedRelatedHabitIds((current) => {
-          if (current.has(habitId)) return current;
-
-          const next = new Set(current);
-          next.add(habitId);
-          collapsingCompletedRelatedHabitIdsRef.current = next;
-          return next;
-        });
-
-        const collapsingTimer = setTimeout(() => {
-          collapsingCompletedRelatedHabitTimersRef.current.delete(habitId);
-          setCollapsingCompletedRelatedHabitIds((current) => {
-            if (!current.has(habitId)) return current;
-
-            const next = new Set(current);
-            next.delete(habitId);
-            collapsingCompletedRelatedHabitIdsRef.current = next;
-            return next;
-          });
-        }, RELATED_HABIT_COMPLETED_COLLAPSE_MS);
-
-        collapsingCompletedRelatedHabitTimersRef.current.set(
-          habitId,
-          collapsingTimer
-        );
       }, RELATED_HABIT_COMPLETED_MOVE_DELAY_MS);
 
       pendingCompletedRelatedHabitMoveTimersRef.current.set(
@@ -925,30 +895,36 @@ export function MonumentRelatedHabits({
     const isStandaloneHabitDue = (
       habit: (typeof standaloneDecoratedHabits)[number]
     ) => {
-      const isMovingToCompleted =
+      const isCompletedToday =
+        completedRelatedHabitIds.has(habit.id) ||
         pendingCompletedRelatedHabitIds.has(habit.id) ||
         collapsingCompletedRelatedHabitIds.has(habit.id);
 
-      return (
-        isMovingToCompleted ||
-        (!completedRelatedHabitIds.has(habit.id) &&
-          isRelatedHabitDueLabel(habit.dueLabel))
-      );
+      return isCompletedToday || isRelatedHabitDueLabel(habit.dueLabel);
     };
-    const isRoutineHabitDue = (
+    const isRoutineHabitDuePanel = (
       habit: RelatedRoutineCardRoutine["habits"][number]
-    ) => !habit.completed && isRelatedHabitDueLabel(habit.dueLabel);
+    ) => Boolean(habit.completed) || isRelatedHabitDueLabel(habit.dueLabel);
+    const isRoutineHabitNotDuePanel = (
+      habit: RelatedRoutineCardRoutine["habits"][number]
+    ) => !habit.completed && !isRelatedHabitDueLabel(habit.dueLabel);
 
     const dueRoutineItems = relatedRoutines
-      .filter((routine) => routine.habits.some(isRoutineHabitDue))
+      .map((routine) => ({
+        ...routine,
+        habits: routine.habits.filter(isRoutineHabitDuePanel),
+      }))
+      .filter((routine) => routine.habits.length > 0)
       .map((routine) => ({
         kind: "routine" as const,
         routine,
       }));
     const notDueRoutineItems = relatedRoutines
-      .filter((routine) =>
-        routine.habits.some((habit) => !isRoutineHabitDue(habit))
-      )
+      .map((routine) => ({
+        ...routine,
+        habits: routine.habits.filter(isRoutineHabitNotDuePanel),
+      }))
+      .filter((routine) => routine.habits.length > 0)
       .map((routine) => ({
         kind: "routine" as const,
         routine,
@@ -963,6 +939,7 @@ export function MonumentRelatedHabits({
       .filter(
         (habit) =>
           !isStandaloneHabitDue(habit) &&
+          !completedRelatedHabitIds.has(habit.id) &&
           !pendingCompletedRelatedHabitIds.has(habit.id) &&
           !collapsingCompletedRelatedHabitIds.has(habit.id)
       )
@@ -976,7 +953,6 @@ export function MonumentRelatedHabits({
         id: "due",
         label: "Due",
         ariaLabel: "Show due habits",
-        emptyMessage: "No due habits right now.",
         items: [...dueRoutineItems, ...dueHabitItems].sort(
           sortRelatedHabitPageItems
         ),
@@ -985,12 +961,11 @@ export function MonumentRelatedHabits({
         id: "not-due-completed",
         label: "Not due / Completed",
         ariaLabel: "Show not due and completed habits",
-        emptyMessage: "No not due or completed habits yet.",
         items: [...notDueRoutineItems, ...notDueHabitItems].sort(
           sortRelatedHabitPageItems
         ),
       },
-    ];
+    ].filter((page) => page.items.length > 0);
   }, [
     collapsingCompletedRelatedHabitIds,
     completedRelatedHabitIds,
@@ -2045,7 +2020,7 @@ export function MonumentRelatedHabits({
         ) : habitsError ? (
           <p className="text-xs text-white/60">{habitsError}</p>
         ) : relatedHabits.length === 0 ? (
-          <p className="text-xs text-white/60">
+          <p className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 px-4 py-3 text-xs text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             no habits related to this monument yet
           </p>
         ) : (
@@ -2096,18 +2071,9 @@ export function MonumentRelatedHabits({
                         ref={(element) => {
                           relatedHabitPagePanelRefs.current[page.id] = element;
                         }}
-                        className={
-                          page.items.length > 0
-                            ? relatedHabitPageGridClass
-                            : "min-h-[120px]"
-                        }
+                        className={relatedHabitPageGridClass}
                       >
-                        {page.items.length === 0 ? (
-                          <div className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-                            {page.emptyMessage}
-                          </div>
-                        ) : (
-                          page.items.map((item) => {
+                        {page.items.map((item) => {
                           if (item.kind === "routine") {
                             return (
                               <RelatedRoutineCard
@@ -2305,8 +2271,7 @@ export function MonumentRelatedHabits({
                               </div>
                             </div>
                           );
-                        })
-                        )}
+                        })}
                       </div>
                     </div>
                   ))}
