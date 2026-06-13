@@ -13,9 +13,9 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft,
   CalendarDays,
   CheckSquare,
+  ChevronLeft,
   FolderKanban,
   Flame,
   Info,
@@ -590,15 +590,15 @@ function Header({
 }) {
   const router = useRouter();
   return (
-    <header className="sticky top-2 z-20 mb-3 -mx-1 rounded-2xl border border-zinc-800/90 bg-black/72 px-2 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:static sm:mx-0 sm:mb-5 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:shadow-none sm:backdrop-blur-none">
+    <header className="sticky top-0 z-20 mb-3 -mx-4 bg-black px-4 py-2 sm:static sm:mx-0 sm:mb-5 sm:bg-transparent sm:px-0 sm:py-0">
       <div className="flex min-w-0 flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
         <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
           <button
             onClick={() => router.push("/dashboard")}
             aria-label="Back to dashboard"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-800/90 bg-zinc-950/80 text-zinc-300 transition hover:border-zinc-700 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600 sm:h-9 sm:w-9 sm:bg-zinc-950"
+            className="-ml-2 inline-flex h-8 w-8 shrink-0 items-center justify-center text-white/85 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:ml-0 sm:h-9 sm:w-9"
           >
-            <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
           <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden lg:flex lg:justify-center">
             <div className="w-max min-w-full pr-1 lg:min-w-0 lg:pr-0">
@@ -633,7 +633,7 @@ function AnalyticsTabs({
   onViewChange: (view: AnalyticsView) => void;
 }) {
   return (
-    <div className="inline-flex min-w-max items-center gap-0.5 rounded-full border border-zinc-800/90 bg-zinc-950/70 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:gap-1 sm:rounded-xl sm:bg-zinc-950/80">
+    <div className="inline-flex min-w-max items-center gap-5 sm:gap-7">
       {ANALYTICS_TABS.map((tab) => {
         const isActive = activeView === tab.id;
         return (
@@ -643,16 +643,11 @@ function AnalyticsTabs({
             onClick={() => onViewChange(tab.id)}
             aria-pressed={isActive}
             className={classNames(
-              "relative h-6 shrink-0 rounded-full px-2.5 text-[11px] font-medium leading-none text-zinc-400 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/35 motion-reduce:transition-none sm:h-8 sm:rounded-lg sm:px-3.5 sm:text-xs",
-              isActive
-                ? "bg-zinc-100 text-zinc-950 shadow-[0_8px_18px_rgba(0,0,0,0.24),inset_0_0_0_1px_rgba(255,255,255,0.7)]"
-                : "hover:bg-zinc-900/80 hover:text-zinc-100"
+              "shrink-0 py-1 text-xs font-medium leading-none text-white/60 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 motion-reduce:transition-none sm:text-sm",
+              isActive && "text-white"
             )}
           >
             {tab.label}
-            {isActive ? (
-              <span className="absolute inset-x-3 -bottom-0.5 h-px rounded-full bg-emerald-300/55 sm:hidden" />
-            ) : null}
           </button>
         );
       })}

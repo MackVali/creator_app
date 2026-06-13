@@ -516,7 +516,7 @@ export default function SettingsPage() {
 
   return (
     <div
-      className="app-bg min-h-screen"
+      className="app-bg app-settings-bg min-h-screen"
     >
       <header className="app-top-nav sticky top-0 z-10 border-b backdrop-blur">
         <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
@@ -675,7 +675,7 @@ function ProfileOverview({ profile, email, initials, onEdit, onViewProfile }: Pr
   const avatarUrl = profile?.avatar_url;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+    <section className="app-settings-surface overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
       <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <ProfileAvatar src={avatarUrl} alt={displayName} fallback={initials} />
@@ -763,7 +763,7 @@ type SettingsCardProps = {
 
 function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+    <section className="app-settings-surface overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
       <div className="border-b border-[var(--border)] px-5 py-4 sm:px-6">
         <h2 className="text-base font-semibold text-[var(--text)]">{title}</h2>
         {description && (

@@ -11,31 +11,22 @@ import {
   upsertLinkedAccount,
   deleteLinkedAccount,
 } from "@/lib/db/linked-accounts";
-import { Card, CardContent } from "@/components/ui/card";
 import {
-  Instagram,
-  Youtube,
-  Twitter,
-  Music,
-  Music2,
-  Ghost,
-  Facebook,
   LucideIcon,
   CheckCircle2,
   AlertCircle,
+  MoreVertical,
+  Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildSocialUrl, normalizeUsername } from "@/lib/profile/socialLinks";
-
-const ICON_MAP: Record<SupportedPlatform, LucideIcon> = {
-  instagram: Instagram,
-  tiktok: Music2,
-  youtube: Youtube,
-  spotify: Music,
-  snapchat: Ghost,
-  facebook: Facebook,
-  twitter: Twitter,
-};
+import { getSocialIconDefinition } from "@/components/profile/SocialIcon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface AccountState {
   id?: string;
@@ -58,12 +49,6 @@ const USERNAME_PLACEHOLDERS: Partial<Record<SupportedPlatform, string>> = {
   youtube: "@username",
 };
 
-const glassCardStyles =
-  "relative overflow-hidden rounded-[28px] border border-white/10 bg-background/40 p-6 shadow-[0_25px_60px_-40px_rgba(15,23,42,0.65)] backdrop-blur";
-
-const pillStyles =
-  "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground";
-
 export default function LinkedAccountsForm() {
   const { user } = useAuth();
   const userId = user?.id;
@@ -77,6 +62,7 @@ export default function LinkedAccountsForm() {
     twitter: { url: "", username: "" },
   });
   const [saving, setSaving] = useState<string | null>(null);
+  const [editingPlatform, setEditingPlatform] = useState<SupportedPlatform | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -131,6 +117,7 @@ export default function LinkedAccountsForm() {
           username: normalizedHandle,
         },
       }));
+      setEditingPlatform(null);
       setSuccess(`${PLATFORM_CONFIG[platform].label} link saved`);
     } else {
       setError(saveError || "Failed to save link");
@@ -146,6 +133,7 @@ export default function LinkedAccountsForm() {
     setSaving(null);
     if (success) {
       setAccounts((prev) => ({ ...prev, [platform]: { url: "", username: "" } }));
+      setEditingPlatform((current) => (current === platform ? null : current));
       setSuccess(`${PLATFORM_CONFIG[platform].label} link removed`);
     } else {
       setError(delError || "Failed to remove link");
@@ -153,57 +141,84 @@ export default function LinkedAccountsForm() {
   };
 
   const renderRow = (platform: SupportedPlatform) => {
-    const Icon = ICON_MAP[platform];
     const config = PLATFORM_CONFIG[platform];
+    const definition = getSocialIconDefinition(platform);
+    const Icon = definition.icon;
     const usernameValue = accounts[platform]?.username || "";
+    const accountUrl = accounts[platform]?.url || "";
     const isConnected = Boolean(accounts[platform]?.url.trim().length);
-    const accentPrimary = withOpacity(config.color, 0.28);
-    const accentSecondary = withOpacity(config.color, 0.08);
     const isSaving = saving === platform;
+    const isEditing = editingPlatform === platform;
     const placeholderBase = USERNAME_PLACEHOLDERS[platform] ?? "username";
-    const placeholderText = `${placeholderBase} (username only)`;
+    const subtext = formatAccountSubtext(platform, usernameValue, accountUrl);
 
     return (
       <div
         key={platform}
         className={cn(
-          "group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition-all hover:border-white/20 hover:shadow-[0_25px_50px_-25px_rgba(15,23,42,0.65)]",
-          isConnected ? "shadow-[0_25px_60px_-45px_rgba(15,23,42,0.9)]" : ""
+          "flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 transition hover:border-white/30",
+          isEditing ? "flex-col items-stretch sm:flex-row sm:items-center" : "",
+          isConnected ? "border-white/15 bg-white/[0.07]" : ""
         )}
-        style={{
-          backgroundImage: `linear-gradient(135deg, ${accentSecondary}, rgba(17, 24, 39, 0.4)), linear-gradient(135deg, ${accentPrimary}, transparent)`
-        }}
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3 sm:items-center">
-            <div
-              className="flex size-12 items-center justify-center rounded-xl border border-white/10 bg-white/10 shadow-inner"
-              style={{
-                color: config.color,
-                boxShadow: `0 12px 24px -12px ${withOpacity(config.color, 0.8)}`,
-              }}
-            >
-              <Icon className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                {config.label}
-                {isConnected ? (
-                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
-                    Connected
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    Not linked yet
-                  </span>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/40 text-white">
+            <Icon className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-white">{definition.label}</span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  isConnected
+                    ? "bg-emerald-500/15 text-emerald-300"
+                    : "bg-red-500/15 text-red-300"
                 )}
-              </div>
-              <p className="text-xs text-muted-foreground/80">
-                {`Add your ${config.label} username or handle (no URL)`}
-              </p>
+              >
+                {isConnected ? "Connected" : "Not connected"}
+              </span>
             </div>
+            <p className="mt-1 truncate text-xs uppercase tracking-[0.35em] text-white/50">
+              {subtext}
+            </p>
           </div>
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[280px] sm:flex-row sm:items-center">
+        </div>
+
+        {!isEditing ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild disabled={isSaving}>
+              <button
+                type="button"
+                aria-label={`${config.label} account actions`}
+                className="flex h-10 w-7 shrink-0 items-center justify-center text-white/55 transition hover:text-white focus:outline-none focus:ring-2 focus:ring-white/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <MoreVertical className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              className="w-36 rounded-xl border border-white/10 bg-black p-1 text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)]"
+            >
+              <DropdownMenuItem
+                onClick={() => setEditingPlatform(platform)}
+                className="cursor-pointer rounded-lg px-3 py-2 text-sm text-white focus:bg-white/10 focus:text-white"
+              >
+                Edit
+              </DropdownMenuItem>
+              {isConnected ? (
+                <DropdownMenuItem
+                  onClick={() => handleRemove(platform)}
+                  className="cursor-pointer rounded-lg px-3 py-2 text-sm text-red-300 focus:bg-red-500/15 focus:text-red-200"
+                >
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:min-w-[360px]">
             <Input
               value={usernameValue}
               onChange={(e) =>
@@ -212,87 +227,76 @@ export default function LinkedAccountsForm() {
                   [platform]: { ...prev[platform], username: e.target.value },
                 }))
               }
-              placeholder={placeholderText}
-              className="h-11 flex-1 rounded-xl border border-white/20 bg-white/5 text-sm text-foreground placeholder:text-muted-foreground/60 focus-visible:border-white/40 focus-visible:bg-white/10"
+              placeholder={`${placeholderBase} only`}
+              aria-label={`${config.label} username`}
+              className="h-10 flex-1 rounded-xl border-white/10 bg-black/30 text-sm text-white placeholder:text-white/35 focus-visible:border-white/35 focus-visible:bg-black/40"
             />
-            <div className="flex gap-2 sm:w-auto">
-              <Button
-                onClick={() => handleSave(platform)}
-                disabled={isSaving}
-                size="sm"
-                className="w-full sm:w-auto"
-              >
-                {isSaving ? "Saving" : isConnected ? "Update" : "Save"}
-              </Button>
-              {isConnected && (
-                <Button
-                  variant="outline"
-                  onClick={() => handleRemove(platform)}
-                  disabled={isSaving}
-                  size="sm"
-                  className="w-full border-white/30 bg-transparent text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground sm:w-auto"
-                >
-                  Remove
-                </Button>
-              )}
-            </div>
+            <Button
+              onClick={() => handleSave(platform)}
+              disabled={isSaving}
+              size="sm"
+              className="h-10 rounded-lg border border-white/10 bg-zinc-800 text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save className="mr-1.5 h-4 w-4" aria-hidden="true" />
+              {isSaving ? "Saving" : isConnected ? "Update" : "Save"}
+            </Button>
           </div>
-        </div>
+        )}
       </div>
     );
   };
 
   return (
-    <Card className={glassCardStyles}>
-      <CardContent className="space-y-6 p-0">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-white/10 bg-white/5 px-6 py-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              {hasConnectedAccount ? "Your socials are synced" : "Start connecting platforms"}
-            </div>
-            <p className="text-xs text-muted-foreground/80">
-              Type only your username or handle for each platform and we’ll build the link for you.
-            </p>
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+            {hasConnectedAccount ? "Connected profiles" : "No accounts connected yet"}
           </div>
-          <span className={pillStyles}>
-            {hasConnectedAccount ? "Premium ready" : "Curated profile"}
-          </span>
+          <p className="text-xs text-zinc-400">
+            Enter usernames only. CREATOR builds and saves the public links.
+          </p>
         </div>
+      </div>
 
-        {(error || success) && (
-          <div className="space-y-2">
-            {error && (
-              <StatusBanner
-                tone="destructive"
-                icon={AlertCircle}
-                message={error}
-              />
-            )}
-            {success && (
-              <StatusBanner tone="success" icon={CheckCircle2} message={success} />
-            )}
-          </div>
-        )}
-
-        <div className="space-y-4">
-          {platformKeys.map((p) => renderRow(p))}
+      {(error || success) && (
+        <div className="space-y-2">
+          {error && (
+            <StatusBanner
+              tone="destructive"
+              icon={AlertCircle}
+              message={error}
+            />
+          )}
+          {success && (
+            <StatusBanner tone="success" icon={CheckCircle2} message={success} />
+          )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      <div className="grid gap-3">
+        {platformKeys.map((p) => renderRow(p))}
+      </div>
+    </section>
   );
 }
 
-function withOpacity(color: string, opacity: number) {
-  const parsed = color.replace("#", "");
-  if (parsed.length !== 6) {
-    return color;
+function formatAccountSubtext(platform: SupportedPlatform, username: string, url: string) {
+  const normalizedUsername = normalizeUsername(platform, username || url);
+  if (normalizedUsername) {
+    return `@${normalizedUsername}`;
   }
-  const bigint = parseInt(parsed, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+
+  if (url) {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
+  }
+
+  return "Username only";
 }
 
 interface StatusBannerProps {

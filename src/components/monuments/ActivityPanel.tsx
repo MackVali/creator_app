@@ -1326,9 +1326,9 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                       </dl>
                     </header>
 
-                    <dl className="mt-3 grid grid-cols-[0.7fr_1.3fr_1fr] gap-2 border-t border-white/[0.06] pt-3 text-left">
+                    <dl className="mt-3 grid grid-cols-[0.85fr_1.2fr_0.95fr] gap-2 border-t border-white/[0.06] pt-3 text-left">
                       <div className="min-w-0 px-2.5 py-2.5">
-                        <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
+                        <dt className="whitespace-nowrap text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
                           Total XP
                         </dt>
                         <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">

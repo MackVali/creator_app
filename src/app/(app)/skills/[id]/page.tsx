@@ -35,6 +35,10 @@ import { Button } from "@/components/ui/button";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { useToastHelpers } from "@/components/ui/toast";
+import {
+  RelatedRoutineCard,
+  type RelatedRoutineCardRoutine,
+} from "@/components/habits/RelatedRoutineCard";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import FlameEmber from "@/components/FlameEmber";
 import { SkillDrawer, type Category, type Skill as DrawerSkill } from "@/app/(app)/skills/components/SkillDrawer";
@@ -92,6 +96,15 @@ interface HabitSummary {
   nextDueOverride: string | null;
   habitType: string | null;
   memoCaptureConfig: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
+  routineId: string | null;
+  routineName: string | null;
+  routineDescription: string | null;
+}
+
+interface RoutineMetadata {
+  id: string;
+  name: string | null;
+  description: string | null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -130,6 +143,11 @@ function isWindowAtTop() {
 type HabitDueStatus = {
   label: string;
   rank: number;
+};
+type DecoratedRelatedRoutine = RelatedRoutineCardRoutine & {
+  dueRank: number;
+  typeRank: number;
+  sortName: string;
 };
 type RelatedHabitCardDensity = "large" | "small";
 type RelatedHabitPageSwipeAxis = "horizontal" | "vertical" | null;
@@ -183,6 +201,51 @@ function normalizeRelatedHabitStreakDays(value: unknown): number {
   return Number.isFinite(numericValue)
     ? Math.max(0, Math.round(numericValue))
     : 0;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function formatRoutineRecord(routine: unknown): RoutineMetadata | null {
+  if (!routine || typeof routine !== "object") return null;
+  const routineRecord = routine as Record<string, unknown>;
+  const routineId = readString(routineRecord.id);
+  if (!routineId) return null;
+
+  return {
+    id: routineId,
+    name: readString(routineRecord.name),
+    description: readString(routineRecord.description),
+  };
+}
+
+async function fetchRoutineMetadataById(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  userId: string,
+  routineIds: string[]
+): Promise<Map<string, RoutineMetadata>> {
+  const uniqueRoutineIds = Array.from(new Set(routineIds.filter(Boolean)));
+  if (uniqueRoutineIds.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("habit_routines")
+    .select("id, name, description")
+    .eq("user_id", userId)
+    .in("id", uniqueRoutineIds);
+
+  if (error) {
+    return new Map();
+  }
+
+  return new Map(
+    (data ?? [])
+      .map(formatRoutineRecord)
+      .filter((routine): routine is RoutineMetadata => routine !== null)
+      .map((routine) => [routine.id, routine])
+  );
 }
 
 function parseOptionalDate(value: string | null | undefined): Date | null {
@@ -590,19 +653,95 @@ export default function SkillDetailPage() {
         }),
     [relatedHabits, timeZone]
   );
+  const standaloneDecoratedHabits = useMemo(
+    () => decoratedHabits.filter((habit) => !habit.routineId),
+    [decoratedHabits]
+  );
+  const relatedRoutines = useMemo<DecoratedRelatedRoutine[]>(() => {
+    const routineMap = new Map<string, DecoratedRelatedRoutine>();
+
+    for (const habit of decoratedHabits) {
+      if (!habit.routineId) continue;
+
+      const existing = routineMap.get(habit.routineId);
+      const routineHabit = {
+        id: habit.id,
+        name: habit.name,
+        dueLabel: habit.dueLabel,
+        skillIcon: skill?.icon ?? null,
+      };
+
+      if (existing) {
+        existing.habits.push(routineHabit);
+        existing.dueRank = Math.min(existing.dueRank, habit.dueRank);
+        existing.typeRank = Math.min(
+          existing.typeRank,
+          getHabitTypePriority(habit.habitType)
+        );
+        continue;
+      }
+
+      const routineName = habit.routineName ?? "Untitled routine";
+      routineMap.set(habit.routineId, {
+        id: habit.routineId,
+        name: routineName,
+        description: habit.routineDescription,
+        habits: [routineHabit],
+        dueRank: habit.dueRank,
+        typeRank: getHabitTypePriority(habit.habitType),
+        sortName: routineName,
+      });
+    }
+
+    return Array.from(routineMap.values()).sort((first, second) =>
+      first.name.localeCompare(second.name, undefined, { sensitivity: "base" })
+    );
+  }, [decoratedHabits, skill?.icon]);
   const relatedHabitPages = useMemo(() => {
-    const dueHabits = decoratedHabits.filter(
-      (habit) => habit.dueLabel === "DUE" || habit.dueLabel === "OVERDUE"
-    );
-    const nonDueHabits = decoratedHabits.filter(
-      (habit) => habit.dueLabel !== "DUE" && habit.dueLabel !== "OVERDUE"
-    );
+    const routineItems = relatedRoutines.map((routine) => ({
+      kind: "routine" as const,
+      routine,
+    }));
+    const habitItems = standaloneDecoratedHabits.map((habit) => ({
+      kind: "habit" as const,
+      habit,
+    }));
 
     return [
-      { id: "due", habits: dueHabits },
-      { id: "non-due", habits: nonDueHabits },
-    ].filter((page) => page.habits.length > 0);
-  }, [decoratedHabits]);
+      {
+        id: "routines-and-habits",
+        items: [...routineItems, ...habitItems].sort((first, second) => {
+          const firstDueRank =
+            first.kind === "routine" ? first.routine.dueRank : first.habit.dueRank;
+          const secondDueRank =
+            second.kind === "routine" ? second.routine.dueRank : second.habit.dueRank;
+          if (firstDueRank !== secondDueRank) {
+            return firstDueRank - secondDueRank;
+          }
+
+          const firstTypeRank =
+            first.kind === "routine"
+              ? first.routine.typeRank
+              : getHabitTypePriority(first.habit.habitType);
+          const secondTypeRank =
+            second.kind === "routine"
+              ? second.routine.typeRank
+              : getHabitTypePriority(second.habit.habitType);
+          if (firstTypeRank !== secondTypeRank) {
+            return firstTypeRank - secondTypeRank;
+          }
+
+          const firstName =
+            first.kind === "routine" ? first.routine.sortName : first.habit.name;
+          const secondName =
+            second.kind === "routine" ? second.routine.sortName : second.habit.name;
+          return firstName.localeCompare(secondName, undefined, {
+            sensitivity: "base",
+          });
+        }),
+      },
+    ].filter((page) => page.items.length > 0);
+  }, [relatedRoutines, standaloneDecoratedHabits]);
   const relatedHabitPageBaseTransform =
     relatedHabitPagerViewportWidth > 0
       ? -activeRelatedHabitPageIndex * relatedHabitPagerViewportWidth
@@ -1400,7 +1539,7 @@ export default function SkillDetailPage() {
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config"
+            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type, memo_capture_config, routine_id"
           )
           .eq("user_id", userId)
           .eq("skill_id", id)
@@ -1411,6 +1550,20 @@ export default function SkillDetailPage() {
         }
 
         if (!cancelled) {
+          const routineIds = (habitsData ?? [])
+            .map((habit) =>
+              habit && typeof habit === "object"
+                ? readString((habit as Record<string, unknown>).routine_id)
+                : null
+            )
+            .filter((routineId): routineId is string => routineId !== null);
+          const routineById = await fetchRoutineMetadataById(
+            supabase,
+            userId,
+            routineIds
+          );
+          if (cancelled) return;
+
           const formattedHabits = (habitsData ?? [])
             .map((habit): HabitSummary | null => {
               if (!habit) return null;
@@ -1431,11 +1584,17 @@ export default function SkillDetailPage() {
                 next_due_override?: unknown;
                 habit_type?: unknown;
                 memo_capture_config?: unknown;
+                routine_id?: unknown;
               };
 
               const habitId =
                 typeof habitRecord.id === "string" ? habitRecord.id : null;
               if (!habitId) return null;
+              const routineId =
+                readString(habitRecord.routine_id);
+              const routine = routineId
+                ? routineById.get(routineId) ?? null
+                : null;
 
               const habitName =
                 typeof habitRecord.name === "string" && habitRecord.name.trim().length > 0
@@ -1513,6 +1672,9 @@ export default function SkillDetailPage() {
                 memoCaptureConfig:
                   (habitRecord.memo_capture_config as HabitSummary["memoCaptureConfig"]) ??
                   null,
+                routineId,
+                routineName: routine?.name ?? null,
+                routineDescription: routine?.description ?? null,
               } satisfies HabitSummary;
             })
             .filter((habit): habit is HabitSummary => habit !== null);
@@ -2185,7 +2347,7 @@ export default function SkillDetailPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                      {decoratedHabits.length}
+                      {standaloneDecoratedHabits.length + relatedRoutines.length}
                     </span>
                     <button
                       type="button"
@@ -2310,7 +2472,19 @@ export default function SkillDetailPage() {
                                 }}
                                 className={relatedHabitPageGridClass}
                               >
-                                {page.habits.map((habit) => {
+                                {page.items.map((item) => {
+                                  if (item.kind === "routine") {
+                                    return (
+                                      <RelatedRoutineCard
+                                        key={`routine-${item.routine.id}`}
+                                        routine={item.routine}
+                                        density={relatedHabitCardDensity}
+                                        fallbackIcon={skill.icon || "💡"}
+                                      />
+                                    );
+                                  }
+
+                                  const habit = item.habit;
                                   const isHabitCompletedToday =
                                     completedRelatedHabitIds.has(habit.id);
                                   const isHabitPending =
@@ -2472,7 +2646,10 @@ export default function SkillDetailPage() {
                       </div>
                     </div>
                     {relatedHabitPages.length > 1 ? (
-                      <div className="flex items-center justify-center gap-1.5 pt-1">
+                      <div
+                        className="flex items-center justify-center gap-1.5 pt-1"
+                        style={{ marginTop: "-20px" }}
+                      >
                         {relatedHabitPages.map((page, index) => {
                           const isActive =
                             index === activeRelatedHabitPageIndex;
