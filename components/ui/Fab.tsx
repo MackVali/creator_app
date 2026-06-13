@@ -6435,7 +6435,7 @@ export function Fab({
       base: [10, 12, 24],
       highlight: [86, 60, 140],
       lowlight: [4, 6, 18],
-      border: [63, 63, 70],
+      border: [39, 39, 42],
     },
   ];
 
@@ -8820,7 +8820,7 @@ export function Fab({
                           setGoalName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your GOAL"
-                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -8971,7 +8971,7 @@ export function Fab({
                       value={goalWhy}
                       onChange={(e) => setGoalWhy(e.target.value)}
                       placeholder="Motivation…"
-                      className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                     />
                   </div>
                 </>

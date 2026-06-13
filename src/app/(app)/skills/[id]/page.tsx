@@ -2298,7 +2298,7 @@ export default function SkillDetailPage() {
                           {relatedHabitPages.map((page) => (
                             <div
                               key={page.id}
-                              className="h-full shrink-0 overflow-visible px-2 pt-2 pb-3"
+                              className="h-full shrink-0 overflow-visible px-2 pt-2 pb-7"
                               style={{
                                 width: `${relatedHabitPanelWidthPercent}%`,
                               }}
