@@ -368,6 +368,52 @@ export default function MonumentNotePage() {
     router.push(`/monuments/${monumentId}/notes/${subpageId}`);
   }
 
+  async function handleOpenDatabase(databaseId: string) {
+    const targetNoteId = currentNoteId ?? (noteId !== "new" ? noteId : null);
+    if (targetNoteId) {
+      router.push(`/monuments/${monumentId}/notes/${targetNoteId}/databases/${databaseId}`);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const metadata = buildNoteMetadata(noteMetadata, noteIcon, isBookmarked);
+      const saved = await createMonumentNote(
+        monumentId,
+        {
+          title: noteTitle.trim() || "Untitled",
+          content: noteContent,
+        },
+        { metadata },
+      );
+
+      if (!saved) return;
+
+      setCurrentNoteId(saved.id);
+      setNoteMetadata(saved.metadata ?? metadata);
+      setLastSavedSnapshot(
+        createSaveSnapshot({
+          title: saved.title ?? noteTitle,
+          content: saved.content ?? noteContent,
+          icon: noteIcon,
+          bookmarked: saved.metadata?.bookmarked === true,
+          parentNoteId: saved.parentNoteId ?? parentNoteId,
+          metadata: buildNoteMetadata(saved.metadata ?? metadata, noteIcon, isBookmarked),
+        }),
+      );
+      router.push(`/monuments/${monumentId}/notes/${saved.id}/databases/${databaseId}`);
+    } catch (error) {
+      console.error("Failed to save monument note before opening database", {
+        error,
+        monumentId,
+        noteId,
+        databaseId,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function handleDatabaseDefinitionsChange(databases: NoteDatabaseDefinitions) {
     setNoteMetadata((current) => ({ ...(current ?? {}), databases }));
   }
@@ -417,6 +463,7 @@ export default function MonumentNotePage() {
                 onCreateSubpage={handleCreateSubpage}
                 onSubpageCreated={handleSubpageCreated}
                 onOpenSubpage={handleOpenSubpage}
+                onOpenDatabase={handleOpenDatabase}
                 placeholder="Start typing, or press / for commands…"
                 className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
                 aria-label="Note editor"

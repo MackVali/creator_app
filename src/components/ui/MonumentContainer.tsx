@@ -31,7 +31,7 @@ export const MonumentContainer = forwardRef<MonumentContainerHandle>(
     );
 
     return (
-      <section className="section mt-2">
+      <section className="section app-dashboard-section mt-2">
         <div className="mb-3 flex items-center justify-between">
           <Link href="/monuments" className="h-label block">
             Monuments
@@ -47,7 +47,7 @@ export const MonumentContainer = forwardRef<MonumentContainerHandle>(
           {(monuments) => {
             const canAddMonument = monuments.length < MAX_MONUMENTS;
             return (
-              <div className="px-4">
+              <div className="app-dashboard-monuments-panel px-4">
                 <MonumentGridWithSharedTransition
                   monuments={monuments.map<MonumentCard>((m) => ({
                     id: m.id,

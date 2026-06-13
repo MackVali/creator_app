@@ -2237,14 +2237,14 @@ function OverviewLineChart({
 
   const width = 720;
   const height = 330;
-  const padding = { top: 16, right: 12, bottom: 56, left: 38 };
+  const padding = { top: 24, right: 22, bottom: 58, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const contextHeight = 58;
+  const contextHeight = 52;
   const trendHeight = chartHeight - contextHeight;
   const trendBaselineY = padding.top + trendHeight;
-  const contextTopY = trendBaselineY + 12;
-  const contextBottomY = padding.top + chartHeight - 8;
+  const contextTopY = trendBaselineY + 14;
+  const contextBottomY = padding.top + chartHeight - 10;
   const values = points.map((point) => point.xpGained);
   const rawMaxValue = values.length > 0 ? Math.max(...values) : 0;
   const yMax = getTrendYAxisMax(rawMaxValue);
@@ -2282,16 +2282,11 @@ function OverviewLineChart({
     2,
     Math.min(12, bucketWidth * (points.length > 30 ? 0.42 : 0.52))
   );
-  const linePath = svgPoints
-    .map(
-      (point, index) =>
-        `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
-    )
-    .join(" ");
+  const linePath = buildSmoothLinePath(svgPoints);
   const areaPath = [
-    `M${padding.left},${trendBaselineY}`,
-    ...svgPoints.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`),
+    linePath,
     `L${padding.left + chartWidth},${trendBaselineY}`,
+    `L${padding.left},${trendBaselineY}`,
     "Z",
   ].join(" ");
   const xLabels = getTrendAxisLabelIndices(range, points)
@@ -2369,7 +2364,7 @@ function OverviewLineChart({
   }, [tooltip.visible]);
 
   return (
-    <div className="px-3 py-3.5 sm:px-4 sm:py-4">
+    <div className="px-3.5 py-4 sm:px-5 sm:py-5">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium text-zinc-100 sm:text-base">
           XP over time
@@ -2386,23 +2381,37 @@ function OverviewLineChart({
         </div>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-5 space-y-3">
         <div ref={chartRef} className="relative" data-overview-line-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             preserveAspectRatio="none"
-            className="h-[310px] w-full sm:h-[250px] md:h-[270px]"
+            className="h-[300px] w-full sm:h-[280px] md:h-[300px]"
           >
             <defs>
               <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(16,185,129,0.16)" />
-                <stop offset="100%" stopColor="rgba(16,185,129,0.01)" />
+                <stop offset="0%" stopColor="rgba(52,211,153,0.16)" />
+                <stop offset="58%" stopColor="rgba(16,185,129,0.055)" />
+                <stop offset="100%" stopColor="rgba(16,185,129,0)" />
               </linearGradient>
               <linearGradient id="overviewDailyLine" x1="0" x2="1" y1="0" y2="0">
                 <stop offset="0%" stopColor="#34d399" />
                 <stop offset="100%" stopColor="#6ee7b7" />
               </linearGradient>
+              <linearGradient id="overviewDailySurface" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.035)" />
+                <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+              </linearGradient>
             </defs>
+
+            <rect
+              x={padding.left}
+              y={padding.top}
+              width={chartWidth}
+              height={trendHeight}
+              rx={18}
+              fill="url(#overviewDailySurface)"
+            />
 
             {yTickValues.map((value) => {
               const ratio = yMax === 0 ? 0 : value / yMax;
@@ -2414,8 +2423,9 @@ function OverviewLineChart({
                     x2={padding.left + chartWidth}
                     y1={y}
                     y2={y}
-                    stroke="rgba(82,82,91,0.3)"
-                    strokeDasharray="3 6"
+                    stroke="rgba(113,113,122,0.18)"
+                    strokeDasharray="2 10"
+                    vectorEffect="non-scaling-stroke"
                   />
                 </g>
               );
@@ -2426,8 +2436,8 @@ function OverviewLineChart({
               x2={padding.left + chartWidth}
               y1={trendBaselineY}
               y2={trendBaselineY}
-              stroke="rgba(82,82,91,0.34)"
-              strokeDasharray="3 6"
+              stroke="rgba(161,161,170,0.18)"
+              vectorEffect="non-scaling-stroke"
             />
 
             <line
@@ -2435,8 +2445,8 @@ function OverviewLineChart({
               x2={padding.left + chartWidth}
               y1={contextTopY}
               y2={contextTopY}
-              stroke="rgba(63,63,70,0.28)"
-              strokeDasharray="3 6"
+              stroke="rgba(113,113,122,0.12)"
+              vectorEffect="non-scaling-stroke"
             />
 
             {points.map((point, index) => {
@@ -2472,7 +2482,7 @@ function OverviewLineChart({
                       width={efficiencyWidth}
                       height={3}
                       rx={1.5}
-                      fill="rgba(245,158,11,0.45)"
+                      fill="rgba(245,158,11,0.26)"
                     />
                   ) : null}
                   {barHeight > 0 ? (
@@ -2482,7 +2492,7 @@ function OverviewLineChart({
                       width={completionBarWidth}
                       height={barHeight}
                       rx={Math.min(2, completionBarWidth / 2)}
-                      fill="rgba(52,211,153,0.24)"
+                      fill="rgba(52,211,153,0.16)"
                     />
                   ) : null}
                 </g>
@@ -2492,40 +2502,35 @@ function OverviewLineChart({
             {!isEmpty ? (
               <>
                 <path d={areaPath} fill="url(#overviewDailyArea)" />
-                <path
-                  d={linePath}
-                  fill="none"
-                  stroke="url(#overviewDailyLine)"
-                  strokeWidth={2.25}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
                 {activePoint ? (
                   <line
                     x1={svgPoints[activeIndex]?.x ?? 0}
                     x2={svgPoints[activeIndex]?.x ?? 0}
                     y1={padding.top}
                     y2={contextBottomY}
-                    stroke="rgba(113,113,122,0.38)"
-                    strokeDasharray="3 5"
+                    stroke="rgba(212,212,216,0.2)"
+                    strokeDasharray="2 7"
+                    vectorEffect="non-scaling-stroke"
                   />
                 ) : null}
-
-                {svgPoints.map(({ x, y, point }, index) => {
-                  const isActive = activePoint != null && index === activeIndex;
-                  return (
-                    <g key={`${point.date}-${index}`}>
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r={isActive ? 3.8 : 2.3}
-                        fill={isActive ? "#d1fae5" : "#6ee7b7"}
-                        stroke="rgba(9,9,11,0.95)"
-                        strokeWidth={isActive ? 1.5 : 1}
-                      />
-                    </g>
-                  );
-                })}
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="rgba(52,211,153,0.2)"
+                  strokeWidth={8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="url(#overviewDailyLine)"
+                  strokeWidth={2.8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
               </>
             ) : (
               <g>
@@ -2536,6 +2541,7 @@ function OverviewLineChart({
                   y2={padding.top + trendHeight * 0.55}
                   stroke="rgba(63,63,70,0.55)"
                   strokeDasharray="4 6"
+                  vectorEffect="non-scaling-stroke"
                 />
               </g>
             )}
@@ -2585,6 +2591,22 @@ function OverviewLineChart({
                 </div>
               </div>
             ))}
+
+            {activePoint ? (
+              <div
+                className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-300/15"
+                style={{
+                  left: `${(((svgPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
+                    4
+                  )}%`,
+                  top: `${(((svgPoints[activeIndex]?.y ?? 0) / height) * 100).toFixed(
+                    4
+                  )}%`,
+                }}
+              >
+                <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/80 bg-emerald-100 shadow-[0_0_0_1px_rgba(209,250,229,0.42),0_0_18px_rgba(52,211,153,0.28)]" />
+              </div>
+            ) : null}
           </div>
 
           <div className="pointer-events-none absolute inset-0">
@@ -2734,6 +2756,46 @@ function formatRangeSummary(range: AnalyticsRange, pointsCount: number) {
   }
 
   return `${pointsCount} daily points`;
+}
+
+function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
+  if (points.length === 0) {
+    return "";
+  }
+
+  const first = points[0];
+  if (points.length === 1) {
+    return `M${first.x.toFixed(2)},${first.y.toFixed(2)}`;
+  }
+
+  if (points.length === 2) {
+    const second = points[1];
+    return `M${first.x.toFixed(2)},${first.y.toFixed(2)} L${second.x.toFixed(
+      2
+    )},${second.y.toFixed(2)}`;
+  }
+
+  return points.slice(0, -1).reduce((path, point, index) => {
+    const previous = points[index - 1] ?? point;
+    const next = points[index + 1];
+    const nextNext = points[index + 2] ?? next;
+    const minY = Math.min(point.y, next.y);
+    const maxY = Math.max(point.y, next.y);
+    const controlOneX = point.x + (next.x - previous.x) / 6;
+    const controlOneY = clampNumber(point.y + (next.y - previous.y) / 6, minY, maxY);
+    const controlTwoX = next.x - (nextNext.x - point.x) / 6;
+    const controlTwoY = clampNumber(next.y - (nextNext.y - point.y) / 6, minY, maxY);
+
+    return `${path} C${controlOneX.toFixed(2)},${controlOneY.toFixed(
+      2
+    )} ${controlTwoX.toFixed(2)},${controlTwoY.toFixed(2)} ${next.x.toFixed(
+      2
+    )},${next.y.toFixed(2)}`;
+  }, `M${first.x.toFixed(2)},${first.y.toFixed(2)}`);
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function buildYTickValues(yMax: number) {

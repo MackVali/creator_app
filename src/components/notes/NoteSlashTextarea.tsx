@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  ChevronLeft,
   ChevronRight,
   Eye,
   EyeOff,
@@ -28,6 +29,7 @@ import {
   Minus,
   Pin,
   Plus,
+  Settings2,
   X,
   Table2,
   Trash2,
@@ -260,6 +262,7 @@ type NoteSlashTextareaProps = {
     parentContent: string,
   ) => Promise<void> | void;
   onOpenSubpage?: (subpageId: string) => void;
+  onOpenDatabase?: (databaseId: string) => void | Promise<void>;
   placeholder?: string;
   className?: string;
   "aria-label"?: string;
@@ -1271,6 +1274,169 @@ function getDatabaseEntryFieldValue(
   return rawValue;
 }
 
+function NoteDatabaseEntriesView({
+  activeView,
+  definition,
+  entries,
+  size = "compact",
+  titleField,
+  visibleFields,
+}: {
+  activeView: NoteDatabaseViewDefinition;
+  definition: NoteDatabaseDefinition;
+  entries: NoteDatabaseEntry[];
+  size?: "compact" | "full";
+  titleField: NoteDatabaseFieldDefinition | null;
+  visibleFields: NoteDatabaseFieldDefinition[];
+}) {
+  const isFull = size === "full";
+
+  if (entries.length > 0 && activeView.type === "table") {
+    return (
+      <div
+        className={`overflow-x-auto rounded-md border border-white/[0.07] ${
+          isFull ? "bg-black/20" : "bg-black/14"
+        }`}
+      >
+        <div className={`${isFull ? "min-w-[44rem]" : "min-w-[30rem]"} divide-y divide-white/[0.06]`}>
+          <div
+            className={`flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32 ${
+              isFull ? "px-3 py-2" : "px-2.5 py-1.5"
+            }`}
+          >
+            {visibleFields.map((field) => (
+              <span
+                key={field.id}
+                className={`shrink-0 truncate ${field.id === titleField?.id ? "w-40" : "w-32"}`}
+              >
+                {getDatabaseFieldName(field)}
+              </span>
+            ))}
+          </div>
+          {entries.map((entry) => (
+            <div
+              key={entry.id}
+              className={`flex items-center gap-2 ${isFull ? "px-3 py-2 text-sm" : "px-2.5 py-1.5 text-xs"}`}
+            >
+              {visibleFields.map((field) => {
+                const isTitleField = field.id === titleField?.id;
+                const value = formatDatabaseEntryValue(entry.values[field.id], field.type);
+
+                return (
+                  <span
+                    key={field.id}
+                    className={`shrink-0 truncate ${
+                      isTitleField ? "w-40 font-semibold" : "w-32 font-medium"
+                    } ${
+                      isTitleField
+                        ? "text-white/82"
+                        : value
+                          ? "text-white/58"
+                          : "text-white/24"
+                    }`}
+                  >
+                    {isTitleField ? getDatabaseEntryTitle(entry, definition) : value || "Empty"}
+                  </span>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (entries.length > 0 && activeView.type === "list") {
+    return (
+      <div className={isFull ? "space-y-2" : "space-y-1.5"}>
+        {entries.map((entry) => {
+          const properties = getDatabaseEntryProperties(entry, definition);
+
+          return (
+            <div
+              key={entry.id}
+              className={`rounded-md border border-white/[0.07] bg-black/16 ${
+                isFull ? "px-3 py-2.5" : "px-2.5 py-1.5"
+              }`}
+            >
+              <p
+                className={`truncate font-semibold text-white/82 ${
+                  isFull ? "text-sm leading-5" : "text-xs leading-4"
+                }`}
+              >
+                {getDatabaseEntryTitle(entry, definition)}
+              </p>
+              {properties.length > 0 ? (
+                <p
+                  className={`mt-0.5 truncate font-medium text-white/38 ${
+                    isFull ? "text-xs leading-5" : "text-[11px] leading-4"
+                  }`}
+                >
+                  {properties
+                    .map(({ field, value }) => {
+                      return `${getDatabaseFieldName(field)}: ${value || "Empty"}`;
+                    })
+                    .join(" · ")}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (entries.length > 0 && activeView.type === "card") {
+    return (
+      <div className={`grid grid-cols-1 gap-2 ${isFull ? "sm:grid-cols-2 xl:grid-cols-3" : "sm:grid-cols-2"}`}>
+        {entries.map((entry) => {
+          const properties = getDatabaseEntryProperties(entry, definition);
+
+          return (
+            <div
+              key={entry.id}
+              className={`rounded-md border border-white/[0.08] bg-[#080808] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ${
+                isFull ? "px-3 py-3" : "px-2.5 py-2"
+              }`}
+            >
+              <p className="truncate text-sm font-semibold leading-5 text-white/88">
+                {getDatabaseEntryTitle(entry, definition)}
+              </p>
+              <div className="mt-1.5 space-y-1">
+                {properties.map(({ field, value }) => (
+                  <div
+                    key={field.id}
+                    className="flex items-center justify-between gap-2 rounded border border-white/[0.055] bg-white/[0.035] px-2 py-1 text-[11px] font-medium"
+                  >
+                    <span className="truncate text-white/34">{getDatabaseFieldName(field)}</span>
+                    <span
+                      className={`max-w-[55%] truncate ${
+                        value ? "text-white/70" : "text-white/26"
+                      }`}
+                    >
+                      {value || "Empty"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <p
+      className={`rounded-md border border-dashed border-white/[0.08] bg-black/12 font-medium text-white/34 ${
+        isFull ? "px-3 py-8 text-center text-sm" : "px-2.5 py-2 text-xs"
+      }`}
+    >
+      No entries yet
+    </p>
+  );
+}
+
 function serializeSegment(segment: NoteSegment) {
   if (segment.type === "text") return segment.text;
   if (segment.type === "divider") return NOTE_DIVIDER_MARKER;
@@ -1476,6 +1642,673 @@ function findListSelectionForCaret(nextSegments: NoteSegment[], caretOffset: num
   return null;
 }
 
+export function NoteDatabaseFocusedView({
+  autosaveLabel = "Autosaved",
+  databaseDefinitions,
+  databaseEntries,
+  databaseId,
+  noteContent,
+  noteTitle,
+  onBack,
+  onDatabaseDefinitionsChange,
+  onDatabaseEntriesChange,
+}: {
+  autosaveLabel?: string;
+  databaseDefinitions?: NoteDatabaseDefinitions | null;
+  databaseEntries?: NoteDatabaseEntries | null;
+  databaseId: string;
+  noteContent: string;
+  noteTitle?: string;
+  onBack: () => void;
+  onDatabaseDefinitionsChange?: (databases: NoteDatabaseDefinitions) => void;
+  onDatabaseEntriesChange?: (entries: NoteDatabaseEntries) => void;
+}) {
+  const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+  const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
+  const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>({});
+  const segments = useMemo(() => parseNoteSegments(noteContent), [noteContent]);
+  const databaseSegment = useMemo(
+    () =>
+      segments.find(
+        (segment): segment is NoteDatabaseSegment =>
+          segment.type === "database" && segment.databaseId === databaseId,
+      ) ?? null,
+    [databaseId, segments],
+  );
+  const normalizedDatabaseDefinitions = useMemo(
+    () => normalizeDatabaseDefinitionsForSegments(segments, databaseDefinitions).definitions,
+    [databaseDefinitions, segments],
+  );
+  const databaseDefinition =
+    databaseSegment
+      ? (normalizedDatabaseDefinitions[databaseId] ?? createDefaultDatabaseDefinition(databaseSegment))
+      : null;
+  const databaseFields = databaseDefinition
+    ? getDatabaseFieldsWithTitleFirst(databaseDefinition)
+    : [];
+  const activeDatabaseView = databaseDefinition ? getActiveDatabaseView(databaseDefinition) : null;
+  const visibleFields = databaseDefinition ? getVisibleDatabaseFields(databaseDefinition) : [];
+  const titleField = databaseDefinition ? getDatabaseTitleField(databaseDefinition) : null;
+  const entries = databaseEntries?.[databaseId] ?? [];
+  const displayTitle = getDatabaseDisplayTitle(databaseDefinition?.title ?? databaseSegment?.title);
+
+  useEffect(() => {
+    const { changed, definitions } = normalizeDatabaseDefinitionsForSegments(
+      segments,
+      databaseDefinitions,
+    );
+
+    if (changed) {
+      onDatabaseDefinitionsChange?.(definitions);
+    }
+  }, [databaseDefinitions, onDatabaseDefinitionsChange, segments]);
+
+  function updateDatabaseDefinition(
+    getNextDefinition: (currentDefinition: NoteDatabaseDefinition) => NoteDatabaseDefinition,
+  ) {
+    if (!databaseSegment) return;
+
+    const currentDefinition =
+      normalizedDatabaseDefinitions[databaseId] ?? createDefaultDatabaseDefinition(databaseSegment);
+    const nextDefinition = normalizeDatabaseDefinition(getNextDefinition(currentDefinition));
+
+    onDatabaseDefinitionsChange?.({
+      ...normalizedDatabaseDefinitions,
+      [databaseId]: nextDefinition,
+    });
+  }
+
+  function updateDatabaseTitle(title: string) {
+    updateDatabaseDefinition((currentDefinition) => ({
+      ...currentDefinition,
+      title,
+    }));
+  }
+
+  function toggleDatabaseBodyPin() {
+    updateDatabaseDefinition((currentDefinition) => {
+      if (currentDefinition.pinnedSurface === "body") {
+        const nextDefinition = { ...currentDefinition };
+        delete nextDefinition.pinnedSurface;
+        return nextDefinition;
+      }
+
+      return {
+        ...currentDefinition,
+        pinnedSurface: "body",
+      };
+    });
+  }
+
+  function updateDatabaseActiveView(viewType: NoteDatabaseViewType) {
+    updateDatabaseDefinition((currentDefinition) => {
+      const activeView = currentDefinition.views?.find((view) => view.type === viewType);
+      return {
+        ...currentDefinition,
+        activeViewId:
+          activeView?.id ?? buildDefaultDatabaseViewId(currentDefinition.id, viewType),
+      };
+    });
+  }
+
+  function addDatabaseField() {
+    updateDatabaseDefinition((currentDefinition) => {
+      const nextField = createDefaultDatabaseField();
+
+      return {
+        ...currentDefinition,
+        fields: [...currentDefinition.fields, nextField],
+        views: currentDefinition.views?.map((view) => ({
+          ...view,
+          visibleFieldIds: Array.from(new Set([...view.visibleFieldIds, nextField.id])),
+        })),
+      };
+    });
+  }
+
+  function updateDatabaseField(
+    fieldId: string,
+    updates: Partial<Pick<NoteDatabaseFieldDefinition, "name" | "type">>,
+  ) {
+    updateDatabaseDefinition((currentDefinition) => ({
+      ...currentDefinition,
+      fields: currentDefinition.fields.map((field) =>
+        field.id === fieldId ? { ...field, ...updates } : field,
+      ),
+    }));
+  }
+
+  function removeDatabaseField(fieldId: string) {
+    updateDatabaseDefinition((currentDefinition) => {
+      if (fieldId === currentDefinition.titleFieldId) return currentDefinition;
+
+      return {
+        ...currentDefinition,
+        fields: currentDefinition.fields.filter((field) => field.id !== fieldId),
+        views: currentDefinition.views?.map((view) => ({
+          ...view,
+          visibleFieldIds: view.visibleFieldIds.filter(
+            (visibleFieldId) => visibleFieldId !== fieldId,
+          ),
+        })),
+      };
+    });
+  }
+
+  function updateDatabaseViewFieldVisibility(
+    viewId: string,
+    fieldId: string,
+    isVisible: boolean,
+  ) {
+    updateDatabaseDefinition((currentDefinition) => {
+      const currentTitleField = getDatabaseTitleField(currentDefinition);
+      if (!currentTitleField || (fieldId === currentTitleField.id && !isVisible)) {
+        return currentDefinition;
+      }
+
+      const fieldsWithTitleFirst = getDatabaseFieldsWithTitleFirst(currentDefinition);
+
+      return {
+        ...currentDefinition,
+        views: currentDefinition.views?.map((view) => {
+          if (view.id !== viewId) return view;
+
+          const visibleIds = new Set(view.visibleFieldIds);
+          if (isVisible) {
+            visibleIds.add(fieldId);
+          } else {
+            visibleIds.delete(fieldId);
+          }
+          visibleIds.add(currentTitleField.id);
+
+          return {
+            ...view,
+            visibleFieldIds: fieldsWithTitleFirst
+              .filter((field) => field.id === currentTitleField.id || visibleIds.has(field.id))
+              .map((field) => field.id),
+          };
+        }),
+      };
+    });
+  }
+
+  function openDatabaseEntrySheet() {
+    setEntryFormValues({});
+    setIsEntrySheetOpen(true);
+  }
+
+  function closeDatabaseEntrySheet() {
+    setIsEntrySheetOpen(false);
+    setEntryFormValues({});
+  }
+
+  function updateEntryFormValue(fieldId: string, value: string) {
+    setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
+  }
+
+  function saveDatabaseEntry() {
+    if (!databaseDefinition) return;
+
+    const now = new Date().toISOString();
+    const values = databaseFields.reduce<Record<string, unknown>>(
+      (nextValues, field) => {
+        const rawValue = entryFormValues[field.id] ?? "";
+        const value = getDatabaseEntryFieldValue(field, rawValue);
+
+        if (isUsefulDatabaseEntryValue(value)) {
+          nextValues[field.id] = value;
+        }
+
+        return nextValues;
+      },
+      {},
+    );
+    const nextEntry: NoteDatabaseEntry = {
+      id: buildClientDatabaseEntryId(),
+      createdAt: now,
+      updatedAt: now,
+      values,
+    };
+    const currentEntries = databaseEntries ?? {};
+
+    onDatabaseEntriesChange?.({
+      ...currentEntries,
+      [databaseDefinition.id]: [...(currentEntries[databaseDefinition.id] ?? []), nextEntry],
+    });
+    closeDatabaseEntrySheet();
+  }
+
+  if (!databaseSegment || !databaseDefinition || !activeDatabaseView) {
+    return (
+      <section className="rounded-[22px] border border-white/[0.08] bg-[#050505]/92 p-4 text-white shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-white/55 outline-none transition hover:bg-white/[0.06] hover:text-white/80 focus-visible:ring-1 focus-visible:ring-white/24"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back
+        </button>
+        <div className="mt-6 rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-8 text-center text-sm text-white/42">
+          Database not found in this note.
+        </div>
+      </section>
+    );
+  }
+
+  const isPinned =
+    databaseDefinition.lockedSystemDatabase === true ||
+    databaseDefinition.pinnedSurface === "body";
+
+  return (
+    <section className="rounded-[22px] border border-white/[0.08] bg-[#050505]/92 p-4 text-white shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-white/55 outline-none transition hover:bg-white/[0.06] hover:text-white/80 focus-visible:ring-1 focus-visible:ring-white/24"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back
+        </button>
+        <p className="text-[11px] font-medium leading-none text-white/38">{autosaveLabel}</p>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-4 border-b border-white/[0.07] pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
+            Database
+          </p>
+          <h1 className="mt-1 truncate text-2xl font-semibold leading-8 text-white sm:text-3xl">
+            {displayTitle}
+          </h1>
+          {noteTitle ? (
+            <p className="mt-1 truncate text-xs font-medium text-white/36">{noteTitle}</p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex h-9 rounded-full border border-white/[0.08] bg-black/24 p-0.5">
+            {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
+              <button
+                key={viewType}
+                type="button"
+                onClick={() => updateDatabaseActiveView(viewType)}
+                aria-pressed={activeDatabaseView.type === viewType}
+                className={`rounded-full px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-emerald-200/35 ${
+                  activeDatabaseView.type === viewType
+                    ? "bg-white/[0.1] text-white/88"
+                    : "text-white/42 hover:bg-white/[0.055] hover:text-white/68"
+                }`}
+              >
+                {NOTE_DATABASE_VIEW_LABELS[viewType]}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={toggleDatabaseBodyPin}
+            disabled={databaseDefinition.lockedSystemDatabase === true}
+            aria-pressed={isPinned}
+            aria-label={
+              databaseDefinition.lockedSystemDatabase === true
+                ? "System database pinned"
+                : databaseDefinition.pinnedSurface === "body"
+                  ? "Unpin from stomach menu"
+                  : "Pin to stomach menu"
+            }
+            title={
+              databaseDefinition.lockedSystemDatabase === true
+                ? "This system database is locked."
+                : databaseDefinition.pinnedSurface === "body"
+                  ? "Unpin from stomach menu"
+                  : "Pin to stomach menu"
+            }
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+              isPinned
+                ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
+            }`}
+          >
+            <Pin className="h-4 w-4" fill={isPinned ? "currentColor" : "none"} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsBuilderOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/[0.09] bg-white/[0.04] px-3 text-xs font-semibold text-white/66 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/86 focus-visible:ring-1 focus-visible:ring-white/24"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Builder
+          </button>
+          <button
+            type="button"
+            onClick={openDatabaseEntrySheet}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-emerald-300/18 bg-emerald-300/10 px-3 text-xs font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <NoteDatabaseEntriesView
+          activeView={activeDatabaseView}
+          definition={databaseDefinition}
+          entries={entries}
+          size="full"
+          titleField={titleField}
+          visibleFields={visibleFields}
+        />
+      </div>
+
+      {isEntrySheetOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Add entry to ${displayTitle}`}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeDatabaseEntrySheet();
+            }
+          }}
+        >
+          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/[0.1] bg-[#080808] shadow-[0_28px_90px_-34px_rgba(0,0,0,1)]">
+            <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
+                  Add entry
+                </p>
+                <h2 className="mt-1 truncate text-xl font-semibold leading-7 text-white">
+                  {displayTitle}
+                </h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Close entry form"
+                onClick={closeDatabaseEntrySheet}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.07] focus-visible:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              {databaseFields.length > 0 ? (
+                <div className="space-y-3">
+                  {databaseFields.map((field) => {
+                    const fieldName = getDatabaseFieldName(field);
+                    const fieldValue = entryFormValues[field.id] ?? "";
+                    const inputClassName =
+                      "mt-1.5 w-full rounded-xl border border-white/[0.09] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-emerald-300/25 hover:border-white/[0.14] focus-visible:border-emerald-300/35";
+
+                    return (
+                      <label key={field.id} className="block">
+                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/64">
+                          <span className="min-w-0 truncate">
+                            {field.isTitle ? "Title" : fieldName}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            {field.isTitle ? (
+                              <span className="rounded border border-emerald-300/16 bg-emerald-300/8 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-100/58">
+                                {fieldName}
+                              </span>
+                            ) : null}
+                            <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
+                              {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
+                            </span>
+                          </span>
+                        </span>
+                        {field.type === "longText" ? (
+                          <textarea
+                            value={fieldValue}
+                            onChange={(event) =>
+                              updateEntryFormValue(field.id, event.target.value)
+                            }
+                            rows={4}
+                            className={`${inputClassName} resize-none`}
+                            placeholder={fieldName}
+                          />
+                        ) : field.type === "number" ? (
+                          <input
+                            type="number"
+                            value={fieldValue}
+                            onChange={(event) =>
+                              updateEntryFormValue(field.id, event.target.value)
+                            }
+                            className={inputClassName}
+                            placeholder={fieldName}
+                          />
+                        ) : field.type === "rating" ? (
+                          <input
+                            type="number"
+                            min={1}
+                            max={5}
+                            step={1}
+                            value={fieldValue}
+                            onChange={(event) =>
+                              updateEntryFormValue(field.id, event.target.value)
+                            }
+                            className={inputClassName}
+                            placeholder="1-5"
+                          />
+                        ) : field.type === "date" ? (
+                          <input
+                            type="date"
+                            value={fieldValue}
+                            onChange={(event) =>
+                              updateEntryFormValue(field.id, event.target.value)
+                            }
+                            className={inputClassName}
+                          />
+                        ) : field.type === "photo" ? (
+                          <input
+                            disabled
+                            readOnly
+                            value=""
+                            className={`${inputClassName} cursor-not-allowed text-white/28`}
+                            placeholder="Photo field coming later"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={fieldValue}
+                            onChange={(event) =>
+                              updateEntryFormValue(field.id, event.target.value)
+                            }
+                            className={inputClassName}
+                            placeholder={field.type === "select" ? "Select value" : fieldName}
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+                  Add fields in the builder before creating entries.
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 border-t border-white/[0.07] p-3">
+              <button
+                type="button"
+                onClick={closeDatabaseEntrySheet}
+                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.04] text-sm font-semibold text-white/64 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/22"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={databaseFields.length === 0}
+                onClick={saveDatabaseEntry}
+                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-emerald-300/18 bg-emerald-300/10 text-sm font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35 disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-white/[0.03] disabled:text-white/28"
+              >
+                Save entry
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isBuilderOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Database builder for ${displayTitle}`}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsBuilderOpen(false);
+            }
+          }}
+        >
+          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/[0.1] bg-[#080808] shadow-[0_28px_90px_-34px_rgba(0,0,0,1)]">
+            <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
+                  Database builder
+                </p>
+                <input
+                  value={databaseDefinition.title}
+                  onChange={(event) => updateDatabaseTitle(event.target.value)}
+                  placeholder={NOTE_DATABASE_DISPLAY_TITLE_FALLBACK}
+                  className="mt-1 w-full border-0 bg-transparent p-0 text-xl font-semibold leading-7 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
+                  aria-label="Database title"
+                />
+              </div>
+              <button
+                type="button"
+                aria-label="Close database builder"
+                onClick={() => setIsBuilderOpen(false)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.07] focus-visible:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+              <div className="space-y-2">
+                {databaseFields.length > 0 ? (
+                  databaseFields.map((field) => {
+                    const isTitleField = field.id === databaseDefinition.titleFieldId;
+                    const isFieldVisible =
+                      isTitleField || Boolean(activeDatabaseView.visibleFieldIds.includes(field.id));
+                    const activeViewLabel = NOTE_DATABASE_VIEW_LABELS[activeDatabaseView.type];
+
+                    return (
+                      <div
+                        key={field.id}
+                        className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.045] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                      >
+                        <span
+                          className="flex h-8 w-5 items-center justify-center text-white/25"
+                          aria-hidden="true"
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </span>
+                        <input
+                          value={field.name}
+                          onChange={(event) =>
+                            updateDatabaseField(field.id, { name: event.target.value })
+                          }
+                          placeholder="Field name"
+                          className="min-w-0 border-0 bg-transparent p-0 text-sm font-medium leading-6 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
+                          aria-label="Field name"
+                        />
+                        {isTitleField ? (
+                          <span className="flex h-8 items-center gap-1.5 rounded-full border border-emerald-300/16 bg-emerald-300/8 px-2 text-xs font-semibold text-emerald-100/70">
+                            Title
+                            <span className="text-white/30">Text</span>
+                          </span>
+                        ) : (
+                          <select
+                            value={field.type}
+                            onChange={(event) =>
+                              updateDatabaseField(field.id, {
+                                type: event.target.value as NoteDatabaseFieldType,
+                              })
+                            }
+                            className="h-8 max-w-[8rem] rounded-full border border-white/[0.09] bg-[#111] px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.16] focus-visible:border-emerald-300/35"
+                            aria-label="Field type"
+                          >
+                            {NOTE_DATABASE_FIELD_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {NOTE_DATABASE_FIELD_TYPE_LABELS[type]}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={
+                            isTitleField
+                              ? `Title field stays visible in ${activeViewLabel}`
+                              : `${isFieldVisible ? "Hide" : "Show"} field ${
+                                  field.name || "Untitled field"
+                                } in ${activeViewLabel}`
+                          }
+                          onClick={() =>
+                            updateDatabaseViewFieldVisibility(
+                              activeDatabaseView.id,
+                              field.id,
+                              !isFieldVisible,
+                            )
+                          }
+                          disabled={isTitleField}
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
+                            isFieldVisible
+                              ? "text-emerald-100/70 hover:bg-emerald-300/10 hover:text-emerald-50"
+                              : "text-white/24 hover:bg-white/[0.07] hover:text-white/58"
+                          } disabled:cursor-not-allowed disabled:hover:bg-transparent ${
+                            isTitleField ? "disabled:text-emerald-100/38" : "disabled:text-white/14"
+                          }`}
+                        >
+                          {isFieldVisible ? (
+                            <Eye className="h-3.5 w-3.5" />
+                          ) : (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Remove field ${field.name || "Untitled field"}`}
+                          onClick={() => removeDatabaseField(field.id)}
+                          disabled={isTitleField}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/34 outline-none transition hover:bg-white/[0.07] hover:text-white/72 focus-visible:bg-white/[0.07] focus-visible:text-white disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+                    Add fields to shape this database block.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-white/[0.07] p-3">
+              <button
+                type="button"
+                onClick={addDatabaseField}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/18 bg-emerald-300/10 text-sm font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35"
+              >
+                <Plus className="h-4 w-4" />
+                Add Field
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export const NoteSlashTextarea = forwardRef<NoteSlashTextareaHandle, NoteSlashTextareaProps>(
 function NoteSlashTextarea({
   value,
@@ -1487,6 +2320,7 @@ function NoteSlashTextarea({
   onCreateSubpage,
   onSubpageCreated,
   onOpenSubpage,
+  onOpenDatabase,
   placeholder,
   className,
   "aria-label": ariaLabel,
@@ -2285,12 +3119,17 @@ function NoteSlashTextarea({
     });
   }
 
-  function openDatabaseBuilder(segment: NoteDatabaseSegment) {
-    setActiveDatabaseId(segment.databaseId);
-
+  function openDatabase(segment: NoteDatabaseSegment) {
     if (!databaseDefinitions?.[segment.databaseId]) {
       updateDatabaseDefinition(segment.databaseId, (currentDefinition) => currentDefinition);
     }
+
+    if (onOpenDatabase) {
+      void onOpenDatabase(segment.databaseId);
+      return;
+    }
+
+    setActiveDatabaseId(segment.databaseId);
   }
 
   function openDatabaseEntrySheet(segment: NoteDatabaseSegment) {
@@ -2960,123 +3799,13 @@ function NoteSlashTextarea({
                   </div>
 
                   <div className="mt-2.5">
-                    {entries.length > 0 && activeView.type === "table" ? (
-                      <div className="overflow-x-auto rounded-md border border-white/[0.07] bg-black/14">
-                        <div className="min-w-[30rem] divide-y divide-white/[0.06]">
-                          <div className="flex items-center gap-2 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32">
-                            {visibleFields.map((field) => (
-                              <span
-                                key={field.id}
-                                className={`shrink-0 truncate ${
-                                  field.id === titleField?.id ? "w-36" : "w-28"
-                                }`}
-                              >
-                                {getDatabaseFieldName(field)}
-                              </span>
-                            ))}
-                          </div>
-                          {entries.map((entry) => (
-                            <div
-                              key={entry.id}
-                              className="flex items-center gap-2 px-2.5 py-1.5 text-xs"
-                            >
-                              {visibleFields.map((field) => {
-                                const isTitleField = field.id === titleField?.id;
-                                const value = formatDatabaseEntryValue(
-                                  entry.values[field.id],
-                                  field.type,
-                                );
-
-                                return (
-                                  <span
-                                    key={field.id}
-                                    className={`shrink-0 truncate ${
-                                      isTitleField ? "w-36 font-semibold" : "w-28 font-medium"
-                                    } ${
-                                      isTitleField
-                                        ? "text-white/82"
-                                        : value
-                                          ? "text-white/58"
-                                          : "text-white/24"
-                                    }`}
-                                  >
-                                    {isTitleField
-                                      ? getDatabaseEntryTitle(entry, definition)
-                                      : value || "Empty"}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : entries.length > 0 && activeView.type === "list" ? (
-                      <div className="space-y-1.5">
-                        {entries.map((entry) => {
-                          const properties = getDatabaseEntryProperties(entry, definition);
-
-                          return (
-                            <div
-                              key={entry.id}
-                              className="rounded-md border border-white/[0.07] bg-black/16 px-2.5 py-1.5"
-                            >
-                              <p className="truncate text-xs font-semibold leading-4 text-white/82">
-                                {getDatabaseEntryTitle(entry, definition)}
-                              </p>
-                              {properties.length > 0 ? (
-                                <p className="mt-0.5 truncate text-[11px] font-medium leading-4 text-white/38">
-                                  {properties
-                                    .map(({ field, value }) => {
-                                      return `${getDatabaseFieldName(field)}: ${value || "Empty"}`;
-                                    })
-                                    .join(" · ")}
-                                </p>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : entries.length > 0 && activeView.type === "card" ? (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {entries.map((entry) => {
-                          const properties = getDatabaseEntryProperties(entry, definition);
-
-                          return (
-                            <div
-                              key={entry.id}
-                              className="rounded-md border border-white/[0.08] bg-[#080808] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-                            >
-                              <p className="truncate text-sm font-semibold leading-5 text-white/88">
-                                {getDatabaseEntryTitle(entry, definition)}
-                              </p>
-                              <div className="mt-1.5 space-y-1">
-                                {properties.map(({ field, value }) => (
-                                  <div
-                                    key={field.id}
-                                    className="flex items-center justify-between gap-2 rounded border border-white/[0.055] bg-white/[0.035] px-2 py-1 text-[11px] font-medium"
-                                  >
-                                    <span className="truncate text-white/34">
-                                      {getDatabaseFieldName(field)}
-                                    </span>
-                                    <span
-                                      className={`max-w-[55%] truncate ${
-                                        value ? "text-white/70" : "text-white/26"
-                                      }`}
-                                    >
-                                      {value || "Empty"}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="rounded-md border border-dashed border-white/[0.08] bg-black/12 px-2.5 py-2 text-xs font-medium text-white/34">
-                        No entries yet
-                      </p>
-                    )}
+                    <NoteDatabaseEntriesView
+                      activeView={activeView}
+                      definition={definition}
+                      entries={entries}
+                      titleField={titleField}
+                      visibleFields={visibleFields}
+                    />
                   </div>
 
                   <div className="mt-2.5 flex flex-wrap gap-2">
@@ -3092,8 +3821,8 @@ function NoteSlashTextarea({
                       type="button"
                       aria-label={
                         isLockedSystemDatabase
-                          ? `Open database builder for locked system database ${displayTitle}.`
-                          : `Open database builder for ${displayTitle}. Press Backspace or Delete to remove.`
+                          ? `Open locked system database ${displayTitle}.`
+                          : `Open database ${displayTitle}. Press Backspace or Delete to remove.`
                       }
                       title={
                         isLockedSystemDatabase
@@ -3107,7 +3836,7 @@ function NoteSlashTextarea({
                           blockButtonRefs.current.delete(index);
                         }
                       }}
-                      onClick={() => openDatabaseBuilder(segment)}
+                      onClick={() => openDatabase(segment)}
                       onKeyDown={(event) => handleBlockKeyDown(event, index)}
                       className="flex h-8 items-center justify-center rounded-md border border-white/[0.08] bg-black/20 px-2.5 text-xs font-semibold text-white/60 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-white/78 focus-visible:border-emerald-300/35 focus-visible:bg-white/[0.075]"
                     >

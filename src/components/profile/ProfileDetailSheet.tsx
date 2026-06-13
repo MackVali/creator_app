@@ -62,7 +62,7 @@ const DetailMedia = ({
   image: string | null;
   title: string;
 }) => (
-  <div className="relative h-full w-full overflow-hidden rounded-[14px] bg-zinc-900 shadow-[inset_0_-18px_34px_rgba(0,0,0,0.24)]">
+  <div className="relative h-full w-full overflow-hidden rounded-t-[18px] rounded-b-none shadow-[inset_0_-18px_34px_rgba(0,0,0,0.24)]">
     {image ? (
       <img
         src={image}
@@ -300,9 +300,7 @@ export default function ProfileDetailSheet({
       >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-0 pb-2 pt-2 [-webkit-overflow-scrolling:touch]">
           <div className="space-y-2">
-            <div
-              className={`mx-auto ${DETAIL_SHEET_WIDTH_CLASS} rounded-[18px] bg-black/20 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]`}
-            >
+            <div className={`mx-auto ${DETAIL_SHEET_WIDTH_CLASS}`}>
               <div className="relative aspect-[23/18]">
                 <DetailMedia image={image} title={title} />
               </div>

@@ -132,7 +132,7 @@ export function MonumentGridWithSharedTransition({
       type="button"
       data-tour="new-monument"
       onClick={openDialog}
-      className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
+      className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
     >
       <div className="mb-1 text-lg leading-none">🏛️</div>
       <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
@@ -144,7 +144,7 @@ export function MonumentGridWithSharedTransition({
   if (!allowNewMonumentCard && isEmpty) {
     return (
       <div className="grid grid-cols-4 gap-1">
-        <div className="card flex aspect-square w-full flex-col items-center justify-center p-1">
+        <div className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1">
           <p className="text-xs text-[var(--muted)]">
             Maximum of {MAX_MONUMENTS} monuments reached.
           </p>
@@ -162,7 +162,7 @@ export function MonumentGridWithSharedTransition({
                 key={`empty-${index}`}
                 data-tour="new-monument"
                 onClick={openDialog}
-                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
+                className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
               >
                 <div className="mb-1 text-lg opacity-60">🏛️</div>
                 <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
@@ -175,7 +175,7 @@ export function MonumentGridWithSharedTransition({
                 key={m.id}
                 layoutId={`card-${m.id}`}
                 onClick={() => setActiveId(m.id)}
-                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
+                className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
               >
                 <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
                   {m.emoji ?? "\uD83C\uDFDB\uFE0F"}

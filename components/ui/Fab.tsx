@@ -9406,7 +9406,7 @@ export function Fab({
                           "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
                         )}
-                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                        contentWrapperClassName="rounded-sm border-black bg-zinc-950 shadow-xl shadow-black/50"
                         placeholder="Stage"
                       >
                         <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
@@ -10148,7 +10148,7 @@ export function Fab({
                           )
                         }
                       >
-                        <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-sm border border-zinc-700/70 bg-zinc-950 p-2 text-sm text-white shadow-2xl shadow-black/50">
+                        <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-sm border border-black bg-zinc-950 p-2 text-sm text-white shadow-2xl shadow-black/50">
                           <FabHabitRoutineCreateRow
                             active={isCreatingHabitRoutineInline}
                             value={habitInlineRoutineName}

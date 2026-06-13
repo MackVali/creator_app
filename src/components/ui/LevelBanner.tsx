@@ -55,12 +55,12 @@ export const LevelBanner = forwardRef<LevelBannerHandle, LevelBannerProps>(
       <div
         className={cn(
           "relative mx-4 mt-4 overflow-hidden rounded-[var(--radius)] p-4 shadow-[0_20px_42px_-28px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.045)]",
-          "app-card",
+          "app-card app-dashboard-panel app-dashboard-level-banner",
           className,
         )}
         aria-live="polite"
       >
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.045),transparent_32%,rgba(0,0,0,0.28)_78%)]" />
+        <div className="app-dashboard-level-banner-glow pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.045),transparent_32%,rgba(0,0,0,0.28)_78%)]" />
         <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-3 text-[var(--text)]">
           <span
             role="img"

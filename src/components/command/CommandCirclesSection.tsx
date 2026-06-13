@@ -21,10 +21,12 @@ import {
   Check,
   ChevronDown,
   CircleDot,
+  Grid2x2,
+  Grid3x3,
   Handshake,
   LockKeyhole,
   MapPin,
-  MoreHorizontal,
+  MoreVertical,
   ShieldCheck,
   Target,
   Trash2,
@@ -33,14 +35,23 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT } from "@/components/command/events";
+import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { LazyFab } from "@/components/ui/LazyFab";
 import type { FabEditTarget } from "@/components/ui/Fab";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToastHelpers } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -129,6 +140,12 @@ export type CommandCirclesSectionHandle = {
 type CircleDetailView = "goals" | "roadmap";
 type MemberConstraintField = "skill_constraint_ids" | "location_context_ids";
 type OfferMode = "FIXED" | "FLEXIBLE";
+type CircleHabitCardDensity = "large" | "small";
+
+const CIRCLE_HABIT_GRID_CLASS =
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+const CIRCLE_HABIT_SMALL_GRID_CLASS =
+  "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 
 type OwnerSkillOption = {
   id: string;
@@ -659,6 +676,49 @@ function formatHabitRecurrence(habit: CircleHabit) {
   }
 
   return formatLabelValue(recurrence);
+}
+
+function normalizeCircleHabitType(value: string | null | undefined): string {
+  const normalized = value?.trim().toUpperCase() || "HABIT";
+  return normalized === "ASYNC" ? "SYNC" : normalized;
+}
+
+function getCircleHabitCardTypeClass(habitType: string | null | undefined) {
+  const normalized = normalizeCircleHabitType(habitType);
+
+  if (normalized === "CHORE") {
+    return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
+  }
+
+  if (normalized === "SYNC") {
+    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(113,113,122,0.22),transparent_58%),linear-gradient(135deg,rgba(16,18,22,0.98)_0%,rgba(39,43,51,0.94)_48%,rgba(70,77,89,0.68)_100%)]";
+  }
+
+  if (normalized === "PRACTICE") {
+    return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
+  }
+
+  if (normalized === "RELAXER") {
+    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(6,95,70,0.34),transparent_60%),linear-gradient(138deg,rgba(3,24,18,0.98)_0%,rgba(5,68,51,0.94)_48%,rgba(6,95,70,0.74)_100%)]";
+  }
+
+  if (normalized === "MEMO") {
+    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(126,34,206,0.26),transparent_60%),linear-gradient(138deg,rgba(24,13,38,0.98)_0%,rgba(55,29,84,0.95)_48%,rgba(88,46,128,0.72)_100%)]";
+  }
+
+  return "!bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.2),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)]";
+}
+
+function getCircleHabitCardBorderClass(habitType: string | null | undefined) {
+  const normalized = normalizeCircleHabitType(habitType);
+
+  if (normalized === "CHORE") return "border-rose-200/45";
+  if (normalized === "SYNC") return "border-zinc-300/35";
+  if (normalized === "PRACTICE") return "border-slate-500/50";
+  if (normalized === "RELAXER") return "border-emerald-200/60";
+  if (normalized === "MEMO") return "border-purple-300/55";
+
+  return "border-black/70";
 }
 
 function shortenUserId(userId: string) {
@@ -2683,194 +2743,6 @@ function CircleViewToggle({
   );
 }
 
-function CircleRoadmapEmptyState() {
-  return (
-    <div className="rounded-2xl border border-dashed border-white/[0.10] bg-white/[0.03] px-4 py-5 shadow-[0_12px_34px_rgba(0,0,0,0.28)] sm:px-5 sm:py-6">
-      <h2 className="text-sm font-semibold text-white">
-        No Circle work linked yet
-      </h2>
-      <p className="mt-1 max-w-sm text-xs leading-5 text-[#A7B0BD]">
-        Add habits, roles, or command blocks to this Circle to build its
-        roadmap.
-      </p>
-    </div>
-  );
-}
-
-function CircleWorkRenderer({
-  view,
-  habits,
-  members,
-  isLoading,
-  error,
-  onEditHabit,
-}: {
-  view: CircleDetailView;
-  habits: CircleHabit[];
-  members: CircleMemberDisplay[];
-  isLoading: boolean;
-  error: string | null;
-  onEditHabit: (habit: CircleHabit) => void;
-}) {
-  const hasHabits = habits.length > 0;
-  const title = view === "roadmap" ? "Circle Roadmap" : "Circle Goal Grid";
-  const eyebrow = view === "roadmap" ? "Command Roadmap" : "Command Work";
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-            {eyebrow}
-          </p>
-          <h3 className="mt-1 text-base font-semibold text-white">{title}</h3>
-        </div>
-        <div className="flex flex-wrap gap-1.5 text-[11px] font-medium text-white/52">
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-            {habits.length} {habits.length === 1 ? "habit" : "habits"}
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-            {members.length} {members.length === 1 ? "member" : "members"}
-          </span>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/45">
-          Loading Circle work...
-        </div>
-      ) : null}
-
-      {!isLoading && error ? (
-        <div className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm text-rose-100">
-          {error}
-        </div>
-      ) : null}
-
-      {!isLoading && !error && !hasHabits ? <CircleRoadmapEmptyState /> : null}
-
-      {!isLoading && !error && hasHabits ? (
-        view === "roadmap" ? (
-          <div className="grid gap-2.5">
-            {habits.map((habit, index) => (
-              <CircleRoadmapHabitRow
-                key={habit.id}
-                habit={habit}
-                stepNumber={index + 1}
-                onEditHabit={onEditHabit}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {habits.map((habit) => (
-              <CircleGoalGridHabitCard
-                key={habit.id}
-                habit={habit}
-                onEditHabit={onEditHabit}
-              />
-            ))}
-          </div>
-        )
-      ) : null}
-    </div>
-  );
-}
-
-function CircleGoalGridHabitCard({
-  habit,
-  onEditHabit,
-}: {
-  habit: CircleHabit;
-  onEditHabit: (habit: CircleHabit) => void;
-}) {
-  const meta = getCircleHabitMeta(habit);
-
-  return (
-    <button
-      type="button"
-      onClick={() => onEditHabit(habit)}
-      className="min-h-[8.5rem] w-full rounded-2xl border border-white/[0.08] bg-black/[0.24] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/[0.16] hover:bg-white/[0.045] active:border-white/[0.18] active:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/65"
-    >
-      <div className="flex h-full flex-col justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/58 ring-1 ring-white/10">
-            <Target className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
-              Circle Habit
-            </p>
-            <h4 className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-white/86">
-              {habit.name?.trim() || "Untitled habit"}
-            </h4>
-          </div>
-        </div>
-        {meta.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {meta.map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-white/50"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </button>
-  );
-}
-
-function CircleRoadmapHabitRow({
-  habit,
-  stepNumber,
-  onEditHabit,
-}: {
-  habit: CircleHabit;
-  stepNumber: number;
-  onEditHabit: (habit: CircleHabit) => void;
-}) {
-  const meta = getCircleHabitMeta(habit);
-
-  return (
-    <button
-      type="button"
-      onClick={() => onEditHabit(habit)}
-      className="w-full rounded-2xl border border-white/[0.08] bg-black/[0.24] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/[0.16] hover:bg-white/[0.045] active:border-white/[0.18] active:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/65"
-    >
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-xs font-semibold text-white/58">
-          {stepNumber}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <h4 className="min-w-0 truncate text-sm font-semibold text-white/86">
-              {habit.name?.trim() || "Untitled habit"}
-            </h4>
-            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
-              Circle Habit
-            </span>
-          </div>
-          {meta.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {meta.map((item) => (
-                <span
-                  key={item}
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-white/50"
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </button>
-  );
-}
-
 function getCircleHabitMeta(habit: CircleHabit) {
   return [
     habit.habit_type ? formatLabelValue(habit.habit_type) : null,
@@ -2890,69 +2762,161 @@ function CircleHabitsPanel({
   error: string | null;
   onEditHabit: (habit: CircleHabit) => void;
 }) {
-  return (
-    <section className="relative min-h-[260px] overflow-visible rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-5 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:overflow-hidden sm:p-7">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-      <div className="relative space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-            Circle Habits
-          </p>
-        </div>
+  const [circleHabitCardDensity, setCircleHabitCardDensity] =
+    useState<CircleHabitCardDensity>("large");
+  const isSmallCircleHabitDensity = circleHabitCardDensity === "small";
+  const circleHabitGridClass = isSmallCircleHabitDensity
+    ? CIRCLE_HABIT_SMALL_GRID_CLASS
+    : CIRCLE_HABIT_GRID_CLASS;
+  const statusLabel = isLoading ? "Loading" : error ? "Error" : "Circle";
 
+  return (
+    <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
+      <CardHeader className="relative px-6 pt-3 pb-1">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+            CIRCLE HABITS
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+              {statusLabel}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              {habits.length}
+            </span>
+            <button
+              type="button"
+              aria-label={
+                isSmallCircleHabitDensity ? "Use large cards" : "Use small cards"
+              }
+              aria-pressed={isSmallCircleHabitDensity}
+              onClick={() =>
+                setCircleHabitCardDensity((currentDensity) =>
+                  currentDensity === "large" ? "small" : "large"
+                )
+              }
+              className={cn(
+                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                isSmallCircleHabitDensity
+                  ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
+                  : null
+              )}
+            >
+              {isSmallCircleHabitDensity ? (
+                <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+              ) : (
+                <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+              )}
+            </button>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="relative pt-0 pb-4">
         {isLoading ? (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/45">
-            Loading Circle habits...
+          <div className={circleHabitGridClass}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton
+                key={index}
+                className={cn(
+                  "aspect-[5/6] bg-white/[0.06]",
+                  isSmallCircleHabitDensity
+                    ? "min-h-[70px] rounded-xl"
+                    : "min-h-[96px] rounded-2xl"
+                )}
+              />
+            ))}
           </div>
         ) : null}
 
         {!isLoading && error ? (
-          <div className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm text-rose-100">
-            {error}
-          </div>
+          <p className="text-xs text-white/60">{error}</p>
         ) : null}
 
         {!isLoading && !error && habits.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-4 text-sm text-white/48">
-            No Circle habits yet.
-          </div>
+          <p className="text-xs text-white/60">no circle habits yet</p>
         ) : null}
 
         {!isLoading && !error && habits.length > 0 ? (
-          <div className="grid gap-2.5">
+          <div className={circleHabitGridClass}>
             {habits.map((habit) => {
-              const meta = [
-                habit.habit_type ? formatLabelValue(habit.habit_type) : null,
-                formatHabitDuration(habit.duration_minutes),
-                formatHabitRecurrence(habit),
-              ].filter((item): item is string => Boolean(item));
+              const meta = getCircleHabitMeta(habit);
+              const habitName = habit.name?.trim() || "Untitled habit";
+              const primaryMeta = meta[0] ?? "Circle";
+              const secondaryMeta = meta.slice(1).join(" / ");
 
               return (
                 <button
                   type="button"
                   key={habit.id}
                   onClick={() => onEditHabit(habit)}
-                  className="w-full cursor-pointer rounded-2xl border border-white/[0.08] bg-black/[0.22] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/[0.16] hover:bg-white/[0.04] active:border-white/[0.18] active:bg-white/[0.055] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/65"
+                  className={cn(
+                    "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none hover:-translate-y-px active:translate-y-px active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55",
+                    isSmallCircleHabitDensity
+                      ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+                      : "min-h-[96px] rounded-2xl p-3 sm:p-4",
+                    getCircleHabitCardTypeClass(habit.habit_type),
+                    getCircleHabitCardBorderClass(habit.habit_type)
+                  )}
+                  aria-label={`Edit ${habitName}${
+                    meta.length > 0 ? `. ${meta.join(", ")}` : ""
+                  }`}
+                  title={`${habitName}${
+                    meta.length > 0 ? ` - ${meta.join(", ")}` : ""
+                  }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-white/58 ring-1 ring-white/10">
-                      <CircleDot className="h-4 w-4" aria-hidden="true" />
+                  <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
+                    <span
+                      className={cn(
+                        "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]",
+                        isSmallCircleHabitDensity
+                          ? "h-6 w-6 sm:h-7 sm:w-7"
+                          : "h-7 w-7 sm:h-8 sm:w-8"
+                      )}
+                      aria-hidden="true"
+                    >
+                      <CircleDot
+                        className={cn(
+                          isSmallCircleHabitDensity ? "h-3 w-3" : "h-3.5 w-3.5"
+                        )}
+                      />
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-sm font-semibold text-white/85">
-                        {habit.name?.trim() || "Untitled habit"}
-                      </h3>
-                      {meta.length > 0 ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {meta.map((item) => (
-                            <span
-                              key={item}
-                              className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-white/50"
-                            >
-                              {item}
-                            </span>
-                          ))}
-                        </div>
+                    <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                      <span
+                        className={cn(
+                          "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
+                          isSmallCircleHabitDensity
+                            ? "text-[8px] sm:text-[9px]"
+                            : "text-[9px] sm:text-[10px]"
+                        )}
+                        style={{ hyphens: "auto" }}
+                      >
+                        {habitName}
+                      </span>
+                    </div>
+                    <div className="flex w-full min-w-0 flex-col items-center gap-1">
+                      <span
+                        className={cn(
+                          "w-fit max-w-full truncate rounded-full border border-white/10 bg-white/[0.06] font-semibold uppercase leading-none tracking-[0.06em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                          isSmallCircleHabitDensity
+                            ? "px-1.5 py-[2px] text-[7px]"
+                            : "px-2 py-[3px] text-[8px]"
+                        )}
+                      >
+                        {primaryMeta}
+                      </span>
+                      {secondaryMeta ? (
+                        <span
+                          className={cn(
+                            "line-clamp-1 max-w-full text-center font-medium leading-tight text-white/42",
+                            isSmallCircleHabitDensity
+                              ? "text-[7px]"
+                              : "text-[8px]"
+                          )}
+                        >
+                          {secondaryMeta}
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -2961,8 +2925,8 @@ function CircleHabitsPanel({
             })}
           </div>
         ) : null}
-      </div>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3679,14 +3643,29 @@ function CircleCommandDetail({
                 </div>
 
                 {isOwner ? (
-                  <button
-                    type="button"
-                    aria-label="Edit Circle"
-                    onClick={() => setIsEditOpen(true)}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/70 backdrop-blur transition hover:border-white/25 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                  >
-                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Circle actions"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 data-[state=open]:bg-white/[0.08] data-[state=open]:text-white"
+                      >
+                        <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={8}
+                      className="min-w-[160px] rounded-md border border-white/10 bg-[#050507] p-1 text-white shadow-[0_18px_45px_rgba(0,0,0,0.5)]"
+                    >
+                      <DropdownMenuItem
+                        onSelect={() => setIsEditOpen(true)}
+                        className="cursor-default rounded px-2.5 py-2 text-sm font-medium text-white/80 outline-none transition focus:bg-white/[0.06] focus:text-white data-[highlighted]:bg-white/[0.06] data-[highlighted]:text-white"
+                      >
+                        Edit circle
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ) : null}
               </div>
             </div>
@@ -3698,13 +3677,15 @@ function CircleCommandDetail({
               <div className="relative z-10 space-y-4">
                 <CircleViewToggle value={circleView} onChange={setCircleView} />
                 <div className="mt-3 overflow-visible">
-                  <CircleWorkRenderer
-                    view={circleView}
-                    habits={detailHabits ?? []}
-                    members={activeMembers}
-                    isLoading={isLoadingMembers && detailHabits === null}
-                    error={membersError}
-                    onEditHabit={handleEditHabit}
+                  <MonumentGoalsList
+                    sourceType="circle"
+                    circleId={circle.id}
+                    monumentView={circleView}
+                    roadmapEmptyState={
+                      <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+                        No true roadmap linked to this Circle yet.
+                      </Card>
+                    }
                   />
                 </div>
               </div>
@@ -3986,6 +3967,22 @@ export const CommandCirclesSection = forwardRef<
       controller.abort();
     };
   }, [loadIncomingOffers]);
+
+  useEffect(() => {
+    const closeActiveDetail = () => setActiveCircleId(null);
+
+    window.addEventListener(
+      CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT,
+      closeActiveDetail,
+    );
+
+    return () => {
+      window.removeEventListener(
+        CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT,
+        closeActiveDetail,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeCircleId) {
