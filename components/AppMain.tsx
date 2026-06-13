@@ -17,7 +17,7 @@ export default function AppMain({ children }: { children: ReactNode }) {
 
   return (
     <main
-      className={`flex-1 ${
+      className={`flex-1 bg-[var(--bg)] text-[var(--text)] ${
         shouldHideBottomNav || isFocusedEditor
           ? "pb-[env(safe-area-inset-bottom)]"
           : "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"

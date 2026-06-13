@@ -186,7 +186,7 @@ function formatServiceDurationLabel(minutes?: number | null) {
   return `${displayDays} ${displayDays === "1" ? "day" : "days"}`
 }
 
-function resolveServiceImage(service: ProfileOffer) {
+export function resolveServiceImage(service: ProfileOffer) {
   const direct = service.media_url?.trim()
   if (direct) {
     return direct

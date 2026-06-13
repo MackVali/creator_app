@@ -18,12 +18,12 @@ export default function RoleOption({
       disabled={disabled}
       onClick={onSelect}
       className={[
-        "w-full rounded-lg border border-transparent p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all",
+        "w-full rounded-xl border p-4 text-left transition-all",
         disabled
-          ? "cursor-not-allowed bg-[#0B0C0F]/70 text-zinc-500 opacity-75"
+          ? "cursor-not-allowed border-zinc-700/60 bg-zinc-800/40 text-zinc-500"
           : selected
-          ? "bg-zinc-800/90 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
-          : "bg-[#0B0C0F] hover:bg-[#111216]",
+          ? "border-zinc-500 bg-zinc-700 text-zinc-50 shadow-[0_10px_24px_rgba(0,0,0,0.20)]"
+          : "border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-700/70",
       ].join(" ")}
     >
       <div className="flex items-center justify-between mb-2">
@@ -31,13 +31,13 @@ export default function RoleOption({
           <div
             className={[
               "text-sm font-semibold tracking-wide",
-              disabled ? "text-zinc-500" : "text-white",
+              disabled ? "text-zinc-500" : selected ? "text-white" : "text-zinc-100",
             ].join(" ")}
           >
             {title}
           </div>
           {disabled && (
-            <span className="px-2 py-1 text-xs bg-zinc-700 text-zinc-300 rounded-full">
+            <span className="rounded-full bg-zinc-700 px-2 py-1 text-xs text-zinc-300">
               Coming Soon
             </span>
           )}
@@ -46,17 +46,17 @@ export default function RoleOption({
           className={[
             "h-4 w-4 rounded-full",
             selected
-              ? "bg-white"
+              ? "bg-zinc-300"
               : disabled
-              ? "border border-zinc-600"
-              : "border border-zinc-500",
+              ? "border border-zinc-600 bg-zinc-800"
+              : "border border-zinc-500 bg-zinc-800",
           ].join(" ")}
         />
       </div>
       <div
         className={[
           "text-sm",
-          disabled ? "text-zinc-500" : "text-zinc-300",
+          disabled ? "text-zinc-500" : selected ? "text-zinc-200" : "text-zinc-400",
         ].join(" ")}
       >
         {desc}

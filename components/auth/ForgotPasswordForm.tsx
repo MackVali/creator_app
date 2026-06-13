@@ -67,8 +67,8 @@ export default function ForgotPasswordForm() {
   return (
     <AuthRecoveryShell eyebrow="Account recovery" title="CREATOR">
       <div className="space-y-2">
-        <h2 className="text-2xl font-bold text-white">Reset your password</h2>
-        <p className="text-sm leading-6 text-zinc-300">
+        <h2 className="text-2xl font-bold text-zinc-100">Reset your password</h2>
+        <p className="text-sm leading-6 text-zinc-400">
           Enter the email tied to your CREATOR account. We&apos;ll send a reset
           link if the account exists.
         </p>
@@ -78,7 +78,7 @@ export default function ForgotPasswordForm() {
 
       <form onSubmit={handleResetPassword} className="space-y-6">
         <div>
-          <label className="block text-sm font-semibold text-white mb-3">
+          <label className="mb-3 block text-sm font-semibold text-zinc-200">
             Email
           </label>
           <input
@@ -88,7 +88,7 @@ export default function ForgotPasswordForm() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setEmail(e.target.value)
             }
-            className="w-full rounded-xl border border-[#333] bg-[#2C2C2C] px-5 py-4 text-white placeholder-zinc-400 transition-all duration-200 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20"
+            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
             autoComplete="email"
             required
           />
@@ -99,7 +99,7 @@ export default function ForgotPasswordForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-white py-4 font-bold text-[#1E1E1E] shadow-lg transition-all duration-200 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-xl border border-zinc-600/70 bg-[#232326] py-4 font-bold text-zinc-50 shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition-all duration-200 hover:bg-[#2d2d30] disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-[#232326]/50 disabled:text-zinc-500"
         >
           {loading ? "Sending..." : "Send reset link"}
         </button>
@@ -108,7 +108,7 @@ export default function ForgotPasswordForm() {
           <button
             type="button"
             onClick={() => router.push("/auth")}
-            className="text-sm text-zinc-400 transition-colors hover:text-zinc-300"
+            className="text-sm text-zinc-400 transition-colors hover:text-zinc-100"
           >
             Back to sign in
           </button>
@@ -128,18 +128,18 @@ export function AuthRecoveryShell({
   title: string;
 }) {
   return (
-    <main className="flex min-h-dvh w-full items-center justify-center bg-[#121212] px-4 py-12">
+    <main className="flex min-h-dvh w-full items-center justify-center bg-[#050505] px-4 py-12 text-zinc-100">
       <div className="mx-auto w-full max-w-md">
         <div className="mb-10 text-center">
           <p className="mb-4 text-xs font-semibold uppercase tracking-[0.4em] text-zinc-500">
             {eyebrow}
           </p>
-          <h1 className="text-5xl font-black tracking-widest text-white">
+          <h1 className="text-5xl font-black tracking-widest text-zinc-100">
             {title}
           </h1>
         </div>
 
-        <div className="space-y-8 rounded-3xl border border-[#333] bg-[#1E1E1E] p-8 shadow-2xl">
+        <div className="space-y-8 rounded-3xl border border-zinc-600/70 bg-[#363638] p-8 shadow-[0_22px_60px_rgba(0,0,0,0.22)]">
           {children}
         </div>
       </div>
@@ -156,8 +156,8 @@ export function StatusMessage({
 }) {
   const className =
     tone === "success"
-      ? "border-green-500/30 bg-green-900/20 text-green-400"
-      : "border-red-500/30 bg-red-900/20 text-red-400";
+      ? "border-zinc-500/60 bg-zinc-700/45 text-zinc-100"
+      : "border-red-400/30 bg-red-950/25 text-red-200";
 
   return (
     <div className={`rounded-xl border p-4 text-sm ${className}`}>

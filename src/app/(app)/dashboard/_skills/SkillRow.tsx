@@ -11,6 +11,12 @@ export function computeWidth(percent: number) {
   return `${clamped}%`;
 }
 
+export function hasVisibleLevelProgress(
+  progress?: Pick<SkillProgressData, "xpIntoLevel" | "progressPercent">,
+) {
+  return (progress?.xpIntoLevel ?? 0) > 0 && (progress?.progressPercent ?? 0) > 0;
+}
+
 interface Props {
   skill: Skill;
   progress?: SkillProgressData;
@@ -35,23 +41,20 @@ export default function SkillRow({ skill, progress, onColor }: Props) {
     progress?.xpRequired !== undefined &&
     progress?.xpRequired !== null &&
     progress.xpRequired > 0;
+  const showProgressFill = showProgress && hasVisibleLevelProgress(progress);
   const showPrestige = prestige !== undefined && prestige !== null;
 
-  const badgeContent = badges.length > 0 ? (
-    badges.map((badge) => (
-      <span
-        key={badge.id}
-        role="img"
-        aria-label={badge.label}
-        title={badge.label}
-        className="drop-shadow-[0_0_4px_rgba(255,255,255,0.25)]"
-      >
-        {badge.emoji}
-      </span>
-    ))
-  ) : (
-    <span className="text-[9px] font-medium uppercase tracking-[0.2em] opacity-60">No badges</span>
-  );
+  const badgeContent = badges.map((badge) => (
+    <span
+      key={badge.id}
+      role="img"
+      aria-label={badge.label}
+      title={badge.label}
+      className="drop-shadow-[0_0_4px_rgba(255,255,255,0.25)]"
+    >
+      {badge.emoji}
+    </span>
+  ));
 
   const skillHref = `/skills/${skill.id}`;
 
@@ -122,7 +125,9 @@ export default function SkillRow({ skill, progress, onColor }: Props) {
         </div>
         {showLevel && (
           <div className="mt-1 flex flex-wrap items-center gap-2" style={{ color: onColor }}>
-            {showPrestige && <div className="flex items-center gap-1 text-sm leading-none">{badgeContent}</div>}
+            {showPrestige && badges.length > 0 && (
+              <div className="flex items-center gap-1 text-sm leading-none">{badgeContent}</div>
+            )}
             <div className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/8 px-1.5 py-0.5 text-[10px]">
               Lv {level}
             </div>
@@ -132,13 +137,15 @@ export default function SkillRow({ skill, progress, onColor }: Props) {
       {showProgress && (
         <div className="flex min-w-[24%] flex-col gap-1">
           <div className="h-2.5 w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]">
-            <div
-              className="progress-bar-glint relative h-full rounded-full border border-white/[0.14] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)] transition-[width] duration-200"
-              style={{ width: computeWidth(progress?.progressPercent ?? 0) }}
-            >
-              <span className="progress-bar-glint-sweep" aria-hidden="true" />
-              <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-white/35" />
-            </div>
+            {showProgressFill && (
+              <div
+                className="progress-bar-glint relative h-full rounded-full border border-white/[0.14] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)] transition-[width] duration-200"
+                style={{ width: computeWidth(progress?.progressPercent ?? 0) }}
+              >
+                <span className="progress-bar-glint-sweep" aria-hidden="true" />
+                <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-white/35" />
+              </div>
+            )}
           </div>
           <span className="text-xs text-zinc-500">
             {progress?.xpIntoLevel ?? 0} / {progress?.xpRequired ?? 0} XP

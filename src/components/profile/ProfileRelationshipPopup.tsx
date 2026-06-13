@@ -4,7 +4,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X, User } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type MouseEvent, useCallback, useEffect, useState } from "react";
 
 export type ProfileRelationshipView = "following" | "followers" | "offers";
 
@@ -13,12 +14,17 @@ export type ProfileRelationshipUser = {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  viewerFollowsUser: boolean;
+  userFollowsViewer: boolean;
+  isViewer: boolean;
+  canInteract: boolean;
 };
 
 export type ProfileOfferPopupRow = {
   id: string;
   label: string;
   typeLabel: string;
+  imageUrl?: string | null;
   href?: string | null;
   external?: boolean;
   onSelect?: () => void;
@@ -31,6 +37,11 @@ type RelationshipState =
   | { status: "loading"; users: ProfileRelationshipUser[]; error: null }
   | { status: "loaded"; users: ProfileRelationshipUser[]; error: null }
   | { status: "error"; users: ProfileRelationshipUser[]; error: string };
+
+type RelationshipRowAction =
+  | { type: "follow"; label: "Follow" }
+  | { type: "follow_back"; label: "Follow back" }
+  | { type: "message"; label: "Message" };
 
 type ProfileRelationshipPopupProps = {
   username: string;
@@ -85,6 +96,36 @@ function getInitials(displayName: string, username: string) {
   return initials.toUpperCase() || "?";
 }
 
+function normalizeRelationshipUsers(
+  users: ProfileRelationshipUser[],
+): ProfileRelationshipUser[] {
+  return users.map((user) => ({
+    ...user,
+    viewerFollowsUser: Boolean(user.viewerFollowsUser),
+    userFollowsViewer: Boolean(user.userFollowsViewer),
+    isViewer: Boolean(user.isViewer),
+    canInteract: Boolean(user.canInteract),
+  }));
+}
+
+function getRelationshipAction(
+  user: ProfileRelationshipUser,
+): RelationshipRowAction | null {
+  if (!user.canInteract || user.isViewer) {
+    return null;
+  }
+
+  if (user.viewerFollowsUser) {
+    return { type: "message", label: "Message" };
+  }
+
+  if (user.userFollowsViewer) {
+    return { type: "follow_back", label: "Follow back" };
+  }
+
+  return { type: "follow", label: "Follow" };
+}
+
 export default function ProfileRelationshipPopup({
   username,
   ownerDisplayName,
@@ -95,11 +136,13 @@ export default function ProfileRelationshipPopup({
   offersError = null,
   onClose,
 }: ProfileRelationshipPopupProps) {
+  const router = useRouter();
   const [state, setState] = useState<RelationshipState>({
     status: "idle",
     users: [],
     error: null,
   });
+  const [pendingActionUserId, setPendingActionUserId] = useState<string | null>(null);
   const isOpen = view !== null;
 
   useEffect(() => {
@@ -127,7 +170,9 @@ export default function ProfileRelationshipPopup({
         const payload = (await response.json().catch(() => null)) as
           | { users?: ProfileRelationshipUser[] }
           | null;
-        const users = Array.isArray(payload?.users) ? payload.users : [];
+        const users = Array.isArray(payload?.users)
+          ? normalizeRelationshipUsers(payload.users)
+          : [];
 
         if (isActive) {
           setState({ status: "loaded", users, error: null });
@@ -155,6 +200,67 @@ export default function ProfileRelationshipPopup({
       controller.abort();
     };
   }, [username, view]);
+
+  const handleRelationshipAction = useCallback(
+    (
+      event: MouseEvent<HTMLButtonElement>,
+      relationshipUser: ProfileRelationshipUser,
+      action: RelationshipRowAction,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (action.type === "message") {
+        onClose();
+        router.push(`/inbox/${relationshipUser.id}`);
+        return;
+      }
+
+      if (pendingActionUserId) {
+        return;
+      }
+
+      setPendingActionUserId(relationshipUser.id);
+
+      void (async () => {
+        try {
+          const response = await fetch("/api/friends", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: relationshipUser.username }),
+          });
+
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+
+          if (!response.ok) {
+            console.error(
+              "Failed to follow relationship popup user",
+              payload?.error ?? response.status,
+            );
+            return;
+          }
+
+          setState((previous) => ({
+            ...previous,
+            users: previous.users.map((user) =>
+              user.id === relationshipUser.id
+                ? { ...user, viewerFollowsUser: true }
+                : user,
+            ),
+          }));
+        } catch (error) {
+          console.error("Failed to follow relationship popup user", error);
+        } finally {
+          setPendingActionUserId((current) =>
+            current === relationshipUser.id ? null : current,
+          );
+        }
+      })();
+    },
+    [onClose, pendingActionUserId, router],
+  );
 
   const title = getTitle(view, ownerDisplayName, username);
   const ownerName = ownerDisplayName?.trim() || username.trim() || "This profile";
@@ -265,43 +371,60 @@ export default function ProfileRelationshipPopup({
                     relationshipUser.displayName || relationshipUser.username;
                   const avatarSrc = relationshipUser.avatarUrl?.trim() || null;
                   const href = `/profile/${encodeURIComponent(relationshipUser.username)}`;
+                  const action = getRelationshipAction(relationshipUser);
+                  const isActionPending = pendingActionUserId === relationshipUser.id;
 
                   return (
                     <li key={relationshipUser.id}>
-                      <Link
-                        href={href}
-                        prefetch={false}
-                        onClick={onClose}
-                        className="flex min-w-0 items-center gap-3 rounded-[14px] px-3 py-2 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                      >
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/[0.07] ring-1 ring-white/10">
-                          {avatarSrc ? (
-                            <Image
-                              src={avatarSrc}
-                              alt={`${displayName} avatar`}
-                              width={40}
-                              height={40}
-                              unoptimized
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <>
-                              <User className="h-4 w-4 text-white/50" aria-hidden="true" />
-                              <span className="sr-only">
-                                {getInitials(displayName, relationshipUser.username)}
-                              </span>
-                            </>
-                          )}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold text-white">
-                            {displayName}
+                      <div className="flex min-w-0 items-center gap-2 rounded-[14px] px-3 py-2 transition hover:bg-white/[0.06] focus-within:bg-white/[0.05]">
+                        <Link
+                          href={href}
+                          prefetch={false}
+                          onClick={onClose}
+                          className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/[0.07] ring-1 ring-white/10">
+                            {avatarSrc ? (
+                              <Image
+                                src={avatarSrc}
+                                alt={`${displayName} avatar`}
+                                width={40}
+                                height={40}
+                                unoptimized
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <>
+                                <User className="h-4 w-4 text-white/50" aria-hidden="true" />
+                                <span className="sr-only">
+                                  {getInitials(displayName, relationshipUser.username)}
+                                </span>
+                              </>
+                            )}
                           </span>
-                          <span className="block truncate text-xs text-white/55">
-                            @{relationshipUser.username}
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-white">
+                              {displayName}
+                            </span>
+                            <span className="block truncate text-xs text-white/55">
+                              @{relationshipUser.username}
+                            </span>
                           </span>
-                        </span>
-                      </Link>
+                        </Link>
+                        {action ? (
+                          <button
+                            type="button"
+                            onClick={(event) =>
+                              handleRelationshipAction(event, relationshipUser, action)
+                            }
+                            disabled={isActionPending}
+                            className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.12] px-2.5 text-[11px] font-semibold text-white/85 transition hover:bg-white/[0.18] hover:text-white disabled:cursor-wait disabled:opacity-60"
+                            aria-label={`${action.label} ${displayName}`}
+                          >
+                            {action.label}
+                          </button>
+                        ) : null}
+                      </div>
                     </li>
                   );
                 })}
@@ -311,12 +434,27 @@ export default function ProfileRelationshipPopup({
             {isOffersView && !offersLoading && offerRows.length > 0 ? (
               <ul className="space-y-1">
                 {offerRows.map((row) => {
+                  const imageSrc = row.imageUrl?.trim() || null;
                   const rowClassName =
                     "flex min-w-0 items-center justify-between gap-3 rounded-[12px] px-3 py-2 text-left transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50";
                   const rowContent = (
                     <>
-                      <span className="min-w-0 truncate text-sm font-medium text-white">
-                        {row.label}
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        {imageSrc ? (
+                          <span className="relative flex h-6 w-6 shrink-0 overflow-hidden rounded-md bg-white/[0.07] ring-1 ring-white/10">
+                            <Image
+                              src={imageSrc}
+                              alt=""
+                              width={24}
+                              height={24}
+                              unoptimized
+                              className="h-full w-full object-cover"
+                            />
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate text-sm font-medium text-white">
+                          {row.label}
+                        </span>
                       </span>
                       <span className="shrink-0 text-[10px] font-semibold uppercase text-white/40">
                         {row.typeLabel}

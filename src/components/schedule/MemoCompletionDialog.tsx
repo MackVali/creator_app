@@ -50,8 +50,14 @@ function readObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readBoolean(value: unknown) {
-  return value === true;
+function readOptionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return null;
+
+  const normalizedValue = value.trim().toLowerCase();
+  if (["true", "yes", "enabled", "on"].includes(normalizedValue)) return true;
+  if (["false", "no", "disabled", "off"].includes(normalizedValue)) return false;
+  return null;
 }
 
 function readString(value: unknown): string | null {
@@ -63,10 +69,10 @@ function readString(value: unknown): string | null {
 function resolveMemoCapturePlan(config: MemoCaptureConfig | null | undefined) {
   const root = readObject(config);
   const actions = readObject(root?.actions);
-  const note = actions ? readBoolean(actions.note) : true;
-  const form = actions ? readBoolean(actions.form) : false;
-  const photo = actions ? readBoolean(actions.photo) : false;
-  const hasAnyAction = note || form || photo;
+  const noteAction = actions ? readOptionalBoolean(actions.note) : null;
+  const note = actions ? (noteAction ?? true) : true;
+  const form = actions ? readOptionalBoolean(actions.form) === true : false;
+  const photo = actions ? readOptionalBoolean(actions.photo) === true : false;
   const databaseCapture = readObject(root?.databaseCapture);
   const noteDestination = readObject(root?.noteDestination);
   const targetId =
@@ -79,7 +85,7 @@ function resolveMemoCapturePlan(config: MemoCaptureConfig | null | undefined) {
   const target = getDefaultMemoDatabaseTarget(resolvedTargetId);
 
   return {
-    note: hasAnyAction ? note : true,
+    note,
     form,
     photo,
     noteSkillId: readString(noteDestination?.skillId),
@@ -266,15 +272,10 @@ export function MemoCompletionDialog({
     void handleNoteSubmit();
   };
 
-  const primaryLabel = saving
-    ? "Saving..."
-    : activeStep === "form"
-      ? requiredSteps.length > 1
-        ? "Continue"
-        : "Submit capture"
-      : activeStep === "note"
-        ? "Save memo"
-        : "Complete MEMO";
+  const activeStepPosition = activeStep ? requiredSteps.indexOf(activeStep) : -1;
+  const hasNextRequiredStep =
+    activeStepPosition >= 0 && activeStepPosition < requiredSteps.length - 1;
+  const primaryLabel = hasNextRequiredStep ? "Next" : "Done";
   const primaryDisabled =
     saving ||
     (activeStep === "note" ? !canSubmitNote : false) ||
@@ -434,7 +435,7 @@ export function MemoCompletionDialog({
               </div>
             ) : (
               <div className="rounded-[14px] border border-white/10 bg-white/[0.035] p-3 text-xs leading-5 text-white/62">
-                No required capture step is wired for this MEMO yet. Submit to
+                No required capture step is wired for this MEMO yet. Use Done to
                 complete it.
               </div>
             )}
@@ -453,23 +454,14 @@ export function MemoCompletionDialog({
             {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-white/10 bg-white/[0.02] px-4 py-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={saving}
-              className="h-8 px-3 text-xs text-white/58 hover:bg-white/[0.06] hover:text-white"
-            >
-              Cancel
-            </Button>
+          <div className="flex items-center justify-end border-t border-white/10 bg-white/[0.015] px-4 py-2.5">
             <Button
               type="button"
               onClick={handlePrimaryAction}
               disabled={primaryDisabled}
               className={cn(
-                "h-8 min-w-[104px] rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-white/90",
-                primaryDisabled && "opacity-60"
+                "h-7 min-w-[84px] rounded-md border border-white/12 bg-zinc-800 px-3 text-[0.72rem] font-semibold text-zinc-50 shadow-none transition hover:border-white/20 hover:bg-zinc-700 focus-visible:ring-1 focus-visible:ring-white/35",
+                primaryDisabled && "opacity-55"
               )}
             >
               {primaryLabel}
