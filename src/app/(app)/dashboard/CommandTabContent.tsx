@@ -35,11 +35,12 @@ export default function CommandTabContent() {
 
   return (
     <CommandPullRefreshShell
+      className="app-dashboard-bg"
       lockDocumentScroll={false}
       onRefresh={handleRefresh}
       refreshRef={commandSectionRef}
     >
-      <main className="app-dashboard-bg pb-20">
+      <main className="app-dashboard-bg flow-root pb-20">
         <LevelBanner ref={levelBannerRef} />
 
         <MonumentContainer ref={monumentContainerRef} />

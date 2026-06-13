@@ -323,11 +323,6 @@ export default function HeroHeader({
             </p>
           ) : null}
 
-          {hasSocialLinks ? (
-            <div className="mt-3 w-full [&>div]:!justify-start">
-              <SocialPillsRow socials={socials || {}} />
-            </div>
-          ) : null}
         </div>
 
         <div className="flex flex-col gap-1 pt-2.5 sm:pt-3">
@@ -510,6 +505,12 @@ export default function HeroHeader({
                   {actionButtons.secondaryLabel}
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {hasSocialLinks ? (
+            <div className="mt-1 w-full [&>div]:!justify-start">
+              <SocialPillsRow socials={socials || {}} />
             </div>
           ) : null}
 

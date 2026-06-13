@@ -1292,22 +1292,31 @@ function NoteDatabaseEntriesView({
   const isFull = size === "full";
 
   if (entries.length > 0 && activeView.type === "table") {
+    const titleColumnClassName = isFull
+      ? "min-w-[18rem] flex-[1.35_0_18rem] font-semibold"
+      : "w-40 font-semibold";
+    const propertyColumnClassName = isFull
+      ? "min-w-[14rem] flex-[1_0_14rem] font-medium"
+      : "w-32 font-medium";
+
     return (
       <div
-        className={`overflow-x-auto rounded-md border border-white/[0.07] ${
+        className={`w-full overflow-x-auto rounded-md border border-white/[0.07] ${
           isFull ? "bg-black/20" : "bg-black/14"
         }`}
       >
-        <div className={`${isFull ? "min-w-[44rem]" : "min-w-[30rem]"} divide-y divide-white/[0.06]`}>
+        <div className={`${isFull ? "min-w-full" : "min-w-[30rem]"} divide-y divide-white/[0.06]`}>
           <div
             className={`flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32 ${
-              isFull ? "px-3 py-2" : "px-2.5 py-1.5"
+              isFull ? "px-4 py-2.5" : "px-2.5 py-1.5"
             }`}
           >
             {visibleFields.map((field) => (
               <span
                 key={field.id}
-                className={`shrink-0 truncate ${field.id === titleField?.id ? "w-40" : "w-32"}`}
+                className={`shrink-0 truncate ${
+                  field.id === titleField?.id ? titleColumnClassName : propertyColumnClassName
+                }`}
               >
                 {getDatabaseFieldName(field)}
               </span>
@@ -1316,7 +1325,7 @@ function NoteDatabaseEntriesView({
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className={`flex items-center gap-2 ${isFull ? "px-3 py-2 text-sm" : "px-2.5 py-1.5 text-xs"}`}
+              className={`flex items-center gap-2 ${isFull ? "px-4 py-3 text-sm" : "px-2.5 py-1.5 text-xs"}`}
             >
               {visibleFields.map((field) => {
                 const isTitleField = field.id === titleField?.id;
@@ -1326,7 +1335,7 @@ function NoteDatabaseEntriesView({
                   <span
                     key={field.id}
                     className={`shrink-0 truncate ${
-                      isTitleField ? "w-40 font-semibold" : "w-32 font-medium"
+                      isTitleField ? titleColumnClassName : propertyColumnClassName
                     } ${
                       isTitleField
                         ? "text-white/82"
@@ -1356,7 +1365,7 @@ function NoteDatabaseEntriesView({
             <div
               key={entry.id}
               className={`rounded-md border border-white/[0.07] bg-black/16 ${
-                isFull ? "px-3 py-2.5" : "px-2.5 py-1.5"
+                isFull ? "px-4 py-3" : "px-2.5 py-1.5"
               }`}
             >
               <p
@@ -1388,7 +1397,11 @@ function NoteDatabaseEntriesView({
 
   if (entries.length > 0 && activeView.type === "card") {
     return (
-      <div className={`grid grid-cols-1 gap-2 ${isFull ? "sm:grid-cols-2 xl:grid-cols-3" : "sm:grid-cols-2"}`}>
+      <div
+        className={`grid grid-cols-1 ${
+          isFull ? "gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" : "gap-2 sm:grid-cols-2"
+        }`}
+      >
         {entries.map((entry) => {
           const properties = getDatabaseEntryProperties(entry, definition);
 
@@ -1396,7 +1409,7 @@ function NoteDatabaseEntriesView({
             <div
               key={entry.id}
               className={`rounded-md border border-white/[0.08] bg-[#080808] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ${
-                isFull ? "px-3 py-3" : "px-2.5 py-2"
+                isFull ? "px-4 py-3.5" : "px-2.5 py-2"
               }`}
             >
               <p className="truncate text-sm font-semibold leading-5 text-white/88">
@@ -1880,7 +1893,7 @@ export function NoteDatabaseFocusedView({
 
   if (!databaseSegment || !databaseDefinition || !activeDatabaseView) {
     return (
-      <section className="rounded-[22px] border border-white/[0.08] bg-[#050505]/92 p-4 text-white shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
+      <section className="flex min-h-full w-full flex-1 flex-col text-white">
         <button
           type="button"
           onClick={onBack}
@@ -1901,7 +1914,7 @@ export function NoteDatabaseFocusedView({
     databaseDefinition.pinnedSurface === "body";
 
   return (
-    <section className="rounded-[22px] border border-white/[0.08] bg-[#050505]/92 p-4 text-white shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
+    <section className="flex min-h-full w-full flex-1 flex-col text-white">
       <div className="flex min-h-8 items-center justify-between gap-3">
         <button
           type="button"
@@ -1991,7 +2004,7 @@ export function NoteDatabaseFocusedView({
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-5 min-h-0 flex-1 overflow-visible">
         <NoteDatabaseEntriesView
           activeView={activeDatabaseView}
           definition={databaseDefinition}

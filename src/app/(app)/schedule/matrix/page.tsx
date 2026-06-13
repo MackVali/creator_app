@@ -17,6 +17,11 @@ import {
   type WheelEvent,
 } from "react";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
+import {
+  RelatedRoutineCard,
+  type RelatedRoutineCardHabit,
+  type RelatedRoutineCardRoutine,
+} from "@/components/habits/RelatedRoutineCard";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { PullRefreshShell } from "@/components/ui/PullRefreshShell";
@@ -108,6 +113,12 @@ type HabitRow = Pick<
   | "window_edge_preference"
   | "next_due_override"
   | "memo_capture_config"
+  | "routine_id"
+  | "routine_position"
+>;
+type RoutineRow = Pick<
+  Database["public"]["Tables"]["habit_routines"]["Row"],
+  "id" | "name" | "description" | "icon"
 >;
 
 type MatrixEvent = {
@@ -127,6 +138,36 @@ type MatrixHabit = HabitRow & {
   glyph: string;
   dueStatus?: MatrixHabitDueStatus;
 };
+type MatrixRoutineHabit = RelatedRoutineCardHabit & {
+  sourceHabit: MatrixHabit;
+  durationMinutes: number | null;
+};
+type MatrixRoutine = Omit<RelatedRoutineCardRoutine, "habits"> & {
+  habits: MatrixRoutineHabit[];
+  monumentId: string | null;
+  skillIds: string[];
+  glyph: string;
+  dueHabitCount: number;
+  totalDueDurationMinutes: number | null;
+  sortRank: number;
+};
+type MatrixDueItem =
+  | {
+      kind: "habit";
+      id: string;
+      name: string;
+      monumentId: string | null;
+      skillIds: string[];
+      habit: MatrixHabit;
+    }
+  | {
+      kind: "routine";
+      id: string;
+      name: string;
+      monumentId: string | null;
+      skillIds: string[];
+      routine: MatrixRoutine;
+    };
 
 type MonumentGroup<T> = {
   key: string;
@@ -144,7 +185,7 @@ type MatrixMonumentGroup = {
   energyLevel?: FlameLevel | null;
   sortValue?: string | null;
   scheduledItems: MatrixEvent[];
-  unscheduledDueHabits: MatrixHabit[];
+  unscheduledDueItems: MatrixDueItem[];
 };
 
 type MatrixPanel = "scheduled" | "unscheduled";
@@ -168,11 +209,11 @@ type MatrixState = {
   loading: boolean;
   error: string | null;
   eventGroups: MonumentGroup<MatrixEvent>[];
-  unscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
+  unscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   skillEventGroups: MonumentGroup<MatrixEvent>[];
-  skillUnscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
+  skillUnscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   blockEventGroups: MonumentGroup<MatrixEvent>[];
-  blockUnscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
+  blockUnscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   dayLabel: string;
 };
 
@@ -342,6 +383,14 @@ function isMatrixDueHabitCompleted(habit: MatrixHabit): boolean {
   return habit.dueStatus?.isCompletedToday === true;
 }
 
+function isMatrixDueItemCompleted(item: MatrixDueItem): boolean {
+  if (item.kind === "habit") {
+    return isMatrixDueHabitCompleted(item.habit);
+  }
+
+  return item.routine.habits.every((habit) => habit.completed);
+}
+
 function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
   return [...items].sort((a, b) => {
     const completionDifference =
@@ -359,15 +408,19 @@ function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
   });
 }
 
-function sortMatrixDueHabits(items: MatrixHabit[]): MatrixHabit[] {
+function sortMatrixDueItems(items: MatrixDueItem[]): MatrixDueItem[] {
   return [...items].sort((a, b) => {
     const completionDifference =
-      Number(isMatrixDueHabitCompleted(a)) -
-      Number(isMatrixDueHabitCompleted(b));
+      Number(isMatrixDueItemCompleted(a)) - Number(isMatrixDueItemCompleted(b));
     if (completionDifference !== 0) return completionDifference;
 
     const rankDifference =
-      getMatrixHabitTypeRank(a.habit_type) - getMatrixHabitTypeRank(b.habit_type);
+      (a.kind === "routine"
+        ? a.routine.sortRank
+        : getMatrixHabitTypeRank(a.habit.habit_type)) -
+      (b.kind === "routine"
+        ? b.routine.sortRank
+        : getMatrixHabitTypeRank(b.habit.habit_type));
     if (rankDifference !== 0) return rankDifference;
 
     return a.name.localeCompare(b.name);
@@ -813,6 +866,113 @@ function buildMatrixEvents({
   });
 }
 
+function buildMatrixDueItems({
+  habits,
+  routines,
+}: {
+  habits: MatrixHabit[];
+  routines: Map<string, RoutineRow>;
+}): MatrixDueItem[] {
+  const dueItems: MatrixDueItem[] = [];
+  const routineHabitGroups = new Map<string, MatrixHabit[]>();
+
+  for (const habit of habits) {
+    const routineId = habit.routine_id?.trim();
+    if (!routineId) {
+      dueItems.push({
+        kind: "habit",
+        id: habit.id,
+        name: habit.name,
+        monumentId: habit.monumentId,
+        skillIds: habit.skillIds,
+        habit,
+      });
+      continue;
+    }
+
+    const group = routineHabitGroups.get(routineId);
+    if (group) {
+      group.push(habit);
+    } else {
+      routineHabitGroups.set(routineId, [habit]);
+    }
+  }
+
+  for (const [routineId, routineHabits] of routineHabitGroups) {
+    if (routineHabits.length === 0) continue;
+
+    const routine = routines.get(routineId);
+    const sortedHabits = [...routineHabits].sort((a, b) => {
+      const firstPosition =
+        typeof a.routine_position === "number" &&
+        Number.isFinite(a.routine_position)
+          ? a.routine_position
+          : Number.POSITIVE_INFINITY;
+      const secondPosition =
+        typeof b.routine_position === "number" &&
+        Number.isFinite(b.routine_position)
+          ? b.routine_position
+          : Number.POSITIVE_INFINITY;
+      if (firstPosition !== secondPosition) {
+        return firstPosition - secondPosition;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    const matrixRoutineHabits: MatrixRoutineHabit[] = sortedHabits.map(
+      (habit, index) => ({
+        id: habit.id,
+        name: habit.name,
+        dueLabel: habit.dueStatus?.label ?? null,
+        skillIcon: habit.skillIcon,
+        completed: isMatrixDueHabitCompleted(habit),
+        routinePosition: habit.routine_position ?? index + 1,
+        currentStreakDays: habit.current_streak_days,
+        sourceHabit: habit,
+        durationMinutes: habit.duration_minutes,
+      })
+    );
+    const routineSkillIds = Array.from(
+      new Set(sortedHabits.flatMap((habit) => habit.skillIds))
+    );
+    const routineMonumentId =
+      sortedHabits.find((habit) => habit.monumentId)?.monumentId ?? null;
+    const totalDuration = sortedHabits.reduce((sum, habit) => {
+      const duration = habit.duration_minutes;
+      return typeof duration === "number" && Number.isFinite(duration)
+        ? sum + duration
+        : sum;
+    }, 0);
+    const routineName = routine?.name?.trim() || "Routine";
+    const routineIcon = routine?.icon?.trim() || "🔁";
+    const routineItem: MatrixRoutine = {
+      id: routineId,
+      name: routineName,
+      description: routine?.description ?? null,
+      icon: routineIcon,
+      habits: matrixRoutineHabits,
+      monumentId: routineMonumentId,
+      skillIds: routineSkillIds,
+      glyph: routineIcon,
+      dueHabitCount: matrixRoutineHabits.length,
+      totalDueDurationMinutes: totalDuration > 0 ? totalDuration : null,
+      sortRank: Math.min(
+        ...sortedHabits.map((habit) => getMatrixHabitTypeRank(habit.habit_type))
+      ),
+    };
+
+    dueItems.push({
+      kind: "routine",
+      id: `routine:${routineId}`,
+      name: routineName,
+      monumentId: routineMonumentId,
+      skillIds: routineSkillIds,
+      routine: routineItem,
+    });
+  }
+
+  return dueItems;
+}
+
 function groupBySkill<T extends { skillIds: string[] }>({
   items,
   skills,
@@ -969,8 +1129,8 @@ function groupEventsByBlock({
 }
 
 function groupUnscheduledDueHabitsByNoBlock(
-  items: MatrixHabit[]
-): MonumentGroup<MatrixHabit>[] {
+  items: MatrixDueItem[]
+): MonumentGroup<MatrixDueItem>[] {
   return items.length
     ? [
         {
@@ -989,7 +1149,7 @@ function mergeMatrixMonumentGroups({
   unscheduledDueHabitGroups,
 }: {
   scheduledGroups: MonumentGroup<MatrixEvent>[];
-  unscheduledDueHabitGroups: MonumentGroup<MatrixHabit>[];
+  unscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
 }): MatrixMonumentGroup[] {
   const groupLookup = new Map<string, MatrixMonumentGroup>();
 
@@ -1001,14 +1161,14 @@ function mergeMatrixMonumentGroups({
       energyLevel: group.energyLevel,
       sortValue: group.sortValue,
       scheduledItems: group.items,
-      unscheduledDueHabits: [],
+      unscheduledDueItems: [],
     });
   }
 
   for (const group of unscheduledDueHabitGroups) {
     const existing = groupLookup.get(group.key);
     if (existing) {
-      existing.unscheduledDueHabits = group.items;
+      existing.unscheduledDueItems = group.items;
       continue;
     }
 
@@ -1019,7 +1179,7 @@ function mergeMatrixMonumentGroups({
       energyLevel: group.energyLevel,
       sortValue: group.sortValue,
       scheduledItems: [],
-      unscheduledDueHabits: group.items,
+      unscheduledDueItems: group.items,
     });
   }
 
@@ -1880,6 +2040,47 @@ function DueHabitCard({
   );
 }
 
+function MatrixRoutineCard({
+  routine,
+  density,
+  onCompleteHabit,
+}: {
+  routine: MatrixRoutine;
+  density: MatrixCardDensity;
+  onCompleteHabit(habitId: string, completedToday: boolean): void;
+}) {
+  const durationLabel =
+    typeof routine.totalDueDurationMinutes === "number"
+      ? `${routine.totalDueDurationMinutes}m`
+      : null;
+  const dueLabel = `${routine.dueHabitCount} due`;
+  const metaLabel = durationLabel ? `${dueLabel} · ${durationLabel}` : dueLabel;
+
+  return (
+    <div className="matrix-event-card-shell relative h-full">
+      <RelatedRoutineCard
+        routine={routine}
+        density={density}
+        fallbackIcon={routine.glyph || "🔁"}
+        onHabitCompletionToggle={(habitId) => {
+          const habit = routine.habits.find((item) => item.id === habitId);
+          onCompleteHabit(habitId, Boolean(habit?.completed));
+        }}
+      />
+      <span
+        className={cn(
+          "pointer-events-none absolute z-[3] max-w-[calc(100%-1rem)] truncate rounded-full border border-yellow-200/20 bg-black/35 font-semibold uppercase leading-none tracking-[0.06em] text-yellow-50/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
+          density === "small"
+            ? "bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-[2px] text-[6px] sm:text-[7px]"
+            : "bottom-2 left-1/2 -translate-x-1/2 px-2 py-[3px] text-[8px]"
+        )}
+      >
+        {metaLabel}
+      </span>
+    </div>
+  );
+}
+
 function EmptyPanel({ label }: { label: string }) {
   return (
     <div className="flex min-h-[96px] items-center rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-3">
@@ -1967,7 +2168,7 @@ function MatrixSettingsTray({
   );
 }
 
-function getVisibleMatrixDueHabits(group: MatrixMonumentGroup) {
+function getVisibleMatrixDueItems(group: MatrixMonumentGroup) {
   const scheduledMatrixHabitIds = new Set<string>();
 
   for (const event of group.scheduledItems) {
@@ -1982,9 +2183,41 @@ function getVisibleMatrixDueHabits(group: MatrixMonumentGroup) {
     if (sourceId) scheduledMatrixHabitIds.add(sourceId);
   }
 
-  return group.unscheduledDueHabits.filter(
-    (habit) => !scheduledMatrixHabitIds.has(normalizeMatrixSourceId(habit.id))
-  );
+  return group.unscheduledDueItems.flatMap((item): MatrixDueItem[] => {
+    if (item.kind === "habit") {
+      return scheduledMatrixHabitIds.has(normalizeMatrixSourceId(item.habit.id))
+        ? []
+        : [item];
+    }
+
+    const visibleHabits = item.routine.habits.filter(
+      (habit) => !scheduledMatrixHabitIds.has(normalizeMatrixSourceId(habit.id))
+    );
+    if (visibleHabits.length === 0) return [];
+
+    if (visibleHabits.length === item.routine.habits.length) {
+      return [item];
+    }
+
+    const totalDuration = visibleHabits.reduce((sum, habit) => {
+      const duration = habit.durationMinutes;
+      return typeof duration === "number" && Number.isFinite(duration)
+        ? sum + duration
+        : sum;
+    }, 0);
+
+    return [
+      {
+        ...item,
+        routine: {
+          ...item.routine,
+          habits: visibleHabits,
+          dueHabitCount: visibleHabits.length,
+          totalDueDurationMinutes: totalDuration > 0 ? totalDuration : null,
+        },
+      },
+    ];
+  });
 }
 
 function MatrixGroupLabel({
@@ -2174,7 +2407,7 @@ function MatrixGridCarousel({
       groups
         .map((group) => ({
           group,
-          items: sortMatrixDueHabits(getVisibleMatrixDueHabits(group)),
+          items: sortMatrixDueItems(getVisibleMatrixDueItems(group)),
         }))
         .filter(({ items }) => items.length > 0),
     [groups]
@@ -2855,15 +3088,26 @@ function MatrixGridCarousel({
                                 : null
                             )}
                           >
-                            {items.map((habit) => (
-                              <DueHabitCard
-                                key={habit.id}
-                                habit={habit}
-                                density={cardDensity}
-                                completing={completingDueHabitIds.has(habit.id)}
-                                onComplete={onCompleteDueHabit}
-                              />
-                            ))}
+                            {items.map((item) =>
+                              item.kind === "routine" ? (
+                                <MatrixRoutineCard
+                                  key={item.id}
+                                  routine={item.routine}
+                                  density={cardDensity}
+                                  onCompleteHabit={onCompleteDueHabit}
+                                />
+                              ) : (
+                                <DueHabitCard
+                                  key={item.id}
+                                  habit={item.habit}
+                                  density={cardDensity}
+                                  completing={completingDueHabitIds.has(
+                                    item.habit.id
+                                  )}
+                                  onComplete={onCompleteDueHabit}
+                                />
+                              )
+                            )}
                           </div>
                         </MatrixRevealGroupSection>
                       )
@@ -2996,8 +3240,18 @@ function MatrixContent() {
       ];
       for (const groups of groupSets) {
         for (const group of groups) {
-          const habit = group.items.find((item) => item.id === habitId);
-          if (habit) return habit;
+          for (const item of group.items) {
+            if (item.kind === "habit" && item.habit.id === habitId) {
+              return item.habit;
+            }
+
+            if (item.kind === "routine") {
+              const habit = item.routine.habits.find(
+                (routineHabit) => routineHabit.id === habitId
+              );
+              if (habit) return habit.sourceHabit;
+            }
+          }
         }
       }
       const eventGroupSets = [
@@ -3114,16 +3368,16 @@ function MatrixContent() {
 
         setState((current) => {
           const updateHabitInGroups = (
-            groups: MonumentGroup<MatrixHabit>[]
+            groups: MonumentGroup<MatrixDueItem>[]
           ) => {
             return groups
               .map((group) => {
-                const items = group.items.flatMap((habit) => {
-                  if (habit.id !== habitId) return [habit];
+                const items = group.items.flatMap((item): MatrixDueItem[] => {
+                  const updateHabit = (habit: MatrixHabit) => {
+                    if (habit.id !== habitId) return habit;
 
-                  if (!completedToday) {
-                    return [
-                      {
+                    if (!completedToday) {
+                      return {
                         ...habit,
                         last_completed_at: completedAt,
                         next_due_override: null,
@@ -3133,26 +3387,84 @@ function MatrixContent() {
                           isCompletedToday: true,
                           label: "COMPLETE" as const,
                         },
-                      },
-                    ];
+                      };
+                    }
+
+                    const undoneHabit = {
+                      ...habit,
+                      last_completed_at: null,
+                    };
+                    const dueStatus = getMatrixHabitDueStatus(
+                      undoneHabit,
+                      new Date(),
+                      timeZone
+                    );
+
+                    return dueStatus.isDue
+                      ? {
+                          ...undoneHabit,
+                          dueStatus,
+                        }
+                      : null;
+                  };
+
+                  if (item.kind === "habit") {
+                    const updatedHabit = updateHabit(item.habit);
+                    return updatedHabit
+                      ? [
+                          {
+                            ...item,
+                            habit: updatedHabit,
+                            name: updatedHabit.name,
+                            monumentId: updatedHabit.monumentId,
+                            skillIds: updatedHabit.skillIds,
+                          },
+                        ]
+                      : [];
                   }
 
-                  const undoneHabit = {
-                    ...habit,
-                    last_completed_at: null,
-                  };
-                  const dueStatus = getMatrixHabitDueStatus(
-                    undoneHabit,
-                    new Date(),
-                    timeZone
+                  const updatedRoutineHabits = item.routine.habits.flatMap(
+                    (routineHabit): MatrixRoutineHabit[] => {
+                      const updatedHabit = updateHabit(
+                        routineHabit.sourceHabit
+                      );
+                      if (!updatedHabit) return [];
+
+                      return [
+                        {
+                          ...routineHabit,
+                          dueLabel: updatedHabit.dueStatus?.label ?? null,
+                          completed: isMatrixDueHabitCompleted(updatedHabit),
+                          sourceHabit: updatedHabit,
+                          durationMinutes: updatedHabit.duration_minutes,
+                        },
+                      ];
+                    }
                   );
 
-                  if (!dueStatus.isDue) return [];
+                  if (updatedRoutineHabits.length === 0) return [];
+
+                  const totalDuration = updatedRoutineHabits.reduce(
+                    (sum, routineHabit) => {
+                      const duration = routineHabit.durationMinutes;
+                      return typeof duration === "number" &&
+                        Number.isFinite(duration)
+                        ? sum + duration
+                        : sum;
+                    },
+                    0
+                  );
 
                   return [
                     {
-                      ...undoneHabit,
-                      dueStatus,
+                      ...item,
+                      routine: {
+                        ...item.routine,
+                        habits: updatedRoutineHabits,
+                        dueHabitCount: updatedRoutineHabits.length,
+                        totalDueDurationMinutes:
+                          totalDuration > 0 ? totalDuration : null,
+                      },
                     },
                   ];
                 });
@@ -3209,7 +3521,8 @@ function MatrixContent() {
         entityType !== "GOAL" &&
         entityType !== "PROJECT" &&
         entityType !== "TASK" &&
-        entityType !== "HABIT"
+        entityType !== "HABIT" &&
+        entityType !== "ROUTINE"
       ) {
         return;
       }
@@ -3306,7 +3619,7 @@ function MatrixContent() {
               ? supabase
                   .from("habits")
                   .select(
-                    "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
+                    "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override, routine_id, routine_position"
                   )
                   .eq("user_id", userId)
                   .is("circle_id", null)
@@ -3315,7 +3628,7 @@ function MatrixContent() {
             supabase
               .from("habits")
               .select(
-                "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override"
+                "id, name, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, memo_capture_config, duration_minutes, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, goal_id, completion_target, location_context_id, daylight_preference, window_edge_preference, next_due_override, routine_id, routine_position"
               )
               .eq("user_id", userId)
               .is("circle_id", null),
@@ -3360,6 +3673,25 @@ function MatrixContent() {
           throw dayTypeTimeBlockByIdResult.error;
         if (dayTypeTimeBlockByBlockResult.error)
           throw dayTypeTimeBlockByBlockResult.error;
+
+        const routineIds = Array.from(
+          new Set(
+            ((allHabitsResult.data ?? []) as HabitRow[])
+              .map((habit) => habit.routine_id)
+              .filter((routineId): routineId is string =>
+                Boolean(routineId?.trim())
+              )
+          )
+        );
+        const routineResult = routineIds.length
+          ? await supabase
+              .from("habit_routines")
+              .select("id, name, description, icon")
+              .eq("user_id", userId)
+              .in("id", routineIds)
+          : { data: [], error: null };
+
+        if (routineResult.error) throw routineResult.error;
 
         const allProjectIds = Array.from(new Set(projectIds));
 
@@ -3417,6 +3749,12 @@ function MatrixContent() {
         );
         const goalMap = new Map(
           ((goalResult.data ?? []) as GoalRow[]).map((goal) => [goal.id, goal])
+        );
+        const routineMap = new Map(
+          ((routineResult.data ?? []) as RoutineRow[]).map((routine) => [
+            routine.id,
+            routine,
+          ])
         );
         const timeBlockMap = new Map(
           ((timeBlockResult.data ?? []) as TimeBlockRow[]).map((block) => [
@@ -3510,6 +3848,10 @@ function MatrixContent() {
             };
           })
           .sort((a, b) => a.name.localeCompare(b.name));
+        const unscheduledDueItems = buildMatrixDueItems({
+          habits: unscheduledDueHabits,
+          routines: routineMap,
+        });
 
         if (!cancelled) {
           setState({
@@ -3517,7 +3859,7 @@ function MatrixContent() {
             error: null,
             eventGroups: groupByMonument({ items: events, monuments }),
             unscheduledDueHabitGroups: groupByMonument({
-              items: unscheduledDueHabits,
+              items: unscheduledDueItems,
               monuments,
             }),
             skillEventGroups: groupBySkill({
@@ -3525,7 +3867,7 @@ function MatrixContent() {
               skills: skillLookup,
             }),
             skillUnscheduledDueHabitGroups: groupBySkill({
-              items: unscheduledDueHabits,
+              items: unscheduledDueItems,
               skills: skillLookup,
             }),
             blockEventGroups: groupEventsByBlock({
@@ -3535,7 +3877,7 @@ function MatrixContent() {
               dayTypeTimeBlockByTimeBlockId,
             }),
             blockUnscheduledDueHabitGroups:
-              groupUnscheduledDueHabitsByNoBlock(unscheduledDueHabits),
+              groupUnscheduledDueHabitsByNoBlock(unscheduledDueItems),
             dayLabel: formatDayLabel(today, timeZone),
           });
         }

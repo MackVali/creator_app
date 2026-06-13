@@ -87,6 +87,11 @@
     color: #ffffff;
   }
 
+  body.command-circle-detail-open .app-top-nav {
+    position: relative;
+    z-index: 50;
+  }
+
   .app-nav-menu {
     background: rgba(17, 17, 17, 0.96);
     border-color: #2a2a2a;
@@ -200,21 +205,20 @@
     0 2px 7px rgba(24, 24, 27, 0.08);
 }
 
-:root[data-theme="light"] .app-dashboard-bg {
+:root[data-theme="light"] .app-dashboard-bg,
+:root[data-theme="light"] [data-main-tab-panel="/dashboard"],
+:root[data-theme="light"] [data-main-tab-preview="/dashboard"] {
   background-color: #9d9e97;
   background-image:
     radial-gradient(90% 58% at 50% -14%, rgba(63, 63, 63, 0.2), transparent 64%),
     radial-gradient(72% 62% at 100% 2%, rgba(24, 24, 27, 0.12), transparent 58%),
     linear-gradient(180deg, #adaea7 0%, #a3a49d 44%, #979891 100%);
   background-attachment: fixed;
-  min-height: calc(100dvh - 4rem);
   color: #18181b;
 }
 
-:root[data-theme="light"] [data-main-tab-panel="/dashboard"],
-:root[data-theme="light"] [data-main-tab-preview="/dashboard"] {
-  background: #9d9e97;
-  color: #18181b;
+:root[data-theme="light"] .app-dashboard-bg {
+  min-height: calc(100dvh - 4rem);
 }
 
 :root[data-theme="light"] .app-dashboard-panel {

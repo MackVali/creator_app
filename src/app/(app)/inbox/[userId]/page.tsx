@@ -316,8 +316,8 @@ export default function InboxThreadPage() {
 
   return (
     <div className="h-[100dvh] min-h-screen overflow-hidden bg-black text-white">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-4 pt-2 sm:px-6">
-        <header className="sticky top-0 z-20 -mx-4 mb-1 border-b border-white/5 bg-black/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] sm:px-6">
+        <header className="sticky top-0 z-20 -mx-4 mb-1 shrink-0 border-b border-white/5 bg-black/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex min-h-11 items-center gap-2">
             <button
               type="button"
@@ -371,7 +371,7 @@ export default function InboxThreadPage() {
         </header>
 
         <section className="min-h-0 flex-1 overflow-hidden bg-black">
-          <div className="flex h-full flex-col gap-4 px-1 py-4 sm:px-2">
+          <div className="flex h-full min-h-0 flex-col gap-4 px-1 py-4 sm:px-2">
             {loading ? (
               <div className="space-y-2">
                 {Array.from({ length: 6 }).map((_, index) => {

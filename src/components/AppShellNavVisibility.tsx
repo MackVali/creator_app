@@ -2,13 +2,13 @@
 
 import { usePathname } from "next/navigation";
 
+import { isIndividualInboxThreadRoute } from "@/components/appChromeVisibility";
 import AppMain from "@/components/AppMain";
 import BottomNav from "@/components/BottomNav";
 import TopNav from "@/components/TopNav";
 
 const individualNoteRoutePattern =
   /^\/(?:monuments|skills)\/[^/]+\/notes\/[^/]+\/?$/;
-const individualInboxThreadRoutePattern = /^\/inbox\/[^/]+\/?$/;
 const profileManagementRouteSegments = new Set(["edit", "linked-accounts"]);
 
 function isProfileViewRoute(pathname: string) {
@@ -33,7 +33,7 @@ export default function AppShellNavVisibility({
   const pathname = usePathname();
   const hideNav =
     individualNoteRoutePattern.test(pathname) ||
-    individualInboxThreadRoutePattern.test(pathname);
+    isIndividualInboxThreadRoute(pathname);
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
 
   return (

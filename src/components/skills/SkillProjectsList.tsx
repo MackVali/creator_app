@@ -1551,8 +1551,8 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
                   key={i}
                   className={`bg-white/[0.06] ${
                     isSmallProjectCardDensity
-                      ? "h-[70px] rounded-xl"
-                      : "h-[100px] rounded-2xl"
+                      ? "aspect-[5/6] min-h-[108px] rounded-xl sm:min-h-[96px]"
+                      : "aspect-[5/6] min-h-[96px] rounded-2xl"
                   }`}
                 />
               ))}
