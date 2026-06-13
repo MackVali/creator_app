@@ -10,6 +10,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import {
   AlertTriangle,
   Bell,
@@ -151,15 +152,14 @@ const formatTimeZoneLabel = (timeZone: string) => {
 };
 
 export default function SettingsPage() {
-  const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const { profile, userId, loading, error, refreshProfile } = useProfile();
   const { user } = useAuth();
   const { isPlus, is_active, isReady, current_period_end } = useEntitlement();
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState("");
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
   const [savingPreference, setSavingPreference] = useState({
-    darkMode: false,
     notifications: false,
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -212,7 +212,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (profile) {
-      setDarkMode(profile.prefers_dark_mode ?? false);
       setNotifications(profile.notifications_enabled ?? true);
       const profileTimezone =
         profile.timezone && profile.timezone.trim().length > 0
@@ -221,35 +220,10 @@ export default function SettingsPage() {
       setTimezone(profileTimezone);
       setPreferenceError(null);
     } else {
-      setDarkMode(false);
       setNotifications(true);
       setTimezone(getLocalTimeZone());
     }
   }, [profile]);
-
-  const handleDarkModeToggle = async () => {
-    if (!userId || savingPreference.darkMode) return;
-
-    setPreferenceError(null);
-    const previousValue = darkMode;
-    const nextValue = !darkMode;
-    setDarkMode(nextValue);
-    setSavingPreference((prev) => ({ ...prev, darkMode: true }));
-
-    const { error } = await updateProfilePreferences(userId, {
-      prefers_dark_mode: nextValue,
-    });
-
-    if (error) {
-      console.error("Failed to update dark mode preference:", error);
-      setDarkMode(previousValue);
-      setPreferenceError("We couldn't save your preferences. Please try again.");
-    } else {
-      await refreshProfile();
-    }
-
-    setSavingPreference((prev) => ({ ...prev, darkMode: false }));
-  };
 
   const handleNotificationsToggle = async () => {
     if (!userId || savingPreference.notifications) return;
@@ -302,6 +276,7 @@ export default function SettingsPage() {
   const initials = loading
     ? ""
     : getInitials(profile?.name || profile?.username || null, email);
+  const isDarkTheme = theme === "dark";
 
   const handleRetry = () => {
     void refreshProfile();
@@ -481,10 +456,10 @@ export default function SettingsPage() {
           <SettingsToggleRow
             icon={Moon}
             title="Dark mode"
-            checked={darkMode}
-            onChange={handleDarkModeToggle}
-            ariaLabel="Toggle dark mode"
-            disabled={!userId || savingPreference.darkMode}
+            description={isDarkTheme ? "Current theme: Dark" : "Current theme: Light"}
+            checked={isDarkTheme}
+            onChange={toggleTheme}
+            ariaLabel="Toggle theme"
           />
           <SettingsToggleRow
             icon={Bell}
@@ -547,13 +522,13 @@ export default function SettingsPage() {
         backgroundImage: "var(--bg-gradient)",
       }}
     >
-      <header className="sticky top-0 z-10 border-b border-white/10 bg-[var(--bg)]/80 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--bg)]/80 backdrop-blur">
         <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
           <button
             type="button"
             aria-label="Go back to dashboard"
             onClick={() => router.push("/dashboard")}
-            className="inline-flex h-9 w-9 items-center justify-center text-[var(--text)] transition hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="inline-flex h-9 w-9 items-center justify-center text-[var(--text)] transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
           >
             <span aria-hidden="true" className="text-3xl font-light leading-none">
               ‹
@@ -658,7 +633,7 @@ function SettingsLoadingState() {
     >
       <span
         aria-hidden="true"
-        className="h-12 w-12 animate-spin rounded-full border-2 border-white/15 border-t-transparent"
+        className="h-12 w-12 animate-spin rounded-full border-2 border-[var(--border)] border-t-transparent"
       />
       <p className="text-sm">Loading your settings…</p>
     </div>
@@ -704,7 +679,7 @@ function ProfileOverview({ profile, email, initials, onEdit, onViewProfile }: Pr
   const avatarUrl = profile?.avatar_url;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025]">
+    <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
       <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <ProfileAvatar src={avatarUrl} alt={displayName} fallback={initials} />
@@ -748,7 +723,7 @@ function SecondaryButton({ onClick, children }: SecondaryButtonProps) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:border-white/20 hover:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--subtle-surface)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
     >
       {children}
     </button>
@@ -792,14 +767,14 @@ type SettingsCardProps = {
 
 function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025]">
-      <div className="border-b border-white/5 px-5 py-4 sm:px-6">
+    <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+      <div className="border-b border-[var(--border)] px-5 py-4 sm:px-6">
         <h2 className="text-base font-semibold text-[var(--text)]">{title}</h2>
         {description && (
           <p className="mt-1 text-sm leading-5 text-[var(--muted)]">{description}</p>
         )}
       </div>
-      <div className="divide-y divide-white/[0.06]">{children}</div>
+      <div className="divide-y divide-[var(--border)]">{children}</div>
     </section>
   );
 }
@@ -904,7 +879,7 @@ function SettingsSelectRow({
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
           aria-label={title}
-          className="w-full rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-white/30 focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--subtle-surface)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>
@@ -947,7 +922,7 @@ type SettingsIconProps = {
 
 function SettingsIcon({ icon: Icon }: SettingsIconProps) {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.025]">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--subtle-surface)]">
       <Icon className="h-4 w-4 text-[var(--muted)]" aria-hidden="true" />
     </span>
   );

@@ -7,6 +7,8 @@ export interface RoadmapGoal {
   id: string;
   name: string;
   emoji: string | null;
+  monument_id: string | null;
+  circle_id: string | null;
   monumentEmoji: string | null;
   roadmap_id: string | null;
   status: string | null;
@@ -35,6 +37,8 @@ export interface RoadmapCampaignGoal {
   id: string;
   name: string;
   emoji: string | null;
+  monument_id: string | null;
+  circle_id: string | null;
   monumentEmoji: string | null;
   position: number;
   status: string | null;
@@ -114,6 +118,8 @@ type RoadmapGoalRow = {
   id: string;
   name: string;
   emoji?: string | null;
+  monument_id?: string | null;
+  circle_id?: string | null;
   roadmap_id?: string | null;
   status?: string | null;
   global_rank?: number | null;
@@ -173,6 +179,8 @@ function normalizeRoadmapGoal(
     id: goal.id,
     name: goal.name,
     emoji: goal.emoji ?? null,
+    monument_id: goal.monument_id ?? null,
+    circle_id: goal.circle_id ?? null,
     monumentEmoji: goal.monument?.emoji ?? null,
     roadmap_id: goal.roadmap_id ?? null,
     status: goal.status ?? null,
@@ -191,6 +199,19 @@ function isRoadmapGoalCompleted(goal: {
       goal.status.trim().toUpperCase() === "COMPLETED") ||
     goal.allProjectsCompleted === true
   );
+}
+
+function isRoadmapGoalLinkedToContext(
+  goal: { monument_id?: string | null; circle_id?: string | null },
+  context: { monument_id?: string | null; circle_id?: string | null }
+): boolean {
+  if (context.circle_id) {
+    return goal.circle_id === context.circle_id;
+  }
+  if (context.monument_id) {
+    return goal.monument_id === context.monument_id;
+  }
+  return true;
 }
 
 async function requireCurrentUserId(): Promise<string> {
@@ -233,7 +254,7 @@ export async function listRoadmaps(
       monument_id,
       circle_id,
       created_at,
-      goals:goals(id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
+      goals:goals(id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
     `)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -288,7 +309,7 @@ export async function listRoadmapsWithItems(
 
   const { data: legacyGoalRows, error: legacyGoalsError } = await supabase
     .from("goals")
-    .select("id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
+    .select("id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
     .in("roadmap_id", roadmapIds)
     .order("priority_rank", { ascending: true, nullsFirst: false });
 
@@ -337,7 +358,7 @@ export async function listRoadmapsWithItems(
     roadmapGoalIds.length > 0
       ? await supabase
           .from("goals")
-          .select("id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
+          .select("id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
           .in("id", roadmapGoalIds)
       : { data: [], error: null };
 
@@ -387,7 +408,7 @@ export async function listRoadmapsWithItems(
     campaignGoalIds.length > 0
       ? await supabase
           .from("goals")
-          .select("id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
+          .select("id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji)")
           .in("id", campaignGoalIds)
       : { data: [], error: null };
 
@@ -441,10 +462,27 @@ export async function listRoadmapsWithItems(
     ])
   );
 
+  const campaignContextById = new Map(
+    (campaignRows ?? []).map(campaign => [
+      campaign.id,
+      {
+        monument_id: campaign.primary_monument_id ?? null,
+        circle_id: campaign.primary_circle_id ?? null,
+      },
+    ])
+  );
+
   const campaignGoalsByCampaignId = new Map<string, RoadmapCampaignGoal[]>();
   for (const campaignGoal of campaignGoalRows ?? []) {
     const goal = campaignGoalsByGoalId.get(campaignGoal.goal_id);
     if (!goal || isRoadmapGoalCompleted(goal)) {
+      continue;
+    }
+    const campaignContext = campaignContextById.get(campaignGoal.campaign_id);
+    if (
+      campaignContext &&
+      !isRoadmapGoalLinkedToContext(goal, campaignContext)
+    ) {
       continue;
     }
 
@@ -453,6 +491,8 @@ export async function listRoadmapsWithItems(
       id: goal.id,
       name: goal.name,
       emoji: goal.emoji ?? null,
+      monument_id: goal.monument_id ?? null,
+      circle_id: goal.circle_id ?? null,
       monumentEmoji: goal.monumentEmoji ?? null,
       position: campaignGoal.position,
       status: goal.status ?? null,
@@ -538,7 +578,10 @@ export async function listRoadmapsWithItems(
         return true;
       }
 
-      return !isRoadmapGoalCompleted(item.goal);
+      return (
+        isRoadmapGoalLinkedToContext(item.goal, roadmap) &&
+        !isRoadmapGoalCompleted(item.goal)
+      );
     });
     const goalItems = items
       .map(item => item.goal)
@@ -579,7 +622,7 @@ export async function createRoadmap(
       monument_id,
       circle_id,
       created_at,
-      goals:goals(id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
+      goals:goals(id, name, emoji, monument_id, circle_id, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
     `)
     .single();
 

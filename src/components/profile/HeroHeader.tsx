@@ -6,10 +6,8 @@ import {
   BadgeCheck,
   BookOpen,
   ChevronLeft,
-  ExternalLink,
   Share2,
   ShieldCheck,
-  Sparkles,
   Handshake,
   Headphones,
   MapPin,
@@ -129,15 +127,13 @@ export default function HeroHeader({
   const initials = getInitials(profile.name || null, profile.username);
   const displayName = profile.name?.trim() || profile.username;
   const bioSegments = formatBioSegments(profile.bio);
-  const tagline = bioSegments.length
-    ? bioSegments.join(" • ")
-    : "Share a short introduction so people know what to expect from your world.";
+  const bioText = bioSegments.length ? bioSegments.join(" • ") : null;
 
   const pronouns = profile.pronouns?.trim() || null;
   const locationDisplay = (profile.location_display ?? profile.city)?.trim() || null;
-  const heroHeightClasses = "h-[55vh] min-h-[360px] max-h-[560px] sm:h-[58vh] lg:h-[52vh]";
   const heroImageSizes =
-    "(min-width: 1024px) 192px, (min-width: 768px) 176px, (min-width: 640px) 160px, 80vw";
+    "(min-width: 1024px) 176px, (min-width: 640px) 160px, (min-width: 420px) 128px, 96px";
+  const hasSocialLinks = Object.values(socials ?? {}).some((url) => url && url !== "#");
   const partnerBadges = (profile.partner_badges ?? [])
     .filter((badge) => badge && badge.label?.trim())
     .map((badge) => ({
@@ -155,17 +151,7 @@ export default function HeroHeader({
   const hasRelationshipExtras = pronouns || hasPartnerBadges || hasQuickActions;
   const tooltipIdBase = useId();
   const avatarButtonClass =
-    "absolute inset-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-70";
-  const avatarOverlayVisibilityClass = isAvatarUploading
-    ? "opacity-100"
-    : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100";
-
-  const joinedDate = profile.created_at
-    ? new Intl.DateTimeFormat(undefined, {
-        month: "long",
-        year: "numeric",
-      }).format(new Date(profile.created_at))
-    : null;
+    "absolute inset-0 z-10 rounded-full transition duration-200 disabled:cursor-not-allowed disabled:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
   const handleAvatarClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -192,51 +178,69 @@ export default function HeroHeader({
 
   return (
     <section className="w-full bg-black text-white mt-0">
-      <div className="mx-auto flex max-w-6xl flex-col gap-0 px-5 pb-6 pt-0 sm:px-8 sm:pb-8 sm:pt-0">
-        <div className="relative w-full max-w-6xl">
-          <div className="relative w-full overflow-hidden rounded-[32px] border border-white/10 bg-black/40 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
-            <div className={`relative ${heroHeightClasses}`}>
-              <div className="absolute inset-0">
-                {profile.avatar_url ? (
-                  <Image
-                    src={profile.avatar_url}
-                    alt={`${displayName}'s avatar`}
-                    fill
-                    sizes={heroImageSizes}
-                    unoptimized
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-5xl font-semibold text-white">
-                    <span aria-hidden="true">{initials}</span>
-                    <span className="sr-only">{`${displayName}'s initials`}</span>
-                  </div>
-                )}
-              </div>
+      <div className="mx-auto flex max-w-5xl flex-col px-4 pb-6 pt-2 sm:px-6 sm:pb-8">
+        <div className="flex min-h-11 w-full items-center justify-between gap-3 text-white/75">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">Back</span>
+              </button>
+            ) : null}
+            <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+              <p className="min-w-0 shrink truncate text-sm font-semibold leading-tight text-white/90">
+                @{profile.username}
+              </p>
+              {locationDisplay ? (
+                <>
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-white/35" aria-hidden="true" />
+                  <p
+                    className="flex min-w-0 shrink items-center gap-1 text-[0.68rem] font-medium uppercase leading-tight tracking-[0.16em] text-white/55"
+                    aria-label={`Located in ${locationDisplay}`}
+                  >
+                    <MapPin className="h-3 w-3 shrink-0 text-white/45" aria-hidden="true" />
+                    <span className="min-w-0 truncate">{locationDisplay}</span>
+                  </p>
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {topRightSlot ? topRightSlot : null}
+            {onShare ? (
+              <button
+                type="button"
+                onClick={onShare}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+              >
+                <Share2 className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">Share profile</span>
+              </button>
+            ) : null}
+          </div>
+        </div>
 
-              {(onBack || onShare) && (
-                <header className="pointer-events-auto absolute left-4 top-4 z-20 flex items-center justify-start gap-3 text-white/80 sm:left-6 sm:top-6">
-                  {onBack ? (
-                    <button
-                      type="button"
-                      onClick={onBack}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white transition-colors hover:border-white/30 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11"
-                    >
-                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-                      <span className="sr-only">Back</span>
-                    </button>
-                  ) : null}
-                  {onShare ? (
-                    <button
-                      type="button"
-                      onClick={onShare}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white transition-colors hover:border-white/30 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11"
-                    >
-                      <Share2 className="h-4 w-4" aria-hidden="true" />
-                      <span className="sr-only">Share profile</span>
-                    </button>
-                  ) : null}
-                </header>
+        <div className="pt-4 sm:pt-6">
+          <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-4 min-[420px]:grid-cols-[8rem_minmax(0,1fr)] sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-x-6 lg:grid-cols-[11rem_minmax(0,1fr)]">
+            <div className="relative h-24 w-24 overflow-hidden rounded-full min-[420px]:h-32 min-[420px]:w-32 sm:h-40 sm:w-40 lg:h-44 lg:w-44">
+              {profile.avatar_url ? (
+                <Image
+                  src={profile.avatar_url}
+                  alt={`${displayName}'s avatar`}
+                  fill
+                  sizes={heroImageSizes}
+                  unoptimized
+                  className="object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white sm:text-5xl">
+                  <span aria-hidden="true">{initials}</span>
+                  <span className="sr-only">{`${displayName}'s initials`}</span>
+                </div>
               )}
               {isOwner && (
                 <>
@@ -246,7 +250,7 @@ export default function HeroHeader({
                     disabled={isAvatarUploading}
                     aria-label="Change profile photo"
                     aria-busy={isAvatarUploading}
-                    className={`${avatarButtonClass}`}
+                    className={avatarButtonClass}
                   />
                   <input
                     ref={avatarInputRef}
@@ -256,72 +260,61 @@ export default function HeroHeader({
                     aria-hidden="true"
                     onChange={handleAvatarInputChange}
                   />
-                  <span
-                    aria-hidden="true"
-                    className={`pointer-events-none absolute inset-x-6 bottom-6 z-10 rounded-full border border-white/20 bg-black/60 px-5 py-2 text-[0.65rem] font-semibold tracking-[0.35em] text-white transition-opacity duration-200 ${avatarOverlayVisibilityClass}`}
-                  >
-                    {isAvatarUploading ? (
-                      "Uploading..."
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <Sparkles className="h-3 w-3" aria-hidden="true" />
-                        Edit
-                      </span>
-                    )}
-                  </span>
                 </>
               )}
+            </div>
 
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
-              <div className="pointer-events-auto absolute left-4 top-1/2 z-20 -translate-y-1/2 sm:left-6">
-                <SocialPillsRow socials={socials || {}} layout="vertical" />
-              </div>
-              {topRightSlot ? (
-                <div className="pointer-events-auto absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
-                  {topRightSlot}
-                </div>
-              ) : null}
-              {locationDisplay ? (
-                <div
-                  className={`pointer-events-none absolute right-4 z-20 flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.25em] text-white/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] sm:right-6 ${
-                    topRightSlot ? "top-16 sm:top-[4.35rem]" : "top-4 sm:top-6"
-                  }`}
-                  aria-label={`Located in ${locationDisplay}`}
-                >
-                  <MapPin className="h-3 w-3 text-white/70" aria-hidden="true" />
-                  <span className="leading-none text-[0.65rem] tracking-[0.3em] text-white/80">{locationDisplay}</span>
-                </div>
-              ) : null}
-              <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center sm:top-5">
-                <span className="inline-flex items-center rounded-full bg-black/65 px-3 py-1 text-xs font-semibold text-white/85 shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
+            <div className="flex min-w-0 flex-col items-start text-left">
+              <h1 className="max-w-full truncate text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
+                {displayName}
+              </h1>
+              <div className="mt-1.5 flex max-w-full flex-wrap items-center justify-start gap-x-2 gap-y-1 text-sm text-white/60">
+                <span className="max-w-full truncate font-medium text-white/75">
                   @{profile.username}
                 </span>
+                {locationDisplay ? (
+                  <>
+                    <span className="h-1 w-1 rounded-full bg-white/35" aria-hidden="true" />
+                    <span
+                      className="inline-flex min-w-0 items-center gap-1"
+                      aria-label={`Located in ${locationDisplay}`}
+                    >
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-white/45" aria-hidden="true" />
+                      <span className="min-w-0 truncate">{locationDisplay}</span>
+                    </span>
+                  </>
+                ) : null}
               </div>
-              <div className="absolute inset-x-0 bottom-0 z-10 flex w-full flex-col items-center gap-2 px-6 pb-6 text-center text-white pointer-events-none sm:px-8">
-                <h1 className="text-3xl font-semibold sm:text-4xl md:text-5xl">{displayName}</h1>
-                <p className="max-w-3xl text-sm font-semibold leading-relaxed tracking-tight text-white sm:text-base">
-                  {tagline}
+
+              {hasSocialLinks ? (
+                <div className="mt-3 w-full max-w-full">
+                  <SocialPillsRow socials={socials || {}} />
+                </div>
+              ) : null}
+
+              <div className="mt-4 w-full max-w-2xl">
+                <RelationshipViewBar
+                  value={null}
+                  onChange={onProfileStatSelect}
+                  counts={relationshipCounts}
+                  items={PROFILE_STAT_ITEMS}
+                  className="w-full border border-white/10"
+                  itemClassName="px-1.5 sm:px-4"
+                  countClassName="text-white"
+                  labelClassName="text-[0.62rem] font-medium normal-case tracking-normal text-white/55 sm:text-[0.68rem]"
+                  uppercaseLabels={false}
+                />
+              </div>
+              {bioText ? (
+                <p className="mt-3 max-w-2xl text-left text-sm font-semibold leading-relaxed tracking-tight text-white/60 sm:text-base">
+                  {bioText}
                 </p>
-              </div>
+              ) : null}
             </div>
           </div>
         </div>
 
-
-        <div className="flex flex-col gap-1">
-          <div className="w-full">
-            <RelationshipViewBar
-              value={null}
-              onChange={onProfileStatSelect}
-              counts={relationshipCounts}
-              items={PROFILE_STAT_ITEMS}
-              className="mx-auto w-full max-w-none"
-              itemClassName="px-1.5 sm:px-3"
-              countClassName="text-white"
-              labelClassName="text-[0.56rem] font-medium normal-case tracking-normal text-white/55 sm:text-[0.62rem]"
-              uppercaseLabels={false}
-            />
-          </div>
+        <div className="flex flex-col gap-1 pt-5 sm:pt-6">
           {hasRelationshipExtras ? (
             <section className="flex flex-col space-y-1 px-6 py-3 text-center text-white sm:px-8">
 

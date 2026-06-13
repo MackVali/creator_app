@@ -287,6 +287,7 @@ type CreatorEntitySavedEventDetail = {
   entityId: string;
   action: "created" | "updated" | "deleted";
   monumentId?: string | null;
+  circleId?: string | null;
 };
 type FabGoalDeleteConfirmTarget = {
   goalName: string;
@@ -830,6 +831,16 @@ const getClampedVisualViewportKeyboardInset = () => {
   return Math.min(heightLoss, maxKeyboardOffset);
 };
 
+const FAB_KEYBOARD_TEXT_INPUT_TYPES = new Set([
+  "email",
+  "number",
+  "password",
+  "search",
+  "tel",
+  "text",
+  "url",
+]);
+
 const isFabTextEntryElement = (
   element: Element | null,
 ): element is HTMLElement => {
@@ -838,30 +849,13 @@ const isFabTextEntryElement = (
   if (htmlElement.isContentEditable) return true;
   if (element instanceof HTMLTextAreaElement) return true;
   if (element instanceof HTMLInputElement) {
-    return !["button", "submit", "reset", "checkbox", "radio"].includes(
-      element.type,
-    );
+    return FAB_KEYBOARD_TEXT_INPUT_TYPES.has(element.type.toLowerCase());
   }
   return false;
 };
 
 const isFabKeyboardTextEntryElement = (element: HTMLElement): boolean => {
-  if (element.isContentEditable) return true;
-  if (element instanceof HTMLTextAreaElement) return true;
-  if (element instanceof HTMLInputElement) {
-    const type = element.type.toLowerCase();
-    return [
-      "",
-      "email",
-      "number",
-      "password",
-      "search",
-      "tel",
-      "text",
-      "url",
-    ].includes(type);
-  }
-  return false;
+  return isFabTextEntryElement(element);
 };
 
 const getFabTextEntryTarget = (
@@ -8888,6 +8882,7 @@ export function Fab({
                           "min-w-[260px] sm:min-w-[320px]",
                         )}
                         placeholder="No campaign"
+                        disablePortal
                       >
                         <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           <SelectItem
@@ -13837,6 +13832,51 @@ export function Fab({
           throw new Error("Unable to resolve the selected roadmap.");
         };
 
+        const resolveCompatibleGoalCampaignId = async ({
+          roadmapId,
+          selectedMonumentId,
+          selectedCircleId,
+        }: {
+          roadmapId: string;
+          selectedMonumentId: string | null;
+          selectedCircleId: string | null;
+        }) => {
+          if (!goalCampaignId) {
+            return null;
+          }
+
+          let selectedCampaign =
+            goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ??
+            null;
+          if (!selectedCampaign) {
+            const { data: selectedCampaignData, error: selectedCampaignError } =
+              await supabase
+                .from("campaigns")
+                .select(
+                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+                )
+                .eq("id", goalCampaignId)
+                .eq("user_id", user.id)
+                .maybeSingle();
+            if (selectedCampaignError) {
+              throwIfLimitError(selectedCampaignError);
+            }
+            selectedCampaign = selectedCampaignData as GoalCampaignOption | null;
+          }
+
+          if (!selectedCampaign) {
+            throw new Error("Selected campaign could not be found.");
+          }
+
+          const belongsToSelectedContext = selectedCircleId
+            ? selectedCampaign.primary_circle_id === selectedCircleId ||
+              selectedCampaign.roadmap_id === roadmapId
+            : selectedCampaign.primary_monument_id === selectedMonumentId ||
+              selectedCampaign.roadmap_id === roadmapId;
+
+          return belongsToSelectedContext ? goalCampaignId : null;
+        };
+
         if (selected === "GOAL" && activeEditTarget?.entityType === "GOAL") {
           const { data: existingGoalData, error: existingGoalError } =
             await supabase
@@ -13879,45 +13919,12 @@ export function Fab({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
           });
-
-          if (goalCampaignId && goalRelationResolution.selectedCircleId) {
-            let selectedCampaign =
-              goalCampaigns.find(
-                (campaign) => campaign.id === goalCampaignId,
-              ) ?? null;
-            if (!selectedCampaign) {
-              const {
-                data: selectedCampaignData,
-                error: selectedCampaignError,
-              } = await supabase
-                .from("campaigns")
-                .select(
-                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
-                )
-                .eq("id", goalCampaignId)
-                .eq("user_id", user.id)
-                .maybeSingle();
-              if (selectedCampaignError) {
-                throwIfLimitError(selectedCampaignError);
-              }
-              selectedCampaign =
-                selectedCampaignData as GoalCampaignOption | null;
-            }
-            if (!selectedCampaign) {
-              setSaveError("Selected campaign could not be found.");
-              return;
-            }
-            const belongsToSelectedCircle =
-              selectedCampaign.primary_circle_id ===
-                goalRelationResolution.selectedCircleId ||
-              selectedCampaign.roadmap_id === resolvedGoalRoadmapId;
-            if (!belongsToSelectedCircle) {
-              setSaveError(
-                "Select a campaign that belongs to this Circle before saving.",
-              );
-              return;
-            }
-          }
+          const effectiveGoalCampaignId =
+            await resolveCompatibleGoalCampaignId({
+              roadmapId: resolvedGoalRoadmapId,
+              selectedMonumentId: goalRelationResolution.selectedMonumentId,
+              selectedCircleId: goalRelationResolution.selectedCircleId,
+            });
 
           const { error } = await supabase
             .from("goals")
@@ -13953,12 +13960,12 @@ export function Fab({
             .eq("goal_id", activeEditTarget.entityId);
           if (campaignDeleteError) throwIfLimitError(campaignDeleteError);
 
-          if (goalCampaignId) {
+          if (effectiveGoalCampaignId) {
             const { data: campaignGoalRowsData, error: campaignGoalError } =
               await supabase
                 .from("campaign_goals")
                 .select("position")
-                .eq("campaign_id", goalCampaignId)
+                .eq("campaign_id", effectiveGoalCampaignId)
                 .order("position", { ascending: false })
                 .limit(1);
             if (campaignGoalError) throwIfLimitError(campaignGoalError);
@@ -13970,7 +13977,7 @@ export function Fab({
                 ? lastPosition + 1
                 : 1;
             await addGoalToCampaign(user.id, {
-              campaignId: goalCampaignId,
+              campaignId: effectiveGoalCampaignId,
               goalId: activeEditTarget.entityId,
               position: nextPosition,
             });
@@ -13994,6 +14001,7 @@ export function Fab({
             entityId: activeEditTarget.entityId,
             action: "updated",
             monumentId: goalRelationResolution.selectedMonumentId,
+            circleId: goalRelationResolution.selectedCircleId,
           });
           resetFabFormState();
           closeExpandedPanel({ notifyEditClose: false });
@@ -14257,25 +14265,12 @@ export function Fab({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
           });
-          if (goalCampaignId && goalRelationResolution.selectedCircleId) {
-            const selectedCampaign =
-              goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ??
-              null;
-            if (!selectedCampaign) {
-              setSaveError("Selected campaign could not be found.");
-              return;
-            }
-            const belongsToSelectedCircle =
-              selectedCampaign.primary_circle_id ===
-                goalRelationResolution.selectedCircleId ||
-              selectedCampaign.roadmap_id === roadmapId;
-            if (!belongsToSelectedCircle) {
-              setSaveError(
-                "Select a campaign that belongs to this Circle before saving.",
-              );
-              return;
-            }
-          }
+          const effectiveGoalCampaignId =
+            await resolveCompatibleGoalCampaignId({
+              roadmapId,
+              selectedMonumentId: goalRelationResolution.selectedMonumentId,
+              selectedCircleId: goalRelationResolution.selectedCircleId,
+            });
           const { data: goalData, error } = await supabase
             .from("goals")
             .insert({
@@ -14293,12 +14288,12 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = goalData?.id ?? null;
-          if (goalCampaignId && goalData?.id) {
+          if (effectiveGoalCampaignId && goalData?.id) {
             const { data: campaignGoalRows, error: campaignGoalError } =
               await supabase
                 .from("campaign_goals")
                 .select("position")
-                .eq("campaign_id", goalCampaignId)
+                .eq("campaign_id", effectiveGoalCampaignId)
                 .order("position", { ascending: false })
                 .limit(1);
             if (campaignGoalError) throwIfLimitError(campaignGoalError);
@@ -14308,7 +14303,7 @@ export function Fab({
                 ? lastPosition + 1
                 : 1;
             await addGoalToCampaign(user.id, {
-              campaignId: goalCampaignId,
+              campaignId: effectiveGoalCampaignId,
               goalId: goalData.id,
               position: nextPosition,
             });
@@ -14583,6 +14578,10 @@ export function Fab({
             monumentId:
               createdType === "GOAL"
                 ? goalRelationResolution.selectedMonumentId
+                : null,
+            circleId:
+              createdType === "GOAL"
+                ? goalRelationResolution.selectedCircleId
                 : null,
           });
         }

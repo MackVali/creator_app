@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServer } from "@/lib/supabase";
 
 type RelationshipView = "following" | "followers";
 
@@ -9,6 +11,10 @@ type ProfileRelationshipUser = {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  viewerFollowsUser: boolean;
+  userFollowsViewer: boolean;
+  isViewer: boolean;
+  canInteract: boolean;
 };
 
 function resolveDisplayName(profile?: {
@@ -26,6 +32,9 @@ function normalizeProfileRows(
     name: string | null;
     avatar_url: string | null;
   }>,
+  viewerId: string | null,
+  viewerFollowsUserIds: Set<string>,
+  usersFollowingViewerIds: Set<string>,
 ): ProfileRelationshipUser[] {
   return profiles
     .filter(
@@ -45,6 +54,10 @@ function normalizeProfileRows(
       username: profile.username.trim(),
       displayName: resolveDisplayName(profile),
       avatarUrl: profile.avatar_url ?? null,
+      viewerFollowsUser: viewerFollowsUserIds.has(profile.user_id),
+      userFollowsViewer: usersFollowingViewerIds.has(profile.user_id),
+      isViewer: viewerId === profile.user_id,
+      canInteract: Boolean(viewerId) && viewerId !== profile.user_id,
     }));
 }
 
@@ -67,6 +80,24 @@ export async function GET(
   }
 
   const supabase = createAdminClient();
+  const cookieStore = await cookies();
+  const serverSupabase = getSupabaseServer({
+    get: (name) => cookieStore.get(name),
+  });
+  let viewerId: string | null = null;
+
+  if (serverSupabase) {
+    const {
+      data: { user },
+      error: authError,
+    } = await serverSupabase.auth.getUser();
+
+    if (authError) {
+      console.error("Failed to resolve relationship popup viewer", authError);
+    }
+
+    viewerId = user?.id ?? null;
+  }
 
   if (!supabase) {
     if (process.env.NODE_ENV !== "production") {
@@ -123,11 +154,35 @@ export async function GET(
     return NextResponse.json({ users: [] }, { status: 200 });
   }
 
-  const { data: profiles, error: profilesError } = await supabase
+  const profilesQuery = supabase
     .from("profiles")
     .select("user_id, username, name, avatar_url")
     .in("user_id", relatedIds)
     .order("name", { ascending: true });
+  const viewerFollowingQuery = viewerId
+    ? supabase
+        .from("friend_connections")
+        .select("friend_user_id")
+        .eq("user_id", viewerId)
+        .in("friend_user_id", relatedIds)
+    : Promise.resolve({ data: [], error: null });
+  const usersFollowingViewerQuery = viewerId
+    ? supabase
+        .from("friend_connections")
+        .select("user_id")
+        .eq("friend_user_id", viewerId)
+        .in("user_id", relatedIds)
+    : Promise.resolve({ data: [], error: null });
+
+  const [
+    { data: profiles, error: profilesError },
+    { data: viewerFollowingRows, error: viewerFollowingError },
+    { data: usersFollowingViewerRows, error: usersFollowingViewerError },
+  ] = await Promise.all([
+    profilesQuery,
+    viewerFollowingQuery,
+    usersFollowingViewerQuery,
+  ]);
 
   if (profilesError) {
     console.error("Failed to load relationship profiles", profilesError);
@@ -137,8 +192,37 @@ export async function GET(
     );
   }
 
+  if (viewerFollowingError || usersFollowingViewerError) {
+    console.error("Failed to load viewer relationship state", {
+      viewerFollowingError,
+      usersFollowingViewerError,
+    });
+    return NextResponse.json(
+      { error: "Unable to load relationships." },
+      { status: 500 },
+    );
+  }
+
+  const viewerFollowsUserIds = new Set(
+    (viewerFollowingRows ?? [])
+      .map((row) => row.friend_user_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const usersFollowingViewerIds = new Set(
+    (usersFollowingViewerRows ?? [])
+      .map((row) => row.user_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+
   return NextResponse.json(
-    { users: normalizeProfileRows(profiles ?? []) },
+    {
+      users: normalizeProfileRows(
+        profiles ?? [],
+        viewerId,
+        viewerFollowsUserIds,
+        usersFollowingViewerIds,
+      ),
+    },
     { status: 200 },
   );
 }

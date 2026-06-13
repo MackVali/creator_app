@@ -33,6 +33,7 @@ import { useAppCart } from "@/components/cart/AppCartProvider";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 import ProductCarousel from "@/components/profile/ProductCarousel";
 import ServiceCarousel from "@/components/profile/ServiceCarousel";
+import { resolveServiceImage } from "@/components/profile/SourceListingCard";
 import ProfileDetailSheet, {
   ProfileDetailSheetItem,
 } from "@/components/profile/ProfileDetailSheet";
@@ -683,6 +684,7 @@ export default function ProfileByHandlePage() {
       id: `product-${product.id}`,
       label: product.title.trim() || "Untitled product",
       typeLabel: "Product",
+      imageUrl: resolveListingImage(product),
       onSelect: () => openProductSheet(product),
     }));
 
@@ -690,6 +692,7 @@ export default function ProfileByHandlePage() {
       id: `service-${service.id}`,
       label: service.title.trim() || "Untitled service",
       typeLabel: "Service",
+      imageUrl: resolveServiceImage(service),
       onSelect: () => openServiceSheet(service),
     }));
 
@@ -697,6 +700,7 @@ export default function ProfileByHandlePage() {
       id: `content-${card.id}`,
       label: card.title.trim() || card.url,
       typeLabel: "Content",
+      imageUrl: card.thumbnail_url?.trim() || null,
       href: card.url,
       external: true,
       onSelect: () => {

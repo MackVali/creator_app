@@ -192,13 +192,13 @@ export default function UpdatePasswordForm() {
             tone="error"
             message={error || "Invalid or expired reset link."}
           />
-          <p className="text-sm text-zinc-300">
+          <p className="text-sm text-zinc-400">
             Please request a new password reset link.
           </p>
           <button
             type="button"
             onClick={() => router.push("/forgot-password")}
-            className="rounded-xl bg-white px-6 py-3 font-bold text-[#1E1E1E] transition-all duration-200 hover:bg-zinc-100"
+            className="rounded-xl border border-zinc-600/70 bg-[#232326] px-6 py-3 font-bold text-zinc-50 transition-all duration-200 hover:bg-[#2d2d30]"
           >
             Request new reset link
           </button>
@@ -210,8 +210,8 @@ export default function UpdatePasswordForm() {
   return (
     <AuthRecoveryShell eyebrow="Account recovery" title="CREATOR">
       <div className="space-y-2">
-        <h2 className="text-2xl font-bold text-white">Set a new password</h2>
-        <p className="text-sm leading-6 text-zinc-300">
+        <h2 className="text-2xl font-bold text-zinc-100">Set a new password</h2>
+        <p className="text-sm leading-6 text-zinc-400">
           Choose a password with at least 8 characters.
         </p>
       </div>
@@ -220,7 +220,7 @@ export default function UpdatePasswordForm() {
 
       <form onSubmit={handleUpdatePassword} className="space-y-6">
         <div>
-          <label className="block text-sm font-semibold text-white mb-3">
+          <label className="mb-3 block text-sm font-semibold text-zinc-200">
             New password
           </label>
           <input
@@ -230,14 +230,14 @@ export default function UpdatePasswordForm() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setPassword(e.target.value)
             }
-            className="w-full rounded-xl border border-[#333] bg-[#2C2C2C] px-5 py-4 text-white placeholder-zinc-400 transition-all duration-200 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20"
+            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
             autoComplete="new-password"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-white mb-3">
+          <label className="mb-3 block text-sm font-semibold text-zinc-200">
             Confirm new password
           </label>
           <input
@@ -247,7 +247,7 @@ export default function UpdatePasswordForm() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setConfirmPassword(e.target.value)
             }
-            className="w-full rounded-xl border border-[#333] bg-[#2C2C2C] px-5 py-4 text-white placeholder-zinc-400 transition-all duration-200 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20"
+            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
             autoComplete="new-password"
             required
           />
@@ -258,7 +258,7 @@ export default function UpdatePasswordForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-white py-4 font-bold text-[#1E1E1E] shadow-lg transition-all duration-200 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-xl border border-zinc-600/70 bg-[#232326] py-4 font-bold text-zinc-50 shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition-all duration-200 hover:bg-[#2d2d30] disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-[#232326]/50 disabled:text-zinc-500"
         >
           {loading ? "Updating..." : "Update password"}
         </button>
@@ -267,7 +267,7 @@ export default function UpdatePasswordForm() {
           <button
             type="button"
             onClick={() => router.push("/auth")}
-            className="text-sm text-zinc-400 transition-colors hover:text-zinc-300"
+            className="text-sm text-zinc-400 transition-colors hover:text-zinc-100"
           >
             Back to sign in
           </button>

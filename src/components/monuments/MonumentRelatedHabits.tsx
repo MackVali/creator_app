@@ -3,12 +3,14 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type MouseEvent,
   type PointerEvent,
   type TouchEvent,
+  type WheelEvent,
 } from "react";
 import clsx from "clsx";
 import { Grid2x2, Grid3x3 } from "lucide-react";
@@ -71,8 +73,10 @@ type HabitDueStatus = {
   rank: number;
 };
 type RelatedHabitCardDensity = "large" | "small";
+type RelatedHabitPageSwipeAxis = "horizontal" | "vertical" | null;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const RELATED_HABIT_OVERDUE_VISUAL_THRESHOLD_MS = MS_PER_DAY * 7;
 const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
 const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
 const RELATED_HABIT_DOUBLE_TAP_MS = 350;
@@ -82,6 +86,10 @@ const RELATED_HABIT_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_GRID_CLASS =
   "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+const RELATED_HABIT_PAGE_GRID_CLASS =
+  "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
+  "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -270,7 +278,8 @@ function computeHabitDueStatus(
     const isOverdue =
       typeof overdueStartMs === "number" &&
       Number.isFinite(overdueStartMs) &&
-      today.getTime() - overdueStartMs >= MS_PER_DAY;
+      today.getTime() - overdueStartMs >=
+        RELATED_HABIT_OVERDUE_VISUAL_THRESHOLD_MS;
 
     return { label: isOverdue ? "OVERDUE" : "DUE", rank: 0 };
   }
@@ -481,7 +490,41 @@ export function MonumentRelatedHabits({
     relatedHabitCardDensity === "small"
       ? RELATED_HABIT_SMALL_GRID_CLASS
       : RELATED_HABIT_GRID_CLASS;
+  const relatedHabitPageGridClass =
+    relatedHabitCardDensity === "small"
+      ? RELATED_HABIT_SMALL_PAGE_GRID_CLASS
+      : RELATED_HABIT_PAGE_GRID_CLASS;
   const isSmallRelatedHabitDensity = relatedHabitCardDensity === "small";
+  const relatedHabitPagerRef = useRef<HTMLDivElement | null>(null);
+  const relatedHabitPagePanelRefs = useRef<Record<string, HTMLDivElement | null>>(
+    {}
+  );
+  const activeRelatedHabitPageIndexRef = useRef(0);
+  const [activeRelatedHabitPageIndex, setActiveRelatedHabitPageIndex] =
+    useState(0);
+  const [relatedHabitPageHeight, setRelatedHabitPageHeight] = useState<
+    number | null
+  >(null);
+  const [relatedHabitPagerViewportWidth, setRelatedHabitPagerViewportWidth] =
+    useState(0);
+  const [relatedHabitPageDragOffset, setRelatedHabitPageDragOffset] =
+    useState(0);
+  const relatedHabitPageWheelLockedRef = useRef(false);
+  const relatedHabitPageWheelCooldownRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relatedHabitPageDragStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+  } | null>(null);
+  const relatedHabitPageTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    deltaX: number;
+    deltaY: number;
+    axis: RelatedHabitPageSwipeAxis;
+    width: number;
+  } | null>(null);
   const handleRelatedHabitDensityToggle = useCallback(() => {
     setRelatedHabitCardDensity((currentDensity) =>
       currentDensity === "large" ? "small" : "large"
@@ -522,6 +565,359 @@ export function MonumentRelatedHabits({
         }),
     [relatedHabits, timeZone]
   );
+  const relatedHabitPages = useMemo(() => {
+    const dueHabits = decoratedHabits.filter(
+      (habit) => habit.dueLabel === "DUE" || habit.dueLabel === "OVERDUE"
+    );
+    const nonDueHabits = decoratedHabits.filter(
+      (habit) => habit.dueLabel !== "DUE" && habit.dueLabel !== "OVERDUE"
+    );
+
+    return [
+      { id: "due", habits: dueHabits },
+      { id: "non-due", habits: nonDueHabits },
+    ].filter((page) => page.habits.length > 0);
+  }, [decoratedHabits]);
+  const relatedHabitPageBaseTransform =
+    relatedHabitPagerViewportWidth > 0
+      ? -activeRelatedHabitPageIndex * relatedHabitPagerViewportWidth
+      : 0;
+  const relatedHabitPageTrackTransform =
+    relatedHabitPages.length > 0 && relatedHabitPagerViewportWidth > 0
+      ? Math.max(
+          -(relatedHabitPages.length - 1) * relatedHabitPagerViewportWidth,
+          Math.min(
+            0,
+            relatedHabitPageBaseTransform + relatedHabitPageDragOffset
+          )
+        )
+      : 0;
+  const relatedHabitTrackWidthPercent =
+    Math.max(relatedHabitPages.length, 1) * 100;
+  const relatedHabitPanelWidthPercent =
+    100 / Math.max(relatedHabitPages.length, 1);
+
+  const getRelatedHabitPageHeight = useCallback(
+    (index: number) => {
+      if (relatedHabitPages.length === 0) return;
+
+      const bounded = Math.max(
+        0,
+        Math.min(index, relatedHabitPages.length - 1)
+      );
+      const page = relatedHabitPages[bounded];
+      const panelElement = page
+        ? relatedHabitPagePanelRefs.current[page.id]
+        : null;
+
+      return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+    },
+    [relatedHabitPages]
+  );
+
+  const handleRelatedHabitPageChange = useCallback(
+    (index: number) => {
+      if (relatedHabitPages.length === 0) return;
+
+      const bounded = Math.max(
+        0,
+        Math.min(index, relatedHabitPages.length - 1)
+      );
+      const nextHeight = getRelatedHabitPageHeight(bounded);
+      if (nextHeight) {
+        setRelatedHabitPageHeight(nextHeight);
+      }
+      setRelatedHabitPageDragOffset(0);
+      activeRelatedHabitPageIndexRef.current = bounded;
+      setActiveRelatedHabitPageIndex((current) =>
+        current === bounded ? current : bounded
+      );
+    },
+    [getRelatedHabitPageHeight, relatedHabitPages.length]
+  );
+
+  const measureActiveRelatedHabitPage = useCallback(() => {
+    const nextHeight = getRelatedHabitPageHeight(activeRelatedHabitPageIndex);
+    if (!nextHeight) return;
+
+    setRelatedHabitPageHeight((currentHeight) =>
+      currentHeight === nextHeight ? currentHeight : nextHeight
+    );
+  }, [activeRelatedHabitPageIndex, getRelatedHabitPageHeight]);
+
+  useLayoutEffect(() => {
+    if (relatedHabitPages.length === 0) {
+      activeRelatedHabitPageIndexRef.current = 0;
+      setActiveRelatedHabitPageIndex(0);
+      setRelatedHabitPageHeight(null);
+      return;
+    }
+
+    if (activeRelatedHabitPageIndexRef.current >= relatedHabitPages.length) {
+      handleRelatedHabitPageChange(relatedHabitPages.length - 1);
+      return;
+    }
+
+    measureActiveRelatedHabitPage();
+  }, [
+    handleRelatedHabitPageChange,
+    measureActiveRelatedHabitPage,
+    relatedHabitPages.length,
+  ]);
+
+  useLayoutEffect(() => {
+    const viewportElement = relatedHabitPagerRef.current;
+    if (!viewportElement) return;
+
+    const measureViewportWidth = () => {
+      setRelatedHabitPagerViewportWidth(viewportElement.clientWidth);
+    };
+
+    measureViewportWidth();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureViewportWidth);
+    resizeObserver?.observe(viewportElement);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureViewportWidth);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureViewportWidth);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    measureActiveRelatedHabitPage();
+  }, [
+    activeRelatedHabitPageIndex,
+    completedRelatedHabitIds,
+    isSmallRelatedHabitDensity,
+    measureActiveRelatedHabitPage,
+    pendingRelatedHabitIds,
+    relatedHabitPages,
+  ]);
+
+  useEffect(() => {
+    if (relatedHabitPages.length === 0) return;
+
+    const activePage = relatedHabitPages[activeRelatedHabitPageIndex];
+    const activePanel = activePage
+      ? relatedHabitPagePanelRefs.current[activePage.id]
+      : null;
+
+    if (!activePanel) return;
+
+    measureActiveRelatedHabitPage();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            measureActiveRelatedHabitPage();
+          });
+    resizeObserver?.observe(activePanel);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureActiveRelatedHabitPage);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureActiveRelatedHabitPage);
+    };
+  }, [
+    activeRelatedHabitPageIndex,
+    measureActiveRelatedHabitPage,
+    relatedHabitPages,
+  ]);
+
+  const handleRelatedHabitPagerPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== "pen" && event.pointerType !== "mouse") {
+        return;
+      }
+      relatedHabitPageDragStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+      };
+    },
+    []
+  );
+
+  const handleRelatedHabitPagerPointerEnd = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = relatedHabitPageDragStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+      relatedHabitPageDragStartRef.current = null;
+
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      const horizontalDistance = Math.abs(deltaX);
+
+      if (
+        horizontalDistance < 48 ||
+        horizontalDistance < Math.abs(deltaY) * 1.35
+      ) {
+        return;
+      }
+
+      handleRelatedHabitPageChange(
+        activeRelatedHabitPageIndex + (deltaX < 0 ? 1 : -1)
+      );
+    },
+    [activeRelatedHabitPageIndex, handleRelatedHabitPageChange]
+  );
+
+  const resetRelatedHabitPageTouch = useCallback(() => {
+    relatedHabitPageTouchRef.current = null;
+    setRelatedHabitPageDragOffset(0);
+  }, []);
+
+  const handleRelatedHabitPagerTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (event.touches.length !== 1) {
+        resetRelatedHabitPageTouch();
+        return;
+      }
+
+      const touch = event.touches[0];
+      relatedHabitPageTouchRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        deltaX: 0,
+        deltaY: 0,
+        axis: null,
+        width: event.currentTarget.clientWidth,
+      };
+      setRelatedHabitPageDragOffset(0);
+    },
+    [resetRelatedHabitPageTouch]
+  );
+
+  const handleRelatedHabitPagerTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const gesture = relatedHabitPageTouchRef.current;
+      if (!gesture || event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - gesture.startX;
+      const deltaY = touch.clientY - gesture.startY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      gesture.deltaX = deltaX;
+      gesture.deltaY = deltaY;
+
+      if (!gesture.axis) {
+        if (absX > 12 && absX > absY * 1.15) {
+          gesture.axis = "horizontal";
+        } else if (absY > 12 && absY > absX * 1.15) {
+          gesture.axis = "vertical";
+        } else {
+          return;
+        }
+      }
+
+      if (gesture.axis !== "horizontal") return;
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      const width = gesture.width || event.currentTarget.clientWidth || 1;
+      const baseTransform = -activeRelatedHabitPageIndex * width;
+      const minTransform = -(relatedHabitPages.length - 1) * width;
+      const nextTransform = Math.max(
+        minTransform,
+        Math.min(0, baseTransform + deltaX)
+      );
+      setRelatedHabitPageDragOffset(nextTransform - baseTransform);
+    },
+    [activeRelatedHabitPageIndex, relatedHabitPages.length]
+  );
+
+  const handleRelatedHabitPagerTouchEnd = useCallback(() => {
+    const gesture = relatedHabitPageTouchRef.current;
+    if (!gesture) return;
+
+    relatedHabitPageTouchRef.current = null;
+    setRelatedHabitPageDragOffset(0);
+
+    if (gesture.axis !== "horizontal") return;
+
+    const horizontalDistance = Math.abs(gesture.deltaX);
+    const releaseThreshold = Math.min(45, Math.max(28, gesture.width * 0.2));
+    if (
+      horizontalDistance < releaseThreshold ||
+      horizontalDistance < Math.abs(gesture.deltaY) * 1.15
+    ) {
+      return;
+    }
+
+    handleRelatedHabitPageChange(
+      activeRelatedHabitPageIndex + (gesture.deltaX < 0 ? 1 : -1)
+    );
+  }, [activeRelatedHabitPageIndex, handleRelatedHabitPageChange]);
+
+  const handleRelatedHabitPagerWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const horizontalDistance = Math.abs(event.deltaX);
+      if (
+        horizontalDistance < 28 ||
+        horizontalDistance <= Math.abs(event.deltaY)
+      ) {
+        return;
+      }
+
+      const nextIndex =
+        activeRelatedHabitPageIndex + (event.deltaX > 0 ? 1 : -1);
+      if (
+        nextIndex === activeRelatedHabitPageIndex ||
+        nextIndex < 0 ||
+        nextIndex >= relatedHabitPages.length ||
+        relatedHabitPageWheelLockedRef.current
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      relatedHabitPageWheelLockedRef.current = true;
+      handleRelatedHabitPageChange(nextIndex);
+
+      if (relatedHabitPageWheelCooldownRef.current) {
+        clearTimeout(relatedHabitPageWheelCooldownRef.current);
+      }
+      relatedHabitPageWheelCooldownRef.current = setTimeout(() => {
+        relatedHabitPageWheelLockedRef.current = false;
+        relatedHabitPageWheelCooldownRef.current = null;
+      }, 650);
+    },
+    [
+      activeRelatedHabitPageIndex,
+      handleRelatedHabitPageChange,
+      relatedHabitPages.length,
+    ]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (relatedHabitPageWheelCooldownRef.current) {
+        clearTimeout(relatedHabitPageWheelCooldownRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const syncCurrentDateKey = () => {
@@ -1134,147 +1530,223 @@ export function MonumentRelatedHabits({
             {completionError ? (
               <p className="text-xs text-white/60">{completionError}</p>
             ) : null}
-            <div className={relatedHabitGridClass}>
-              {decoratedHabits.map((habit) => {
-                const isHabitCompletedToday = completedRelatedHabitIds.has(
-                  habit.id
-                );
-                const isHabitPending = pendingRelatedHabitIds.has(habit.id);
-                const streakDays = habit.currentStreakDays ?? 0;
-                const showStreakBadge = streakDays >= 2;
-                const streakLabel = `${streakDays}x`;
-                const habitSkillIcon = habit.skillIcon || "💡";
-                const isHabitOverdue = habit.dueLabel === "OVERDUE";
-                const habitPillLabel = isHabitCompletedToday
-                  ? "COMPLETE"
-                  : habit.dueLabel;
-                const habitStateBorderClass = isHabitCompletedToday
-                  ? "shimmer-border-complete"
-                  : isHabitOverdue
-                    ? "related-habit-due-border"
-                    : null;
-                const habitPillClass = isHabitCompletedToday
-                  ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                  : isHabitOverdue
-                    ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
-                    : "border-white/10 bg-white/[0.06] text-white/65";
+            <div
+              ref={relatedHabitPagerRef}
+              className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              style={
+                relatedHabitPageHeight
+                  ? { height: relatedHabitPageHeight }
+                  : undefined
+              }
+              onPointerDown={handleRelatedHabitPagerPointerDown}
+              onPointerUp={handleRelatedHabitPagerPointerEnd}
+              onTouchStart={handleRelatedHabitPagerTouchStart}
+              onTouchMove={handleRelatedHabitPagerTouchMove}
+              onTouchEnd={handleRelatedHabitPagerTouchEnd}
+              onTouchCancel={resetRelatedHabitPageTouch}
+              onWheel={handleRelatedHabitPagerWheel}
+              onPointerCancel={() => {
+                relatedHabitPageDragStartRef.current = null;
+              }}
+            >
+              <div className="absolute inset-0">
+                <div
+                  className="flex h-full transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                  style={{
+                    width: `${relatedHabitTrackWidthPercent}%`,
+                    transform:
+                      relatedHabitPagerViewportWidth > 0
+                        ? `translate3d(${relatedHabitPageTrackTransform}px, 0, 0)`
+                        : `translate3d(${
+                            -activeRelatedHabitPageIndex *
+                            relatedHabitPanelWidthPercent
+                          }%, 0, 0)`,
+                    transitionDuration: relatedHabitPageDragOffset
+                      ? "0ms"
+                      : undefined,
+                  }}
+                >
+                  {relatedHabitPages.map((page) => (
+                    <div
+                      key={page.id}
+                      className="h-full shrink-0 overflow-hidden"
+                      style={{ width: `${relatedHabitPanelWidthPercent}%` }}
+                    >
+                      <div
+                        ref={(element) => {
+                          relatedHabitPagePanelRefs.current[page.id] = element;
+                        }}
+                        className={relatedHabitPageGridClass}
+                      >
+                        {page.habits.map((habit) => {
+                          const isHabitCompletedToday =
+                            completedRelatedHabitIds.has(habit.id);
+                          const isHabitPending = pendingRelatedHabitIds.has(
+                            habit.id
+                          );
+                          const streakDays = habit.currentStreakDays ?? 0;
+                          const showStreakBadge = streakDays >= 2;
+                          const streakLabel = `${streakDays}x`;
+                          const habitSkillIcon = habit.skillIcon || "💡";
+                          const isHabitOverdue = habit.dueLabel === "OVERDUE";
+                          const habitPillLabel = isHabitCompletedToday
+                            ? "COMPLETE"
+                            : habit.dueLabel;
+                          const habitStateBorderClass = isHabitCompletedToday
+                            ? "shimmer-border-complete"
+                            : isHabitOverdue
+                              ? "related-habit-due-border"
+                              : null;
+                          const habitPillClass = isHabitCompletedToday
+                            ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                            : isHabitOverdue
+                              ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
+                              : "border-white/10 bg-white/[0.06] text-white/65";
 
-                return (
-                  <div
-                    key={habit.id}
-                    className={clsx(
-                      "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
-                      isSmallRelatedHabitDensity
-                        ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-                        : "min-h-[96px] rounded-2xl p-3 sm:p-4",
-                      isHabitCompletedToday
-                        ? "emerald-completed-compact"
-                        : [
-                            getHabitCardTypeClass(habit.normalizedHabitType),
-                            getHabitCardBorderClass(habit.normalizedHabitType),
-                          ],
-                      isHabitPending
-                        ? "pointer-events-none cursor-default opacity-75"
-                        : "cursor-pointer",
-                      pressedRelatedHabitId === habit.id
-                        ? "scale-[0.985] translate-y-px brightness-95"
-                        : null,
-                      habitStateBorderClass
-                    )}
-                    role="button"
-                    tabIndex={isHabitPending ? -1 : 0}
-                    aria-pressed={isHabitCompletedToday}
-                    aria-disabled={isHabitPending}
-                    aria-label={`${habit.name}. ${habitPillLabel}. Double tap to ${
-                      isHabitCompletedToday ? "undo" : "complete"
-                    }.`}
-                    title={`${habit.name} - ${habitPillLabel}. Double tap to ${
-                      isHabitCompletedToday ? "undo" : "complete"
-                    }.`}
-                    onPointerDown={(event) =>
-                      handleRelatedHabitPointerDown(event, habit)
-                    }
-                    onPointerUp={cancelRelatedHabitLongPress}
-                    onPointerCancel={cancelRelatedHabitLongPress}
-                    onPointerLeave={handleRelatedHabitPointerLeave}
-                    onSelectStart={(event) => event.preventDefault()}
-                    onDoubleClick={(event) =>
-                      handleRelatedHabitDoubleClick(event, habit.id)
-                    }
-                    onTouchEnd={(event) =>
-                      handleRelatedHabitTouchEnd(event, habit.id)
-                    }
-                    style={{
-                      WebkitTouchCallout: "none",
-                      WebkitUserSelect: "none",
-                      userSelect: "none",
-                    }}
-                  >
-                    {showStreakBadge ? (
-                      <span
-                        className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
-                        aria-label={`${streakDays} habit streak`}
-                      >
-                        <FlameEmber
-                          level={
-                            streakDays >= 7
-                              ? "HIGH"
-                              : streakDays >= 4
-                                ? "MEDIUM"
-                                : "LOW"
-                          }
-                          size="sm"
-                          className="scale-90 drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
-                        />
-                        <span className="tracking-normal">{streakLabel}</span>
-                      </span>
-                    ) : null}
-                    <div className="relative z-[2] flex min-h-0 flex-1 select-none flex-col items-center justify-between gap-1 text-center">
-                      <span
-                        className={clsx(
-                          "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
-                          isSmallRelatedHabitDensity
-                            ? "h-6 w-6 text-[11px] sm:h-7 sm:w-7"
-                            : "h-7 w-7 text-xs sm:h-8 sm:w-8",
-                          isHabitCompletedToday
-                            ? "grayscale"
-                            : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
-                        )}
-                        aria-hidden="true"
-                      >
-                        {habitSkillIcon}
-                      </span>
-                      <div className="flex min-h-0 w-full min-w-0 flex-1 select-none items-center justify-center">
-                        <span
-                          className={clsx(
-                            "line-clamp-3 w-full min-w-0 select-none break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
-                            isSmallRelatedHabitDensity
-                              ? "text-[8px] sm:text-[9px]"
-                              : "text-[9px] sm:text-[10px]"
-                          )}
-                          style={{ hyphens: "auto" }}
-                        >
-                          {habit.name}
-                        </span>
-                      </div>
-                      <div className="flex w-full min-w-0 flex-col items-center gap-1">
-                        <span
-                          className={clsx(
-                            "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                            isSmallRelatedHabitDensity
-                              ? "px-1.5 py-[2px] text-[7px]"
-                              : "px-2 py-[3px] text-[8px]",
-                            habitPillClass
-                          )}
-                        >
-                          {habitPillLabel}
-                        </span>
+                        return (
+                          <div
+                            key={habit.id}
+                            className={clsx(
+                              "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                              isSmallRelatedHabitDensity
+                                ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+                                : "min-h-[96px] rounded-2xl p-3 sm:p-4",
+                              isHabitCompletedToday
+                                ? "emerald-completed-compact"
+                                : [
+                                    getHabitCardTypeClass(
+                                      habit.normalizedHabitType
+                                    ),
+                                    getHabitCardBorderClass(
+                                      habit.normalizedHabitType
+                                    ),
+                                  ],
+                              isHabitPending
+                                ? "pointer-events-none cursor-default opacity-75"
+                                : "cursor-pointer",
+                              pressedRelatedHabitId === habit.id
+                                ? "scale-[0.985] translate-y-px brightness-95"
+                                : null,
+                              habitStateBorderClass
+                            )}
+                            role="button"
+                            tabIndex={isHabitPending ? -1 : 0}
+                            aria-pressed={isHabitCompletedToday}
+                            aria-disabled={isHabitPending}
+                            aria-label={`${habit.name}. ${habitPillLabel}. Double tap to ${
+                              isHabitCompletedToday ? "undo" : "complete"
+                            }.`}
+                            title={`${habit.name} - ${habitPillLabel}. Double tap to ${
+                              isHabitCompletedToday ? "undo" : "complete"
+                            }.`}
+                            onPointerDown={(event) =>
+                              handleRelatedHabitPointerDown(event, habit)
+                            }
+                            onPointerUp={cancelRelatedHabitLongPress}
+                            onPointerCancel={cancelRelatedHabitLongPress}
+                            onPointerLeave={handleRelatedHabitPointerLeave}
+                            onDoubleClick={(event) =>
+                              handleRelatedHabitDoubleClick(event, habit.id)
+                            }
+                            onTouchEnd={(event) =>
+                              handleRelatedHabitTouchEnd(event, habit.id)
+                            }
+                          >
+                            {showStreakBadge ? (
+                              <span
+                                className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
+                                aria-label={`${streakDays} habit streak`}
+                              >
+                                <FlameEmber
+                                  level={
+                                    streakDays >= 7
+                                      ? "HIGH"
+                                      : streakDays >= 4
+                                        ? "MEDIUM"
+                                        : "LOW"
+                                  }
+                                  size="sm"
+                                  className="scale-90 drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                                />
+                                <span className="tracking-normal">
+                                  {streakLabel}
+                                </span>
+                              </span>
+                            ) : null}
+                            <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
+                              <span
+                                className={clsx(
+                                  "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
+                                  isSmallRelatedHabitDensity
+                                    ? "h-6 w-6 text-[11px] sm:h-7 sm:w-7"
+                                    : "h-7 w-7 text-xs sm:h-8 sm:w-8",
+                                  isHabitCompletedToday
+                                    ? "grayscale"
+                                    : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
+                                )}
+                                aria-hidden="true"
+                              >
+                                {habitSkillIcon}
+                              </span>
+                              <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                                <span
+                                  className={clsx(
+                                    "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
+                                    isSmallRelatedHabitDensity
+                                      ? "text-[8px] sm:text-[9px]"
+                                      : "text-[9px] sm:text-[10px]"
+                                  )}
+                                  style={{ hyphens: "auto" }}
+                                >
+                                  {habit.name}
+                                </span>
+                              </div>
+                              <div className="flex w-full min-w-0 flex-col items-center gap-1">
+                                <span
+                                  className={clsx(
+                                    "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                                    isSmallRelatedHabitDensity
+                                      ? "px-1.5 py-[2px] text-[7px]"
+                                      : "px-2 py-[3px] text-[8px]",
+                                    habitPillClass
+                                  )}
+                                >
+                                  {habitPillLabel}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                        })}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              </div>
             </div>
+            {relatedHabitPages.length > 1 ? (
+              <div className="flex items-center justify-center gap-1.5 pt-1">
+                {relatedHabitPages.map((page, index) => {
+                  const isActive = index === activeRelatedHabitPageIndex;
+
+                  return (
+                    <button
+                      key={page.id}
+                      type="button"
+                      aria-label={`Show related habit page ${index + 1}`}
+                      aria-current={isActive ? "true" : undefined}
+                      onClick={() => handleRelatedHabitPageChange(index)}
+                      className={clsx(
+                        "h-1.5 rounded-full transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                        isActive
+                          ? "w-5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.28)]"
+                          : "w-1.5 bg-white/24 hover:bg-white/40"
+                      )}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         )}
       </CardContent>

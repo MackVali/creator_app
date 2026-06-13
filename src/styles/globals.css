@@ -23,22 +23,33 @@
 }
 
 :root {
-  /* calendar design tokens */
+  color-scheme: dark;
+
+  /* app theme tokens */
+  --background: #050505;
+  --foreground: #f5f5f5;
   --surface: #050505;
   --surface-elevated: #111111;
-  --text-primary: #f5f5f5;
-  --text-muted: #a3a3a3;
+  --surface-subtle: #0c0d11;
+  --card: rgba(255, 255, 255, 0.025);
+  --border: rgba(255, 255, 255, 0.08);
+  --muted-foreground: #a3a3a3;
+
+  /* calendar design tokens */
+  --text-primary: var(--foreground);
+  --text-muted: var(--muted-foreground);
   --accent-red: #ff453a;
-  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline: var(--border);
   --dot: rgba(200, 200, 205, 0.85);
   /* Weekend day numbers use a lighter gray for better readability */
   --weekend-dim: rgba(255, 255, 255, 0.4);
 
   /* existing aliases */
-  --bg: var(--surface);
+  --bg: var(--background);
   --surface-2: var(--surface-elevated);
-  --text: var(--text-primary);
-  --muted: var(--text-muted);
+  --subtle-surface: var(--surface-subtle);
+  --text: var(--foreground);
+  --muted: var(--muted-foreground);
   --accent: #8e8e8e;
   --radius: 16px;
   --radius-sm: 12px;
@@ -52,6 +63,40 @@
   );
   --sat-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --background: #f7f7f4;
+  --foreground: #171717;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-subtle: #eceee8;
+  --card: rgba(255, 255, 255, 0.82);
+  --border: rgba(23, 23, 23, 0.12);
+  --muted-foreground: #5f6368;
+
+  --text-primary: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --hairline: var(--border);
+  --dot: rgba(57, 62, 70, 0.72);
+  --weekend-dim: rgba(23, 23, 23, 0.44);
+
+  --bg: var(--background);
+  --surface-2: var(--surface-elevated);
+  --subtle-surface: var(--surface-subtle);
+  --text: var(--foreground);
+  --muted: var(--muted-foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --bg-gradient: radial-gradient(
+    120% 120% at 50% 0%,
+    #ffffff 0%,
+    #f2f3ee 48%,
+    #e8ebe4 100%
+  );
+}
+
 html,
 body {
   min-height: 100%;
