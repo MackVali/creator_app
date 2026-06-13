@@ -1162,13 +1162,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
     const currentLevelPoint = levelHistory[levelHistory.length - 1] ?? null;
     const currentLevel = currentLevelPoint?.level ?? 1;
     const currentTotalXp = currentLevelPoint?.totalXp ?? 0;
-    const xpToNextLevel = currentLevelPoint
-      ? Math.max(
-          0,
-          currentLevelPoint.xpForNextLevel - currentLevelPoint.xpIntoLevel
-        )
-      : 0;
-    const xpPointCount = Math.max(0, levelHistory.length - 1);
     const skillMixTotalXp = xpSkillMix.reduce((sum, item) => sum + item.xp, 0);
     const skillEventCount = xpSkillMix.reduce(
       (sum, item) => sum + item.count,
@@ -1187,8 +1180,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
       skillMixTotalXp,
       topSkillIcon,
       topSkillName,
-      xpPointCount,
-      xpToNextLevel,
     };
   }, [levelHistory, xpSkillMix]);
 
@@ -1338,7 +1329,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                     <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.06] pt-3 text-left">
                       <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
-                          Total Monument XP
+                          Total XP
                         </dt>
                         <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
                           {formatCompactNumber(
@@ -1346,25 +1337,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                           )}
                         </dd>
                       </div>
-                      <div className="min-w-0 px-2.5 py-2.5">
-                        <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
-                          XP to next
-                        </dt>
-                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
-                          {formatCompactNumber(monumentAnalytics.xpToNextLevel)}
-                        </dd>
-                      </div>
-                      <div className="min-w-0 px-2.5 py-2.5">
-                        <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
-                          Points
-                        </dt>
-                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
-                          {monumentAnalytics.xpPointCount}
-                        </dd>
-                      </div>
-                    </dl>
-
-                    <dl className="mt-3 grid grid-cols-2 gap-2 text-left">
                       <div className="min-w-0 px-2.5 py-2.5">
                         <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
                           Total events

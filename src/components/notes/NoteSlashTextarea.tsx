@@ -2954,26 +2954,8 @@ function NoteSlashTextarea({
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.1] bg-black/35 text-emerald-100/70">
                       <Table2 className="h-4 w-4" />
                     </span>
-                    <div className="min-w-0 flex-1 space-y-2">
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold leading-4">{displayTitle}</p>
-                      <div className="flex justify-end">
-                        <div className="flex h-8 w-fit rounded-md border border-white/[0.08] bg-black/20 p-0.5">
-                          {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
-                            <button
-                              key={viewType}
-                              type="button"
-                              onClick={() => updateDatabaseActiveView(segment.databaseId, viewType)}
-                              className={`rounded px-2 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-emerald-200/35 ${
-                                activeView.type === viewType
-                                  ? "bg-white/[0.1] text-white/88"
-                                  : "text-white/42 hover:bg-white/[0.055] hover:text-white/68"
-                              }`}
-                            >
-                              {NOTE_DATABASE_VIEW_LABELS[viewType]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   </div>
 
@@ -3391,45 +3373,64 @@ function NoteSlashTextarea({
                   className="mt-1 w-full border-0 bg-transparent p-0 text-xl font-semibold leading-7 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
                   aria-label="Database title"
                 />
-                <button
-                  type="button"
-                  onClick={() => toggleDatabaseBodyPin(activeDatabaseDefinition.id)}
-                  disabled={activeDatabaseDefinition.lockedSystemDatabase === true}
-                  aria-pressed={
-                    activeDatabaseDefinition.lockedSystemDatabase === true ||
-                    activeDatabaseDefinition.pinnedSurface === "body"
-                  }
-                  aria-label={
-                    activeDatabaseDefinition.lockedSystemDatabase === true
-                      ? "System database pinned"
-                      : activeDatabaseDefinition.pinnedSurface === "body"
-                        ? "Unpin from stomach menu"
-                        : "Pin to stomach menu"
-                  }
-                  title={
-                    activeDatabaseDefinition.lockedSystemDatabase === true
-                      ? "This system database is locked."
-                      : activeDatabaseDefinition.pinnedSurface === "body"
-                        ? "Unpin from stomach menu"
-                        : "Pin to stomach menu"
-                  }
-                  className={`mt-2 inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
-                    activeDatabaseDefinition.lockedSystemDatabase === true ||
-                    activeDatabaseDefinition.pinnedSurface === "body"
-                      ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
-                      : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
-                  }`}
-                >
-                  <Pin
-                    className="h-4 w-4"
-                    fill={
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div className="flex h-9 rounded-full border border-white/[0.08] bg-black/24 p-0.5">
+                    {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
+                      <button
+                        key={viewType}
+                        type="button"
+                        onClick={() => updateDatabaseActiveView(activeDatabaseDefinition.id, viewType)}
+                        aria-pressed={activeDatabaseView?.type === viewType}
+                        className={`rounded-full px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-emerald-200/35 ${
+                          activeDatabaseView?.type === viewType
+                            ? "bg-white/[0.1] text-white/88"
+                            : "text-white/42 hover:bg-white/[0.055] hover:text-white/68"
+                        }`}
+                      >
+                        {NOTE_DATABASE_VIEW_LABELS[viewType]}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleDatabaseBodyPin(activeDatabaseDefinition.id)}
+                    disabled={activeDatabaseDefinition.lockedSystemDatabase === true}
+                    aria-pressed={
                       activeDatabaseDefinition.lockedSystemDatabase === true ||
                       activeDatabaseDefinition.pinnedSurface === "body"
-                        ? "currentColor"
-                        : "none"
                     }
-                  />
-                </button>
+                    aria-label={
+                      activeDatabaseDefinition.lockedSystemDatabase === true
+                        ? "System database pinned"
+                        : activeDatabaseDefinition.pinnedSurface === "body"
+                          ? "Unpin from stomach menu"
+                          : "Pin to stomach menu"
+                    }
+                    title={
+                      activeDatabaseDefinition.lockedSystemDatabase === true
+                        ? "This system database is locked."
+                        : activeDatabaseDefinition.pinnedSurface === "body"
+                          ? "Unpin from stomach menu"
+                          : "Pin to stomach menu"
+                    }
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+                      activeDatabaseDefinition.lockedSystemDatabase === true ||
+                      activeDatabaseDefinition.pinnedSurface === "body"
+                        ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                        : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
+                    }`}
+                  >
+                    <Pin
+                      className="h-4 w-4"
+                      fill={
+                        activeDatabaseDefinition.lockedSystemDatabase === true ||
+                        activeDatabaseDefinition.pinnedSurface === "body"
+                          ? "currentColor"
+                          : "none"
+                      }
+                    />
+                  </button>
+                </div>
               </div>
               <button
                 type="button"

@@ -7733,7 +7733,7 @@ export function Fab({
                     setDraftProjectName(e.target.value.toUpperCase())
                   }
                   placeholder="Name your PROJECT"
-                  className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
+                  className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                 />
               </div>
               <div className="grid gap-2">
@@ -8008,7 +8008,7 @@ export function Fab({
                 value={draftProjectWhy}
                 onChange={(e) => setDraftProjectWhy(e.target.value)}
                 placeholder="Add context…"
-                className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
               />
             </div>
           </div>
@@ -8254,7 +8254,7 @@ export function Fab({
                   value={draftTaskName}
                   onChange={(e) => setDraftTaskName(e.target.value.toUpperCase())}
                   placeholder="Name your TASK"
-                  className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
+                  className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                 />
               </div>
               <div className="grid gap-2">
@@ -8525,7 +8525,7 @@ export function Fab({
                   onChange={(e) => setDraftTaskNotes(e.target.value)}
                   placeholder="Context…"
                   rows={3}
-                  className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
+                  className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
                 />
               </div>
             </div>
@@ -9310,7 +9310,7 @@ export function Fab({
                           setProjectName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your PROJECT"
-                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -9585,7 +9585,7 @@ export function Fab({
                       value={projectWhy}
                       onChange={(e) => setProjectWhy(e.target.value)}
                       placeholder="Add context…"
-                      className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                     />
                   </div>
                 </>
@@ -9796,7 +9796,7 @@ export function Fab({
                           setTaskName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your TASK"
-                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -10065,7 +10065,7 @@ export function Fab({
                         onChange={(e) => setTaskNotes(e.target.value)}
                         placeholder="Context…"
                         rows={3}
-                        className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
+                        className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
                       />
                     </div>
                   </div>
@@ -10294,7 +10294,7 @@ export function Fab({
                           setHabitName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your HABIT"
-                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -10526,7 +10526,7 @@ export function Fab({
                       onChange={(event) => setHabitWhy(event.target.value)}
                       placeholder="Add context…"
                       rows={2}
-                      className="min-h-[68px] rounded-md border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      className="min-h-[68px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                     />
                   </div>
 

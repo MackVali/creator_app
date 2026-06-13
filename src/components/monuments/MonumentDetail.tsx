@@ -853,7 +853,7 @@ export function MonumentDetail({
   return (
     <motion.main
       ref={detailSurfaceRef}
-      className="min-h-dvh bg-black relative overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
+      className="min-h-[var(--monument-detail-overlay-height,100dvh)] bg-black relative overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
       style={{ y: pullY, touchAction: "pan-y", willChange: "transform" }}
       onPointerDown={handlePullExitStart}
       onPointerMove={handlePullExitMove}
