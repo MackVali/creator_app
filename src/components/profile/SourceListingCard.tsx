@@ -1,23 +1,20 @@
 "use client"
 
+/* eslint-disable @next/next/no-img-element -- Match the Source listing card media treatment in a compact profile card. */
+
 import { cn } from "@/lib/utils"
 import type { ProfileOffer } from "@/lib/types"
 import type { SourceListing } from "@/types/source"
-import { formatListingCurrency, resolveListingImage } from "./detailSheetUtils"
+import {
+  listingInlineStatusLabels,
+  listingInlineStatusTextClass,
+  normalizeSourceListingCardProps,
+} from "@/components/source/SourceListingCard"
 
-const listingInlineStatusLabels: Record<SourceListing["status"], string> = {
-  draft: "Draft",
-  queued: "Queued",
-  published: "Available",
-  needs_attention: "Needs attention",
-}
-
-const listingInlineStatusTextClass: Record<SourceListing["status"], string> = {
-  draft: "text-zinc-500",
-  queued: "text-zinc-400",
-  published: "text-emerald-300",
-  needs_attention: "text-amber-300",
-}
+export const PROFILE_SOURCE_LISTING_CARD_WIDTH = 100
+export const PROFILE_SOURCE_LISTING_CARD_HEIGHT = 140
+export const PROFILE_SOURCE_LISTING_IMAGE_HEIGHT = 72
+export const PROFILE_SOURCE_LISTING_MEDIA_INSET = 4
 
 type SourceListingCardProps = {
   image: string | null
@@ -49,42 +46,56 @@ export function SourceListingCard({
       aria-label={ariaLabel ?? `Open details for ${title}`}
       onClick={onClick}
       className={cn(
-        "goal-card group flex h-full transform-gpu flex-col overflow-hidden !rounded-2xl !border-white/10 !bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.96)_56%,rgba(33,34,40,0.78)_100%)] text-left text-[11px] text-zinc-300 !shadow-[0_18px_38px_-30px_rgba(0,0,0,0.98),0_8px_18px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.07)] transition duration-200 hover:-translate-y-px hover:!border-white/25 hover:brightness-110 active:translate-y-px active:scale-[0.985] active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55 select-none",
+        "goal-card group flex shrink-0 transform-gpu flex-col overflow-hidden !rounded-2xl !border-white/10 !bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.1),transparent_56%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(17,18,22,0.96)_56%,rgba(33,34,40,0.78)_100%)] text-left text-[11px] text-zinc-300 !shadow-[0_18px_38px_-30px_rgba(0,0,0,0.98),0_8px_18px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.07)] transition duration-200 hover:-translate-y-px hover:!border-white/25 hover:brightness-110 active:translate-y-px active:scale-[0.985] active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55 select-none",
         selected
           ? "!border-white/35 !shadow-[0_0_0_1px_rgba(255,255,255,0.18),0_20px_42px_-28px_rgba(255,255,255,0.34),0_16px_36px_-26px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.1)] brightness-110"
           : "hover:!shadow-[0_20px_42px_-30px_rgba(255,255,255,0.22),0_14px_30px_-22px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.08)]",
         className,
       )}
+      style={{
+        width: PROFILE_SOURCE_LISTING_CARD_WIDTH,
+        minWidth: PROFILE_SOURCE_LISTING_CARD_WIDTH,
+        maxWidth: PROFILE_SOURCE_LISTING_CARD_WIDTH,
+        height: PROFILE_SOURCE_LISTING_CARD_HEIGHT,
+      }}
     >
-      <div className="relative mx-1 mt-1 h-24 overflow-hidden rounded-t-lg bg-zinc-900 shadow-[inset_0_-18px_32px_rgba(0,0,0,0.22)]">
+      <div
+        className="relative overflow-hidden rounded-t-lg bg-zinc-900 shadow-[inset_0_-18px_32px_rgba(0,0,0,0.22)]"
+        style={{
+          height: PROFILE_SOURCE_LISTING_IMAGE_HEIGHT,
+          marginLeft: PROFILE_SOURCE_LISTING_MEDIA_INSET,
+          marginRight: PROFILE_SOURCE_LISTING_MEDIA_INSET,
+          marginTop: PROFILE_SOURCE_LISTING_MEDIA_INSET,
+        }}
+      >
         {image ? (
           <img
             src={image}
             alt={title}
-            className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03] group-hover:brightness-110"
+            className="h-full w-full object-cover object-center transition duration-200 group-hover:scale-[1.03] group-hover:brightness-110"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_48%),linear-gradient(145deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))] text-zinc-500">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/35">
+            <span className="text-[8px] font-semibold uppercase tracking-[0.18em] text-white/35">
               No image
             </span>
           </div>
         )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/[0.04]" />
       </div>
-      <div className="flex flex-grow flex-col gap-1.5 px-3 py-3">
-        <p className="text-[11px] font-semibold leading-snug text-white line-clamp-2">
+      <div className="flex min-h-0 flex-grow flex-col gap-0.5 px-2 py-1.5">
+        <p className="text-[9px] font-semibold leading-tight text-white line-clamp-2">
           {title}
         </p>
-        <p className="text-[10px] font-medium text-zinc-300">{priceLabel}</p>
+        <p className="truncate text-[8px] font-medium text-zinc-300">{priceLabel}</p>
         {secondaryLabel ? (
-          <span className="text-[9px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+          <span className="truncate text-[7px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
             {secondaryLabel}
           </span>
         ) : null}
         <p
           className={cn(
-            "text-[9px] font-semibold uppercase tracking-[0.24em]",
+            "mt-auto truncate text-[7px] font-semibold uppercase tracking-[0.14em]",
             listingInlineStatusTextClass[status],
           )}
         >
@@ -104,16 +115,11 @@ export function ProductSourceListingCard({
   onSelect?: (product: SourceListing) => void
   className?: string
 }) {
+  const cardProps = normalizeSourceListingCardProps(product)
+
   return (
     <SourceListingCard
-      image={resolveListingImage(product)}
-      title={product.title}
-      priceLabel={
-        product.price !== null
-          ? formatListingCurrency(product.price, product.currency)
-          : "Price TBD"
-      }
-      status={product.status}
+      {...cardProps}
       onClick={() => onSelect?.(product)}
       className={className}
     />
@@ -129,13 +135,11 @@ export function ServiceSourceListingCard({
   onSelect?: (service: ProfileOffer) => void
   className?: string
 }) {
+  const cardProps = normalizeSourceListingCardProps(profileOfferToSourceListing(service))
+
   return (
     <SourceListingCard
-      image={resolveServiceImage(service)}
-      title={service.title}
-      priceLabel={formatOfferCurrency(service.price_cents, service.currency)}
-      status={service.is_active ? "published" : "draft"}
-      secondaryLabel={formatServiceDurationLabel(service.duration_minutes)}
+      {...cardProps}
       onClick={() => onSelect?.(service)}
       className={className}
     />
@@ -146,44 +150,66 @@ export function SourceListingCardSkeleton({ className }: { className?: string })
   return (
     <div
       className={cn(
-        "h-[178px] animate-pulse overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 p-1",
+        "shrink-0 animate-pulse overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70",
         className,
       )}
+      style={{
+        width: PROFILE_SOURCE_LISTING_CARD_WIDTH,
+        minWidth: PROFILE_SOURCE_LISTING_CARD_WIDTH,
+        maxWidth: PROFILE_SOURCE_LISTING_CARD_WIDTH,
+        height: PROFILE_SOURCE_LISTING_CARD_HEIGHT,
+      }}
     >
-      <div className="h-24 rounded-t-lg bg-white/10" />
-      <div className="px-3 py-3">
-        <div className="h-3 w-28 rounded-full bg-white/20" />
-        <div className="mt-2 h-3 w-20 rounded-full bg-white/10" />
-        <div className="mt-2 h-2 w-16 rounded-full bg-white/10" />
+      <div
+        className="rounded-t-lg bg-white/10"
+        style={{
+          height: PROFILE_SOURCE_LISTING_IMAGE_HEIGHT,
+          marginLeft: PROFILE_SOURCE_LISTING_MEDIA_INSET,
+          marginRight: PROFILE_SOURCE_LISTING_MEDIA_INSET,
+          marginTop: PROFILE_SOURCE_LISTING_MEDIA_INSET,
+        }}
+      />
+      <div className="px-2 py-1.5">
+        <div className="h-2 w-16 rounded-full bg-white/20" />
+        <div className="mt-1.5 h-2 w-12 rounded-full bg-white/10" />
+        <div className="mt-1.5 h-1.5 w-10 rounded-full bg-white/10" />
       </div>
     </div>
   )
 }
 
-function formatOfferCurrency(priceCents?: number | null, currency?: string | null) {
-  if (typeof priceCents !== "number" || !currency) {
-    return "Price TBD"
+function profileOfferToSourceListing(service: ProfileOffer): SourceListing {
+  const metadata = { ...(service.metadata ?? {}) }
+  const image = resolveServiceImage(service)
+
+  if (image) {
+    metadata.coverImage = image
   }
 
-  return formatListingCurrency(priceCents / 100, currency)
-}
-
-function formatServiceDurationLabel(minutes?: number | null) {
-  if (!minutes || !Number.isFinite(minutes) || minutes <= 0) return null
-
-  if (minutes < 60) {
-    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`
+  if (
+    typeof service.duration_minutes === "number" &&
+    Number.isFinite(service.duration_minutes)
+  ) {
+    metadata.duration_minutes = service.duration_minutes
   }
 
-  if (minutes < 1440) {
-    const hours = minutes / 60
-    const displayHours = Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(1)))
-    return `${displayHours} ${displayHours === "1" ? "hour" : "hours"}`
+  return {
+    id: service.id,
+    type: "service",
+    title: service.title,
+    description: service.description ?? null,
+    price:
+      typeof service.price_cents === "number" && Number.isFinite(service.price_cents)
+        ? service.price_cents / 100
+        : null,
+    currency: service.currency || "USD",
+    status: service.is_active ? "published" : "draft",
+    metadata,
+    publish_results: null,
+    published_at: service.is_active ? service.updated_at : null,
+    created_at: service.created_at,
+    updated_at: service.updated_at,
   }
-
-  const days = minutes / 1440
-  const displayDays = Number.isInteger(days) ? String(days) : String(Number(days.toFixed(1)))
-  return `${displayDays} ${displayDays === "1" ? "day" : "days"}`
 }
 
 export function resolveServiceImage(service: ProfileOffer) {

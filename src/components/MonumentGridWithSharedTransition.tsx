@@ -73,7 +73,7 @@ export function MonumentGridWithSharedTransition({
       type="button"
       data-tour="new-monument"
       onClick={openDialog}
-      className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+      className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
     >
       <div className="mb-1 text-lg leading-none">🏛️</div>
       <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
@@ -86,7 +86,7 @@ export function MonumentGridWithSharedTransition({
     return (
       <div className="grid grid-cols-4 gap-1">
         <div className="card flex aspect-square w-full flex-col items-center justify-center p-1">
-          <p className="text-xs text-white/50">
+          <p className="text-xs text-[var(--muted)]">
             Maximum of {MAX_MONUMENTS} monuments reached.
           </p>
         </div>
@@ -103,7 +103,7 @@ export function MonumentGridWithSharedTransition({
                 key={`empty-${index}`}
                 data-tour="new-monument"
                 onClick={openDialog}
-                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
               >
                 <div className="mb-1 text-lg opacity-60">🏛️</div>
                 <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
@@ -116,7 +116,7 @@ export function MonumentGridWithSharedTransition({
                 key={m.id}
                 layoutId={`card-${m.id}`}
                 onClick={() => setActiveId(m.id)}
-                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]"
               >
                 <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
                   {m.emoji ?? "\uD83C\uDFDB\uFE0F"}
@@ -147,7 +147,7 @@ export function MonumentGridWithSharedTransition({
               layoutId={`card-${selected.id}`}
               role="dialog"
               aria-modal="true"
-              className="relative h-[100dvh] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              className="app-card relative h-[100dvh] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}

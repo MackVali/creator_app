@@ -9699,7 +9699,7 @@ export default function ScheduleTabContent({
 
   if (!dayTimelineModel) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-white/60">
+      <div className="flex h-full w-full items-center justify-center text-[var(--muted)]">
         Loading schedule…
       </div>
     );
@@ -9730,13 +9730,13 @@ export default function ScheduleTabContent({
           onHeightChange={setTopBarHeight}
         />
         <div
-          className="text-zinc-100 space-y-4"
+          className="space-y-4 text-[var(--text)]"
           style={{ paddingTop: scheduleContentPaddingTop }}
           data-schedule-root
         >
           <div
             className={clsx(
-              "relative bg-[var(--surface)]",
+              "app-surface relative",
               isInlineJumpToDateOpen ? "overflow-visible" : "overflow-hidden"
             )}
             ref={swipeContainerRef}

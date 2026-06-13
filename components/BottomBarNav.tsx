@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 
 export interface BottomBarNavItem {
   key: string;
@@ -27,9 +28,10 @@ export function BottomBarNav({
       item.href === currentPath ||
       (item.href !== "/" && currentPath.startsWith(`${item.href}/`));
     return (
-      <a
+      <Link
         key={item.key}
         href={item.href}
+        prefetch
         aria-current={isActive ? "page" : undefined}
         onClick={(e) => {
           if (isActive) {
@@ -51,7 +53,9 @@ export function BottomBarNav({
       >
         <div
           className={`flex min-w-0 flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
-            isActive ? "text-gray-100" : "text-gray-400 hover:text-gray-200"
+            isActive
+              ? "text-[var(--text)]"
+              : "text-[var(--muted)] hover:text-[var(--text)]"
           }`}
         >
           <div
@@ -71,7 +75,7 @@ export function BottomBarNav({
             {item.label}
           </span>
         </div>
-      </a>
+      </Link>
     );
   };
 
@@ -79,7 +83,7 @@ export function BottomBarNav({
   const leftItems = items.slice(0, mid);
   const rightItems = items.slice(mid);
   return (
-    <nav className="pointer-events-auto mx-auto w-full max-w-md rounded-[22px] border border-white/[0.06] bg-[linear-gradient(145deg,_rgba(18,18,22,0.94)_0%,_rgba(8,9,12,0.92)_48%,_rgba(2,3,6,0.96)_100%)] text-gray-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),_inset_0_-10px_22px_rgba(0,0,0,0.32),_0_18px_44px_rgba(0,0,0,0.52)] backdrop-blur-xl">
+    <nav className="app-bottom-nav pointer-events-auto mx-auto w-full max-w-md rounded-[22px] border backdrop-blur-xl">
       <div className="grid h-16 w-full grid-cols-[1fr_3.5rem_1fr] items-center">
         <div className="flex h-full min-w-0 items-center justify-evenly">
           {leftItems.map(renderItem)}

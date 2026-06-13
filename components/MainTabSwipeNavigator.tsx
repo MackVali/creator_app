@@ -31,7 +31,9 @@ type SwipeHostRoute = MainTabRouteHref;
 type SwipeDirection = "left" | "right";
 type SwipeTargetRoute = MainTabRouteHref;
 
-const AXIS_LOCK_DISTANCE = 10;
+const AXIS_LOCK_DISTANCE = 32;
+const VERTICAL_LOCK_DISTANCE = 14;
+const HORIZONTAL_DOMINANCE_RATIO = 1.5;
 const EDGE_RESISTANCE = 0.2;
 const DRAG_FOLLOW = 1;
 const MIN_COMMIT_DISTANCE = 110;
@@ -47,9 +49,16 @@ const IGNORE_TARGET_SELECTOR = [
   "select",
   "button",
   "a[href]",
+  "summary",
   "[role='button']",
   "[role='slider']",
+  "[role='switch']",
+  "[role='checkbox']",
+  "[role='radio']",
+  "[role='tab']",
+  "[role='menuitem']",
   "[contenteditable]:not([contenteditable='false'])",
+  "[draggable='true']",
   "[data-no-tab-swipe]",
   "[data-inline-jump-panel]",
   "[data-radix-select-trigger]",
@@ -110,8 +119,8 @@ function getSwipeTarget(
 
   const targetIndex =
     direction === "left"
-      ? (currentIndex + 1) % swipeRoutes.length
-      : (currentIndex - 1 + swipeRoutes.length) % swipeRoutes.length;
+      ? (currentIndex - 1 + swipeRoutes.length) % swipeRoutes.length
+      : (currentIndex + 1) % swipeRoutes.length;
   return swipeRoutes[targetIndex] ?? null;
 }
 
@@ -139,7 +148,7 @@ function isInteractiveTarget(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest(IGNORE_TARGET_SELECTOR));
 }
 
-function isHorizontalScrollableAncestor(target: EventTarget | null, boundary: Element | null) {
+function isScrollableGestureSurface(target: EventTarget | null, boundary: Element | null) {
   if (!(target instanceof Element)) return false;
 
   let node: Element | null = target;
@@ -148,12 +157,15 @@ function isHorizontalScrollableAncestor(target: EventTarget | null, boundary: El
     const canScrollX =
       /(auto|scroll|overlay)/.test(style.overflowX) &&
       node.scrollWidth > node.clientWidth + 8;
+    const canScrollY =
+      /(auto|scroll|overlay)/.test(style.overflowY) &&
+      node.scrollHeight > node.clientHeight + 8;
     const isKnownHorizontalSurface =
       node.getAttribute("aria-roledescription") === "carousel" ||
       node.classList.contains("scroll-snap") ||
       style.touchAction.includes("pan-x");
 
-    if (canScrollX || isKnownHorizontalSurface) {
+    if (canScrollX || canScrollY || isKnownHorizontalSurface) {
       return true;
     }
 
@@ -161,6 +173,14 @@ function isHorizontalScrollableAncestor(target: EventTarget | null, boundary: El
   }
 
   return false;
+}
+
+function hasHorizontalSwipeIntent(absX: number, absY: number) {
+  return absX >= AXIS_LOCK_DISTANCE && absX >= absY * HORIZONTAL_DOMINANCE_RATIO;
+}
+
+function hasVerticalScrollIntent(absX: number, absY: number) {
+  return absY >= VERTICAL_LOCK_DISTANCE && absY >= absX;
 }
 
 function clampDrag(rawDeltaX: number, width: number, hasAdjacentRoute: boolean) {
@@ -322,6 +342,10 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
   const isEnabledRoute = swipeHostRoute !== null;
   const activePreviewRoute = committedPreviewRoute ?? peekState?.targetHref ?? null;
   const activeSwipeDirection = peekState?.direction ?? null;
+  const isOverflowVisibleRoute =
+    normalizedPathname === SCHEDULE_ROUTE ||
+    normalizedPathname === COMMAND_ROUTE ||
+    Boolean(normalizedPathname?.startsWith("/schedule/matrix"));
   const currentLayerContent = activePersistentRoute ? (
     <PersistentMainTabPanels
       activeRoute={activePersistentRoute}
@@ -528,12 +552,12 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     gesture.lastTime = now;
 
     if (gesture.phase === "pending") {
-      if (absX < AXIS_LOCK_DISTANCE && absY < AXIS_LOCK_DISTANCE) return;
-
-      if (absY > absX) {
+      if (hasVerticalScrollIntent(absX, absY)) {
         clearGesture();
         return;
       }
+
+      if (!hasHorizontalSwipeIntent(absX, absY)) return;
 
       gesture.phase = "dragging";
     }
@@ -605,7 +629,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     if (!swipeHostRoute) return;
     if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
     if (isInteractiveTarget(event.target)) return;
-    if (isHorizontalScrollableAncestor(event.target, rootRef.current)) return;
+    if (isScrollableGestureSurface(event.target, rootRef.current)) return;
 
     stopAnimation();
     removeWindowListeners();
@@ -706,7 +730,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
       onPointerDownCapture={handlePointerDownCapture}
       style={{ touchAction: "pan-y pinch-zoom" }}
       className={`relative min-h-full bg-[#050505] ${
-        (normalizedPathname === SCHEDULE_ROUTE || normalizedPathname === COMMAND_ROUTE || normalizedPathname.startsWith("/schedule/matrix")) ? "overflow-visible" : "overflow-hidden"
+        isOverflowVisibleRoute ? "overflow-visible" : "overflow-hidden"
       }`}
     >
       {activePreviewRoute && activeSwipeDirection ? (

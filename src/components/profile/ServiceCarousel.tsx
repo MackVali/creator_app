@@ -49,7 +49,7 @@ export default function ServiceCarousel({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="flex flex-wrap items-start justify-start gap-3">
         {loading
           ? Array.from({ length: skeletonCount }).map((_, index) => (
               <SourceListingCardSkeleton

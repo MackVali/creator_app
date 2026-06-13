@@ -169,18 +169,18 @@ export default function ConnectTabContent() {
   const [error, setError] = useState<string | null>(null);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [requestsError, setRequestsError] = useState<string | null>(null);
-  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [invites, setInvites] = useState<SentInvite[]>([]);
   const [contactImport, setContactImport] = useState<ContactImportStatus | null>(null);
   const [suggested, setSuggested] = useState<SuggestedFriend[]>([]);
   const [searchProfiles, setSearchProfiles] = useState<DiscoveryProfile[]>([]);
-  const [isLoadingSearch, setIsLoadingSearch] = useState(true);
+  const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
-  const [isLoadingCircles, setIsLoadingCircles] = useState(true);
+  const [isLoadingCircles, setIsLoadingCircles] = useState(false);
   const [circlesError, setCirclesError] = useState<string | null>(null);
   const [circleInvites, setCircleInvites] = useState<CircleInvite[]>([]);
-  const [isLoadingCircleInvites, setIsLoadingCircleInvites] = useState(true);
+  const [isLoadingCircleInvites, setIsLoadingCircleInvites] = useState(false);
   const [circleInvitesError, setCircleInvitesError] = useState<string | null>(
     null
   );
@@ -202,6 +202,10 @@ export default function ConnectTabContent() {
   const requestsTabRef = useRef<HTMLButtonElement>(null);
   const circlesTabRef = useRef<HTMLButtonElement>(null);
   const isMountedRef = useRef(true);
+  const hasRequestedRequestsRef = useRef(false);
+  const hasRequestedCircleInvitesRef = useRef(false);
+  const hasRequestedSearchRef = useRef(false);
+  const hasRequestedCirclesRef = useRef(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -571,16 +575,27 @@ export default function ConnectTabContent() {
   }, [refreshFriends, friendsView]);
 
   useEffect(() => {
+    if (tab !== 'requests') return;
+    if (hasRequestedRequestsRef.current) return;
+    hasRequestedRequestsRef.current = true;
     void refreshRequests();
-  }, [refreshRequests]);
+  }, [refreshRequests, tab]);
 
   useEffect(() => {
+    if (tab !== 'requests') return;
+    if (hasRequestedCircleInvitesRef.current) return;
+    hasRequestedCircleInvitesRef.current = true;
     void refreshCircleInvites();
-  }, [refreshCircleInvites]);
+  }, [refreshCircleInvites, tab]);
 
   useEffect(() => {
+    if (tab !== 'search' && tab !== 'requests' && tabSearchQuery.trim().length === 0) {
+      return;
+    }
+    if (hasRequestedSearchRef.current) return;
+    hasRequestedSearchRef.current = true;
     void refreshSearch();
-  }, [refreshSearch]);
+  }, [refreshSearch, tab, tabSearchQuery]);
 
   useEffect(() => {
     if (!canCreateCircle) {
@@ -591,8 +606,12 @@ export default function ConnectTabContent() {
       return;
     }
 
+    if (tab !== 'circles') return;
+    if (hasRequestedCirclesRef.current) return;
+    hasRequestedCirclesRef.current = true;
+
     void refreshCircles();
-  }, [canCreateCircle, refreshCircles]);
+  }, [canCreateCircle, refreshCircles, tab]);
 
   const sortedFriends = useMemo(() => {
     if (!friends.length) {

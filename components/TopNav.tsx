@@ -421,7 +421,7 @@ export default function TopNav() {
     <div
       id="body-intake-panel"
       ref={bodyMenuRef}
-      className="fixed left-0 z-[9999] w-48 rounded-r-lg border border-l-0 border-black bg-[#070707]/95 p-1 text-white shadow-[0_18px_44px_rgba(0,0,0,0.65)] backdrop-blur"
+      className="app-popover fixed left-0 z-[9999] w-48 rounded-r-lg border border-l-0 p-1 backdrop-blur"
       style={{ top: "calc(env(safe-area-inset-top, 0px) + 3.75rem)" }}
     >
       <div className="flex flex-col gap-1">
@@ -431,15 +431,15 @@ export default function TopNav() {
             type="button"
             aria-label={label}
             onClick={onClick}
-            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-white/85 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070707]"
+            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-[var(--text)] transition hover:bg-[var(--card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             <BodyPanelRowIcon iconKey={iconKey} />
             <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
             <span
-              className="relative ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/40 text-[8px] font-semibold text-white/80"
+              className="relative ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--subtle-surface)] text-[8px] font-semibold text-[var(--muted)]"
               aria-label={`${label} progress 0%`}
             >
-              <span className="absolute inset-1 rounded-full border border-white/20 border-t-white/70" aria-hidden="true" />
+              <span className="absolute inset-1 rounded-full border border-[var(--border)] border-t-[var(--muted)]" aria-hidden="true" />
               <span className="relative">0%</span>
             </span>
           </button>
@@ -450,7 +450,7 @@ export default function TopNav() {
 
   return (
     <>
-      <nav className="w-full flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] pb-2 bg-black/80 text-white border-b border-white/10 backdrop-blur">
+      <nav className="app-top-nav w-full flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] pb-2 border-b backdrop-blur">
         <div className="flex items-center gap-0.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -463,22 +463,22 @@ export default function TopNav() {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
-              className="bg-[#111111] border-[#2A2A2A] text-[#E6E6E6]"
+              className="app-nav-menu"
             >
               {userIsTopNavAdmin(currentUser) ? (
                 <DropdownMenuItem asChild>
-                  <Link href="/schedule/priorities" className="text-zinc-500">
+                  <Link href="/schedule/priorities" className="text-[var(--muted)]">
                     Priority Editor
                   </Link>
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuItem asChild>
-                <Link href="/focus-pomo" className="text-zinc-500">
+                <Link href="/focus-pomo" className="text-[var(--muted)]">
                   FocusPomo
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/schedule/matrix" className="text-zinc-500">
+                <Link href="/schedule/matrix" className="text-[var(--muted)]">
                   Matrix
                 </Link>
               </DropdownMenuItem>
@@ -496,7 +496,7 @@ export default function TopNav() {
           <button
             ref={bodyMenuTriggerRef}
             type="button"
-            className="inline-flex h-11 w-11 select-none items-center justify-center rounded-full bg-black/35 p-2 text-white/80 backdrop-blur transition hover:bg-black/50 hover:text-white focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 active:outline-none [-webkit-tap-highlight-color:transparent]"
+            className="app-nav-icon inline-flex h-11 w-11 select-none items-center justify-center rounded-full p-2 backdrop-blur transition focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 active:outline-none [-webkit-tap-highlight-color:transparent]"
             aria-label="Open body intake panel"
             aria-expanded={isBodyMenuOpen}
             aria-controls="body-intake-panel"

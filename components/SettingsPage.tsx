@@ -338,7 +338,7 @@ export default function SettingsPage() {
   ) : (
     <>
       <section className="grid gap-6">
-        <section className="relative overflow-hidden rounded-[28px] border border-white/12 bg-[linear-gradient(155deg,rgba(38,38,39,0.96)_0%,rgba(12,13,13,0.99)_52%,rgba(3,5,5,1)_100%)] text-white shadow-[0_24px_70px_rgba(0,0,0,0.42),0_0_58px_rgba(16,185,129,0.08),inset_0_1px_0_rgba(255,255,255,0.1)]">
+        <section className="app-premium-panel relative overflow-hidden rounded-[28px] border">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-80"
@@ -369,17 +369,17 @@ export default function SettingsPage() {
                     CREATOR Pro
                   </p>
                   {isPlus && (
-                    <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-zinc-300">
+                    <span className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
                       {planStatusLabel}
                     </span>
                   )}
                 </div>
                 {!isPlus && (
-                  <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-normal text-white">
+                  <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-normal text-[var(--text)]">
                     Upgrade when your system outgrows free.
                   </h2>
                 )}
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
                   {isPlus
                     ? "Full CREATOR Pro planning and execution layer is unlocked."
                     : "More room for goals, projects, tasks, and habits. Bigger roadmaps for bigger life systems."}
@@ -396,7 +396,7 @@ export default function SettingsPage() {
               onClick={handlePlanAction}
               className={
                 isPlus
-                  ? "inline-flex h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.045] px-5 text-sm font-semibold text-zinc-100 transition hover:border-white/20 hover:bg-white/[0.075] focus:outline-none focus:ring-2 focus:ring-emerald-300/55"
+                  ? "app-button inline-flex h-12 items-center justify-center rounded-2xl px-5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-emerald-300/55"
                   : "focus-pomo-start-glint inline-flex h-12 items-center justify-center rounded-2xl border border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] px-5 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.48),0_8px_18px_rgba(0,6,4,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-green-800/45"
               }
             >
@@ -516,13 +516,9 @@ export default function SettingsPage() {
 
   return (
     <div
-      className="min-h-screen text-[var(--text)]"
-      style={{
-        backgroundColor: "var(--bg)",
-        backgroundImage: "var(--bg-gradient)",
-      }}
+      className="app-bg min-h-screen"
     >
-      <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--bg)]/80 backdrop-blur">
+      <header className="app-top-nav sticky top-0 z-10 border-b backdrop-blur">
         <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
           <button
             type="button"
@@ -558,14 +554,14 @@ export default function SettingsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-account-title"
-            className="relative w-full max-w-md rounded-2xl border border-red-500/30 bg-[#111216] p-6 shadow-2xl"
+            className="app-card relative w-full max-w-md rounded-2xl border border-red-500/30 p-6 shadow-2xl"
           >
             <div className="flex items-start gap-4">
               <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 text-red-200">
                 <AlertTriangle className="h-5 w-5" aria-hidden="true" />
               </span>
               <div>
-                <h2 id="delete-account-title" className="text-lg font-semibold text-white">
+                <h2 id="delete-account-title" className="text-lg font-semibold text-[var(--text)]">
                   Delete account
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
@@ -574,7 +570,7 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
-            <label className="mt-6 block text-sm font-medium text-white" htmlFor="delete-confirmation">
+            <label className="mt-6 block text-sm font-medium text-[var(--text)]" htmlFor="delete-confirmation">
               Type DELETE to confirm
             </label>
             <input
@@ -584,7 +580,7 @@ export default function SettingsPage() {
               disabled={deletingAccount}
               autoCapitalize="characters"
               autoComplete="off"
-              className="mt-2 w-full rounded-xl border border-white/15 bg-black px-4 py-3 text-sm text-white outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
             />
             {deleteError ? (
               <p className="mt-3 text-sm text-red-300" role="alert">
@@ -596,7 +592,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={closeDeleteDialog}
                 disabled={deletingAccount}
-                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40 disabled:cursor-not-allowed disabled:opacity-60"
+                className="app-button inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -753,7 +749,7 @@ function ProfileAvatar({ src, alt, fallback }: ProfileAvatarProps) {
   }
 
   return (
-    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.08] text-sm font-semibold text-white shadow-inner shadow-black/30">
+    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--subtle-surface)] text-sm font-semibold text-[var(--text)] shadow-inner shadow-black/10">
       {fallbackValue}
     </div>
   );
@@ -791,7 +787,7 @@ function SettingsActionRow({ icon: Icon, title, description, onClick }: Settings
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-14 w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-200 hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:px-6"
+      className="flex min-h-14 w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-200 hover:bg-[var(--subtle-surface)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:px-6"
     >
       <SettingsIcon icon={Icon} />
       <div className="min-w-0 flex-1">
@@ -945,7 +941,7 @@ function ToggleSwitch({ checked, onChange, ariaLabel, disabled = false }: Toggle
       disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-        checked ? "bg-[var(--accent)]" : "bg-white/10"
+        checked ? "bg-[var(--accent)]" : "bg-[var(--subtle-surface)]"
       } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
     >
       <span

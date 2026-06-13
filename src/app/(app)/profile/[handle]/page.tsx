@@ -24,7 +24,10 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { uploadAvatar } from "@/lib/storage";
 import { resolveSocialLink } from "@/lib/profile/socialLinks";
 import type { RelationshipViewCounts } from "@/components/friends/RelationshipViewBar";
-import HeroHeader from "@/components/profile/HeroHeader";
+import HeroHeader, {
+  type FollowedByPreviewUser,
+  type ProfileHeaderActionButtons,
+} from "@/components/profile/HeroHeader";
 import ProfileModules from "@/components/profile/modules/ProfileModules";
 import { ContentCardsSection } from "@/components/profile/ContentCardsSection";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
@@ -79,6 +82,8 @@ export default function ProfileByHandlePage() {
   const [incomingRequestId, setIncomingRequestId] = useState<string | null>(null);
   const [respondingRequest, setRespondingRequest] = useState(false);
   const [relationshipCounts, setRelationshipCounts] = useState<RelationshipViewCounts | null>(null);
+  const [followedByPreviewUsers, setFollowedByPreviewUsers] = useState<FollowedByPreviewUser[]>([]);
+  const [followedByTotalCount, setFollowedByTotalCount] = useState(0);
   const [detailSheetItem, setDetailSheetItem] = useState<ProfileDetailSheetItem | null>(null);
   const [relationshipPopupView, setRelationshipPopupView] =
     useState<ProfileRelationshipView | null>(null);
@@ -291,6 +296,92 @@ export default function ProfileByHandlePage() {
       controller.abort();
     };
   }, [profile?.username]);
+
+  useEffect(() => {
+    if (!profile?.username || !user?.id) {
+      setFollowedByPreviewUsers([]);
+      setFollowedByTotalCount(0);
+      return;
+    }
+
+    let isActive = true;
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/profile/${encodeURIComponent(profile.username)}/relationships?view=followers`,
+          { signal: controller.signal },
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        if (!response.ok) {
+          setFollowedByPreviewUsers([]);
+          setFollowedByTotalCount(0);
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              users?: Array<{
+                id?: string | null;
+                username?: string | null;
+                displayName?: string | null;
+                avatarUrl?: string | null;
+              }>;
+            }
+          | null;
+        const users = Array.isArray(payload?.users) ? payload.users : [];
+        const normalizedUsers = users
+          .filter(
+            (follower): follower is {
+              id: string;
+              username: string;
+              displayName?: string | null;
+              avatarUrl?: string | null;
+            } =>
+              typeof follower.id === "string" &&
+              follower.id.length > 0 &&
+              typeof follower.username === "string" &&
+              follower.username.trim().length > 0,
+          )
+          .map((follower) => {
+            const username = follower.username.trim();
+            const displayName = follower.displayName?.trim() || username;
+
+            return {
+              id: follower.id,
+              username,
+              displayName,
+              avatarUrl: follower.avatarUrl ?? null,
+            };
+          });
+
+        setFollowedByPreviewUsers(normalizedUsers.slice(0, 3));
+        setFollowedByTotalCount(normalizedUsers.length);
+      } catch (err) {
+        if (!isActive) {
+          return;
+        }
+
+        if ((err as { name?: string }).name === "AbortError") {
+          return;
+        }
+
+        console.error("Failed to load followed-by preview", err);
+        setFollowedByPreviewUsers([]);
+        setFollowedByTotalCount(0);
+      }
+    })();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [profile?.username, relationshipStatus, user?.id]);
 
   useEffect(() => {
     if (!profile?.user_id) {
@@ -575,6 +666,9 @@ export default function ProfileByHandlePage() {
       return;
     }
 
+    const wasAlreadyFollowing =
+      relationshipStatus === "friends" || relationshipStatus === "following";
+
     setRequestingFriend(true);
     try {
       const response = await fetch("/api/friends", {
@@ -614,6 +708,12 @@ export default function ProfileByHandlePage() {
         } else {
           setRelationshipStatus(relationship);
         }
+
+        if (!wasAlreadyFollowing) {
+          setRelationshipCounts((prev) =>
+            prev ? { ...prev, followers: prev.followers + 1 } : prev,
+          );
+        }
       } catch (refreshError) {
         console.error("Failed to refresh relationship status", refreshError);
         setRelationshipStatus("none");
@@ -648,6 +748,11 @@ export default function ProfileByHandlePage() {
       }
 
       setRelationshipStatus(status === "accepted" ? "friends" : "none");
+      if (status === "accepted") {
+        setRelationshipCounts((prev) =>
+          prev ? { ...prev, followers: prev.followers + 1 } : prev,
+        );
+      }
       setIncomingRequestId(null);
     } catch (err) {
       console.error("Failed to respond to friend request", err);
@@ -678,6 +783,7 @@ export default function ProfileByHandlePage() {
     () => linkCardsModule?.cards.filter((card) => card.is_active !== false) ?? [],
     [linkCardsModule?.cards],
   );
+  const hasActiveContentCards = activeContentCards.length > 0;
 
   const offerPopupRows = useMemo<ProfileOfferPopupRow[]>(() => {
     const productRows: ProfileOfferPopupRow[] = sourceProducts.map((product) => ({
@@ -799,6 +905,59 @@ export default function ProfileByHandlePage() {
   }
 
   const isOwner = user?.id === profile.user_id;
+  const viewerFollowsProfile =
+    relationshipStatus === "friends" || relationshipStatus === "following";
+  const relationshipCheckPending =
+    !isOwner && relationshipLoading && relationshipStatus === null;
+  const canMessageProfile = !isOwner && viewerFollowsProfile && Boolean(profile.user_id);
+  const primaryActionLabel = isOwner
+    ? "Edit Profile"
+    : requestingFriend || respondingRequest
+      ? "Following..."
+      : viewerFollowsProfile
+        ? "Following"
+        : relationshipStatus === "outgoing_request"
+          ? "Requested"
+          : relationshipStatus === "followed_by" || relationshipStatus === "incoming_request"
+            ? "Follow back"
+            : "Follow";
+  const profileActionButtons: ProfileHeaderActionButtons = isOwner
+    ? {
+        primaryLabel: "Edit Profile",
+        primaryAriaLabel: "Edit profile",
+        onPrimaryClick: () => router.push("/profile/edit"),
+        secondaryLabel: "View Inbox",
+        secondaryAriaLabel: "View inbox",
+        onSecondaryClick: () => router.push("/inbox"),
+      }
+    : {
+        primaryLabel: primaryActionLabel,
+        primaryAriaLabel: `${primaryActionLabel} ${profile.username}`,
+        primaryDisabled:
+          !user?.id ||
+          relationshipCheckPending ||
+          viewerFollowsProfile ||
+          relationshipStatus === "outgoing_request",
+        primaryBusy: requestingFriend || respondingRequest,
+        onPrimaryClick: () => {
+          if (relationshipStatus === "incoming_request" && incomingRequestId) {
+            void handleRespondToRequest("accepted");
+            return;
+          }
+
+          void handleFollow();
+        },
+        secondaryLabel: "Message",
+        secondaryAriaLabel: `Message ${profile.username}`,
+        secondaryDisabled: !canMessageProfile,
+        onSecondaryClick: () => {
+          if (!canMessageProfile) {
+            return;
+          }
+
+          router.push(`/inbox/${profile.user_id}`);
+        },
+      };
 
   return (
     <div className="relative min-h-screen pb-[env(safe-area-inset-bottom)] text-white">
@@ -820,10 +979,17 @@ export default function ProfileByHandlePage() {
           isAvatarUploading={isAvatarUploading}
           relationshipCounts={profileStatCounts}
           onProfileStatSelect={handleProfileStatSelect}
+          followedByUsers={followedByPreviewUsers}
+          followedByTotalCount={followedByTotalCount}
+          actionButtons={profileActionButtons}
         />
 
-        <div className="mx-auto mt-6 w-full max-w-5xl space-y-12 bg-black px-4 pb-20">
-          {linkCardsModule ? (
+        <div
+          className={`mx-auto w-full max-w-5xl space-y-12 bg-black px-4 pb-20 ${
+            hasActiveContentCards ? "mt-4" : "mt-0"
+          }`}
+        >
+          {linkCardsModule && hasActiveContentCards ? (
             <ContentCardsSection module={linkCardsModule} />
           ) : null}
 

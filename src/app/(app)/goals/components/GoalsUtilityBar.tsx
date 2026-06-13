@@ -66,12 +66,12 @@ export function GoalsUtilityBar({
   }, [local, onSearch]);
 
   return (
-    <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#07050d]/80 p-6 shadow-[0_25px_90px_-60px_rgba(239,68,68,0.75)] backdrop-blur">
+    <div className="app-panel relative overflow-hidden rounded-[30px] p-6 shadow-[0_25px_90px_-60px_rgba(239,68,68,0.45)] backdrop-blur">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.08),transparent)] opacity-30" />
       <div className="relative flex flex-col gap-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs uppercase tracking-[0.3em] text-white/60">Control filters</p>
-          <p className="text-xs text-white/50">
+          <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Control filters</p>
+          <p className="text-xs text-[var(--muted)]">
             Tune the feed to surface only the goals you want to play.
           </p>
         </div>
@@ -79,7 +79,7 @@ export function GoalsUtilityBar({
           <label className="sr-only" htmlFor="goals-search">
             Search goals
           </label>
-          <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-white/40">
+          <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-[var(--muted)]">
             <svg
               className="h-4 w-4"
               viewBox="0 0 24 24"
@@ -98,7 +98,7 @@ export function GoalsUtilityBar({
             value={local}
             onChange={(event) => setLocal(event.target.value)}
             placeholder="Search goals or projects"
-            className="w-full rounded-2xl border border-white/15 bg-white/[0.04] py-3.5 pl-12 pr-4 text-sm text-white placeholder:text-white/50 focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+            className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)] py-3.5 pl-12 pr-4 text-sm text-[var(--text)] placeholder:text-[var(--muted)] focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
           />
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -184,8 +184,8 @@ function FilterSelect({
       : normalized;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 sm:px-4 sm:py-3">
-      <p className="text-[9px] uppercase tracking-[0.2em] text-white/50 sm:text-[10px] sm:tracking-[0.3em]">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 sm:px-4 sm:py-3">
+      <p className="text-[9px] uppercase tracking-[0.2em] text-[var(--muted)] sm:text-[10px] sm:tracking-[0.3em]">
         {label}
       </p>
       {searchable && (
@@ -198,7 +198,7 @@ function FilterSelect({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white placeholder:text-white/50 focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+            className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--muted)] focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
             type="search"
           />
         </div>
@@ -207,7 +207,7 @@ function FilterSelect({
         <select
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full appearance-none bg-transparent text-xs font-medium text-white focus:outline-none sm:text-sm sm:font-semibold"
+          className="w-full appearance-none bg-transparent text-xs font-medium text-[var(--text)] focus:outline-none sm:text-sm sm:font-semibold"
         >
           {filtered.length === 0 ? (
             <option value={value} disabled>
@@ -215,13 +215,13 @@ function FilterSelect({
             </option>
           ) : (
             filtered.map((option) => (
-              <option key={option.value} value={option.value} className="bg-[#07050d] text-white">
+              <option key={option.value} value={option.value} className="bg-[var(--surface)] text-[var(--text)]">
                 {option.label}
               </option>
             ))
           )}
         </select>
-        <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-white/50">
+        <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[var(--muted)]">
           ▾
         </span>
       </div>

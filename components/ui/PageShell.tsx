@@ -9,7 +9,7 @@ interface PageShellProps {
 
 export function PageShell({ children, title }: PageShellProps) {
   return (
-    <div className="min-h-screen bg-[#0F0F12] text-zinc-200">
+    <div className="app-bg min-h-screen">
       <div className="flex">
         <Sidebar />
         <div className="flex-1 flex flex-col min-h-screen">
