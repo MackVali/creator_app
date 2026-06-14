@@ -242,7 +242,7 @@ export default function ProfileDetailSheet({
 
   const detailTypeLabel = isProduct ? "product" : "service";
   const summaryMeta = isProduct
-    ? [priceLabel, item.data.status === "published" ? "Live" : "Draft"]
+    ? [priceLabel]
     : [priceLabel, serviceDurationLabel, serviceAvailabilityLabel].filter(
         (value): value is string => Boolean(value),
       );

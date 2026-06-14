@@ -165,7 +165,6 @@ type QuantityBehavior = (typeof QUANTITY_BEHAVIOR_OPTIONS)[number]["value"]
 const DEFAULT_QUANTITY_BEHAVIOR: QuantityBehavior = QUANTITY_BEHAVIOR_OPTIONS[0].value
 
 const PRODUCT_AVAILABILITY_OPTIONS = [
-  { value: "single", label: "Single listing" },
   { value: "limited", label: "Limited" },
   { value: "unlimited", label: "Unlimited" },
 ] as const
@@ -173,16 +172,7 @@ const PRODUCT_AVAILABILITY_OPTIONS = [
 type ProductAvailability = (typeof PRODUCT_AVAILABILITY_OPTIONS)[number]["value"]
 const DEFAULT_PRODUCT_AVAILABILITY: ProductAvailability = "limited"
 const DEFAULT_PRODUCT_INVENTORY = "1"
-
-const resolveProductKind = (metadata: Record<string, unknown> | null): ProductKind => {
-  const rawValue = metadata?.["product_kind"]
-  if (typeof rawValue === "string") {
-    if (PRODUCT_KIND_OPTIONS.some((option) => option.value === rawValue)) {
-      return rawValue as ProductKind
-    }
-  }
-  return DEFAULT_PRODUCT_KIND
-}
+const DEFAULT_PRODUCT_CURRENCY = "USD"
 
 const resolveServiceMode = (metadata: Record<string, unknown> | null): ServiceMode => {
   const rawValue = metadata?.["service_mode"]
@@ -239,17 +229,6 @@ const resolveProductAvailability = (
   if (quantityBehavior === "always_available") {
     return "unlimited"
   }
-  if (quantityBehavior === "per_order") {
-    return "single"
-  }
-
-  const inventory = resolveMetadataNumber(metadata, "inventory")
-  if (inventory === 1) {
-    return "single"
-  }
-  if (inventory !== null && inventory > 1) {
-    return "limited"
-  }
 
   return DEFAULT_PRODUCT_AVAILABILITY
 }
@@ -262,13 +241,6 @@ const getProductAvailabilityMetadata = (
     return {
       inventory: "",
       quantityBehavior: "always_available" as QuantityBehavior,
-    }
-  }
-
-  if (availability === "single") {
-    return {
-      inventory: "1",
-      quantityBehavior: "per_order" as QuantityBehavior,
     }
   }
 
@@ -403,7 +375,7 @@ const defaultProductSheetForm: ProductSheetFormState = {
   title: "",
   description: "",
   price: "",
-  currency: "USD",
+  currency: DEFAULT_PRODUCT_CURRENCY,
   inventory: DEFAULT_PRODUCT_INVENTORY,
   productKind: DEFAULT_PRODUCT_KIND,
   availability: DEFAULT_PRODUCT_AVAILABILITY,
@@ -2439,8 +2411,8 @@ export default function Source() {
         currentProductDetailListing.price !== null
           ? String(currentProductDetailListing.price)
           : "",
-      currency: currentProductDetailListing.currency ?? "USD",
-      productKind: resolveProductKind(currentProductDetailListing.metadata),
+      currency: DEFAULT_PRODUCT_CURRENCY,
+      productKind: DEFAULT_PRODUCT_KIND,
       availability: productAvailability,
       inventory:
         inventoryValue !== null
@@ -2634,7 +2606,7 @@ export default function Source() {
     }
 
     const metadataFields: Record<string, string> = {
-      product_kind: productSheetForm.productKind,
+      product_kind: DEFAULT_PRODUCT_KIND,
       product_availability: productSheetForm.availability,
       quantity_behavior: availabilityMetadata.quantityBehavior,
     }
@@ -2650,7 +2622,7 @@ export default function Source() {
         title: productSheetForm.title,
         description: productSheetForm.description,
         price: productSheetForm.price,
-        currency: productSheetForm.currency,
+        currency: DEFAULT_PRODUCT_CURRENCY,
         inventory: availabilityMetadata.inventory,
         durationMinutes: "",
         metadata: Object.keys(metadataFields).length
@@ -2750,7 +2722,7 @@ export default function Source() {
     setIsProductDetailSubmitting(true)
 
     const productDetailMetadataUpdates: Record<string, unknown | null> = {
-      product_kind: productDetailForm.productKind,
+      product_kind: DEFAULT_PRODUCT_KIND,
     }
     if (productDetailImageDirty) {
       productDetailMetadataUpdates.coverImage = productDetailImageUrl
@@ -2788,7 +2760,10 @@ export default function Source() {
       {
         listing,
         type: "product",
-        form: productDetailForm,
+        form: {
+          ...productDetailForm,
+          currency: DEFAULT_PRODUCT_CURRENCY,
+        },
         metadataUpdates: productDetailMetadataUpdates,
         status: productDetailStatus,
       },
@@ -4701,19 +4676,14 @@ function SourceProductSheet({
     ? trimmedTitle || `New ${listingTypeLabels[listingType].toLowerCase()}`
     : listing?.title ?? ""
 
-  const priceLabel =
-    isCreate
-      ? (() => {
-          const trimmedPrice = formState.price.trim()
-          const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
-          if (trimmedPrice && Number.isNaN(price)) return "Price TBD"
-          return price !== null
-            ? formatCurrency(price, formState.currency.trim() || "USD")
-            : "Price TBD"
-        })()
-      : listing?.price !== null
-        ? formatCurrency(listing.price, listing.currency)
-        : "Price TBD"
+  const priceLabel = (() => {
+    const trimmedPrice = formState.price.trim()
+    const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+    if (trimmedPrice && Number.isNaN(price)) return "Price TBD"
+    return price !== null
+      ? formatCurrency(price, DEFAULT_PRODUCT_CURRENCY)
+      : "Price TBD"
+  })()
   const coverImagePreview = imagePreview || imageUrl
   const statusValue: SourceListing["status"] = isCreate ? "draft" : listing?.status ?? "draft"
   const updatedLabel = isCreate
@@ -4784,57 +4754,21 @@ function SourceProductSheet({
               </FieldStack>
 
               <div className={sourceListingFormSectionClassName}>
-                <FieldStack
-                  label="Product kind"
-                  htmlFor="product-detail-kind"
-                >
-                  <Select
-                    id="product-detail-kind"
-                    value={formState.productKind}
-                    onValueChange={(value) => onFieldChange("productKind", value)}
-                    triggerClassName={sourceListingSelectTriggerClassName}
-                    disablePortal
-                  >
-                    <SelectContent>
-                      {PRODUCT_KIND_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <FieldStack label="Price" htmlFor="product-detail-price">
+                  <Input
+                    id="product-detail-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formState.price}
+                    onChange={(event) =>
+                      onFieldChange("price", event.target.value)
+                    }
+                    placeholder="49.99"
+                    disabled={isBusy}
+                    className={sourceListingFormControlClassName}
+                  />
                 </FieldStack>
-
-                <div className="grid grid-cols-[minmax(0,1fr)_4.75rem] gap-3">
-                  <FieldStack label="Price" htmlFor="product-detail-price">
-                    <Input
-                      id="product-detail-price"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formState.price}
-                      onChange={(event) =>
-                        onFieldChange("price", event.target.value)
-                      }
-                      placeholder="49.99"
-                      disabled={isBusy}
-                      className={sourceListingFormControlClassName}
-                    />
-                  </FieldStack>
-                  <FieldStack label="Currency" htmlFor="product-detail-currency">
-                    <Input
-                      id="product-detail-currency"
-                      value={formState.currency}
-                      onChange={(event) =>
-                        onFieldChange("currency", event.target.value.toUpperCase())
-                      }
-                      placeholder="USD"
-                      maxLength={3}
-                      disabled={isBusy}
-                      className={sourceListingFormControlClassName}
-                    />
-                  </FieldStack>
-                </div>
 
                 <FieldStack
                   label="Availability"
@@ -4845,7 +4779,7 @@ function SourceProductSheet({
                       id="product-detail-availability"
                       role="radiogroup"
                       aria-label="Availability"
-                      className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-white/[0.045] p-1"
+                      className="inline-grid w-fit grid-cols-2 gap-1 rounded-lg border border-white/10 bg-white/[0.045] p-0.5"
                     >
                       {PRODUCT_AVAILABILITY_OPTIONS.map((option) => {
                         const isSelected = formState.availability === option.value
@@ -4856,7 +4790,7 @@ function SourceProductSheet({
                             role="radio"
                             aria-checked={isSelected}
                             className={cn(
-                              "h-8 rounded-lg px-1.5 text-center text-[10px] font-semibold leading-tight text-white/[0.56] transition-colors hover:bg-white/[0.07] hover:text-white/[0.82] disabled:pointer-events-none disabled:opacity-60",
+                              "h-7 rounded-md px-3 text-center text-xs font-semibold leading-none text-white/[0.56] transition-colors hover:bg-white/[0.07] hover:text-white/[0.82] disabled:pointer-events-none disabled:opacity-60",
                               isSelected &&
                                 "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                             )}
@@ -4871,8 +4805,8 @@ function SourceProductSheet({
                       })}
                     </div>
                     {formState.availability === "limited" && (
-                      <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-end gap-2">
-                        <span className="pb-2 text-xs text-white/[0.52]">
+                      <div className="grid grid-cols-[auto_5.5rem] items-center gap-2">
+                        <span className="text-xs text-white/[0.52]">
                           Quantity
                         </span>
                         <Input

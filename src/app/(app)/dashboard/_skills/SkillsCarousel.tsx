@@ -388,6 +388,20 @@ const getCommunitySkillAliasSearchText = (skill: CommunitySkill) =>
     .join(" ")
     .toLowerCase();
 
+function scrollDashboardToTopSmooth() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const scrollTarget = document.scrollingElement ?? document.documentElement;
+
+  if (scrollTarget.scrollTop <= 0 && window.scrollY <= 0) {
+    return;
+  }
+
+  scrollTarget.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 const compareBySortOrderThenName = <T extends { sort_order: number | null; name: string }>(
   left: T,
   right: T
@@ -645,6 +659,11 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
 
   const closeSkillDetail = useCallback(() => {
     setActiveSkillId(null);
+  }, []);
+
+  const openSkillDetail = useCallback((skill: Skill) => {
+    scrollDashboardToTopSmooth();
+    setActiveSkillId(skill.id);
   }, []);
 
   const detailOverlayStyle = {
@@ -2003,7 +2022,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                     isDraggingSkill={Boolean(draggingSkill)}
                     onSkillDragStart={(skill) => handleSkillDragStart(skill, category.id)}
                     onSkillDragEnd={handleSkillDragEnd}
-                    onSkillOpen={(skill) => setActiveSkillId(skill.id)}
+                    onSkillOpen={openSkillDetail}
                     onDragCategoryHover={() => handleCategoryDragEnter(category.id)}
                     onDragCategoryLeave={() => handleCategoryDragLeave(category.id)}
                     menuOpen={openMenuFor === category.id}

@@ -3215,12 +3215,10 @@ function InlineCircleHeaderEditor({
 
 function CircleCommandDetail({
   circle,
-  onClose,
   onCircleUpdated,
   needsSafeAreaTopPadding = false,
 }: {
   circle: CommandCircle;
-  onClose: () => void;
   onCircleUpdated: (circle: CircleUpdate) => void;
   needsSafeAreaTopPadding?: boolean;
 }) {
@@ -3566,15 +3564,6 @@ function CircleCommandDetail({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label="Close Circle detail"
-                      onClick={onClose}
-                      className="flex h-10 w-10 items-center justify-center rounded-full text-white/68 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
-
                     {isOwner ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -4226,7 +4215,6 @@ export const CommandCirclesSection = forwardRef<
           >
             <CircleCommandDetail
               circle={activeCircle}
-              onClose={closeCircleDetail}
               needsSafeAreaTopPadding={circleTransition.appViewportRect.top <= 1}
               onCircleUpdated={(updatedCircle) => {
                 setCircles((currentCircles) =>

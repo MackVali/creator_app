@@ -22,6 +22,7 @@ type SourceListingCardProps = {
   priceLabel: string
   status: SourceListing["status"]
   secondaryLabel?: string | null
+  showStatus?: boolean
   selected?: boolean
   onClick?: () => void
   ariaLabel?: string
@@ -34,6 +35,7 @@ export function SourceListingCard({
   priceLabel,
   status,
   secondaryLabel,
+  showStatus = true,
   selected = false,
   onClick,
   ariaLabel,
@@ -93,14 +95,16 @@ export function SourceListingCard({
             {secondaryLabel}
           </span>
         ) : null}
-        <p
-          className={cn(
-            "mt-auto truncate text-[7px] font-semibold uppercase tracking-[0.14em]",
-            listingInlineStatusTextClass[status],
-          )}
-        >
-          {listingInlineStatusLabels[status]}
-        </p>
+        {showStatus ? (
+          <p
+            className={cn(
+              "mt-auto truncate text-[7px] font-semibold uppercase tracking-[0.14em]",
+              listingInlineStatusTextClass[status],
+            )}
+          >
+            {listingInlineStatusLabels[status]}
+          </p>
+        ) : null}
       </div>
     </button>
   )
@@ -140,6 +144,7 @@ export function ServiceSourceListingCard({
   return (
     <SourceListingCard
       {...cardProps}
+      showStatus={false}
       onClick={() => onSelect?.(service)}
       className={className}
     />
