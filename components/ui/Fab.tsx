@@ -293,6 +293,24 @@ type FabGoalDeleteConfirmTarget = {
   goalName: string;
   projectCount: number | null;
 };
+type FabHabitEditSnapshot = {
+  name?: string | null;
+  description?: string | null;
+  habitType?: string | null;
+  recurrence?: string | null;
+  durationMinutes?: number | null;
+  energy?: string | null;
+  goalId?: string | null;
+  skillId?: string | null;
+  routineId?: string | null;
+  circleId?: string | null;
+  locationContextId?: string | null;
+  daylightPreference?: string | null;
+  windowEdgePreference?: string | null;
+  nextDueOverride?: string | null;
+  fixedStartLocal?: string | null;
+  fixedEndLocal?: string | null;
+};
 export type FabEditTarget = {
   entityType: CreationType;
   entityId: string;
@@ -300,6 +318,7 @@ export type FabEditTarget = {
   title?: string | null;
   layoutId?: string | null;
   originRect?: FabEditOriginRect | null;
+  habitSnapshot?: FabHabitEditSnapshot | null;
 };
 type TagEntityType = CreationType;
 type CreationFormMode =
@@ -4138,6 +4157,76 @@ export function Fab({
 
     setProjectName(seededTitle);
   }, [editTarget?.entityId, editTarget?.entityType, editTarget?.title]);
+
+  useLayoutEffect(() => {
+    if (editTarget?.entityType !== "HABIT" || !editTarget.entityId) {
+      return;
+    }
+
+    const snapshot = editTarget.habitSnapshot ?? null;
+    const seededTitle =
+      typeof editTarget.title === "string" ? editTarget.title.trim() : "";
+
+    if (snapshot?.name || seededTitle) {
+      setHabitName(snapshot?.name?.trim() || seededTitle);
+    }
+    if (snapshot?.description != null) {
+      setHabitWhy(snapshot.description);
+    }
+    if (snapshot?.habitType) {
+      setHabitType(normalizeHabitType(snapshot.habitType) || defaultHabitType);
+    }
+    if (snapshot?.recurrence) {
+      setHabitRecurrence(snapshot.recurrence);
+    }
+    if (
+      typeof snapshot?.durationMinutes === "number" &&
+      Number.isFinite(snapshot.durationMinutes)
+    ) {
+      setHabitDuration(String(snapshot.durationMinutes));
+    }
+    if (snapshot?.energy) {
+      setHabitEnergy(snapshot.energy);
+    }
+    if (snapshot?.goalId) {
+      setHabitGoalId(snapshot.goalId);
+    }
+    if (snapshot?.skillId) {
+      setHabitSkillId(snapshot.skillId);
+    }
+    if (snapshot?.routineId) {
+      setHabitRoutineId(snapshot.routineId);
+    }
+    if (snapshot?.circleId) {
+      setHabitCircleId(snapshot.circleId);
+    }
+    if (snapshot?.locationContextId) {
+      setHabitLocationContextId(snapshot.locationContextId);
+    }
+    if (snapshot?.daylightPreference) {
+      setHabitDaylightPreference(snapshot.daylightPreference);
+    }
+    if (snapshot?.windowEdgePreference) {
+      setHabitWindowEdgePreference(snapshot.windowEdgePreference);
+    }
+    if (snapshot?.nextDueOverride) {
+      setHabitNextDueOverride(
+        formatDateTimeLocalInputValue(snapshot.nextDueOverride),
+      );
+    }
+    if (snapshot?.fixedStartLocal) {
+      setHabitFixedStartTime(formatLocalTimeInputValue(snapshot.fixedStartLocal));
+    }
+    if (snapshot?.fixedEndLocal) {
+      setHabitFixedEndTime(formatLocalTimeInputValue(snapshot.fixedEndLocal));
+    }
+  }, [
+    defaultHabitType,
+    editTarget?.entityId,
+    editTarget?.entityType,
+    editTarget?.habitSnapshot,
+    editTarget?.title,
+  ]);
 
   useEffect(() => {
     if (editTarget?.entityType !== "GOAL" || !editTarget.entityId) {
