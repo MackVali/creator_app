@@ -56,6 +56,8 @@ type RelatedRoutineCardProps = {
   onHabitCompletionToggle?: (habitId: string) => void | Promise<void>;
   onAddHabit?: (routine: RelatedRoutineCardRoutine) => void;
   restoreOpen?: boolean;
+  newHabitRevealId?: string | null;
+  onNewHabitRevealComplete?: (habitId: string) => void;
 };
 
 const DEFAULT_ROUTINE_ICON = "🔁";
@@ -114,6 +116,23 @@ const routineDrawerCompletedHabitMotion = {
       height: { duration: 0.3, ease: [0.33, 0, 0.2, 1] },
       opacity: { duration: 0.2, ease: "easeOut" },
       y: { duration: 0.3, ease: [0.33, 0, 0.2, 1] },
+    },
+  },
+} as const;
+
+const routineDrawerNewHabitMotion = {
+  hidden: {
+    opacity: 0,
+    height: 0,
+    y: -6,
+  },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: {
+      duration: 0.42,
+      ease: [0.16, 1, 0.3, 1],
     },
   },
 } as const;
@@ -185,6 +204,30 @@ function sortRoutineHabitsByPosition(habits: RelatedRoutineCardHabit[]) {
       ...habit,
       routinePosition: readRoutinePosition(habit.routinePosition) ?? index + 1,
     }));
+}
+
+function placeRoutineHabitsAtBottom(
+  habits: RelatedRoutineCardHabit[],
+  habitIds: Iterable<string>
+) {
+  const pinnedHabitIds = Array.from(habitIds);
+  if (pinnedHabitIds.length === 0) return habits;
+
+  const pinned = new Set(pinnedHabitIds);
+  const bottomHabitsById = new Map(
+    habits
+      .filter((habit) => pinned.has(habit.id))
+      .map((habit) => [habit.id, habit])
+  );
+
+  if (bottomHabitsById.size === 0) return habits;
+
+  return [
+    ...habits.filter((habit) => !pinned.has(habit.id)),
+    ...pinnedHabitIds
+      .map((habitId) => bottomHabitsById.get(habitId))
+      .filter((habit): habit is RelatedRoutineCardHabit => Boolean(habit)),
+  ];
 }
 
 function normalizeRoutineHabitStreakDays(value: number | null | undefined) {
@@ -433,6 +476,8 @@ export function RelatedRoutineCard({
   onHabitCompletionToggle,
   onAddHabit,
   restoreOpen = false,
+  newHabitRevealId = null,
+  onNewHabitRevealComplete,
 }: RelatedRoutineCardProps) {
   const headingId = useId();
   const prefersReducedMotion = useReducedMotion();
@@ -450,6 +495,7 @@ export function RelatedRoutineCard({
   const collapsingCompletedHabitTimersRef = useRef<
     Map<string, ReturnType<typeof setTimeout>>
   >(new Map());
+  const bottomPinnedHabitIdsRef = useRef<Set<string>>(new Set());
   const actionsMenuRef = useRef<HTMLDivElement | null>(null);
   const isSmall = density === "small";
   const routineName = routine.name?.trim() || "Untitled routine";
@@ -475,7 +521,10 @@ export function RelatedRoutineCard({
     [routine.habits]
   );
   const [localHabits, setLocalHabits] = useState(() =>
-    sortRoutineHabitsByPosition(routineHabits)
+    placeRoutineHabitsAtBottom(
+      sortRoutineHabitsByPosition(routineHabits),
+      newHabitRevealId ? [newHabitRevealId] : []
+    )
   );
 
   useLayoutEffect(() => {
@@ -716,7 +765,16 @@ export function RelatedRoutineCard({
   }, []);
 
   useEffect(() => {
-    const sortedHabits = sortRoutineHabitsByPosition(routineHabits);
+    if (newHabitRevealId) {
+      bottomPinnedHabitIdsRef.current.add(newHabitRevealId);
+    }
+  }, [newHabitRevealId]);
+
+  useEffect(() => {
+    const sortedHabits = placeRoutineHabitsAtBottom(
+      sortRoutineHabitsByPosition(routineHabits),
+      bottomPinnedHabitIdsRef.current
+    );
 
     setLocalHabits(
       sortedHabits.map((habit) => {
@@ -1209,6 +1267,8 @@ export function RelatedRoutineCard({
                                       collapsingCompletedHabitIds.has(habit.id);
                                     const isCollapsingCompletedMove =
                                       collapsingCompletedHabitIds.has(habit.id);
+                                    const isNewHabitReveal =
+                                      newHabitRevealId === habit.id;
                                     const displayedHabit =
                                       isPendingCompletedMove
                                         ? {
@@ -1227,7 +1287,18 @@ export function RelatedRoutineCard({
                                             ? "pointer-events-none"
                                             : null
                                         )}
-                                        initial={false}
+                                        initial={
+                                          isNewHabitReveal
+                                            ? prefersReducedMotion
+                                              ? { opacity: 0 }
+                                              : "hidden"
+                                            : false
+                                        }
+                                        onAnimationComplete={() => {
+                                          if (isNewHabitReveal) {
+                                            onNewHabitRevealComplete?.(habit.id);
+                                          }
+                                        }}
                                         animate={
                                           prefersReducedMotion
                                             ? {
@@ -1247,7 +1318,9 @@ export function RelatedRoutineCard({
                                         variants={
                                           prefersReducedMotion
                                             ? undefined
-                                            : routineDrawerActiveHabitMotion
+                                            : isNewHabitReveal
+                                              ? routineDrawerNewHabitMotion
+                                              : routineDrawerActiveHabitMotion
                                         }
                                         transition={
                                           prefersReducedMotion

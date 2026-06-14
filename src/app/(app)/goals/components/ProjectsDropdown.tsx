@@ -26,6 +26,8 @@ interface ProjectsDropdownProps {
   projectTasksOnly?: boolean;
   onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
+  newProjectRevealId?: string | null;
+  onNewProjectRevealComplete?: (projectId: string) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -41,6 +43,11 @@ const PROJECT_COMPLETION_REBUCKET_DELAY_MS = 650;
 const completedProjectsRevealTransition = {
   duration: 0.56,
   ease: [0.22, 1, 0.36, 1],
+} as const;
+
+const newProjectRevealTransition = {
+  duration: 0.42,
+  ease: [0.16, 1, 0.3, 1],
 } as const;
 
 const isProjectCompleted = (project: Project) =>
@@ -76,6 +83,8 @@ export function ProjectsDropdown({
   projectTasksOnly = false,
   onAddProject,
   addingProject = false,
+  newProjectRevealId = null,
+  onNewProjectRevealComplete,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
   const prefersReducedMotion = useReducedMotion();
@@ -181,6 +190,55 @@ export function ProjectsDropdown({
     [onProjectUpdated]
   );
 
+  const renderProjectRow = useCallback(
+    (project: Project, projectOrder: number) => {
+      const row = (
+        <ProjectRow
+          key={project.id}
+          project={project}
+          projectOrder={projectOrder}
+          variant="compactNested"
+          onLongPress={onProjectLongPress}
+          onUpdated={handleProjectUpdated}
+        />
+      );
+
+      if (newProjectRevealId !== project.id) {
+        return row;
+      }
+
+      return (
+        <motion.div
+          key={project.id}
+          className="overflow-hidden"
+          initial={
+            prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }
+          }
+          animate={
+            prefersReducedMotion
+              ? { opacity: 1 }
+              : { opacity: 1, height: "auto", y: 0 }
+          }
+          transition={
+            prefersReducedMotion
+              ? { duration: 0.12, ease: "easeOut" }
+              : newProjectRevealTransition
+          }
+          onAnimationComplete={() => onNewProjectRevealComplete?.(project.id)}
+        >
+          {row}
+        </motion.div>
+      );
+    },
+    [
+      handleProjectUpdated,
+      newProjectRevealId,
+      onNewProjectRevealComplete,
+      onProjectLongPress,
+      prefersReducedMotion,
+    ]
+  );
+
   const taskEntries = useMemo(() => {
     if (!projectTasksOnly) {
       return [] as TaskEntry[];
@@ -231,16 +289,7 @@ export function ProjectsDropdown({
         ) : projects.length > 0 ? (
           <div className="space-y-1 sm:space-y-1.5">
             {activeProjects.length > 0 ? (
-              activeProjects.map((p, index) => (
-                <ProjectRow
-                  key={p.id}
-                  project={p}
-                  projectOrder={index + 1}
-                  variant="compactNested"
-                  onLongPress={onProjectLongPress}
-                  onUpdated={handleProjectUpdated}
-                />
-              ))
+              activeProjects.map((p, index) => renderProjectRow(p, index + 1))
             ) : completedProjects.length > 0 ? (
               <div className="px-2 py-1.5 text-xs text-white/45">
                 All projects are complete.
@@ -286,16 +335,9 @@ export function ProjectsDropdown({
                   }
                 >
                   <div className="space-y-1 sm:space-y-1.5">
-                    {completedProjects.map((p, index) => (
-                      <ProjectRow
-                        key={p.id}
-                        project={p}
-                        projectOrder={activeProjects.length + index + 1}
-                        variant="compactNested"
-                        onLongPress={onProjectLongPress}
-                        onUpdated={handleProjectUpdated}
-                      />
-                    ))}
+                    {completedProjects.map((p, index) =>
+                      renderProjectRow(p, activeProjects.length + index + 1)
+                    )}
                   </div>
                 </motion.div>
               ) : null}

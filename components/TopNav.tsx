@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAppCart } from "@/components/cart/AppCartProvider";
 import { AppCartQuickView, AppCheckoutFullscreen } from "@/components/cart/AppCartPanels";
+import { resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 
 type RoleMetadata = {
   role?: unknown;
@@ -53,7 +54,7 @@ type NoteDatabaseMetadataDefinition = {
   systemDatabaseKey?: unknown;
 };
 
-type BodyDatabaseIconKey = "stomach" | "droplet" | "dumbbell" | "table";
+type BodyDatabaseIconKey = "stomach" | "droplet" | "dumbbell" | "table" | string;
 
 const BODY_FALLBACK_ROWS = [
   {
@@ -114,14 +115,25 @@ function getBodyDatabaseIconKey({
   systemDatabaseKey: string | null;
   title: string;
 }): BodyDatabaseIconKey {
-  if (iconKey === "stomach" || iconKey === "droplet" || iconKey === "dumbbell") {
-    return iconKey;
-  }
-
   const normalizedSystemKey = normalizeBodyDatabaseKey(systemDatabaseKey);
   if (normalizedSystemKey === "nutrition") return "stomach";
   if (normalizedSystemKey === "hydration") return "droplet";
   if (normalizedSystemKey === "fitness") return "dumbbell";
+
+  if (typeof iconKey === "string" && iconKey.trim()) {
+    const normalizedIconKey = iconKey.trim();
+    if (
+      normalizedIconKey === "stomach" ||
+      normalizedIconKey === "droplet" ||
+      normalizedIconKey === "dumbbell" ||
+      normalizedIconKey === "table"
+    ) {
+      return normalizedIconKey;
+    }
+    if (normalizeBodyDatabaseKey(normalizedIconKey) !== "database") {
+      return normalizedIconKey;
+    }
+  }
 
   const normalizedTitle = normalizeBodyDatabaseKey(title);
   if (normalizedTitle === "nutrition") return "stomach";
@@ -142,10 +154,24 @@ function BodyPanelRowIcon({ iconKey }: { iconKey: BodyDatabaseIconKey }) {
     );
   }
 
-  const LucideIcon =
-    iconKey === "droplet" ? Droplet : iconKey === "dumbbell" ? Dumbbell : Table2;
+  if (iconKey === "droplet" || iconKey === "dumbbell" || iconKey === "table") {
+    const LucideIcon =
+      iconKey === "droplet" ? Droplet : iconKey === "dumbbell" ? Dumbbell : Table2;
 
-  return <LucideIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />;
+    return <LucideIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />;
+  }
+
+  const resolvedIcon = resolveNoteIcon(iconKey);
+  if (resolvedIcon.kind === "lucide") {
+    const CustomIcon = resolvedIcon.Icon;
+    return <CustomIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />;
+  }
+
+  return (
+    <span className="w-4 shrink-0 text-center text-sm leading-none" aria-hidden="true">
+      {resolvedIcon.emoji}
+    </span>
+  );
 }
 
 function getPinnedBodyDatabasesFromMetadata({

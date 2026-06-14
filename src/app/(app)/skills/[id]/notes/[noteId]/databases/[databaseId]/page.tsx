@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   NoteDatabaseFocusedView,
+  removeNoteDatabaseSegment,
   type NoteDatabaseDefinitions,
   type NoteDatabaseEntries,
 } from "@/components/notes/NoteSlashTextarea";
@@ -144,6 +145,68 @@ export default function SkillNoteDatabasePage() {
     setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
   }
 
+  async function handleDeleteDatabase() {
+    if (!note) return;
+
+    const removal = removeNoteDatabaseSegment({
+      content: note.content ?? "",
+      databaseDefinitions: getMetadataDatabases(noteMetadata),
+      databaseEntries: getMetadataDatabaseEntries(noteMetadata),
+      databaseId,
+    });
+
+    if (removal.locked) {
+      console.warn("This system database is locked.", {
+        databaseId: removal.databaseId,
+        systemDatabaseKey: removal.systemDatabaseKey,
+      });
+      return;
+    }
+
+    if (!removal.removed) return;
+
+    const nextMetadata = {
+      ...(noteMetadata ?? {}),
+      databases: removal.databaseDefinitions,
+      databaseEntries: removal.databaseEntries,
+    };
+
+    setIsSaving(true);
+    try {
+      const saved = await updateSkillNote(
+        skillId,
+        note.id,
+        {
+          title: note.title ?? "Untitled",
+          content: removal.content,
+        },
+        { metadata: nextMetadata },
+      );
+
+      if (!saved) return;
+
+      setNote(saved);
+      setNoteMetadata(saved.metadata ?? nextMetadata);
+      setLastSavedSnapshot(JSON.stringify(saved.metadata ?? nextMetadata ?? null));
+      window.dispatchEvent(new Event("creator:pinned-body-databases-changed"));
+      window.dispatchEvent(
+        new CustomEvent("creator:skill-notes-changed", {
+          detail: { skillId, noteId: saved.id },
+        }),
+      );
+      router.push(`/skills/${skillId}/notes/${noteId}`);
+    } catch (error) {
+      console.error("Failed to delete skill note database", {
+        error,
+        skillId,
+        noteId,
+        databaseId,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#020202] px-3 pb-[calc(6rem_+_env(safe-area-inset-bottom,0px))] text-white sm:px-5 lg:px-8">
       <div className="flex min-h-[calc(100vh-7rem)] w-full flex-col">
@@ -162,6 +225,7 @@ export default function SkillNoteDatabasePage() {
             onBack={handleBack}
             onDatabaseDefinitionsChange={handleDatabaseDefinitionsChange}
             onDatabaseEntriesChange={handleDatabaseEntriesChange}
+            onDeleteDatabase={handleDeleteDatabase}
           />
         )}
       </div>

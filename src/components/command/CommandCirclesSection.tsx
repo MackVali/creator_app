@@ -11,7 +11,9 @@ import {
   useState,
   type FormEvent,
   type MouseEvent,
+  type PointerEvent,
   type ReactNode,
+  type TouchEvent,
 } from "react";
 import {
   AnimatePresence,
@@ -24,7 +26,6 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
-  CircleDot,
   Grid2x2,
   Grid3x3,
   Handshake,
@@ -39,6 +40,8 @@ import {
 } from "lucide-react";
 
 import { CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT } from "@/components/command/events";
+import FlameEmber from "@/components/FlameEmber";
+import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { LazyFab } from "@/components/ui/LazyFab";
 import type { FabEditTarget } from "@/components/ui/Fab";
@@ -56,7 +59,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastHelpers } from "@/components/ui/toast";
+import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
+import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
+import {
+  addDaysInTimeZone,
+  formatDateKeyInTimeZone,
+  normalizeTimeZone,
+  startOfDayInTimeZone,
+} from "@/lib/scheduler/timezone";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import type { Database } from "@/types/supabase";
 
 type CircleType = "HOUSEHOLD" | "TEAM" | "CLIENTS" | "STUDIO" | "CUSTOM";
 
@@ -110,8 +124,18 @@ type CircleHabit = {
   circle_id: string | null;
   name: string | null;
   habit_type: string | null;
+  memo_capture_config: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
   recurrence: string | null;
   recurrence_days: number[] | null;
+  recurrence_mode: string | null;
+  anchor_type: string | null;
+  anchor_value: string | number | null;
+  anchor_start_date: string | null;
+  next_due_override: string | null;
+  last_completed_at: string | null;
+  current_streak_days: number | null;
+  skill_id: string | null;
+  routine_id: string | null;
   duration_minutes: number | null;
   created_at: string;
   updated_at: string;
@@ -173,6 +197,18 @@ const CIRCLE_HABIT_SMALL_GRID_CLASS =
 const CIRCLE_CARD_BORDER_RADIUS = 16;
 const CIRCLE_DETAIL_BORDER_RADIUS = 24;
 const CIRCLE_DETAIL_SAFE_TOP_GAP = 8;
+const CIRCLE_HABIT_DOUBLE_TAP_MS = 350;
+const CIRCLE_HABIT_LONG_PRESS_MS = 300;
+const CIRCLE_HABIT_LONG_PRESS_SUPPRESS_MS = 1_000;
+const CIRCLE_HABIT_OVERDUE_VISUAL_THRESHOLD_MS = 24 * 60 * 60 * 1000 * 7;
+const CIRCLE_HABIT_MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
+const CIRCLE_HABIT_NO_DUE_MATCH_RANK = CIRCLE_HABIT_MAX_LOOKAHEAD_DAYS + 1;
+const CIRCLE_HABIT_COMPLETED_CARD_CLASS =
+  "border-emerald-800/80 !bg-[#070b0d] !bg-[radial-gradient(circle_at_16%_0%,rgba(45,212,191,0.12),transparent_34%),radial-gradient(circle_at_88%_18%,rgba(16,185,129,0.10),transparent_36%),linear-gradient(135deg,rgba(6,78,59,0.22),rgba(3,12,14,0)_42%),linear-gradient(180deg,#11161a_0%,#090d10_55%,#050708_100%)] bg-clip-padding outline outline-1 -outline-offset-4 outline-emerald-400/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(45,212,191,0.22),inset_0_-10px_18px_rgba(0,0,0,0.34),0_0_0_1px_rgba(2,44,34,0.72),0_0_18px_-11px_rgba(16,185,129,0.58),0_10px_24px_-20px_rgba(0,0,0,0.85)]";
+const CIRCLE_HABIT_COMPLETED_SHIMMER_CLASS =
+  "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(45deg,rgba(2,44,34,0.42),rgba(5,150,105,0.50),rgba(52,211,153,0.58),rgba(16,185,129,0.48),rgba(2,44,34,0.42))] bg-[length:400%_400%] p-[3px] opacity-85 animate-[steel-shimmer_3s_ease-in-out_infinite] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
+const CIRCLE_HABIT_COMPLETED_FACET_CLASS =
+  "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(135deg,rgba(2,44,34,0.95),transparent_18%)_top_left/42%_42%_no-repeat,linear-gradient(225deg,rgba(6,95,70,0.86),transparent_18%)_top_right/42%_42%_no-repeat,linear-gradient(45deg,rgba(3,67,54,0.90),transparent_18%)_bottom_left/42%_42%_no-repeat,linear-gradient(315deg,rgba(20,184,166,0.28),transparent_18%)_bottom_right/42%_42%_no-repeat] p-[2px] shadow-[inset_0_0_0_1px_rgba(5,150,105,0.36),inset_0_0_0_2px_rgba(2,44,34,0.50)] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
 
 type OwnerSkillOption = {
   id: string;
@@ -771,51 +807,215 @@ function getOfferSenderName(offer: IncomingOffer) {
   );
 }
 
-function formatLabelValue(value: string) {
-  return value
-    .trim()
-    .replace(/[_-]+/g, " ")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatHabitDuration(durationMinutes: number | null | undefined) {
-  if (
-    typeof durationMinutes !== "number" ||
-    !Number.isFinite(durationMinutes) ||
-    durationMinutes <= 0
-  ) {
-    return null;
-  }
-
-  return `${durationMinutes} min`;
-}
-
-function formatHabitRecurrence(habit: CircleHabit) {
-  const recurrence = habit.recurrence?.trim();
-
-  if (!recurrence) {
-    return null;
-  }
-
-  const normalized = recurrence.toLowerCase();
-  const interval = Array.isArray(habit.recurrence_days)
-    ? habit.recurrence_days.find((day) => Number.isInteger(day) && day > 0)
-    : null;
-
-  if (normalized === "every x days" && interval) {
-    return `Every ${interval} ${interval === 1 ? "day" : "days"}`;
-  }
-
-  return formatLabelValue(recurrence);
-}
-
 function normalizeCircleHabitType(value: string | null | undefined): string {
   const normalized = value?.trim().toUpperCase() || "HABIT";
   return normalized === "ASYNC" ? "SYNC" : normalized;
+}
+
+function parseOptionalDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getRecurrenceCode(value: string | null | undefined): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function isDailyCircleHabitRecurrence(habit: CircleHabit): boolean {
+  const recurrence = getRecurrenceCode(habit.recurrence);
+  return (
+    recurrence === "" ||
+    recurrence === "daily" ||
+    recurrence === "none" ||
+    recurrence === "everyday"
+  );
+}
+
+function getCircleHabitOverdueFallbackStart(
+  habit: CircleHabit,
+  date: Date,
+  timeZone: string,
+): Date | null {
+  if (!isDailyCircleHabitRecurrence(habit)) return null;
+
+  const lastCompletedAt = parseOptionalDate(habit.last_completed_at);
+  if (lastCompletedAt) {
+    return addDaysInTimeZone(
+      startOfDayInTimeZone(lastCompletedAt, timeZone),
+      1,
+      timeZone,
+    );
+  }
+
+  const nextDueOverride = parseOptionalDate(habit.next_due_override);
+  if (nextDueOverride && nextDueOverride.getTime() <= date.getTime()) {
+    return startOfDayInTimeZone(nextDueOverride, timeZone);
+  }
+
+  const anchorStartDate = parseOptionalDate(habit.anchor_start_date);
+  if (anchorStartDate) return startOfDayInTimeZone(anchorStartDate, timeZone);
+
+  const createdAt = parseOptionalDate(habit.created_at);
+  if (createdAt) return startOfDayInTimeZone(createdAt, timeZone);
+
+  const updatedAt = parseOptionalDate(habit.updated_at);
+  if (updatedAt) return startOfDayInTimeZone(updatedAt, timeZone);
+
+  return null;
+}
+
+function buildCircleScheduleHabit(habit: CircleHabit): HabitScheduleItem {
+  return {
+    id: habit.id,
+    name: habit.name?.trim() || "Untitled habit",
+    memoCaptureConfig: habit.memo_capture_config ?? null,
+    durationMinutes: null,
+    createdAt: habit.created_at ?? null,
+    updatedAt: habit.updated_at ?? null,
+    lastCompletedAt: habit.last_completed_at,
+    currentStreakDays: habit.current_streak_days ?? 0,
+    longestStreakDays: 0,
+    habitType: normalizeCircleHabitType(habit.habit_type),
+    windowId: null,
+    energy: null,
+    recurrence: habit.recurrence,
+    recurrenceDays: habit.recurrence_days,
+    recurrenceMode: habit.recurrence_mode,
+    anchorType: habit.anchor_type,
+    anchorValue:
+      typeof habit.anchor_value === "number"
+        ? String(habit.anchor_value)
+        : habit.anchor_value,
+    anchorStartDate: habit.anchor_start_date,
+    skillId: habit.skill_id,
+    goalId: null,
+    completionTarget: null,
+    locationContextId: null,
+    locationContextValue: null,
+    locationContextName: null,
+    daylightPreference: null,
+    windowEdgePreference: null,
+    nextDueOverride: habit.next_due_override,
+    window: null,
+  } satisfies HabitScheduleItem;
+}
+
+function getCircleHabitOverdueStart({
+  habit,
+  evaluation,
+  date,
+  timeZone,
+}: {
+  habit: CircleHabit;
+  evaluation: ReturnType<typeof evaluateHabitDueOnDate>;
+  date: Date;
+  timeZone: string;
+}): Date | null {
+  if (!evaluation.isDue) return null;
+
+  const dueStart = evaluation.dueStart ?? null;
+  const dayStart = startOfDayInTimeZone(date, timeZone);
+  const dueStartDay = dueStart
+    ? startOfDayInTimeZone(dueStart, timeZone)
+    : null;
+  const shouldUseFallback =
+    dueStartDay?.getTime() === dayStart.getTime() &&
+    (evaluation.debugTag === "DUE_DAILY" ||
+      evaluation.debugTag === "DUE_NO_ANCHOR");
+
+  if (!shouldUseFallback) return dueStart;
+
+  return getCircleHabitOverdueFallbackStart(habit, date, timeZone) ?? dueStart;
+}
+
+function computeCircleHabitDueStatus(
+  habit: CircleHabit,
+  timeZone: string,
+): { label: string; rank: number } {
+  const normalizedZone = normalizeTimeZone(timeZone);
+  const scheduleHabit = buildCircleScheduleHabit(habit);
+  const today = new Date();
+  const nextDueOverride = parseOptionalDate(habit.next_due_override);
+
+  const todayEvaluation = evaluateHabitDueOnDate({
+    habit: scheduleHabit,
+    date: today,
+    timeZone: normalizedZone,
+    nextDueOverride,
+  });
+
+  if (todayEvaluation.isDue) {
+    const overdueStart = getCircleHabitOverdueStart({
+      habit,
+      evaluation: todayEvaluation,
+      date: today,
+      timeZone: normalizedZone,
+    });
+    const overdueStartMs = overdueStart?.getTime();
+    const isOverdue =
+      typeof overdueStartMs === "number" &&
+      Number.isFinite(overdueStartMs) &&
+      today.getTime() - overdueStartMs >=
+        CIRCLE_HABIT_OVERDUE_VISUAL_THRESHOLD_MS;
+
+    return { label: isOverdue ? "OVERDUE" : "DUE", rank: 0 };
+  }
+
+  for (
+    let dayOffset = 1;
+    dayOffset <= CIRCLE_HABIT_MAX_LOOKAHEAD_DAYS;
+    dayOffset += 1
+  ) {
+    const futureDate = new Date(
+      today.getTime() + dayOffset * 24 * 60 * 60 * 1000,
+    );
+    const evaluation = evaluateHabitDueOnDate({
+      habit: scheduleHabit,
+      date: futureDate,
+      timeZone: normalizedZone,
+      nextDueOverride,
+    });
+
+    if (evaluation.isDue) {
+      return {
+        label: `${dayOffset} ${dayOffset === 1 ? "DAY" : "DAYS"}`,
+        rank: dayOffset,
+      };
+    }
+  }
+
+  return { label: "No Due Match", rank: CIRCLE_HABIT_NO_DUE_MATCH_RANK };
+}
+
+function wasCircleHabitCompletedOnDate(
+  habit: Pick<CircleHabit, "last_completed_at">,
+  dateKey: string,
+  timeZone: string,
+): boolean {
+  const lastCompletedAt = parseOptionalDate(habit.last_completed_at);
+  if (!lastCompletedAt) return false;
+
+  return formatDateKeyInTimeZone(lastCompletedAt, timeZone) === dateKey;
+}
+
+function getCircleHabitTypePriority(
+  habitType: string | null | undefined,
+): number {
+  const normalized = normalizeCircleHabitType(habitType);
+  if (normalized === "CHORE") return 0;
+  if (normalized === "SYNC") return 2;
+  if (
+    normalized === "HABIT" ||
+    normalized === "PRACTICE" ||
+    normalized === "RELAXER" ||
+    normalized === "MEMO"
+  ) {
+    return 1;
+  }
+  return 3;
 }
 
 function getCircleHabitCardTypeClass(habitType: string | null | undefined) {
@@ -825,9 +1025,7 @@ function getCircleHabitCardTypeClass(habitType: string | null | undefined) {
     return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
   }
 
-  if (normalized === "SYNC") {
-    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(113,113,122,0.22),transparent_58%),linear-gradient(135deg,rgba(16,18,22,0.98)_0%,rgba(39,43,51,0.94)_48%,rgba(70,77,89,0.68)_100%)]";
-  }
+  if (normalized === "SYNC" || normalized === "MEMO") return "habit-card--sync-gray";
 
   if (normalized === "PRACTICE") {
     return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
@@ -837,10 +1035,6 @@ function getCircleHabitCardTypeClass(habitType: string | null | undefined) {
     return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(6,95,70,0.34),transparent_60%),linear-gradient(138deg,rgba(3,24,18,0.98)_0%,rgba(5,68,51,0.94)_48%,rgba(6,95,70,0.74)_100%)]";
   }
 
-  if (normalized === "MEMO") {
-    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(126,34,206,0.26),transparent_60%),linear-gradient(138deg,rgba(24,13,38,0.98)_0%,rgba(55,29,84,0.95)_48%,rgba(88,46,128,0.72)_100%)]";
-  }
-
   return "!bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.2),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)]";
 }
 
@@ -848,10 +1042,11 @@ function getCircleHabitCardBorderClass(habitType: string | null | undefined) {
   const normalized = normalizeCircleHabitType(habitType);
 
   if (normalized === "CHORE") return "border-rose-200/45";
-  if (normalized === "SYNC") return "border-zinc-300/35";
+  if (normalized === "SYNC" || normalized === "MEMO") {
+    return "border-zinc-300/35";
+  }
   if (normalized === "PRACTICE") return "border-slate-500/50";
   if (normalized === "RELAXER") return "border-emerald-200/60";
-  if (normalized === "MEMO") return "border-purple-300/55";
 
   return "border-black/70";
 }
@@ -2876,190 +3071,818 @@ function CircleViewToggle({
   );
 }
 
-function getCircleHabitMeta(habit: CircleHabit) {
-  return [
-    habit.habit_type ? formatLabelValue(habit.habit_type) : null,
-    formatHabitDuration(habit.duration_minutes),
-    formatHabitRecurrence(habit),
-  ].filter((item): item is string => Boolean(item));
+function getCircleHabitFabOriginRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const styles = window.getComputedStyle(element);
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    borderRadius: styles.borderRadius,
+    backgroundColor: styles.backgroundColor,
+    backgroundImage: styles.backgroundImage,
+    boxShadow: styles.boxShadow,
+  };
 }
 
 function CircleHabitsPanel({
   habits,
+  currentUserId,
   isLoading,
   error,
+  ownerSkills,
   onEditHabit,
 }: {
   habits: CircleHabit[];
+  currentUserId: string | null;
   isLoading: boolean;
   error: string | null;
-  onEditHabit: (habit: CircleHabit) => void;
+  ownerSkills: OwnerSkillOption[];
+  onEditHabit: (habit: CircleHabit, element?: HTMLElement | null) => void;
 }) {
+  const supabase = getSupabaseBrowser();
+  const toast = useToastHelpers();
   const [circleHabitCardDensity, setCircleHabitCardDensity] =
     useState<CircleHabitCardDensity>("large");
+  const [completedCircleHabitIds, setCompletedCircleHabitIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [pendingCircleHabitIds, setPendingCircleHabitIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [circleHabitStateOverrides, setCircleHabitStateOverrides] = useState(
+    () =>
+      new Map<
+        string,
+        {
+          lastCompletedAt: string | null;
+          nextDueOverride: string | null;
+        }
+      >(),
+  );
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const [pressedCircleHabitId, setPressedCircleHabitId] = useState<
+    string | null
+  >(null);
+  const [memoCompletionState, setMemoCompletionState] =
+    useState<CircleHabit | null>(null);
+  const timeZone = useMemo(() => {
+    try {
+      return normalizeTimeZone(
+        Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
+      );
+    } catch (timezoneError) {
+      console.error("Failed to determine user timezone", timezoneError);
+      return "UTC";
+    }
+  }, []);
+  const [currentDateKey, setCurrentDateKey] = useState(() =>
+    formatDateKeyInTimeZone(new Date(), timeZone),
+  );
+  const lastCircleHabitTapRef = useRef<{
+    habitId: string;
+    timestamp: number;
+  } | null>(null);
+  const circleHabitLongPressTimerRef = useRef<number | null>(null);
+  const circleHabitSuppressCompletionUntilRef = useRef(0);
+  const previousCircleHabitStateRef = useRef(
+    new Map<
+      string,
+      {
+        lastCompletedAt: string | null;
+        nextDueOverride: string | null;
+      }
+    >(),
+  );
+  const pendingCircleHabitActionsRef = useRef(
+    new Map<string, { action: "complete" | "undo"; dateKey: string }>(),
+  );
+  const bypassMemoCaptureRef = useRef(false);
+  const completionStateDateKeyRef = useRef<string | null>(null);
   const isSmallCircleHabitDensity = circleHabitCardDensity === "small";
   const circleHabitGridClass = isSmallCircleHabitDensity
     ? CIRCLE_HABIT_SMALL_GRID_CLASS
     : CIRCLE_HABIT_GRID_CLASS;
   const statusLabel = isLoading ? "Loading" : error ? "Error" : "Circle";
+  const circleHabitIdsKey = useMemo(
+    () => habits.map((habit) => habit.id).join(","),
+    [habits],
+  );
+  const skillIconById = useMemo(
+    () => new Map(ownerSkills.map((skill) => [skill.id, skill.icon ?? null])),
+    [ownerSkills],
+  );
+  const isCircleHabitCompletedForCurrentDay = useCallback(
+    (habit: Pick<CircleHabit, "id" | "last_completed_at">) =>
+      completedCircleHabitIds.has(habit.id) ||
+      wasCircleHabitCompletedOnDate(habit, currentDateKey, timeZone),
+    [completedCircleHabitIds, currentDateKey, timeZone],
+  );
+  const decoratedHabits = useMemo(
+    () =>
+      habits
+        .map((habit) => {
+          const override = circleHabitStateOverrides.get(habit.id);
+          const effectiveHabit = override
+            ? {
+                ...habit,
+                last_completed_at: override.lastCompletedAt,
+                next_due_override: override.nextDueOverride,
+              }
+            : habit;
+          const dueStatus = computeCircleHabitDueStatus(
+            effectiveHabit,
+            timeZone,
+          );
+          return {
+            ...effectiveHabit,
+            name: habit.name?.trim() || "Untitled habit",
+            normalizedHabitType: normalizeCircleHabitType(habit.habit_type),
+            dueLabel: dueStatus.label,
+            dueRank: dueStatus.rank,
+          };
+        })
+        .sort((first, second) => {
+          if (first.dueRank !== second.dueRank) {
+            return first.dueRank - second.dueRank;
+          }
+
+          const typeRank =
+            getCircleHabitTypePriority(first.habit_type) -
+            getCircleHabitTypePriority(second.habit_type);
+          if (typeRank !== 0) {
+            return typeRank;
+          }
+
+          return first.name.localeCompare(second.name, undefined, {
+            sensitivity: "base",
+          });
+        }),
+    [circleHabitStateOverrides, habits, timeZone],
+  );
+
+  useEffect(() => {
+    setCircleHabitStateOverrides((current) => {
+      if (current.size === 0) return current;
+
+      const validHabitIds = new Set(habits.map((habit) => habit.id));
+      const next = new Map(
+        Array.from(current.entries()).filter(([habitId]) =>
+          validHabitIds.has(habitId),
+        ),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [habits]);
+
+  useEffect(() => {
+    const syncCurrentDateKey = () => {
+      const nextDateKey = formatDateKeyInTimeZone(new Date(), timeZone);
+      setCurrentDateKey((previousDateKey) =>
+        previousDateKey === nextDateKey ? previousDateKey : nextDateKey,
+      );
+    };
+
+    syncCurrentDateKey();
+    const intervalId = window.setInterval(syncCurrentDateKey, 60 * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [timeZone]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const habitIds = circleHabitIdsKey
+      .split(",")
+      .map((habitId) => habitId.trim())
+      .filter(Boolean);
+
+    if (!supabase || !currentUserId || habitIds.length === 0) {
+      setCompletedCircleHabitIds(new Set());
+      completionStateDateKeyRef.current = currentDateKey;
+      setCompletionError(null);
+      return;
+    }
+
+    if (completionStateDateKeyRef.current !== currentDateKey) {
+      const currentDatePendingCompletions = new Set<string>();
+      pendingCircleHabitActionsRef.current.forEach((pendingAction, id) => {
+        if (
+          habitIds.includes(id) &&
+          pendingAction.dateKey === currentDateKey &&
+          pendingAction.action === "complete"
+        ) {
+          currentDatePendingCompletions.add(id);
+        }
+      });
+      setCompletedCircleHabitIds(currentDatePendingCompletions);
+      completionStateDateKeyRef.current = currentDateKey;
+    }
+
+    const loadCompletionState = async () => {
+      try {
+        const { data, error: completionLoadError } = await supabase
+          .from("habit_completion_days")
+          .select("habit_id")
+          .eq("user_id", currentUserId)
+          .eq("completion_day", currentDateKey)
+          .in("habit_id", habitIds);
+
+        if (completionLoadError) {
+          throw completionLoadError;
+        }
+
+        if (!cancelled) {
+          const completedIds = new Set(
+            (data ?? [])
+              .map((row) =>
+                typeof row.habit_id === "string" ? row.habit_id : null,
+              )
+              .filter((habitId): habitId is string => habitId !== null),
+          );
+          pendingCircleHabitActionsRef.current.forEach((pendingAction, id) => {
+            if (
+              !habitIds.includes(id) ||
+              pendingAction.dateKey !== currentDateKey
+            ) {
+              return;
+            }
+
+            if (pendingAction.action === "complete") {
+              completedIds.add(id);
+            } else {
+              completedIds.delete(id);
+            }
+          });
+          setCompletedCircleHabitIds(completedIds);
+          completionStateDateKeyRef.current = currentDateKey;
+          setCompletionError(null);
+        }
+      } catch (completionLoadError) {
+        if (!cancelled) {
+          console.error(
+            "Error loading circle habit completion state:",
+            completionLoadError,
+          );
+          setCompletionError("Unable to load habit completion state right now.");
+        }
+      }
+    };
+
+    void loadCompletionState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [circleHabitIdsKey, currentDateKey, currentUserId, supabase]);
+
+  const handleCircleHabitCompletionToggle = useCallback(
+    async (habitId: string) => {
+      if (!currentUserId || pendingCircleHabitIds.has(habitId)) {
+        return;
+      }
+
+      const habitBeforeUpdate =
+        habits.find((habit) => habit.id === habitId) ?? null;
+      if (!habitBeforeUpdate) {
+        return;
+      }
+
+      const wasCompleted =
+        isCircleHabitCompletedForCurrentDay(habitBeforeUpdate);
+      const action = wasCompleted ? "undo" : "complete";
+      const completedAt = new Date().toISOString();
+
+      if (
+        !bypassMemoCaptureRef.current &&
+        action === "complete" &&
+        normalizeCircleHabitType(habitBeforeUpdate.habit_type) === "MEMO"
+      ) {
+        setMemoCompletionState(habitBeforeUpdate);
+        return;
+      }
+
+      setCompletionError(null);
+      setPendingCircleHabitIds((previous) => {
+        const next = new Set(previous);
+        next.add(habitId);
+        return next;
+      });
+
+      if (!wasCompleted && !previousCircleHabitStateRef.current.has(habitId)) {
+        previousCircleHabitStateRef.current.set(habitId, {
+          lastCompletedAt: habitBeforeUpdate.last_completed_at,
+          nextDueOverride: habitBeforeUpdate.next_due_override,
+        });
+      }
+      pendingCircleHabitActionsRef.current.set(habitId, {
+        action,
+        dateKey: currentDateKey,
+      });
+
+      setCompletedCircleHabitIds((previous) => {
+        const next = new Set(previous);
+        if (wasCompleted) {
+          next.delete(habitId);
+        } else {
+          next.add(habitId);
+        }
+        return next;
+      });
+      setCircleHabitStateOverrides((previous) => {
+        const next = new Map(previous);
+        if (action === "complete") {
+          next.set(habitId, {
+            lastCompletedAt: completedAt,
+            nextDueOverride: null,
+          });
+        } else {
+          const previousState = previousCircleHabitStateRef.current.get(habitId);
+          next.set(habitId, {
+            lastCompletedAt: previousState?.lastCompletedAt ?? null,
+            nextDueOverride:
+              previousState?.nextDueOverride ??
+              habitBeforeUpdate.next_due_override,
+          });
+        }
+        return next;
+      });
+
+      try {
+        const response = await fetch("/api/habits/completion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            habitId,
+            completedAt,
+            timeZone,
+            action,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        if (action === "undo") {
+          previousCircleHabitStateRef.current.delete(habitId);
+        }
+      } catch (completionUpdateError) {
+        console.error(
+          "Failed to update circle habit completion:",
+          completionUpdateError,
+        );
+        setCompletionError("Unable to update habit completion right now.");
+        toast.error(
+          "Completion failed",
+          "Unable to update habit completion right now.",
+        );
+
+        setCompletedCircleHabitIds((previous) => {
+          const next = new Set(previous);
+          if (wasCompleted) {
+            next.add(habitId);
+          } else {
+            next.delete(habitId);
+          }
+          return next;
+        });
+        if (!wasCompleted) {
+          previousCircleHabitStateRef.current.delete(habitId);
+        }
+        setCircleHabitStateOverrides((previous) => {
+          const next = new Map(previous);
+          next.set(habitId, {
+            lastCompletedAt: habitBeforeUpdate.last_completed_at,
+            nextDueOverride: habitBeforeUpdate.next_due_override,
+          });
+          return next;
+        });
+      } finally {
+        pendingCircleHabitActionsRef.current.delete(habitId);
+        setPendingCircleHabitIds((previous) => {
+          const next = new Set(previous);
+          next.delete(habitId);
+          return next;
+        });
+      }
+    },
+    [
+      currentDateKey,
+      currentUserId,
+      habits,
+      isCircleHabitCompletedForCurrentDay,
+      pendingCircleHabitIds,
+      timeZone,
+      toast,
+    ],
+  );
+
+  const handleMemoCompletionSubmitted = useCallback(async () => {
+    if (!memoCompletionState) return;
+
+    bypassMemoCaptureRef.current = true;
+    try {
+      await handleCircleHabitCompletionToggle(memoCompletionState.id);
+      setMemoCompletionState(null);
+    } finally {
+      bypassMemoCaptureRef.current = false;
+    }
+  }, [handleCircleHabitCompletionToggle, memoCompletionState]);
+
+  const handleCircleHabitTouchEnd = useCallback(
+    (event: TouchEvent<HTMLDivElement>, habitId: string) => {
+      if (Date.now() < circleHabitSuppressCompletionUntilRef.current) {
+        event.preventDefault();
+        lastCircleHabitTapRef.current = null;
+        return;
+      }
+
+      const now = Date.now();
+      const previousTap = lastCircleHabitTapRef.current;
+
+      if (
+        previousTap?.habitId === habitId &&
+        now - previousTap.timestamp <= CIRCLE_HABIT_DOUBLE_TAP_MS
+      ) {
+        event.preventDefault();
+        lastCircleHabitTapRef.current = null;
+        void handleCircleHabitCompletionToggle(habitId);
+        return;
+      }
+
+      lastCircleHabitTapRef.current = {
+        habitId,
+        timestamp: now,
+      };
+    },
+    [handleCircleHabitCompletionToggle],
+  );
+
+  const cancelCircleHabitLongPress = useCallback(
+    (event?: PointerEvent<HTMLDivElement>) => {
+      if (circleHabitLongPressTimerRef.current !== null) {
+        window.clearTimeout(circleHabitLongPressTimerRef.current);
+        circleHabitLongPressTimerRef.current = null;
+      }
+
+      setPressedCircleHabitId(null);
+
+      if (event) {
+        try {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
+        } catch {
+          // Pointer capture can already be released by the browser.
+        }
+      }
+    },
+    [],
+  );
+
+  const handleCircleHabitPointerLeave = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse") {
+        cancelCircleHabitLongPress(event);
+      }
+    },
+    [cancelCircleHabitLongPress],
+  );
+
+  const handleCircleHabitPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>, habit: CircleHabit) => {
+      if (
+        (event.pointerType === "mouse" && event.button !== 0) ||
+        pendingCircleHabitIds.has(habit.id)
+      ) {
+        return;
+      }
+
+      const element = event.currentTarget;
+      const { pointerId } = event;
+      cancelCircleHabitLongPress();
+      setPressedCircleHabitId(habit.id);
+      lastCircleHabitTapRef.current = null;
+
+      try {
+        element.setPointerCapture?.(pointerId);
+      } catch {
+        // Pointer capture is best-effort across browsers and input types.
+      }
+
+      circleHabitLongPressTimerRef.current = window.setTimeout(() => {
+        circleHabitLongPressTimerRef.current = null;
+        circleHabitSuppressCompletionUntilRef.current =
+          Date.now() + CIRCLE_HABIT_LONG_PRESS_SUPPRESS_MS;
+        lastCircleHabitTapRef.current = null;
+        setPressedCircleHabitId(null);
+        try {
+          if (element.hasPointerCapture?.(pointerId)) {
+            element.releasePointerCapture?.(pointerId);
+          }
+        } catch {
+          // Pointer capture can already be released by the browser.
+        }
+        onEditHabit(habit, element);
+      }, CIRCLE_HABIT_LONG_PRESS_MS);
+    },
+    [cancelCircleHabitLongPress, onEditHabit, pendingCircleHabitIds],
+  );
+
+  const handleCircleHabitDoubleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>, habitId: string) => {
+      if (Date.now() < circleHabitSuppressCompletionUntilRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        lastCircleHabitTapRef.current = null;
+        return;
+      }
+
+      void handleCircleHabitCompletionToggle(habitId);
+    },
+    [handleCircleHabitCompletionToggle],
+  );
+
+  useEffect(() => cancelCircleHabitLongPress, [cancelCircleHabitLongPress]);
 
   return (
-    <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
-      <CardHeader className="relative px-6 pt-3 pb-1">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-            CIRCLE HABITS
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-              {statusLabel}
-            </span>
-            <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-              {habits.length}
-            </span>
-            <button
-              type="button"
-              aria-label={
-                isSmallCircleHabitDensity ? "Use large cards" : "Use small cards"
-              }
-              aria-pressed={isSmallCircleHabitDensity}
-              onClick={() =>
-                setCircleHabitCardDensity((currentDensity) =>
-                  currentDensity === "large" ? "small" : "large"
-                )
-              }
-              className={cn(
-                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-                isSmallCircleHabitDensity
-                  ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
-                  : null
-              )}
-            >
-              {isSmallCircleHabitDensity ? (
-                <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-              ) : (
-                <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-              )}
-            </button>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="relative pt-0 pb-4">
-        {isLoading ? (
-          <div className={circleHabitGridClass}>
-            {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton
-                key={index}
-                className={cn(
-                  "aspect-[5/6] bg-white/[0.06]",
+    <>
+      <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_70%)]" />
+        <CardHeader className="relative px-6 pt-3 pb-1">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+              CIRCLE HABITS
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+                {statusLabel}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                {habits.length}
+              </span>
+              <button
+                type="button"
+                aria-label={
                   isSmallCircleHabitDensity
-                    ? "min-h-[70px] rounded-xl"
-                    : "min-h-[96px] rounded-2xl"
+                    ? "Use large cards"
+                    : "Use small cards"
+                }
+                aria-pressed={isSmallCircleHabitDensity}
+                onClick={() =>
+                  setCircleHabitCardDensity((currentDensity) =>
+                    currentDensity === "large" ? "small" : "large",
+                  )
+                }
+                className={cn(
+                  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                  isSmallCircleHabitDensity
+                    ? "text-zinc-300 shadow-[0_0_16px_-8px_rgba(255,255,255,0.72)]"
+                    : null,
                 )}
-              />
-            ))}
+              >
+                {isSmallCircleHabitDensity ? (
+                  <Grid2x2
+                    className="h-3.5 w-3.5"
+                    strokeWidth={1.8}
+                    aria-hidden
+                  />
+                ) : (
+                  <Grid3x3
+                    className="h-3.5 w-3.5"
+                    strokeWidth={1.8}
+                    aria-hidden
+                  />
+                )}
+              </button>
+            </div>
           </div>
-        ) : null}
+        </CardHeader>
 
-        {!isLoading && error ? (
-          <p className="text-xs text-white/60">{error}</p>
-        ) : null}
-
-        {!isLoading && !error && habits.length === 0 ? (
-          <p className="text-xs text-white/60">no circle habits yet</p>
-        ) : null}
-
-        {!isLoading && !error && habits.length > 0 ? (
-          <div className={circleHabitGridClass}>
-            {habits.map((habit) => {
-              const meta = getCircleHabitMeta(habit);
-              const habitName = habit.name?.trim() || "Untitled habit";
-              const primaryMeta = meta[0] ?? "Circle";
-              const secondaryMeta = meta.slice(1).join(" / ");
-
-              return (
-                <button
-                  type="button"
-                  key={habit.id}
-                  onClick={() => onEditHabit(habit)}
+        <CardContent className="relative pt-0 pb-4">
+          {isLoading ? (
+            <div className={circleHabitGridClass}>
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Skeleton
+                  key={index}
                   className={cn(
-                    "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none hover:-translate-y-px active:translate-y-px active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/55",
+                    "aspect-[5/6] bg-white/[0.06]",
                     isSmallCircleHabitDensity
-                      ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
-                      : "min-h-[96px] rounded-2xl p-3 sm:p-4",
-                    getCircleHabitCardTypeClass(habit.habit_type),
-                    getCircleHabitCardBorderClass(habit.habit_type)
+                      ? "min-h-[70px] rounded-xl"
+                      : "min-h-[96px] rounded-2xl",
                   )}
-                  aria-label={`Edit ${habitName}${
-                    meta.length > 0 ? `. ${meta.join(", ")}` : ""
-                  }`}
-                  title={`${habitName}${
-                    meta.length > 0 ? ` - ${meta.join(", ")}` : ""
-                  }`}
-                >
-                  <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
-                    <span
-                      className={cn(
-                        "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]",
-                        isSmallCircleHabitDensity
-                          ? "h-6 w-6 sm:h-7 sm:w-7"
-                          : "h-7 w-7 sm:h-8 sm:w-8"
-                      )}
-                      aria-hidden="true"
-                    >
-                      <CircleDot
-                        className={cn(
-                          isSmallCircleHabitDensity ? "h-3 w-3" : "h-3.5 w-3.5"
-                        )}
-                      />
-                    </span>
-                    <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {!isLoading && error ? (
+            <p className="text-xs text-white/60">{error}</p>
+          ) : null}
+
+          {!isLoading && completionError ? (
+            <p className="mb-2 text-xs text-white/60">{completionError}</p>
+          ) : null}
+
+          {!isLoading && !error && habits.length === 0 ? (
+            <p className="text-xs text-white/60">no circle habits yet</p>
+          ) : null}
+
+          {!isLoading && !error && habits.length > 0 ? (
+            <div className={circleHabitGridClass}>
+              {decoratedHabits.map((habit) => {
+                const habitName = habit.name;
+                const isHabitCompletedToday =
+                  isCircleHabitCompletedForCurrentDay(habit);
+                const isHabitPending = pendingCircleHabitIds.has(habit.id);
+                const streakDays = habit.current_streak_days ?? 0;
+                const showStreakBadge = streakDays >= 2;
+                const habitSkillIcon =
+                  (habit.skill_id ? skillIconById.get(habit.skill_id) : null) ||
+                  "💡";
+                const isHabitOverdue = habit.dueLabel === "OVERDUE";
+                const habitPillLabel = isHabitCompletedToday
+                  ? "COMPLETE"
+                  : habit.dueLabel;
+                const habitStateBorderClass =
+                  !isHabitCompletedToday && isHabitOverdue
+                    ? "related-habit-due-border"
+                    : null;
+                const habitPillClass = isHabitCompletedToday
+                  ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                  : isHabitOverdue
+                    ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
+                    : "border-white/10 bg-white/[0.06] text-white/65";
+
+                return (
+                  <div
+                    key={habit.id}
+                    className={cn(
+                      "goal-card group relative flex aspect-[5/6] w-full transform-gpu flex-col text-white transition duration-200 select-none",
+                      isSmallCircleHabitDensity
+                        ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+                        : "min-h-[96px] rounded-2xl p-3 sm:p-4",
+                      isHabitCompletedToday
+                        ? CIRCLE_HABIT_COMPLETED_CARD_CLASS
+                        : [
+                            getCircleHabitCardTypeClass(
+                              habit.normalizedHabitType,
+                            ),
+                            getCircleHabitCardBorderClass(
+                              habit.normalizedHabitType,
+                            ),
+                          ],
+                      isHabitPending
+                        ? "pointer-events-none cursor-default opacity-75"
+                        : "cursor-pointer",
+                      pressedCircleHabitId === habit.id
+                        ? "scale-[0.985] translate-y-px brightness-95"
+                        : null,
+                      habitStateBorderClass,
+                    )}
+                    role="button"
+                    tabIndex={isHabitPending ? -1 : 0}
+                    aria-pressed={isHabitCompletedToday}
+                    aria-disabled={isHabitPending}
+                    aria-label={`${habitName}. ${habitPillLabel}. Double tap to ${
+                      isHabitCompletedToday ? "undo" : "complete"
+                    }.`}
+                    title={`${habitName} - ${habitPillLabel}. Double tap to ${
+                      isHabitCompletedToday ? "undo" : "complete"
+                    }.`}
+                    draggable={false}
+                    style={{
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                      WebkitTouchCallout: "none",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                    onPointerDown={(event) =>
+                      handleCircleHabitPointerDown(event, habit)
+                    }
+                    onPointerUp={cancelCircleHabitLongPress}
+                    onPointerCancel={cancelCircleHabitLongPress}
+                    onPointerLeave={handleCircleHabitPointerLeave}
+                    onDoubleClick={(event) =>
+                      handleCircleHabitDoubleClick(event, habit.id)
+                    }
+                    onTouchEnd={(event) =>
+                      handleCircleHabitTouchEnd(event, habit.id)
+                    }
+                    onContextMenu={(event) => event.preventDefault()}
+                    onDragStart={(event) => event.preventDefault()}
+                  >
+                    {isHabitCompletedToday ? (
+                      <>
+                        <span
+                          className={CIRCLE_HABIT_COMPLETED_SHIMMER_CLASS}
+                          aria-hidden="true"
+                        />
+                        <span
+                          className={CIRCLE_HABIT_COMPLETED_FACET_CLASS}
+                          aria-hidden="true"
+                        />
+                      </>
+                    ) : null}
+                    {showStreakBadge ? (
+                      <span
+                        className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex flex-col items-center gap-0 text-[9px] font-semibold leading-[0.85] text-amber-100/95"
+                        aria-label={`${streakDays} habit streak`}
+                      >
+                        <FlameEmber
+                          level={
+                            streakDays >= 7
+                              ? "HIGH"
+                              : streakDays >= 4
+                                ? "MEDIUM"
+                                : "LOW"
+                          }
+                          size="sm"
+                          className="scale-90 drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                        />
+                        <span className="tracking-normal">{streakDays}x</span>
+                      </span>
+                    ) : null}
+                    <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
                       <span
                         className={cn(
-                          "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
+                          "mt-1 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
                           isSmallCircleHabitDensity
-                            ? "text-[8px] sm:text-[9px]"
-                            : "text-[9px] sm:text-[10px]"
+                            ? "h-6 w-6 text-[11px] sm:h-7 sm:w-7"
+                            : "h-7 w-7 text-xs sm:h-8 sm:w-8",
+                          isHabitCompletedToday
+                            ? "grayscale"
+                            : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]",
                         )}
-                        style={{ hyphens: "auto" }}
+                        aria-hidden="true"
                       >
-                        {habitName}
+                        {habitSkillIcon}
                       </span>
-                    </div>
-                    <div className="flex w-full min-w-0 flex-col items-center gap-1">
-                      <span
-                        className={cn(
-                          "w-fit max-w-full truncate rounded-full border border-white/10 bg-white/[0.06] font-semibold uppercase leading-none tracking-[0.06em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                          isSmallCircleHabitDensity
-                            ? "px-1.5 py-[2px] text-[7px]"
-                            : "px-2 py-[3px] text-[8px]"
-                        )}
-                      >
-                        {primaryMeta}
-                      </span>
-                      {secondaryMeta ? (
+                      <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
                         <span
                           className={cn(
-                            "line-clamp-1 max-w-full text-center font-medium leading-tight text-white/42",
+                            "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center font-semibold leading-tight text-white whitespace-normal",
                             isSmallCircleHabitDensity
-                              ? "text-[7px]"
-                              : "text-[8px]"
+                              ? "text-[8px] sm:text-[9px]"
+                              : "text-[9px] sm:text-[10px]",
+                          )}
+                          style={{ hyphens: "auto" }}
+                        >
+                          {habitName}
+                        </span>
+                      </div>
+                      <div className="flex w-full min-w-0 flex-col items-center gap-1">
+                        <span
+                          className={cn(
+                            "w-fit max-w-none whitespace-nowrap rounded-full border font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                            isSmallCircleHabitDensity
+                              ? "px-1.5 py-[2px] text-[7px]"
+                              : "px-2 py-[3px] text-[8px]",
+                            habitPillClass,
                           )}
                         >
-                          {secondaryMeta}
+                          {habitPillLabel}
                         </span>
-                      ) : null}
+                      </div>
                     </div>
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+                );
+              })}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+      <MemoCompletionDialog
+        open={Boolean(memoCompletionState)}
+        context={
+          memoCompletionState
+            ? {
+                habitId: memoCompletionState.id,
+                habitName:
+                  memoCompletionState.name?.trim() || "Untitled habit",
+                habitType: memoCompletionState.habit_type,
+                skillId: memoCompletionState.skill_id,
+                skillIcon:
+                  (memoCompletionState.skill_id
+                    ? skillIconById.get(memoCompletionState.skill_id)
+                    : null) ?? null,
+                memoCaptureConfig: memoCompletionState.memo_capture_config,
+                completionDate: new Date().toISOString(),
+              }
+            : null
+        }
+        onOpenChange={(open) => {
+          if (!open) {
+            setMemoCompletionState(null);
+          }
+        }}
+        onCompleted={handleMemoCompletionSubmitted}
+      />
+    </>
   );
 }
 
@@ -3218,6 +4041,9 @@ function CircleCommandDetail({
     null,
   );
   const [detailHabits, setDetailHabits] = useState<CircleHabit[] | null>(null);
+  const [detailViewerUserId, setDetailViewerUserId] = useState<string | null>(
+    null,
+  );
   const [ownerSkills, setOwnerSkills] = useState<OwnerSkillOption[]>([]);
   const [ownerLocationContexts, setOwnerLocationContexts] = useState<
     OwnerLocationContextOption[]
@@ -3253,6 +4079,7 @@ function CircleCommandDetail({
         setMembersError(null);
         setDetailMembers(null);
         setDetailHabits(null);
+        setDetailViewerUserId(null);
         setOwnerSkills([]);
         setOwnerLocationContexts([]);
 
@@ -3274,6 +4101,7 @@ function CircleCommandDetail({
         const data = (await response.json()) as {
           members?: CircleMember[];
           habits?: CircleHabit[];
+          viewerUserId?: string | null;
           ownerSkills?: OwnerSkillOption[];
           ownerLocationContexts?: OwnerLocationContextOption[];
         };
@@ -3289,6 +4117,7 @@ function CircleCommandDetail({
           })),
         );
         setDetailHabits(data.habits ?? []);
+        setDetailViewerUserId(data.viewerUserId ?? null);
         setOwnerSkills(data.ownerSkills ?? []);
         setOwnerLocationContexts(data.ownerLocationContexts ?? []);
       } catch (loadError) {
@@ -3301,6 +4130,7 @@ function CircleCommandDetail({
 
         setDetailMembers(null);
         setDetailHabits([]);
+        setDetailViewerUserId(null);
         setOwnerSkills([]);
         setOwnerLocationContexts([]);
         setMembersError(
@@ -3327,12 +4157,27 @@ function CircleCommandDetail({
     };
   }, [loadCircleDetail]);
 
-  const handleEditHabit = useCallback((habit: CircleHabit) => {
-    setFabEditTarget({
-      entityType: "HABIT",
-      entityId: habit.id,
-    });
-  }, []);
+  const handleEditHabit = useCallback(
+    (habit: CircleHabit, element?: HTMLElement | null) => {
+      setFabEditTarget({
+        entityType: "HABIT",
+        entityId: habit.id,
+        title: habit.name?.trim() || "Untitled habit",
+        originRect: element ? getCircleHabitFabOriginRect(element) : null,
+        habitSnapshot: {
+          name: habit.name,
+          habitType: habit.habit_type,
+          recurrence: habit.recurrence,
+          durationMinutes: habit.duration_minutes,
+          skillId: habit.skill_id,
+          routineId: habit.routine_id,
+          circleId: habit.circle_id,
+          nextDueOverride: habit.next_due_override,
+        },
+      });
+    },
+    [],
+  );
 
   const handleFabEditSaved = useCallback(
     (target: FabEditTarget) => {
@@ -3608,8 +4453,10 @@ function CircleCommandDetail({
 
             <CircleHabitsPanel
               habits={detailHabits ?? []}
+              currentUserId={detailViewerUserId}
               isLoading={isLoadingMembers && detailHabits === null}
               error={membersError}
+              ownerSkills={ownerSkills}
               onEditHabit={handleEditHabit}
             />
           </div>
