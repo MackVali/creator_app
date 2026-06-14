@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Skill } from "./useSkillsData";
@@ -23,11 +24,12 @@ interface Props {
   onColor: string;
   trackColor: string;
   fillColor: string;
+  onOpen?: (skill: Skill) => void;
 }
 
 const SKILL_OPEN_PREVIEW_PREFIX = "creator.skillOpenPreview.";
 
-export default function SkillRow({ skill, progress, onColor }: Props) {
+export default function SkillRow({ skill, progress, onColor, onOpen }: Props) {
   const router = useRouter();
   const openingTimerRef = useRef<number | null>(null);
   const [opening, setOpening] = useState(false);
@@ -96,33 +98,28 @@ export default function SkillRow({ skill, progress, onColor }: Props) {
     }, 180);
   }, [storeOpenPreview]);
 
-  return (
-    <Link
-      href={skillHref}
-      className={`rounded-2xl bg-black/15 border border-black/20 px-3 py-2.5 flex items-center gap-3 transition-[transform,filter,box-shadow,background-color,border-color] duration-150 ease-out active:scale-[.985] ${
-        opening
-          ? "scale-[.985] border-white/25 bg-white/10 brightness-110 shadow-[0_10px_30px_rgba(255,255,255,0.08)] ring-1 ring-white/15"
-          : "shadow-none"
-      }`}
-      draggable={false}
-      onPointerEnter={prefetchSkill}
-      onFocus={prefetchSkill}
-      onTouchStart={() => {
-        prefetchSkill();
-        markOpening();
-      }}
-      onPointerDown={markOpening}
-      onClick={storeOpenPreview}
-      onDragStart={(e) => e.preventDefault()}
-      style={{ color: onColor }}
-    >
-      <div className="size-9 rounded-xl bg-black/25 flex items-center justify-center text-lg">
+  const className = `w-full rounded-2xl bg-black/15 border border-black/20 px-3 py-2.5 flex items-center gap-3 text-left transition-[transform,filter,box-shadow,background-color,border-color] duration-150 ease-out active:scale-[.985] ${
+    opening
+      ? "scale-[.985] border-white/25 bg-white/10 brightness-110 shadow-[0_10px_30px_rgba(255,255,255,0.08)] ring-1 ring-white/15"
+      : "shadow-none"
+  }`;
+
+  const content = (
+    <>
+      <motion.div
+        layoutId={`skill-emoji-${skill.id}`}
+        className="size-9 rounded-xl bg-black/25 flex items-center justify-center text-lg"
+      >
         {skill.emoji || ""}
-      </div>
+      </motion.div>
       <div className="flex-1 min-w-0">
-        <div className="font-medium truncate" style={{ color: onColor }}>
+        <motion.div
+          layoutId={`skill-title-${skill.id}`}
+          className="font-medium truncate"
+          style={{ color: onColor }}
+        >
           {skill.name}
-        </div>
+        </motion.div>
         {showLevel && (
           <div className="mt-1 flex flex-wrap items-center gap-2" style={{ color: onColor }}>
             {showPrestige && badges.length > 0 && (
@@ -152,6 +149,52 @@ export default function SkillRow({ skill, progress, onColor }: Props) {
           </span>
         </div>
       )}
+    </>
+  );
+
+  if (onOpen) {
+    return (
+      <motion.button
+        type="button"
+        layoutId={`skill-card-${skill.id}`}
+        className={className}
+        draggable={false}
+        onPointerEnter={prefetchSkill}
+        onFocus={prefetchSkill}
+        onTouchStart={() => {
+          prefetchSkill();
+          markOpening();
+        }}
+        onPointerDown={markOpening}
+        onClick={() => {
+          storeOpenPreview();
+          onOpen(skill);
+        }}
+        onDragStart={(e) => e.preventDefault()}
+        style={{ color: onColor }}
+      >
+        {content}
+      </motion.button>
+    );
+  }
+
+  return (
+    <Link
+      href={skillHref}
+      className={className}
+      draggable={false}
+      onPointerEnter={prefetchSkill}
+      onFocus={prefetchSkill}
+      onTouchStart={() => {
+        prefetchSkill();
+        markOpening();
+      }}
+      onPointerDown={markOpening}
+      onClick={storeOpenPreview}
+      onDragStart={(e) => e.preventDefault()}
+      style={{ color: onColor }}
+    >
+      {content}
     </Link>
   );
 }

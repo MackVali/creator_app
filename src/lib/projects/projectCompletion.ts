@@ -152,6 +152,44 @@ async function fetchMonumentIdsForSkills(
   }
 }
 
+async function fetchProjectDurationMinutes(
+  projectId: string,
+  userId: string,
+  supabase: ReturnType<typeof getSupabaseBrowser>
+): Promise<number | null> {
+  try {
+    const { data, error } = await supabase
+      .from("projects")
+      .select("duration_min, effective_duration_min")
+      .eq("id", projectId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    const effectiveDuration = Number(
+      (data as { effective_duration_min?: number | null } | null)
+        ?.effective_duration_min ?? Number.NaN
+    );
+    if (Number.isFinite(effectiveDuration) && effectiveDuration >= 0) {
+      return Math.round(effectiveDuration);
+    }
+
+    const duration = Number(
+      (data as { duration_min?: number | null } | null)?.duration_min ??
+        Number.NaN
+    );
+    return Number.isFinite(duration) && duration >= 0
+      ? Math.round(duration)
+      : null;
+  } catch (error) {
+    console.error("Failed to resolve project completion duration", error);
+    return null;
+  }
+}
+
 function buildAwardKeyBase(
   projectId: string,
   scheduleInstanceId: string | null,
@@ -169,7 +207,9 @@ async function awardProjectXp(
   skillIds: string[],
   monumentIds: string[],
   scheduleInstanceId: string | null,
-  action: ProjectCompletionAction
+  action: ProjectCompletionAction,
+  completedAt: string | null,
+  durationMin: number | null
 ) {
   const awardKeyBase = buildAwardKeyBase(projectId, scheduleInstanceId, action);
 
@@ -177,6 +217,15 @@ async function awardProjectXp(
     kind: "project",
     amount: action === "complete" ? PROJECT_XP_AMOUNT : -PROJECT_XP_AMOUNT,
     awardKeyBase,
+    completion: {
+      action,
+      sourceType: "PROJECT",
+      sourceId: projectId,
+      completedAt: completedAt ?? new Date().toISOString(),
+      scheduleInstanceId: scheduleInstanceId ?? undefined,
+      wasScheduled: Boolean(scheduleInstanceId),
+      durationMin,
+    },
   };
 
   if (scheduleInstanceId) {
@@ -228,6 +277,11 @@ export async function recordProjectCompletion(
   const userId = authData.user.id;
   const completionTimestamp = action === "complete" ? new Date().toISOString() : null;
   const skillIds = collectUniqueSkillIds(context.projectSkillIds, context.taskSkillIds);
+  const durationMin = await fetchProjectDurationMinutes(
+    context.projectId,
+    userId,
+    supabase
+  );
   const scheduleInstanceId = await updateProjectInstanceStatus(
     context.projectId,
     action,
@@ -250,5 +304,13 @@ export async function recordProjectCompletion(
   await updateProjectCompletionFlag(context.projectId, action, supabase, completionTimestamp);
   const monumentIds = await fetchMonumentIdsForSkills(userId, skillIds, supabase);
 
-  await awardProjectXp(context.projectId, skillIds, monumentIds, scheduleInstanceId, action);
+  await awardProjectXp(
+    context.projectId,
+    skillIds,
+    monumentIds,
+    scheduleInstanceId,
+    action,
+    completionTimestamp,
+    durationMin
+  );
 }

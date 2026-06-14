@@ -2383,6 +2383,7 @@ export function MonumentGoalsList({
     async (goal: Goal) => {
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
+      const completedAt = new Date().toISOString();
 
       const applyCompletedStatus = (currentGoal: Goal): Goal =>
         currentGoal.id === goal.id
@@ -2407,6 +2408,27 @@ export function MonumentGoalsList({
         const { error } = await query;
         if (error) {
           throw error;
+        }
+
+        try {
+          const response = await fetch("/api/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceType: "GOAL",
+              sourceId: goal.id,
+              completedAt,
+              wasScheduled: false,
+            }),
+          });
+          if (!response.ok) {
+            console.error(
+              "Failed to record goal completion",
+              await response.text()
+            );
+          }
+        } catch (completionError) {
+          console.error("Failed to record goal completion", completionError);
         }
 
         setGoals((prev) => prev.map(applyCompletedStatus));

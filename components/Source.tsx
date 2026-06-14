@@ -4319,17 +4319,21 @@ export default function Source() {
 type SheetMode = "create" | "edit"
 
 const sourceListingSheetContentClassName =
-  "no-default-close w-[calc(100vw-2rem)] !max-w-[22rem] !max-h-[min(82dvh,43rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
+  "no-default-close w-full !max-w-[304px] sm:!max-w-[320px] !max-h-[calc(100dvh_-_5.75rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.06),transparent_56%),linear-gradient(145deg,rgba(4,4,6,0.995)_0%,rgba(9,9,12,0.99)_56%,rgba(16,16,20,0.96)_100%)] p-0 text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] gap-0 sm:!max-h-[calc(100dvh_-_3rem)] sm:rounded-[24px]"
+const sourceListingSheetWidthClassName =
+  "w-full max-w-[304px] sm:max-w-[320px]"
 const sourceListingSheetBodyClassName =
-  "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4"
+  "min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-contain px-0 pb-3 pt-2 [-webkit-overflow-scrolling:touch]"
 const sourceListingFormSectionClassName =
-  "space-y-3 border-t border-zinc-900/70 pt-4 first:border-t-0 first:pt-0"
+  "space-y-3 border-t border-white/[0.06] pt-3 first:border-t-0 first:pt-0"
 const sourceListingQuietSectionClassName =
-  "space-y-3 border-t border-zinc-900/70 pt-4"
+  "space-y-3 border-t border-white/[0.06] pt-3"
 const sourceListingFormControlClassName =
-  "border-zinc-800/70 bg-zinc-900/60 text-zinc-300 placeholder:text-zinc-500 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+  "border-white/10 bg-white/[0.055] text-white/[0.78] placeholder:text-white/[0.34] focus-visible:border-white/20 focus-visible:ring-white/15 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
 const sourceListingSelectTriggerClassName =
-  "h-10 rounded-xl border-zinc-800/70 bg-zinc-900/60 text-zinc-300 shadow-none"
+  "h-9 rounded-xl border-white/10 bg-white/[0.055] text-white/[0.78] shadow-none"
+const sourceListingSheetButtonClassName =
+  "h-8 min-w-0 border border-white/10 bg-zinc-800 text-xs font-medium text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-white/15 hover:bg-zinc-700 active:bg-zinc-900"
 
 type SourceListingCoverImageFieldProps = {
   title: string
@@ -4351,7 +4355,7 @@ function SourceListingCoverImageField({
   isImageUploading,
 }: SourceListingCoverImageFieldProps) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <input
         ref={imageInputRef}
         type="file"
@@ -4359,30 +4363,31 @@ function SourceListingCoverImageField({
         className="sr-only"
         onChange={onImageChange}
       />
-      <div className="mx-auto w-full max-w-[12.5rem]">
-        <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[1.1rem] border border-zinc-800/80 bg-zinc-950 shadow-sm shadow-black/30 ring-1 ring-white/[0.03]">
+      <div className={`mx-auto ${sourceListingSheetWidthClassName} px-1.5`}>
+        <div className="relative aspect-[23/18] w-full overflow-hidden rounded-t-[18px] rounded-b-none border border-white/[0.06] bg-[radial-gradient(circle_at_20%_0%,rgba(255,255,255,0.12),transparent_48%),linear-gradient(145deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))] shadow-[inset_0_-18px_34px_rgba(0,0,0,0.24)]">
           {coverImagePreview ? (
             <Image
               src={coverImagePreview}
               alt={`${title} cover`}
               fill
-              sizes="12.5rem"
+              sizes="(min-width: 640px) 320px, 304px"
               unoptimized
               className="h-full w-full object-cover object-center"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-zinc-950 px-4 text-center text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-              No image selected
+            <div className="flex h-full w-full items-center justify-center px-4 text-center text-[9px] font-semibold uppercase tracking-[0.16em] text-white/[0.35]">
+              No image
             </div>
           )}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/[0.35] via-transparent to-white/[0.04]" />
         </div>
       </div>
-      <div className="mx-auto flex w-full max-w-[12.5rem] items-center justify-center gap-2">
+      <div className={`mx-auto flex ${sourceListingSheetWidthClassName} items-center justify-center gap-2 px-2`}>
         <Button
           type="button"
           variant="secondary"
           size="sm"
-          className="min-w-0 flex-1 px-3 text-xs"
+          className="h-7 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.06] px-2 text-[11px] text-white/[0.78] hover:bg-white/[0.1]"
           onClick={() => imageInputRef.current?.click()}
           disabled={isImageUploading}
         >
@@ -4394,7 +4399,7 @@ function SourceListingCoverImageField({
             type="button"
             variant="ghost"
             size="sm"
-            className="px-3 text-xs text-zinc-300 hover:text-zinc-100"
+            className="h-7 rounded-lg px-2 text-[11px] text-white/[0.58] hover:bg-white/[0.07] hover:text-white/[0.86]"
             onClick={onImageRemove}
             disabled={isImageUploading}
           >
@@ -4404,12 +4409,118 @@ function SourceListingCoverImageField({
         )}
       </div>
       {isImageUploading && (
-        <p className="text-center text-xs text-zinc-400">Uploading image…</p>
+        <p className="text-center text-[11px] text-white/[0.5]">Uploading image…</p>
       )}
       {imageUploadError && (
         <p className="text-center text-xs text-red-400">{imageUploadError}</p>
       )}
     </div>
+  )
+}
+
+type SourceListingSheetShellProps = {
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  onSubmit(event: FormEvent<HTMLFormElement>): void
+  title: string
+  statusValue: SourceListing["status"]
+  priceLabel: string
+  updatedLabel: string | null
+  error: string | null
+  isBusy: boolean
+  submitLabel: string
+  submitBusyLabel: string
+  media: ReactNode
+  children: ReactNode
+}
+
+function SourceListingSheetShell({
+  isOpen,
+  onOpenChange,
+  onSubmit,
+  title,
+  statusValue,
+  priceLabel,
+  updatedLabel,
+  error,
+  isBusy,
+  submitLabel,
+  submitBusyLabel,
+  media,
+  children,
+}: SourceListingSheetShellProps) {
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="center"
+        className={sourceListingSheetContentClassName}
+      >
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <div className={sourceListingSheetBodyClassName}>
+            {media}
+            <div className={`mx-auto ${sourceListingSheetWidthClassName} px-2`}>
+              <div className="space-y-1.5">
+                <p className="text-[1.02rem] font-semibold leading-tight text-white sm:text-[1.08rem]">
+                  {title}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium text-white/[0.58]">
+                  <Badge
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      statusAccent[statusValue]
+                    )}
+                  >
+                    {listingStatuses[statusValue]}
+                  </Badge>
+                  <span className="text-amber-300">{priceLabel}</span>
+                  {updatedLabel && <span>{updatedLabel}</span>}
+                </div>
+                {error && (
+                  <div className="rounded-xl border border-red-500/35 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                    {error}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className={`mx-auto ${sourceListingSheetWidthClassName} space-y-3 px-2`}>
+              {children}
+            </div>
+          </div>
+
+          <SheetFooter className="shrink-0 border-t border-white/[0.06] bg-black/[0.22] px-0 pb-[calc(0.35rem+env(safe-area-inset-bottom,0px))] pt-1.5 sm:pb-2">
+            <div className={`mx-auto ${sourceListingSheetWidthClassName} px-2`}>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 min-w-0 rounded-lg text-xs text-white/[0.68] hover:bg-white/[0.07] hover:text-white"
+                  onClick={() => onOpenChange(false)}
+                  disabled={isBusy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className={sourceListingSheetButtonClassName}
+                  disabled={isBusy}
+                >
+                  {isBusy ? (
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                      <span className="truncate">{submitBusyLabel}</span>
+                    </span>
+                  ) : (
+                    <span className="truncate">{submitLabel}</span>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   )
 }
 
@@ -4491,43 +4602,31 @@ function SourceProductSheet({
   const productSubmitBusyLabel = isCreate ? "Creating product" : "Saving changes"
 
   return (
-    <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="center"
-        className={sourceListingSheetContentClassName}
-      >
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
-          <div className="shrink-0 border-b border-zinc-900/70 px-4 py-3">
-            <p className="text-lg font-semibold leading-tight text-zinc-100">{title}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-              <Badge
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[10px]",
-                  statusAccent[statusValue]
-                )}
-              >
-                {listingStatuses[statusValue]}
-              </Badge>
-              <span>{priceLabel}</span>
-              {updatedLabel && <span>{updatedLabel}</span>}
-            </div>
-            {error && (
-              <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                {error}
-              </div>
-            )}
-          </div>
-          <div className={sourceListingSheetBodyClassName}>
-            <SourceListingCoverImageField
-              title={title}
-              coverImagePreview={coverImagePreview}
-              imageInputRef={imageInputRef}
-              onImageChange={onImageChange}
-              onImageRemove={onImageRemove}
-              imageUploadError={imageUploadError}
-              isImageUploading={isImageUploading}
-            />
-            <div className="space-y-4">
+    <SourceListingSheetShell
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      onSubmit={onSubmit}
+      title={title}
+      statusValue={statusValue}
+      priceLabel={priceLabel}
+      updatedLabel={updatedLabel}
+      error={error}
+      isBusy={isBusy}
+      submitLabel={productSubmitLabel}
+      submitBusyLabel={productSubmitBusyLabel}
+      media={
+        <SourceListingCoverImageField
+          title={title}
+          coverImagePreview={coverImagePreview}
+          imageInputRef={imageInputRef}
+          onImageChange={onImageChange}
+          onImageRemove={onImageRemove}
+          imageUploadError={imageUploadError}
+          isImageUploading={isImageUploading}
+        />
+      }
+    >
+      <div className="space-y-3">
               <FieldStack label="Title" htmlFor="product-detail-title">
                 <Input
                   id="product-detail-title"
@@ -4693,35 +4792,8 @@ function SourceProductSheet({
                   </p>
                 </div>
               )}
-            </div>
-          </div>
-
-          <SheetFooter className="shrink-0 border-t border-zinc-900/70 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={isBusy}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={isBusy}>
-                {isBusy ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="size-4 animate-spin" />
-                    {productSubmitBusyLabel}
-                  </span>
-                ) : (
-                  productSubmitLabel
-                )}
-              </Button>
-            </div>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </SourceListingSheetShell>
   )
 }
 
@@ -4809,43 +4881,31 @@ function SourceServiceSheet({
   const serviceSubmitBusyLabel = isCreate ? "Creating service" : "Saving changes"
 
   return (
-    <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="center"
-        className={sourceListingSheetContentClassName}
-      >
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
-          <div className="shrink-0 border-b border-zinc-900/70 px-4 py-3">
-            <p className="text-lg font-semibold leading-tight text-zinc-100">{title}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-              <Badge
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[10px]",
-                  statusAccent[statusValue]
-                )}
-              >
-                {listingStatuses[statusValue]}
-              </Badge>
-              <span>{priceLabel}</span>
-              {updatedLabel && <span>{updatedLabel}</span>}
-            </div>
-            {error && (
-              <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                {error}
-              </div>
-            )}
-          </div>
-          <div className={sourceListingSheetBodyClassName}>
-            <SourceListingCoverImageField
-              title={title}
-              coverImagePreview={coverImagePreview}
-              imageInputRef={imageInputRef}
-              onImageChange={onImageChange}
-              onImageRemove={onImageRemove}
-              imageUploadError={imageUploadError}
-              isImageUploading={isImageUploading}
-            />
-            <div className="space-y-4">
+    <SourceListingSheetShell
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      onSubmit={onSubmit}
+      title={title}
+      statusValue={statusValue}
+      priceLabel={priceLabel}
+      updatedLabel={updatedLabel}
+      error={error}
+      isBusy={isBusy}
+      submitLabel={serviceSubmitLabel}
+      submitBusyLabel={serviceSubmitBusyLabel}
+      media={
+        <SourceListingCoverImageField
+          title={title}
+          coverImagePreview={coverImagePreview}
+          imageInputRef={imageInputRef}
+          onImageChange={onImageChange}
+          onImageRemove={onImageRemove}
+          imageUploadError={imageUploadError}
+          isImageUploading={isImageUploading}
+        />
+      }
+    >
+      <div className="space-y-3">
               <FieldStack label="Title" htmlFor="service-detail-title">
                 <Input
                   id="service-detail-title"
@@ -5053,35 +5113,8 @@ function SourceServiceSheet({
                   </FieldStack>
                 </div>
               )}
-            </div>
-          </div>
-
-          <SheetFooter className="shrink-0 border-t border-zinc-900/70 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={isBusy}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={isBusy}>
-                {isBusy ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="size-4 animate-spin" />
-                    {serviceSubmitBusyLabel}
-                  </span>
-                ) : (
-                  serviceSubmitLabel
-                )}
-              </Button>
-            </div>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </SourceListingSheetShell>
   )
 }
 

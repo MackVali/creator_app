@@ -195,6 +195,56 @@ export interface Database {
           completed_at?: string;
         };
       };
+      completion_events: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_id: string;
+          completed_at: string;
+          schedule_instance_id: string | null;
+          was_scheduled: boolean;
+          duration_min: number | null;
+          time_zone: string | null;
+          productivity_day_key: string | null;
+          completion_key: string;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          source_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_id: string;
+          completed_at: string;
+          schedule_instance_id?: string | null;
+          was_scheduled?: boolean;
+          duration_min?: number | null;
+          time_zone?: string | null;
+          productivity_day_key?: string | null;
+          completion_key: string;
+          revoked_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          source_type?: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+          source_id?: string;
+          completed_at?: string;
+          schedule_instance_id?: string | null;
+          was_scheduled?: boolean;
+          duration_min?: number | null;
+          time_zone?: string | null;
+          productivity_day_key?: string | null;
+          completion_key?: string;
+          revoked_at?: string | null;
+        };
+      };
       location_contexts: {
         Row: {
           id: string;
@@ -1304,6 +1354,7 @@ export interface Database {
           kind: Database["public"]["Enums"]["xp_kind"];
           amount: number;
           schedule_instance_id: string | null;
+          completion_event_id: string | null;
           skill_id: string | null;
           monument_id: string | null;
           award_key: string | null;
@@ -1316,6 +1367,7 @@ export interface Database {
           kind: Database["public"]["Enums"]["xp_kind"];
           amount: number;
           schedule_instance_id?: string | null;
+          completion_event_id?: string | null;
           skill_id?: string | null;
           monument_id?: string | null;
           award_key?: string | null;
@@ -1328,6 +1380,7 @@ export interface Database {
           kind?: Database["public"]["Enums"]["xp_kind"];
           amount?: number;
           schedule_instance_id?: string | null;
+          completion_event_id?: string | null;
           skill_id?: string | null;
           monument_id?: string | null;
           award_key?: string | null;

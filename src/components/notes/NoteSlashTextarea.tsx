@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Calendar,
+  Check,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -1612,10 +1613,6 @@ function NoteDatabaseEntriesView({
             const filledProperties = properties.filter(({ value }) => value);
             const visibleProperties = filledProperties.slice(0, 2);
             const hiddenPropertyCount = Math.max(0, filledProperties.length - visibleProperties.length);
-            const propertySummary =
-              filledProperties.length > 0
-                ? `${filledProperties.length} detail${filledProperties.length === 1 ? "" : "s"}`
-                : `${properties.length} field${properties.length === 1 ? "" : "s"}`;
 
             return (
               <article
@@ -1625,10 +1622,6 @@ function NoteDatabaseEntriesView({
                 <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.055),transparent_60%)]" />
                 <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/28 to-transparent" />
                 <div className="relative z-[1] flex min-h-0 flex-1 flex-col items-center justify-between gap-1.5 text-center">
-                  <span className="max-w-full rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-[2px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em] text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-2 sm:py-[3px] sm:text-[8px]">
-                    {propertySummary}
-                  </span>
-
                   <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
                     <p
                       className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[11px]"
@@ -1738,6 +1731,27 @@ function NoteDatabaseFieldEditSheet({
   onFieldTypeChange: (type: NoteDatabaseFieldType) => void;
 }) {
   useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const previousBodyOverflow = body.style.overflow;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverscrollBehavior = body.style.overscrollBehavior;
+    const previousHtmlOverscrollBehavior = html.style.overscrollBehavior;
+
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    html.style.overscrollBehavior = "none";
+
+    return () => {
+      body.style.overflow = previousBodyOverflow;
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      html.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+    };
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -1750,10 +1764,21 @@ function NoteDatabaseFieldEditSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/58 backdrop-blur-sm"
+      className="fixed inset-0 z-[80] flex items-end justify-center overflow-hidden overscroll-contain bg-black/58 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="note-database-field-edit-title"
+      onWheel={(event) => {
+        event.stopPropagation();
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+        }
+      }}
+      onTouchMove={(event) => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+        }
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -1782,7 +1807,7 @@ function NoteDatabaseFieldEditSheet({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
           <label className="block">
             <span className="sr-only">Field name</span>
             <input
@@ -1818,13 +1843,15 @@ function NoteDatabaseFieldEditSheet({
                     className={`flex min-h-12 w-full items-center gap-3 border-b border-white/[0.065] px-4 text-left outline-none transition last:border-b-0 ${
                       isLockedTitleType
                         ? "cursor-not-allowed text-white/24"
-                        : "text-white/74 hover:bg-white/[0.06] hover:text-white focus-visible:bg-white/[0.075] focus-visible:text-white"
+                        : isSelected
+                          ? "bg-white/[0.045] text-white/86 hover:bg-white/[0.065] hover:text-white focus-visible:bg-white/[0.075] focus-visible:text-white"
+                          : "text-white/74 hover:bg-white/[0.06] hover:text-white focus-visible:bg-white/[0.075] focus-visible:text-white"
                     }`}
                   >
                     <span
                       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
                         isSelected
-                          ? "border-emerald-200/24 bg-emerald-300/12 text-emerald-50"
+                          ? "border-white/[0.11] bg-black/28 text-white/78"
                           : "border-white/[0.08] bg-black/22 text-current"
                       }`}
                     >
@@ -1834,9 +1861,10 @@ function NoteDatabaseFieldEditSheet({
                       {NOTE_DATABASE_FIELD_TYPE_LABELS[option.type]}
                     </span>
                     {isSelected ? (
-                      <span className="shrink-0 rounded-full border border-emerald-200/16 bg-emerald-300/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-50/78">
-                        Current
-                      </span>
+                      <Check
+                        className="ml-auto h-4 w-4 shrink-0 text-white/42"
+                        aria-hidden="true"
+                      />
                     ) : isLockedTitleType ? (
                       <span className="shrink-0 text-[11px] font-semibold text-white/28">
                         Title stays Text

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import {
+  ensureCompletionEvent,
+  isCompletionSchemaMissing,
+} from '@/lib/completions/completionEvents'
 import { normalizeTimeZone, formatDateKeyInTimeZone } from '@/lib/scheduler/timezone'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { refreshHabitStreak } from '@/lib/streaks'
@@ -10,6 +14,8 @@ const completionRequestSchema = z.object({
   completedAt: z.string().datetime().optional(),
   timeZone: z.string().optional(),
   action: z.enum(['complete', 'undo']),
+  scheduleInstanceId: z.string().uuid().optional(),
+  durationMin: z.number().int().nonnegative().nullable().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -37,7 +43,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { habitId, completedAt, timeZone, action } = parsed.data
+    const { habitId, completedAt, timeZone, action, scheduleInstanceId, durationMin } = parsed.data
     const resolvedTimeZone = normalizeTimeZone(timeZone)
     const completedAtDate = completedAt ? new Date(completedAt) : new Date()
     if (Number.isNaN(completedAtDate.getTime())) {
@@ -71,6 +77,27 @@ export async function POST(request: NextRequest) {
       if (overrideError) {
         console.error('Failed to clear habit due override after completion', overrideError)
       }
+
+      try {
+        await ensureCompletionEvent({
+          client: supabase,
+          userId: user.id,
+          input: {
+            action: 'complete',
+            sourceType: 'HABIT',
+            sourceId: habitId,
+            completedAt: completionTimestamp,
+            scheduleInstanceId,
+            wasScheduled: Boolean(scheduleInstanceId),
+            durationMin,
+            timeZone: resolvedTimeZone,
+          },
+        })
+      } catch (completionError) {
+        if (!isCompletionSchemaMissing(completionError)) {
+          console.error('Failed to record habit completion event', completionError)
+        }
+      }
     } else {
       const { error } = await supabase
         .from('habit_completion_days')
@@ -83,6 +110,26 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         return NextResponse.json({ error: error.message ?? 'Failed to remove completion' }, { status: 500 })
+      }
+
+      try {
+        await ensureCompletionEvent({
+          client: supabase,
+          userId: user.id,
+          input: {
+            action: 'undo',
+            sourceType: 'HABIT',
+            sourceId: habitId,
+            completedAt: completionTimestamp,
+            scheduleInstanceId,
+            wasScheduled: Boolean(scheduleInstanceId),
+            timeZone: resolvedTimeZone,
+          },
+        })
+      } catch (completionError) {
+        if (!isCompletionSchemaMissing(completionError)) {
+          console.error('Failed to revoke habit completion event', completionError)
+        }
       }
     }
 

@@ -79,6 +79,7 @@ interface Props {
   isDraggingSkill?: boolean;
   onSkillDragStart?: (skill: Skill) => void;
   onSkillDragEnd?: (skill: Skill) => void;
+  onSkillOpen?: (skill: Skill) => void;
   onDragCategoryHover?: () => void;
   onDragCategoryLeave?: () => void;
 }
@@ -107,6 +108,7 @@ export default function CategoryCard({
   isDraggingSkill,
   onSkillDragStart,
   onSkillDragEnd,
+  onSkillOpen,
   onDragCategoryHover,
   onDragCategoryLeave,
 }: Props) {
@@ -698,6 +700,7 @@ export default function CategoryCard({
                   onDragStateChange={onSkillDrag}
                   onDragStart={() => onSkillDragStart?.(s)}
                   onDragEnd={() => onSkillDragEnd?.(s)}
+                  onOpen={onSkillOpen}
                 />
               ))
             )}

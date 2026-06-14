@@ -1443,9 +1443,33 @@ export default function GoalsPage() {
     updateGoal({ ...goal, active: nextActive, status });
   };
 
+  const recordGoalCompletionEvent = async (
+    goalId: string,
+    completedAt: string
+  ) => {
+    try {
+      const response = await fetch("/api/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceType: "GOAL",
+          sourceId: goalId,
+          completedAt,
+          wasScheduled: false,
+        }),
+      });
+      if (!response.ok) {
+        console.error("Failed to record goal completion", await response.text());
+      }
+    } catch (error) {
+      console.error("Failed to record goal completion", error);
+    }
+  };
+
   const handleManualGoalComplete = async (goal: Goal) => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
+    const completedAt = new Date().toISOString();
 
     let query = supabase
       .from("goals")
@@ -1460,6 +1484,8 @@ export default function GoalsPage() {
     if (error) {
       throw error;
     }
+
+    await recordGoalCompletionEvent(goal.id, completedAt);
 
     updateGoal({
       ...goal,
@@ -1715,6 +1741,12 @@ export default function GoalsPage() {
                   userId,
                   onUserResolved: setUserId,
                 });
+                if (normalizeGoalStatus(goal.status, goal.active) === "COMPLETED") {
+                  await recordGoalCompletionEvent(
+                    goal.id,
+                    new Date().toISOString()
+                  );
+                }
                 updateGoal(goal);
               } catch (err) {
                 if (err instanceof LimitReachedError) {
