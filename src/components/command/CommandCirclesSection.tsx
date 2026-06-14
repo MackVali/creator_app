@@ -172,6 +172,7 @@ const CIRCLE_HABIT_SMALL_GRID_CLASS =
   "-mx-2 grid grid-cols-4 gap-1.5 px-2 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 const CIRCLE_CARD_BORDER_RADIUS = 16;
 const CIRCLE_DETAIL_BORDER_RADIUS = 24;
+const CIRCLE_DETAIL_SAFE_TOP_GAP = 8;
 
 type OwnerSkillOption = {
   id: string;
@@ -300,19 +301,47 @@ function measureCircleRect(rect: DOMRect): MeasuredCircleRect {
   };
 }
 
+function getSafeAreaInsetTop() {
+  if (typeof document === "undefined") {
+    return 0;
+  }
+
+  const probe = document.createElement("div");
+  probe.style.position = "fixed";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  probe.style.paddingTop = "env(safe-area-inset-top, 0px)";
+  document.body.appendChild(probe);
+
+  const safeAreaInsetTop = Number.parseFloat(
+    window.getComputedStyle(probe).paddingTop,
+  );
+
+  probe.remove();
+
+  return Number.isFinite(safeAreaInsetTop) ? safeAreaInsetTop : 0;
+}
+
 function getCircleAppViewportRect(): CircleAppViewportRect {
   const viewportHeight = window.innerHeight || 0;
   const topNav = document.querySelector<HTMLElement>(".app-top-nav");
   const bottomNav = document.querySelector<HTMLElement>("[data-bottom-nav]");
+  const safeAreaInsetTop = getSafeAreaInsetTop();
 
-  let viewportTop = 0;
+  let viewportTop =
+    safeAreaInsetTop > 0
+      ? Math.min(viewportHeight, safeAreaInsetTop + CIRCLE_DETAIL_SAFE_TOP_GAP)
+      : 0;
   let viewportBottom = viewportHeight;
 
   if (topNav) {
     const topNavRect = topNav.getBoundingClientRect();
 
     if (topNavRect.bottom > 0 && topNavRect.top < viewportHeight) {
-      viewportTop = Math.max(0, Math.min(topNavRect.bottom, viewportHeight));
+      viewportTop = Math.max(
+        viewportTop,
+        Math.min(topNavRect.bottom, viewportHeight),
+      );
     }
   }
 

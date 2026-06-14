@@ -18,6 +18,8 @@ import { Grid2x2, Grid3x3 } from "lucide-react";
 import FlameEmber from "@/components/FlameEmber";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
+import { HabitEditSheet } from "@/components/schedule/HabitEditSheet";
+import type { ScheduleEditOrigin } from "@/components/schedule/ScheduleMorphDialog";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
@@ -108,6 +110,11 @@ type RelatedHabitPageItem =
     };
 type RelatedHabitCardDensity = "large" | "small";
 type RelatedHabitPageSwipeAxis = "horizontal" | "vertical" | null;
+type RelatedHabitEditState = {
+  habitId: string;
+  title: string;
+  origin: ScheduleEditOrigin | null;
+};
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const RELATED_HABIT_OVERDUE_VISUAL_THRESHOLD_MS = MS_PER_DAY * 7;
@@ -399,13 +406,13 @@ function getHabitCardBorderClass(habitType: string | null | undefined): string {
   return "border-black/70";
 }
 
-function getRelatedHabitFabOriginRect(element: HTMLElement) {
+function getRelatedHabitEditOrigin(element: HTMLElement): ScheduleEditOrigin {
   const rect = element.getBoundingClientRect();
   const styles = window.getComputedStyle(element);
 
   return {
-    top: rect.top,
-    left: rect.left,
+    x: rect.left,
+    y: rect.top,
     width: rect.width,
     height: rect.height,
     borderRadius: styles.borderRadius,
@@ -582,6 +589,8 @@ export function MonumentRelatedHabits({
   ] = useState<Set<string>>(() => new Set());
   const [memoCompletionState, setMemoCompletionState] =
     useState<HabitSummary | null>(null);
+  const [editingRelatedHabit, setEditingRelatedHabit] =
+    useState<RelatedHabitEditState | null>(null);
   const timeZone = useMemo(() => {
     try {
       return normalizeTimeZone(
@@ -1755,15 +1764,14 @@ export function MonumentRelatedHabits({
         } catch {
           // Pointer capture can already be released by the browser.
         }
-        fabCreation?.requestEntityEdit({
-          entityType: "HABIT",
-          entityId: habit.id,
+        setEditingRelatedHabit({
+          habitId: habit.id,
           title: habit.name,
-          originRect: getRelatedHabitFabOriginRect(element),
+          origin: getRelatedHabitEditOrigin(element),
         });
       }, RELATED_HABIT_LONG_PRESS_MS);
     },
-    [cancelRelatedHabitLongPress, fabCreation, pendingRelatedHabitIds]
+    [cancelRelatedHabitLongPress, pendingRelatedHabitIds]
   );
 
   const handleRelatedHabitDoubleClick = useCallback(
@@ -2343,6 +2351,22 @@ export function MonumentRelatedHabits({
         if (!open) setMemoCompletionState(null);
       }}
       onCompleted={handleMemoCompletionSubmitted}
+    />
+    <HabitEditSheet
+      open={Boolean(editingRelatedHabit)}
+      habitId={editingRelatedHabit?.habitId ?? null}
+      eventTitle={editingRelatedHabit?.title ?? null}
+      eventTypeLabel="Habit"
+      origin={editingRelatedHabit?.origin ?? null}
+      onClose={() => setEditingRelatedHabit(null)}
+      onSaved={() => {
+        setRefreshVersion((current) => current + 1);
+        setEditingRelatedHabit(null);
+      }}
+      onInstanceDeleted={() => {
+        setRefreshVersion((current) => current + 1);
+        setEditingRelatedHabit(null);
+      }}
     />
     </>
   );

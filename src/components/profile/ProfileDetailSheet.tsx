@@ -295,7 +295,7 @@ export default function ProfileDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-label={`${title} ${detailTypeLabel} details`}
-        className={`relative z-10 mx-auto flex max-h-[calc(100dvh_-_5.75rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] ${DETAIL_SHEET_WIDTH_CLASS} flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.045),transparent_56%),linear-gradient(145deg,rgba(2,2,3,0.995)_0%,rgba(5,5,7,0.99)_56%,rgba(10,10,12,0.96)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:max-h-[calc(100dvh_-_3rem)] sm:rounded-[24px]`}
+        className={`relative z-10 mx-auto flex max-h-[calc(100dvh_-_5.75rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] ${DETAIL_SHEET_WIDTH_CLASS} flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_12%_-18%,rgba(255,255,255,0.06),transparent_56%),linear-gradient(145deg,rgba(4,4,6,0.995)_0%,rgba(9,9,12,0.99)_56%,rgba(16,16,20,0.96)_100%)] text-white shadow-[0_24px_72px_-36px_rgba(0,0,0,1),0_14px_34px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.07)] sm:max-h-[calc(100dvh_-_3rem)] sm:rounded-[24px]`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-0 pb-2 pt-2 [-webkit-overflow-scrolling:touch]">
@@ -413,7 +413,7 @@ export default function ProfileDetailSheet({
           </div>
         </div>
 
-        <div className="flex-shrink-0 bg-black/[0.28] px-0 pb-[calc(0.55rem+env(safe-area-inset-bottom,0px))] pt-2 sm:pb-2.5">
+        <div className="flex-shrink-0 bg-black/[0.22] px-0 pb-[calc(0.35rem+env(safe-area-inset-bottom,0px))] pt-1.5 sm:pb-2">
           <div className={`mx-auto ${DETAIL_SHEET_WIDTH_CLASS} space-y-1.5 px-2`}>
             <div className="grid gap-2 sm:grid-cols-2">
               <Button
@@ -446,11 +446,7 @@ export default function ProfileDetailSheet({
               >
                 {ctaFeedback}
               </p>
-            ) : (
-              <p className="text-center text-[10px] text-white/[0.38]">
-                Commerce experience coming soon
-              </p>
-            )}
+            ) : null}
           </div>
         </div>
       </section>
