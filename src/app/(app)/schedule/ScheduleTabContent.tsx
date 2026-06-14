@@ -3374,6 +3374,8 @@ export default function ScheduleTabContent({
       habitId: string;
       completedAt: string;
       action: "complete" | "undo";
+      scheduleInstanceId?: string | null;
+      durationMin?: number | null;
     }) => {
       if (!userId) return;
       const completionDate = new Date(params.completedAt);
@@ -3389,6 +3391,8 @@ export default function ScheduleTabContent({
             completedAt: completedAtISO,
             timeZone: effectiveTimeZone,
             action: params.action,
+            scheduleInstanceId: params.scheduleInstanceId ?? undefined,
+            durationMin: params.durationMin ?? undefined,
           }),
         });
         if (!response.ok) {
@@ -5370,6 +5374,23 @@ export default function ScheduleTabContent({
               kind: payload.kind,
               amount: isUndo ? -payload.amount : payload.amount,
               awardKeyBase: isUndo ? `${baseAwardKey}:undo` : baseAwardKey,
+              completion: {
+                action: isUndo ? "undo" : "complete",
+                sourceType: instance.source_type,
+                sourceId: instance.source_id,
+                completedAt:
+                  nextStatus === "completed"
+                    ? (trimResult?.endUTC ?? completionIso)
+                    : instance.completed_at ?? completionIso,
+                scheduleInstanceId: instance.id,
+                wasScheduled: true,
+                durationMin:
+                  trimResult?.durationMin ??
+                  (typeof instance.duration_min === "number"
+                    ? instance.duration_min
+                    : null),
+                timeZone: stableTimeZone ?? effectiveTimeZone,
+              },
             };
             if (payload.skillIds.length > 0) {
               body.skillIds = payload.skillIds;
@@ -5411,6 +5432,12 @@ export default function ScheduleTabContent({
             habitId: instance.source_id,
             completedAt: completionTimestamp,
             action,
+            scheduleInstanceId: instance.id,
+            durationMin:
+              trimResult?.durationMin ??
+              (typeof instance.duration_min === "number"
+                ? instance.duration_min
+                : null),
           });
         }
       } catch (error) {
@@ -5442,6 +5469,7 @@ export default function ScheduleTabContent({
       setPendingInstanceStatuses,
       pendingInstanceStatuses,
       stableTimeZone,
+      effectiveTimeZone,
       canonicalTodayDateKey,
       applyStatusTargets,
     ]
@@ -5696,6 +5724,19 @@ export default function ScheduleTabContent({
             kind: "task",
             amount: isUndo ? -1 : 1,
             awardKeyBase: isUndo ? `${baseAwardKey}:undo` : baseAwardKey,
+            completion: {
+              action: isUndo ? "undo" : "complete",
+              sourceType: "TASK",
+              sourceId: taskId,
+              completedAt: new Date().toISOString(),
+              wasScheduled: false,
+              durationMin:
+                typeof task.duration_min === "number" &&
+                Number.isFinite(task.duration_min)
+                  ? Math.max(0, Math.round(task.duration_min))
+                  : null,
+              timeZone: stableTimeZone ?? effectiveTimeZone,
+            },
           };
           if (uniqueSkillIds.length > 0) {
             body.skillIds = uniqueSkillIds;
@@ -5739,7 +5780,15 @@ export default function ScheduleTabContent({
         });
       }
     },
-    [taskMap, pendingBacklogTaskIds, setTasks, skillMonumentMap, userId]
+    [
+      taskMap,
+      pendingBacklogTaskIds,
+      setTasks,
+      skillMonumentMap,
+      userId,
+      stableTimeZone,
+      effectiveTimeZone,
+    ]
   );
   function navigate(next: ScheduleView) {
     if (navLock.current) return;

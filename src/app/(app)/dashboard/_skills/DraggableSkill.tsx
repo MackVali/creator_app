@@ -16,6 +16,7 @@ interface Props {
   onDragStateChange?: (dragging: boolean) => void;
   onDragStart?: (skill: Skill) => void;
   onDragEnd?: (skill: Skill) => void;
+  onOpen?: (skill: Skill) => void;
 }
 
 export default function DraggableSkill({
@@ -28,6 +29,7 @@ export default function DraggableSkill({
   onDragStateChange,
   onDragStart,
   onDragEnd,
+  onOpen,
 }: Props) {
   return (
     <Reorder.Item
@@ -66,6 +68,7 @@ export default function DraggableSkill({
         onColor={onColor}
         trackColor={trackColor}
         fillColor={fillColor}
+        onOpen={onOpen}
       />
     </Reorder.Item>
   );

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import {
+  ensureCompletionEvent,
+  isCompletionSchemaMissing,
+} from "@/lib/completions/completionEvents";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type { Database } from "@/types/supabase";
 
@@ -23,6 +27,20 @@ const awardRequestSchema = z.object({
   monumentIds: z.array(z.string().min(1)).optional(),
   awardKeyBase: z.string().min(1).optional(),
   source: z.string().optional(),
+  completion: z
+    .object({
+      action: z.enum(["complete", "undo"]).optional(),
+      sourceType: z.enum(["GOAL", "PROJECT", "TASK", "HABIT"]).optional(),
+      sourceId: z.string().min(1).optional(),
+      completedAt: z.string().datetime().optional(),
+      scheduleInstanceId: z.string().min(1).optional(),
+      wasScheduled: z.boolean().optional(),
+      durationMin: z.number().int().nonnegative().nullable().optional(),
+      timeZone: z.string().optional(),
+      productivityDayKey: z.string().optional(),
+      completionKey: z.string().optional(),
+    })
+    .optional(),
 });
 
 const DEFAULT_AMOUNTS: Record<Exclude<XpKind, "manual">, number> = {
@@ -58,13 +76,15 @@ function buildEvents(
   userId: string,
   request: AwardRequest,
   amount: number,
-  awardKeyBase: string
+  awardKeyBase: string,
+  completionEventId: string | null
 ): AwardEvent[] {
   const base = {
     user_id: userId,
     kind: request.kind,
     amount,
     schedule_instance_id: request.scheduleInstanceId ?? null,
+    completion_event_id: completionEventId,
     skill_id: null,
     monument_id: null,
     award_key: awardKeyBase,
@@ -146,7 +166,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const events = buildEvents(user.id, awardRequest, amount, awardKeyBase);
+    let completionEventId: string | null = null;
+    const completionInput = awardRequest.completion
+      ? {
+          ...awardRequest.completion,
+          scheduleInstanceId:
+            awardRequest.completion.scheduleInstanceId ??
+            awardRequest.scheduleInstanceId,
+        }
+      : awardRequest.scheduleInstanceId
+        ? {
+            action: amount < 0 ? "undo" : "complete",
+            scheduleInstanceId: awardRequest.scheduleInstanceId,
+            wasScheduled: true,
+          }
+        : null;
+
+    if (completionInput) {
+      try {
+        const completion = await ensureCompletionEvent({
+          client: supabase,
+          userId: user.id,
+          input: completionInput,
+        });
+        completionEventId = amount > 0 ? completion.id : null;
+      } catch (error) {
+        if (!isCompletionSchemaMissing(error)) {
+          console.error("Failed to link XP to completion event", error);
+        }
+        completionEventId = null;
+      }
+    }
+
+    const events = buildEvents(
+      user.id,
+      awardRequest,
+      amount,
+      awardKeyBase,
+      completionEventId
+    );
 
     const dedupeCandidates = events.map((event) => event.award_key);
 
@@ -175,6 +233,20 @@ export async function POST(request: NextRequest) {
             .map((row) => row.award_key)
             .filter((key): key is string => typeof key === "string")
         );
+        if (completionEventId && existingKeys.size > 0) {
+          const { error: linkExistingError } = await supabase
+            .from("xp_events")
+            .update({ completion_event_id: completionEventId })
+            .eq("user_id", user.id)
+            .is("completion_event_id", null)
+            .in("award_key", Array.from(existingKeys));
+          if (linkExistingError && !isCompletionSchemaMissing(linkExistingError)) {
+            console.error(
+              "Failed to link existing XP events to completion",
+              linkExistingError
+            );
+          }
+        }
         eventsToInsert = events.filter(
           (event) => !existingKeys.has(event.award_key)
         );

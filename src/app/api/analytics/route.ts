@@ -112,6 +112,19 @@ type RawXpEventRow = {
   amount?: number | null;
   kind?: string | null;
   skill_id?: string | null;
+  completion_event_id?: string | null;
+};
+
+type RawCompletionEventRow = {
+  id: string;
+  source_type: string | null;
+  source_id: string | null;
+  completed_at: string | null;
+  schedule_instance_id: string | null;
+  was_scheduled: boolean | null;
+  duration_min: number | null;
+  productivity_day_key: string | null;
+  revoked_at: string | null;
 };
 
 type RawHabitRow = {
@@ -186,6 +199,17 @@ type NormalizedHabitCompletionRow = {
   habit_id: string;
   completion_day: string;
   completed_at: string | null;
+};
+
+type NormalizedCompletionEventRow = {
+  id: string;
+  sourceId: string;
+  sourceType: OverviewCompletionSummaryType;
+  completedAt: string;
+  scheduleInstanceId: string | null;
+  wasScheduled: boolean;
+  durationMinutes: number | null;
+  productivityDayKey: string | null;
 };
 
 type RawScheduleInstanceRow = {
@@ -318,6 +342,7 @@ type DayTypeTimeBlockLabelRow = {
 
 type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT";
 type ScheduleSummaryType = AnalyticsScheduleSummary["byType"][number]["type"];
+type OverviewCompletionSummaryType = ScheduleSummaryType | "goal";
 type TodaySummaryType = AnalyticsTodaySummary["byType"][number]["type"];
 type ScheduleInstanceStatus =
   | "scheduled"
@@ -434,6 +459,7 @@ export async function GET(request: NextRequest) {
 
   const [
     xpEventsRes,
+    completionEventsRes,
     tasksRes,
     projectsRes,
     habitsRes,
@@ -457,10 +483,20 @@ export async function GET(request: NextRequest) {
   ] = await Promise.all([
     supabase
       .from("xp_events")
-      .select("id, created_at, amount, kind, skill_id")
+      .select("id, created_at, amount, kind, skill_id, completion_event_id")
       .eq("user_id", user.id)
       .gte("created_at", combinedStartIso)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("completion_events")
+      .select(
+        "id, source_type, source_id, completed_at, schedule_instance_id, was_scheduled, duration_min, productivity_day_key, revoked_at"
+      )
+      .eq("user_id", user.id)
+      .is("revoked_at", null)
+      .gte("completed_at", previousStart.toISOString())
+      .lte("completed_at", end.toISOString())
+      .order("completed_at", { ascending: false }),
     queryWithFallback(
       () =>
         supabase
@@ -652,6 +688,10 @@ export async function GET(request: NextRequest) {
 
   const queryError =
     xpEventsRes.error ||
+    (completionEventsRes.error &&
+    !shouldFallbackToLegacySchema(completionEventsRes.error)
+      ? completionEventsRes.error
+      : null) ||
     tasksRes.error ||
     projectsRes.error ||
     habitsRes.error ||
@@ -675,6 +715,26 @@ export async function GET(request: NextRequest) {
   }
 
   const xpEvents = (xpEventsRes.data ?? []) as RawXpEventRow[];
+  const completionEvents = normalizeCompletionEventRows(
+    completionEventsRes.error == null
+      ? ((completionEventsRes.data ?? []) as RawCompletionEventRow[])
+      : []
+  );
+  let completionXpEvents: RawXpEventRow[] = [];
+  if (completionEvents.length > 0) {
+    const { data, error } = await supabase
+      .from("xp_events")
+      .select("id, created_at, amount, kind, skill_id, completion_event_id")
+      .eq("user_id", user.id)
+      .in(
+        "completion_event_id",
+        completionEvents.map((completion) => completion.id)
+      );
+    if (error && !shouldFallbackToLegacySchema(error)) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    completionXpEvents = (data ?? []) as RawXpEventRow[];
+  }
   const tasks = normalizeTaskRows(tasksRes.data ?? []);
   const projects = normalizeProjectRows(projectsRes.data ?? []);
   const habits = normalizeHabitRows(habitsRes.data ?? []);
@@ -882,6 +942,30 @@ export async function GET(request: NextRequest) {
     previousEnd,
     (event) => parseDate(event.created_at)
   );
+  const completionSplit = splitByPeriod(
+    completionEvents,
+    start,
+    end,
+    previousStart,
+    previousEnd,
+    (completion) => parseDate(completion.completedAt)
+  );
+  const currentCompletionIds = new Set(
+    completionSplit.current.map((completion) => completion.id)
+  );
+  const previousCompletionIds = new Set(
+    completionSplit.previous.map((completion) => completion.id)
+  );
+  const currentCompletionXpEvents = completionXpEvents.filter(
+    (event) =>
+      typeof event.completion_event_id === "string" &&
+      currentCompletionIds.has(event.completion_event_id)
+  );
+  const previousCompletionXpEvents = completionXpEvents.filter(
+    (event) =>
+      typeof event.completion_event_id === "string" &&
+      previousCompletionIds.has(event.completion_event_id)
+  );
   const previousOverviewObservedInstances = filterObservedInstancesForRange(
     overviewObservedInstances,
     previousStart,
@@ -894,6 +978,8 @@ export async function GET(request: NextRequest) {
   );
   const overviewDailyResult = await buildOverviewDailySeries({
     xpEvents: xpSplit.current,
+    completionEvents: completionSplit.current,
+    completionXpEvents: currentCompletionXpEvents,
     observedInstances: currentOverviewObservedInstances,
     scheduleInstances: scheduleSummaryInstances,
     start,
@@ -906,6 +992,8 @@ export async function GET(request: NextRequest) {
   const overviewDaily = overviewDailyResult.overviewDaily;
   const previousOverviewDailyResult = await buildOverviewDailySeries({
     xpEvents: xpSplit.previous,
+    completionEvents: completionSplit.previous,
+    completionXpEvents: previousCompletionXpEvents,
     observedInstances: previousOverviewObservedInstances,
     scheduleInstances: previousOverviewScheduleInstances,
     start: previousStart,
@@ -1718,6 +1806,44 @@ function normalizeHabitCompletionRows(
     );
 }
 
+function normalizeCompletionEventRows(
+  rows: RawCompletionEventRow[]
+): NormalizedCompletionEventRow[] {
+  return rows
+    .map((row) => {
+      const sourceType = normalizeCompletionSummaryType(row.source_type);
+      const completedAt = normalizeIsoString(row.completed_at);
+      if (!row.id || !sourceType || !row.source_id || !completedAt || row.revoked_at) {
+        return null;
+      }
+      const duration =
+        typeof row.duration_min === "number" &&
+        Number.isFinite(row.duration_min) &&
+        row.duration_min >= 0
+          ? Math.round(row.duration_min)
+          : null;
+      return {
+        id: row.id,
+        sourceId: row.source_id,
+        sourceType,
+        completedAt,
+        scheduleInstanceId:
+          typeof row.schedule_instance_id === "string" &&
+          row.schedule_instance_id.length > 0
+            ? row.schedule_instance_id
+            : null,
+        wasScheduled: row.was_scheduled === true,
+        durationMinutes: duration,
+        productivityDayKey:
+          typeof row.productivity_day_key === "string" &&
+          row.productivity_day_key.length > 0
+            ? row.productivity_day_key
+            : null,
+      } satisfies NormalizedCompletionEventRow;
+    })
+    .filter((row): row is NormalizedCompletionEventRow => row !== null);
+}
+
 const SCHEDULE_SOURCE_TYPE_MAP: Record<
   ScheduleSourceType,
   AnalyticsScheduleCompletion["type"]
@@ -1833,6 +1959,8 @@ function normalizeObservedScheduleAnalyticsRows(
 
 async function buildOverviewDailySeries({
   xpEvents,
+  completionEvents,
+  completionXpEvents,
   observedInstances,
   scheduleInstances,
   usableScheduleSource,
@@ -1843,6 +1971,8 @@ async function buildOverviewDailySeries({
   timeZone,
 }: {
   xpEvents: RawXpEventRow[];
+  completionEvents: NormalizedCompletionEventRow[];
+  completionXpEvents: RawXpEventRow[];
   observedInstances: NormalizedObservedScheduleAnalyticsRow[];
   scheduleInstances: NormalizedScheduleInstanceRow[];
   usableScheduleSource: OverviewUsableScheduleSource;
@@ -1872,6 +2002,7 @@ async function buildOverviewDailySeries({
         habitXp: 0,
         taskXp: 0,
         completedEvents: 0,
+        completedGoals: 0,
         completedProjects: 0,
         completedHabits: 0,
         completedTasks: 0,
@@ -1896,6 +2027,7 @@ async function buildOverviewDailySeries({
         habitXp: 0,
         taskXp: 0,
         completedEvents: 0,
+        completedGoals: 0,
         completedProjects: 0,
         completedHabits: 0,
         completedTasks: 0,
@@ -1908,7 +2040,57 @@ async function buildOverviewDailySeries({
     }
   }
 
+  const completionById = new Map(
+    completionEvents.map((completion) => [completion.id, completion])
+  );
+
+  for (const event of completionXpEvents) {
+    const completionId =
+      typeof event.completion_event_id === "string"
+        ? event.completion_event_id
+        : null;
+    if (!completionId) {
+      continue;
+    }
+    const completion = completionById.get(completionId);
+    if (!completion) {
+      continue;
+    }
+    const completedAt = parseDate(completion.completedAt);
+    if (!isWithinRange(completedAt, start, end) || !completedAt) {
+      continue;
+    }
+
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue;
+    }
+
+    const date =
+      range === "1d"
+        ? formatHourBucketKey(completedAt)
+        : completion.productivityDayKey ??
+          formatProductivityDayKey(completedAt, timeZone);
+    const point = points.get(date);
+    if (!point) {
+      continue;
+    }
+
+    point.xpGained += amount;
+
+    if (event.kind === "project") {
+      point.projectXp += amount;
+    } else if (event.kind === "habit") {
+      point.habitXp += amount;
+    } else if (event.kind === "task") {
+      point.taskXp += amount;
+    }
+  }
+
   for (const event of xpEvents) {
+    if (event.completion_event_id) {
+      continue;
+    }
     const eventDate = parseDate(event.created_at);
     if (!isWithinRange(eventDate, start, end) || !eventDate) {
       continue;
@@ -1977,6 +2159,7 @@ async function buildOverviewDailySeries({
 
   const completedDebug = addOverviewCompletedMinutes({
     points,
+    completionEvents,
     observedInstances,
     scheduleInstances,
     usableScheduleSource,
@@ -2199,6 +2382,7 @@ function normalizeComparisonValue(value: number) {
 
 function addOverviewCompletedMinutes({
   points,
+  completionEvents,
   observedInstances,
   scheduleInstances,
   usableScheduleSource,
@@ -2208,6 +2392,7 @@ function addOverviewCompletedMinutes({
   timeZone,
 }: {
   points: Map<string, AnalyticsOverviewDailyPoint>;
+  completionEvents: NormalizedCompletionEventRow[];
   observedInstances: NormalizedObservedScheduleAnalyticsRow[];
   scheduleInstances: NormalizedScheduleInstanceRow[];
   usableScheduleSource: OverviewUsableScheduleSource;
@@ -2220,7 +2405,10 @@ function addOverviewCompletedMinutes({
   const rangeEndExclusive = new Date(end.getTime() + 1);
   const includedRows: AnalyticsOverviewEfficiencyCompletedDebugRow[] = [];
   const excludedRows: AnalyticsOverviewEfficiencyCompletedDebugRow[] = [];
+  const completionScheduleInstanceIds = new Set<string>();
+  const completionSourceDayKeys = new Set<string>();
   const observedCompletedIds = new Set<string>();
+  let completionRowsIncluded = 0;
   let observedRowsIncluded = 0;
   let scheduleInstanceRowsIncluded = 0;
 
@@ -2355,8 +2543,109 @@ function addOverviewCompletedMinutes({
     return true;
   };
 
+  const applyCompletionEvent = (completion: NormalizedCompletionEventRow) => {
+    const completedAt = parseDate(completion.completedAt);
+    if (!completedAt || !isWithinRange(completedAt, start, end)) {
+      recordExcluded({
+        source: "completion_events",
+        id: completion.id,
+        status: null,
+        startUtc: completion.completedAt,
+        endUtc: completion.completedAt,
+        minutesAfterClipping: 0,
+        reason: "outside_selected_range",
+      });
+      return false;
+    }
+
+    const pointKey =
+      range === "1d"
+        ? formatHourBucketKey(completedAt)
+        : completion.productivityDayKey ??
+          formatProductivityDayKey(completedAt, timeZone);
+    const point = points.get(pointKey);
+    if (!point) {
+      recordExcluded({
+        source: "completion_events",
+        id: completion.id,
+        status: null,
+        startUtc: completion.completedAt,
+        endUtc: completion.completedAt,
+        minutesAfterClipping: 0,
+        reason: "missing_point",
+      });
+      return false;
+    }
+
+    const durationMinutes = completion.durationMinutes ?? 0;
+    point.completedMinutes += durationMinutes;
+    point.completedEvents += 1;
+    if (completion.sourceType === "project") {
+      point.completedProjects += 1;
+    } else if (completion.sourceType === "goal") {
+      point.completedGoals += 1;
+    } else if (completion.sourceType === "habit") {
+      point.completedHabits += 1;
+    } else if (completion.sourceType === "task") {
+      point.completedTasks += 1;
+    }
+
+    if (completion.scheduleInstanceId) {
+      completionScheduleInstanceIds.add(completion.scheduleInstanceId);
+    }
+    completionSourceDayKeys.add(
+      buildCompletionFallbackDedupeKey({
+        sourceType: completion.sourceType,
+        sourceId: completion.sourceId,
+        date: completedAt,
+        timeZone,
+      })
+    );
+
+    recordIncluded({
+      source: "completion_events",
+      id: completion.id,
+      status: null,
+      startUtc: completion.completedAt,
+      endUtc: completion.completedAt,
+      minutesAfterClipping: durationMinutes,
+    });
+    return true;
+  };
+
+  const completionRowsConsidered = completionEvents.length;
+  for (const completion of completionEvents) {
+    if (applyCompletionEvent(completion)) {
+      completionRowsIncluded += 1;
+    }
+  }
+
   const observedRowsConsidered = observedInstances.length;
   for (const instance of observedInstances) {
+    const observedAnchor = parseDate(instance.dayStartUtc ?? instance.startUtc);
+    if (
+      completionScheduleInstanceIds.has(instance.id) ||
+      (observedAnchor &&
+        completionSourceDayKeys.has(
+          buildCompletionFallbackDedupeKey({
+            sourceType: instance.sourceType,
+            sourceId: instance.sourceId,
+            date: observedAnchor,
+            timeZone,
+          })
+        ))
+    ) {
+      recordExcluded({
+        source: "observed",
+        id: instance.id,
+        status: instance.status,
+        startUtc: instance.startUtc,
+        endUtc: instance.endUtc,
+        minutesAfterClipping: 0,
+        reason: "covered_by_completion_event",
+      });
+      continue;
+    }
     if (instance.status !== "completed") {
       recordExcluded({
         source: "observed",
@@ -2398,10 +2687,35 @@ function addOverviewCompletedMinutes({
 
   const fallbackScheduleInstances = scheduleInstances.filter(
     (instance) =>
-      instance.status === "completed" && !observedCompletedIds.has(instance.id)
+      instance.status === "completed" &&
+      !observedCompletedIds.has(instance.id) &&
+      !completionScheduleInstanceIds.has(instance.id)
   );
   const scheduleInstanceRowsConsidered = fallbackScheduleInstances.length;
   for (const instance of fallbackScheduleInstances) {
+    const scheduleAnchor = parseDate(instance.completedAt ?? instance.startUtc);
+    if (
+      scheduleAnchor &&
+      completionSourceDayKeys.has(
+        buildCompletionFallbackDedupeKey({
+          sourceType: instance.sourceType,
+          sourceId: instance.sourceId,
+          date: scheduleAnchor,
+          timeZone,
+        })
+      )
+    ) {
+      recordExcluded({
+        source: "schedule_instances",
+        id: instance.id,
+        status: instance.status,
+        startUtc: instance.startUtc,
+        endUtc: instance.endUtc,
+        minutesAfterClipping: 0,
+        reason: "covered_by_completion_event",
+      });
+      continue;
+    }
     if (isOverviewCompletedBreak(instance, usableScheduleSource)) {
       recordExcluded({
         source: "schedule_instances",
@@ -2428,17 +2742,29 @@ function addOverviewCompletedMinutes({
     }
   }
 
-  const rowsIncluded = observedRowsIncluded + scheduleInstanceRowsIncluded;
-  const rowsConsidered = observedRowsConsidered + scheduleInstanceRowsConsidered;
+  const rowsIncluded =
+    completionRowsIncluded + observedRowsIncluded + scheduleInstanceRowsIncluded;
+  const rowsConsidered =
+    completionRowsConsidered +
+    observedRowsConsidered +
+    scheduleInstanceRowsConsidered;
   const fallbackUsed = scheduleInstanceRowsIncluded > 0;
-  const source =
-    observedRowsIncluded > 0 && fallbackUsed
-      ? "observed_plus_schedule_instances_fallback"
-      : observedRowsIncluded > 0
-        ? "observed"
-        : fallbackUsed
-          ? "schedule_instances_fallback"
-          : "none";
+  let source: OverviewDailySeriesCompletedDebug["source"] = "none";
+  if (completionRowsIncluded > 0 && observedRowsIncluded > 0 && fallbackUsed) {
+    source = "completion_events_plus_observed_plus_schedule_instances_fallback";
+  } else if (completionRowsIncluded > 0 && observedRowsIncluded > 0) {
+    source = "completion_events_plus_observed";
+  } else if (completionRowsIncluded > 0 && fallbackUsed) {
+    source = "completion_events_plus_schedule_instances_fallback";
+  } else if (completionRowsIncluded > 0) {
+    source = "completion_events";
+  } else if (observedRowsIncluded > 0 && fallbackUsed) {
+    source = "observed_plus_schedule_instances_fallback";
+  } else if (observedRowsIncluded > 0) {
+    source = "observed";
+  } else if (fallbackUsed) {
+    source = "schedule_instances_fallback";
+  }
 
   return {
     source,
@@ -2467,6 +2793,20 @@ function formatHourBucketKey(date: Date) {
       0
     )
   ).toISOString();
+}
+
+function buildCompletionFallbackDedupeKey({
+  sourceType,
+  sourceId,
+  date,
+  timeZone,
+}: {
+  sourceType: OverviewCompletionSummaryType;
+  sourceId: string;
+  date: Date;
+  timeZone: string;
+}) {
+  return `${sourceType}:${sourceId}:${formatProductivityDayKey(date, timeZone)}`;
 }
 
 function buildSkillXpTrend({
@@ -3800,6 +4140,15 @@ function normalizeScheduleSummaryType(
     return "unknown";
   }
   return SCHEDULE_SOURCE_TYPE_MAP[normalized];
+}
+
+function normalizeCompletionSummaryType(
+  value: string | null | undefined
+): OverviewCompletionSummaryType {
+  if (value?.toUpperCase() === "GOAL") {
+    return "goal";
+  }
+  return normalizeScheduleSummaryType(value);
 }
 
 function normalizeScheduleStatus(

@@ -9,7 +9,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 
@@ -28,6 +30,7 @@ import { backfillSkillStarterNote, getSkillStarterNote } from "@/lib/skillStarte
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
+import { SkillDetail } from "@/app/(app)/skills/[id]/SkillDetail";
 import type { SkillRow } from "@/lib/types/skill";
 
 const FALLBACK_COLOR = "#6366f1";
@@ -562,8 +565,13 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const activeIndexRef = useRef(0);
   const scrollFrame = useRef<number | null>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const previousBodyOverflow = useRef<string | null>(null);
+  const activeSkillScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [categories, setCategories] = useState(fetchedCategories);
+  const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [detailOverlayHeight, setDetailOverlayHeight] = useState<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [skillDragging, setSkillDragging] = useState(false);
   const [catOverrides, setCatOverrides] = useState<
@@ -616,6 +624,79 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.icon ?? category.icon ?? null;
+
+  const selectedSkill = useMemo(() => {
+    if (!activeSkillId) {
+      return null;
+    }
+
+    for (const category of categories) {
+      const match = (skillsByCategory[category.id] ?? []).find(
+        (skill) => skill.id === activeSkillId
+      );
+      if (match) {
+        return match;
+      }
+    }
+
+    return null;
+  }, [activeSkillId, categories, skillsByCategory]);
+
+  const closeSkillDetail = useCallback(() => {
+    setActiveSkillId(null);
+  }, []);
+
+  const detailOverlayStyle = {
+    "--monument-detail-overlay-height": detailOverlayHeight
+      ? `${detailOverlayHeight}px`
+      : "100dvh",
+  } as CSSProperties;
+
+  useEffect(() => {
+    if (!activeSkillId) {
+      previousFocus.current?.focus();
+      return;
+    }
+
+    previousFocus.current = document.activeElement as HTMLElement;
+    previousBodyOverflow.current = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.classList.add("monument-detail-open");
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow.current ?? "";
+      previousBodyOverflow.current = null;
+      document.body.classList.remove("monument-detail-open");
+    };
+  }, [activeSkillId]);
+
+  useEffect(() => {
+    if (!activeSkillId) {
+      setDetailOverlayHeight(null);
+      return;
+    }
+
+    const updateStableOverlayHeight = () => {
+      const nextHeight = Math.max(
+        window.innerHeight || 0,
+        window.visualViewport?.height ?? 0
+      );
+      if (nextHeight > 0) {
+        setDetailOverlayHeight(Math.round(nextHeight));
+      }
+    };
+
+    updateStableOverlayHeight();
+    window.addEventListener("resize", updateStableOverlayHeight);
+    window.addEventListener("orientationchange", updateStableOverlayHeight);
+    window.visualViewport?.addEventListener("resize", updateStableOverlayHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateStableOverlayHeight);
+      window.removeEventListener("orientationchange", updateStableOverlayHeight);
+      window.visualViewport?.removeEventListener("resize", updateStableOverlayHeight);
+    };
+  }, [activeSkillId]);
 
   useEffect(() => {
     activeCommunitySkillCategoryIndexRef.current = activeCommunitySkillCategoryIndex;
@@ -1912,6 +1993,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                     isDraggingSkill={Boolean(draggingSkill)}
                     onSkillDragStart={(skill) => handleSkillDragStart(skill, category.id)}
                     onSkillDragEnd={handleSkillDragEnd}
+                    onSkillOpen={(skill) => setActiveSkillId(skill.id)}
                     onDragCategoryHover={() => handleCategoryDragEnter(category.id)}
                     onDragCategoryLeave={() => handleCategoryDragLeave(category.id)}
                     menuOpen={openMenuFor === category.id}
@@ -2608,6 +2690,42 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
           )}
         </div>
       </div>
+      <AnimatePresence>
+        {selectedSkill && (
+          <motion.div
+            key="skill-detail-overlay"
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+          >
+            <motion.div
+              ref={activeSkillScrollRef}
+              layoutId={`skill-card-${selectedSkill.id}`}
+              role="dialog"
+              aria-modal="true"
+              className="app-card relative h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl bg-black shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              style={detailOverlayStyle}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{
+                type: "spring",
+                stiffness: 500,
+                damping: 40,
+                mass: 0.9,
+              }}
+            >
+              <SkillDetail
+                skillId={selectedSkill.id}
+                onClose={closeSkillDetail}
+                scrollContainerRef={activeSkillScrollRef}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 });

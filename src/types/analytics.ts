@@ -146,6 +146,7 @@ export type AnalyticsOverviewDailyPoint = {
   habitXp: number;
   taskXp: number;
   completedEvents: number;
+  completedGoals: number;
   completedProjects: number;
   completedHabits: number;
   completedTasks: number;
@@ -207,7 +208,7 @@ export type AnalyticsOverviewEfficiencyDebugDay = {
 };
 
 export type AnalyticsOverviewEfficiencyCompletedDebugRow = {
-  source: "observed" | "schedule_instances";
+  source: "completion_events" | "observed" | "schedule_instances";
   id: string;
   status: string | null;
   startUtc: string | null;
@@ -218,6 +219,10 @@ export type AnalyticsOverviewEfficiencyCompletedDebugRow = {
 
 export type AnalyticsOverviewEfficiencyCompletedDebug = {
   source:
+    | "completion_events"
+    | "completion_events_plus_observed"
+    | "completion_events_plus_schedule_instances_fallback"
+    | "completion_events_plus_observed_plus_schedule_instances_fallback"
     | "observed"
     | "schedule_instances_fallback"
     | "observed_plus_schedule_instances_fallback"

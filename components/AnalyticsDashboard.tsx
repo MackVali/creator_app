@@ -1825,6 +1825,10 @@ function OverviewDiagnosticsSection({
     (sum, point) => sum + point.completedProjects,
     0
   );
+  const completedGoals = points.reduce(
+    (sum, point) => sum + (point.completedGoals ?? 0),
+    0
+  );
   const completedHabits = points.reduce(
     (sum, point) => sum + point.completedHabits,
     0
@@ -1914,8 +1918,8 @@ function OverviewDiagnosticsSection({
           comparison={selectedPoint ? undefined : comparison?.completed}
           sublabel={
             selectedPoint
-              ? `${formatCompactNumber(selectedPoint.completedProjects)}P · ${formatCompactNumber(selectedPoint.completedTasks)}T · ${formatCompactNumber(selectedPoint.completedHabits)}H`
-              : `${formatCompactNumber(completedProjects)}P · ${formatCompactNumber(completedTasks)}T · ${formatCompactNumber(completedHabits)}H`
+              ? `${formatCompactNumber(selectedPoint.completedGoals ?? 0)}G · ${formatCompactNumber(selectedPoint.completedProjects)}P · ${formatCompactNumber(selectedPoint.completedTasks)}T · ${formatCompactNumber(selectedPoint.completedHabits)}H`
+              : `${formatCompactNumber(completedGoals)}G · ${formatCompactNumber(completedProjects)}P · ${formatCompactNumber(completedTasks)}T · ${formatCompactNumber(completedHabits)}H`
           }
           tone="green"
         />

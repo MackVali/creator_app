@@ -301,6 +301,22 @@ function measureCircleRect(rect: DOMRect): MeasuredCircleRect {
   };
 }
 
+function resetCircleDetailAppScroll() {
+  window.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "auto",
+  });
+
+  document.scrollingElement?.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "auto",
+  });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}
+
 function getSafeAreaInsetTop() {
   if (typeof document === "undefined") {
     return 0;
@@ -3697,6 +3713,7 @@ export const CommandCirclesSection = forwardRef<
   const previousBodyOverflow = useRef<string | null>(null);
   const previousHtmlOverscroll = useRef<string | null>(null);
   const previousBodyOverscroll = useRef<string | null>(null);
+  const openScrollFrameRef = useRef<number | null>(null);
 
   const activeCircle =
     circles.find((circle) => circle.id === activeCircleId) ?? null;
@@ -3829,6 +3846,8 @@ export const CommandCirclesSection = forwardRef<
         return;
       }
 
+      resetCircleDetailAppScroll();
+
       const appViewportRect = getCircleAppViewportRect();
       const targetRect = getCircleDetailPopupRect(appViewportRect);
 
@@ -3846,6 +3865,32 @@ export const CommandCirclesSection = forwardRef<
         closeRect: null,
       });
       setActiveCircleId(circleId);
+
+      if (openScrollFrameRef.current !== null) {
+        cancelAnimationFrame(openScrollFrameRef.current);
+      }
+
+      openScrollFrameRef.current = requestAnimationFrame(() => {
+        openScrollFrameRef.current = null;
+        resetCircleDetailAppScroll();
+        setCircleTransition((currentTransition) => {
+          if (
+            !currentTransition ||
+            currentTransition.circleId !== circleId ||
+            currentTransition.phase === "closing"
+          ) {
+            return currentTransition;
+          }
+
+          const nextAppViewportRect = getCircleAppViewportRect();
+
+          return {
+            ...currentTransition,
+            appViewportRect: nextAppViewportRect,
+            targetRect: getCircleDetailPopupRect(nextAppViewportRect),
+          };
+        });
+      });
     },
     [],
   );
@@ -4027,6 +4072,15 @@ export const CommandCirclesSection = forwardRef<
     },
     [respondingOfferId, toast],
   );
+
+  useEffect(() => {
+    return () => {
+      if (openScrollFrameRef.current !== null) {
+        cancelAnimationFrame(openScrollFrameRef.current);
+        openScrollFrameRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
