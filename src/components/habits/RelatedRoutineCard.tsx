@@ -131,7 +131,7 @@ const routineDrawerNewHabitMotion = {
     height: "auto",
     y: 0,
     transition: {
-      duration: 0.42,
+      duration: 0.56,
       ease: [0.16, 1, 0.3, 1],
     },
   },

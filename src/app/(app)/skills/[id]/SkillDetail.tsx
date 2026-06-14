@@ -528,19 +528,6 @@ function getRelatedHabitFabOriginRect(element: HTMLElement) {
   };
 }
 
-function describeLevel(level: number): string {
-  if (level >= 10) {
-    return "Mastery in motion.";
-  }
-  if (level >= 6) {
-    return "Building serious momentum.";
-  }
-  if (level >= 3) {
-    return "Solidifying the fundamentals.";
-  }
-  return "Laying the groundwork for growth.";
-}
-
 interface SkillDetailProps {
   skillId: string;
   onClose?: () => void;

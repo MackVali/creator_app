@@ -432,7 +432,7 @@ export default function MonumentNotePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 pb-[calc(10rem_+_env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] text-white sm:pb-[calc(9rem_+_env(safe-area-inset-bottom,0px))] sm:pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
+    <main className="min-h-screen bg-[#020202] px-4 pb-16 pt-4 text-white sm:pb-14 sm:pt-5">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 sm:gap-3">
         <section className="bg-transparent p-0">
           {isLoading ? (

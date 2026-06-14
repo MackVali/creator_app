@@ -7,8 +7,6 @@ import AppMain from "@/components/AppMain";
 import BottomNav from "@/components/BottomNav";
 import TopNav from "@/components/TopNav";
 
-const individualNoteRoutePattern =
-  /^\/(?:monuments|skills)\/[^/]+\/notes\/[^/]+\/?$/;
 const profileManagementRouteSegments = new Set(["edit", "linked-accounts"]);
 
 function isProfileViewRoute(pathname: string) {
@@ -31,9 +29,7 @@ export default function AppShellNavVisibility({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const hideNav =
-    individualNoteRoutePattern.test(pathname) ||
-    isIndividualInboxThreadRoute(pathname);
+  const hideNav = isIndividualInboxThreadRoute(pathname);
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
 
   return (

@@ -37,5 +37,5 @@ export default function ProfilePage() {
   }, [user, router]);
 
   // Keep redirect loading state visually consistent with profile loading UI.
-  return <ProfileSkeleton />;
+  return <ProfileSkeleton actionLayout="owner" />;
 }

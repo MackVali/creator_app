@@ -267,8 +267,11 @@ function GoalCardImpl({
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const isDrawerCompactDefault = drawerCompact && variant === "default";
+  const shouldSuppressProjectRevealParentMotion =
+    newProjectRevealId !== null && open;
   const shouldSuppressDrawerOpenAnimation =
-    suppressDrawerOpenAnimation && open;
+    (suppressDrawerOpenAnimation || shouldSuppressProjectRevealParentMotion) &&
+    open;
   const usesCampaignDrawerRowVisual =
     campaignDrawerRowVisual && isDrawerCompactDefault;
   const defaultCardRef = useRef<HTMLDivElement | null>(null);
@@ -805,7 +808,7 @@ function GoalCardImpl({
       };
   const dropdownContentMotionProps: HTMLMotionProps<"div"> = isDrawerCompactDefault
     ? drawerCompactMeasuredContentMotionProps
-    : prefersReducedMotion
+    : shouldSuppressProjectRevealParentMotion || prefersReducedMotion
       ? {}
       : {
           variants: detailContentVariant,
@@ -1071,7 +1074,7 @@ function GoalCardImpl({
     <>
       <motion.div
         ref={defaultCardRef}
-        layout={!prefersReducedMotion}
+        layout={!prefersReducedMotion && !shouldSuppressProjectRevealParentMotion}
         transition={
           prefersReducedMotion
             ? { duration: 0.12 }
@@ -1321,7 +1324,9 @@ function GoalCardImpl({
                     : "origin-top overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm"
                 }
                 layout={
-                  !isDrawerCompactDefault && !prefersReducedMotion
+                  !isDrawerCompactDefault &&
+                  !prefersReducedMotion &&
+                  !shouldSuppressProjectRevealParentMotion
                     ? "size"
                     : undefined
                 }

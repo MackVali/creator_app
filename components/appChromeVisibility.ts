@@ -30,7 +30,6 @@ export function isCircleDetailRoute(pathname: string | null | undefined) {
 export function shouldHideBottomChrome(pathname: string | null | undefined) {
   return (
     isScheduleRoute(pathname) ||
-    isIndividualNoteRoute(pathname) ||
     isIndividualInboxThreadRoute(pathname) ||
     FOCUSED_EDITOR_ROUTES.has(pathname ?? "")
   );
@@ -38,7 +37,6 @@ export function shouldHideBottomChrome(pathname: string | null | undefined) {
 
 export function shouldUseFocusedEditorSpacing(pathname: string | null | undefined) {
   return (
-    isIndividualNoteRoute(pathname) ||
     isIndividualInboxThreadRoute(pathname) ||
     FOCUSED_EDITOR_ROUTES.has(pathname ?? "")
   );

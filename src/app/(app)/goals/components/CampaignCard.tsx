@@ -186,7 +186,7 @@ const completedGoalsRevealMotion = {
 } as const;
 
 const newCampaignGoalRevealTransition = {
-  duration: 0.42,
+  duration: 0.56,
   ease: [0.16, 1, 0.3, 1],
 } as const;
 
@@ -354,6 +354,8 @@ function DraggableGoalCard({
     ? campaignDrawerOpenedGoalMotion
     : openedGoalMotion;
   const isNewGoalReveal = newGoalRevealId === goal.id;
+  const shouldSuppressProjectRevealParentMotion =
+    newProjectRevealId !== null && isOpen === true;
   const [shouldRenderOpenGoal, setShouldRenderOpenGoal] = useState(Boolean(isOpen));
   const [controlledGoalOpen, setControlledGoalOpen] = useState(Boolean(isOpen));
   const closeTimerRef = useRef<number | null>(null);
@@ -588,11 +590,37 @@ function DraggableGoalCard({
           : "rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 sm:rounded-xl"
       }`}
       {...shellMotionProps}
-      layout={prefersReducedMotion ? undefined : "size"}
-      variants={prefersReducedMotion ? undefined : collapsedGoalMotion}
-      initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-      animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-      exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+      layout={
+        prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+          ? undefined
+          : "size"
+      }
+      variants={
+        prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+          ? undefined
+          : collapsedGoalMotion
+      }
+      initial={
+        shouldSuppressProjectRevealParentMotion
+          ? false
+          : prefersReducedMotion
+            ? { opacity: 0 }
+            : "hidden"
+      }
+      animate={
+        shouldSuppressProjectRevealParentMotion
+          ? undefined
+          : prefersReducedMotion
+            ? { opacity: 1 }
+            : "visible"
+      }
+      exit={
+        shouldSuppressProjectRevealParentMotion
+          ? undefined
+          : prefersReducedMotion
+            ? { opacity: 0 }
+            : "exit"
+      }
       transition={
         prefersReducedMotion
           ? { duration: 0.12 }
@@ -656,7 +684,11 @@ function DraggableGoalCard({
       {/* Goal Card with inline expansion */}
       <motion.div
         className="overflow-hidden"
-        layout={prefersReducedMotion ? undefined : "size"}
+        layout={
+          prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+            ? undefined
+            : "size"
+        }
         initial={
           isNewGoalReveal
             ? prefersReducedMotion
@@ -690,7 +722,11 @@ function DraggableGoalCard({
         {campaignDrawerRow ? (
           <motion.div
             className={campaignGoalContainerClass}
-            layout={prefersReducedMotion ? undefined : "size"}
+            layout={
+              prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+                ? undefined
+                : "size"
+            }
             transition={
               prefersReducedMotion
                 ? { duration: 0.12 }
@@ -702,13 +738,37 @@ function DraggableGoalCard({
               {isOpen ? (
                 <motion.div
                   className="overflow-hidden border-t border-white/8"
-                  layout={prefersReducedMotion ? undefined : "size"}
-                  variants={
-                    prefersReducedMotion ? undefined : openedGoalVariants
+                  layout={
+                    prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+                      ? undefined
+                      : "size"
                   }
-                  initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-                  animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-                  exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                  variants={
+                    prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+                      ? undefined
+                      : openedGoalVariants
+                  }
+                  initial={
+                    shouldSuppressProjectRevealParentMotion
+                      ? false
+                      : prefersReducedMotion
+                        ? { opacity: 0 }
+                        : "hidden"
+                  }
+                  animate={
+                    shouldSuppressProjectRevealParentMotion
+                      ? undefined
+                      : prefersReducedMotion
+                        ? { opacity: 1 }
+                        : "visible"
+                  }
+                  exit={
+                    shouldSuppressProjectRevealParentMotion
+                      ? undefined
+                      : prefersReducedMotion
+                        ? { opacity: 0 }
+                        : "exit"
+                  }
                   transition={
                     prefersReducedMotion
                       ? { duration: 0.12 }
@@ -782,11 +842,37 @@ function DraggableGoalCard({
             {shouldRenderOpenGoal ? (
               <motion.div
                 className="overflow-hidden"
-                layout={prefersReducedMotion ? undefined : "size"}
-                variants={prefersReducedMotion ? undefined : openedGoalVariants}
-                initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-                animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-                exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                layout={
+                  prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+                    ? undefined
+                    : "size"
+                }
+                variants={
+                  prefersReducedMotion || shouldSuppressProjectRevealParentMotion
+                    ? undefined
+                    : openedGoalVariants
+                }
+                initial={
+                  shouldSuppressProjectRevealParentMotion
+                    ? false
+                    : prefersReducedMotion
+                      ? { opacity: 0 }
+                      : "hidden"
+                }
+                animate={
+                  shouldSuppressProjectRevealParentMotion
+                    ? undefined
+                    : prefersReducedMotion
+                      ? { opacity: 1 }
+                      : "visible"
+                }
+                exit={
+                  shouldSuppressProjectRevealParentMotion
+                    ? undefined
+                    : prefersReducedMotion
+                      ? { opacity: 0 }
+                      : "exit"
+                }
                 transition={
                   prefersReducedMotion
                     ? { duration: 0.12 }
@@ -825,7 +911,7 @@ function DraggableGoalCard({
                     onNewProjectRevealComplete?.(goal.id, projectId)
                   }
                   suppressDrawerOpenAnimation={
-                    newProjectRevealId !== null && isOpen === true
+                    shouldSuppressProjectRevealParentMotion
                   }
                   monumentContext={monumentContext}
                   onManualComplete={onGoalManualComplete}
