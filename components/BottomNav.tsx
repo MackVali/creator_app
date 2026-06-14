@@ -12,6 +12,7 @@ import {
 } from "@/components/appChromeVisibility";
 import { CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT } from "@/components/command/events";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
+import { CLOSE_ACTIVE_SKILL_DETAIL_EVENT } from "@/components/skills/events";
 import {
   MAIN_TAB_ROUTES,
   isPersistentMainTabRoute,
@@ -59,6 +60,13 @@ function isCommandCircleDetailOverlayOpen() {
   );
 }
 
+function isSkillDetailOverlayOpen() {
+  return (
+    typeof document !== "undefined" &&
+    document.body.classList.contains("skill-detail-open")
+  );
+}
+
 export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -103,10 +111,22 @@ export default function BottomNav() {
                 href === "/dashboard" &&
                 (isCircleDetail ||
                   isMonumentDetailOverlayOpen() ||
+                  isSkillDetailOverlayOpen() ||
                   isCommandCircleDetailOverlayOpen())
               }
               onNavigate={(href) => {
                 const targetHref = href as MainTabRouteHref;
+                const skillDetailOverlayOpen = isSkillDetailOverlayOpen();
+
+                if (skillDetailOverlayOpen) {
+                  window.dispatchEvent(
+                    new CustomEvent(CLOSE_ACTIVE_SKILL_DETAIL_EVENT)
+                  );
+
+                  if (targetHref === "/dashboard") {
+                    return;
+                  }
+                }
 
                 if (
                   targetHref === "/dashboard" &&

@@ -1005,6 +1005,18 @@ function getDatabaseDisplayTitle(title: string | null | undefined) {
     : trimmedTitle;
 }
 
+function getDatabaseFormTitle(title: string | null | undefined) {
+  const trimmedTitle = title?.trim() ?? "";
+  const databaseTitle =
+    trimmedTitle.length === 0 ||
+    trimmedTitle === NOTE_DATABASE_TITLE_FALLBACK ||
+    trimmedTitle === NOTE_DATABASE_DISPLAY_TITLE_FALLBACK
+      ? "Database"
+      : trimmedTitle;
+
+  return `${databaseTitle} form`;
+}
+
 function normalizeDatabaseFieldType(type: unknown): NoteDatabaseFieldType {
   if (typeof type !== "string") return "text";
   const normalizedType = NOTE_DATABASE_FIELD_TYPES.find(
@@ -1631,7 +1643,7 @@ function NoteDatabaseEntriesView({
                     </p>
                   </div>
 
-                  <div className="flex w-full min-w-0 flex-wrap items-center justify-center gap-1">
+                  <div className="flex w-full min-w-0 flex-col items-end justify-end gap-1">
                     {visibleProperties.length > 0 ? (
                       visibleProperties.map(({ field, value }) => (
                         <span
@@ -1785,8 +1797,8 @@ function NoteDatabaseFieldEditSheet({
         }
       }}
     >
-      <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] min-h-[66vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[30px] border border-white/[0.1] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:mb-4 sm:min-h-0 sm:rounded-[30px] sm:border-b">
-        <div className="relative border-b border-white/[0.07] px-4 pb-4 pt-3">
+      <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] min-h-[66vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[30px] border border-white/[0.04] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:mb-4 sm:min-h-0 sm:rounded-[30px] sm:border-b">
+        <div className="relative border-b border-white/[0.04] px-4 pb-4 pt-3">
           <div
             className="mx-auto h-1 w-11 rounded-full bg-white/22"
             aria-hidden="true"
@@ -1815,7 +1827,7 @@ function NoteDatabaseFieldEditSheet({
               onChange={(event) => onFieldNameChange(event.target.value)}
               placeholder="Field name"
               aria-label="Field name"
-              className="h-12 w-full rounded-2xl border border-white/[0.1] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.15] focus-visible:border-emerald-200/35"
+              className="h-12 w-full rounded-2xl border border-white/[0.04] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.06] focus-visible:border-white/[0.1]"
             />
           </label>
 
@@ -1823,7 +1835,7 @@ function NoteDatabaseFieldEditSheet({
             <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
               Type
             </p>
-            <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.035]">
+            <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035]">
               {NOTE_DATABASE_FIELD_TYPE_OPTIONS.map((option) => {
                 const Icon = option.icon;
                 const isSelected = field.type === option.type;
@@ -1840,21 +1852,13 @@ function NoteDatabaseFieldEditSheet({
                         onFieldTypeChange(option.type);
                       }
                     }}
-                    className={`flex min-h-12 w-full items-center gap-3 border-b border-white/[0.065] px-4 text-left outline-none transition last:border-b-0 ${
+                    className={`flex min-h-12 w-full items-center gap-3 border-b border-white/[0.04] px-4 text-left outline-none transition last:border-b-0 ${
                       isLockedTitleType
                         ? "cursor-not-allowed text-white/24"
-                        : isSelected
-                          ? "bg-white/[0.045] text-white/86 hover:bg-white/[0.065] hover:text-white focus-visible:bg-white/[0.075] focus-visible:text-white"
-                          : "text-white/74 hover:bg-white/[0.06] hover:text-white focus-visible:bg-white/[0.075] focus-visible:text-white"
+                        : "text-white/74 hover:bg-white/[0.035] hover:text-white/88 focus-visible:bg-white/[0.035] focus-visible:text-white/90"
                     }`}
                   >
-                    <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
-                        isSelected
-                          ? "border-white/[0.11] bg-black/28 text-white/78"
-                          : "border-white/[0.08] bg-black/22 text-current"
-                      }`}
-                    >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.04] bg-black/22 text-current">
                       <Icon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold">
@@ -1862,7 +1866,7 @@ function NoteDatabaseFieldEditSheet({
                     </span>
                     {isSelected ? (
                       <Check
-                        className="ml-auto h-4 w-4 shrink-0 text-white/42"
+                        className="ml-auto h-4 w-4 shrink-0 text-white/38"
                         aria-hidden="true"
                       />
                     ) : isLockedTitleType ? (
@@ -1875,7 +1879,7 @@ function NoteDatabaseFieldEditSheet({
               })}
             </div>
 
-            <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+            <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.02]">
               {NOTE_DATABASE_COMING_SOON_FIELD_TYPE_OPTIONS.map((option) => {
                 const Icon = option.icon;
 
@@ -1884,9 +1888,9 @@ function NoteDatabaseFieldEditSheet({
                     key={option.label}
                     type="button"
                     disabled
-                    className="flex min-h-12 w-full cursor-not-allowed items-center gap-3 border-b border-white/[0.05] px-4 text-left text-white/24 last:border-b-0"
+                    className="flex min-h-12 w-full cursor-not-allowed items-center gap-3 border-b border-white/[0.04] px-4 text-left text-white/24 last:border-b-0"
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-black/18">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.04] bg-black/18">
                       <Icon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold">
@@ -2161,6 +2165,8 @@ export function NoteDatabaseFocusedView({
   const titleField = databaseDefinition ? getDatabaseTitleField(databaseDefinition) : null;
   const entries = databaseEntries?.[databaseId] ?? [];
   const displayTitle = getDatabaseDisplayTitle(databaseDefinition?.title ?? databaseSegment?.title);
+  const databaseFormTitle = getDatabaseFormTitle(databaseDefinition?.title ?? databaseSegment?.title);
+  const parentNoteTitle = noteTitle?.trim() || "Note";
   const editingField =
     editingFieldId && databaseDefinition
       ? (databaseFields.find((field) => field.id === editingFieldId) ?? null)
@@ -2373,7 +2379,9 @@ export function NoteDatabaseFocusedView({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <p className="text-xs font-medium leading-none text-white/38">Database</p>
+          <p className="min-w-0 truncate text-xs font-medium leading-none text-white/38">
+            {parentNoteTitle}
+          </p>
           <p className="ml-auto text-[11px] font-medium leading-none text-white/38">
             {autosaveLabel}
           </p>
@@ -2400,40 +2408,19 @@ export function NoteDatabaseFocusedView({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <p className="text-xs font-medium leading-none text-white/38">Database</p>
+        <p className="min-w-0 truncate text-xs font-medium leading-none text-white/38">
+          {parentNoteTitle}
+        </p>
         <p className="ml-auto text-[11px] font-medium leading-none text-white/38">
           {autosaveLabel}
         </p>
       </div>
 
-      <div className="mt-3 flex flex-col gap-4 border-b border-white/[0.07] pb-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold leading-8 text-white sm:text-3xl">
+      <div className="mt-3 flex flex-col gap-4 border-b border-white/[0.07] pb-4">
+        <div className="flex min-w-0 max-w-full items-center gap-2">
+          <h1 className="min-w-0 truncate text-2xl font-semibold leading-8 text-white sm:text-3xl">
             {displayTitle}
           </h1>
-          {noteTitle ? (
-            <p className="mt-1 truncate text-xs font-medium text-white/36">{noteTitle}</p>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-9 rounded-full border border-white/[0.08] bg-black/24 p-0.5">
-            {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
-              <button
-                key={viewType}
-                type="button"
-                onClick={() => updateDatabaseActiveView(viewType)}
-                aria-pressed={activeDatabaseView.type === viewType}
-                className={`rounded-full px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-emerald-200/35 ${
-                  activeDatabaseView.type === viewType
-                    ? "bg-white/[0.1] text-white/88"
-                    : "text-white/42 hover:bg-white/[0.055] hover:text-white/68"
-                }`}
-              >
-                {NOTE_DATABASE_VIEW_LABELS[viewType]}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             onClick={toggleDatabaseBodyPin}
@@ -2453,7 +2440,7 @@ export function NoteDatabaseFocusedView({
                   ? "Unpin from stomach menu"
                   : "Pin to stomach menu"
             }
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
               isPinned
                 ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
                 : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
@@ -2461,22 +2448,45 @@ export function NoteDatabaseFocusedView({
           >
             <Pin className="h-4 w-4" fill={isPinned ? "currentColor" : "none"} />
           </button>
-          <button
-            type="button"
-            onClick={() => setIsBuilderOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/[0.09] bg-white/[0.04] px-3 text-xs font-semibold text-white/66 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/86 focus-visible:ring-1 focus-visible:ring-white/24"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            Builder
-          </button>
-          <button
-            type="button"
-            onClick={openDatabaseEntrySheet}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-emerald-300/18 bg-emerald-300/10 px-3 text-xs font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add
-          </button>
+        </div>
+
+        <div className="flex w-full flex-wrap items-center gap-2">
+          <div className="flex h-9 rounded-full border border-white/[0.08] bg-black/24 p-0.5">
+            {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
+              <button
+                key={viewType}
+                type="button"
+                onClick={() => updateDatabaseActiveView(viewType)}
+                aria-pressed={activeDatabaseView.type === viewType}
+                className={`rounded-full px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-emerald-200/35 ${
+                  activeDatabaseView.type === viewType
+                    ? "bg-white/[0.1] text-white/88"
+                    : "text-white/42 hover:bg-white/[0.055] hover:text-white/68"
+                }`}
+              >
+                {NOTE_DATABASE_VIEW_LABELS[viewType]}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsBuilderOpen(true)}
+              aria-label="Builder"
+              title="Builder"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.09] bg-white/[0.04] text-white/66 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/86 focus-visible:ring-1 focus-visible:ring-white/24"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={openDatabaseEntrySheet}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/[0.12] bg-zinc-700 px-3.5 text-xs font-semibold text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_8px_18px_-14px_rgba(0,0,0,0.95)] outline-none transition hover:border-white/[0.16] hover:bg-zinc-600 hover:text-white focus-visible:ring-1 focus-visible:ring-white/24"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2509,54 +2519,52 @@ export function NoteDatabaseFocusedView({
 
       {isEntrySheetOpen ? (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
+          className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6"
           role="dialog"
           aria-modal="true"
-          aria-label={`Add entry to ${displayTitle}`}
+          aria-labelledby="note-database-entry-form-title"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeDatabaseEntrySheet();
             }
           }}
         >
-          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/[0.1] bg-[#080808] shadow-[0_28px_90px_-34px_rgba(0,0,0,1)]">
-            <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
-                  Add entry
-                </p>
-                <h2 className="mt-1 truncate text-xl font-semibold leading-7 text-white">
-                  {displayTitle}
-                </h2>
-              </div>
+          <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
+            <div className="relative border-b border-white/[0.04] px-4 py-4">
+              <h2
+                id="note-database-entry-form-title"
+                className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
+              >
+                {databaseFormTitle}
+              </h2>
               <button
                 type="button"
                 aria-label="Close entry form"
                 onClick={closeDatabaseEntrySheet}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.07] focus-visible:text-white"
+                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
               {databaseFields.length > 0 ? (
-                <div className="space-y-3">
+                <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
                   {databaseFields.map((field) => {
                     const fieldName = getDatabaseFieldName(field);
                     const fieldValue = entryFormValues[field.id] ?? "";
                     const inputClassName =
-                      "mt-1.5 w-full rounded-xl border border-white/[0.09] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-emerald-300/25 hover:border-white/[0.14] focus-visible:border-emerald-300/35";
+                      "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
 
                     return (
-                      <label key={field.id} className="block">
-                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/64">
+                      <label key={field.id} className="block px-4 py-3">
+                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
                           <span className="min-w-0 truncate">
                             {field.isTitle ? "Title" : fieldName}
                           </span>
                           <span className="flex shrink-0 items-center gap-1.5">
                             {field.isTitle ? (
-                              <span className="rounded border border-emerald-300/16 bg-emerald-300/8 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-100/58">
+                              <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
                                 {fieldName}
                               </span>
                             ) : null}
@@ -2631,17 +2639,17 @@ export function NoteDatabaseFocusedView({
                   })}
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+                <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
                   Add fields in the builder before creating entries.
                 </div>
               )}
             </div>
 
-            <div className="flex gap-2 border-t border-white/[0.07] p-3">
+            <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
               <button
                 type="button"
                 onClick={closeDatabaseEntrySheet}
-                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.04] text-sm font-semibold text-white/64 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/22"
+                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
               >
                 Cancel
               </button>
@@ -2649,7 +2657,7 @@ export function NoteDatabaseFocusedView({
                 type="button"
                 disabled={databaseFields.length === 0}
                 onClick={saveDatabaseEntry}
-                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-emerald-300/18 bg-emerald-300/10 text-sm font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35 disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-white/[0.03] disabled:text-white/28"
+                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
               >
                 Save entry
               </button>
@@ -2660,7 +2668,7 @@ export function NoteDatabaseFocusedView({
 
       {isBuilderOpen ? (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
+          className="fixed inset-0 z-[70] flex items-end justify-center overflow-hidden overscroll-contain bg-black/58 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-label={`Database builder for ${displayTitle}`}
@@ -2670,138 +2678,179 @@ export function NoteDatabaseFocusedView({
             }
           }}
         >
-          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/[0.1] bg-[#080808] shadow-[0_28px_90px_-34px_rgba(0,0,0,1)]">
-            <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
-                  Database builder
-                </p>
-                <input
-                  value={databaseDefinition.title}
-                  onChange={(event) => updateDatabaseTitle(event.target.value)}
-                  placeholder={NOTE_DATABASE_DISPLAY_TITLE_FALLBACK}
-                  className="mt-1 w-full border-0 bg-transparent p-0 text-xl font-semibold leading-7 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
-                  aria-label="Database title"
-                />
-              </div>
+          <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] min-h-[66vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[30px] border border-white/[0.04] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:mb-4 sm:min-h-0 sm:rounded-[30px] sm:border-b">
+            <div className="relative border-b border-white/[0.04] px-4 pb-4 pt-3">
+              <div
+                className="mx-auto h-1 w-11 rounded-full bg-white/22"
+                aria-hidden="true"
+              />
+              <h2 className="mt-4 text-center text-base font-semibold leading-6 text-white">
+                Database builder
+              </h2>
               <button
                 type="button"
                 aria-label="Close database builder"
                 onClick={() => setIsBuilderOpen(false)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.07] focus-visible:text-white"
+                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-              <div className="space-y-2">
-                {databaseFields.length > 0 ? (
-                  databaseFields.map((field) => {
-                    const isTitleField = field.id === databaseDefinition.titleFieldId;
-                    const isFieldVisible =
-                      isTitleField || Boolean(activeDatabaseView.visibleFieldIds.includes(field.id));
-                    const activeViewLabel = NOTE_DATABASE_VIEW_LABELS[activeDatabaseView.type];
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+              <label className="block">
+                <span className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
+                  Database title
+                </span>
+                <span className="mt-2 flex items-center gap-2">
+                  <input
+                    value={databaseDefinition.title}
+                    onChange={(event) => updateDatabaseTitle(event.target.value)}
+                    placeholder={NOTE_DATABASE_DISPLAY_TITLE_FALLBACK}
+                    className="h-12 min-w-0 flex-1 rounded-2xl border border-white/[0.04] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.06] focus-visible:border-white/[0.1]"
+                    aria-label="Database title"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleDatabaseBodyPin}
+                    disabled={databaseDefinition.lockedSystemDatabase === true}
+                    aria-pressed={isPinned}
+                    aria-label={
+                      databaseDefinition.lockedSystemDatabase === true
+                        ? "System database pinned"
+                        : databaseDefinition.pinnedSurface === "body"
+                          ? "Unpin from stomach menu"
+                          : "Pin to stomach menu"
+                    }
+                    title={
+                      databaseDefinition.lockedSystemDatabase === true
+                        ? "This system database is locked."
+                        : databaseDefinition.pinnedSurface === "body"
+                          ? "Unpin from stomach menu"
+                          : "Pin to stomach menu"
+                    }
+                    className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+                      isPinned
+                        ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                        : "bg-white/[0.045] text-white/42 hover:bg-white/[0.065] hover:text-white/68"
+                    }`}
+                  >
+                    <Pin className="h-4 w-4" fill={isPinned ? "currentColor" : "none"} />
+                  </button>
+                </span>
+              </label>
 
-                    return (
-                      <div
-                        key={field.id}
-                        className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.045] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-                      >
-                        <span
-                          className="flex h-8 w-5 items-center justify-center text-white/25"
-                          aria-hidden="true"
+              <div className="mt-6">
+                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
+                  Fields
+                </p>
+                {databaseFields.length > 0 ? (
+                  <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035]">
+                    {databaseFields.map((field) => {
+                      const isTitleField = field.id === databaseDefinition.titleFieldId;
+                      const isFieldVisible =
+                        isTitleField ||
+                        Boolean(activeDatabaseView.visibleFieldIds.includes(field.id));
+                      const activeViewLabel = NOTE_DATABASE_VIEW_LABELS[activeDatabaseView.type];
+
+                      return (
+                        <div
+                          key={field.id}
+                          className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-b border-white/[0.04] px-3 py-2.5 last:border-b-0"
                         >
-                          <GripVertical className="h-4 w-4" />
-                        </span>
-                        <input
-                          value={field.name}
-                          onChange={(event) =>
-                            updateDatabaseField(field.id, { name: event.target.value })
-                          }
-                          placeholder="Field name"
-                          className="min-w-0 border-0 bg-transparent p-0 text-sm font-medium leading-6 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
-                          aria-label="Field name"
-                        />
-                        {isTitleField ? (
-                          <span className="flex h-8 items-center gap-1.5 rounded-full border border-emerald-300/16 bg-emerald-300/8 px-2 text-xs font-semibold text-emerald-100/70">
-                            Title
-                            <span className="text-white/30">Text</span>
-                          </span>
-                        ) : (
-                          <select
-                            value={field.type}
-                            onChange={(event) =>
-                              updateDatabaseField(field.id, {
-                                type: event.target.value as NoteDatabaseFieldType,
-                              })
-                            }
-                            className="h-8 max-w-[8rem] rounded-full border border-white/[0.09] bg-[#111] px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.16] focus-visible:border-emerald-300/35"
-                            aria-label="Field type"
+                          <span
+                            className="flex h-8 w-5 items-center justify-center text-white/22"
+                            aria-hidden="true"
                           >
-                            {NOTE_DATABASE_FIELD_TYPES.map((type) => (
-                              <option key={type} value={type}>
-                                {NOTE_DATABASE_FIELD_TYPE_LABELS[type]}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={
-                            isTitleField
-                              ? `Title field stays visible in ${activeViewLabel}`
-                              : `${isFieldVisible ? "Hide" : "Show"} field ${
-                                  field.name || "Untitled field"
-                                } in ${activeViewLabel}`
-                          }
-                          onClick={() =>
-                            updateDatabaseViewFieldVisibility(
-                              activeDatabaseView.id,
-                              field.id,
-                              !isFieldVisible,
-                            )
-                          }
-                          disabled={isTitleField}
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
-                            isFieldVisible
-                              ? "text-emerald-100/70 hover:bg-emerald-300/10 hover:text-emerald-50"
-                              : "text-white/24 hover:bg-white/[0.07] hover:text-white/58"
-                          } disabled:cursor-not-allowed disabled:hover:bg-transparent ${
-                            isTitleField ? "disabled:text-emerald-100/38" : "disabled:text-white/14"
-                          }`}
-                        >
-                          {isFieldVisible ? (
-                            <Eye className="h-3.5 w-3.5" />
+                            <GripVertical className="h-4 w-4" />
+                          </span>
+                          <input
+                            value={field.name}
+                            onChange={(event) =>
+                              updateDatabaseField(field.id, { name: event.target.value })
+                            }
+                            placeholder="Field name"
+                            className="min-w-0 border-0 bg-transparent p-0 text-sm font-semibold leading-6 text-white/82 outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
+                            aria-label="Field name"
+                          />
+                          {isTitleField ? (
+                            <span className="flex h-8 items-center gap-1.5 rounded-full border border-white/[0.05] bg-black/22 px-2 text-xs font-semibold text-white/62">
+                              Title
+                              <span className="text-white/28">Text</span>
+                            </span>
                           ) : (
-                            <EyeOff className="h-3.5 w-3.5" />
+                            <select
+                              value={field.type}
+                              onChange={(event) =>
+                                updateDatabaseField(field.id, {
+                                  type: event.target.value as NoteDatabaseFieldType,
+                                })
+                              }
+                              className="h-8 max-w-[8rem] rounded-full border border-white/[0.05] bg-black/22 px-2 text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:text-white/78 focus-visible:border-white/[0.12]"
+                              aria-label="Field type"
+                            >
+                              {NOTE_DATABASE_FIELD_TYPES.map((type) => (
+                                <option key={type} value={type}>
+                                  {NOTE_DATABASE_FIELD_TYPE_LABELS[type]}
+                                </option>
+                              ))}
+                            </select>
                           )}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Remove field ${field.name || "Untitled field"}`}
-                          onClick={() => removeDatabaseField(field.id)}
-                          disabled={isTitleField}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/34 outline-none transition hover:bg-white/[0.07] hover:text-white/72 focus-visible:bg-white/[0.07] focus-visible:text-white disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })
+                          <button
+                            type="button"
+                            aria-label={
+                              isTitleField
+                                ? `Title field stays visible in ${activeViewLabel}`
+                                : `${isFieldVisible ? "Hide" : "Show"} field ${
+                                    field.name || "Untitled field"
+                                  } in ${activeViewLabel}`
+                            }
+                            onClick={() =>
+                              updateDatabaseViewFieldVisibility(
+                                activeDatabaseView.id,
+                                field.id,
+                                !isFieldVisible,
+                              )
+                            }
+                            disabled={isTitleField}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
+                              isFieldVisible
+                                ? "text-white/58 hover:bg-white/[0.055] hover:text-white/82"
+                                : "text-white/24 hover:bg-white/[0.055] hover:text-white/58"
+                            } disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
+                          >
+                            {isFieldVisible ? (
+                              <Eye className="h-3.5 w-3.5" />
+                            ) : (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Remove field ${field.name || "Untitled field"}`}
+                            onClick={() => removeDatabaseField(field.id)}
+                            disabled={isTitleField}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-white/70 focus-visible:bg-white/[0.07] focus-visible:text-white disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+                  <div className="mt-2 rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-4 py-8 text-center text-sm font-medium text-white/38">
                     Add fields to shape this database block.
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="border-t border-white/[0.07] p-3">
+            <div className="border-t border-white/[0.04] p-3">
               <button
                 type="button"
                 onClick={addDatabaseField}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/18 bg-emerald-300/10 text-sm font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35"
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.05] bg-white/[0.06] text-sm font-semibold text-white/76 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.085] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/18"
               >
                 <Plus className="h-4 w-4" />
                 Add Field
@@ -2894,6 +2943,9 @@ function NoteSlashTextarea({
       ? (normalizedDatabaseDefinitions[activeEntryDatabaseId] ??
         createDefaultDatabaseDefinition(activeEntryDatabaseSegment))
       : null;
+  const activeEntryDatabaseFormTitle = getDatabaseFormTitle(
+    activeEntryDatabaseDefinition?.title ?? activeEntryDatabaseSegment?.title,
+  );
   const activeEntryDatabaseFields = activeEntryDatabaseDefinition
     ? getDatabaseFieldsWithTitleFirst(activeEntryDatabaseDefinition)
     : [];
@@ -4431,54 +4483,52 @@ function NoteSlashTextarea({
 
       {activeEntryDatabaseDefinition ? (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
+          className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6"
           role="dialog"
           aria-modal="true"
-          aria-label={`Add entry to ${getDatabaseDisplayTitle(activeEntryDatabaseDefinition.title)}`}
+          aria-labelledby="note-inline-database-entry-form-title"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeDatabaseEntrySheet();
             }
           }}
         >
-          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/[0.1] bg-[#080808] shadow-[0_28px_90px_-34px_rgba(0,0,0,1)]">
-            <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
-                  Add entry
-                </p>
-                <h2 className="mt-1 truncate text-xl font-semibold leading-7 text-white">
-                  {getDatabaseDisplayTitle(activeEntryDatabaseDefinition.title)}
-                </h2>
-              </div>
+          <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
+            <div className="relative border-b border-white/[0.04] px-4 py-4">
+              <h2
+                id="note-inline-database-entry-form-title"
+                className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
+              >
+                {activeEntryDatabaseFormTitle}
+              </h2>
               <button
                 type="button"
                 aria-label="Close entry form"
                 onClick={closeDatabaseEntrySheet}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.07] focus-visible:text-white"
+                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
               {activeEntryDatabaseFields.length > 0 ? (
-                <div className="space-y-3">
+                <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
                   {activeEntryDatabaseFields.map((field) => {
                     const fieldName = getDatabaseFieldName(field);
                     const fieldValue = entryFormValues[field.id] ?? "";
                     const inputClassName =
-                      "mt-1.5 w-full rounded-xl border border-white/[0.09] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-emerald-300/25 hover:border-white/[0.14] focus-visible:border-emerald-300/35";
+                      "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
 
                     return (
-                      <label key={field.id} className="block">
-                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/64">
+                      <label key={field.id} className="block px-4 py-3">
+                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
                           <span className="min-w-0 truncate">
                             {field.isTitle ? "Title" : fieldName}
                           </span>
                           <span className="flex shrink-0 items-center gap-1.5">
                             {field.isTitle ? (
-                              <span className="rounded border border-emerald-300/16 bg-emerald-300/8 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-100/58">
+                              <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
                                 {fieldName}
                               </span>
                             ) : null}
@@ -4553,17 +4603,17 @@ function NoteSlashTextarea({
                   })}
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+                <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
                   Add fields in the builder before creating entries.
                 </div>
               )}
             </div>
 
-            <div className="flex gap-2 border-t border-white/[0.07] p-3">
+            <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
               <button
                 type="button"
                 onClick={closeDatabaseEntrySheet}
-                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.04] text-sm font-semibold text-white/64 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/22"
+                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
               >
                 Cancel
               </button>
@@ -4571,7 +4621,7 @@ function NoteSlashTextarea({
                 type="button"
                 disabled={activeEntryDatabaseFields.length === 0}
                 onClick={saveDatabaseEntry}
-                className="flex h-10 flex-1 items-center justify-center rounded-xl border border-emerald-300/18 bg-emerald-300/10 text-sm font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35 disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-white/[0.03] disabled:text-white/28"
+                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
               >
                 Save entry
               </button>
@@ -4582,7 +4632,7 @@ function NoteSlashTextarea({
 
       {activeDatabaseDefinition ? (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6"
+          className="fixed inset-0 z-[70] flex items-end justify-center overflow-hidden overscroll-contain bg-black/58 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-label={`Database builder for ${getDatabaseDisplayTitle(activeDatabaseDefinition.title)}`}
@@ -4592,39 +4642,40 @@ function NoteSlashTextarea({
             }
           }}
         >
-          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/[0.1] bg-[#080808] shadow-[0_28px_90px_-34px_rgba(0,0,0,1)]">
-            <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
-                  Database builder
-                </p>
-                <input
-                  value={activeDatabaseDefinition.title}
-                  onChange={(event) =>
-                    updateDatabaseTitle(activeDatabaseDefinition.id, event.target.value)
-                  }
-                  placeholder={NOTE_DATABASE_DISPLAY_TITLE_FALLBACK}
-                  className="mt-1 w-full border-0 bg-transparent p-0 text-xl font-semibold leading-7 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
-                  aria-label="Database title"
-                />
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <div className="flex h-9 rounded-full border border-white/[0.08] bg-black/24 p-0.5">
-                    {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
-                      <button
-                        key={viewType}
-                        type="button"
-                        onClick={() => updateDatabaseActiveView(activeDatabaseDefinition.id, viewType)}
-                        aria-pressed={activeDatabaseView?.type === viewType}
-                        className={`rounded-full px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-emerald-200/35 ${
-                          activeDatabaseView?.type === viewType
-                            ? "bg-white/[0.1] text-white/88"
-                            : "text-white/42 hover:bg-white/[0.055] hover:text-white/68"
-                        }`}
-                      >
-                        {NOTE_DATABASE_VIEW_LABELS[viewType]}
-                      </button>
-                    ))}
-                  </div>
+          <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] min-h-[66vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[30px] border border-white/[0.04] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:mb-4 sm:min-h-0 sm:rounded-[30px] sm:border-b">
+            <div className="relative border-b border-white/[0.04] px-4 pb-4 pt-3">
+              <div
+                className="mx-auto h-1 w-11 rounded-full bg-white/22"
+                aria-hidden="true"
+              />
+              <h2 className="mt-4 text-center text-base font-semibold leading-6 text-white">
+                Database builder
+              </h2>
+              <button
+                type="button"
+                aria-label="Close database builder"
+                onClick={() => setActiveDatabaseId(null)}
+                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+              <label className="block">
+                <span className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
+                  Database title
+                </span>
+                <span className="mt-2 flex items-center gap-2">
+                  <input
+                    value={activeDatabaseDefinition.title}
+                    onChange={(event) =>
+                      updateDatabaseTitle(activeDatabaseDefinition.id, event.target.value)
+                    }
+                    placeholder={NOTE_DATABASE_DISPLAY_TITLE_FALLBACK}
+                    className="h-12 min-w-0 flex-1 rounded-2xl border border-white/[0.04] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.06] focus-visible:border-white/[0.1]"
+                    aria-label="Database title"
+                  />
                   <button
                     type="button"
                     onClick={() => toggleDatabaseBodyPin(activeDatabaseDefinition.id)}
@@ -4647,11 +4698,11 @@ function NoteSlashTextarea({
                           ? "Unpin from stomach menu"
                           : "Pin to stomach menu"
                     }
-                    className={`inline-flex h-9 w-9 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
+                    className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
                       activeDatabaseDefinition.lockedSystemDatabase === true ||
                       activeDatabaseDefinition.pinnedSurface === "body"
                         ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
-                        : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
+                        : "bg-white/[0.045] text-white/42 hover:bg-white/[0.065] hover:text-white/68"
                     }`}
                   >
                     <Pin
@@ -4664,133 +4715,149 @@ function NoteSlashTextarea({
                       }
                     />
                   </button>
+                </span>
+              </label>
+
+              <div className="mt-4 rounded-2xl border border-white/[0.04] bg-white/[0.035] p-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex h-9 rounded-full border border-white/[0.04] bg-black/22 p-0.5">
+                    {NOTE_DATABASE_VIEW_TYPES.map((viewType) => (
+                      <button
+                        key={viewType}
+                        type="button"
+                        onClick={() => updateDatabaseActiveView(activeDatabaseDefinition.id, viewType)}
+                        aria-pressed={activeDatabaseView?.type === viewType}
+                        className={`rounded-full px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-white/18 ${
+                          activeDatabaseView?.type === viewType
+                            ? "bg-white/[0.09] text-white/84"
+                            : "text-white/42 hover:bg-white/[0.045] hover:text-white/66"
+                        }`}
+                      >
+                        {NOTE_DATABASE_VIEW_LABELS[viewType]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <button
-                type="button"
-                aria-label="Close database builder"
-                onClick={() => setActiveDatabaseId(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/45 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.07] focus-visible:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-              <div className="space-y-2">
+              <div className="mt-6">
+                <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
+                  Fields
+                </p>
                 {activeDatabaseFields.length > 0 ? (
-                  activeDatabaseFields.map((field) => {
-                    const isTitleField = field.id === activeDatabaseDefinition.titleFieldId;
-                    const isFieldVisible =
-                      isTitleField || Boolean(activeDatabaseView?.visibleFieldIds.includes(field.id));
-                    const activeViewLabel = activeDatabaseView
-                      ? NOTE_DATABASE_VIEW_LABELS[activeDatabaseView.type]
-                      : "active view";
+                  <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035]">
+                    {activeDatabaseFields.map((field) => {
+                      const isTitleField = field.id === activeDatabaseDefinition.titleFieldId;
+                      const isFieldVisible =
+                        isTitleField ||
+                        Boolean(activeDatabaseView?.visibleFieldIds.includes(field.id));
+                      const activeViewLabel = activeDatabaseView
+                        ? NOTE_DATABASE_VIEW_LABELS[activeDatabaseView.type]
+                        : "active view";
 
-                    return (
-                      <div
-                        key={field.id}
-                        className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.045] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-                      >
-                        <span
-                          className="flex h-8 w-5 items-center justify-center text-white/25"
-                          aria-hidden="true"
+                      return (
+                        <div
+                          key={field.id}
+                          className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-b border-white/[0.04] px-3 py-2.5 last:border-b-0"
                         >
-                          <GripVertical className="h-4 w-4" />
-                        </span>
-                        <input
-                          value={field.name}
-                          onChange={(event) =>
-                            updateDatabaseField(activeDatabaseDefinition.id, field.id, {
-                              name: event.target.value,
-                            })
-                          }
-                          placeholder="Field name"
-                          className="min-w-0 border-0 bg-transparent p-0 text-sm font-medium leading-6 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
-                          aria-label="Field name"
-                        />
-                        {isTitleField ? (
-                          <span className="flex h-8 items-center gap-1.5 rounded-full border border-emerald-300/16 bg-emerald-300/8 px-2 text-xs font-semibold text-emerald-100/70">
-                            Title
-                            <span className="text-white/30">Text</span>
+                          <span
+                            className="flex h-8 w-5 items-center justify-center text-white/22"
+                            aria-hidden="true"
+                          >
+                            <GripVertical className="h-4 w-4" />
                           </span>
-                        ) : (
-                          <select
-                            value={field.type}
+                          <input
+                            value={field.name}
                             onChange={(event) =>
                               updateDatabaseField(activeDatabaseDefinition.id, field.id, {
-                                type: event.target.value as NoteDatabaseFieldType,
+                                name: event.target.value,
                               })
                             }
-                            className="h-8 max-w-[8rem] rounded-full border border-white/[0.09] bg-[#111] px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.16] focus-visible:border-emerald-300/35"
-                            aria-label="Field type"
-                          >
-                            {NOTE_DATABASE_FIELD_TYPES.map((type) => (
-                              <option key={type} value={type}>
-                                {NOTE_DATABASE_FIELD_TYPE_LABELS[type]}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={
-                            isTitleField
-                              ? `Title field stays visible in ${activeViewLabel}`
-                              : `${isFieldVisible ? "Hide" : "Show"} field ${
-                                  field.name || "Untitled field"
-                                } in ${activeViewLabel}`
-                          }
-                          onClick={() => {
-                            if (!activeDatabaseView) return;
-
-                            updateDatabaseViewFieldVisibility(
-                              activeDatabaseDefinition.id,
-                              activeDatabaseView.id,
-                              field.id,
-                              !isFieldVisible,
-                            );
-                          }}
-                          disabled={isTitleField || !activeDatabaseView}
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
-                            isFieldVisible
-                              ? "text-emerald-100/70 hover:bg-emerald-300/10 hover:text-emerald-50"
-                              : "text-white/24 hover:bg-white/[0.07] hover:text-white/58"
-                          } disabled:cursor-not-allowed disabled:hover:bg-transparent ${
-                            isTitleField ? "disabled:text-emerald-100/38" : "disabled:text-white/14"
-                          }`}
-                        >
-                          {isFieldVisible ? (
-                            <Eye className="h-3.5 w-3.5" />
+                            placeholder="Field name"
+                            className="min-w-0 border-0 bg-transparent p-0 text-sm font-semibold leading-6 text-white/82 outline-none placeholder:text-white/24 selection:bg-emerald-300/25"
+                            aria-label="Field name"
+                          />
+                          {isTitleField ? (
+                            <span className="flex h-8 items-center gap-1.5 rounded-full border border-white/[0.05] bg-black/22 px-2 text-xs font-semibold text-white/62">
+                              Title
+                              <span className="text-white/28">Text</span>
+                            </span>
                           ) : (
-                            <EyeOff className="h-3.5 w-3.5" />
+                            <select
+                              value={field.type}
+                              onChange={(event) =>
+                                updateDatabaseField(activeDatabaseDefinition.id, field.id, {
+                                  type: event.target.value as NoteDatabaseFieldType,
+                                })
+                              }
+                              className="h-8 max-w-[8rem] rounded-full border border-white/[0.05] bg-black/22 px-2 text-xs font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:text-white/78 focus-visible:border-white/[0.12]"
+                              aria-label="Field type"
+                            >
+                              {NOTE_DATABASE_FIELD_TYPES.map((type) => (
+                                <option key={type} value={type}>
+                                  {NOTE_DATABASE_FIELD_TYPE_LABELS[type]}
+                                </option>
+                              ))}
+                            </select>
                           )}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Remove field ${field.name || "Untitled field"}`}
-                          onClick={() => removeDatabaseField(activeDatabaseDefinition.id, field.id)}
-                          disabled={isTitleField}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/34 outline-none transition hover:bg-white/[0.07] hover:text-white/72 focus-visible:bg-white/[0.07] focus-visible:text-white disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })
+                          <button
+                            type="button"
+                            aria-label={
+                              isTitleField
+                                ? `Title field stays visible in ${activeViewLabel}`
+                                : `${isFieldVisible ? "Hide" : "Show"} field ${
+                                    field.name || "Untitled field"
+                                  } in ${activeViewLabel}`
+                            }
+                            onClick={() => {
+                              if (!activeDatabaseView) return;
+
+                              updateDatabaseViewFieldVisibility(
+                                activeDatabaseDefinition.id,
+                                activeDatabaseView.id,
+                                field.id,
+                                !isFieldVisible,
+                              );
+                            }}
+                            disabled={isTitleField || !activeDatabaseView}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg outline-none transition focus-visible:bg-white/[0.07] focus-visible:text-white ${
+                              isFieldVisible
+                                ? "text-white/58 hover:bg-white/[0.055] hover:text-white/82"
+                                : "text-white/24 hover:bg-white/[0.055] hover:text-white/58"
+                            } disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
+                          >
+                            {isFieldVisible ? (
+                              <Eye className="h-3.5 w-3.5" />
+                            ) : (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Remove field ${field.name || "Untitled field"}`}
+                            onClick={() => removeDatabaseField(activeDatabaseDefinition.id, field.id)}
+                            disabled={isTitleField}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-white/70 focus-visible:bg-white/[0.07] focus-visible:text-white disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+                  <div className="mt-2 rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-4 py-8 text-center text-sm font-medium text-white/38">
                     Add fields to shape this database block.
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="border-t border-white/[0.07] p-3">
+            <div className="border-t border-white/[0.04] p-3">
               <button
                 type="button"
                 onClick={() => addDatabaseField(activeDatabaseDefinition.id)}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/18 bg-emerald-300/10 text-sm font-semibold text-emerald-50 outline-none transition hover:border-emerald-300/28 hover:bg-emerald-300/15 focus-visible:ring-1 focus-visible:ring-emerald-200/35"
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.05] bg-white/[0.06] text-sm font-semibold text-white/76 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.085] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/18"
               >
                 <Plus className="h-4 w-4" />
                 Add Field
