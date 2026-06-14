@@ -327,6 +327,11 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     x: number;
     y: number;
     pointerId: number;
+    pointerType: string;
+    deltaX: number;
+    deltaY: number;
+    axis: ProjectPanelSwipeAxis;
+    width: number;
   } | null>(null);
   const projectPanelTouchRef = useRef<{
     startX: number;
@@ -479,38 +484,110 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
   const handleProjectPanelPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (event.pointerType !== "pen" && event.pointerType !== "mouse") {
+      if (event.pointerType === "touch" && !event.isPrimary) {
         return;
       }
+
+      event.currentTarget.setPointerCapture?.(event.pointerId);
       projectPanelDragStartRef.current = {
         x: event.clientX,
         y: event.clientY,
         pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        deltaX: 0,
+        deltaY: 0,
+        axis: null,
+        width: event.currentTarget.clientWidth,
       };
+      setProjectPanelDragOffset(0);
     },
     []
   );
 
+  const handleProjectPanelPointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const gesture = projectPanelDragStartRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+      const deltaX = event.clientX - gesture.x;
+      const deltaY = event.clientY - gesture.y;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      gesture.deltaX = deltaX;
+      gesture.deltaY = deltaY;
+
+      if (!gesture.axis) {
+        if (absX > 12 && absX > absY * 1.15) {
+          gesture.axis = "horizontal";
+        } else if (absY > 12 && absY > absX * 1.15) {
+          gesture.axis = "vertical";
+        } else {
+          return;
+        }
+      }
+
+      if (gesture.axis !== "horizontal") return;
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      const width = gesture.width || event.currentTarget.clientWidth || 1;
+      const baseTransform = -activeProjectPanelIndex * width;
+      const nextTransform = Math.max(
+        -width,
+        Math.min(0, baseTransform + deltaX)
+      );
+      setProjectPanelDragOffset(nextTransform - baseTransform);
+    },
+    [activeProjectPanelIndex]
+  );
+
   const handleProjectPanelPointerEnd = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      const start = projectPanelDragStartRef.current;
-      if (!start || start.pointerId !== event.pointerId) return;
+      const gesture = projectPanelDragStartRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
       projectPanelDragStartRef.current = null;
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      setProjectPanelDragOffset(0);
 
-      const deltaX = event.clientX - start.x;
-      const deltaY = event.clientY - start.y;
+      const deltaX = event.clientX - gesture.x;
+      const deltaY = event.clientY - gesture.y;
       const horizontalDistance = Math.abs(deltaX);
+      const releaseThreshold =
+        gesture.pointerType === "touch"
+          ? Math.min(45, Math.max(28, gesture.width * 0.2))
+          : 48;
 
       if (
-        horizontalDistance < 48 ||
+        horizontalDistance < releaseThreshold ||
         horizontalDistance < Math.abs(deltaY) * 1.35
       ) {
         return;
       }
 
-      handleProjectPanelChange(deltaX < 0 ? "completed" : "active");
+      const nextPanel = deltaX < 0 ? "completed" : "active";
+      if (nextPanel !== projectSection) {
+        handleProjectPanelChange(nextPanel);
+      }
     },
-    [handleProjectPanelChange]
+    [handleProjectPanelChange, projectSection]
+  );
+
+  const resetProjectPanelPointer = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (projectPanelDragStartRef.current?.pointerId === event.pointerId) {
+        projectPanelDragStartRef.current = null;
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        setProjectPanelDragOffset(0);
+      }
+    },
+    []
   );
 
   const resetProjectPanelTouch = useCallback(() => {
@@ -1564,15 +1641,14 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
               className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
               style={projectPanelHeight ? { height: projectPanelHeight } : undefined}
               onPointerDown={handleProjectPanelPointerDown}
+              onPointerMove={handleProjectPanelPointerMove}
               onPointerUp={handleProjectPanelPointerEnd}
               onTouchStart={handleProjectPanelTouchStart}
               onTouchMove={handleProjectPanelTouchMove}
               onTouchEnd={handleProjectPanelTouchEnd}
               onTouchCancel={resetProjectPanelTouch}
               onWheel={handleProjectPanelWheel}
-              onPointerCancel={() => {
-                projectPanelDragStartRef.current = null;
-              }}
+              onPointerCancel={resetProjectPanelPointer}
             >
               <div
                 ref={projectPanelViewportRef}

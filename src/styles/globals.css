@@ -239,6 +239,24 @@
     linear-gradient(145deg, rgba(255, 255, 255, 0.1), transparent 36%, rgba(39, 39, 42, 0.12) 100%);
 }
 
+:root[data-theme="light"] .app-dashboard-skill-carousel-shell {
+  background:
+    radial-gradient(94% 120% at 50% -48%, rgba(255, 255, 255, 0.2), transparent 58%),
+    linear-gradient(180deg, #d0d1ca 0%, #c2c3bc 100%);
+  border-color: rgba(39, 39, 42, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(24, 24, 27, 0.08),
+    0 16px 34px rgba(24, 24, 27, 0.18),
+    0 2px 7px rgba(24, 24, 27, 0.1);
+}
+
+:root[data-theme="light"] .app-dashboard-skill-carousel-glow {
+  background:
+    radial-gradient(84% 135% at 50% -52%, rgba(255, 255, 255, 0.2), transparent 56%),
+    linear-gradient(180deg, rgba(218, 219, 212, 0.34), rgba(164, 165, 158, 0.18));
+}
+
 :root[data-theme="light"] .app-dashboard-monuments-panel {
   border-radius: calc(var(--radius) + 2px);
 }
@@ -725,6 +743,26 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   border-radius: 8px;
   border: 2px solid rgba(0, 0, 0, 0.35);
   pointer-events: none;
+}
+
+.goal-card.matrix-habit-card--sync {
+  background:
+    radial-gradient(
+      circle at 12% -20%,
+      rgba(226, 232, 240, 0.34),
+      transparent 58%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(82, 82, 91, 0.98) 0%,
+      rgba(113, 113, 122, 0.95) 48%,
+      rgba(161, 161, 170, 0.9) 100%
+    ) !important;
+  border-color: rgba(161, 161, 170, 0.28);
+  box-shadow:
+    0 18px 36px rgba(24, 24, 27, 0.24),
+    0 8px 18px rgba(39, 39, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075);
 }
 
 @keyframes goal-manual-complete-reject-shake {

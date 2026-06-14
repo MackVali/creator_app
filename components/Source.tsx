@@ -4319,7 +4319,7 @@ export default function Source() {
 type SheetMode = "create" | "edit"
 
 const sourceListingSheetContentClassName =
-  "no-default-close w-full !max-w-[30rem] !max-h-[min(80dvh,42rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
+  "no-default-close w-[calc(100vw-2rem)] !max-w-[17rem] !max-h-[min(80dvh,42rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
 const sourceListingSheetBodyClassName =
   "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4"
 const sourceListingFormControlClassName =
