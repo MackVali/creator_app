@@ -3166,10 +3166,12 @@ function CircleCommandDetail({
   circle,
   onClose,
   onCircleUpdated,
+  needsSafeAreaTopPadding = false,
 }: {
   circle: CommandCircle;
   onClose: () => void;
   onCircleUpdated: (circle: CircleUpdate) => void;
+  needsSafeAreaTopPadding?: boolean;
 }) {
   const members = circle.memberPreview ?? [];
   const memberCount = circle.activeMemberCount ?? 0;
@@ -3421,6 +3423,9 @@ function CircleCommandDetail({
   const canMakeOffer = elevatedRoles.has(role);
   const canEditWorkProfile = role === "OWNER" || role === "MANAGER";
   const circleIcon = getCircleIconDisplay(circle.icon_emoji);
+  const detailTopPaddingClass = needsSafeAreaTopPadding
+    ? "pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:pt-4"
+    : "pt-3 sm:pt-4";
 
   useEffect(() => {
     if (!selectedMemberId) {
@@ -3445,8 +3450,10 @@ function CircleCommandDetail({
       <main
         ref={detailScrollRef}
         key={circle.id}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8"
-        style={{ paddingTop: 0 }}
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] lg:px-8",
+          detailTopPaddingClass,
+        )}
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden pt-0 sm:gap-6">
           <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] px-3 pb-3 pt-1.5 text-white shadow-[0_24px_70px_-42px_rgba(0,0,0,0.82)] sm:px-4 sm:pb-3.5 sm:pt-2 md:rounded-3xl">
@@ -4126,6 +4133,7 @@ export const CommandCirclesSection = forwardRef<
             <CircleCommandDetail
               circle={activeCircle}
               onClose={closeCircleDetail}
+              needsSafeAreaTopPadding={circleTransition.appViewportRect.top <= 1}
               onCircleUpdated={(updatedCircle) => {
                 setCircles((currentCircles) =>
                   currentCircles.map((circle) =>

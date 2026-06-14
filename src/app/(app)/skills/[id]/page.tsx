@@ -481,17 +481,12 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
   if (normalized === "CHORE") {
     return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
   }
-  if (normalized === "SYNC") {
-    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(113,113,122,0.22),transparent_58%),linear-gradient(135deg,rgba(16,18,22,0.98)_0%,rgba(39,43,51,0.94)_48%,rgba(70,77,89,0.68)_100%)]";
-  }
+  if (normalized === "SYNC" || normalized === "MEMO") return "habit-card--sync-gray";
   if (normalized === "PRACTICE") {
     return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
   }
   if (normalized === "RELAXER") {
     return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(6,95,70,0.34),transparent_60%),linear-gradient(138deg,rgba(3,24,18,0.98)_0%,rgba(5,68,51,0.94)_48%,rgba(6,95,70,0.74)_100%)]";
-  }
-  if (normalized === "MEMO") {
-    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(126,34,206,0.26),transparent_60%),linear-gradient(138deg,rgba(24,13,38,0.98)_0%,rgba(55,29,84,0.95)_48%,rgba(88,46,128,0.72)_100%)]";
   }
   return "!bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.2),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)]";
 }
@@ -499,10 +494,9 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
 function getHabitCardBorderClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return "border-rose-200/45";
-  if (normalized === "SYNC") return "border-zinc-300/35";
+  if (normalized === "SYNC" || normalized === "MEMO") return "border-zinc-300/35";
   if (normalized === "PRACTICE") return "border-slate-500/50";
   if (normalized === "RELAXER") return "border-emerald-200/60";
-  if (normalized === "MEMO") return "border-purple-300/55";
   return "border-black/70";
 }
 

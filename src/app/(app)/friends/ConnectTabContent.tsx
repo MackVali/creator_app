@@ -1089,24 +1089,11 @@ export default function ConnectTabContent() {
           ) : null}
 
           {canCreateCircle && isLoadingCircles ? (
-            <article className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 shadow-xl shadow-black/30">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
-                    Loading circles
-                  </p>
-                  <h3 className="mt-2 text-base font-semibold text-white">
-                    Pulling your shared systems into view.
-                  </h3>
-                </div>
-                <span className="h-2.5 w-2.5 rounded-full bg-white/60 shadow-[0_0_18px_rgba(255,255,255,0.45)]" />
-              </div>
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                <div className="h-2 rounded-full bg-white/10" />
-                <div className="h-2 rounded-full bg-white/10" />
-                <div className="h-2 rounded-full bg-white/10" />
-              </div>
-            </article>
+            <div className="space-y-2" aria-label="Loading circles">
+              {[0, 1, 2].map((index) => (
+                <CircleOverviewSkeleton key={index} />
+              ))}
+            </div>
           ) : null}
 
           {canCreateCircle && circlesError ? (
@@ -1171,12 +1158,12 @@ function CircleOverviewRow({ circle }: CircleOverviewRowProps) {
   const activeMemberCount = circle.activeMemberCount ?? memberPreview.length;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-white/10 bg-black/55 shadow-xl shadow-black/30 transition hover:border-white/18 hover:bg-white/[0.035]">
+    <article className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#171719] shadow-[0_14px_34px_rgba(0,0,0,0.28)] transition hover:border-white/[0.14] hover:bg-[#1d1d20]">
       <Link
         href={`/friends/circles/${circle.id}`}
-        className="group flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+        className="flex w-full items-start gap-3 px-4 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-base font-semibold text-white shadow-inner shadow-black/25">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-[#242427] text-base font-semibold text-white shadow-inner shadow-black/30">
           {icon}
         </span>
         <span className="min-w-0 flex-1">
@@ -1188,9 +1175,26 @@ function CircleOverviewRow({ circle }: CircleOverviewRowProps) {
             totalCount={activeMemberCount}
           />
         </span>
-        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-white/45 transition group-hover:text-white/70" aria-hidden="true" />
       </Link>
     </article>
+  );
+}
+
+function CircleOverviewSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#151517] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,0.24)]">
+      <div className="flex items-start gap-3">
+        <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-white/[0.08]" />
+        <div className="min-w-0 flex-1 pt-0.5">
+          <div className="h-4 w-36 animate-pulse rounded-full bg-white/[0.09]" />
+          <div className="mt-3 flex items-center">
+            <div className="h-7 w-7 animate-pulse rounded-full border border-black bg-white/[0.08]" />
+            <div className="-ml-2 h-7 w-7 animate-pulse rounded-full border border-black bg-white/[0.07]" />
+            <div className="-ml-2 h-7 w-7 animate-pulse rounded-full border border-black bg-white/[0.06]" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

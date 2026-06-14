@@ -136,7 +136,7 @@ export default function MonumentNoteDatabasePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-3 pb-[calc(6rem_+_env(safe-area-inset-bottom,0px))] pt-[env(safe-area-inset-top,0px)] text-white sm:px-5 sm:pt-[env(safe-area-inset-top,0px)] lg:px-8">
+    <main className="min-h-screen bg-[#020202] px-3 pb-[calc(6rem_+_env(safe-area-inset-bottom,0px))] text-white sm:px-5 lg:px-8">
       <div className="flex min-h-[calc(100vh-7rem)] w-full flex-col">
         {isLoading ? (
           <section className="w-full rounded-[18px] border border-white/[0.08] bg-[#050505]/92 p-4 text-sm text-white/60 sm:p-5">
