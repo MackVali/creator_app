@@ -17,6 +17,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Calendar,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -24,14 +26,18 @@ import {
   FileText,
   FilePlus2,
   GripVertical,
+  Hash,
+  Link,
   List,
   ListChecks,
   Minus,
   Pin,
   Plus,
   Settings2,
+  Star,
   X,
   Table2,
+  Tags,
   Trash2,
   Type,
   type LucideIcon,
@@ -155,6 +161,28 @@ const NOTE_DATABASE_FIELD_TYPE_LABELS: Record<NoteDatabaseFieldType, string> = {
   longText: "Long text",
   date: "Date",
 };
+
+const NOTE_DATABASE_FIELD_TYPE_OPTIONS: Array<{
+  type: NoteDatabaseFieldType;
+  icon: LucideIcon;
+}> = [
+  { type: "text", icon: Type },
+  { type: "number", icon: Hash },
+  { type: "select", icon: List },
+  { type: "photo", icon: FileText },
+  { type: "rating", icon: Star },
+  { type: "longText", icon: FileText },
+  { type: "date", icon: Calendar },
+];
+
+const NOTE_DATABASE_COMING_SOON_FIELD_TYPE_OPTIONS: Array<{
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { label: "Checkbox", icon: CheckSquare },
+  { label: "URL", icon: Link },
+  { label: "Multi-select", icon: Tags },
+];
 
 const NOTE_DATABASE_VIEW_LABELS: Record<NoteDatabaseViewType, string> = {
   table: "Table",
@@ -1279,6 +1307,7 @@ function NoteDatabaseEntriesView({
   activeView,
   definition,
   entries,
+  onFieldHeaderClick,
   size = "compact",
   titleField,
   visibleFields,
@@ -1286,6 +1315,7 @@ function NoteDatabaseEntriesView({
   activeView: NoteDatabaseViewDefinition;
   definition: NoteDatabaseDefinition;
   entries: NoteDatabaseEntry[];
+  onFieldHeaderClick?: (field: NoteDatabaseFieldDefinition) => void;
   size?: "compact" | "full";
   titleField: NoteDatabaseFieldDefinition | null;
   visibleFields: NoteDatabaseFieldDefinition[];
@@ -1324,9 +1354,16 @@ function NoteDatabaseEntriesView({
                   <th
                     key={field.id}
                     scope="col"
-                    className="sticky top-0 z-10 whitespace-nowrap border-b border-r border-white/[0.08] bg-[#08090a]/98 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/42 backdrop-blur last:border-r-0"
+                    className="sticky top-0 z-10 whitespace-nowrap border-b border-r border-white/[0.08] bg-[#08090a]/98 p-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/42 backdrop-blur last:border-r-0"
                   >
-                    <span className="block">{getDatabaseFieldName(field)}</span>
+                    <button
+                      type="button"
+                      onClick={() => onFieldHeaderClick?.(field)}
+                      aria-label={`Edit field ${getDatabaseFieldName(field)}`}
+                      className="block h-full w-full px-2 py-1.5 text-left outline-none transition hover:bg-white/[0.045] hover:text-white/68 focus-visible:bg-white/[0.06] focus-visible:text-white/78 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-emerald-200/30"
+                    >
+                      <span className="block">{getDatabaseFieldName(field)}</span>
+                    </button>
                   </th>
                 ))}
               </tr>
@@ -1569,7 +1606,7 @@ function NoteDatabaseEntriesView({
   if (entries.length > 0 && activeView.type === "card") {
     if (isFull) {
       return (
-        <div className="-mx-1 grid grid-cols-2 gap-2.5 px-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <div className="-mx-1 grid grid-cols-3 gap-1.5 px-1 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {entries.map((entry) => {
             const properties = getDatabaseEntryProperties(entry, definition);
             const filledProperties = properties.filter(({ value }) => value);
@@ -1583,18 +1620,18 @@ function NoteDatabaseEntriesView({
             return (
               <article
                 key={entry.id}
-                className="goal-card group relative flex aspect-[5/6] min-h-[108px] transform-gpu flex-col overflow-hidden rounded-2xl border border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.20),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)] p-3 text-white shadow-[0_18px_34px_-28px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.065),inset_0_-14px_22px_rgba(0,0,0,0.22)] transition duration-200 hover:-translate-y-0.5 hover:border-zinc-300/35 hover:brightness-110 active:translate-y-px active:scale-[0.99] sm:min-h-[124px]"
+                className="goal-card group relative flex aspect-[5/6] min-h-[86px] transform-gpu flex-col overflow-hidden rounded-xl border border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.20),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)] p-2 text-white shadow-[0_18px_34px_-28px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.065),inset_0_-14px_22px_rgba(0,0,0,0.22)] transition duration-200 hover:-translate-y-0.5 hover:border-zinc-300/35 hover:brightness-110 active:translate-y-px active:scale-[0.99] sm:min-h-[104px] sm:rounded-2xl sm:p-2.5"
               >
                 <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.055),transparent_60%)]" />
                 <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/28 to-transparent" />
-                <div className="relative z-[1] flex min-h-0 flex-1 flex-col items-center justify-between gap-2 text-center">
-                  <span className="max-w-full rounded-full border border-white/10 bg-white/[0.055] px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.06em] text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <div className="relative z-[1] flex min-h-0 flex-1 flex-col items-center justify-between gap-1.5 text-center">
+                  <span className="max-w-full rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-[2px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em] text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-2 sm:py-[3px] sm:text-[8px]">
                     {propertySummary}
                   </span>
 
                   <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
                     <p
-                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[11px] font-semibold leading-tight text-white whitespace-normal sm:text-xs"
+                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[11px]"
                       style={{ hyphens: "auto" }}
                     >
                       {getDatabaseEntryTitle(entry, definition)}
@@ -1606,21 +1643,23 @@ function NoteDatabaseEntriesView({
                       visibleProperties.map(({ field, value }) => (
                         <span
                           key={field.id}
-                          className="flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.055] px-2 py-[3px] text-[8px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]"
+                          className="flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-[2px] text-[7px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] sm:px-2 sm:py-[3px] sm:text-[8px]"
                         >
-                          <span className="max-w-[3.5rem] truncate text-white/38">
+                          <span className="max-w-[2.5rem] truncate text-white/38 sm:max-w-[3.5rem]">
                             {getDatabaseFieldName(field)}
                           </span>
-                          <span className="max-w-[4.75rem] truncate text-white/78">{value}</span>
+                          <span className="max-w-[3rem] truncate text-white/78 sm:max-w-[4.75rem]">
+                            {value}
+                          </span>
                         </span>
                       ))
                     ) : (
-                      <span className="text-[9px] font-medium leading-none text-white/30">
+                      <span className="text-[8px] font-medium leading-none text-white/30 sm:text-[9px]">
                         No details
                       </span>
                     )}
                     {hiddenPropertyCount > 0 ? (
-                      <span className="rounded-full border border-white/10 bg-white/[0.045] px-1.5 py-[3px] text-[8px] font-semibold leading-none text-white/42">
+                      <span className="rounded-full border border-white/10 bg-white/[0.045] px-1.5 py-[2px] text-[7px] font-semibold leading-none text-white/42 sm:py-[3px] sm:text-[8px]">
                         +{hiddenPropertyCount}
                       </span>
                     ) : null}
@@ -1684,6 +1723,158 @@ function NoteDatabaseEntriesView({
     >
       No entries yet
     </p>
+  );
+}
+
+function NoteDatabaseFieldEditSheet({
+  field,
+  onClose,
+  onFieldNameChange,
+  onFieldTypeChange,
+}: {
+  field: NoteDatabaseFieldDefinition;
+  onClose: () => void;
+  onFieldNameChange: (name: string) => void;
+  onFieldTypeChange: (type: NoteDatabaseFieldType) => void;
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/58 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="note-database-field-edit-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="animate-in slide-in-from-bottom-6 fade-in-0 flex max-h-[88vh] min-h-[66vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[30px] border border-white/[0.1] border-b-0 bg-[#090909] shadow-[0_-24px_80px_-32px_rgba(0,0,0,1)] duration-200 sm:mb-4 sm:min-h-0 sm:rounded-[30px] sm:border-b">
+        <div className="relative border-b border-white/[0.07] px-4 pb-4 pt-3">
+          <div
+            className="mx-auto h-1 w-11 rounded-full bg-white/22"
+            aria-hidden="true"
+          />
+          <h2
+            id="note-database-field-edit-title"
+            className="mt-4 text-center text-base font-semibold leading-6 text-white"
+          >
+            Edit field
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close edit field sheet"
+            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <label className="block">
+            <span className="sr-only">Field name</span>
+            <input
+              value={field.name}
+              onChange={(event) => onFieldNameChange(event.target.value)}
+              placeholder="Field name"
+              aria-label="Field name"
+              className="h-12 w-full rounded-2xl border border-white/[0.1] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.15] focus-visible:border-emerald-200/35"
+            />
+          </label>
+
+          <div className="mt-6">
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
+              Type
+            </p>
+            <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.035]">
+              {NOTE_DATABASE_FIELD_TYPE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const isSelected = field.type === option.type;
+                const isLockedTitleType = Boolean(field.isTitle && option.type !== "text");
+
+                return (
+                  <button
+                    key={option.type}
+                    type="button"
+                    disabled={isLockedTitleType}
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      if (!isSelected) {
+                        onFieldTypeChange(option.type);
+                      }
+                    }}
+                    className={`flex min-h-12 w-full items-center gap-3 border-b border-white/[0.065] px-4 text-left outline-none transition last:border-b-0 ${
+                      isLockedTitleType
+                        ? "cursor-not-allowed text-white/24"
+                        : "text-white/74 hover:bg-white/[0.06] hover:text-white focus-visible:bg-white/[0.075] focus-visible:text-white"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
+                        isSelected
+                          ? "border-emerald-200/24 bg-emerald-300/12 text-emerald-50"
+                          : "border-white/[0.08] bg-black/22 text-current"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                      {NOTE_DATABASE_FIELD_TYPE_LABELS[option.type]}
+                    </span>
+                    {isSelected ? (
+                      <span className="shrink-0 rounded-full border border-emerald-200/16 bg-emerald-300/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-50/78">
+                        Current
+                      </span>
+                    ) : isLockedTitleType ? (
+                      <span className="shrink-0 text-[11px] font-semibold text-white/28">
+                        Title stays Text
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+              {NOTE_DATABASE_COMING_SOON_FIELD_TYPE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    disabled
+                    className="flex min-h-12 w-full cursor-not-allowed items-center gap-3 border-b border-white/[0.05] px-4 text-left text-white/24 last:border-b-0"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-black/18">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                      {option.label}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-semibold text-white/26">
+                      Coming soon
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1915,6 +2106,7 @@ export function NoteDatabaseFocusedView({
 }) {
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>({});
   const segments = useMemo(() => parseNoteSegments(noteContent), [noteContent]);
   const databaseSegment = useMemo(
@@ -1941,6 +2133,10 @@ export function NoteDatabaseFocusedView({
   const titleField = databaseDefinition ? getDatabaseTitleField(databaseDefinition) : null;
   const entries = databaseEntries?.[databaseId] ?? [];
   const displayTitle = getDatabaseDisplayTitle(databaseDefinition?.title ?? databaseSegment?.title);
+  const editingField =
+    editingFieldId && databaseDefinition
+      ? (databaseFields.find((field) => field.id === editingFieldId) ?? null)
+      : null;
 
   useEffect(() => {
     const { changed, definitions } = normalizeDatabaseDefinitionsForSegments(
@@ -1952,6 +2148,15 @@ export function NoteDatabaseFocusedView({
       onDatabaseDefinitionsChange?.(definitions);
     }
   }, [databaseDefinitions, onDatabaseDefinitionsChange, segments]);
+
+  useEffect(() => {
+    if (!editingFieldId || !databaseDefinition) return;
+
+    const stillExists = databaseDefinition.fields.some((field) => field.id === editingFieldId);
+    if (!stillExists) {
+      setEditingFieldId(null);
+    }
+  }, [databaseDefinition, editingFieldId]);
 
   function updateDatabaseDefinition(
     getNextDefinition: (currentDefinition: NoteDatabaseDefinition) => NoteDatabaseDefinition,
@@ -2258,11 +2463,21 @@ export function NoteDatabaseFocusedView({
           activeView={activeDatabaseView}
           definition={databaseDefinition}
           entries={entries}
+          onFieldHeaderClick={(field) => setEditingFieldId(field.id)}
           size="full"
           titleField={titleField}
           visibleFields={visibleFields}
         />
       </div>
+
+      {editingField ? (
+        <NoteDatabaseFieldEditSheet
+          field={editingField}
+          onClose={() => setEditingFieldId(null)}
+          onFieldNameChange={(name) => updateDatabaseField(editingField.id, { name })}
+          onFieldTypeChange={(type) => updateDatabaseField(editingField.id, { type })}
+        />
+      ) : null}
 
       {isEntrySheetOpen ? (
         <div
