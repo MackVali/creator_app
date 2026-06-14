@@ -347,14 +347,13 @@ function getSafeAreaInsetTop() {
 function getCircleAppViewportRect(): CircleAppViewportRect {
   const viewportHeight = window.innerHeight || 0;
   const topNav = document.querySelector<HTMLElement>(".app-top-nav");
-  const bottomNav = document.querySelector<HTMLElement>("[data-bottom-nav]");
   const safeAreaInsetTop = getSafeAreaInsetTop();
 
   let viewportTop =
     safeAreaInsetTop > 0
       ? Math.min(viewportHeight, safeAreaInsetTop + CIRCLE_DETAIL_SAFE_TOP_GAP)
       : 0;
-  let viewportBottom = viewportHeight;
+  const viewportBottom = viewportHeight;
 
   if (topNav) {
     const topNavRect = topNav.getBoundingClientRect();
@@ -363,17 +362,6 @@ function getCircleAppViewportRect(): CircleAppViewportRect {
       viewportTop = Math.max(
         viewportTop,
         Math.min(topNavRect.bottom, viewportHeight),
-      );
-    }
-  }
-
-  if (bottomNav) {
-    const bottomNavRect = bottomNav.getBoundingClientRect();
-
-    if (bottomNavRect.top < viewportHeight && bottomNavRect.bottom > 0) {
-      viewportBottom = Math.max(
-        viewportTop,
-        Math.min(bottomNavRect.top, viewportHeight),
       );
     }
   }

@@ -69,6 +69,8 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { MonumentNote } from "@/lib/types/monument-note";
+import { getTopLevelDatabaseNoteDisplay } from "@/lib/topLevelDatabaseNotes";
+import { TopLevelDatabaseNoteCard } from "./TopLevelDatabaseNoteCard";
 
 export const monumentNoteTileOuterClass =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
@@ -199,6 +201,17 @@ function getMonumentNoteIcon(
 }
 
 export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: MonumentNoteCardProps) {
+  const databaseDisplay = getTopLevelDatabaseNoteDisplay(note.metadata);
+  if (databaseDisplay) {
+    return (
+      <TopLevelDatabaseNoteCard
+        href={`/monuments/${monumentId}/notes/${note.id}/databases/${databaseDisplay.databaseId}`}
+        database={databaseDisplay}
+        className={monumentNoteTileOuterClass}
+      />
+    );
+  }
+
   const titleLine =
     note.title?.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ??
     "Open this note to add a title.";

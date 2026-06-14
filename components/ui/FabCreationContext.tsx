@@ -34,6 +34,7 @@ export type FabCreationRequest = {
 export type FabCreationPreservedDrawer = {
   type: "campaign" | "goal" | "routine";
   id: string;
+  parentId?: string | null;
 };
 
 type FabCreationRequestOptions = {

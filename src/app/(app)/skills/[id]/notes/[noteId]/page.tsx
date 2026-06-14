@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
 import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
@@ -10,17 +10,13 @@ import {
   type NoteDatabaseEntries,
   type NoteSlashTextareaHandle,
 } from "@/components/notes/NoteSlashTextarea";
-import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import {
   createSkillNote,
-  getNote,
   getNoteWithChildren,
-  getNotes,
   updateSkillNote,
 } from "@/lib/notesStorage";
 import type { Note } from "@/lib/types/note";
 
-const ROOT_PARENT_VALUE = "__root__";
 const DEFAULT_NOTE_ICON = "📝";
 
 function getNoteTitle(note: Note | null): string {
@@ -104,11 +100,8 @@ export default function NotePage() {
   const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(normalizedParentFromQuery);
-  const [parentNote, setParentNote] = useState<Note | null>(null);
-  const [parentOptions, setParentOptions] = useState<Note[]>([]);
   const [children, setChildren] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(noteId !== "new");
-  const [isLoadingParents, setIsLoadingParents] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
 
@@ -122,7 +115,6 @@ export default function NotePage() {
       setNoteIcon(DEFAULT_NOTE_ICON);
       setNoteMetadata(null);
       setChildren([]);
-      setParentNote(null);
       setSelectedParentId(normalizedParentFromQuery);
       setLastSavedSnapshot(
         createSaveSnapshot({
@@ -154,7 +146,6 @@ export default function NotePage() {
           setNoteIcon(icon);
           setNoteMetadata(result.note.metadata ?? null);
           setSelectedParentId(result.note.parentNoteId ?? null);
-          setParentNote(result.parent);
           setChildren(result.children);
           setLastSavedSnapshot(
             createSaveSnapshot({
@@ -173,7 +164,6 @@ export default function NotePage() {
           setNoteMetadata(null);
           setLastSavedSnapshot("");
           setSelectedParentId(null);
-          setParentNote(null);
           setChildren([]);
         }
       } catch (error) {
@@ -186,7 +176,6 @@ export default function NotePage() {
         setNoteMetadata(null);
         setLastSavedSnapshot("");
         setSelectedParentId(null);
-        setParentNote(null);
         setChildren([]);
       } finally {
         if (isMounted) {
@@ -199,64 +188,6 @@ export default function NotePage() {
       isMounted = false;
     };
   }, [skillId, noteId, normalizedParentFromQuery]);
-
-  useEffect(() => {
-    let isActive = true;
-    setIsLoadingParents(true);
-
-    (async () => {
-      try {
-        const options = await getNotes(skillId, { parentNoteId: null });
-        if (!isActive) return;
-        setParentOptions(options);
-      } catch (error) {
-        console.error("Failed to load parent options", { error, skillId });
-        if (!isActive) return;
-        setParentOptions([]);
-      } finally {
-        if (isActive) {
-          setIsLoadingParents(false);
-        }
-      }
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, [skillId]);
-
-  useEffect(() => {
-    if (!selectedParentId) {
-      setParentNote(null);
-      return;
-    }
-
-    if (parentNote?.id === selectedParentId) {
-      return;
-    }
-
-    let isActive = true;
-
-    (async () => {
-      try {
-        const fetchedParent = await getNote(skillId, selectedParentId);
-        if (!isActive) return;
-        setParentNote(fetchedParent);
-      } catch (error) {
-        console.error("Failed to load parent note", {
-          error,
-          skillId,
-          parentId: selectedParentId,
-        });
-        if (!isActive) return;
-        setParentNote(null);
-      }
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, [selectedParentId, skillId, parentNote?.id]);
 
   useEffect(() => {
     if (isLoading || isSaving) return;
@@ -334,13 +265,6 @@ export default function NotePage() {
     selectedParentId,
     skillId,
   ]);
-
-  const availableParentOptions = useMemo(
-    () => parentOptions.filter((option) => option.id !== currentNoteId),
-    [parentOptions, currentNoteId],
-  );
-
-  const parentSelectValue = selectedParentId ?? ROOT_PARENT_VALUE;
 
   async function handleCreateSubpage() {
     if (!currentNoteId) {
@@ -523,32 +447,6 @@ export default function NotePage() {
                 onBack={handleBack}
                 autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
               />
-
-              <div className="flex justify-end">
-                <Select
-                  value={parentSelectValue}
-                  onValueChange={(value) => {
-                    if (value === ROOT_PARENT_VALUE) {
-                      setSelectedParentId(null);
-                    } else {
-                      setSelectedParentId(value);
-                    }
-                  }}
-                  placeholder="Top-level page"
-                  triggerClassName="h-8 max-w-full rounded-full border border-white/[0.08] bg-white/[0.045] px-3 text-left text-xs text-white/70 shadow-none hover:bg-white/[0.07]"
-                >
-                  <SelectContent className="border-white/[0.08] bg-[#101010] text-white">
-                    <SelectItem value={ROOT_PARENT_VALUE}>
-                      {isLoadingParents ? "Loading…" : "Top-level page"}
-                    </SelectItem>
-                    {availableParentOptions.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {getNoteTitle(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
               <NoteTextActionBar
                 onFormat={(command) => noteTextareaRef.current?.applyTextFormat(command)}
