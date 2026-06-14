@@ -68,7 +68,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-const DEFAULT_NOTE_ICON = "lucide:NotebookPen";
+export const DEFAULT_NOTE_ICON = "lucide:NotebookPen";
 
 type NoteIconPreset = {
   value: `lucide:${string}`;
@@ -162,7 +162,7 @@ const iconButtonBaseClass =
 const iconButtonSelectedClass = "border-emerald-300/35 bg-emerald-300/12 text-emerald-100";
 const iconButtonIdleClass = "border-white/[0.08] bg-white/[0.04] text-white/78 hover:bg-white/[0.08]";
 
-function resolveNoteIcon(
+export function resolveNoteIcon(
   iconValue?: string | null,
 ): { kind: "lucide"; Icon: LucideIcon } | { kind: "emoji"; emoji: string } {
   const value = iconValue?.trim() || DEFAULT_NOTE_ICON;
@@ -172,6 +172,132 @@ function resolveNoteIcon(
   if (value.startsWith("lucide:")) return { kind: "lucide", Icon: NotebookPen };
 
   return { kind: "emoji", emoji: value };
+}
+
+type NoteIconPickerProps = {
+  icon?: string | null;
+  onIconChange: (icon: string) => void;
+  ariaLabel?: string;
+  customInputAriaLabel?: string;
+};
+
+export function NoteIconPicker({
+  icon,
+  onIconChange,
+  ariaLabel = "Change note icon",
+  customInputAriaLabel = "Custom note icon",
+}: NoteIconPickerProps) {
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [iconSearch, setIconSearch] = useState("");
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const currentIconValue = icon?.trim() || DEFAULT_NOTE_ICON;
+  const normalizedIconSearch = iconSearch.trim().toLowerCase();
+  const filteredLucideIcons = normalizedIconSearch
+    ? LUCIDE_ICON_PRESETS.filter((preset) =>
+        [preset.label, preset.value.replace("lucide:", ""), ...preset.keywords]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedIconSearch),
+      )
+    : LUCIDE_ICON_PRESETS;
+  const resolvedIcon = resolveNoteIcon(icon);
+  const customEmojiValue = currentIconValue.startsWith("lucide:") ? "" : currentIconValue;
+  const triggerIconNode =
+    resolvedIcon.kind === "lucide" ? (
+      <resolvedIcon.Icon className="h-5 w-5 text-white/85" aria-hidden="true" />
+    ) : (
+      <span aria-hidden="true">{resolvedIcon.emoji}</span>
+    );
+
+  useEffect(() => {
+    if (!isPickerOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setIsPickerOpen(false);
+        setIconSearch("");
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isPickerOpen]);
+
+  return (
+    <div ref={pickerRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setIsPickerOpen((current) => !current)}
+        className="flex h-10 w-10 items-center justify-center rounded-[11px] border border-white/[0.11] bg-white/[0.055] text-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_24px_-18px_rgba(0,0,0,0.95)] outline-none backdrop-blur-xl transition hover:border-white/20 hover:bg-white/[0.08] focus-visible:border-emerald-300/45 focus-visible:ring-2 focus-visible:ring-emerald-300/20"
+        aria-label={ariaLabel}
+        aria-expanded={isPickerOpen}
+      >
+        {triggerIconNode}
+      </button>
+
+      {isPickerOpen ? (
+        <div className="absolute left-0 top-12 z-50 w-[min(20rem,calc(100vw-1.5rem))] rounded-[18px] border border-white/[0.1] bg-[#090909]/95 p-2 shadow-[0_24px_70px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+            <div className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-white/35">
+              Custom emoji
+            </div>
+            <input
+              value={customEmojiValue}
+              onChange={(event) => onIconChange(event.target.value.slice(0, 4))}
+              maxLength={4}
+              className="h-8 w-20 rounded-[10px] border border-white/[0.09] bg-black/35 px-2 text-center text-sm text-white outline-none placeholder:text-white/30 focus:border-emerald-300/35 focus:ring-2 focus:ring-emerald-300/10"
+              placeholder="Paste"
+              aria-label={customInputAriaLabel}
+            />
+          </div>
+
+          <input
+            value={iconSearch}
+            onChange={(event) => setIconSearch(event.target.value)}
+            className="h-8 w-full rounded-[10px] border border-white/[0.09] bg-black/35 px-3 text-[0.78rem] text-white outline-none placeholder:text-white/30 focus:border-emerald-300/35 focus:ring-2 focus:ring-emerald-300/10"
+            placeholder="Search icons"
+            aria-label="Search icons"
+          />
+
+          <div className="mt-3 px-1 pb-1 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-white/35">
+            SVG icons
+          </div>
+          <div className="max-h-64 overflow-y-auto pr-1">
+            {filteredLucideIcons.length > 0 ? (
+              <div className="grid grid-cols-5 gap-1.5">
+                {filteredLucideIcons.map((preset) => {
+                  const PresetIcon = preset.icon;
+
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      onClick={() => {
+                        onIconChange(preset.value);
+                        setIsPickerOpen(false);
+                        setIconSearch("");
+                      }}
+                      className={`${iconButtonBaseClass} ${
+                        currentIconValue === preset.value ? iconButtonSelectedClass : iconButtonIdleClass
+                      }`}
+                      title={preset.label}
+                      aria-label={`Use ${preset.label} icon`}
+                    >
+                      <PresetIcon className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-[11px] border border-white/[0.08] bg-white/[0.035] px-3 py-4 text-center text-[0.75rem] text-white/40">
+                No icons found
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 type NoteEditorHeaderProps = {
@@ -191,37 +317,6 @@ export function NoteEditorHeader({
   onBack,
   autosaveLabel,
 }: NoteEditorHeaderProps) {
-  const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [iconSearch, setIconSearch] = useState("");
-  const pickerRef = useRef<HTMLDivElement | null>(null);
-  const currentIconValue = icon?.trim() || DEFAULT_NOTE_ICON;
-  const normalizedIconSearch = iconSearch.trim().toLowerCase();
-  const filteredLucideIcons = normalizedIconSearch
-    ? LUCIDE_ICON_PRESETS.filter((preset) =>
-        [preset.label, preset.value.replace("lucide:", ""), ...preset.keywords]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedIconSearch),
-      )
-    : LUCIDE_ICON_PRESETS;
-  const resolvedIcon = resolveNoteIcon(icon);
-  const TriggerIcon = resolvedIcon.kind === "lucide" ? resolvedIcon.Icon : null;
-  const customEmojiValue = currentIconValue.startsWith("lucide:") ? "" : currentIconValue;
-
-  useEffect(() => {
-    if (!isPickerOpen) return;
-
-    function handlePointerDown(event: PointerEvent) {
-      if (!pickerRef.current?.contains(event.target as Node)) {
-        setIsPickerOpen(false);
-        setIconSearch("");
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isPickerOpen]);
-
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2.5 sm:gap-3">
@@ -236,83 +331,7 @@ export function NoteEditorHeader({
           </button>
         ) : null}
 
-        <div ref={pickerRef} className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsPickerOpen((current) => !current)}
-            className="flex h-10 w-10 items-center justify-center rounded-[11px] border border-white/[0.11] bg-white/[0.055] text-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_24px_-18px_rgba(0,0,0,0.95)] outline-none backdrop-blur-xl transition hover:border-white/20 hover:bg-white/[0.08] focus-visible:border-emerald-300/45 focus-visible:ring-2 focus-visible:ring-emerald-300/20"
-            aria-label="Change note icon"
-            aria-expanded={isPickerOpen}
-          >
-            {TriggerIcon ? (
-              <TriggerIcon className="h-5 w-5 text-white/85" aria-hidden="true" />
-            ) : (
-              <span aria-hidden="true">{resolvedIcon.emoji}</span>
-            )}
-          </button>
-
-          {isPickerOpen ? (
-            <div className="absolute left-0 top-12 z-50 w-[min(20rem,calc(100vw-1.5rem))] rounded-[18px] border border-white/[0.1] bg-[#090909]/95 p-2 shadow-[0_24px_70px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl">
-              <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                <div className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-white/35">
-                  Custom emoji
-                </div>
-                <input
-                  value={customEmojiValue}
-                  onChange={(event) => onIconChange(event.target.value.slice(0, 4))}
-                  maxLength={4}
-                  className="h-8 w-20 rounded-[10px] border border-white/[0.09] bg-black/35 px-2 text-center text-sm text-white outline-none placeholder:text-white/30 focus:border-emerald-300/35 focus:ring-2 focus:ring-emerald-300/10"
-                  placeholder="Paste"
-                  aria-label="Custom note icon"
-                />
-              </div>
-
-              <input
-                value={iconSearch}
-                onChange={(event) => setIconSearch(event.target.value)}
-                className="h-8 w-full rounded-[10px] border border-white/[0.09] bg-black/35 px-3 text-[0.78rem] text-white outline-none placeholder:text-white/30 focus:border-emerald-300/35 focus:ring-2 focus:ring-emerald-300/10"
-                placeholder="Search icons"
-                aria-label="Search icons"
-              />
-
-              <div className="mt-3 px-1 pb-1 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-white/35">
-                SVG icons
-              </div>
-              <div className="max-h-64 overflow-y-auto pr-1">
-                {filteredLucideIcons.length > 0 ? (
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {filteredLucideIcons.map((preset) => {
-                      const PresetIcon = preset.icon;
-
-                      return (
-                        <button
-                          key={preset.value}
-                          type="button"
-                          onClick={() => {
-                            onIconChange(preset.value);
-                            setIsPickerOpen(false);
-                            setIconSearch("");
-                          }}
-                          className={`${iconButtonBaseClass} ${
-                            currentIconValue === preset.value ? iconButtonSelectedClass : iconButtonIdleClass
-                          }`}
-                          title={preset.label}
-                          aria-label={`Use ${preset.label} icon`}
-                        >
-                          <PresetIcon className="h-5 w-5" aria-hidden="true" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-[11px] border border-white/[0.08] bg-white/[0.035] px-3 py-4 text-center text-[0.75rem] text-white/40">
-                    No icons found
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <NoteIconPicker icon={icon} onIconChange={onIconChange} />
 
         <input
           value={title}

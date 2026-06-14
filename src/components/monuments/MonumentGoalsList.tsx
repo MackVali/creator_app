@@ -1081,6 +1081,15 @@ export function MonumentGoalsList({
   const [restoreCampaignGoalId, setRestoreCampaignGoalId] = useState<
     string | null
   >(null);
+  const [newCampaignGoalReveal, setNewCampaignGoalReveal] = useState<{
+    campaignId: string;
+    goalId: string;
+  } | null>(null);
+  const [newProjectReveal, setNewProjectReveal] = useState<{
+    goalId: string;
+    projectId: string;
+    campaignId?: string | null;
+  } | null>(null);
   const [roadmapOpenGoal, setRoadmapOpenGoal] = useState<Goal | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
@@ -1367,6 +1376,9 @@ export function MonumentGoalsList({
     roadmapOpenGoal,
     restoreCampaignDrawerId,
     restoreCampaignGoalId,
+    restoreGoalDrawerId,
+    newCampaignGoalReveal,
+    newProjectReveal,
     recentlyCompletedGoalIds,
   ]);
 
@@ -2094,10 +2106,14 @@ export function MonumentGoalsList({
           detail.preserveDrawer?.type === "campaign"
         ) {
           const campaignId = detail.campaignId ?? detail.preserveDrawer.id;
-          if (campaignId) {
+          if (campaignId && detail.entityId) {
             setRestoreGoalDrawerId(null);
             setRestoreCampaignDrawerId(campaignId);
             setRestoreCampaignGoalId(null);
+            setNewCampaignGoalReveal({
+              campaignId,
+              goalId: detail.entityId,
+            });
           }
         }
 
@@ -2106,8 +2122,13 @@ export function MonumentGoalsList({
           detail.preserveDrawer?.type === "goal"
         ) {
           const goalId = detail.goalId ?? detail.preserveDrawer.id;
-          if (goalId) {
+          if (goalId && detail.entityId) {
             const campaignId = detail.preserveDrawer.parentId ?? null;
+            setNewProjectReveal({
+              goalId,
+              projectId: detail.entityId,
+              campaignId,
+            });
 
             if (campaignId) {
               setRestoreGoalDrawerId(null);
@@ -2373,6 +2394,28 @@ export function MonumentGoalsList({
       void refreshGoalStatus(goalId);
     },
     [refreshGoalStatus]
+  );
+
+  const handleNewCampaignGoalRevealComplete = useCallback(
+    (campaignId: string, goalId: string) => {
+      setNewCampaignGoalReveal((current) =>
+        current?.campaignId === campaignId && current.goalId === goalId
+          ? null
+          : current
+      );
+    },
+    []
+  );
+
+  const handleNewProjectRevealComplete = useCallback(
+    (goalId: string, projectId: string) => {
+      setNewProjectReveal((current) =>
+        current?.goalId === goalId && current.projectId === projectId
+          ? null
+          : current
+      );
+    },
+    []
   );
 
   const handleGoalOpenChange = useCallback(
@@ -3149,6 +3192,18 @@ export function MonumentGoalsList({
               onTaskToggleCompletion={handleTaskToggleCompletion}
               onManualComplete={handleManualGoalComplete}
               open={openGoalId === roadmapOpenGoal.id}
+              newProjectRevealId={
+                newProjectReveal?.goalId === roadmapOpenGoal.id &&
+                !newProjectReveal.campaignId
+                  ? newProjectReveal.projectId
+                  : null
+              }
+              onNewProjectRevealComplete={(projectId) =>
+                handleNewProjectRevealComplete(roadmapOpenGoal.id, projectId)
+              }
+              suppressDrawerOpenAnimation={
+                restoreGoalDrawerId === roadmapOpenGoal.id
+              }
               onOpenChange={(isOpen) => {
                 handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
                 if (!isOpen) setRoadmapOpenGoal(null);
@@ -3160,7 +3215,10 @@ export function MonumentGoalsList({
     );
 
     const renderGoalsPanel = (section: GoalPanel) => {
-      const campaignGroupsForGoalGrid = getCampaignGroupsForGoalGrid(section);
+      const campaignGroupsForGoalGrid =
+        resolvedSourceType === "circle"
+          ? []
+          : getCampaignGroupsForGoalGrid(section);
       const filteredStandaloneGoals = standaloneGoals.filter((goal) =>
         filterGoalBySection(goal, section)
       );
@@ -3213,6 +3271,20 @@ export function MonumentGoalsList({
                       ? restoreCampaignGoalId
                       : null
                   }
+                  newGoalRevealId={
+                    newCampaignGoalReveal?.campaignId === roadmap.id
+                      ? newCampaignGoalReveal.goalId
+                      : null
+                  }
+                  newProjectReveal={
+                    newProjectReveal?.campaignId === roadmap.id
+                      ? newProjectReveal
+                      : null
+                  }
+                  onNewGoalRevealComplete={(goalId) =>
+                    handleNewCampaignGoalRevealComplete(roadmap.id, goalId)
+                  }
+                  onNewProjectRevealComplete={handleNewProjectRevealComplete}
                   monumentContext
                   suppressReadyToast
                 />
@@ -3258,6 +3330,21 @@ export function MonumentGoalsList({
                 onTaskToggleCompletion={handleTaskToggleCompletion}
                 onManualComplete={handleManualGoalComplete}
                 open
+                newProjectRevealId={
+                  newProjectReveal?.goalId === openRoadmapGoalForSection.id &&
+                  !newProjectReveal.campaignId
+                    ? newProjectReveal.projectId
+                    : null
+                }
+                onNewProjectRevealComplete={(projectId) =>
+                  handleNewProjectRevealComplete(
+                    openRoadmapGoalForSection.id,
+                    projectId
+                  )
+                }
+                suppressDrawerOpenAnimation={
+                  restoreGoalDrawerId === openRoadmapGoalForSection.id
+                }
                 onOpenChange={(isOpen) => {
                   handleGoalOpenChange(openRoadmapGoalForSection.id, isOpen);
                   if (!isOpen) setRoadmapOpenGoal(null);
@@ -3296,6 +3383,16 @@ export function MonumentGoalsList({
                 onTaskToggleCompletion={handleTaskToggleCompletion}
                 onManualComplete={handleManualGoalComplete}
                 open={openGoalId === goal.id}
+                newProjectRevealId={
+                  newProjectReveal?.goalId === goal.id &&
+                  !newProjectReveal.campaignId
+                    ? newProjectReveal.projectId
+                    : null
+                }
+                onNewProjectRevealComplete={(projectId) =>
+                  handleNewProjectRevealComplete(goal.id, projectId)
+                }
+                suppressDrawerOpenAnimation={restoreGoalDrawerId === goal.id}
                 onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
               />
             </div>
@@ -3403,8 +3500,12 @@ export function MonumentGoalsList({
     roadmapEmptyState,
     monumentRoadmapsWithItems,
     roadmapOpenGoal,
+    restoreGoalDrawerId,
     restoreCampaignDrawerId,
     restoreCampaignGoalId,
+    newCampaignGoalReveal?.campaignId,
+    newCampaignGoalReveal?.goalId,
+    newProjectReveal,
     recentlyCompletedGoalIds,
     activeGoalPanel,
     goalGridClass,
@@ -3416,6 +3517,8 @@ export function MonumentGoalsList({
     handleManualGoalComplete,
     handleGoalOpenChange,
     handleCampaignAddGoal,
+    handleNewCampaignGoalRevealComplete,
+    handleNewProjectRevealComplete,
     handleRoadmapGoalEdit,
     handleRoadmapGoalOpen,
     handleProjectEditOpen,

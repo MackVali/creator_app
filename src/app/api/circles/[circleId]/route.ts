@@ -13,7 +13,7 @@ const memberColumns =
   "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
 
 const habitColumns =
-  "id, circle_id, name, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at";
+  "id, circle_id, name, habit_type, memo_capture_config, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, last_completed_at, current_streak_days, skill_id, routine_id, duration_minutes, created_at, updated_at";
 
 type CircleType = "HOUSEHOLD" | "TEAM" | "CLIENTS" | "STUDIO" | "CUSTOM";
 
@@ -47,8 +47,18 @@ type CircleHabitRow = {
   circle_id: string | null;
   name: string | null;
   habit_type: string | null;
+  memo_capture_config: unknown;
   recurrence: string | null;
   recurrence_days: number[] | null;
+  recurrence_mode: string | null;
+  anchor_type: string | null;
+  anchor_value: string | number | null;
+  anchor_start_date: string | null;
+  next_due_override: string | null;
+  last_completed_at: string | null;
+  current_streak_days: number | null;
+  skill_id: string | null;
+  routine_id: string | null;
   duration_minutes: number | null;
   created_at: string;
   updated_at: string;
@@ -235,6 +245,7 @@ export async function GET(_request: Request, context: CircleDetailParams) {
   return NextResponse.json(
     {
       circle,
+      viewerUserId: user.id,
       viewerCanManageMembers: circle.owner_user_id === user.id,
       habits: habits ?? [],
       ownerSkills,

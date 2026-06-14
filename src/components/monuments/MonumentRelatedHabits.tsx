@@ -565,6 +565,10 @@ export function MonumentRelatedHabits({
   const [restoreRoutineDrawerId, setRestoreRoutineDrawerId] = useState<
     string | null
   >(null);
+  const [newRoutineHabitReveal, setNewRoutineHabitReveal] = useState<{
+    routineId: string;
+    habitId: string;
+  } | null>(null);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [completionLoading, setCompletionLoading] = useState(false);
   const [habitsError, setHabitsError] = useState<string | null>(null);
@@ -1809,6 +1813,7 @@ export function MonumentRelatedHabits({
       const detail = (
         event as CustomEvent<{
           entityType?: string;
+          entityId?: string;
           action?: string;
           routineId?: string | null;
           preserveDrawer?: {
@@ -1827,8 +1832,12 @@ export function MonumentRelatedHabits({
         detail.preserveDrawer?.type === "routine"
       ) {
         const routineId = detail.routineId ?? detail.preserveDrawer.id;
-        if (routineId) {
+        if (routineId && detail.entityId) {
           setRestoreRoutineDrawerId(routineId);
+          setNewRoutineHabitReveal({
+            routineId,
+            habitId: detail.entityId,
+          });
         }
       }
 
@@ -1840,6 +1849,17 @@ export function MonumentRelatedHabits({
       window.removeEventListener("creator:entity-saved", handleCreatorEntitySaved);
     };
   }, []);
+
+  const handleNewRoutineHabitRevealComplete = useCallback(
+    (routineId: string, habitId: string) => {
+      setNewRoutineHabitReveal((current) =>
+        current?.routineId === routineId && current.habitId === habitId
+          ? null
+          : current
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2158,6 +2178,18 @@ export function MonumentRelatedHabits({
                                 onAddHabit={handleRoutineAddHabit}
                                 restoreOpen={
                                   restoreRoutineDrawerId === item.routine.id
+                                }
+                                newHabitRevealId={
+                                  newRoutineHabitReveal?.routineId ===
+                                  item.routine.id
+                                    ? newRoutineHabitReveal.habitId
+                                    : null
+                                }
+                                onNewHabitRevealComplete={(habitId) =>
+                                  handleNewRoutineHabitRevealComplete(
+                                    item.routine.id,
+                                    habitId
+                                  )
                                 }
                               />
                             );

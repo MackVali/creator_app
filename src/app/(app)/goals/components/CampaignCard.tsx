@@ -185,6 +185,11 @@ const completedGoalsRevealMotion = {
   },
 } as const;
 
+const newCampaignGoalRevealTransition = {
+  duration: 0.42,
+  ease: [0.16, 1, 0.3, 1],
+} as const;
+
 const goalManualCompleteRejectClass =
   "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]";
 const campaignDrawerNoSelectClass =
@@ -222,6 +227,12 @@ type CampaignDetails = {
   emoji: string | null;
 };
 
+type NewProjectRevealMarker = {
+  goalId: string;
+  projectId: string;
+  campaignId?: string | null;
+};
+
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
@@ -246,6 +257,10 @@ function DraggableGoalCard({
   onGoalManualComplete,
   suppressReadyToast = false,
   sourceCampaignId = null,
+  newGoalRevealId = null,
+  newProjectRevealId = null,
+  onNewGoalRevealComplete,
+  onNewProjectRevealComplete,
 }: {
   goal: Goal;
   index: number;
@@ -271,6 +286,10 @@ function DraggableGoalCard({
   campaignDrawerRow?: boolean;
   suppressReadyToast?: boolean;
   sourceCampaignId?: string | null;
+  newGoalRevealId?: string | null;
+  newProjectRevealId?: string | null;
+  onNewGoalRevealComplete?: (goalId: string) => void;
+  onNewProjectRevealComplete?: (goalId: string, projectId: string) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const {
@@ -334,6 +353,7 @@ function DraggableGoalCard({
   const openedGoalVariants = campaignDrawerRow
     ? campaignDrawerOpenedGoalMotion
     : openedGoalMotion;
+  const isNewGoalReveal = newGoalRevealId === goal.id;
   const [shouldRenderOpenGoal, setShouldRenderOpenGoal] = useState(Boolean(isOpen));
   const [controlledGoalOpen, setControlledGoalOpen] = useState(Boolean(isOpen));
   const closeTimerRef = useRef<number | null>(null);
@@ -637,6 +657,30 @@ function DraggableGoalCard({
       <motion.div
         className="overflow-hidden"
         layout={prefersReducedMotion ? undefined : "size"}
+        initial={
+          isNewGoalReveal
+            ? prefersReducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, height: 0, y: -6 }
+            : false
+        }
+        animate={
+          isNewGoalReveal
+            ? prefersReducedMotion
+              ? { opacity: 1 }
+              : {
+                  opacity: 1,
+                  height: "auto",
+                  y: 0,
+                  transition: newCampaignGoalRevealTransition,
+                }
+            : undefined
+        }
+        onAnimationComplete={() => {
+          if (isNewGoalReveal) {
+            onNewGoalRevealComplete?.(goal.id);
+          }
+        }}
         transition={
           prefersReducedMotion
             ? { duration: 0.01 }
@@ -709,6 +753,10 @@ function DraggableGoalCard({
                       onProjectUpdated={(projectId, updates) =>
                         onProjectUpdated?.(goal.id, projectId, updates)
                       }
+                      newProjectRevealId={newProjectRevealId}
+                      onNewProjectRevealComplete={(projectId) =>
+                        onNewProjectRevealComplete?.(goal.id, projectId)
+                      }
                       addingProject={false}
                       onAddProject={(originRect) =>
                         fabCreation?.requestProjectCreation(
@@ -771,6 +819,13 @@ function DraggableGoalCard({
                   }
                   onProjectUpdated={(projectId, updates) =>
                     onProjectUpdated?.(goal.id, projectId, updates)
+                  }
+                  newProjectRevealId={newProjectRevealId}
+                  onNewProjectRevealComplete={(projectId) =>
+                    onNewProjectRevealComplete?.(goal.id, projectId)
+                  }
+                  suppressDrawerOpenAnimation={
+                    newProjectRevealId !== null && isOpen === true
                   }
                   monumentContext={monumentContext}
                   onManualComplete={onGoalManualComplete}
@@ -852,6 +907,10 @@ interface CampaignCardProps {
   suppressReadyToast?: boolean;
   restoreOpen?: boolean;
   restoreOpenGoalId?: string | null;
+  newGoalRevealId?: string | null;
+  newProjectReveal?: NewProjectRevealMarker | null;
+  onNewGoalRevealComplete?: (goalId: string) => void;
+  onNewProjectRevealComplete?: (goalId: string, projectId: string) => void;
 }
 
 function CampaignCardImpl({
@@ -871,6 +930,10 @@ function CampaignCardImpl({
   suppressReadyToast = false,
   restoreOpen = false,
   restoreOpenGoalId = null,
+  newGoalRevealId = null,
+  newProjectReveal = null,
+  onNewGoalRevealComplete,
+  onNewProjectRevealComplete,
   onRoadmapOrderSaved,
   onCampaignDetailsSaved,
 }: CampaignCardProps) {
@@ -1063,6 +1126,10 @@ function CampaignCardImpl({
                 onAddGoal={onAddGoal}
                 restoreOpen={restoreOpen}
                 restoreOpenGoalId={restoreOpenGoalId}
+                newGoalRevealId={newGoalRevealId}
+                newProjectReveal={newProjectReveal}
+                onNewGoalRevealComplete={onNewGoalRevealComplete}
+                onNewProjectRevealComplete={onNewProjectRevealComplete}
                 onCampaignDetailsSaved={onCampaignDetailsSaved}
                 onGoalsReordered={async (reordered) => {
                   setLocalGoals(reordered);
@@ -1216,6 +1283,10 @@ type CampaignDrawerProps = {
   ) => void | Promise<void>;
   restoreOpen?: boolean;
   restoreOpenGoalId?: string | null;
+  newGoalRevealId?: string | null;
+  newProjectReveal?: NewProjectRevealMarker | null;
+  onNewGoalRevealComplete?: (goalId: string) => void;
+  onNewProjectRevealComplete?: (goalId: string, projectId: string) => void;
 };
 
 // Campaign Drawer: opened compact campaign goals menu used by Monument Detail Goal Grid campaign cards.
@@ -1236,6 +1307,10 @@ function CampaignDrawer({
   onCampaignDetailsSaved,
   restoreOpen = false,
   restoreOpenGoalId = null,
+  newGoalRevealId = null,
+  newProjectReveal = null,
+  onNewGoalRevealComplete,
+  onNewProjectRevealComplete,
 }: CampaignDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const prefersReducedMotion = useReducedMotion();
@@ -1692,6 +1767,14 @@ function CampaignDrawer({
       campaignDrawerRow
       sourceCampaignId={roadmap.id}
       suppressReadyToast={suppressReadyToast}
+      newGoalRevealId={newGoalRevealId}
+      newProjectRevealId={
+        newProjectReveal?.goalId === goal.id
+          ? newProjectReveal.projectId
+          : null
+      }
+      onNewGoalRevealComplete={onNewGoalRevealComplete}
+      onNewProjectRevealComplete={onNewProjectRevealComplete}
     />
   );
 
@@ -1830,11 +1913,15 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.suppressReadyToast === next.suppressReadyToast &&
     prev.restoreOpen === next.restoreOpen &&
     prev.restoreOpenGoalId === next.restoreOpenGoalId &&
+    prev.newGoalRevealId === next.newGoalRevealId &&
+    prev.newProjectReveal === next.newProjectReveal &&
     prev.onProjectUpdated === next.onProjectUpdated &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onGoalManualComplete === next.onGoalManualComplete &&
     prev.onAddGoal === next.onAddGoal &&
     prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved &&
+    prev.onNewGoalRevealComplete === next.onNewGoalRevealComplete &&
+    prev.onNewProjectRevealComplete === next.onNewProjectRevealComplete &&
     prev.onCampaignDetailsSaved === next.onCampaignDetailsSaved
   );
 });

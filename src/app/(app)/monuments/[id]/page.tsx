@@ -48,7 +48,7 @@ export default async function MonumentDetailPage({
 
   const { data: notesData, error: notesError } = await supabase
     .from("notes")
-    .select("id,title,content,monument_id,created_at,updated_at,metadata,parent_note_id,sibling_order")
+    .select("id,title,content,monument_id,created_at,updated_at")
     .eq("user_id", user.id)
     .eq("monument_id", params.id)
     .order("created_at", { ascending: true });
@@ -68,9 +68,6 @@ export default async function MonumentDetailPage({
     content: row.content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    metadata: (row.metadata as Record<string, unknown> | null) ?? null,
-    parentNoteId: row.parent_note_id ?? null,
-    siblingOrder: row.sibling_order ?? null,
   }));
 
   return <MonumentDetail monument={monument} notes={notes} />;

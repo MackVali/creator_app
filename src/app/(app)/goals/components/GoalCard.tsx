@@ -13,7 +13,12 @@ import {
 import dynamic from "next/dynamic";
 import { ChevronDown, MoreVertical, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  type HTMLMotionProps,
+} from "framer-motion";
 import type { Goal, Project, Task } from "../types";
 import {
   ProjectRowTaskInteractionsProvider,
@@ -103,6 +108,9 @@ interface GoalCardProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   projectDropdownMode?: "default" | "tasks-only";
+  newProjectRevealId?: string | null;
+  onNewProjectRevealComplete?: (projectId: string) => void;
+  suppressDrawerOpenAnimation?: boolean;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -238,6 +246,9 @@ function GoalCardImpl({
   open: openProp,
   onOpenChange,
   projectDropdownMode = "default",
+  newProjectRevealId = null,
+  onNewProjectRevealComplete,
+  suppressDrawerOpenAnimation = false,
   onTaskToggleCompletion,
   onAddTask,
   onProjectHoldComplete,
@@ -256,6 +267,8 @@ function GoalCardImpl({
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const isDrawerCompactDefault = drawerCompact && variant === "default";
+  const shouldSuppressDrawerOpenAnimation =
+    suppressDrawerOpenAnimation && open;
   const usesCampaignDrawerRowVisual =
     campaignDrawerRowVisual && isDrawerCompactDefault;
   const defaultCardRef = useRef<HTMLDivElement | null>(null);
@@ -699,7 +712,11 @@ function GoalCardImpl({
     0.85,
     1.45
   );
-  const drawerCompactMeasuredDetailMotionProps = prefersReducedMotion
+  const drawerCompactMeasuredDetailMotionProps: HTMLMotionProps<"div"> = shouldSuppressDrawerOpenAnimation
+    ? {
+        initial: false,
+      }
+    : prefersReducedMotion
     ? {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
@@ -735,7 +752,11 @@ function GoalCardImpl({
           },
         },
       };
-  const drawerCompactMeasuredContentMotionProps = prefersReducedMotion
+  const drawerCompactMeasuredContentMotionProps: HTMLMotionProps<"div"> = shouldSuppressDrawerOpenAnimation
+    ? {
+        initial: false,
+      }
+    : prefersReducedMotion
     ? {
         initial: false,
       }
@@ -763,7 +784,11 @@ function GoalCardImpl({
           },
         },
       };
-  const detailMotionProps = prefersReducedMotion
+  const detailMotionProps: HTMLMotionProps<"div"> = shouldSuppressDrawerOpenAnimation
+    ? {
+        initial: false,
+      }
+    : prefersReducedMotion
     ? {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
@@ -778,6 +803,16 @@ function GoalCardImpl({
         animate: "visible" as const,
         exit: "exit" as const,
       };
+  const dropdownContentMotionProps: HTMLMotionProps<"div"> = isDrawerCompactDefault
+    ? drawerCompactMeasuredContentMotionProps
+    : prefersReducedMotion
+      ? {}
+      : {
+          variants: detailContentVariant,
+          initial: "hidden" as const,
+          animate: "visible" as const,
+          exit: "exit" as const,
+        };
 
   // Compact tile for dense mobile grids
   if (variant === "compact") {
@@ -863,6 +898,8 @@ function GoalCardImpl({
                     onEdit={onEdit}
                     hideGoalEditAction={hideGoalEditAction}
                     onTaskEditOpen={onTaskEditOpen}
+                    newProjectRevealId={newProjectRevealId}
+                    onNewProjectRevealComplete={onNewProjectRevealComplete}
                     onTaskToggleCompletion={onTaskToggleCompletion}
                   />
                 ) : null}
@@ -979,6 +1016,8 @@ function GoalCardImpl({
                   onEdit={onEdit}
                   hideGoalEditAction={hideGoalEditAction}
                   onTaskEditOpen={onTaskEditOpen}
+                  newProjectRevealId={newProjectRevealId}
+                  onNewProjectRevealComplete={onNewProjectRevealComplete}
                   onTaskToggleCompletion={onTaskToggleCompletion}
                 />
               ) : null}
@@ -1296,29 +1335,7 @@ function GoalCardImpl({
                       ? drawerCompactDropdownContentRef
                       : undefined
                   }
-                  variants={
-                    isDrawerCompactDefault || prefersReducedMotion
-                      ? undefined
-                      : detailContentVariant
-                  }
-                  initial={
-                    isDrawerCompactDefault || prefersReducedMotion
-                      ? undefined
-                      : "hidden"
-                  }
-                  animate={
-                    isDrawerCompactDefault || prefersReducedMotion
-                      ? undefined
-                      : "visible"
-                  }
-                  exit={
-                    isDrawerCompactDefault || prefersReducedMotion
-                      ? undefined
-                      : "exit"
-                  }
-                  {...(isDrawerCompactDefault
-                    ? drawerCompactMeasuredContentMotionProps
-                    : {})}
+                  {...dropdownContentMotionProps}
                 >
                   <ProjectRowTaskInteractionsProvider
                     value={{
@@ -1338,6 +1355,8 @@ function GoalCardImpl({
                       projectTasksOnly={projectDropdownMode === "tasks-only"}
                       onAddProject={handleAddProject}
                       addingProject={addingProject}
+                      newProjectRevealId={newProjectRevealId}
+                      onNewProjectRevealComplete={onNewProjectRevealComplete}
                       onTaskToggleCompletion={onTaskToggleCompletion}
                     />
                   </ProjectRowTaskInteractionsProvider>
@@ -1387,6 +1406,8 @@ type CompactProjectsOverlayProps = {
     project: Project,
     origin: ProjectCardMorphOrigin | null
   ) => void;
+  newProjectRevealId?: string | null;
+  onNewProjectRevealComplete?: (projectId: string) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -1409,6 +1430,8 @@ function CompactProjectsOverlay({
   onEdit,
   hideGoalEditAction = false,
   onTaskEditOpen,
+  newProjectRevealId = null,
+  onNewProjectRevealComplete,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
@@ -1555,6 +1578,8 @@ function CompactProjectsOverlay({
             goalId={goalId}
             onAddProject={onAddProject}
             addingProject={addingProject}
+            newProjectRevealId={newProjectRevealId}
+            onNewProjectRevealComplete={onNewProjectRevealComplete}
             onTaskToggleCompletion={onTaskToggleCompletion}
           />
         </ProjectRowTaskInteractionsProvider>

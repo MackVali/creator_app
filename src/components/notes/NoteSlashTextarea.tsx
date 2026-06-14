@@ -57,6 +57,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 
 type SlashCommandId =
   | "text"
@@ -192,6 +193,7 @@ const NOTE_DATABASE_VIEW_LABELS: Record<NoteDatabaseViewType, string> = {
 };
 
 const NOTE_DATABASE_VIEW_TYPES: NoteDatabaseViewType[] = ["table", "list", "card"];
+const DEFAULT_NOTE_DATABASE_ICON = "lucide:Database";
 const NOTE_DATABASE_FULL_TABLE_MIN_VISIBLE_ROWS = 40;
 const NOTE_DATABASE_TITLE_FIELD_NAMES = new Set([
   "name",
@@ -204,6 +206,26 @@ const NOTE_DATABASE_TITLE_FIELD_NAMES = new Set([
 
 export const NOTE_DIVIDER_LINE_CLASS =
   "h-px w-full bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),rgba(16,185,129,0.16),rgba(255,255,255,0.07),transparent)]";
+
+function DatabaseInlineIcon({ iconKey }: { iconKey?: string | null }) {
+  const normalizedIconKey = iconKey?.trim();
+
+  if (!normalizedIconKey || normalizedIconKey.toLowerCase() === "database") {
+    return <Table2 className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+
+  const resolvedIcon = resolveNoteIcon(normalizedIconKey);
+  if (resolvedIcon.kind === "lucide") {
+    const Icon = resolvedIcon.Icon;
+    return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+
+  return (
+    <span className="text-sm leading-none" aria-hidden="true">
+      {resolvedIcon.emoji}
+    </span>
+  );
+}
 
 export type NoteSubpageMarker = {
   title: string;
@@ -1195,6 +1217,73 @@ function normalizeDatabaseDefinitionsForSegments(
   return { changed, definitions: nextDefinitions };
 }
 
+export function removeNoteDatabaseSegment({
+  content,
+  databaseDefinitions,
+  databaseEntries,
+  databaseId,
+  segmentIndex,
+}: {
+  content: string;
+  databaseDefinitions?: NoteDatabaseDefinitions | null;
+  databaseEntries?: NoteDatabaseEntries | null;
+  databaseId: string;
+  segmentIndex?: number;
+}) {
+  const currentSegments = parseNoteSegments(content);
+  const targetSegmentIndex =
+    typeof segmentIndex === "number"
+      ? segmentIndex
+      : currentSegments.findIndex(
+          (segment) => segment.type === "database" && segment.databaseId === databaseId,
+        );
+  const targetSegment = currentSegments[targetSegmentIndex];
+  const currentDefinitions = databaseDefinitions ?? {};
+  const currentEntries = databaseEntries ?? {};
+  const targetDefinition =
+    targetSegment?.type === "database" ? currentDefinitions[targetSegment.databaseId] : null;
+  const emptyResult = {
+    content,
+    databaseDefinitions: currentDefinitions,
+    databaseEntries: currentEntries,
+    databaseId,
+    locked: false,
+    removed: false,
+    segmentIndex: targetSegmentIndex,
+    systemDatabaseKey: undefined as string | undefined,
+  };
+
+  if (targetSegment?.type !== "database" || targetSegment.databaseId !== databaseId) {
+    return emptyResult;
+  }
+
+  if (targetDefinition?.lockedSystemDatabase === true) {
+    return {
+      ...emptyResult,
+      locked: true,
+      systemDatabaseKey: targetDefinition.systemDatabaseKey,
+    };
+  }
+
+  const nextDefinitions = { ...currentDefinitions };
+  const nextEntries = { ...currentEntries };
+  delete nextDefinitions[databaseId];
+  delete nextEntries[databaseId];
+
+  return {
+    content: serializeNoteSegments(
+      currentSegments.filter((_, index) => index !== targetSegmentIndex),
+    ),
+    databaseDefinitions: nextDefinitions,
+    databaseEntries: nextEntries,
+    databaseId,
+    locked: false,
+    removed: true,
+    segmentIndex: targetSegmentIndex,
+    systemDatabaseKey: targetDefinition?.systemDatabaseKey,
+  };
+}
+
 function getDatabaseTitleField(definition: NoteDatabaseDefinition) {
   return (
     definition.fields.find((field) => field.id === definition.titleFieldId) ??
@@ -1459,7 +1548,7 @@ function NoteDatabaseEntriesView({
 
     if (entries.length === 0) {
       return (
-        <p className="rounded-md border border-dashed border-white/[0.08] bg-black/12 px-2.5 py-2 text-xs font-medium text-white/34">
+        <p className="border-y border-dashed border-white/[0.055] bg-transparent px-0 py-2 text-xs font-medium text-white/34">
           No entries yet
         </p>
       );
@@ -1473,16 +1562,10 @@ function NoteDatabaseEntriesView({
       : "w-32 font-medium";
 
     return (
-      <div
-        className={`w-full overflow-x-auto rounded-md border border-white/[0.07] ${
-          isFull ? "bg-black/20" : "bg-black/14"
-        }`}
-      >
-        <div className={`${isFull ? "min-w-full" : "min-w-[30rem]"} divide-y divide-white/[0.06]`}>
+      <div className="w-full overflow-x-auto border-y border-white/[0.055] bg-transparent">
+        <div className="min-w-[30rem] divide-y divide-white/[0.05]">
           <div
-            className={`flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32 ${
-              isFull ? "px-4 py-2.5" : "px-2.5 py-1.5"
-            }`}
+            className="flex items-center gap-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30"
           >
             {visibleFields.map((field) => (
               <span
@@ -1498,7 +1581,7 @@ function NoteDatabaseEntriesView({
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className={`flex items-center gap-2 ${isFull ? "px-4 py-3 text-sm" : "px-2.5 py-1.5 text-xs"}`}
+              className="flex items-center gap-2 py-1.5 text-xs transition hover:bg-white/[0.018]"
             >
               {visibleFields.map((field) => {
                 const isTitleField = field.id === titleField?.id;
@@ -1608,30 +1691,22 @@ function NoteDatabaseEntriesView({
     }
 
     return (
-      <div className={isFull ? "space-y-2" : "space-y-1.5"}>
+      <div className="divide-y divide-white/[0.05] border-y border-white/[0.055]">
         {entries.map((entry) => {
           const properties = getDatabaseEntryProperties(entry, definition);
 
           return (
             <div
               key={entry.id}
-              className={`rounded-md border border-white/[0.07] bg-black/16 ${
-                isFull ? "px-4 py-3" : "px-2.5 py-1.5"
-              }`}
+              className="py-1.5 transition hover:bg-white/[0.018]"
             >
               <p
-                className={`truncate font-semibold text-white/82 ${
-                  isFull ? "text-sm leading-5" : "text-xs leading-4"
-                }`}
+                className="truncate text-xs font-semibold leading-4 text-white/82"
               >
                 {getDatabaseEntryTitle(entry, definition)}
               </p>
               {properties.length > 0 ? (
-                <p
-                  className={`mt-0.5 truncate font-medium text-white/38 ${
-                    isFull ? "text-xs leading-5" : "text-[11px] leading-4"
-                  }`}
-                >
+                <p className="mt-0.5 truncate text-[11px] font-medium leading-4 text-white/38">
                   {properties
                     .map(({ field, value }) => {
                       return `${getDatabaseFieldName(field)}: ${value || "Empty"}`;
@@ -1708,29 +1783,23 @@ function NoteDatabaseEntriesView({
     }
 
     return (
-      <div
-        className={`grid grid-cols-1 ${
-          isFull ? "gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" : "gap-2 sm:grid-cols-2"
-        }`}
-      >
+      <div className="grid grid-cols-1 gap-1.5 border-y border-white/[0.055] py-1.5 sm:grid-cols-2">
         {entries.map((entry) => {
           const properties = getDatabaseEntryProperties(entry, definition);
 
           return (
             <div
               key={entry.id}
-              className={`rounded-md border border-white/[0.08] bg-[#080808] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ${
-                isFull ? "px-4 py-3.5" : "px-2.5 py-2"
-              }`}
+              className="min-w-0 border-l border-white/[0.055] bg-white/[0.012] px-2 py-1.5 transition hover:bg-white/[0.025]"
             >
-              <p className="truncate text-sm font-semibold leading-5 text-white/88">
+              <p className="truncate text-xs font-semibold leading-4 text-white/84">
                 {getDatabaseEntryTitle(entry, definition)}
               </p>
-              <div className="mt-1.5 space-y-1">
+              <div className="mt-1 space-y-0.5">
                 {properties.map(({ field, value }) => (
                   <div
                     key={field.id}
-                    className="flex items-center justify-between gap-2 rounded border border-white/[0.055] bg-white/[0.035] px-2 py-1 text-[11px] font-medium"
+                    className="flex items-center justify-between gap-2 text-[11px] font-medium leading-4"
                   >
                     <span className="truncate text-white/34">{getDatabaseFieldName(field)}</span>
                     <span
@@ -1752,8 +1821,10 @@ function NoteDatabaseEntriesView({
 
   return (
     <p
-      className={`rounded-md border border-dashed border-white/[0.08] bg-black/12 font-medium text-white/34 ${
-        isFull ? "px-3 py-8 text-center text-sm" : "px-2.5 py-2 text-xs"
+      className={`border-dashed border-white/[0.08] bg-black/12 font-medium text-white/34 ${
+        isFull
+          ? "rounded-md border px-3 py-8 text-center text-sm"
+          : "border-y bg-transparent px-0 py-2 text-xs"
       }`}
     >
       No entries yet
@@ -2201,6 +2272,7 @@ export function NoteDatabaseFocusedView({
   onBack,
   onDatabaseDefinitionsChange,
   onDatabaseEntriesChange,
+  onDeleteDatabase,
 }: {
   autosaveLabel?: string;
   databaseDefinitions?: NoteDatabaseDefinitions | null;
@@ -2211,6 +2283,7 @@ export function NoteDatabaseFocusedView({
   onBack: () => void;
   onDatabaseDefinitionsChange?: (databases: NoteDatabaseDefinitions) => void;
   onDatabaseEntriesChange?: (entries: NoteDatabaseEntries) => void;
+  onDeleteDatabase?: () => void | Promise<void>;
 }) {
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
@@ -2288,6 +2361,13 @@ export function NoteDatabaseFocusedView({
     updateDatabaseDefinition((currentDefinition) => ({
       ...currentDefinition,
       title,
+    }));
+  }
+
+  function updateDatabaseIcon(iconKey: string) {
+    updateDatabaseDefinition((currentDefinition) => ({
+      ...currentDefinition,
+      iconKey: iconKey.trim() || DEFAULT_NOTE_DATABASE_ICON,
     }));
   }
 
@@ -2500,6 +2580,15 @@ export function NoteDatabaseFocusedView({
   const isPinned =
     databaseDefinition.lockedSystemDatabase === true ||
     databaseDefinition.pinnedSurface === "body";
+  const canDeleteDatabase =
+    databaseDefinition.lockedSystemDatabase !== true && Boolean(onDeleteDatabase);
+
+  async function deleteDatabase() {
+    if (!canDeleteDatabase) return;
+
+    setIsBuilderOpen(false);
+    await onDeleteDatabase?.();
+  }
 
   return (
     <section className="flex min-h-full w-full flex-1 flex-col text-white">
@@ -2522,6 +2611,12 @@ export function NoteDatabaseFocusedView({
 
       <div className="mt-3 flex flex-col gap-4 border-b border-white/[0.07] pb-4">
         <div className="flex min-w-0 max-w-full items-center gap-2">
+          <NoteIconPicker
+            icon={databaseDefinition.iconKey || DEFAULT_NOTE_DATABASE_ICON}
+            onIconChange={updateDatabaseIcon}
+            ariaLabel="Change database icon"
+            customInputAriaLabel="Custom database icon"
+          />
           <h1 className="min-w-0 truncate text-2xl font-semibold leading-8 text-white sm:text-3xl">
             {displayTitle}
           </h1>
@@ -2977,6 +3072,25 @@ export function NoteDatabaseFocusedView({
               >
                 <Plus className="h-4 w-4" />
                 Add Field
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteDatabase()}
+                disabled={!canDeleteDatabase}
+                aria-label={
+                  databaseDefinition.lockedSystemDatabase === true
+                    ? "System database cannot be deleted"
+                    : `Delete database ${displayTitle}`
+                }
+                title={
+                  databaseDefinition.lockedSystemDatabase === true
+                    ? "This system database is locked."
+                    : `Delete database ${displayTitle}`
+                }
+                className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-red-300/[0.1] bg-red-950/[0.08] text-sm font-semibold text-red-100/58 outline-none transition hover:border-red-300/[0.16] hover:bg-red-950/[0.14] hover:text-red-100/78 focus-visible:ring-1 focus-visible:ring-red-100/18 disabled:cursor-not-allowed disabled:border-white/[0.04] disabled:bg-white/[0.025] disabled:text-white/26 disabled:hover:bg-white/[0.025]"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {databaseDefinition.lockedSystemDatabase === true ? "System DB locked" : "Delete DB"}
               </button>
             </div>
           </div>
@@ -3576,16 +3690,31 @@ function NoteSlashTextarea({
 
   function removeSegment(segmentIndex: number) {
     const removedSegment = segments[segmentIndex];
-    const removedDatabaseDefinition =
-      removedSegment?.type === "database"
-        ? databaseDefinitions?.[removedSegment.databaseId]
-        : null;
 
-    if (removedDatabaseDefinition?.lockedSystemDatabase === true) {
-      console.warn("This system database is locked.", {
-        databaseId: removedDatabaseDefinition.id,
-        systemDatabaseKey: removedDatabaseDefinition.systemDatabaseKey,
+    if (removedSegment?.type === "database") {
+      const removal = removeNoteDatabaseSegment({
+        content: value,
+        databaseDefinitions,
+        databaseEntries,
+        databaseId: removedSegment.databaseId,
+        segmentIndex,
       });
+
+      if (removal.locked) {
+        console.warn("This system database is locked.", {
+          databaseId: removal.databaseId,
+          systemDatabaseKey: removal.systemDatabaseKey,
+        });
+        return;
+      }
+
+      if (!removal.removed) return;
+
+      const parsedNextSegments = parseNoteSegments(removal.content);
+      onValueChange(removal.content);
+      onDatabaseDefinitionsChange?.(removal.databaseDefinitions);
+      onDatabaseEntriesChange?.(removal.databaseEntries);
+      setPendingSelection(findNearestEditableSelection(parsedNextSegments, segmentIndex));
       return;
     }
 
@@ -3593,18 +3722,6 @@ function NoteSlashTextarea({
     const nextValue = serializeNoteSegments(nextSegments);
     const parsedNextSegments = parseNoteSegments(nextValue);
     onValueChange(nextValue);
-
-    if (removedSegment?.type === "database" && databaseDefinitions?.[removedSegment.databaseId]) {
-      const nextDefinitions = { ...databaseDefinitions };
-      delete nextDefinitions[removedSegment.databaseId];
-      onDatabaseDefinitionsChange?.(nextDefinitions);
-    }
-
-    if (removedSegment?.type === "database" && databaseEntries?.[removedSegment.databaseId]) {
-      const nextEntries = { ...databaseEntries };
-      delete nextEntries[removedSegment.databaseId];
-      onDatabaseEntriesChange?.(nextEntries);
-    }
 
     setPendingSelection(findNearestEditableSelection(parsedNextSegments, segmentIndex));
   }
@@ -3810,6 +3927,38 @@ function NoteSlashTextarea({
     }
 
     setActiveDatabaseId(segment.databaseId);
+  }
+
+  function deleteDatabaseById(databaseId: string) {
+    const removal = removeNoteDatabaseSegment({
+      content: value,
+      databaseDefinitions,
+      databaseEntries,
+      databaseId,
+    });
+
+    if (removal.locked) {
+      console.warn("This system database is locked.", {
+        databaseId: removal.databaseId,
+        systemDatabaseKey: removal.systemDatabaseKey,
+      });
+      return;
+    }
+
+    if (!removal.removed) return;
+
+    const parsedNextSegments = parseNoteSegments(removal.content);
+    onValueChange(removal.content);
+    onDatabaseDefinitionsChange?.(removal.databaseDefinitions);
+    onDatabaseEntriesChange?.(removal.databaseEntries);
+    setActiveDatabaseId(null);
+
+    if (activeEntryDatabaseId === databaseId) {
+      setActiveEntryDatabaseId(null);
+      setEntryFormValues({});
+    }
+
+    setPendingSelection(findNearestEditableSelection(parsedNextSegments, removal.segmentIndex));
   }
 
   function openDatabaseEntrySheet(segment: NoteDatabaseSegment) {
@@ -4468,17 +4617,57 @@ function NoteSlashTextarea({
                 segment,
             <div key={`${index}-database`} className="flex min-h-[4.25rem] items-center py-1.5">
               <div className="group flex w-full max-w-[42rem] items-center gap-1">
-                <div className="min-w-0 flex-1 rounded-lg border border-white/[0.1] bg-[linear-gradient(180deg,rgba(255,255,255,0.065),rgba(255,255,255,0.035))] px-3 py-2.5 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_34px_-28px_rgba(0,0,0,0.95)]">
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.1] bg-black/35 text-emerald-100/70">
-                      <Table2 className="h-4 w-4" />
+                <div className="min-w-0 flex-1 border-y border-white/[0.055] bg-transparent py-2.5 text-white/90">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-white/38">
+                      <DatabaseInlineIcon iconKey={definition.iconKey} />
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold leading-4">{displayTitle}</p>
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <p className="truncate text-sm font-semibold leading-4 text-white/86">
+                        {displayTitle}
+                      </p>
+                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-white/30">
+                        {NOTE_DATABASE_VIEW_LABELS[activeView.type]}
+                      </span>
+                    </div>
+                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openDatabaseEntrySheet(segment)}
+                        className="flex h-7 items-center justify-center gap-1 rounded-md border border-white/[0.07] bg-white/[0.025] px-2 text-xs font-semibold text-white/70 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.045] hover:text-white/84 focus-visible:ring-1 focus-visible:ring-white/20"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={
+                          isLockedSystemDatabase
+                            ? `Open locked system database ${displayTitle}.`
+                            : `Open database ${displayTitle}. Press Backspace or Delete to remove.`
+                        }
+                        title={
+                          isLockedSystemDatabase
+                            ? "This system database is locked."
+                            : undefined
+                        }
+                        ref={(node) => {
+                          if (node) {
+                            blockButtonRefs.current.set(index, node);
+                          } else {
+                            blockButtonRefs.current.delete(index);
+                          }
+                        }}
+                        onClick={() => openDatabase(segment)}
+                        onKeyDown={(event) => handleBlockKeyDown(event, index)}
+                        className="flex h-7 items-center justify-center rounded-md border border-white/[0.06] bg-transparent px-2 text-xs font-semibold text-white/56 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.035] hover:text-white/78 focus-visible:border-white/[0.18] focus-visible:bg-white/[0.045]"
+                      >
+                        Open
+                      </button>
                     </div>
                   </div>
 
-                  <div className="mt-2.5">
+                  <div className="mt-2">
                     <NoteDatabaseEntriesView
                       activeView={activeView}
                       definition={definition}
@@ -4487,53 +4676,7 @@ function NoteSlashTextarea({
                       visibleFields={visibleFields}
                     />
                   </div>
-
-                  <div className="mt-2.5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openDatabaseEntrySheet(segment)}
-                      className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/[0.11] bg-[#2a2a2a] px-2.5 text-xs font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-[#333] focus-visible:ring-1 focus-visible:ring-white/24"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={
-                        isLockedSystemDatabase
-                          ? `Open locked system database ${displayTitle}.`
-                          : `Open database ${displayTitle}. Press Backspace or Delete to remove.`
-                      }
-                      title={
-                        isLockedSystemDatabase
-                          ? "This system database is locked."
-                          : undefined
-                      }
-                      ref={(node) => {
-                        if (node) {
-                          blockButtonRefs.current.set(index, node);
-                        } else {
-                          blockButtonRefs.current.delete(index);
-                        }
-                      }}
-                      onClick={() => openDatabase(segment)}
-                      onKeyDown={(event) => handleBlockKeyDown(event, index)}
-                      className="flex h-8 items-center justify-center rounded-md border border-white/[0.08] bg-black/20 px-2.5 text-xs font-semibold text-white/60 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-white/78 focus-visible:border-emerald-300/35 focus-visible:bg-white/[0.075]"
-                    >
-                      Open
-                    </button>
-                  </div>
                 </div>
-                {isLockedSystemDatabase ? null : (
-                  <button
-                    type="button"
-                    aria-label={`Remove database block ${displayTitle}`}
-                    onClick={() => removeSegment(index)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/35 opacity-100 outline-none transition hover:bg-white/[0.07] hover:text-white/70 focus-visible:bg-white/[0.07] focus-visible:text-white/75 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
               </div>
             </div>,
               );
@@ -4984,6 +5127,27 @@ function NoteSlashTextarea({
               >
                 <Plus className="h-4 w-4" />
                 Add Field
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteDatabaseById(activeDatabaseDefinition.id)}
+                disabled={activeDatabaseDefinition.lockedSystemDatabase === true}
+                aria-label={
+                  activeDatabaseDefinition.lockedSystemDatabase === true
+                    ? "System database cannot be deleted"
+                    : `Delete database ${getDatabaseDisplayTitle(activeDatabaseDefinition.title)}`
+                }
+                title={
+                  activeDatabaseDefinition.lockedSystemDatabase === true
+                    ? "This system database is locked."
+                    : `Delete database ${getDatabaseDisplayTitle(activeDatabaseDefinition.title)}`
+                }
+                className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-2xl border border-red-300/[0.1] bg-red-950/[0.08] text-sm font-semibold text-red-100/58 outline-none transition hover:border-red-300/[0.16] hover:bg-red-950/[0.14] hover:text-red-100/78 focus-visible:ring-1 focus-visible:ring-red-100/18 disabled:cursor-not-allowed disabled:border-white/[0.04] disabled:bg-white/[0.025] disabled:text-white/26 disabled:hover:bg-white/[0.025]"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {activeDatabaseDefinition.lockedSystemDatabase === true
+                  ? "System DB locked"
+                  : "Delete DB"}
               </button>
             </div>
           </div>

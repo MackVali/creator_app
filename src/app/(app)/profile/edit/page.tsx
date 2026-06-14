@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Capacitor } from "@capacitor/core";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Camera as CapacitorCamera,
   CameraResultType,
@@ -32,7 +33,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2, X } from "lucide-react";
+import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2, X, ChevronRight } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
@@ -40,6 +42,17 @@ import SocialPillsRow from "@/components/profile/SocialPillsRow";
 type AvatarPhotoSource = "camera" | "photos";
 type AvatarPermissionResult = "granted" | "limited" | "denied";
 type PhotoLibraryPermissionState = CameraPermissionState | "restricted" | undefined;
+type EditableProfileField = "name" | "username" | "bio" | "dob" | "city";
+type EditableProfileFieldConfig = {
+  key: EditableProfileField;
+  label: string;
+  placeholder: string;
+  helper: string;
+  required?: boolean;
+  inputType?: "text" | "date";
+  multiline?: boolean;
+  icon?: LucideIcon;
+};
 
 const PHOTO_LIBRARY_SETTINGS_MESSAGE =
   "Photo library access is needed to choose a profile photo. Enable Photos access in iOS Settings and try again.";
@@ -58,6 +71,46 @@ const AVATAR_PHOTO_SOURCE_LABELS: Record<AvatarPhotoSource, string> = {
   camera: "Take Photo",
   photos: "Choose from Library",
 };
+
+const EDITABLE_PROFILE_FIELDS: EditableProfileFieldConfig[] = [
+  {
+    key: "name",
+    label: "Full Name",
+    placeholder: "Add your full name",
+    helper: "This appears on your profile and helps people recognize you.",
+    required: true,
+  },
+  {
+    key: "username",
+    label: "Username",
+    placeholder: "Choose a username",
+    helper: "This is your unique profile identifier. Changes are saved when you save the page.",
+    required: true,
+  },
+  {
+    key: "bio",
+    label: "Bio",
+    placeholder: "Add a short bio",
+    helper: "Keep it tight. A short intro, niche, or current focus usually works best.",
+    multiline: true,
+  },
+  {
+    key: "dob",
+    label: "Date of Birth",
+    placeholder: "Add date of birth",
+    helper: "Used for eligibility and personalization. It is not shown as a profile headline.",
+    required: true,
+    inputType: "date",
+    icon: Calendar,
+  },
+  {
+    key: "city",
+    label: "City",
+    placeholder: "Add your city",
+    helper: "Optional. Add a city if location context helps your audience understand your work.",
+    icon: MapPin,
+  },
+];
 
 function isCameraCancelError(error: unknown) {
   const message =
@@ -156,6 +209,7 @@ export default function ProfileEditPage() {
   const [success, setSuccess] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [activeProfileField, setActiveProfileField] = useState<EditableProfileField | null>(null);
 
   const [formData, setFormData] = useState<ProfileFormData>({
     name: "",
@@ -357,22 +411,6 @@ export default function ProfileEditPage() {
     return prefills;
   }, [linkedAccounts, socialLinks]);
 
-  const activeLinkedAccounts = useMemo(() => {
-    const visible = linkedAccounts.filter((account) => account.url?.trim());
-    const sortIndex = (platform?: string) => {
-      const normalized = (platform ?? "").toLowerCase();
-      const index = LINKED_ACCOUNT_ORDER.indexOf(normalized as SupportedPlatform);
-      return index === -1 ? LINKED_ACCOUNT_ORDER.length : index;
-    };
-
-    return [...visible].sort((a, b) => {
-      const indexA = sortIndex(a.platform);
-      const indexB = sortIndex(b.platform);
-      return indexA - indexB;
-    });
-  }, [linkedAccounts]);
-
-  const hasLinkedAccounts = activeLinkedAccounts.length > 0;
   const inlineSelectedLinkedAccount = inlineSelectedPlatform
     ? linkedAccounts.find(
         (account) =>
@@ -1520,14 +1558,14 @@ export default function ProfileEditPage() {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <div className="h-3 w-20 rounded-full bg-white/10" />
-                  <div className="h-11 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                  <div className="h-11 rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
                     <div className="ml-3.5 mt-4 h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="h-3 w-20 rounded-full bg-white/10" />
-                  <div className="relative h-11 rounded-lg border border-white/5 bg-black pl-8 ring-1 ring-black">
+                  <div className="relative h-11 rounded-lg border border-white/10 bg-[#202126] pl-8 ring-1 ring-white/10">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-zinc-500">
                       @
                     </span>
@@ -1538,7 +1576,7 @@ export default function ProfileEditPage() {
 
                 <div className="space-y-1.5">
                   <div className="h-3 w-10 rounded-full bg-white/10" />
-                  <div className="min-h-[88px] rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                  <div className="min-h-[88px] rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
                     <div className="space-y-2 px-3.5 pt-3.5">
                       <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.08]" />
                       <div className="h-3 w-full max-w-[320px] rounded-full bg-white/[0.06]" />
@@ -1552,7 +1590,7 @@ export default function ProfileEditPage() {
                       <Calendar className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                       <div className="h-3 w-24 rounded-full bg-white/10" />
                     </div>
-                    <div className="h-11 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                    <div className="h-11 rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
                       <div className="ml-3.5 mt-4 h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
                     </div>
                   </div>
@@ -1562,7 +1600,7 @@ export default function ProfileEditPage() {
                       <MapPin className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                       <div className="h-3 w-10 rounded-full bg-white/10" />
                     </div>
-                    <div className="h-11 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                    <div className="h-11 rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
                       <div className="ml-3.5 mt-4 h-3 w-32 animate-pulse rounded-full bg-white/[0.08]" />
                     </div>
                   </div>
@@ -1620,6 +1658,83 @@ export default function ProfileEditPage() {
     profile.name?.trim() ||
     profile.username ||
     "Your profile";
+  const activeProfileFieldConfig = activeProfileField
+    ? EDITABLE_PROFILE_FIELDS.find((field) => field.key === activeProfileField) ?? null
+    : null;
+  const getProfileFieldDisplayValue = (field: EditableProfileFieldConfig) => {
+    const value = formData[field.key]?.trim();
+
+    if (!value) {
+      return field.placeholder;
+    }
+
+    if (field.key === "username") {
+      return `@${value}`;
+    }
+
+    if (field.key === "dob") {
+      const [year, month, day] = value.split("-");
+      return year && month && day ? `${month}/${day}/${year}` : value;
+    }
+
+    return value;
+  };
+  const renderProfileFieldEditorControl = (field: EditableProfileFieldConfig) => {
+    const editorId = `profile-field-${field.key}`;
+    const hasError = hasAttemptedSubmit && fieldErrors[field.key];
+    const inputClasses = `bg-[#202126] text-base text-white placeholder:text-zinc-500 ${
+      hasError
+        ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
+        : "!border-white/10 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+    }`;
+
+    if (field.multiline) {
+      return (
+        <Textarea
+          id={editorId}
+          value={formData[field.key]}
+          onChange={(e) => handleInputChange(field.key, e.target.value)}
+          placeholder={field.placeholder}
+          autoFocus
+          className={`${inputClasses} min-h-[148px] resize-none rounded-xl focus-visible:ring-offset-0`}
+        />
+      );
+    }
+
+    if (field.key === "username") {
+      return (
+        <div className="relative">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-medium text-zinc-500"
+          >
+            @
+          </span>
+          <Input
+            id={editorId}
+            type="text"
+            value={formData.username}
+            onChange={(e) => handleInputChange("username", e.target.value)}
+            placeholder={field.placeholder}
+            autoFocus
+            className={`${inputClasses} h-12 rounded-xl pl-8`}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <Input
+        id={editorId}
+        type={field.inputType ?? "text"}
+        value={formData[field.key]}
+        onChange={(e) => handleInputChange(field.key, e.target.value)}
+        placeholder={field.placeholder}
+        autoFocus
+        className={`${inputClasses} h-12 rounded-xl`}
+      />
+    );
+  };
   const {
     renderedWidth: editorRenderedWidth,
     renderedHeight: editorRenderedHeight,
@@ -1923,136 +2038,61 @@ export default function ProfileEditPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Name */}
-              <div className="space-y-1.5">
-                <Label htmlFor="name" className="text-xs font-semibold text-zinc-300">
-                  Full Name
-                  {hasAttemptedSubmit ? (
-                    <span className="text-red-400 ml-1">*</span>
-                  ) : null}
-                </Label>
-                <Input
-                  id="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => handleInputChange("name", e.target.value)}
-                  placeholder="Enter your full name"
-                  className={`h-11 bg-black text-base text-white placeholder:text-zinc-500 ${
-                    hasAttemptedSubmit && fieldErrors.name
-                      ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                      : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
-                  }`}
-                />
-                {hasAttemptedSubmit && fieldErrors.name ? (
-                  <p className="text-xs text-red-400">{fieldErrors.name}</p>
-                ) : null}
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-[#111217]">
+                {EDITABLE_PROFILE_FIELDS.map((field, index) => {
+                  const Icon = field.icon;
+                  const value = formData[field.key]?.trim();
+                  const hasError = hasAttemptedSubmit && fieldErrors[field.key];
+
+                  return (
+                    <button
+                      key={field.key}
+                      type="button"
+                      onClick={() => setActiveProfileField(field.key)}
+                      className={`flex min-h-[48px] w-full items-center gap-3 px-3.5 py-2.5 text-left transition hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${
+                        index === 0 ? "" : "border-t border-white/[0.06]"
+                      }`}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        {Icon ? (
+                          <Icon className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden="true" />
+                        ) : null}
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-zinc-200">
+                            {field.label}
+                            {field.required && hasAttemptedSubmit ? (
+                              <span className="ml-1 text-red-400">*</span>
+                            ) : null}
+                          </span>
+                          {hasError ? (
+                            <span className="mt-0.5 block text-[0.7rem] leading-4 text-red-400">
+                              {fieldErrors[field.key]}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      <span
+                        className={`min-w-0 max-w-[52%] truncate text-right text-sm ${
+                          value ? "text-zinc-100" : "text-zinc-500"
+                        }`}
+                      >
+                        {getProfileFieldDisplayValue(field)}
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Username */}
-              <div className="space-y-1.5">
-                <Label htmlFor="username" className="text-xs font-semibold text-zinc-300">
-                  Username
-                  {hasAttemptedSubmit ? (
-                    <span className="text-red-400 ml-1">*</span>
-                  ) : null}
-                </Label>
-                <div className="relative">
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-medium text-zinc-500"
-                  >
-                    @
-                  </span>
-                  <Input
-                    id="username"
-                    type="text"
-                    value={formData.username}
-                    onChange={(e) => handleInputChange("username", e.target.value)}
-                    placeholder="Choose a unique username"
-                    className={`h-11 bg-black pl-8 text-base text-white placeholder:text-zinc-500 ${
-                      hasAttemptedSubmit && fieldErrors.username
-                        ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                        : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
-                    }`}
-                  />
-                </div>
-                <p className="text-xs leading-4 text-zinc-400">
-                  This will be your unique identifier: @{formData.username || "username"}
-                </p>
-                {hasAttemptedSubmit && fieldErrors.username ? (
-                  <p className="text-xs text-red-400">{fieldErrors.username}</p>
-                ) : null}
-              </div>
-
-              {/* Bio */}
-              <div className="space-y-1.5">
-                <Label htmlFor="bio" className="text-xs font-semibold text-zinc-300">
-                  Bio
-                </Label>
-                <Textarea
-                  id="bio"
-                  value={formData.bio}
-                  onChange={(e) => handleInputChange("bio", e.target.value)}
-                  placeholder="Tell us about yourself..."
-                  className="min-h-[88px] resize-none bg-black text-base text-white !border-black placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
-                />
-              </div>
-
-              {/* Date of Birth */}
-              <div className="space-y-1.5">
-                <Label htmlFor="dob" className="flex items-center space-x-1.5 text-xs font-semibold text-zinc-300">
-                  <Calendar className="h-4 w-4 text-zinc-400" />
-                  <span>
-                    Date of Birth
-                    {hasAttemptedSubmit ? (
-                      <span className="text-red-400 ml-1">*</span>
-                    ) : null}
-                  </span>
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="dob"
-                    type="date"
-                    value={formData.dob}
-                    onChange={(e) => handleInputChange("dob", e.target.value)}
-                    className={`h-11 w-full appearance-none rounded-lg border bg-black text-base text-white placeholder:text-zinc-500 transition-colors duration-200 ${
-                      hasAttemptedSubmit && fieldErrors.dob
-                        ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                        : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
-                    } pr-12 pl-4`}
-                  />
-                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/70" />
-                </div>
-                {hasAttemptedSubmit && fieldErrors.dob ? (
-                  <p className="text-xs text-red-400">{fieldErrors.dob}</p>
-                ) : null}
-              </div>
-
-              {/* City */}
-              <div className="space-y-1.5">
-                <Label htmlFor="city" className="flex items-center space-x-1.5 text-xs font-semibold text-zinc-300">
-                  <MapPin className="h-4 w-4 text-zinc-400" />
-                  <span>City</span>
-                </Label>
-                <Input
-                  id="city"
-                  type="text"
-                  value={formData.city}
-                  onChange={(e) => handleInputChange("city", e.target.value)}
-                  placeholder="Where are you located?"
-                  className="h-11 bg-black text-base text-white !border-black placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
-                />
-              </div>
-
-              {/* Privacy Toggle */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-zinc-200">
-                    Profile visibility
-                  </span>
+              <div className="rounded-xl border border-white/10 bg-[#111217] px-3.5 py-2.5">
+                <div className="flex min-h-[36px] items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="block text-sm font-medium text-zinc-200">
+                      Profile visibility
+                    </span>
                     <span
-                      className={`text-[0.68rem] uppercase tracking-[0.24em] transition-colors duration-300 ${
+                      className={`mt-0.5 block text-[0.68rem] uppercase tracking-[0.24em] transition-colors duration-300 ${
                         formData.is_private ? "text-zinc-400" : "text-emerald-400"
                       }`}
                       aria-live="polite"
@@ -2060,7 +2100,7 @@ export default function ProfileEditPage() {
                       {formData.is_private ? "Private" : "Public"}
                     </span>
                   </div>
-                  <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
+                  <label className="relative inline-flex h-6 w-12 shrink-0 cursor-pointer items-center">
                     <input
                       type="checkbox"
                       className="peer sr-only"
@@ -2070,6 +2110,7 @@ export default function ProfileEditPage() {
                     <span className="absolute inset-0 rounded-full bg-emerald-500 transition-colors duration-300 ease-out peer-checked:bg-zinc-700 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70" />
                     <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-300 ease-out peer-checked:translate-x-6" />
                   </label>
+                </div>
               </div>
 
               {/* Submit Button */}
@@ -2097,63 +2138,72 @@ export default function ProfileEditPage() {
         </Card>
       </main>
 
-      {hasLinkedAccounts ? (
-        <div className="mx-auto w-full max-w-5xl px-4 pb-10">
-          <div className="border-b border-white/10 pb-4">
-            <div className="space-y-1 max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
-                Linked accounts
-              </p>
-              <p className="text-sm text-zinc-400">
-                Your audience sees these profiles on your page.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {activeLinkedAccounts.map((account) => {
-              const platformKey = (account.platform ?? "").toLowerCase();
-              const definition = getSocialIconDefinition(platformKey);
-              const Icon = definition.icon;
-              let subtext = account.username ? `@${account.username}` : undefined;
-              if (!subtext && account.url) {
-                try {
-                  subtext = new URL(account.url).hostname;
-                } catch {
-                  subtext = account.url;
-                }
-              }
+      <AnimatePresence>
+        {activeProfileFieldConfig ? (
+          <motion.section
+            key={activeProfileFieldConfig.key}
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "tween", duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+            className="fixed inset-0 z-[240] overflow-y-auto bg-[#0F0F12] text-zinc-100 shadow-[0_0_80px_rgba(0,0,0,0.55)]"
+            aria-label={`Edit ${activeProfileFieldConfig.label}`}
+          >
+            <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col">
+              <div className="sticky top-0 z-10 border-b border-white/10 bg-[#0B0C10]/95 px-3.5 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)] backdrop-blur-xl">
+                <div className="flex h-10 items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveProfileField(null)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                    aria-label="Back to edit profile"
+                  >
+                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <h2 className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-white">
+                    {activeProfileFieldConfig.label}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setActiveProfileField(null)}
+                    className="inline-flex h-9 items-center justify-center rounded-full px-3 text-sm font-semibold text-white transition hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
 
-              if (!account.url) {
-                return null;
-              }
-
-              return (
-                <a
-                  key={`${platformKey}-${account.url}`}
-                  href={account.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 transition hover:border-white/30"
-                >
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-black/40 text-white">
-                    <Icon className="h-5 w-5" aria-hidden="true" />
-                  </span>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-white">
-                      {definition.label}
-                    </span>
-                    {subtext ? (
-                      <span className="text-xs uppercase tracking-[0.35em] text-white/50">
-                        {subtext}
-                      </span>
+              <div className="flex-1 px-4 py-5">
+                <div className="space-y-3">
+                  <Label
+                    htmlFor={`profile-field-${activeProfileFieldConfig.key}`}
+                    className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55"
+                  >
+                    {activeProfileFieldConfig.label}
+                    {activeProfileFieldConfig.required ? (
+                      <span className="ml-1 text-red-400">*</span>
                     ) : null}
-                  </div>
-                </a>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+                  </Label>
+                  {renderProfileFieldEditorControl(activeProfileFieldConfig)}
+                  <p className="text-sm leading-5 text-zinc-400">
+                    {activeProfileFieldConfig.helper}
+                  </p>
+                  {activeProfileFieldConfig.key === "username" ? (
+                    <p className="text-xs leading-4 text-zinc-500">
+                      Current preview: @{formData.username.trim() || "username"}
+                    </p>
+                  ) : null}
+                  {hasAttemptedSubmit && fieldErrors[activeProfileFieldConfig.key] ? (
+                    <p className="text-sm text-red-400">
+                      {fieldErrors[activeProfileFieldConfig.key]}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </motion.section>
+        ) : null}
+      </AnimatePresence>
 
       {user?.id ? (
         <section className="mx-auto w-full max-w-6xl px-4 py-12">
