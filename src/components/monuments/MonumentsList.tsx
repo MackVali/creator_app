@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import { MonumentsEmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -72,7 +73,7 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
             const monumentIds = monumentsData.map((monument) => monument.id);
             const { data: goalsData, error: goalsError } = await supabase
               .from("goals")
-              .select("monument_id")
+              .select("monument_id,status,active")
               .in("monument_id", monumentIds);
             if (goalsError) {
               console.error(goalsError);
@@ -80,7 +81,10 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
               goalCounts = (goalsData ?? []).reduce<Record<string, number>>(
                 (acc, goal) => {
                   const monumentId = goal.monument_id;
-                  if (monumentId) {
+                  if (
+                    monumentId &&
+                    normalizeGoalStatus(goal.status, goal.active) !== "COMPLETED"
+                  ) {
                     acc[monumentId] = (acc[monumentId] ?? 0) + 1;
                   }
                   return acc;

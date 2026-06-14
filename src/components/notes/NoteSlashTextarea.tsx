@@ -1320,6 +1320,7 @@ function NoteDatabaseEntriesView({
   activeView,
   definition,
   entries,
+  onAddField,
   onFieldHeaderClick,
   size = "compact",
   titleField,
@@ -1328,6 +1329,7 @@ function NoteDatabaseEntriesView({
   activeView: NoteDatabaseViewDefinition;
   definition: NoteDatabaseDefinition;
   entries: NoteDatabaseEntry[];
+  onAddField?: () => void;
   onFieldHeaderClick?: (field: NoteDatabaseFieldDefinition) => void;
   size?: "compact" | "full";
   titleField: NoteDatabaseFieldDefinition | null;
@@ -1367,7 +1369,7 @@ function NoteDatabaseEntriesView({
                   <th
                     key={field.id}
                     scope="col"
-                    className="sticky top-0 z-10 whitespace-nowrap border-b border-r border-white/[0.08] bg-[#08090a]/98 p-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/42 backdrop-blur last:border-r-0"
+                    className="sticky top-0 z-10 whitespace-nowrap border-b border-r border-white/[0.08] bg-[#08090a]/98 p-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/42 backdrop-blur"
                   >
                     <button
                       type="button"
@@ -1379,6 +1381,22 @@ function NoteDatabaseEntriesView({
                     </button>
                   </th>
                 ))}
+                {onAddField ? (
+                  <th
+                    scope="col"
+                    className="sticky top-0 z-10 w-10 border-b border-white/[0.08] bg-[#08090a]/98 p-0 text-white/38 backdrop-blur"
+                  >
+                    <button
+                      type="button"
+                      onClick={onAddField}
+                      aria-label="Add field"
+                      title="Add field"
+                      className="flex h-full min-h-8 w-full items-center justify-center outline-none transition hover:bg-white/[0.045] hover:text-white/68 focus-visible:bg-white/[0.06] focus-visible:text-white/78 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-emerald-200/30"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -1405,6 +1423,12 @@ function NoteDatabaseEntriesView({
                       </td>
                     );
                   })}
+                  {onAddField ? (
+                    <td
+                      aria-hidden="true"
+                      className={`${fullTableCellClassName} group-hover:bg-white/[0.025]`}
+                    />
+                  ) : null}
                 </tr>
               ))}
               {Array.from({ length: placeholderRowCount }, (_, placeholderRowIndex) => (
@@ -1419,6 +1443,12 @@ function NoteDatabaseEntriesView({
                       className={`${fullTableCellClassName} text-white/0`}
                     />
                   ))}
+                  {onAddField ? (
+                    <td
+                      aria-hidden="true"
+                      className={`${fullTableCellClassName} text-white/0`}
+                    />
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -1732,16 +1762,24 @@ function NoteDatabaseEntriesView({
 }
 
 function NoteDatabaseFieldEditSheet({
+  canRemoveField,
   field,
   onClose,
   onFieldNameChange,
   onFieldTypeChange,
+  onRemoveField,
 }: {
+  canRemoveField: boolean;
   field: NoteDatabaseFieldDefinition;
   onClose: () => void;
   onFieldNameChange: (name: string) => void;
   onFieldTypeChange: (type: NoteDatabaseFieldType) => void;
+  onRemoveField: () => void;
 }) {
+  const removeFieldTitle = canRemoveField
+    ? "Remove field"
+    : "Title field cannot be removed";
+
   useEffect(() => {
     const body = document.body;
     const html = document.documentElement;
@@ -1820,16 +1858,28 @@ function NoteDatabaseFieldEditSheet({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
-          <label className="block">
-            <span className="sr-only">Field name</span>
-            <input
-              value={field.name}
-              onChange={(event) => onFieldNameChange(event.target.value)}
-              placeholder="Field name"
-              aria-label="Field name"
-              className="h-12 w-full rounded-2xl border border-white/[0.04] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.06] focus-visible:border-white/[0.1]"
-            />
-          </label>
+          <div className="flex items-center gap-2">
+            <label className="min-w-0 flex-1">
+              <span className="sr-only">Field name</span>
+              <input
+                value={field.name}
+                onChange={(event) => onFieldNameChange(event.target.value)}
+                placeholder="Field name"
+                aria-label="Field name"
+                className="h-12 w-full rounded-2xl border border-white/[0.04] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.06] focus-visible:border-white/[0.1]"
+              />
+            </label>
+            <button
+              type="button"
+              aria-label={removeFieldTitle}
+              title={removeFieldTitle}
+              onClick={onRemoveField}
+              disabled={!canRemoveField}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-red-200/70 focus-visible:bg-white/[0.07] focus-visible:text-red-100 disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
           <div className="mt-6">
             <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/36">
@@ -2501,6 +2551,7 @@ export function NoteDatabaseFocusedView({
           activeView={activeDatabaseView}
           definition={databaseDefinition}
           entries={entries}
+          onAddField={addDatabaseField}
           onFieldHeaderClick={(field) => setEditingFieldId(field.id)}
           size="full"
           titleField={titleField}
@@ -2510,10 +2561,17 @@ export function NoteDatabaseFocusedView({
 
       {editingField ? (
         <NoteDatabaseFieldEditSheet
+          canRemoveField={
+            editingField.id !== databaseDefinition.titleFieldId && editingField.isTitle !== true
+          }
           field={editingField}
           onClose={() => setEditingFieldId(null)}
           onFieldNameChange={(name) => updateDatabaseField(editingField.id, { name })}
           onFieldTypeChange={(type) => updateDatabaseField(editingField.id, { type })}
+          onRemoveField={() => {
+            removeDatabaseField(editingField.id);
+            setEditingFieldId(null);
+          }}
         />
       ) : null}
 
