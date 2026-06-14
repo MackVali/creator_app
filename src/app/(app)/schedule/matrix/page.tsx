@@ -129,6 +129,7 @@ type MatrixEvent = {
   glyph: string;
   goal: Goal | null;
   habit: MatrixHabit | null;
+  routine: MatrixRoutine | null;
 };
 
 type MatrixHabit = HabitRow & {
@@ -140,6 +141,7 @@ type MatrixHabit = HabitRow & {
 };
 type MatrixRoutineHabit = RelatedRoutineCardHabit & {
   sourceHabit: MatrixHabit;
+  sourceInstance?: ScheduleInstance;
   durationMinutes: number | null;
 };
 type MatrixRoutine = Omit<RelatedRoutineCardRoutine, "habits"> & {
@@ -327,6 +329,9 @@ function getMatrixHabitTypeRank(habitType: string | null | undefined): number {
 }
 
 function getMatrixEventTypeRank(event: MatrixEvent): number {
+  if (event.routine) {
+    return event.routine.sortRank;
+  }
   if (event.habit) {
     return getMatrixHabitTypeRank(event.habit.habit_type);
   }
@@ -345,6 +350,10 @@ function getMatrixEventStartTime(event: MatrixEvent): number {
 }
 
 function isMatrixEventCompleted(event: MatrixEvent): boolean {
+  if (event.routine) {
+    return event.routine.habits.every((habit) => habit.completed);
+  }
+
   return event.instance.status?.trim().toLowerCase() === "completed";
 }
 
@@ -406,6 +415,14 @@ function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
 
     return a.title.localeCompare(b.title);
   });
+}
+
+function getMatrixScheduledHabitLabel(
+  status: ScheduleInstance["status"] | null | undefined
+) {
+  if (status === "completed") return "COMPLETE";
+  if (status && status !== "scheduled") return status.replaceAll("_", " ");
+  return "SCHEDULED";
 }
 
 function sortMatrixDueItems(items: MatrixDueItem[]): MatrixDueItem[] {
@@ -822,6 +839,7 @@ function buildMatrixEvents({
         glyph: monumentId ? (monumentIdToEmoji.get(monumentId) ?? "◇") : "◇",
         goal: projectGoal,
         habit: null,
+        routine: null,
       };
       return [event];
     }
@@ -859,9 +877,135 @@ function buildMatrixEvents({
             dueStatus,
           }
         : null,
+      routine: null,
     };
     return [event];
   });
+}
+
+function buildMatrixScheduledEvents({
+  events,
+  routines,
+}: {
+  events: MatrixEvent[];
+  routines: Map<string, RoutineRow>;
+}): MatrixEvent[] {
+  const scheduledEvents: MatrixEvent[] = [];
+  const routineEventGroups = new Map<string, MatrixEvent[]>();
+
+  for (const event of events) {
+    const routineId = event.habit?.routine_id?.trim();
+    if (!routineId) {
+      scheduledEvents.push(event);
+      continue;
+    }
+
+    const group = routineEventGroups.get(routineId);
+    if (group) {
+      group.push(event);
+    } else {
+      routineEventGroups.set(routineId, [event]);
+    }
+  }
+
+  for (const [routineId, routineEvents] of routineEventGroups) {
+    if (routineEvents.length === 0) continue;
+
+    const routine = routines.get(routineId);
+    const sortedEvents = [...routineEvents].sort((a, b) => {
+      const firstPosition =
+        typeof a.habit?.routine_position === "number" &&
+        Number.isFinite(a.habit.routine_position)
+          ? a.habit.routine_position
+          : Number.POSITIVE_INFINITY;
+      const secondPosition =
+        typeof b.habit?.routine_position === "number" &&
+        Number.isFinite(b.habit.routine_position)
+          ? b.habit.routine_position
+          : Number.POSITIVE_INFINITY;
+      if (firstPosition !== secondPosition) {
+        return firstPosition - secondPosition;
+      }
+
+      const firstStartTime = getMatrixEventStartTime(a);
+      const secondStartTime = getMatrixEventStartTime(b);
+      if (firstStartTime !== secondStartTime) {
+        return firstStartTime - secondStartTime;
+      }
+
+      return a.title.localeCompare(b.title);
+    });
+    const representativeEvent = sortedEvents[0];
+    if (!representativeEvent) continue;
+
+    const matrixRoutineHabits: MatrixRoutineHabit[] = sortedEvents.flatMap(
+      (event, index) => {
+        const habit = event.habit;
+        if (!habit) return [];
+
+        return [
+          {
+            id: habit.id,
+            name: habit.name,
+            dueLabel: getMatrixScheduledHabitLabel(event.instance.status),
+            skillIcon: habit.skillIcon,
+            completed: isMatrixEventCompleted(event),
+            routinePosition: habit.routine_position ?? index + 1,
+            currentStreakDays: habit.current_streak_days,
+            sourceHabit: habit,
+            sourceInstance: event.instance,
+            durationMinutes:
+              event.instance.duration_min ?? habit.duration_minutes,
+          },
+        ];
+      }
+    );
+    if (matrixRoutineHabits.length === 0) continue;
+
+    const routineSkillIds = Array.from(
+      new Set(sortedEvents.flatMap((event) => event.skillIds))
+    );
+    const routineMonumentId =
+      sortedEvents.find((event) => event.monumentId)?.monumentId ?? null;
+    const totalDuration = matrixRoutineHabits.reduce((sum, habit) => {
+      const duration = habit.durationMinutes;
+      return typeof duration === "number" && Number.isFinite(duration)
+        ? sum + duration
+        : sum;
+    }, 0);
+    const routineName = routine?.name?.trim() || "Routine";
+    const routineIcon = routine?.icon?.trim() || "🔁";
+    const routineItem: MatrixRoutine = {
+      id: routineId,
+      name: routineName,
+      description: routine?.description ?? null,
+      icon: routineIcon,
+      habits: matrixRoutineHabits,
+      monumentId: routineMonumentId,
+      skillIds: routineSkillIds,
+      glyph: routineIcon,
+      dueHabitCount: matrixRoutineHabits.length,
+      totalDueDurationMinutes: totalDuration > 0 ? totalDuration : null,
+      sortRank: Math.min(
+        ...matrixRoutineHabits.map((habit) =>
+          getMatrixHabitTypeRank(habit.sourceHabit.habit_type)
+        )
+      ),
+    };
+
+    scheduledEvents.push({
+      ...representativeEvent,
+      title: routineName,
+      monumentId: routineMonumentId,
+      skillIds: routineSkillIds,
+      glyph: routineIcon,
+      goal: null,
+      habit: null,
+      routine: routineItem,
+    });
+  }
+
+  return scheduledEvents;
 }
 
 function buildMatrixDueItems({
@@ -1573,17 +1717,30 @@ function ScheduledEventCard({
     pointerId: number;
   } | null>(null);
   const suppressTapUntilRef = useRef(0);
-  const isCompleted = event.instance.status === "completed";
+  const isCompleted = isMatrixEventCompleted(event);
   const cleanStatus =
-    event.instance.status === "completed"
+    event.routine
+      ? isCompleted
+        ? "Completed"
+        : null
+      : event.instance.status === "completed"
       ? "Completed"
       : event.instance.status && event.instance.status !== "scheduled"
         ? event.instance.status.replaceAll("_", " ")
         : null;
 
   const completeEvent = useCallback(() => {
+    if (event.routine) {
+      const nextStatus = isCompleted ? "scheduled" : "completed";
+      for (const habit of event.routine.habits) {
+        const instanceId = habit.sourceInstance?.id;
+        if (instanceId) onComplete(instanceId, nextStatus);
+      }
+      return;
+    }
+
     onComplete(event.instance.id, isCompleted ? "scheduled" : "completed");
-  }, [event.instance.id, isCompleted, onComplete]);
+  }, [event.instance.id, event.routine, isCompleted, onComplete]);
 
   const cancelLongPress = useCallback(
     (event?: PointerEvent<HTMLDivElement>) => {
@@ -1610,6 +1767,7 @@ function ScheduledEventCard({
   const handleLongPressEdit = useCallback(
     (element: HTMLElement) => {
       if (!fabCreation) return;
+      if (event.routine) return;
 
       if (event.instance.source_type === "PROJECT") {
         const projectId = event.instance.source_id;
@@ -1638,21 +1796,29 @@ function ScheduledEventCard({
         });
       }
     },
-    [event.habit?.id, event.instance.id, event.instance.source_id, event.instance.source_type, event.title, fabCreation]
+    [
+      event.habit?.id,
+      event.instance.id,
+      event.instance.source_id,
+      event.instance.source_type,
+      event.routine,
+      event.title,
+      fabCreation,
+    ]
   );
 
   const handleCardPointerDown = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      if (event.pointerType === "mouse" && event.button !== 0) return;
-      if (!fabCreation) return;
+    (pointerEvent: PointerEvent<HTMLDivElement>) => {
+      if (pointerEvent.pointerType === "mouse" && pointerEvent.button !== 0) return;
+      if (!fabCreation || event.routine) return;
 
-      const element = event.currentTarget;
-      const pointerId = event.pointerId;
+      const element = pointerEvent.currentTarget;
+      const pointerId = pointerEvent.pointerId;
 
       cancelLongPress();
       longPressStartRef.current = {
-        x: event.clientX,
-        y: event.clientY,
+        x: pointerEvent.clientX,
+        y: pointerEvent.clientY,
         pointerId,
       };
 
@@ -1672,7 +1838,7 @@ function ScheduledEventCard({
         handleLongPressEdit(element);
       }, MATRIX_CARD_LONG_PRESS_MS);
     },
-    [cancelLongPress, fabCreation, handleLongPressEdit]
+    [cancelLongPress, event.routine, fabCreation, handleLongPressEdit]
   );
 
   const handleCardPointerMove = useCallback(
@@ -1765,7 +1931,21 @@ function ScheduledEventCard({
   }, [event.goal, isCompleted]);
   const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
 
-  const card = scheduledGoal ? (
+  const card = event.routine ? (
+    <MatrixRoutineCard
+      routine={event.routine}
+      density={density}
+      onCompleteHabit={(habitId, completed) => {
+        const routineHabit = event.routine?.habits.find(
+          (habit) => habit.id === habitId
+        );
+        const instanceId = routineHabit?.sourceInstance?.id;
+        if (!instanceId) return;
+
+        onComplete(instanceId, completed ? "scheduled" : "completed");
+      }}
+    />
+  ) : scheduledGoal ? (
     density === "small" ? (
       <MatrixProjectCard
         goal={scheduledGoal}
@@ -2171,6 +2351,7 @@ function MatrixSettingsTray({
 
 function getVisibleMatrixDueItems(group: MatrixMonumentGroup) {
   const scheduledMatrixHabitIds = new Set<string>();
+  const routineChildHabitIds = new Set<string>();
 
   for (const event of group.scheduledItems) {
     const isScheduledHabit =
@@ -2182,10 +2363,41 @@ function getVisibleMatrixDueItems(group: MatrixMonumentGroup) {
 
     if (habitId) scheduledMatrixHabitIds.add(habitId);
     if (sourceId) scheduledMatrixHabitIds.add(sourceId);
+
+    if (event.routine) {
+      for (const habit of event.routine.habits) {
+        const routineHabitId = normalizeMatrixSourceId(habit.id);
+        const routineSourceId = normalizeMatrixSourceId(
+          habit.sourceInstance?.source_id
+        );
+
+        if (routineHabitId) scheduledMatrixHabitIds.add(routineHabitId);
+        if (routineSourceId) scheduledMatrixHabitIds.add(routineSourceId);
+      }
+    }
+  }
+
+  for (const item of group.unscheduledDueItems) {
+    if (item.kind !== "routine") continue;
+
+    for (const habit of item.routine.habits) {
+      const habitId = normalizeMatrixSourceId(habit.id);
+      const sourceHabitId = normalizeMatrixSourceId(habit.sourceHabit.id);
+
+      if (habitId) routineChildHabitIds.add(habitId);
+      if (sourceHabitId) routineChildHabitIds.add(sourceHabitId);
+    }
   }
 
   return group.unscheduledDueItems.flatMap((item): MatrixDueItem[] => {
     if (item.kind === "habit") {
+      if (
+        item.habit.routine_id?.trim() &&
+        routineChildHabitIds.has(normalizeMatrixSourceId(item.habit.id))
+      ) {
+        return [];
+      }
+
       return scheduledMatrixHabitIds.has(normalizeMatrixSourceId(item.habit.id))
         ? []
         : [item];
@@ -3209,17 +3421,44 @@ function MatrixContent() {
       ) =>
         groups.map((group) => ({
           ...group,
-          items: group.items.map((event) =>
-            event.instance.id === instanceId
-              ? {
-                  ...event,
-                  instance: {
-                    ...event.instance,
-                    status: nextStatus,
-                  },
-                }
-              : event
-          ),
+          items: group.items.map((event) => {
+            const nextEvent =
+              event.instance.id === instanceId
+                ? {
+                    ...event,
+                    instance: {
+                      ...event.instance,
+                      status: nextStatus,
+                    },
+                  }
+                : event;
+
+            if (!nextEvent.routine) return nextEvent;
+
+            const nextHabits = nextEvent.routine.habits.map((habit) => {
+              if (habit.sourceInstance?.id !== instanceId) return habit;
+
+              const sourceInstance = {
+                ...habit.sourceInstance,
+                status: nextStatus,
+              };
+
+              return {
+                ...habit,
+                dueLabel: getMatrixScheduledHabitLabel(nextStatus),
+                completed: nextStatus === "completed",
+                sourceInstance,
+              };
+            });
+
+            return {
+              ...nextEvent,
+              routine: {
+                ...nextEvent.routine,
+                habits: nextHabits,
+              },
+            };
+          }),
         }));
 
       setState((current) => ({
@@ -3262,8 +3501,14 @@ function MatrixContent() {
       ];
       for (const groups of eventGroupSets) {
         for (const group of groups) {
-          const event = group.items.find((item) => item.habit?.id === habitId);
-          if (event?.habit) return event.habit;
+          for (const event of group.items) {
+            if (event.habit?.id === habitId) return event.habit;
+
+            const routineHabit = event.routine?.habits.find(
+              (habit) => habit.id === habitId
+            );
+            if (routineHabit) return routineHabit.sourceHabit;
+          }
         }
       }
       return null;
@@ -3287,10 +3532,25 @@ function MatrixContent() {
       ];
       for (const groups of groupSets) {
         for (const group of groups) {
-          const event = group.items.find(
-            (item) => item.instance.id === instanceId
-          );
-          if (event) return event;
+          for (const event of group.items) {
+            if (event.instance.id === instanceId) return event;
+
+            const routineHabit = event.routine?.habits.find(
+              (habit) => habit.sourceInstance?.id === instanceId
+            );
+            if (routineHabit?.sourceInstance) {
+              return {
+                instance: routineHabit.sourceInstance,
+                title: routineHabit.sourceHabit.name,
+                monumentId: routineHabit.sourceHabit.monumentId,
+                skillIds: routineHabit.sourceHabit.skillIds,
+                glyph: routineHabit.sourceHabit.glyph,
+                goal: null,
+                habit: routineHabit.sourceHabit,
+                routine: null,
+              };
+            }
+          }
         }
       }
       return null;
@@ -3782,7 +4042,7 @@ function MatrixContent() {
           }
         }
 
-        const events = buildMatrixEvents({
+        const rawEvents = buildMatrixEvents({
           instances,
           projects: projectMap,
           habits: habitMap,
@@ -3792,6 +4052,10 @@ function MatrixContent() {
           monumentIdToEmoji,
           date: today,
           timeZone,
+        });
+        const events = buildMatrixScheduledEvents({
+          events: rawEvents,
+          routines: routineMap,
         });
         const scheduledTodayHabitIds = new Set(scheduledHabitIds);
         for (const event of events) {

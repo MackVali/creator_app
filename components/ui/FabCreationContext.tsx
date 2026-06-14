@@ -28,6 +28,16 @@ export type FabCreationRequest = {
   routineId?: string | null;
   skillId?: string | null;
   originRect?: FabCreationOriginRect | null;
+  preserveDrawer?: FabCreationPreservedDrawer | null;
+};
+
+export type FabCreationPreservedDrawer = {
+  type: "campaign" | "goal" | "routine";
+  id: string;
+};
+
+type FabCreationRequestOptions = {
+  preserveDrawer?: FabCreationPreservedDrawer | null;
 };
 
 type FabCreationContextValue = {
@@ -35,11 +45,13 @@ type FabCreationContextValue = {
   editRequest: FabEditTarget | null;
   requestGoalCreation: (
     originRect?: FabCreationOriginRect | null,
-    campaignId?: string | null
+    campaignId?: string | null,
+    options?: FabCreationRequestOptions
   ) => void;
   requestProjectCreation: (
     goalId?: string | null,
-    originRect?: FabCreationOriginRect | null
+    originRect?: FabCreationOriginRect | null,
+    options?: FabCreationRequestOptions
   ) => void;
   requestTaskCreation: (
     projectId?: string | null,
@@ -51,7 +63,8 @@ type FabCreationContextValue = {
     defaults?: {
       routineId?: string | null;
       skillId?: string | null;
-    } | null
+    } | null,
+    options?: FabCreationRequestOptions
   ) => void;
   requestEntityEdit: (target: FabEditTarget) => void;
 };
@@ -67,7 +80,8 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
   const requestGoalCreation = useCallback(
     (
       originRect?: FabCreationOriginRect | null,
-      campaignId?: string | null
+      campaignId?: string | null,
+      options?: FabCreationRequestOptions
     ) => {
       nextRequestIdRef.current += 1;
       setCreationRequest({
@@ -76,20 +90,29 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         goalId: null,
         campaignId: campaignId ?? null,
         originRect: originRect ?? null,
+        preserveDrawer: options?.preserveDrawer ?? null,
       });
     },
     []
   );
 
-  const requestProjectCreation = useCallback((goalId?: string | null, originRect?: FabCreationOriginRect | null) => {
-    nextRequestIdRef.current += 1;
-    setCreationRequest({
-      id: nextRequestIdRef.current,
-      type: "PROJECT",
-      goalId: goalId ?? null,
-      originRect: originRect ?? null,
-    });
-  }, []);
+  const requestProjectCreation = useCallback(
+    (
+      goalId?: string | null,
+      originRect?: FabCreationOriginRect | null,
+      options?: FabCreationRequestOptions
+    ) => {
+      nextRequestIdRef.current += 1;
+      setCreationRequest({
+        id: nextRequestIdRef.current,
+        type: "PROJECT",
+        goalId: goalId ?? null,
+        originRect: originRect ?? null,
+        preserveDrawer: options?.preserveDrawer ?? null,
+      });
+    },
+    []
+  );
 
   const requestTaskCreation = useCallback(
     (
@@ -115,7 +138,8 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       defaults?: {
         routineId?: string | null;
         skillId?: string | null;
-      } | null
+      } | null,
+      options?: FabCreationRequestOptions
     ) => {
       nextRequestIdRef.current += 1;
       setCreationRequest({
@@ -124,6 +148,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         routineId: defaults?.routineId ?? null,
         skillId: defaults?.skillId ?? null,
         originRect: originRect ?? null,
+        preserveDrawer: options?.preserveDrawer ?? null,
       });
     },
     []

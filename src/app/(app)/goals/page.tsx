@@ -1019,7 +1019,12 @@ export default function GoalsPage() {
         const nextCampaignGoalsMap = new Map<string, Goal[]>();
         for (const campaign of campaignCardsData) {
           const orderedGoals = campaign.goals
-            .map((goal) => goalsById.get(goal.id))
+            .map((campaignGoal) => {
+              const goal = goalsById.get(campaignGoal.id);
+              return goal
+                ? { ...goal, priorityRank: campaignGoal.position }
+                : null;
+            })
             .filter((goal): goal is Goal => Boolean(goal));
           nextCampaignGoalsMap.set(campaign.id, orderedGoals);
         }

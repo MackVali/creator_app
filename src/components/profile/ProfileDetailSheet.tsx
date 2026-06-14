@@ -214,9 +214,6 @@ export default function ProfileDetailSheet({
   const serviceDurationLabel = !isProduct
     ? formatDuration(item.data.duration_minutes)
     : null;
-  const serviceAvailabilityLabel = !isProduct
-    ? formatInventoryStatus(item.data.inventory_status)
-    : null;
   const serviceCtaLabel = !isProduct ? item.data.cta_label?.trim() : null;
 
   const detailRows: { label: string; value: string }[] = [];
@@ -243,7 +240,7 @@ export default function ProfileDetailSheet({
   const detailTypeLabel = isProduct ? "product" : "service";
   const summaryMeta = isProduct
     ? [priceLabel]
-    : [priceLabel, serviceDurationLabel, serviceAvailabilityLabel].filter(
+    : [priceLabel, serviceDurationLabel].filter(
         (value): value is string => Boolean(value),
       );
 

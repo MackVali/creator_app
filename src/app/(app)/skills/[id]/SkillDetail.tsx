@@ -19,7 +19,6 @@ import {
   Target,
   Timer,
   MoreVertical,
-  X,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
@@ -2053,13 +2052,13 @@ export function SkillDetail({
   const detailMainClassName = clsx(
     "px-4 sm:px-6 lg:px-8",
     onClose
-      ? "pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:pb-6 sm:pt-4"
+      ? "pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[env(safe-area-inset-top,0px)] sm:pb-6 sm:pt-4"
       : "pb-6 pt-3 sm:pt-4"
   );
   const errorMainClassName = clsx(
     "relative px-4",
     onClose
-      ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+3rem)]"
+      ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+1rem)]"
       : "pb-16 pt-10"
   );
 
@@ -2097,16 +2096,6 @@ export function SkillDetail({
                       <Skeleton id="skill-overview-loading" className="h-8 min-w-0 flex-1 bg-white/10 sm:h-9 md:h-10" />
                     )}
                     <div className="flex shrink-0 items-center gap-0.5">
-                      {onClose ? (
-                        <button
-                          type="button"
-                          aria-label="Close skill details"
-                          onClick={onClose}
-                          className="inline-flex size-9 items-center justify-center text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-                        >
-                          <X className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                      ) : null}
                       <Skeleton className="size-9 rounded-full bg-white/10" />
                       <Skeleton className="size-9 rounded-full bg-white/10" />
                     </div>
@@ -2198,16 +2187,6 @@ export function SkillDetail({
   if (error || !skill) {
     return (
       <main className={errorMainClassName}>
-        {onClose ? (
-          <button
-            type="button"
-            aria-label="Close skill details"
-            onClick={onClose}
-            className="absolute right-4 top-3 inline-flex size-9 items-center justify-center text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 sm:right-6 sm:top-4"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        ) : null}
         <div className="mx-auto max-w-3xl">
           <div className="rounded-3xl border border-red-500/30 bg-red-500/10 px-8 py-12 text-center shadow-[0_25px_60px_rgba(220,38,38,0.35)]">
             <h1 className="text-2xl font-semibold text-red-100">
@@ -2399,16 +2378,6 @@ export function SkillDetail({
                       {skill.name}
                     </h1>
                     <div className="flex shrink-0 items-center gap-0.5">
-                      {onClose ? (
-                        <button
-                          type="button"
-                          aria-label="Close skill details"
-                          onClick={onClose}
-                          className="inline-flex size-9 items-center justify-center text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-                        >
-                          <X className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                      ) : null}
                       <button
                         type="button"
                         aria-label={`Start focus pomo for ${skill.name}`}

@@ -27,6 +27,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useSortable } from "@dnd-kit/sortable";
 import {
+  saveCampaignGoalOrder,
   updateCampaignDetails,
   type Roadmap,
 } from "@/lib/queries/roadmaps";
@@ -185,6 +186,8 @@ const completedGoalsRevealMotion = {
 
 const goalManualCompleteRejectClass =
   "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]";
+const campaignDrawerNoSelectClass =
+  "select-none [-webkit-user-select:none] [-webkit-touch-callout:none]";
 
 const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
   if (typeof window === "undefined") {
@@ -532,6 +535,8 @@ function DraggableGoalCard({
 
   const isCampaignGoalRowHoused = campaignDrawerRow;
   const campaignGoalContainerClass = `relative overflow-hidden rounded-lg border text-white transition hover:border-white/18 sm:rounded-xl ${
+    campaignDrawerRow ? campaignDrawerNoSelectClass : ""
+  } ${
     manualCompleteRejected
       ? goalManualCompleteRejectClass
       : isCompleted
@@ -549,6 +554,8 @@ function DraggableGoalCard({
       onPointerLeave={handleClosedRowPointerRelease}
       onClick={handleClosedRowClickEvent}
       className={`relative flex w-full items-center gap-2 px-2 py-1.5 text-left text-white transition hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:px-2.5 sm:py-2 ${
+        campaignDrawerRow ? campaignDrawerNoSelectClass : ""
+      } ${
         isCampaignGoalRowHoused
           ? "rounded-lg border border-transparent bg-transparent shadow-none sm:rounded-xl"
           : manualCompleteRejected
@@ -703,7 +710,8 @@ function DraggableGoalCard({
                       onAddProject={(originRect) =>
                         fabCreation?.requestProjectCreation(
                           goal.id,
-                          originRect ?? null
+                          originRect ?? null,
+                          { preserveDrawer: { type: "goal", id: goal.id } }
                         )
                       }
                     />
@@ -833,6 +841,8 @@ interface CampaignCardProps {
   ) => void;
   monumentContext?: boolean;
   suppressReadyToast?: boolean;
+  restoreOpen?: boolean;
+  restoreOpenGoalId?: string | null;
 }
 
 function CampaignCardImpl({
@@ -850,6 +860,8 @@ function CampaignCardImpl({
   onProjectEditOpen,
   monumentContext = false,
   suppressReadyToast = false,
+  restoreOpen = false,
+  restoreOpenGoalId = null,
   onRoadmapOrderSaved,
   onCampaignDetailsSaved,
 }: CampaignCardProps) {
@@ -890,6 +902,11 @@ function CampaignCardImpl({
     };
   }, []);
 
+  useEffect(() => {
+    if (!restoreOpen) return;
+    setOpen(true);
+  }, [restoreOpen]);
+
   const handleToggle = useCallback(() => {
     setOpen((prev) => !prev);
   }, []);
@@ -903,23 +920,16 @@ function CampaignCardImpl({
     })
   );
 
-  const savePriorityRanks = useCallback(
+  const saveCampaignGoalPositions = useCallback(
     async (goalsToSave: Goal[]) => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return;
-
       try {
-        const orderedGoalIds = goalsToSave.map((goal) => goal.id);
-        const { error } = await supabase.rpc("save_roadmap_goal_order", {
-          p_roadmap_id: roadmap.id,
-          p_goal_ids: orderedGoalIds,
-        });
-
-        if (error) {
-          console.error("Failed to save roadmap goal order:", error);
-        }
+        await saveCampaignGoalOrder(
+          roadmap.id,
+          goalsToSave.map((goal) => goal.id)
+        );
       } catch (error) {
-        console.error("Failed to save priority ranks:", error);
+        console.error("Failed to save campaign goal order:", error);
+        throw error;
       }
     },
     [roadmap.id]
@@ -943,11 +953,16 @@ function CampaignCardImpl({
         }));
 
         setLocalGoals(updatedGoals);
-        await savePriorityRanks(updatedGoals);
+        try {
+          await saveCampaignGoalPositions(updatedGoals);
+        } catch {
+          setLocalGoals(localGoals);
+          return;
+        }
         await onRoadmapOrderSaved?.();
       }
     },
-    [localGoals, savePriorityRanks, onRoadmapOrderSaved]
+    [localGoals, saveCampaignGoalPositions, onRoadmapOrderSaved]
   );
 
   const handleProjectUpdated = useCallback(
@@ -1037,6 +1052,8 @@ function CampaignCardImpl({
                 monumentContext={monumentContext}
                 suppressReadyToast={suppressReadyToast}
                 onAddGoal={onAddGoal}
+                restoreOpen={restoreOpen}
+                restoreOpenGoalId={restoreOpenGoalId}
                 onCampaignDetailsSaved={onCampaignDetailsSaved}
                 onGoalsReordered={async (reordered) => {
                   setLocalGoals(reordered);
@@ -1188,6 +1205,8 @@ type CampaignDrawerProps = {
     campaignId: string,
     details: CampaignDetails
   ) => void | Promise<void>;
+  restoreOpen?: boolean;
+  restoreOpenGoalId?: string | null;
 };
 
 // Campaign Drawer: opened compact campaign goals menu used by Monument Detail Goal Grid campaign cards.
@@ -1206,6 +1225,8 @@ function CampaignDrawer({
   onGoalsReordered,
   onAddGoal,
   onCampaignDetailsSaved,
+  restoreOpen = false,
+  restoreOpenGoalId = null,
 }: CampaignDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const prefersReducedMotion = useReducedMotion();
@@ -1240,23 +1261,16 @@ function CampaignDrawer({
     })
   );
 
-  const savePriorityRanks = useCallback(
+  const saveCampaignGoalPositions = useCallback(
     async (goalsToSave: Goal[]) => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return;
-
       try {
-        const orderedGoalIds = goalsToSave.map((goal) => goal.id);
-        const { error } = await supabase.rpc("save_roadmap_goal_order", {
-          p_roadmap_id: roadmap.id,
-          p_goal_ids: orderedGoalIds,
-        });
-
-        if (error) {
-          console.error("Failed to save roadmap goal order:", error);
-        }
+        await saveCampaignGoalOrder(
+          roadmap.id,
+          goalsToSave.map((goal) => goal.id)
+        );
       } catch (error) {
-        console.error("Failed to save priority ranks:", error);
+        console.error("Failed to save campaign goal order:", error);
+        throw error;
       }
     },
     [roadmap.id]
@@ -1265,6 +1279,17 @@ function CampaignDrawer({
   useEffect(() => {
     setLocalGoals(goals);
   }, [goals]);
+
+  useEffect(() => {
+    if (
+      !restoreOpen ||
+      !restoreOpenGoalId ||
+      !localGoals.some((goal) => goal.id === restoreOpenGoalId)
+    ) {
+      return;
+    }
+    setOpenGoalId(restoreOpenGoalId);
+  }, [localGoals, restoreOpen, restoreOpenGoalId]);
 
   const activeGoals = localGoals.filter(
     (goal) => !isCampaignDrawerGoalCompleted(goal)
@@ -1376,7 +1401,12 @@ function CampaignDrawer({
       }));
 
       setLocalGoals(updatedGoals);
-      await savePriorityRanks(updatedGoals);
+      try {
+        await saveCampaignGoalPositions(updatedGoals);
+      } catch {
+        setLocalGoals(localGoals);
+        return;
+      }
       await onGoalsReordered?.(updatedGoals);
     },
     [
@@ -1384,7 +1414,7 @@ function CampaignDrawer({
       completedGoals,
       localGoals,
       onGoalsReordered,
-      savePriorityRanks,
+      saveCampaignGoalPositions,
     ]
   );
 
@@ -1788,6 +1818,8 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.goals === next.goals &&
     prev.monumentContext === next.monumentContext &&
     prev.suppressReadyToast === next.suppressReadyToast &&
+    prev.restoreOpen === next.restoreOpen &&
+    prev.restoreOpenGoalId === next.restoreOpenGoalId &&
     prev.onProjectUpdated === next.onProjectUpdated &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onGoalManualComplete === next.onGoalManualComplete &&
