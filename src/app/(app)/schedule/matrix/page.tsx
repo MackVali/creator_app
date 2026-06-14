@@ -432,7 +432,7 @@ function getHabitCardTypeClass(habitType: string | null | undefined): string {
   if (normalized === "CHORE") {
     return "bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
   }
-  if (normalized === "SYNC" || normalized === "MEMO") return "matrix-habit-card--sync";
+  if (normalized === "SYNC" || normalized === "MEMO") return "habit-card--sync-gray";
   if (normalized === "PRACTICE") {
     return "bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
   }

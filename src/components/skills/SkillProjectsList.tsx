@@ -373,6 +373,23 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     [getProjectPanelElement]
   );
 
+  const getProjectPagerHeight = useCallback(
+    (fallbackPanel: ProjectSection) => {
+      const activeHeight = getProjectPanelHeight("active");
+      const completedHeight = getProjectPanelHeight("completed");
+      const panelHeights = [activeHeight, completedHeight].filter(
+        (height): height is number => typeof height === "number" && height > 0
+      );
+
+      if (panelHeights.length > 0) {
+        return Math.max(...panelHeights);
+      }
+
+      return getProjectPanelHeight(fallbackPanel);
+    },
+    [getProjectPanelHeight]
+  );
+
   const getLoadingProjectPanelHeight = useCallback(() => {
     const panelElement = loadingProjectPanelRef.current;
     return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
@@ -380,14 +397,14 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
   const handleProjectPanelChange = useCallback(
     (panel: ProjectSection) => {
-      const nextHeight = getProjectPanelHeight(panel);
+      const nextHeight = getProjectPagerHeight(panel);
       if (nextHeight) {
         setProjectPanelHeight(nextHeight);
       }
       setProjectPanelDragOffset(0);
       setProjectSection(panel);
     },
-    [getProjectPanelHeight]
+    [getProjectPagerHeight]
   );
 
   const handleProjectCardDensityToggle = useCallback(() => {
@@ -399,7 +416,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   const measureActiveProjectPanel = useCallback(() => {
     const nextHeight = loading
       ? getLoadingProjectPanelHeight()
-      : getProjectPanelHeight(projectSection);
+      : getProjectPagerHeight(projectSection);
     if (!nextHeight) return;
 
     setProjectPanelHeight((currentHeight) =>
@@ -407,7 +424,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     );
   }, [
     getLoadingProjectPanelHeight,
-    getProjectPanelHeight,
+    getProjectPagerHeight,
     loading,
     projectSection,
   ]);
@@ -1505,6 +1522,8 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   );
 
   const filteredProjects = projectsBySection[projectSection];
+  const hasAnyProjectPanel =
+    projectsBySection.active.length > 0 || projectsBySection.completed.length > 0;
 
   useEffect(() => {
     if (!openGoalId) return;
@@ -1634,7 +1653,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
                 />
               ))}
             </div>
-          ) : filteredProjects.length === 0 ? (
+          ) : !hasAnyProjectPanel ? (
             renderProjectPanel(projectSection)
           ) : (
             <div

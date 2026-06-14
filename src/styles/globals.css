@@ -745,6 +745,7 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   pointer-events: none;
 }
 
+.goal-card.habit-card--sync-gray,
 .goal-card.matrix-habit-card--sync {
   background:
     radial-gradient(
