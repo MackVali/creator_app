@@ -7,7 +7,7 @@ import {
 } from "../../components/appChromeVisibility";
 
 describe("appChromeVisibility", () => {
-  it("treats individual skill and monument notes as focused editor routes", () => {
+  it("keeps individual skill and monument notes in the normal app chrome flow", () => {
     for (const pathname of [
       "/skills/skill-1/notes/note-1",
       "/skills/skill-1/notes/new",
@@ -15,8 +15,8 @@ describe("appChromeVisibility", () => {
       "/monuments/monument-1/notes/new",
     ]) {
       expect(isIndividualNoteRoute(pathname)).toBe(true);
-      expect(shouldHideBottomChrome(pathname)).toBe(true);
-      expect(shouldUseFocusedEditorSpacing(pathname)).toBe(true);
+      expect(shouldHideBottomChrome(pathname)).toBe(false);
+      expect(shouldUseFocusedEditorSpacing(pathname)).toBe(false);
     }
   });
 

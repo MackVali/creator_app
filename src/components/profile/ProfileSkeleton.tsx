@@ -15,7 +15,7 @@ function StatSkeleton({ width }: { width: string }) {
   );
 }
 
-function ContentCardsSkeleton() {
+export function ProfileContentCardsSkeleton() {
   return (
     <section className="animate-pulse">
       <div className="grid grid-cols-2 gap-4">
@@ -36,11 +36,13 @@ function ContentCardsSkeleton() {
   );
 }
 
-function ListingSectionSkeleton({ titleWidth }: { titleWidth: string }) {
+export function ProfileListingSectionSkeleton({ titleWidth }: { titleWidth: string }) {
   return (
-    <section className="space-y-2 text-white">
+    <section className="animate-pulse space-y-2 text-white">
       <div className="flex items-end justify-between gap-3">
-        <SkeletonBlock className={`h-3 rounded-full bg-white/12 ${titleWidth}`} />
+        <div className="space-y-1">
+          <SkeletonBlock className={`h-3 rounded-full bg-white/12 ${titleWidth}`} />
+        </div>
         <SkeletonBlock className="h-3 w-14 rounded-full bg-white/8" />
       </div>
 
@@ -53,9 +55,50 @@ function ListingSectionSkeleton({ titleWidth }: { titleWidth: string }) {
   );
 }
 
-export function ProfileSkeleton() {
+function FollowedBySkeleton() {
+  return (
+    <div className="flex w-full items-center gap-2.5 pt-0">
+      <div className="flex shrink-0 -space-x-2">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <SkeletonBlock
+            key={`profile-followed-by-avatar-skeleton-${index}`}
+            className="h-6 w-6 rounded-full border-2 border-black bg-white/12 ring-1 ring-white/10"
+          />
+        ))}
+      </div>
+      <SkeletonBlock className="h-3.5 min-w-0 flex-1 rounded-full bg-white/10" />
+    </div>
+  );
+}
+
+function ActionRowsSkeleton({ actionLayout }: { actionLayout: ProfileSkeletonActionLayout }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {actionLayout === "owner" ? (
+        <SkeletonBlock className="min-h-[3.4rem] w-full rounded-md border border-black bg-white/14" />
+      ) : null}
+      <div className="grid grid-cols-2 gap-2">
+        <SkeletonBlock className="h-9 rounded-md border border-black bg-white/14" />
+        <SkeletonBlock className="h-9 rounded-md border border-black bg-white/10" />
+      </div>
+    </div>
+  );
+}
+
+type ProfileSkeletonActionLayout = "viewer" | "owner";
+
+export function ProfileSkeleton({
+  actionLayout = "viewer",
+}: {
+  actionLayout?: ProfileSkeletonActionLayout;
+}) {
   return (
     <div className="relative min-h-screen bg-black pb-[env(safe-area-inset-bottom)] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/25 via-neutral-900/20 to-transparent blur-[140px]" />
+        <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/25 via-neutral-950/20 to-transparent blur-[160px]" />
+        <div className="absolute left-1/2 top-[15%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-neutral-500/10 blur-[170px]" />
+      </div>
       <main className="relative z-10 pb-14 pt-0">
         <section className="mt-0 w-full bg-black text-white">
           <div className="mx-auto flex max-w-5xl flex-col px-4 pb-6 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)] sm:px-6 sm:pb-8">
@@ -87,38 +130,31 @@ export function ProfileSkeleton() {
                 <SkeletonBlock className="h-3.5 w-3/4 rounded-full bg-white/8 sm:h-4" />
               </div>
 
-              <div className="mt-3 flex flex-wrap justify-start gap-2">
-                <SkeletonBlock className="h-8 w-20 rounded-full bg-white/10" />
-                <SkeletonBlock className="h-8 w-24 rounded-full bg-white/10" />
-                <SkeletonBlock className="h-8 w-16 rounded-full bg-white/8" />
+              <div className="mt-3 flex min-h-[2rem] flex-wrap justify-center gap-2 px-6">
+                <SkeletonBlock className="h-7 w-20 rounded-full border border-white/10 bg-white/10" />
+                <SkeletonBlock className="h-7 w-24 rounded-full border border-white/10 bg-white/10" />
               </div>
             </div>
 
             <div className="animate-pulse flex flex-col gap-1 pt-2.5 sm:pt-3">
-              <div className="flex items-center gap-2.5 pt-0">
-                <div className="flex shrink-0 -space-x-2">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <SkeletonBlock
-                      key={`profile-followed-by-avatar-skeleton-${index}`}
-                      className="h-6 w-6 rounded-full border-2 border-black bg-white/12 ring-1 ring-white/10"
-                    />
-                  ))}
-                </div>
-                <SkeletonBlock className="h-3.5 min-w-0 flex-1 rounded-full bg-white/10" />
+              {actionLayout === "viewer" ? <FollowedBySkeleton /> : null}
+              <div className={actionLayout === "viewer" ? "pt-3" : "pt-0"}>
+                <ActionRowsSkeleton actionLayout={actionLayout} />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-3">
-                <SkeletonBlock className="h-9 rounded-md border border-black bg-white/14" />
-                <SkeletonBlock className="h-9 rounded-md border border-black bg-white/10" />
+              <div className="mt-1 flex w-full justify-start gap-2">
+                <SkeletonBlock className="h-8 w-8 rounded-full bg-white/10" />
+                <SkeletonBlock className="h-8 w-8 rounded-full bg-white/10" />
+                <SkeletonBlock className="h-8 w-8 rounded-full bg-white/10" />
               </div>
             </div>
           </div>
         </section>
 
-        <div className="mx-auto mt-4 w-full max-w-5xl space-y-8 bg-black px-4 pb-20">
-          <ContentCardsSkeleton />
-          <ListingSectionSkeleton titleWidth="w-20" />
-          <ListingSectionSkeleton titleWidth="w-24" />
+        <div className="mx-auto mt-4 w-full max-w-5xl space-y-12 bg-black px-4 pb-20">
+          <ProfileContentCardsSkeleton />
+          <ProfileListingSectionSkeleton titleWidth="w-20" />
+          <ProfileListingSectionSkeleton titleWidth="w-24" />
         </div>
       </main>
     </div>

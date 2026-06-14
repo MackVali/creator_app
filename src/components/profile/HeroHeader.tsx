@@ -106,6 +106,8 @@ interface HeroHeaderProps {
   followedByUsers?: FollowedByPreviewUser[];
   followedByTotalCount?: number;
   actionButtons?: ProfileHeaderActionButtons;
+  relationshipStatsLoading?: boolean;
+  followedByPreviewLoading?: boolean;
 }
 
 export default function HeroHeader({
@@ -122,6 +124,8 @@ export default function HeroHeader({
   followedByUsers = [],
   followedByTotalCount = 0,
   actionButtons,
+  relationshipStatsLoading = false,
+  followedByPreviewLoading = false,
 }: HeroHeaderProps) {
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -182,6 +186,7 @@ export default function HeroHeader({
   const followedByTotal = Math.max(followedByTotalCount, followedByPreviewUsers.length);
   const followedByOtherCount = Math.max(followedByTotal - followedByNameUsers.length, 0);
   const hasFollowedByPreview = !isOwner && followedByPreviewUsers.length > 0;
+  const showFollowedByPreview = hasFollowedByPreview || (!isOwner && followedByPreviewLoading);
   const actionButtonBaseClass =
     "inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-md px-3 text-[0.82rem] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-45";
   const actionButtonClass =
@@ -306,6 +311,7 @@ export default function HeroHeader({
                   value={null}
                   onChange={onProfileStatSelect}
                   counts={relationshipCounts}
+                  loading={relationshipStatsLoading}
                   items={PROFILE_STAT_ITEMS}
                   className="!w-full max-w-full !items-stretch !gap-1.5 !rounded-none !bg-transparent !px-0 !py-0 min-[420px]:!gap-2"
                   itemClassName="!flex-1 !items-center !gap-0.5 !rounded-none !bg-transparent !px-1 !py-0 text-center hover:!bg-transparent"
@@ -407,64 +413,81 @@ export default function HeroHeader({
             </section>
           ) : null}
 
-          {hasFollowedByPreview ? (
-            <button
-              type="button"
-              onClick={handleFollowedByPreviewClick}
-              className="group flex w-full items-center gap-2.5 pt-0 text-left text-[0.78rem] font-medium leading-snug text-white/70 transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:text-[0.82rem]"
-              aria-label={`Open ${displayName}'s followers`}
-            >
-              <span className="flex shrink-0 -space-x-2">
-                {followedByPreviewUsers.map((follower) => {
-                  const fallbackInitials = (follower.displayName || follower.username)
-                    .trim()
-                    .slice(0, 2)
-                    .toUpperCase();
+          {showFollowedByPreview ? (
+            hasFollowedByPreview ? (
+              <button
+                type="button"
+                onClick={handleFollowedByPreviewClick}
+                className="group flex w-full items-center gap-2.5 pt-0 text-left text-[0.78rem] font-medium leading-snug text-white/70 transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:text-[0.82rem]"
+                aria-label={`Open ${displayName}'s followers`}
+              >
+                <span className="flex shrink-0 -space-x-2">
+                  {followedByPreviewUsers.map((follower) => {
+                    const fallbackInitials = (follower.displayName || follower.username)
+                      .trim()
+                      .slice(0, 2)
+                      .toUpperCase();
 
-                  return (
-                    <span
-                      key={follower.id}
-                      className="relative block h-6 w-6 overflow-hidden rounded-full border-2 border-black bg-zinc-900 ring-1 ring-white/10 transition group-hover:z-10 group-hover:ring-white/35"
-                      aria-hidden="true"
-                    >
-                      {follower.avatarUrl ? (
-                        <Image
-                          src={follower.avatarUrl}
-                          alt=""
-                          fill
-                          sizes="24px"
-                          unoptimized
-                          className="rounded-full object-cover"
-                        />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center bg-zinc-900 text-[0.58rem] font-semibold text-white/50">
-                          {fallbackInitials || <User className="h-3 w-3" aria-hidden="true" />}
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span>Followed by </span>
-                {followedByNameUsers.map((follower, index) => {
-                  const separator =
-                    index === 0 ? "" : followedByOtherCount > 0 ? ", " : " and ";
-
-                  return (
-                    <span key={follower.id}>
-                      {separator}
-                      <span className="font-semibold text-white/88">
-                        {follower.username}
+                    return (
+                      <span
+                        key={follower.id}
+                        className="relative block h-6 w-6 overflow-hidden rounded-full border-2 border-black bg-zinc-900 ring-1 ring-white/10 transition group-hover:z-10 group-hover:ring-white/35"
+                        aria-hidden="true"
+                      >
+                        {follower.avatarUrl ? (
+                          <Image
+                            src={follower.avatarUrl}
+                            alt=""
+                            fill
+                            sizes="24px"
+                            unoptimized
+                            className="rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center bg-zinc-900 text-[0.58rem] font-semibold text-white/50">
+                            {fallbackInitials || <User className="h-3 w-3" aria-hidden="true" />}
+                          </span>
+                        )}
                       </span>
-                    </span>
-                  );
-                })}
-                {followedByOtherCount > 0 ? (
-                  <span>{` and ${followedByOtherCount} ${followedByOtherCount === 1 ? "other" : "others"}`}</span>
-                ) : null}
-              </span>
-            </button>
+                    );
+                  })}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span>Followed by </span>
+                  {followedByNameUsers.map((follower, index) => {
+                    const separator =
+                      index === 0 ? "" : followedByOtherCount > 0 ? ", " : " and ";
+
+                    return (
+                      <span key={follower.id}>
+                        {separator}
+                        <span className="font-semibold text-white/88">
+                          {follower.username}
+                        </span>
+                      </span>
+                    );
+                  })}
+                  {followedByOtherCount > 0 ? (
+                    <span>{` and ${followedByOtherCount} ${followedByOtherCount === 1 ? "other" : "others"}`}</span>
+                  ) : null}
+                </span>
+              </button>
+            ) : (
+              <div
+                className="flex w-full animate-pulse items-center gap-2.5 pt-0"
+                aria-hidden="true"
+              >
+                <span className="flex shrink-0 -space-x-2">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <span
+                      key={`followed-by-loading-${index}`}
+                      className="block h-6 w-6 rounded-full border-2 border-black bg-white/12 ring-1 ring-white/10"
+                    />
+                  ))}
+                </span>
+                <span className="h-3.5 min-w-0 flex-1 rounded-full bg-white/10" />
+              </div>
+            )
           ) : null}
 
           {actionButtons ? (

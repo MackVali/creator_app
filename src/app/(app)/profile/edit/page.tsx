@@ -32,7 +32,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2, X, ChevronRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -1552,78 +1551,44 @@ export default function ProfileEditPage() {
           </div>
         </section>
 
-        <main className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-10 pt-2">
-          <Card className="border border-white/5 bg-[#15161A] py-3 shadow-xl">
-            <CardContent className="px-3.5 sm:px-5">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <div className="h-3 w-20 rounded-full bg-white/10" />
-                  <div className="h-11 rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
-                    <div className="ml-3.5 mt-4 h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="h-3 w-20 rounded-full bg-white/10" />
-                  <div className="relative h-11 rounded-lg border border-white/10 bg-[#202126] pl-8 ring-1 ring-white/10">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-zinc-500">
-                      @
-                    </span>
-                    <div className="mt-4 h-3 w-44 animate-pulse rounded-full bg-white/[0.08]" />
-                  </div>
-                  <div className="h-2.5 w-56 rounded-full bg-white/[0.07]" />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="h-3 w-10 rounded-full bg-white/10" />
-                  <div className="min-h-[88px] rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
-                    <div className="space-y-2 px-3.5 pt-3.5">
-                      <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.08]" />
-                      <div className="h-3 w-full max-w-[320px] rounded-full bg-white/[0.06]" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                      <div className="h-3 w-24 rounded-full bg-white/10" />
-                    </div>
-                    <div className="h-11 rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
-                      <div className="ml-3.5 mt-4 h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                      <div className="h-3 w-10 rounded-full bg-white/10" />
-                    </div>
-                    <div className="h-11 rounded-lg border border-white/10 bg-[#202126] ring-1 ring-white/10">
-                      <div className="ml-3.5 mt-4 h-3 w-32 animate-pulse rounded-full bg-white/[0.08]" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="h-3 w-28 rounded-full bg-white/10" />
-                    <div className="h-2.5 w-14 rounded-full bg-emerald-400/25" />
-                  </div>
-                  <div className="h-6 w-12 rounded-full bg-emerald-500/55 p-1 shadow-lg">
-                    <div className="h-4 w-4 rounded-full bg-white/85" />
-                  </div>
-                </div>
-
-                <div className="pt-3">
-                  <div className="h-12 rounded-xl border border-stone-400/10 bg-stone-600/55 shadow-[0_16px_38px_rgba(0,0,0,0.35)]">
-                    <div className="mx-auto mt-[1.125rem] h-3 w-28 rounded-full bg-white/20" />
-                  </div>
-                </div>
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-2">
+          <div className="border-y border-white/[0.08]">
+            <div className="flex min-h-[50px] items-center justify-between gap-3 py-2.5">
+              <div className="h-3 w-20 rounded-full bg-white/10" />
+              <div className="h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
+            </div>
+            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+              <div className="h-3 w-20 rounded-full bg-white/10" />
+              <div className="h-3 w-44 animate-pulse rounded-full bg-white/[0.08]" />
+            </div>
+            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+              <div className="h-3 w-10 rounded-full bg-white/10" />
+              <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.08]" />
+            </div>
+            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                <div className="h-3 w-24 rounded-full bg-white/10" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
+            </div>
+            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                <div className="h-3 w-10 rounded-full bg-white/10" />
+              </div>
+              <div className="h-3 w-32 animate-pulse rounded-full bg-white/[0.08]" />
+            </div>
+            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+              <div className="h-3 w-28 rounded-full bg-white/10" />
+              <div className="h-6 w-12 rounded-full bg-emerald-500/55 p-1 shadow-lg">
+                <div className="h-4 w-4 rounded-full bg-white/85" />
+              </div>
+            </div>
+          </div>
+          <div className="h-12 rounded-xl border border-stone-400/10 bg-stone-600/55 shadow-[0_16px_38px_rgba(0,0,0,0.35)]">
+            <div className="mx-auto mt-[1.125rem] h-3 w-28 rounded-full bg-white/20" />
+          </div>
         </main>
       </div>
     );
@@ -2022,120 +1987,113 @@ export default function ProfileEditPage() {
             )}
           </div>
         )}
-        <Card className="border border-white/5 bg-[#15161A] py-3 shadow-xl">
-          <CardContent className="px-3.5 sm:px-5">
-            {success && (
-              <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-center text-sm text-zinc-200">
-                  Profile updated successfully! Redirecting...
-                </p>
-              </div>
-            )}
+        {success && (
+          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <p className="text-center text-sm text-zinc-200">
+              Profile updated successfully! Redirecting...
+            </p>
+          </div>
+        )}
 
-            {error && (
-              <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-center text-sm text-zinc-300">{error}</p>
-              </div>
-            )}
+        {error && (
+          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <p className="text-center text-sm text-zinc-300">{error}</p>
+          </div>
+        )}
 
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-[#111217]">
-                {EDITABLE_PROFILE_FIELDS.map((field, index) => {
-                  const Icon = field.icon;
-                  const value = formData[field.key]?.trim();
-                  const hasError = hasAttemptedSubmit && fieldErrors[field.key];
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="border-y border-white/[0.08]">
+            {EDITABLE_PROFILE_FIELDS.map((field, index) => {
+              const Icon = field.icon;
+              const value = formData[field.key]?.trim();
+              const hasError = hasAttemptedSubmit && fieldErrors[field.key];
 
-                  return (
-                    <button
-                      key={field.key}
-                      type="button"
-                      onClick={() => setActiveProfileField(field.key)}
-                      className={`flex min-h-[48px] w-full items-center gap-3 px-3.5 py-2.5 text-left transition hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${
-                        index === 0 ? "" : "border-t border-white/[0.06]"
-                      }`}
-                    >
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
-                        {Icon ? (
-                          <Icon className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden="true" />
-                        ) : null}
-                        <span className="min-w-0">
-                          <span className="block text-sm font-medium text-zinc-200">
-                            {field.label}
-                            {field.required && hasAttemptedSubmit ? (
-                              <span className="ml-1 text-red-400">*</span>
-                            ) : null}
-                          </span>
-                          {hasError ? (
-                            <span className="mt-0.5 block text-[0.7rem] leading-4 text-red-400">
-                              {fieldErrors[field.key]}
-                            </span>
-                          ) : null}
-                        </span>
-                      </span>
-                      <span
-                        className={`min-w-0 max-w-[52%] truncate text-right text-sm ${
-                          value ? "text-zinc-100" : "text-zinc-500"
-                        }`}
-                      >
-                        {getProfileFieldDisplayValue(field)}
-                      </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-[#111217] px-3.5 py-2.5">
-                <div className="flex min-h-[36px] items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="block text-sm font-medium text-zinc-200">
-                      Profile visibility
-                    </span>
-                    <span
-                      className={`mt-0.5 block text-[0.68rem] uppercase tracking-[0.24em] transition-colors duration-300 ${
-                        formData.is_private ? "text-zinc-400" : "text-emerald-400"
-                      }`}
-                      aria-live="polite"
-                    >
-                      {formData.is_private ? "Private" : "Public"}
-                    </span>
-                  </div>
-                  <label className="relative inline-flex h-6 w-12 shrink-0 cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      className="peer sr-only"
-                      checked={formData.is_private ?? false}
-                      onChange={(e) => handlePrivacyChange(e.target.checked)}
-                    />
-                    <span className="absolute inset-0 rounded-full bg-emerald-500 transition-colors duration-300 ease-out peer-checked:bg-zinc-700 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70" />
-                    <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-300 ease-out peer-checked:translate-x-6" />
-                  </label>
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-3">
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="h-12 w-full rounded-xl border border-stone-400/20 bg-stone-600 text-base font-semibold text-white shadow-[0_16px_38px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-stone-300/30 hover:bg-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+              return (
+                <button
+                  key={field.key}
+                  type="button"
+                  onClick={() => setActiveProfileField(field.key)}
+                  className={`flex min-h-[50px] w-full items-center gap-3 py-2.5 text-left transition hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 ${
+                    index === 0 ? "" : "border-t border-white/[0.07]"
+                  }`}
                 >
-                  {saving ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
-                      <span>Saving...</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2">
-                      <Save className="h-4 w-4" />
-                      <span>Save Changes</span>
-                    </div>
-                  )}
-                </Button>
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    {Icon ? (
+                      <Icon className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden="true" />
+                    ) : null}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-zinc-200">
+                        {field.label}
+                        {field.required && hasAttemptedSubmit ? (
+                          <span className="ml-1 text-red-400">*</span>
+                        ) : null}
+                      </span>
+                      {hasError ? (
+                        <span className="mt-0.5 block text-[0.7rem] leading-4 text-red-400">
+                          {fieldErrors[field.key]}
+                        </span>
+                      ) : null}
+                    </span>
+                  </span>
+                  <span
+                    className={`min-w-0 max-w-[52%] truncate text-right text-sm ${
+                      value ? "text-zinc-100" : "text-zinc-500"
+                    }`}
+                  >
+                    {getProfileFieldDisplayValue(field)}
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+                </button>
+              );
+            })}
+
+            <div className="flex min-h-[50px] items-center justify-between gap-3 border-t border-white/[0.07] py-2.5">
+              <div className="min-w-0">
+                <span className="block text-sm font-medium text-zinc-200">
+                  Profile visibility
+                </span>
+                <span
+                  className={`mt-0.5 block text-[0.68rem] uppercase tracking-[0.24em] transition-colors duration-300 ${
+                    formData.is_private ? "text-zinc-400" : "text-emerald-400"
+                  }`}
+                  aria-live="polite"
+                >
+                  {formData.is_private ? "Private" : "Public"}
+                </span>
               </div>
-            </form>
-          </CardContent>
-        </Card>
+              <label className="relative inline-flex h-6 w-12 shrink-0 cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={formData.is_private ?? false}
+                  onChange={(e) => handlePrivacyChange(e.target.checked)}
+                />
+                <span className="absolute inset-0 rounded-full bg-emerald-500 transition-colors duration-300 ease-out peer-checked:bg-zinc-700 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70" />
+                <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-300 ease-out peer-checked:translate-x-6" />
+              </label>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <Button
+              type="submit"
+              disabled={saving}
+              className="h-12 w-full rounded-xl border border-stone-400/20 bg-stone-600 text-base font-semibold text-white shadow-[0_16px_38px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-stone-300/30 hover:bg-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? (
+                <div className="flex items-center space-x-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
+                  <span>Saving...</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Save className="h-4 w-4" />
+                  <span>Save Changes</span>
+                </div>
+              )}
+            </Button>
+          </div>
+        </form>
       </main>
 
       <AnimatePresence>

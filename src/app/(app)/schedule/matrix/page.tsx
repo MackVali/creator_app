@@ -1651,7 +1651,7 @@ function MatrixProjectCard({
             >
               {goal.title}
             </h3>
-            <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full border border-emerald-100/[0.16] bg-emerald-950/[0.22] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]">
+            <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full border border-zinc-700/65 bg-[linear-gradient(180deg,#17191b,#090a0b)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]">
               <div
                 className="progress-bar-glint relative h-full rounded-full border border-emerald-100/25 bg-gradient-to-r from-emerald-300/65 via-emerald-100/85 to-emerald-300/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22),0_0_10px_rgba(52,211,153,0.34)] transition-[width] duration-200"
                 style={{ width: `${progress}%` }}
@@ -1675,9 +1675,7 @@ function MatrixProjectCard({
       meta={
         <div className={cn(
           "w-full overflow-hidden rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)]",
-          progress > 0
-            ? "h-2 border border-[#16483d] bg-[linear-gradient(180deg,#1b2d28,#0d1b17)]"
-            : "h-2 border border-[#252a2a] bg-[linear-gradient(180deg,#17191b,#090a0b)]"
+          "h-2 border border-[#252a2a] bg-[linear-gradient(180deg,#17191b,#090a0b)]"
         )}>
           <div
             className={cn(
@@ -4335,25 +4333,23 @@ function MatrixContent() {
           </MatrixCard>
         ) : null}
 
-        <section>
-          <MatrixCard className="p-3 sm:p-4">
-            {state.loading ? (
-              <MatrixLoadingRows />
-            ) : activeMatrixGroups.length ? (
-              <MatrixGridCarousel
-                groups={activeMatrixGroups}
-                matrixView={matrixView}
-                onCompleteScheduledEvent={handleCompleteScheduledEvent}
-                onCompleteDueHabit={handleCompleteDueHabit}
-                completingDueHabitIds={completingDueHabitIds}
-              />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <EmptyPanel label="No scheduled Events found for today." />
-                <EmptyPanel label="No due habits are waiting outside scheduled Events." />
-              </div>
-            )}
-          </MatrixCard>
+        <section className="px-0.5 py-0.5">
+          {state.loading ? (
+            <MatrixLoadingRows />
+          ) : activeMatrixGroups.length ? (
+            <MatrixGridCarousel
+              groups={activeMatrixGroups}
+              matrixView={matrixView}
+              onCompleteScheduledEvent={handleCompleteScheduledEvent}
+              onCompleteDueHabit={handleCompleteDueHabit}
+              completingDueHabitIds={completingDueHabitIds}
+            />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EmptyPanel label="No scheduled Events found for today." />
+              <EmptyPanel label="No due habits are waiting outside scheduled Events." />
+            </div>
+          )}
         </section>
         </div>
       </PullRefreshShell>

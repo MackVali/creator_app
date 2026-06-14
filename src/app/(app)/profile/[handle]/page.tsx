@@ -33,7 +33,10 @@ import { ContentCardsSection } from "@/components/profile/ContentCardsSection";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
 import { SourceListing } from "@/types/source";
 import { useAppCart } from "@/components/cart/AppCartProvider";
-import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
+import {
+  ProfileContentCardsSkeleton,
+  ProfileSkeleton,
+} from "@/components/profile/ProfileSkeleton";
 import ProductCarousel from "@/components/profile/ProductCarousel";
 import ServiceCarousel from "@/components/profile/ServiceCarousel";
 import { resolveServiceImage } from "@/components/profile/SourceListingCard";
@@ -69,21 +72,24 @@ export default function ProfileByHandlePage() {
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [sourceProducts, setSourceProducts] = useState<SourceListing[]>([]);
-  const [sourceProductsLoading, setSourceProductsLoading] = useState(false);
+  const [sourceProductsLoading, setSourceProductsLoading] = useState(true);
   const [sourceProductsError, setSourceProductsError] = useState<string | null>(null);
   const [serviceOffers, setServiceOffers] = useState<ProfileOffer[]>([]);
-  const [serviceOffersLoading, setServiceOffersLoading] = useState(false);
+  const [serviceOffersLoading, setServiceOffersLoading] = useState(true);
   const [serviceOffersError, setServiceOffersError] = useState<string | null>(null);
+  const [secondaryProfileLoading, setSecondaryProfileLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus | null>(null);
-  const [relationshipLoading, setRelationshipLoading] = useState(false);
+  const [relationshipLoading, setRelationshipLoading] = useState(true);
   const [requestingFriend, setRequestingFriend] = useState(false);
   const [incomingRequestId, setIncomingRequestId] = useState<string | null>(null);
   const [respondingRequest, setRespondingRequest] = useState(false);
   const [relationshipCounts, setRelationshipCounts] = useState<RelationshipViewCounts | null>(null);
+  const [relationshipCountsLoading, setRelationshipCountsLoading] = useState(true);
   const [followedByPreviewUsers, setFollowedByPreviewUsers] = useState<FollowedByPreviewUser[]>([]);
   const [followedByTotalCount, setFollowedByTotalCount] = useState(0);
+  const [followedByPreviewLoading, setFollowedByPreviewLoading] = useState(false);
   const [detailSheetItem, setDetailSheetItem] = useState<ProfileDetailSheetItem | null>(null);
   const [relationshipPopupView, setRelationshipPopupView] =
     useState<ProfileRelationshipView | null>(null);
@@ -240,6 +246,7 @@ export default function ProfileByHandlePage() {
   useEffect(() => {
     if (!profile?.username) {
       setRelationshipCounts(null);
+      setRelationshipCountsLoading(false);
       return;
     }
 
@@ -247,6 +254,7 @@ export default function ProfileByHandlePage() {
     const controller = new AbortController();
 
     (async () => {
+      setRelationshipCountsLoading(true);
       try {
         const response = await fetch(
           `/api/profile/${encodeURIComponent(profile.username)}/friend-stats`,
@@ -288,6 +296,10 @@ export default function ProfileByHandlePage() {
 
         console.error("Failed to load friend stats", err);
         setRelationshipCounts(null);
+      } finally {
+        if (isActive) {
+          setRelationshipCountsLoading(false);
+        }
       }
     })();
 
@@ -301,6 +313,7 @@ export default function ProfileByHandlePage() {
     if (!profile?.username || !user?.id) {
       setFollowedByPreviewUsers([]);
       setFollowedByTotalCount(0);
+      setFollowedByPreviewLoading(false);
       return;
     }
 
@@ -308,6 +321,7 @@ export default function ProfileByHandlePage() {
     const controller = new AbortController();
 
     (async () => {
+      setFollowedByPreviewLoading(true);
       try {
         const response = await fetch(
           `/api/profile/${encodeURIComponent(profile.username)}/relationships?view=followers`,
@@ -374,6 +388,10 @@ export default function ProfileByHandlePage() {
         console.error("Failed to load followed-by preview", err);
         setFollowedByPreviewUsers([]);
         setFollowedByTotalCount(0);
+      } finally {
+        if (isActive) {
+          setFollowedByPreviewLoading(false);
+        }
       }
     })();
 
@@ -440,6 +458,9 @@ export default function ProfileByHandlePage() {
         if (!userProfile) {
           setError("Profile not found");
           setProfile(null);
+          setSecondaryProfileLoading(false);
+          setSourceProductsLoading(false);
+          setServiceOffersLoading(false);
           return;
         }
 
@@ -447,6 +468,12 @@ export default function ProfileByHandlePage() {
         setSocialLinks([]);
         setContentCards([]);
         setLinkedAccounts([]);
+        setSecondaryProfileLoading(true);
+        setRelationshipStatus(null);
+        setRelationshipLoading(true);
+        setRelationshipCountsLoading(true);
+        setSourceProductsLoading(true);
+        setServiceOffersLoading(true);
         setLoading(false);
 
         try {
@@ -469,6 +496,10 @@ export default function ProfileByHandlePage() {
           setSocialLinks([]);
           setContentCards([]);
           setLinkedAccounts([]);
+        } finally {
+          if (isActive) {
+            setSecondaryProfileLoading(false);
+          }
         }
       } catch (err) {
         if (!isActive) return;
@@ -476,6 +507,9 @@ export default function ProfileByHandlePage() {
         console.error("Error loading profile:", err);
         setError("Failed to load profile");
         setProfile(null);
+        setSecondaryProfileLoading(false);
+        setSourceProductsLoading(false);
+        setServiceOffersLoading(false);
       } finally {
         if (isActive) {
           setLoading(false);
@@ -862,18 +896,27 @@ export default function ProfileByHandlePage() {
 
   const profileStatCounts = useMemo<RelationshipViewCounts>(() => {
     const offerCount = sourceProducts.length + serviceOffers.length + activeContentCards.length;
+    const counts: RelationshipViewCounts = {};
 
-    return {
-      following: relationshipCounts?.following ?? 0,
-      followers: relationshipCounts?.followers ?? 0,
-      offers: offerCount,
-    };
+    if (!relationshipCountsLoading) {
+      counts.following = relationshipCounts?.following ?? 0;
+      counts.followers = relationshipCounts?.followers ?? 0;
+    }
+    if (!secondaryProfileLoading && !sourceProductsLoading && !serviceOffersLoading) {
+      counts.offers = offerCount;
+    }
+
+    return counts;
   }, [
     relationshipCounts?.followers,
     relationshipCounts?.following,
+    relationshipCountsLoading,
     activeContentCards.length,
+    secondaryProfileLoading,
     serviceOffers.length,
+    serviceOffersLoading,
     sourceProducts.length,
+    sourceProductsLoading,
   ]);
 
   if (loading) {
@@ -978,18 +1021,22 @@ export default function ProfileByHandlePage() {
           onAvatarChange={handleAvatarChange}
           isAvatarUploading={isAvatarUploading}
           relationshipCounts={profileStatCounts}
+          relationshipStatsLoading={relationshipCountsLoading}
           onProfileStatSelect={handleProfileStatSelect}
           followedByUsers={followedByPreviewUsers}
           followedByTotalCount={followedByTotalCount}
+          followedByPreviewLoading={followedByPreviewLoading}
           actionButtons={profileActionButtons}
         />
 
         <div
           className={`mx-auto w-full max-w-5xl space-y-12 bg-black px-4 pb-20 ${
-            hasActiveContentCards ? "mt-4" : "mt-0"
+            secondaryProfileLoading || hasActiveContentCards ? "mt-4" : "mt-0"
           }`}
         >
-          {linkCardsModule && hasActiveContentCards ? (
+          {secondaryProfileLoading ? (
+            <ProfileContentCardsSkeleton />
+          ) : linkCardsModule && hasActiveContentCards ? (
             <ContentCardsSection module={linkCardsModule} />
           ) : null}
 
