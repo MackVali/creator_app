@@ -164,6 +164,16 @@ const QUANTITY_BEHAVIOR_OPTIONS = [
 type QuantityBehavior = (typeof QUANTITY_BEHAVIOR_OPTIONS)[number]["value"]
 const DEFAULT_QUANTITY_BEHAVIOR: QuantityBehavior = QUANTITY_BEHAVIOR_OPTIONS[0].value
 
+const PRODUCT_AVAILABILITY_OPTIONS = [
+  { value: "single", label: "Single listing" },
+  { value: "limited", label: "Limited" },
+  { value: "unlimited", label: "Unlimited" },
+] as const
+
+type ProductAvailability = (typeof PRODUCT_AVAILABILITY_OPTIONS)[number]["value"]
+const DEFAULT_PRODUCT_AVAILABILITY: ProductAvailability = "limited"
+const DEFAULT_PRODUCT_INVENTORY = "1"
+
 const resolveProductKind = (metadata: Record<string, unknown> | null): ProductKind => {
   const rawValue = metadata?.["product_kind"]
   if (typeof rawValue === "string") {
@@ -213,6 +223,85 @@ const resolveQuantityBehavior = (
     return rawValue as QuantityBehavior
   }
   return DEFAULT_QUANTITY_BEHAVIOR
+}
+
+const resolveProductAvailability = (
+  metadata: Record<string, unknown> | null
+): ProductAvailability => {
+  const rawAvailability = resolveMetadataString(metadata, "product_availability")
+  if (
+    PRODUCT_AVAILABILITY_OPTIONS.some((option) => option.value === rawAvailability)
+  ) {
+    return rawAvailability as ProductAvailability
+  }
+
+  const quantityBehavior = resolveQuantityBehavior(metadata)
+  if (quantityBehavior === "always_available") {
+    return "unlimited"
+  }
+  if (quantityBehavior === "per_order") {
+    return "single"
+  }
+
+  const inventory = resolveMetadataNumber(metadata, "inventory")
+  if (inventory === 1) {
+    return "single"
+  }
+  if (inventory !== null && inventory > 1) {
+    return "limited"
+  }
+
+  return DEFAULT_PRODUCT_AVAILABILITY
+}
+
+const getProductAvailabilityMetadata = (
+  availability: ProductAvailability,
+  inventory: string
+) => {
+  if (availability === "unlimited") {
+    return {
+      inventory: "",
+      quantityBehavior: "always_available" as QuantityBehavior,
+    }
+  }
+
+  if (availability === "single") {
+    return {
+      inventory: "1",
+      quantityBehavior: "per_order" as QuantityBehavior,
+    }
+  }
+
+  return {
+    inventory: inventory.trim() || DEFAULT_PRODUCT_INVENTORY,
+    quantityBehavior: "per_unit" as QuantityBehavior,
+  }
+}
+
+const getValidatedProductAvailabilityMetadata = (
+  availability: ProductAvailability,
+  inventory: string
+) => {
+  const metadata = getProductAvailabilityMetadata(availability, inventory)
+
+  if (availability !== "limited") {
+    return metadata
+  }
+
+  const trimmedInventory = metadata.inventory.trim()
+  const inventoryCount = Number.parseInt(trimmedInventory, 10)
+  if (
+    !/^\d+$/.test(trimmedInventory) ||
+    Number.isNaN(inventoryCount) ||
+    inventoryCount <= 0
+  ) {
+    throw new Error("Quantity must be a positive integer.")
+  }
+
+  return {
+    ...metadata,
+    inventory: String(inventoryCount),
+  }
 }
 
 const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
@@ -306,6 +395,7 @@ type ProductSheetFormState = {
   currency: string
   inventory: string
   productKind: ProductKind
+  availability: ProductAvailability
   quantityBehavior: QuantityBehavior
 }
 
@@ -314,8 +404,9 @@ const defaultProductSheetForm: ProductSheetFormState = {
   description: "",
   price: "",
   currency: "USD",
-  inventory: "",
+  inventory: DEFAULT_PRODUCT_INVENTORY,
   productKind: DEFAULT_PRODUCT_KIND,
+  availability: DEFAULT_PRODUCT_AVAILABILITY,
   quantityBehavior: DEFAULT_QUANTITY_BEHAVIOR,
 }
 
@@ -2337,6 +2428,9 @@ export default function Source() {
     }
 
     const inventoryValue = resolveMetadataNumber(currentProductDetailListing.metadata, "inventory")
+    const productAvailability = resolveProductAvailability(
+      currentProductDetailListing.metadata
+    )
     setProductDetailForm((prev) => ({
       ...prev,
       title: currentProductDetailListing.title,
@@ -2347,7 +2441,13 @@ export default function Source() {
           : "",
       currency: currentProductDetailListing.currency ?? "USD",
       productKind: resolveProductKind(currentProductDetailListing.metadata),
-      inventory: inventoryValue !== null ? String(inventoryValue) : "",
+      availability: productAvailability,
+      inventory:
+        inventoryValue !== null
+          ? String(inventoryValue)
+          : productAvailability === "limited"
+            ? DEFAULT_PRODUCT_INVENTORY
+            : "",
       quantityBehavior: resolveQuantityBehavior(currentProductDetailListing.metadata),
     }))
     setProductDetailStatus(currentProductDetailListing.status)
@@ -2518,9 +2618,25 @@ export default function Source() {
     event.preventDefault()
     setProductSheetError(null)
 
+    let availabilityMetadata: ReturnType<
+      typeof getValidatedProductAvailabilityMetadata
+    >
+    try {
+      availabilityMetadata = getValidatedProductAvailabilityMetadata(
+        productSheetForm.availability,
+        productSheetForm.inventory
+      )
+    } catch (err) {
+      setProductSheetError(
+        err instanceof Error ? err.message : "Unable to save product availability."
+      )
+      return
+    }
+
     const metadataFields: Record<string, string> = {
       product_kind: productSheetForm.productKind,
-      quantity_behavior: productSheetForm.quantityBehavior,
+      product_availability: productSheetForm.availability,
+      quantity_behavior: availabilityMetadata.quantityBehavior,
     }
     if (productImageUrl) {
       metadataFields.coverImage = productImageUrl
@@ -2535,7 +2651,7 @@ export default function Source() {
         description: productSheetForm.description,
         price: productSheetForm.price,
         currency: productSheetForm.currency,
-        inventory: productSheetForm.inventory,
+        inventory: availabilityMetadata.inventory,
         durationMinutes: "",
         metadata: Object.keys(metadataFields).length
           ? JSON.stringify(metadataFields)
@@ -2640,23 +2756,32 @@ export default function Source() {
       productDetailMetadataUpdates.coverImage = productDetailImageUrl
     }
 
-    if (productDetailForm.productKind === "physical") {
-      const inventoryRaw = productDetailForm.inventory.trim()
-      if (inventoryRaw) {
-        const count = Number.parseInt(inventoryRaw, 10)
-        if (Number.isNaN(count) || count < 0) {
-          setProductDetailError("Inventory must be a non-negative integer.")
-          setIsProductDetailSubmitting(false)
-          return
-        }
-        productDetailMetadataUpdates.inventory = count
-      } else {
-        productDetailMetadataUpdates.inventory = null
-      }
-      productDetailMetadataUpdates.quantity_behavior = productDetailForm.quantityBehavior
+    let availabilityMetadata: ReturnType<
+      typeof getValidatedProductAvailabilityMetadata
+    >
+    try {
+      availabilityMetadata = getValidatedProductAvailabilityMetadata(
+        productDetailForm.availability,
+        productDetailForm.inventory
+      )
+    } catch (err) {
+      setProductDetailError(
+        err instanceof Error ? err.message : "Unable to save product availability."
+      )
+      setIsProductDetailSubmitting(false)
+      return
+    }
+
+    productDetailMetadataUpdates.product_availability = productDetailForm.availability
+    productDetailMetadataUpdates.quantity_behavior =
+      availabilityMetadata.quantityBehavior
+    if (availabilityMetadata.inventory) {
+      productDetailMetadataUpdates.inventory = Number.parseInt(
+        availabilityMetadata.inventory,
+        10
+      )
     } else {
       productDetailMetadataUpdates.inventory = null
-      productDetailMetadataUpdates.quantity_behavior = null
     }
 
     updateListing.mutate(
@@ -4590,7 +4715,6 @@ function SourceProductSheet({
         ? formatCurrency(listing.price, listing.currency)
         : "Price TBD"
   const coverImagePreview = imagePreview || imageUrl
-  const isPhysicalProduct = formState.productKind === "physical"
   const statusValue: SourceListing["status"] = isCreate ? "draft" : listing?.status ?? "draft"
   const updatedLabel = isCreate
     ? "Not published yet"
@@ -4600,6 +4724,12 @@ function SourceProductSheet({
   const shouldShowAvailability = showAvailability ?? !isCreate
   const productSubmitLabel = isCreate ? "Publish product" : "Save changes"
   const productSubmitBusyLabel = isCreate ? "Creating product" : "Saving changes"
+  const handleProductAvailabilityChange = (value: ProductAvailability) => {
+    onFieldChange("availability", value)
+    if (value === "limited" && !formState.inventory.trim()) {
+      onFieldChange("inventory", DEFAULT_PRODUCT_INVENTORY)
+    }
+  }
 
   return (
     <SourceListingSheetShell
@@ -4657,7 +4787,6 @@ function SourceProductSheet({
                 <FieldStack
                   label="Product kind"
                   htmlFor="product-detail-kind"
-                  description="Clarify whether this listing is a physical good or digital download."
                 >
                   <Select
                     id="product-detail-kind"
@@ -4709,8 +4838,64 @@ function SourceProductSheet({
 
                 <FieldStack
                   label="Availability"
+                  htmlFor="product-detail-availability"
+                >
+                  <div className="space-y-2">
+                    <div
+                      id="product-detail-availability"
+                      role="radiogroup"
+                      aria-label="Availability"
+                      className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-white/[0.045] p-1"
+                    >
+                      {PRODUCT_AVAILABILITY_OPTIONS.map((option) => {
+                        const isSelected = formState.availability === option.value
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            className={cn(
+                              "h-8 rounded-lg px-1.5 text-center text-[10px] font-semibold leading-tight text-white/[0.56] transition-colors hover:bg-white/[0.07] hover:text-white/[0.82] disabled:pointer-events-none disabled:opacity-60",
+                              isSelected &&
+                                "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                            )}
+                            onClick={() =>
+                              handleProductAvailabilityChange(option.value)
+                            }
+                            disabled={isBusy}
+                          >
+                            {option.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {formState.availability === "limited" && (
+                      <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-end gap-2">
+                        <span className="pb-2 text-xs text-white/[0.52]">
+                          Quantity
+                        </span>
+                        <Input
+                          id="product-detail-quantity"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={formState.inventory}
+                          onChange={(event) =>
+                            onFieldChange("inventory", event.target.value)
+                          }
+                          placeholder={DEFAULT_PRODUCT_INVENTORY}
+                          disabled={isBusy}
+                          className={sourceListingFormControlClassName}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </FieldStack>
+
+                <FieldStack
+                  label="Status"
                   htmlFor="product-detail-status"
-                  description="Switch between draft and live states using Source’s listing status."
                 >
                   {shouldShowAvailability ? (
                     <Select
@@ -4737,61 +4922,6 @@ function SourceProductSheet({
                   )}
                 </FieldStack>
               </div>
-              {isPhysicalProduct && (
-                <div className={sourceListingQuietSectionClassName}>
-                  <FormSubheading
-                    title="Fulfillment & inventory"
-                    description="Track stock and how Source should reserve this item before it ships."
-                  />
-                  <div className="grid gap-3">
-                    <FieldStack
-                      label="Inventory count"
-                      htmlFor="product-detail-inventory"
-                      description="Current stock level synced to connected storefronts."
-                    >
-                      <Input
-                        id="product-detail-inventory"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={formState.inventory}
-                        onChange={(event) =>
-                          onFieldChange("inventory", event.target.value)
-                        }
-                        placeholder="0"
-                        disabled={isBusy}
-                        className={sourceListingFormControlClassName}
-                      />
-                    </FieldStack>
-                    <FieldStack
-                      label="Quantity behavior"
-                      htmlFor="product-detail-quantity-behavior"
-                      description="Choose how Source should hold units when publish requests arrive."
-                    >
-                      <Select
-                        id="product-detail-quantity-behavior"
-                        value={formState.quantityBehavior}
-                        onValueChange={(value) =>
-                          onFieldChange("quantityBehavior", value)
-                        }
-                        triggerClassName={sourceListingSelectTriggerClassName}
-                        disablePortal
-                      >
-                        <SelectContent>
-                          {QUANTITY_BEHAVIOR_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FieldStack>
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    Source assumes physical products ship. Keep inventory up to date so storefronts can reserve stock before purchase.
-                  </p>
-                </div>
-              )}
       </div>
     </SourceListingSheetShell>
   )

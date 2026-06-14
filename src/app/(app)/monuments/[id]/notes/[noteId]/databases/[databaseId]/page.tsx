@@ -29,14 +29,14 @@ function getMetadataDatabaseEntries(
 }
 
 function getNoteTitle(note: MonumentNote | null) {
-  if (!note) return "Untitled";
+  if (!note) return "Note";
   return (
     note.title?.trim() ||
     note.content
       ?.split(/\r?\n/)
       .map((line) => line.trim())
       .find((line) => line.length > 0) ||
-    "Untitled"
+    "Note"
   );
 }
 

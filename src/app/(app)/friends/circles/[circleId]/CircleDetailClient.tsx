@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -158,6 +159,28 @@ function getScrollParent(element: HTMLElement | null) {
   }
 
   return null;
+}
+
+function getDocumentScrollContainer() {
+  return document.scrollingElement instanceof HTMLElement
+    ? document.scrollingElement
+    : document.documentElement;
+}
+
+function resetCircleDetailScrollPosition(scrollContainer: HTMLElement | null) {
+  const target = scrollContainer ?? getDocumentScrollContainer();
+
+  if (target.scrollTop <= 1 && target.scrollLeft <= 1) {
+    return false;
+  }
+
+  target.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "auto",
+  });
+
+  return true;
 }
 
 function normalizeStringArray(value: unknown) {
@@ -555,34 +578,16 @@ export default function CircleDetailClient({
     [circleId],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     detailScrollRef.current = getScrollParent(detailSurfaceRef.current);
-  }, []);
+    resetCircleDetailScrollPosition(detailScrollRef.current);
 
-  useEffect(() => {
     const frameId = requestAnimationFrame(() => {
-      detailScrollRef.current =
+      const scrollContainer =
         detailScrollRef.current ?? getScrollParent(detailSurfaceRef.current);
 
-      detailScrollRef.current?.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: "auto",
-      });
-
-      window.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: "auto",
-      });
-
-      document.scrollingElement?.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: "auto",
-      });
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
+      detailScrollRef.current = scrollContainer;
+      resetCircleDetailScrollPosition(scrollContainer);
     });
 
     return () => {

@@ -301,20 +301,26 @@ function measureCircleRect(rect: DOMRect): MeasuredCircleRect {
   };
 }
 
-function resetCircleDetailAppScroll() {
-  window.scrollTo({
+function getCircleDetailPageScrollContainer() {
+  return document.scrollingElement instanceof HTMLElement
+    ? document.scrollingElement
+    : document.documentElement;
+}
+
+function resetCircleDetailPageScroll() {
+  const scrollContainer = getCircleDetailPageScrollContainer();
+
+  if (scrollContainer.scrollTop <= 1 && scrollContainer.scrollLeft <= 1) {
+    return false;
+  }
+
+  scrollContainer.scrollTo({
     top: 0,
     left: 0,
     behavior: "auto",
   });
 
-  document.scrollingElement?.scrollTo({
-    top: 0,
-    left: 0,
-    behavior: "auto",
-  });
-  document.documentElement.scrollTop = 0;
-  document.body.scrollTop = 0;
+  return true;
 }
 
 function getSafeAreaInsetTop() {
@@ -3846,7 +3852,7 @@ export const CommandCirclesSection = forwardRef<
         return;
       }
 
-      resetCircleDetailAppScroll();
+      resetCircleDetailPageScroll();
 
       const appViewportRect = getCircleAppViewportRect();
       const targetRect = getCircleDetailPopupRect(appViewportRect);
@@ -3872,7 +3878,12 @@ export const CommandCirclesSection = forwardRef<
 
       openScrollFrameRef.current = requestAnimationFrame(() => {
         openScrollFrameRef.current = null;
-        resetCircleDetailAppScroll();
+        const didCorrectScroll = resetCircleDetailPageScroll();
+
+        if (!didCorrectScroll) {
+          return;
+        }
+
         setCircleTransition((currentTransition) => {
           if (
             !currentTransition ||

@@ -31,6 +31,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
 import { SkillDetail } from "@/app/(app)/skills/[id]/SkillDetail";
+import { CLOSE_ACTIVE_SKILL_DETAIL_EVENT } from "@/components/skills/events";
 import type { SkillRow } from "@/lib/types/skill";
 
 const FALLBACK_COLOR = "#6366f1";
@@ -662,13 +663,22 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     previousBodyOverflow.current = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     document.body.classList.add("monument-detail-open");
+    document.body.classList.add("skill-detail-open");
 
     return () => {
       document.body.style.overflow = previousBodyOverflow.current ?? "";
       previousBodyOverflow.current = null;
       document.body.classList.remove("monument-detail-open");
+      document.body.classList.remove("skill-detail-open");
     };
   }, [activeSkillId]);
+
+  useEffect(() => {
+    window.addEventListener(CLOSE_ACTIVE_SKILL_DETAIL_EVENT, closeSkillDetail);
+    return () => {
+      window.removeEventListener(CLOSE_ACTIVE_SKILL_DETAIL_EVENT, closeSkillDetail);
+    };
+  }, [closeSkillDetail]);
 
   useEffect(() => {
     if (!activeSkillId) {

@@ -2050,12 +2050,24 @@ export function SkillDetail({
   );
 
   const handlePullExitEnd = resetPullExit;
+  const detailMainClassName = clsx(
+    "px-4 sm:px-6 lg:px-8",
+    onClose
+      ? "pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] sm:pb-6 sm:pt-4"
+      : "pb-6 pt-3 sm:pt-4"
+  );
+  const errorMainClassName = clsx(
+    "relative px-4",
+    onClose
+      ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+3rem)]"
+      : "pb-16 pt-10"
+  );
 
   if (loading) {
     const previewIcon = skillOpenPreview?.icon || "💡";
 
     return (
-      <main className="px-4 pb-6 pt-3 sm:px-6 sm:pt-4 lg:px-8">
+      <main className={detailMainClassName}>
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
           <section aria-labelledby="skill-overview-loading" className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(145deg,#06070A_0%,#08090B_56%,#0D0E11_100%)] p-4 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5 md:p-6">
             <div className="absolute inset-0">
@@ -2185,7 +2197,7 @@ export function SkillDetail({
 
   if (error || !skill) {
     return (
-      <main className="relative px-4 pb-16 pt-10">
+      <main className={errorMainClassName}>
         {onClose ? (
           <button
             type="button"
@@ -2345,7 +2357,7 @@ export function SkillDetail({
   return (
     <>
     <main
-      className="px-4 pb-6 pt-3 sm:px-6 sm:pt-4 lg:px-8"
+      className={detailMainClassName}
       onPointerDown={handlePullExitStart}
       onPointerMove={handlePullExitMove}
       onPointerUp={handlePullExitEnd}
