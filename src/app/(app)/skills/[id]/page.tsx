@@ -1577,13 +1577,13 @@ export default function SkillDetailPage() {
             name: habit.name,
             habitType: habit.habitType,
             recurrence: habit.recurrence,
-            skillId: habit.skillId,
+            skillId: id,
             routineId: habit.routineId,
           },
         });
       }, RELATED_HABIT_LONG_PRESS_MS);
     },
-    [cancelRelatedHabitLongPress, fabCreation, pendingRelatedHabitIds]
+    [cancelRelatedHabitLongPress, fabCreation, id, pendingRelatedHabitIds]
   );
 
   const handleRelatedHabitDoubleClick = useCallback(
@@ -2647,6 +2647,13 @@ export default function SkillDetailPage() {
                                         ? "undo"
                                         : "complete"
                                     }.`}
+                                    draggable={false}
+                                    style={{
+                                      userSelect: "none",
+                                      WebkitUserSelect: "none",
+                                      WebkitTouchCallout: "none",
+                                      WebkitTapHighlightColor: "transparent",
+                                    }}
                                     onPointerDown={(event) =>
                                       handleRelatedHabitPointerDown(
                                         event,
@@ -2667,6 +2674,12 @@ export default function SkillDetailPage() {
                                         event,
                                         habit.id
                                       )
+                                    }
+                                    onContextMenu={(event) =>
+                                      event.preventDefault()
+                                    }
+                                    onDragStart={(event) =>
+                                      event.preventDefault()
                                     }
                                   >
                                     {showStreakBadge ? (

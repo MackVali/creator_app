@@ -10,10 +10,10 @@ import {
   useState,
 } from "react";
 import {
+  ArrowLeft,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
   ClipboardList,
   LockKeyhole,
   Settings,
@@ -107,6 +107,8 @@ type DetailRow = {
     disabled?: boolean;
   };
 };
+
+const defaultBody = "Manage people, roles, invites, and trust for this Circle.";
 
 const memberPlaceholderRows = [
   { label: "You", value: "Owner / Active" },
@@ -973,21 +975,202 @@ export default function CircleDetailClient({
   );
 
   const title = circle?.name ?? "Household";
-  const headerTitle = `${title} Circle`;
+  const body = circle?.description?.trim() || defaultBody;
 
   return (
-    <main className="mx-auto mt-0 w-full max-w-4xl space-y-4 px-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-1 text-white sm:pt-1.5">
-      <section className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(145deg,rgba(28,28,30,0.62),rgba(7,7,8,0.84))] px-3 py-2 shadow-lg shadow-black/25 backdrop-blur-xl">
+    <main className="mx-auto mt-0 w-full max-w-4xl space-y-6 px-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] text-white sm:pt-4">
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.14),transparent_34%),linear-gradient(135deg,rgba(18,18,18,0.96),rgba(0,0,0,0.92))] px-6 pb-6 pt-3 shadow-2xl shadow-black/50 sm:px-8 sm:pb-8 sm:pt-4">
         <Link
           href="/friends"
-          aria-label="Back to friends"
-          className="inline-flex min-w-0 items-center gap-2 text-white/50 transition hover:text-white"
+          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/60 transition hover:bg-white/10 hover:text-white"
         >
-          <ChevronLeft className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <span className="truncate text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
-            {headerTitle}
-          </span>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back
         </Link>
+
+        <div className="mt-6 space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/50">
+              CIRCLE
+            </p>
+            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] font-semibold text-white/45">
+              {circleId}
+            </span>
+          </div>
+          <h1 className="text-3xl font-semibold leading-tight text-white sm:text-4xl">
+            {title}
+          </h1>
+          <p className="max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
+            {body}
+          </p>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => {
+              setShowInviteForm((current) => !current);
+              setInviteError(null);
+              setInviteSearchError(null);
+            }}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-black/90 transition hover:bg-white/85"
+            aria-expanded={showInviteForm}
+          >
+            <UserPlus className="h-4 w-4" aria-hidden="true" />
+            Invite Person
+          </button>
+        </div>
+
+        {showInviteForm ? (
+          <form
+            onSubmit={handleInviteSubmit}
+            className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-3 ring-1 ring-white/5"
+          >
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto] sm:items-start">
+              <div className="relative min-w-0">
+                <label className="sr-only" htmlFor="circle-member-search-query">
+                  Username
+                </label>
+                <input
+                  id="circle-member-search-query"
+                  type="search"
+                  inputMode="search"
+                  value={inviteUsername}
+                  onChange={(event) => {
+                    setInviteUsername(event.target.value);
+                    setInviteError(null);
+                  }}
+                  placeholder="name or @username"
+                  className="h-11 w-full min-w-0 rounded-full border border-white/10 bg-white/[0.06] px-4 text-sm font-medium text-white outline-none transition placeholder:text-white/35 focus:border-white/25 focus:bg-white/[0.09]"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  name="circle-member-search-query"
+                  aria-autocomplete="list"
+                />
+                <p className="mt-2 px-1 text-xs font-medium text-white/45">
+                  Search by name or @username.
+                </p>
+                {isSearchingInvitees ||
+                inviteSearchError ||
+                inviteSearchResults.length > 0 ? (
+                  <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/95 shadow-xl shadow-black/35 ring-1 ring-white/5">
+                    {isSearchingInvitees ? (
+                      <p className="px-4 py-3 text-sm font-medium text-white/55">
+                        Searching...
+                      </p>
+                    ) : null}
+                    {inviteSearchError ? (
+                      <p className="px-4 py-3 text-sm font-medium text-rose-200">
+                        {inviteSearchError}
+                      </p>
+                    ) : null}
+                    {!inviteSearchError
+                      ? inviteSearchResults.map((profile) => {
+                          const username = profile.username?.trim() || null;
+                          const profileName = profile.name?.trim();
+                          const displayName =
+                            profileName ||
+                            username ||
+                            shortenUserId(profile.user_id);
+                          const isSelected =
+                            selectedInviteProfile?.user_id === profile.user_id;
+
+                          return (
+                            <button
+                              key={profile.user_id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedInviteProfile(profile);
+                                setInviteUsername(
+                                  username ? `@${username}` : displayName,
+                                );
+                                setInviteSearchError(null);
+                                setInviteError(null);
+                              }}
+                              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
+                                isSelected
+                                  ? "bg-white/[0.1]"
+                                  : "hover:bg-white/[0.06]"
+                              }`}
+                            >
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black text-xs font-semibold uppercase text-white/75 ring-1 ring-white/15">
+                                {profile.avatar_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={profile.avatar_url}
+                                    alt=""
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  getInitials(displayName, profile.user_id)
+                                )}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-white/85">
+                                  {displayName}
+                                </span>
+                                {username ? (
+                                  <span className="mt-0.5 block truncate text-xs font-medium text-white/45">
+                                    @{username}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          );
+                        })
+                      : null}
+                  </div>
+                ) : null}
+              </div>
+              <label className="sr-only" htmlFor="invite-role">
+                Role
+              </label>
+              <select
+                id="invite-role"
+                value={inviteRole}
+                onChange={(event) =>
+                  setInviteRole(event.target.value as InviteRole)
+                }
+                className="h-11 rounded-full border border-white/10 bg-zinc-950 px-4 text-sm font-semibold text-white/80 outline-none transition focus:border-white/25"
+              >
+                {inviteRoleOptions.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowInviteForm(false);
+                  setInviteUsername("");
+                  setInviteRole("MEMBER");
+                  setInviteError(null);
+                  setInviteSearchResults([]);
+                  setInviteSearchError(null);
+                  setSelectedInviteProfile(null);
+                }}
+                className="inline-flex h-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/65 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isInviting}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-black/90 transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isInviting ? "Sending..." : "Send Invite"}
+              </button>
+            </div>
+            {inviteError ? (
+              <p className="mt-3 px-1 text-sm font-medium text-rose-200">
+                {inviteError}
+              </p>
+            ) : null}
+          </form>
+        ) : null}
       </section>
 
       {isLoading ? (
@@ -1029,14 +1212,13 @@ export default function CircleDetailClient({
       <section className="grid gap-3 md:grid-cols-2">
         {sections.map((section) => {
           const Icon = section.Icon;
-          const showInviteControls = section.title === "Active Members";
 
           return (
             <article
               key={section.title}
               className={liquidGlassPanelClass}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold text-white">
                     {section.title}
@@ -1047,188 +1229,10 @@ export default function CircleDetailClient({
                     </p>
                   ) : null}
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {showInviteControls ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowInviteForm((current) => !current);
-                        setInviteError(null);
-                        setInviteSearchError(null);
-                      }}
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-full bg-white px-3 text-xs font-semibold text-black/90 transition hover:bg-white/85"
-                      aria-expanded={showInviteForm}
-                    >
-                      <UserPlus className="h-4 w-4" aria-hidden="true" />
-                      Invite Person
-                    </button>
-                  ) : null}
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06] text-white/70 ring-1 ring-white/10">
-                    <Icon className="h-5 w-5" aria-hidden="true" />
-                  </div>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/70 ring-1 ring-white/10">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
                 </div>
               </div>
-
-              {showInviteControls && showInviteForm ? (
-                <form
-                  onSubmit={handleInviteSubmit}
-                  className="mt-4 rounded-2xl border border-white/[0.085] bg-[linear-gradient(145deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/5 backdrop-blur"
-                >
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto] sm:items-start">
-                    <div className="relative min-w-0">
-                      <label
-                        className="sr-only"
-                        htmlFor="circle-member-search-query"
-                      >
-                        Username
-                      </label>
-                      <input
-                        id="circle-member-search-query"
-                        type="search"
-                        inputMode="search"
-                        value={inviteUsername}
-                        onChange={(event) => {
-                          setInviteUsername(event.target.value);
-                          setInviteError(null);
-                        }}
-                        placeholder="name or @username"
-                        className="h-11 w-full min-w-0 rounded-full border border-white/10 bg-white/[0.06] px-4 text-sm font-medium text-white outline-none transition placeholder:text-white/35 focus:border-white/25 focus:bg-white/[0.09]"
-                        autoComplete="new-password"
-                        autoCorrect="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        name="circle-member-search-query"
-                        aria-autocomplete="list"
-                      />
-                      <p className="mt-2 px-1 text-xs font-medium text-white/45">
-                        Search by name or @username.
-                      </p>
-                      {isSearchingInvitees ||
-                      inviteSearchError ||
-                      inviteSearchResults.length > 0 ? (
-                        <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/95 shadow-xl shadow-black/35 ring-1 ring-white/5">
-                          {isSearchingInvitees ? (
-                            <p className="px-4 py-3 text-sm font-medium text-white/55">
-                              Searching...
-                            </p>
-                          ) : null}
-                          {inviteSearchError ? (
-                            <p className="px-4 py-3 text-sm font-medium text-rose-200">
-                              {inviteSearchError}
-                            </p>
-                          ) : null}
-                          {!inviteSearchError
-                            ? inviteSearchResults.map((profile) => {
-                                const username =
-                                  profile.username?.trim() || null;
-                                const profileName = profile.name?.trim();
-                                const displayName =
-                                  profileName ||
-                                  username ||
-                                  shortenUserId(profile.user_id);
-                                const isSelected =
-                                  selectedInviteProfile?.user_id ===
-                                  profile.user_id;
-
-                                return (
-                                  <button
-                                    key={profile.user_id}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedInviteProfile(profile);
-                                      setInviteUsername(
-                                        username
-                                          ? `@${username}`
-                                          : displayName,
-                                      );
-                                      setInviteSearchError(null);
-                                      setInviteError(null);
-                                    }}
-                                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
-                                      isSelected
-                                        ? "bg-white/[0.1]"
-                                        : "hover:bg-white/[0.06]"
-                                    }`}
-                                  >
-                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black text-xs font-semibold uppercase text-white/75 ring-1 ring-white/15">
-                                      {profile.avatar_url ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={profile.avatar_url}
-                                          alt=""
-                                          className="h-full w-full object-cover"
-                                        />
-                                      ) : (
-                                        getInitials(
-                                          displayName,
-                                          profile.user_id,
-                                        )
-                                      )}
-                                    </span>
-                                    <span className="min-w-0">
-                                      <span className="block truncate text-sm font-semibold text-white/85">
-                                        {displayName}
-                                      </span>
-                                      {username ? (
-                                        <span className="mt-0.5 block truncate text-xs font-medium text-white/45">
-                                          @{username}
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                  </button>
-                                );
-                              })
-                            : null}
-                        </div>
-                      ) : null}
-                    </div>
-                    <label className="sr-only" htmlFor="invite-role">
-                      Role
-                    </label>
-                    <select
-                      id="invite-role"
-                      value={inviteRole}
-                      onChange={(event) =>
-                        setInviteRole(event.target.value as InviteRole)
-                      }
-                      className="h-11 rounded-full border border-white/10 bg-zinc-950/85 px-4 text-sm font-semibold text-white/80 outline-none transition focus:border-white/25"
-                    >
-                      {inviteRoleOptions.map((role) => (
-                        <option key={role} value={role}>
-                          {role}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowInviteForm(false);
-                        setInviteUsername("");
-                        setInviteRole("MEMBER");
-                        setInviteError(null);
-                        setInviteSearchResults([]);
-                        setInviteSearchError(null);
-                        setSelectedInviteProfile(null);
-                      }}
-                      className="inline-flex h-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/65 transition hover:bg-white/10 hover:text-white"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isInviting}
-                      className="inline-flex h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-black/90 transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isInviting ? "Sending..." : "Send Invite"}
-                    </button>
-                  </div>
-                  {inviteError ? (
-                    <p className="mt-3 px-1 text-sm font-medium text-rose-200">
-                      {inviteError}
-                    </p>
-                  ) : null}
-                </form>
-              ) : null}
 
               <div className="mt-5 space-y-2">
                 {section.rows.length > 0 ? (

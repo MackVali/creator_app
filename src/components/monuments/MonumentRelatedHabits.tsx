@@ -2180,6 +2180,13 @@ export function MonumentRelatedHabits({
                               title={`${habit.name} - ${habitPillLabel}. Double tap to ${
                                 isHabitCompletedToday ? "undo" : "complete"
                               }.`}
+                              draggable={false}
+                              style={{
+                                userSelect: "none",
+                                WebkitUserSelect: "none",
+                                WebkitTouchCallout: "none",
+                                WebkitTapHighlightColor: "transparent",
+                              }}
                               onPointerDown={(event) =>
                                 handleRelatedHabitPointerDown(event, habit)
                               }
@@ -2192,6 +2199,8 @@ export function MonumentRelatedHabits({
                               onTouchEnd={(event) =>
                                 handleRelatedHabitTouchEnd(event, habit.id)
                               }
+                              onContextMenu={(event) => event.preventDefault()}
+                              onDragStart={(event) => event.preventDefault()}
                             >
                               {isHabitCompletedToday ? (
                                 <>

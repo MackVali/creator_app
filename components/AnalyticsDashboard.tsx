@@ -5,20 +5,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
-  type PointerEvent,
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import {
-  CheckSquare,
-  ChevronLeft,
-  FolderKanban,
-  Flame,
-  Info,
-} from "lucide-react";
+import { ChevronLeft, Info } from "lucide-react";
 import type {
   AnalyticsOverviewComparison,
   AnalyticsOverviewComparisonMetric,
@@ -30,29 +22,10 @@ import type {
   AnalyticsHabitPerformance,
   AnalyticsHabitStreakPoint,
   AnalyticsHabitWeeklyReflection,
-  AnalyticsScheduleCompletion,
   AnalyticsSkillCategoryContribution,
   AnalyticsSkillCategoryContributionMeta,
   AnalyticsView,
 } from "@/types/analytics";
-
-const SCHEDULE_ICON_MAP: Record<
-  AnalyticsScheduleCompletion["type"],
-  ComponentType<{ className?: string }>
-> = {
-  project: FolderKanban,
-  task: CheckSquare,
-  habit: Flame,
-};
-
-const SCHEDULE_BADGE_STYLES: Record<
-  AnalyticsScheduleCompletion["type"],
-  string
-> = {
-  project: "border-sky-400/40 text-sky-100",
-  task: "border-emerald-400/40 text-emerald-100",
-  habit: "border-orange-400/40 text-orange-100",
-};
 
 function classNames(
   ...classes: (string | boolean | null | undefined)[]
@@ -409,7 +382,6 @@ export default function AnalyticsDashboard({
   const skillCategoryContributionMeta =
     analytics?.skillCategoryContributionMeta ?? null;
   const habitSummary = normalizeHabitSummary(analytics?.habit);
-  const recentSchedules = analytics?.recentSchedules ?? [];
   const overviewTrend = analytics?.overviewDaily ?? [];
   const hasAnalyticsData = analytics !== null;
 
@@ -480,20 +452,6 @@ export default function AnalyticsDashboard({
               categories={skillCategoryContribution}
               meta={skillCategoryContributionMeta}
             />
-          )}
-        </SectionCard>
-        <SectionCard
-          title="Recently completed"
-          description="Latest completed events."
-        >
-          {loading ? (
-            <Skeleton className="h-40" />
-          ) : error ? (
-            renderErrorState()
-          ) : recentSchedules.length === 0 ? (
-            <EmptyCopy copy="No completed events in this range." />
-          ) : (
-            <RecentScheduleShowcase items={recentSchedules} />
           )}
         </SectionCard>
       </div>
@@ -1822,86 +1780,6 @@ function getSkillInitial(name: string) {
   return (trimmed[0] ?? "?").toUpperCase();
 }
 
-function RecentScheduleShowcase({
-  items,
-}: {
-  items: AnalyticsScheduleCompletion[];
-}) {
-  const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const dayFormatter = new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-
-  return (
-    <ul className="space-y-2 sm:space-y-3">
-      {items.map((item) => {
-        const start = safeDate(item.startUtc);
-        const end = safeDate(item.endUtc);
-        const completed = safeDate(item.completedAt);
-        const Icon = SCHEDULE_ICON_MAP[item.type];
-        const timeRange =
-          start && end
-            ? `${timeFormatter.format(start)} to ${timeFormatter.format(end)}`
-            : "Scheduled event";
-        const completedLabel = completed ? dayFormatter.format(completed) : "N/A";
-        return (
-          <li
-            key={item.id}
-            className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-950/80 p-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-2xl sm:p-3"
-          >
-            <div className="flex flex-1 items-start gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-300">
-                <Icon className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-white">
-                    {item.title}
-                  </span>
-                  <span
-                    className={classNames(
-                      "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em]",
-                      SCHEDULE_BADGE_STYLES[item.type]
-                    )}
-                  >
-                    {item.type}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-zinc-500">{timeRange}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-300">
-                  <span className="rounded-full border border-zinc-800 px-2 py-0.5 text-zinc-200">
-                    {formatDurationLabel(item.durationMinutes)}
-                  </span>
-                  <span className="rounded-full border border-zinc-800 px-2 py-0.5 text-zinc-200">
-                    {formatEnergyLabel(item.energy)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="text-xs text-zinc-500 sm:text-right">
-              <div className="font-semibold text-white">{completedLabel}</div>
-              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-600">
-                Completed
-              </div>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function safeDate(value: string | null | undefined) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
-}
-
 function OverviewDiagnosticsSection({
   points,
   comparison,
@@ -1915,6 +1793,7 @@ function OverviewDiagnosticsSection({
   isRefreshing: boolean;
   statusMessage: string | null;
 }) {
+  const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
   const totalXp = points.reduce((sum, point) => sum + point.xpGained, 0);
   const completedEvents = points.reduce(
     (sum, point) => sum + point.completedEvents,
@@ -1957,6 +1836,19 @@ function OverviewDiagnosticsSection({
   const averageLabel = range === "1d" ? "Avg/hour" : "Avg/day";
   const averageValue =
     points.length > 0 ? totalXp / points.length : 0;
+  const selectedPoint =
+    selectedPointIndex == null ? null : points[selectedPointIndex] ?? null;
+  const selectedPointWorkMinutes = selectedPoint
+    ? getSelectedPointAverageMinutes(selectedPoint)
+    : 0;
+  const selectedPointAveragePerHour =
+    selectedPoint && selectedPointWorkMinutes > 0
+      ? selectedPoint.xpGained / (selectedPointWorkMinutes / 60)
+      : 0;
+
+  useEffect(() => {
+    setSelectedPointIndex(null);
+  }, [points, range]);
 
   return (
     <div
@@ -1970,10 +1862,20 @@ function OverviewDiagnosticsSection({
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-400/85">
             PROGRESS TREND
           </div>
-          <OverviewPanelStatus
-            isRefreshing={isRefreshing}
-            message={statusMessage}
-          />
+          {selectedPoint || isRefreshing || statusMessage ? (
+            <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-1.5">
+              {selectedPoint ? (
+                <div className="inline-flex items-center rounded-full border border-emerald-400/15 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/80">
+                  Selected {formatTrendActiveLabel(selectedPoint.date, range)}
+                </div>
+              ) : null}
+              <OverviewPanelStatus
+                isRefreshing={isRefreshing}
+                message={statusMessage}
+                compact
+              />
+            </div>
+          ) : null}
         </div>
         <div className="shrink-0 pt-0.5 text-right text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
           vs previous cycle
@@ -1983,35 +1885,60 @@ function OverviewDiagnosticsSection({
       <div className="grid grid-cols-2 gap-2 sm:gap-2.5 lg:grid-cols-4">
         <OverviewKpiRailItem
           label="XP"
-          value={formatCompactNumber(totalXp)}
-          comparison={comparison?.xp}
-          sublabel={formatRangeSummary(range, points.length)}
+          value={formatCompactNumber(selectedPoint?.xpGained ?? totalXp)}
+          comparison={selectedPoint ? undefined : comparison?.xp}
+          sublabel={
+            selectedPoint
+              ? formatTrendActiveLabel(selectedPoint.date, range)
+              : formatRangeSummary(range, points.length)
+          }
           tone="green"
         />
         <OverviewKpiRailItem
-          label={averageLabel.toUpperCase()}
-          value={formatAverageXp(averageValue)}
-          comparison={comparison?.avgPerDay}
-          sublabel={`Peak ${formatCompactNumber(peakXp)} XP`}
+          label={selectedPoint ? "AVG/HR" : averageLabel.toUpperCase()}
+          value={formatAverageXp(
+            selectedPoint ? selectedPointAveragePerHour : averageValue
+          )}
+          comparison={selectedPoint ? undefined : comparison?.avgPerDay}
+          sublabel={
+            selectedPoint
+              ? `${selectedPointWorkMinutes}m tracked`
+              : `Peak ${formatCompactNumber(peakXp)} XP`
+          }
         />
         <OverviewKpiRailItem
           label="COMPLETED"
-          value={formatCompactNumber(completedEvents)}
-          comparison={comparison?.completed}
-          sublabel={`${formatCompactNumber(completedProjects)}P · ${formatCompactNumber(completedTasks)}T · ${formatCompactNumber(completedHabits)}H`}
+          value={formatCompactNumber(
+            selectedPoint?.completedEvents ?? completedEvents
+          )}
+          comparison={selectedPoint ? undefined : comparison?.completed}
+          sublabel={
+            selectedPoint
+              ? `${formatCompactNumber(selectedPoint.completedProjects)}P · ${formatCompactNumber(selectedPoint.completedTasks)}T · ${formatCompactNumber(selectedPoint.completedHabits)}H`
+              : `${formatCompactNumber(completedProjects)}P · ${formatCompactNumber(completedTasks)}T · ${formatCompactNumber(completedHabits)}H`
+          }
           tone="green"
         />
         <OverviewKpiRailItem
           label="EFFICIENCY"
-          value={`${rangeEfficiencyRate}%`}
-          comparison={comparison?.efficiency}
-          sublabel={`${totalCompletedMinutes}m / ${totalUsableWindowMinutes}m`}
+          value={`${selectedPoint?.efficiencyRate ?? rangeEfficiencyRate}%`}
+          comparison={selectedPoint ? undefined : comparison?.efficiency}
+          sublabel={
+            selectedPoint
+              ? `${selectedPoint.completedMinutes}m / ${selectedPoint.usableWindowMinutes}m`
+              : `${totalCompletedMinutes}m / ${totalUsableWindowMinutes}m`
+          }
           tone="green"
         />
       </div>
 
       <div className="overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(145deg,rgba(9,9,11,0.9),rgba(24,24,27,0.72))] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:rounded-[20px]">
-        <OverviewLineChart points={points} range={range} />
+        <OverviewLineChart
+          points={points}
+          range={range}
+          selectedPointIndex={selectedPointIndex}
+          onSelectedPointIndexChange={setSelectedPointIndex}
+        />
       </div>
     </div>
   );
@@ -2020,9 +1947,11 @@ function OverviewDiagnosticsSection({
 function OverviewPanelStatus({
   isRefreshing,
   message,
+  compact = false,
 }: {
   isRefreshing: boolean;
   message: string | null;
+  compact?: boolean;
 }) {
   const toneClass = message
     ? "border-rose-500/20 bg-rose-500/10 text-rose-200"
@@ -2033,7 +1962,7 @@ function OverviewPanelStatus({
   }
 
   return (
-    <div className="mt-1.5 h-5">
+    <div className={compact ? "h-5" : "mt-1.5 h-5"}>
       {isRefreshing ? (
         <div
           className={classNames(
@@ -2198,31 +2127,15 @@ function getOverviewComparisonClass(
 function OverviewLineChart({
   points,
   range,
+  selectedPointIndex,
+  onSelectedPointIndexChange,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   range: AnalyticsRange;
+  selectedPointIndex: number | null;
+  onSelectedPointIndexChange: (index: number | null) => void;
 }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
-  const [tooltip, setTooltip] = useState<{
-    index: number;
-    left: number;
-    top: number;
-    visible: boolean;
-  }>({
-    index: points.length - 1,
-    left: 50,
-    top: 50,
-    visible: false,
-  });
-
-  useEffect(() => {
-    setTooltip({
-      index: points.length > 0 ? points.length - 1 : 0,
-      left: 50,
-      top: 50,
-      visible: false,
-    });
-  }, [points, range]);
 
   const width = 720;
   const height = 318;
@@ -2245,8 +2158,11 @@ function OverviewLineChart({
     1,
     ...points.map((point) => point.completedEvents)
   );
-  const activeIndex = Math.min(tooltip.index, points.length - 1);
-  const activePoint = tooltip.visible ? points[activeIndex] ?? null : null;
+  const activeIndex =
+    selectedPointIndex == null
+      ? -1
+      : Math.max(0, Math.min(selectedPointIndex, points.length - 1));
+  const activePoint = activeIndex >= 0 ? points[activeIndex] ?? null : null;
   const yTickValues = buildYTickValues(yMax);
   const yAxisLabels = yTickValues
     .filter((value) => value > 0)
@@ -2290,47 +2206,15 @@ function OverviewLineChart({
       weekday: formatTrendWeekdayLabel(points[index]?.date, range),
     }));
   const yAxisLabelLeft = ((padding.left - 10) / width) * 100;
-  const showTooltip = (index: number, left: number, top: number) => {
-    setTooltip({
-      index,
-      left: Math.max(8, Math.min(92, left)),
-      top: Math.max(12, Math.min(88, top)),
-      visible: true,
-    });
+  const selectPoint = (index: number) => {
+    onSelectedPointIndexChange(index);
   };
-  const showTooltipAtPoint = (index: number) => {
-    const point = svgPoints[index];
-    if (!point) {
-      return;
-    }
-
-    showTooltip(index, (point.x / width) * 100, (point.y / height) * 100);
-  };
-  const showTooltipAtPointer = (
-    index: number,
-    event: PointerEvent<HTMLButtonElement>
-  ) => {
-    const bounds = event.currentTarget
-      .closest("[data-overview-line-chart]")
-      ?.getBoundingClientRect();
-
-    if (!bounds) {
-      showTooltipAtPoint(index);
-      return;
-    }
-
-    showTooltip(
-      index,
-      ((event.clientX - bounds.left) / bounds.width) * 100,
-      ((event.clientY - bounds.top) / bounds.height) * 100
-    );
-  };
-  const hideTooltip = () => {
-    setTooltip((current) => ({ ...current, visible: false }));
+  const clearSelectedPoint = () => {
+    onSelectedPointIndexChange(null);
   };
 
   useEffect(() => {
-    if (!tooltip.visible) {
+    if (selectedPointIndex == null) {
       return;
     }
 
@@ -2342,9 +2226,7 @@ function OverviewLineChart({
         return;
       }
 
-      setTooltip((current) =>
-        current.visible ? { ...current, visible: false } : current
-      );
+      onSelectedPointIndexChange(null);
     };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
@@ -2352,7 +2234,7 @@ function OverviewLineChart({
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
     };
-  }, [tooltip.visible]);
+  }, [onSelectedPointIndexChange, selectedPointIndex]);
 
   return (
     <div className="px-3 py-3.5 sm:px-4 sm:py-4">
@@ -2500,7 +2382,7 @@ function OverviewLineChart({
                     x2={svgPoints[activeIndex]?.x ?? 0}
                     y1={padding.top}
                     y2={contextBottomY}
-                    stroke="rgba(244,244,245,0.2)"
+                    stroke="rgba(244,244,245,0.14)"
                     strokeDasharray="1 9"
                     vectorEffect="non-scaling-stroke"
                   />
@@ -2577,7 +2459,7 @@ function OverviewLineChart({
 
             {activePoint ? (
               <div
-                className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-100"
+                className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-200/80"
                 style={{
                   left: `${(((svgPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
                     4
@@ -2597,21 +2479,21 @@ function OverviewLineChart({
                     <button
                       key={`${point.point.date}-hitbox`}
                       type="button"
-                      onPointerEnter={(event) => showTooltipAtPointer(index, event)}
-                      onPointerMove={(event) => showTooltipAtPointer(index, event)}
+                      onPointerEnter={() => selectPoint(index)}
+                      onPointerMove={() => selectPoint(index)}
                       onPointerDown={(event) => {
                         if (event.pointerType === "touch") {
-                          showTooltipAtPoint(index);
+                          selectPoint(index);
                         }
                       }}
                       onPointerLeave={(event) => {
                         if (event.pointerType !== "touch") {
-                          hideTooltip();
+                          clearSelectedPoint();
                         }
                       }}
-                      onFocus={() => showTooltipAtPoint(index)}
-                      onBlur={hideTooltip}
-                      onClick={() => showTooltipAtPoint(index)}
+                      onFocus={() => selectPoint(index)}
+                      onBlur={clearSelectedPoint}
+                      onClick={() => selectPoint(index)}
                       className="pointer-events-auto absolute bottom-0 top-0 -translate-x-1/2 focus:outline-none"
                       style={{
                         left: `${((point.x / width) * 100).toFixed(4)}%`,
@@ -2627,91 +2509,11 @@ function OverviewLineChart({
                 : null}
             </div>
           </div>
-
-          {activePoint ? (
-            <div
-              className={classNames(
-                "pointer-events-none absolute z-10 min-w-[142px] rounded-2xl border border-white/12 bg-zinc-950/80 px-3 py-2.5 text-[11px] text-zinc-300 shadow-[0_18px_45px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
-                tooltip.left > 72
-                  ? "-translate-x-full"
-                  : tooltip.left < 28
-                    ? "translate-x-0"
-                    : "-translate-x-1/2",
-                tooltip.top > 58 ? "-translate-y-[calc(100%+8px)]" : "translate-y-2"
-              )}
-              style={{
-                left: `${tooltip.left}%`,
-                top: `${tooltip.top}%`,
-              }}
-              role="tooltip"
-            >
-              <div className="mb-1.5 flex items-center justify-between gap-3">
-                <span className="font-medium text-zinc-100">
-                  {formatTrendActiveLabel(activePoint.date, range)}
-                </span>
-                <span className="rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
-                  XP
-                </span>
-              </div>
-              <div className="text-lg font-semibold leading-none text-zinc-50">
-                {formatCompactNumber(activePoint.xpGained)}
-              </div>
-              <div className="mt-2 grid gap-1 border-t border-white/10 pt-2">
-                <OverviewTooltipMetric
-                  label="Completed"
-                  value={activePoint.completedEvents}
-                  tone="text-emerald-200"
-                />
-                <OverviewTooltipMetric
-                  label="Scheduled"
-                  value={activePoint.scheduledEvents}
-                  tone="text-zinc-200"
-                />
-                <OverviewTooltipMetric
-                  label="Missed"
-                  value={activePoint.missedEvents}
-                  tone="text-rose-200"
-                />
-                {hasEfficiencyBuckets && activePoint.usableWindowMinutes > 0 ? (
-                  <OverviewTooltipMetric
-                    label="Efficiency"
-                    value={activePoint.efficiencyRate}
-                    tone="text-amber-200"
-                    suffix="%"
-                  />
-                ) : null}
-              </div>
-            </div>
-          ) : null}
         </div>
         <div className="flex items-center gap-1.5 border-t border-white/[0.06] pt-2 text-[11px] text-zinc-500 sm:text-xs">
           <Info className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden="true" />
           <span>All times shown in your local time zone</span>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function OverviewTooltipMetric({
-  label,
-  value,
-  tone,
-  suffix = "",
-}: {
-  label: string;
-  value: number;
-  tone: string;
-  suffix?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-        {label}
-      </div>
-      <div className={classNames("font-semibold tabular-nums", tone)}>
-        {formatCompactNumber(value)}
-        {suffix}
       </div>
     </div>
   );
@@ -2737,6 +2539,16 @@ function formatRangeSummary(range: AnalyticsRange, pointsCount: number) {
   }
 
   return `${pointsCount} daily points`;
+}
+
+function getSelectedPointAverageMinutes(point: AnalyticsOverviewDailyPoint) {
+  if (point.completedMinutes > 0) {
+    return point.completedMinutes;
+  }
+
+  // The daily payload has completed minutes but no separate active timer total;
+  // use the existing usable window as the safest local fallback without changing queries.
+  return point.usableWindowMinutes;
 }
 
 function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
@@ -2942,29 +2754,6 @@ function formatTrendActiveLabel(value: string | null, range: AnalyticsRange) {
 
 function parseTrendDate(value: string, range: AnalyticsRange) {
   return range === "1d" ? new Date(value) : new Date(`${value}T12:00:00Z`);
-}
-
-function formatDurationLabel(minutes: number) {
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    return "Flexible";
-  }
-  if (minutes >= 60) {
-    const hours = Math.floor(minutes / 60);
-    const remainder = minutes % 60;
-    if (remainder === 0) {
-      return `${hours}h`;
-    }
-    return `${hours}h ${remainder}m`;
-  }
-  return `${minutes}m`;
-}
-
-function formatEnergyLabel(value: string | null) {
-  if (!value) {
-    return "Neutral energy";
-  }
-  const normalized = value.toLowerCase();
-  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} energy`;
 }
 
 function StreakTrendCard({
