@@ -34,6 +34,8 @@ import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
+import { HabitEditSheet } from "@/components/schedule/HabitEditSheet";
+import type { ScheduleEditOrigin } from "@/components/schedule/ScheduleMorphDialog";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
   RelatedRoutineCard,
@@ -154,6 +156,11 @@ type DecoratedRelatedRoutine = RelatedRoutineCardRoutine & {
 };
 type RelatedHabitCardDensity = "large" | "small";
 type RelatedHabitPageSwipeAxis = "horizontal" | "vertical" | null;
+type RelatedHabitEditState = {
+  habitId: string;
+  title: string;
+  origin: ScheduleEditOrigin | null;
+};
 
 const RELATED_HABIT_GRID_CLASS =
   "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
@@ -500,13 +507,13 @@ function getHabitCardBorderClass(habitType: string | null | undefined): string {
   return "border-black/70";
 }
 
-function getRelatedHabitFabOriginRect(element: HTMLElement) {
+function getRelatedHabitEditOrigin(element: HTMLElement): ScheduleEditOrigin {
   const rect = element.getBoundingClientRect();
   const styles = window.getComputedStyle(element);
 
   return {
-    top: rect.top,
-    left: rect.left,
+    x: rect.left,
+    y: rect.top,
     width: rect.width,
     height: rect.height,
     borderRadius: styles.borderRadius,
@@ -554,6 +561,8 @@ export default function SkillDetailPage() {
   >(() => new Set());
   const [memoCompletionState, setMemoCompletionState] =
     useState<HabitSummary | null>(null);
+  const [editingRelatedHabit, setEditingRelatedHabit] =
+    useState<RelatedHabitEditState | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
@@ -1568,15 +1577,14 @@ export default function SkillDetailPage() {
         } catch {
           // Pointer capture can already be released by the browser.
         }
-        fabCreation?.requestEntityEdit({
-          entityType: "HABIT",
-          entityId: habit.id,
+        setEditingRelatedHabit({
+          habitId: habit.id,
           title: habit.name,
-          originRect: getRelatedHabitFabOriginRect(element),
+          origin: getRelatedHabitEditOrigin(element),
         });
       }, RELATED_HABIT_LONG_PRESS_MS);
     },
-    [cancelRelatedHabitLongPress, fabCreation, pendingRelatedHabitIds]
+    [cancelRelatedHabitLongPress, pendingRelatedHabitIds]
   );
 
   const handleRelatedHabitDoubleClick = useCallback(
@@ -2795,6 +2803,22 @@ export default function SkillDetailPage() {
         if (!open) setMemoCompletionState(null);
       }}
       onCompleted={handleMemoCompletionSubmitted}
+    />
+    <HabitEditSheet
+      open={Boolean(editingRelatedHabit)}
+      habitId={editingRelatedHabit?.habitId ?? null}
+      eventTitle={editingRelatedHabit?.title ?? null}
+      eventTypeLabel="Habit"
+      origin={editingRelatedHabit?.origin ?? null}
+      onClose={() => setEditingRelatedHabit(null)}
+      onSaved={() => {
+        setRelatedHabitsRefreshVersion((current) => current + 1);
+        setEditingRelatedHabit(null);
+      }}
+      onInstanceDeleted={() => {
+        setRelatedHabitsRefreshVersion((current) => current + 1);
+        setEditingRelatedHabit(null);
+      }}
     />
     </>
   );

@@ -1158,12 +1158,12 @@ function CircleOverviewRow({ circle }: CircleOverviewRowProps) {
   const activeMemberCount = circle.activeMemberCount ?? memberPreview.length;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#171719] shadow-[0_14px_34px_rgba(0,0,0,0.28)] transition hover:border-white/[0.14] hover:bg-[#1d1d20]">
+    <article className="overflow-hidden rounded-[22px] border border-white/[0.075] bg-[radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.085),transparent_34%),linear-gradient(145deg,rgba(38,38,41,0.86)_0%,rgba(24,24,26,0.95)_48%,rgba(11,11,12,0.98)_100%)] shadow-[0_20px_48px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.075)] transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.13] hover:shadow-[0_26px_58px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.1)] active:translate-y-0 active:scale-[0.995]">
       <Link
         href={`/friends/circles/${circle.id}`}
-        className="flex w-full items-start gap-3 px-4 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+        className="flex w-full items-center gap-3.5 px-4 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-[#242427] text-base font-semibold text-white shadow-inner shadow-black/30">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/[0.09] bg-[linear-gradient(145deg,rgba(255,255,255,0.12),rgba(255,255,255,0.035))] text-base font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(0,0,0,0.32)]">
           {icon}
         </span>
         <span className="min-w-0 flex-1">
@@ -1182,11 +1182,11 @@ function CircleOverviewRow({ circle }: CircleOverviewRowProps) {
 
 function CircleOverviewSkeleton() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#151517] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,0.24)]">
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-white/[0.08]" />
+    <div className="overflow-hidden rounded-[22px] border border-white/[0.065] bg-[radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.06),transparent_34%),linear-gradient(145deg,rgba(34,34,37,0.82),rgba(15,15,17,0.96))] px-4 py-4 shadow-[0_20px_48px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="flex items-center gap-3.5">
+        <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-white/[0.075] shadow-inner shadow-black/30" />
         <div className="min-w-0 flex-1 pt-0.5">
-          <div className="h-4 w-36 animate-pulse rounded-full bg-white/[0.09]" />
+          <div className="h-4 w-36 animate-pulse rounded-full bg-white/[0.085]" />
           <div className="mt-3 flex items-center">
             <div className="h-7 w-7 animate-pulse rounded-full border border-black bg-white/[0.08]" />
             <div className="-ml-2 h-7 w-7 animate-pulse rounded-full border border-black bg-white/[0.07]" />

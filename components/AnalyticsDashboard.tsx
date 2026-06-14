@@ -13,7 +13,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
-  CalendarDays,
   CheckSquare,
   ChevronLeft,
   FolderKanban,
@@ -436,8 +435,8 @@ export default function AnalyticsDashboard({
     activeContent = <AnalyticsPaywallState onUpgrade={handleUpgrade} />;
   } else if (activeView === "overview") {
     activeContent = (
-      <div className="space-y-4 xl:space-y-5">
-        <SectionCard className="rounded-[24px] border-zinc-800/90 bg-[radial-gradient(circle_at_top_left,rgba(63,63,70,0.18),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-4 shadow-[0_22px_54px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-[28px] sm:p-5 lg:p-6">
+      <div className="space-y-3 xl:space-y-4">
+        <SectionCard className="rounded-[22px] border-zinc-800/90 bg-[radial-gradient(circle_at_top_left,rgba(63,63,70,0.18),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-3 shadow-[0_22px_54px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-[26px] sm:p-4 lg:p-5">
           {!hasAnalyticsData && loading ? (
             <Skeleton className="h-64" />
           ) : !hasAnalyticsData && error ? (
@@ -460,7 +459,6 @@ export default function AnalyticsDashboard({
               points={overviewTrend}
               comparison={analytics?.overviewComparison}
               range={analytics?.range ?? selectedRange}
-              selectedRange={selectedRange}
               isRefreshing={analyticsRefreshing}
               statusMessage={error}
             />
@@ -1908,14 +1906,12 @@ function OverviewDiagnosticsSection({
   points,
   comparison,
   range,
-  selectedRange,
   isRefreshing,
   statusMessage,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   comparison?: AnalyticsOverviewComparison;
   range: AnalyticsRange;
-  selectedRange: AnalyticsRange;
   isRefreshing: boolean;
   statusMessage: string | null;
 }) {
@@ -1965,33 +1961,26 @@ function OverviewDiagnosticsSection({
   return (
     <div
       className={classNames(
-        "space-y-4 transition-opacity duration-200 sm:space-y-5",
+        "space-y-3 transition-opacity duration-200 sm:space-y-4",
         isRefreshing && "opacity-80"
       )}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-400/85">
             PROGRESS TREND
           </div>
-          <div className="mt-2">
-            <OverviewPanelStatus
-              isRefreshing={isRefreshing}
-              message={statusMessage}
-            />
-          </div>
+          <OverviewPanelStatus
+            isRefreshing={isRefreshing}
+            message={statusMessage}
+          />
         </div>
-        <div className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-zinc-700/70 bg-zinc-800/45 px-3 text-sm font-semibold text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:h-11 sm:px-4 sm:text-base">
-          <CalendarDays className="h-4 w-4 text-zinc-300" aria-hidden="true" />
-          <span>{formatAnalyticsRangeLabel(selectedRange)}</span>
+        <div className="shrink-0 pt-0.5 text-right text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+          vs previous cycle
         </div>
       </div>
 
-      <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-        vs previous cycle
-      </div>
-
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-2.5 lg:grid-cols-4">
         <OverviewKpiRailItem
           label="XP"
           value={formatCompactNumber(totalXp)}
@@ -2021,7 +2010,7 @@ function OverviewDiagnosticsSection({
         />
       </div>
 
-      <div className="overflow-hidden rounded-[20px] border border-zinc-700/50 bg-[linear-gradient(145deg,rgba(9,9,11,0.9),rgba(24,24,27,0.72))] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:rounded-[22px]">
+      <div className="overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(145deg,rgba(9,9,11,0.9),rgba(24,24,27,0.72))] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:rounded-[20px]">
         <OverviewLineChart points={points} range={range} />
       </div>
     </div>
@@ -2044,7 +2033,7 @@ function OverviewPanelStatus({
   }
 
   return (
-    <div className="mt-2 h-5">
+    <div className="mt-1.5 h-5">
       {isRefreshing ? (
         <div
           className={classNames(
@@ -2091,7 +2080,7 @@ function AnalyticsRangeSelector({
               aria-pressed={isActive}
               aria-busy={isRefreshing && isActive}
               className={classNames(
-                "h-[18px] rounded-full px-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.08em] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/70 sm:h-6 sm:px-2 sm:text-[10px] sm:tracking-[0.1em]",
+                "h-[17px] rounded-full px-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.08em] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/70 sm:h-5 sm:px-2 sm:text-[9px] sm:tracking-[0.1em]",
                 isActive
                   ? "border border-zinc-700 bg-zinc-800/80 text-zinc-100"
                   : "border border-transparent text-zinc-500 hover:text-zinc-300",
@@ -2136,7 +2125,7 @@ function OverviewKpiRailItem({
   return (
     <div
       className={classNames(
-        "relative min-h-[104px] min-w-0 overflow-hidden rounded-2xl border border-zinc-700/45 bg-[linear-gradient(135deg,rgba(39,39,42,0.68),rgba(9,9,11,0.78))] p-3 pl-3.5 shadow-[0_14px_28px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)] before:absolute before:inset-y-4 before:left-0 before:w-0.5 before:rounded-full sm:min-h-[112px] sm:p-4 sm:pl-4",
+        "relative min-h-[92px] min-w-0 overflow-hidden rounded-2xl border border-zinc-700/45 bg-[linear-gradient(135deg,rgba(39,39,42,0.68),rgba(9,9,11,0.78))] p-2.5 pl-3 shadow-[0_14px_28px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)] before:absolute before:inset-y-3.5 before:left-0 before:w-0.5 before:rounded-full sm:min-h-[100px] sm:p-3.5 sm:pl-4",
         accentClass
       )}
     >
@@ -2144,7 +2133,7 @@ function OverviewKpiRailItem({
         <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400 sm:text-[11px]">
           {label}
         </div>
-        <div className="mt-2 flex min-w-0 items-baseline gap-2">
+        <div className="mt-1.5 flex min-w-0 items-baseline gap-1.5">
           <div
             className={classNames(
               "min-w-0 truncate text-[2rem] font-semibold leading-none tabular-nums sm:text-[2.35rem]",
@@ -2164,7 +2153,7 @@ function OverviewKpiRailItem({
             </div>
           ) : null}
         </div>
-        <div className="mt-2 truncate text-xs leading-tight text-zinc-500 sm:text-sm">
+        <div className="mt-1.5 truncate text-[11px] leading-tight text-zinc-500 sm:text-xs">
           {sublabel}
         </div>
       </div>
@@ -2366,12 +2355,12 @@ function OverviewLineChart({
   }, [tooltip.visible]);
 
   return (
-    <div className="px-3.5 py-4 sm:px-5 sm:py-5">
-      <div className="flex items-center justify-between gap-3">
+    <div className="px-3 py-3.5 sm:px-4 sm:py-4">
+      <div className="flex items-center justify-between gap-2.5">
         <div className="text-sm font-medium text-zinc-100 sm:text-base">
           XP over time
         </div>
-        <div className="flex shrink-0 items-center gap-2.5 text-[11px] text-zinc-500 sm:gap-3 sm:text-xs">
+        <div className="flex shrink-0 items-center gap-2 text-[10px] text-zinc-500 sm:gap-2.5 sm:text-[11px]">
           <span className="inline-flex items-center gap-1.5">
             <span className="h-1 w-5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.28)]" />
             Daily XP
@@ -2383,12 +2372,12 @@ function OverviewLineChart({
         </div>
       </div>
 
-      <div className="mt-4 space-y-3 sm:mt-5">
+      <div className="mt-3 space-y-2.5 sm:mt-3.5">
         <div ref={chartRef} className="relative" data-overview-line-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             preserveAspectRatio="none"
-            className="h-[260px] w-full sm:h-[280px] md:h-[300px]"
+            className="h-[236px] w-full sm:h-[258px] md:h-[280px]"
           >
             <defs>
               <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
@@ -2706,7 +2695,7 @@ function OverviewLineChart({
             </div>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-xs text-zinc-500">
+        <div className="flex items-center gap-1.5 border-t border-white/[0.06] pt-2 text-[11px] text-zinc-500 sm:text-xs">
           <Info className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden="true" />
           <span>All times shown in your local time zone</span>
         </div>

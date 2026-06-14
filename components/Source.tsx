@@ -4319,13 +4319,17 @@ export default function Source() {
 type SheetMode = "create" | "edit"
 
 const sourceListingSheetContentClassName =
-  "no-default-close w-[calc(100vw-2rem)] !max-w-[17rem] !max-h-[min(80dvh,42rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
+  "no-default-close w-[calc(100vw-2rem)] !max-w-[22rem] !max-h-[min(82dvh,43rem)] overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 p-0 text-zinc-100 shadow-2xl gap-0"
 const sourceListingSheetBodyClassName =
   "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4"
+const sourceListingFormSectionClassName =
+  "space-y-3 border-t border-zinc-900/70 pt-4 first:border-t-0 first:pt-0"
+const sourceListingQuietSectionClassName =
+  "space-y-3 border-t border-zinc-900/70 pt-4"
 const sourceListingFormControlClassName =
   "border-zinc-800/70 bg-zinc-900/60 text-zinc-300 placeholder:text-zinc-500 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
 const sourceListingSelectTriggerClassName =
-  "text-zinc-300"
+  "h-10 rounded-xl border-zinc-800/70 bg-zinc-900/60 text-zinc-300 shadow-none"
 
 type SourceListingCoverImageFieldProps = {
   title: string
@@ -4347,7 +4351,7 @@ function SourceListingCoverImageField({
   isImageUploading,
 }: SourceListingCoverImageFieldProps) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <input
         ref={imageInputRef}
         type="file"
@@ -4355,14 +4359,14 @@ function SourceListingCoverImageField({
         className="sr-only"
         onChange={onImageChange}
       />
-      <div className="mx-auto w-full max-w-[14rem]">
-        <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-950 shadow-sm">
+      <div className="mx-auto w-full max-w-[12.5rem]">
+        <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[1.1rem] border border-zinc-800/80 bg-zinc-950 shadow-sm shadow-black/30 ring-1 ring-white/[0.03]">
           {coverImagePreview ? (
             <Image
               src={coverImagePreview}
               alt={`${title} cover`}
               fill
-              sizes="14rem"
+              sizes="12.5rem"
               unoptimized
               className="h-full w-full object-cover object-center"
             />
@@ -4373,31 +4377,35 @@ function SourceListingCoverImageField({
           )}
         </div>
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      <div className="mx-auto flex w-full max-w-[12.5rem] items-center justify-center gap-2">
         <Button
           type="button"
           variant="secondary"
           size="sm"
+          className="min-w-0 flex-1 px-3 text-xs"
           onClick={() => imageInputRef.current?.click()}
           disabled={isImageUploading}
         >
-          {coverImagePreview ? "Replace cover image" : "Upload cover image"}
+          <UploadCloud className="size-3.5" />
+          {coverImagePreview ? "Replace" : "Upload"}
         </Button>
         {coverImagePreview && (
           <Button
             type="button"
             variant="ghost"
             size="sm"
+            className="px-3 text-xs text-zinc-300 hover:text-zinc-100"
             onClick={onImageRemove}
             disabled={isImageUploading}
           >
-            Remove image
+            <X className="size-3.5" />
+            Remove
           </Button>
         )}
-        {isImageUploading && (
-          <span className="text-xs text-zinc-400">Uploading image…</span>
-        )}
       </div>
+      {isImageUploading && (
+        <p className="text-center text-xs text-zinc-400">Uploading image…</p>
+      )}
       {imageUploadError && (
         <p className="text-center text-xs text-red-400">{imageUploadError}</p>
       )}
@@ -4519,7 +4527,7 @@ function SourceProductSheet({
               imageUploadError={imageUploadError}
               isImageUploading={isImageUploading}
             />
-            <div className="space-y-3">
+            <div className="space-y-4">
               <FieldStack label="Title" htmlFor="product-detail-title">
                 <Input
                   id="product-detail-title"
@@ -4546,95 +4554,97 @@ function SourceProductSheet({
                 />
               </FieldStack>
 
-              <FieldStack
-                label="Product kind"
-                htmlFor="product-detail-kind"
-                description="Clarify whether this listing is a physical good or digital download."
-              >
-                <Select
-                  id="product-detail-kind"
-                  value={formState.productKind}
-                  onValueChange={(value) => onFieldChange("productKind", value)}
-                  triggerClassName={sourceListingSelectTriggerClassName}
-                  disablePortal
+              <div className={sourceListingFormSectionClassName}>
+                <FieldStack
+                  label="Product kind"
+                  htmlFor="product-detail-kind"
+                  description="Clarify whether this listing is a physical good or digital download."
                 >
-                  <SelectContent>
-                    {PRODUCT_KIND_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FieldStack>
+                  <Select
+                    id="product-detail-kind"
+                    value={formState.productKind}
+                    onValueChange={(value) => onFieldChange("productKind", value)}
+                    triggerClassName={sourceListingSelectTriggerClassName}
+                    disablePortal
+                  >
+                    <SelectContent>
+                      {PRODUCT_KIND_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldStack>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FieldStack label="Price" htmlFor="product-detail-price">
-                  <Input
-                    id="product-detail-price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formState.price}
-                    onChange={(event) =>
-                      onFieldChange("price", event.target.value)
-                    }
-                    placeholder="49.99"
-                    disabled={isBusy}
-                    className={sourceListingFormControlClassName}
-                  />
-                </FieldStack>
-                <FieldStack label="Currency" htmlFor="product-detail-currency">
-                  <Input
-                    id="product-detail-currency"
-                    value={formState.currency}
-                    onChange={(event) =>
-                      onFieldChange("currency", event.target.value.toUpperCase())
-                    }
-                    placeholder="USD"
-                    maxLength={3}
-                    disabled={isBusy}
-                    className={sourceListingFormControlClassName}
-                  />
-                </FieldStack>
-              </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_4.75rem] gap-3">
+                  <FieldStack label="Price" htmlFor="product-detail-price">
+                    <Input
+                      id="product-detail-price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formState.price}
+                      onChange={(event) =>
+                        onFieldChange("price", event.target.value)
+                      }
+                      placeholder="49.99"
+                      disabled={isBusy}
+                      className={sourceListingFormControlClassName}
+                    />
+                  </FieldStack>
+                  <FieldStack label="Currency" htmlFor="product-detail-currency">
+                    <Input
+                      id="product-detail-currency"
+                      value={formState.currency}
+                      onChange={(event) =>
+                        onFieldChange("currency", event.target.value.toUpperCase())
+                      }
+                      placeholder="USD"
+                      maxLength={3}
+                      disabled={isBusy}
+                      className={sourceListingFormControlClassName}
+                    />
+                  </FieldStack>
+                </div>
 
                 <FieldStack
                   label="Availability"
                   htmlFor="product-detail-status"
                   description="Switch between draft and live states using Source’s listing status."
                 >
-                {shouldShowAvailability ? (
-                  <Select
-                    value={availabilityStatus}
-                    onValueChange={(value) =>
-                      onAvailabilityChange(value as SourceListing["status"])
-                    }
-                    placeholder="Draft"
-                    triggerClassName={sourceListingSelectTriggerClassName}
-                    disablePortal
-                  >
-                    <SelectContent>
-                      {productAvailabilityStatuses.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {availabilityLabels[status]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
-                    Draft status is set after creation.
-                  </div>
-                )}
+                  {shouldShowAvailability ? (
+                    <Select
+                      value={availabilityStatus}
+                      onValueChange={(value) =>
+                        onAvailabilityChange(value as SourceListing["status"])
+                      }
+                      placeholder="Draft"
+                      triggerClassName={sourceListingSelectTriggerClassName}
+                      disablePortal
+                    >
+                      <SelectContent>
+                        {productAvailabilityStatuses.map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {availabilityLabels[status]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
+                      Draft status is set after creation.
+                    </div>
+                  )}
                 </FieldStack>
+              </div>
               {isPhysicalProduct && (
-                <div className="space-y-3 border-t border-zinc-900/70 pt-3">
+                <div className={sourceListingQuietSectionClassName}>
                   <FormSubheading
                     title="Fulfillment & inventory"
                     description="Track stock and how Source should reserve this item before it ships."
                   />
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3">
                     <FieldStack
                       label="Inventory count"
                       htmlFor="product-detail-inventory"
@@ -4835,7 +4845,7 @@ function SourceServiceSheet({
               imageUploadError={imageUploadError}
               isImageUploading={isImageUploading}
             />
-            <div className="space-y-3">
+            <div className="space-y-4">
               <FieldStack label="Title" htmlFor="service-detail-title">
                 <Input
                   id="service-detail-title"
@@ -4862,114 +4872,116 @@ function SourceServiceSheet({
                 />
               </FieldStack>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FieldStack
-                  label="Price"
-                  htmlFor="service-detail-price"
-                  description={serviceDetailPriceDescription}
-                >
-                  <Input
-                    id="service-detail-price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formState.price}
-                    onChange={(event) => onFieldChange("price", event.target.value)}
-                    placeholder="49.99"
-                    disabled={isBusy}
-                    className={sourceListingFormControlClassName}
-                  />
-                </FieldStack>
-                <FieldStack label="Currency" htmlFor="service-detail-currency">
-                  <Input
-                    id="service-detail-currency"
-                    value={formState.currency}
-                    onChange={(event) =>
-                      onFieldChange("currency", event.target.value.toUpperCase())
-                    }
-                    placeholder="USD"
-                    maxLength={3}
-                    disabled={isBusy}
-                    className={sourceListingFormControlClassName}
-                  />
-                </FieldStack>
-              </div>
+              <div className={sourceListingFormSectionClassName}>
+                <div className="grid grid-cols-[minmax(0,1fr)_4.75rem] gap-3">
+                  <FieldStack
+                    label="Price"
+                    htmlFor="service-detail-price"
+                    description={serviceDetailPriceDescription}
+                  >
+                    <Input
+                      id="service-detail-price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formState.price}
+                      onChange={(event) => onFieldChange("price", event.target.value)}
+                      placeholder="49.99"
+                      disabled={isBusy}
+                      className={sourceListingFormControlClassName}
+                    />
+                  </FieldStack>
+                  <FieldStack label="Currency" htmlFor="service-detail-currency">
+                    <Input
+                      id="service-detail-currency"
+                      value={formState.currency}
+                      onChange={(event) =>
+                        onFieldChange("currency", event.target.value.toUpperCase())
+                      }
+                      placeholder="USD"
+                      maxLength={3}
+                      disabled={isBusy}
+                      className={sourceListingFormControlClassName}
+                    />
+                  </FieldStack>
+                </div>
 
                 <FieldStack
                   label="Availability"
                   htmlFor="service-detail-status"
                   description="Switch between draft and live states using Source’s listing status."
                 >
-                {shouldShowAvailability ? (
+                  {shouldShowAvailability ? (
+                    <Select
+                      value={availabilityStatus}
+                      onValueChange={(value) =>
+                        onAvailabilityChange(value as SourceListing["status"])
+                      }
+                      placeholder="Draft"
+                      triggerClassName={sourceListingSelectTriggerClassName}
+                      disablePortal
+                    >
+                      <SelectContent>
+                        {productAvailabilityStatuses.map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {availabilityLabels[status]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
+                      Draft status is set after creation.
+                    </div>
+                  )}
+                </FieldStack>
+
+                <FieldStack
+                  label="Service mode"
+                  htmlFor="service-detail-mode"
+                  description="Controls how bookings or quotes should behave once this listing is live."
+                >
                   <Select
-                    value={availabilityStatus}
-                    onValueChange={(value) =>
-                      onAvailabilityChange(value as SourceListing["status"])
-                    }
-                    placeholder="Draft"
+                    id="service-detail-mode"
+                    value={formState.serviceMode}
+                    onValueChange={(value) => onFieldChange("serviceMode", value)}
                     triggerClassName={sourceListingSelectTriggerClassName}
                     disablePortal
                   >
                     <SelectContent>
-                      {productAvailabilityStatuses.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {availabilityLabels[status]}
+                      {SERVICE_MODE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                ) : (
-                  <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
-                    Draft status is set after creation.
-                  </div>
+                </FieldStack>
+
+                {serviceDetailIsBookable && (
+                  <FieldStack
+                    label="Duration (minutes)"
+                    htmlFor="service-detail-duration"
+                    description="This duration drives the booking window and scheduler prompts."
+                  >
+                    <Input
+                      id="service-detail-duration"
+                      type="number"
+                      min="1"
+                      value={formState.durationMinutes}
+                      onChange={(event) =>
+                        onFieldChange("durationMinutes", event.target.value)
+                      }
+                      placeholder="30"
+                      disabled={isBusy}
+                      className={sourceListingFormControlClassName}
+                    />
+                  </FieldStack>
                 )}
-                </FieldStack>
-
-              <FieldStack
-                label="Service mode"
-                htmlFor="service-detail-mode"
-                description="Controls how bookings or quotes should behave once this listing is live."
-              >
-                <Select
-                  id="service-detail-mode"
-                  value={formState.serviceMode}
-                  onValueChange={(value) => onFieldChange("serviceMode", value)}
-                  triggerClassName={sourceListingSelectTriggerClassName}
-                  disablePortal
-                >
-                  <SelectContent>
-                    {SERVICE_MODE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FieldStack>
-
-              {serviceDetailIsBookable && (
-                <FieldStack
-                  label="Duration (minutes)"
-                  htmlFor="service-detail-duration"
-                  description="This duration drives the booking window and scheduler prompts."
-                >
-                  <Input
-                    id="service-detail-duration"
-                    type="number"
-                    min="1"
-                    value={formState.durationMinutes}
-                    onChange={(event) =>
-                      onFieldChange("durationMinutes", event.target.value)
-                    }
-                    placeholder="30"
-                    disabled={isBusy}
-                    className={sourceListingFormControlClassName}
-                  />
-                </FieldStack>
-              )}
+              </div>
 
               {(serviceDetailIsFlatRate || serviceDetailIsCustomQuote) && (
-                <div className="space-y-3 border-t border-zinc-900/70 pt-3">
+                <div className={sourceListingQuietSectionClassName}>
                   <FormSubheading
                     title={
                       serviceDetailIsFlatRate

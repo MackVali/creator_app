@@ -163,6 +163,7 @@ const NOTE_DATABASE_VIEW_LABELS: Record<NoteDatabaseViewType, string> = {
 };
 
 const NOTE_DATABASE_VIEW_TYPES: NoteDatabaseViewType[] = ["table", "list", "card"];
+const NOTE_DATABASE_FULL_TABLE_MIN_VISIBLE_ROWS = 40;
 const NOTE_DATABASE_TITLE_FIELD_NAMES = new Set([
   "name",
   "title",
@@ -1290,8 +1291,100 @@ function NoteDatabaseEntriesView({
   visibleFields: NoteDatabaseFieldDefinition[];
 }) {
   const isFull = size === "full";
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
 
-  if (entries.length > 0 && activeView.type === "table") {
+  function toggleExpandedEntry(entryId: string) {
+    setExpandedEntryIds((currentEntryIds) => {
+      const nextEntryIds = new Set(currentEntryIds);
+      if (nextEntryIds.has(entryId)) {
+        nextEntryIds.delete(entryId);
+      } else {
+        nextEntryIds.add(entryId);
+      }
+
+      return nextEntryIds;
+    });
+  }
+
+  if (activeView.type === "table") {
+    if (isFull) {
+      const placeholderRowCount = Math.max(
+        0,
+        NOTE_DATABASE_FULL_TABLE_MIN_VISIBLE_ROWS - entries.length,
+      );
+      const fullTableCellClassName =
+        "h-8 whitespace-nowrap border-b border-r border-white/[0.055] px-2 py-1 align-middle text-xs leading-5 last:border-r-0";
+
+      return (
+        <div className="h-full min-h-[36rem] w-full overflow-auto bg-transparent">
+          <table className="w-max min-w-max table-auto border-separate border-spacing-0 text-left">
+            <thead>
+              <tr>
+                {visibleFields.map((field) => (
+                  <th
+                    key={field.id}
+                    scope="col"
+                    className="sticky top-0 z-10 whitespace-nowrap border-b border-r border-white/[0.08] bg-[#08090a]/98 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/42 backdrop-blur last:border-r-0"
+                  >
+                    <span className="block">{getDatabaseFieldName(field)}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="group">
+                  {visibleFields.map((field) => {
+                    const isTitleField = field.id === titleField?.id;
+                    const value = formatDatabaseEntryValue(entry.values[field.id], field.type);
+
+                    return (
+                      <td
+                        key={field.id}
+                        className={`${fullTableCellClassName} group-hover:bg-white/[0.025] ${
+                          isTitleField
+                            ? "font-semibold text-white/88"
+                            : value
+                              ? "font-medium text-white/62"
+                              : "font-medium text-white/30"
+                        }`}
+                      >
+                        <span className="block">
+                          {isTitleField ? getDatabaseEntryTitle(entry, definition) : value || "Empty"}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              {Array.from({ length: placeholderRowCount }, (_, placeholderRowIndex) => (
+                <tr
+                  key={`placeholder-${placeholderRowIndex}`}
+                  aria-hidden="true"
+                  className="pointer-events-none"
+                >
+                  {visibleFields.map((field) => (
+                    <td
+                      key={field.id}
+                      className={`${fullTableCellClassName} text-white/0`}
+                    />
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (entries.length === 0) {
+      return (
+        <p className="rounded-md border border-dashed border-white/[0.08] bg-black/12 px-2.5 py-2 text-xs font-medium text-white/34">
+          No entries yet
+        </p>
+      );
+    }
+
     const titleColumnClassName = isFull
       ? "min-w-[18rem] flex-[1.35_0_18rem] font-semibold"
       : "w-40 font-semibold";
@@ -1356,6 +1449,84 @@ function NoteDatabaseEntriesView({
   }
 
   if (entries.length > 0 && activeView.type === "list") {
+    if (isFull) {
+      return (
+        <div className="divide-y divide-white/[0.075] border-y border-white/[0.07]">
+          {entries.map((entry) => {
+            const properties = getDatabaseEntryProperties(entry, definition);
+            const previewProperties = properties.filter(({ value }) => value).slice(0, 3);
+            const isExpanded = expandedEntryIds.has(entry.id);
+
+            return (
+              <div key={entry.id} className="group">
+                <button
+                  type="button"
+                  onClick={() => toggleExpandedEntry(entry.id)}
+                  aria-expanded={isExpanded}
+                  className="flex w-full items-center gap-3 px-1 py-3 text-left outline-none transition hover:bg-white/[0.025] focus-visible:bg-white/[0.035] sm:px-2"
+                >
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-white/42 transition ${
+                      isExpanded ? "rotate-90 text-white/70" : ""
+                    }`}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white/88 sm:text-[15px]">
+                      {getDatabaseEntryTitle(entry, definition)}
+                    </span>
+                    {previewProperties.length > 0 ? (
+                      <span className="mt-0.5 block truncate text-xs font-medium text-white/38">
+                        {previewProperties
+                          .map(({ field, value }) => `${getDatabaseFieldName(field)}: ${value}`)
+                          .join(" · ")}
+                      </span>
+                    ) : properties.length > 0 ? (
+                      <span className="mt-0.5 block truncate text-xs font-medium text-white/28">
+                        {properties.length} field{properties.length === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+
+                {isExpanded ? (
+                  <div className="pb-4 pl-11 pr-1 sm:pl-12 sm:pr-2">
+                    <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {visibleFields.map((field) => {
+                        const isTitleField = field.id === titleField?.id;
+                        const value = isTitleField
+                          ? getDatabaseEntryTitle(entry, definition)
+                          : formatDatabaseEntryValue(entry.values[field.id], field.type);
+
+                        return (
+                          <div
+                            key={field.id}
+                            className="min-w-0 border-l border-white/[0.08] bg-white/[0.025] px-3 py-2"
+                          >
+                            <dt className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30">
+                              {getDatabaseFieldName(field)}
+                            </dt>
+                            <dd
+                              className={`mt-1 truncate text-sm font-medium ${
+                                value ? "text-white/78" : "text-white/28"
+                              }`}
+                            >
+                              {value || "Empty"}
+                            </dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
     return (
       <div className={isFull ? "space-y-2" : "space-y-1.5"}>
         {entries.map((entry) => {
@@ -1396,6 +1567,64 @@ function NoteDatabaseEntriesView({
   }
 
   if (entries.length > 0 && activeView.type === "card") {
+    if (isFull) {
+      return (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {entries.map((entry) => {
+            const properties = getDatabaseEntryProperties(entry, definition);
+            const visibleProperties = properties.slice(0, 5);
+            const hiddenPropertyCount = Math.max(0, properties.length - visibleProperties.length);
+
+            return (
+              <article
+                key={entry.id}
+                className="group relative flex min-h-[11rem] flex-col overflow-hidden rounded-2xl border border-zinc-300/15 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-4 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 hover:-translate-y-px hover:border-zinc-100/28"
+              >
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/24 to-transparent" />
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-base font-semibold leading-5 text-white/92">
+                    {getDatabaseEntryTitle(entry, definition)}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/28">
+                    {visibleFields.length} field{visibleFields.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+
+                <div className="mt-4 flex flex-1 flex-col gap-2">
+                  {visibleProperties.length > 0 ? (
+                    visibleProperties.map(({ field, value }) => (
+                      <div key={field.id} className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 rounded-full border border-white/[0.08] bg-white/[0.045] px-2.5 py-1.5 text-[11px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                          <span className="truncate text-white/38">{getDatabaseFieldName(field)}</span>
+                          <span
+                            className={`max-w-[58%] truncate ${
+                              value ? "text-white/78" : "text-white/28"
+                            }`}
+                          >
+                            {value || "Empty"}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-white/[0.08] bg-white/[0.025] px-3 py-4 text-center text-xs font-medium text-white/30">
+                      No visible fields
+                    </p>
+                  )}
+                </div>
+
+                {hiddenPropertyCount > 0 ? (
+                  <p className="mt-3 text-[11px] font-semibold text-white/30">
+                    +{hiddenPropertyCount} more field{hiddenPropertyCount === 1 ? "" : "s"}
+                  </p>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      );
+    }
+
     return (
       <div
         className={`grid grid-cols-1 ${
@@ -2010,7 +2239,13 @@ export function NoteDatabaseFocusedView({
         </div>
       </div>
 
-      <div className="mt-5 min-h-0 flex-1 overflow-visible">
+      <div
+        className={
+          activeDatabaseView.type === "table"
+            ? "mt-5 min-h-0 flex-1 overflow-hidden"
+            : "mt-5 min-h-0 flex-1 overflow-visible"
+        }
+      >
         <NoteDatabaseEntriesView
           activeView={activeDatabaseView}
           definition={databaseDefinition}
