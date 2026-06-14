@@ -430,21 +430,19 @@ function sortMatrixDueItems(items: MatrixDueItem[]): MatrixDueItem[] {
 function getHabitCardTypeClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") {
-    return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
+    return "bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
   }
-  if (normalized === "SYNC") {
-    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.34),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.98)_0%,rgba(113,113,122,0.95)_48%,rgba(161,161,170,0.9)_100%)]";
-  }
+  if (normalized === "SYNC" || normalized === "MEMO") return "matrix-habit-card--sync";
   if (normalized === "PRACTICE") {
-    return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
+    return "bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
   }
-  return "!bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
+  return "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
 }
 
 function getHabitCardBorderClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return "border-rose-200/45";
-  if (normalized === "SYNC") return "border-zinc-200/45";
+  if (normalized === "SYNC" || normalized === "MEMO") return "border-zinc-200/45";
   if (normalized === "PRACTICE") return "border-slate-500/50";
   return "border-white/10 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.055)]";
 }
@@ -2049,34 +2047,37 @@ function MatrixRoutineCard({
   density: MatrixCardDensity;
   onCompleteHabit(habitId: string, completedToday: boolean): void;
 }) {
-  const durationLabel =
-    typeof routine.totalDueDurationMinutes === "number"
-      ? `${routine.totalDueDurationMinutes}m`
-      : null;
-  const dueLabel = `${routine.dueHabitCount} due`;
-  const metaLabel = durationLabel ? `${dueLabel} · ${durationLabel}` : dueLabel;
+  const habitCount = Math.max(0, routine.dueHabitCount);
+  const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
+  const routineName = routine.name?.trim() || "Routine";
+  const routineGlyph = routine.glyph || routine.icon?.trim() || "🔁";
 
   return (
-    <div className="matrix-event-card-shell relative h-full">
-      <RelatedRoutineCard
-        routine={routine}
-        density={density}
-        fallbackIcon={routine.glyph || "🔁"}
-        onHabitCompletionToggle={(habitId) => {
-          const habit = routine.habits.find((item) => item.id === habitId);
-          onCompleteHabit(habitId, Boolean(habit?.completed));
-        }}
-      />
-      <span
-        className={cn(
-          "pointer-events-none absolute z-[3] max-w-[calc(100%-1rem)] truncate rounded-full border border-yellow-200/20 bg-black/35 font-semibold uppercase leading-none tracking-[0.06em] text-yellow-50/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
-          density === "small"
-            ? "bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-[2px] text-[6px] sm:text-[7px]"
-            : "bottom-2 left-1/2 -translate-x-1/2 px-2 py-[3px] text-[8px]"
-        )}
+    <div className="matrix-event-card-shell group/routine-card relative h-full cursor-pointer">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none h-full transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
       >
-        {metaLabel}
-      </span>
+        <MatrixHabitCard
+          glyph={routineGlyph}
+          title={routineName}
+          pill={habitCountLabel}
+          habitType={null}
+          overdue={false}
+          density={density}
+        />
+      </div>
+      <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!aspect-auto [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
+        <RelatedRoutineCard
+          routine={routine}
+          density={density}
+          fallbackIcon={routineGlyph}
+          onHabitCompletionToggle={(habitId) => {
+            const habit = routine.habits.find((item) => item.id === habitId);
+            onCompleteHabit(habitId, Boolean(habit?.completed));
+          }}
+        />
+      </div>
     </div>
   );
 }

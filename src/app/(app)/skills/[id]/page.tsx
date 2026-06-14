@@ -450,6 +450,17 @@ function computeHabitDueStatus(
   return { label: "No Due Match", rank: NO_DUE_MATCH_RANK };
 }
 
+function wasRelatedHabitCompletedOnDate(
+  habit: Pick<HabitSummary, "lastCompletedAt">,
+  dateKey: string,
+  timeZone: string
+): boolean {
+  const lastCompletedAt = parseOptionalDate(habit.lastCompletedAt);
+  if (!lastCompletedAt) return false;
+
+  return formatDateKeyInTimeZone(lastCompletedAt, timeZone) === dateKey;
+}
+
 function getHabitTypePriority(habitType: string | null | undefined): number {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return 0;
@@ -656,6 +667,12 @@ export default function SkillDetailPage() {
   );
   const bypassMemoCaptureRef = useRef(false);
   const completionStateDateKeyRef = useRef<string | null>(null);
+  const isRelatedHabitCompletedForCurrentDay = useCallback(
+    (habit: Pick<HabitSummary, "id" | "lastCompletedAt">) =>
+      completedRelatedHabitIds.has(habit.id) ||
+      wasRelatedHabitCompletedOnDate(habit, currentDateKey, timeZone),
+    [completedRelatedHabitIds, currentDateKey, timeZone]
+  );
   const pullStartYRef = useRef<number | null>(null);
   const pullExitTriggeredRef = useRef(false);
   const pullPointerIdRef = useRef<number | null>(null);
@@ -705,14 +722,13 @@ export default function SkillDetailPage() {
       if (!habit.routineId) continue;
 
       const existing = routineMap.get(habit.routineId);
+      const isCompletedToday = isRelatedHabitCompletedForCurrentDay(habit);
       const routineHabit = {
         id: habit.id,
         name: habit.name,
-        dueLabel: completedRelatedHabitIds.has(habit.id)
-          ? "COMPLETE"
-          : habit.dueLabel,
+        dueLabel: isCompletedToday ? "COMPLETE" : habit.dueLabel,
         skillIcon: skill?.icon ?? null,
-        completed: completedRelatedHabitIds.has(habit.id),
+        completed: isCompletedToday,
         pending: pendingRelatedHabitIds.has(habit.id),
         routinePosition: habit.routinePosition,
         currentStreakDays: habit.currentStreakDays,
@@ -745,8 +761,8 @@ export default function SkillDetailPage() {
       first.name.localeCompare(second.name, undefined, { sensitivity: "base" })
     );
   }, [
-    completedRelatedHabitIds,
     decoratedHabits,
+    isRelatedHabitCompletedForCurrentDay,
     pendingRelatedHabitIds,
     skill?.icon,
   ]);
@@ -1312,7 +1328,8 @@ export default function SkillDetailPage() {
         return;
       }
 
-      const wasCompleted = completedRelatedHabitIds.has(habitId);
+      const wasCompleted =
+        isRelatedHabitCompletedForCurrentDay(habitBeforeUpdate);
       const action = wasCompleted ? "undo" : "complete";
       const completedAt = new Date().toISOString();
 
@@ -1434,9 +1451,9 @@ export default function SkillDetailPage() {
       }
     },
     [
-      completedRelatedHabitIds,
       currentDateKey,
       currentUserId,
+      isRelatedHabitCompletedForCurrentDay,
       pendingRelatedHabitIds,
       relatedHabits,
       timeZone,
@@ -2564,7 +2581,7 @@ export default function SkillDetailPage() {
 
                                   const habit = item.habit;
                                   const isHabitCompletedToday =
-                                    completedRelatedHabitIds.has(habit.id);
+                                    isRelatedHabitCompletedForCurrentDay(habit);
                                   const isHabitPending =
                                     pendingRelatedHabitIds.has(habit.id);
                                   const streakDays =

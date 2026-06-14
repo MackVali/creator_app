@@ -95,14 +95,6 @@ type CircleInvite = {
   } | null;
 };
 
-const circleTypeChips: Record<CircleType, string[]> = {
-  HOUSEHOLD: ['Members', 'Roles', 'Invites'],
-  TEAM: ['Members', 'Roles', 'Trust'],
-  CLIENTS: ['People', 'Access', 'Invites'],
-  STUDIO: ['Members', 'Roles', 'Circles'],
-  CUSTOM: ['People', 'Trust', 'Access'],
-};
-
 const circleTypeOptions: CircleType[] = [
   'HOUSEHOLD',
   'TEAM',
@@ -110,14 +102,6 @@ const circleTypeOptions: CircleType[] = [
   'STUDIO',
   'CUSTOM',
 ];
-
-const circleTypeFallbacks: Record<CircleType, string> = {
-  HOUSEHOLD: 'Keep household people, roles, and invites together.',
-  TEAM: 'Coordinate trusted people and access for a shared circle.',
-  CLIENTS: 'Manage service relationships and circle access.',
-  STUDIO: 'Keep studio members, roles, and trust clear.',
-  CUSTOM: 'Build a trusted circle around the people you coordinate.',
-};
 
 const relationshipTabOptions: Array<{
   view: RelationshipView;
@@ -180,7 +164,6 @@ export default function ConnectTabContent() {
   const [showCreateCircleForm, setShowCreateCircleForm] = useState(false);
   const [newCircleName, setNewCircleName] = useState('');
   const [newCircleType, setNewCircleType] = useState<CircleType>('CUSTOM');
-  const [expandedCircleId, setExpandedCircleId] = useState<string | null>(null);
   const [tabSearchQuery, setTabSearchQuery] = useState('');
   const canCreateCircle = userHasAppManagerAccess(user);
   const followingTabRef = useRef<HTMLButtonElement>(null);
@@ -1143,12 +1126,6 @@ export default function ConnectTabContent() {
                     <CircleOverviewRow
                       key={circle.id}
                       circle={circle}
-                      isExpanded={expandedCircleId === circle.id}
-                      onToggle={() =>
-                        setExpandedCircleId((current) =>
-                          current === circle.id ? null : circle.id
-                        )
-                      }
                     />
                   ))}
                 </div>
@@ -1186,27 +1163,18 @@ type ProfileOverviewProps = {
 
 type CircleOverviewRowProps = {
   circle: Circle;
-  isExpanded: boolean;
-  onToggle: () => void;
 };
 
-function CircleOverviewRow({
-  circle,
-  isExpanded,
-  onToggle,
-}: CircleOverviewRowProps) {
+function CircleOverviewRow({ circle }: CircleOverviewRowProps) {
   const icon = circle.icon_emoji?.trim() || circle.name.charAt(0).toUpperCase();
   const memberPreview = circle.memberPreview ?? [];
   const activeMemberCount = circle.activeMemberCount ?? memberPreview.length;
-  const roleLabel = circle.viewerRole === 'OWNER' ? 'Owner' : circle.viewerRole;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-white/10 bg-black/55 shadow-xl shadow-black/30">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={isExpanded}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+    <article className="overflow-hidden rounded-2xl border border-white/10 bg-black/55 shadow-xl shadow-black/30 transition hover:border-white/18 hover:bg-white/[0.035]">
+      <Link
+        href={`/friends/circles/${circle.id}`}
+        className="group flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
       >
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-base font-semibold text-white shadow-inner shadow-black/25">
           {icon}
@@ -1220,59 +1188,9 @@ function CircleOverviewRow({
             totalCount={activeMemberCount}
           />
         </span>
-        <ChevronDown
-          className={`mt-1 h-4 w-4 shrink-0 text-white/45 transition ${
-            isExpanded ? 'rotate-180 text-white/70' : ''
-          }`}
-          aria-hidden="true"
-        />
-      </button>
-
-      {isExpanded ? (
-        <div className="border-t border-white/10 px-4 py-4">
-          <p className="text-sm leading-6 text-white/62">
-            {circle.description?.trim() ||
-              circleTypeFallbacks[circle.circle_type]}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <CircleMetaPill label={circle.circle_type} />
-            <CircleMetaPill label={circle.status} />
-            {roleLabel ? <CircleMetaPill label={roleLabel} /> : null}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {circleTypeChips[circle.circle_type].map((chip) => (
-              <CircleMetaPill key={chip} label={chip} muted />
-            ))}
-          </div>
-          <Link
-            href={`/friends/circles/${circle.id}`}
-            className="mt-4 inline-flex h-9 items-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-white/72 transition hover:bg-white/10 hover:text-white"
-          >
-            Open Circle
-          </Link>
-        </div>
-      ) : null}
+        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-white/45 transition group-hover:text-white/70" aria-hidden="true" />
+      </Link>
     </article>
-  );
-}
-
-function CircleMetaPill({
-  label,
-  muted = false,
-}: {
-  label: string;
-  muted?: boolean;
-}) {
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-        muted
-          ? 'bg-white/[0.045] text-white/52 ring-1 ring-white/10'
-          : 'border border-white/10 bg-white/[0.06] text-white/68'
-      }`}
-    >
-      {label}
-    </span>
   );
 }
 

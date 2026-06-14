@@ -2236,15 +2236,15 @@ function OverviewLineChart({
   }, [points, range]);
 
   const width = 720;
-  const height = 330;
-  const padding = { top: 24, right: 22, bottom: 58, left: 50 };
+  const height = 318;
+  const padding = { top: 32, right: 24, bottom: 54, left: 42 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const contextHeight = 52;
+  const contextHeight = 42;
   const trendHeight = chartHeight - contextHeight;
   const trendBaselineY = padding.top + trendHeight;
-  const contextTopY = trendBaselineY + 14;
-  const contextBottomY = padding.top + chartHeight - 10;
+  const contextTopY = trendBaselineY + 12;
+  const contextBottomY = padding.top + chartHeight - 8;
   const values = points.map((point) => point.xpGained);
   const rawMaxValue = values.length > 0 ? Math.max(...values) : 0;
   const yMax = getTrendYAxisMax(rawMaxValue);
@@ -2259,15 +2259,17 @@ function OverviewLineChart({
   const activeIndex = Math.min(tooltip.index, points.length - 1);
   const activePoint = tooltip.visible ? points[activeIndex] ?? null : null;
   const yTickValues = buildYTickValues(yMax);
-  const yAxisLabels = yTickValues.map((value) => {
-    const ratio = yMax === 0 ? 0 : value / yMax;
-    const y = padding.top + trendHeight - ratio * trendHeight;
+  const yAxisLabels = yTickValues
+    .filter((value) => value > 0)
+    .map((value) => {
+      const ratio = yMax === 0 ? 0 : value / yMax;
+      const y = padding.top + trendHeight - ratio * trendHeight;
 
-    return {
-      value,
-      top: (y / height) * 100,
-    };
-  });
+      return {
+        value,
+        top: (y / height) * 100,
+      };
+    });
   const svgPoints = points.map((point, index) => {
     const x =
       points.length === 1
@@ -2369,37 +2371,38 @@ function OverviewLineChart({
         <div className="text-sm font-medium text-zinc-100 sm:text-base">
           XP over time
         </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs text-zinc-400 sm:text-sm">
+        <div className="flex shrink-0 items-center gap-2.5 text-[11px] text-zinc-500 sm:gap-3 sm:text-xs">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-0.5 w-5 rounded-full bg-emerald-300/85 shadow-[0_0_10px_rgba(52,211,153,0.24)]" />
+            <span className="h-1 w-5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.28)]" />
             Daily XP
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500/35" />
+            <span className="h-2 w-2 rounded-full bg-emerald-300/25" />
             Events
           </span>
         </div>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-4 space-y-3 sm:mt-5">
         <div ref={chartRef} className="relative" data-overview-line-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             preserveAspectRatio="none"
-            className="h-[300px] w-full sm:h-[280px] md:h-[300px]"
+            className="h-[260px] w-full sm:h-[280px] md:h-[300px]"
           >
             <defs>
               <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(52,211,153,0.16)" />
-                <stop offset="58%" stopColor="rgba(16,185,129,0.055)" />
+                <stop offset="0%" stopColor="rgba(110,231,183,0.18)" />
+                <stop offset="52%" stopColor="rgba(52,211,153,0.07)" />
                 <stop offset="100%" stopColor="rgba(16,185,129,0)" />
               </linearGradient>
               <linearGradient id="overviewDailyLine" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0%" stopColor="#34d399" />
-                <stop offset="100%" stopColor="#6ee7b7" />
+                <stop offset="0%" stopColor="#86efac" />
+                <stop offset="52%" stopColor="#6ee7b7" />
+                <stop offset="100%" stopColor="#34d399" />
               </linearGradient>
               <linearGradient id="overviewDailySurface" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.035)" />
+                <stop offset="0%" stopColor="rgba(255,255,255,0.022)" />
                 <stop offset="100%" stopColor="rgba(255,255,255,0)" />
               </linearGradient>
             </defs>
@@ -2413,7 +2416,7 @@ function OverviewLineChart({
               fill="url(#overviewDailySurface)"
             />
 
-            {yTickValues.map((value) => {
+            {yTickValues.filter((value) => value > 0).map((value) => {
               const ratio = yMax === 0 ? 0 : value / yMax;
               const y = padding.top + trendHeight - ratio * trendHeight;
               return (
@@ -2423,8 +2426,8 @@ function OverviewLineChart({
                     x2={padding.left + chartWidth}
                     y1={y}
                     y2={y}
-                    stroke="rgba(113,113,122,0.18)"
-                    strokeDasharray="2 10"
+                    stroke="rgba(212,212,216,0.105)"
+                    strokeDasharray="1 13"
                     vectorEffect="non-scaling-stroke"
                   />
                 </g>
@@ -2436,7 +2439,7 @@ function OverviewLineChart({
               x2={padding.left + chartWidth}
               y1={trendBaselineY}
               y2={trendBaselineY}
-              stroke="rgba(161,161,170,0.18)"
+              stroke="rgba(212,212,216,0.14)"
               vectorEffect="non-scaling-stroke"
             />
 
@@ -2445,7 +2448,7 @@ function OverviewLineChart({
               x2={padding.left + chartWidth}
               y1={contextTopY}
               y2={contextTopY}
-              stroke="rgba(113,113,122,0.12)"
+              stroke="rgba(212,212,216,0.07)"
               vectorEffect="non-scaling-stroke"
             />
 
@@ -2480,9 +2483,9 @@ function OverviewLineChart({
                       x={x - (bucketWidth * 0.72) / 2}
                       y={contextTopY + 4}
                       width={efficiencyWidth}
-                      height={3}
-                      rx={1.5}
-                      fill="rgba(245,158,11,0.26)"
+                      height={2}
+                      rx={1}
+                      fill="rgba(245,158,11,0.15)"
                     />
                   ) : null}
                   {barHeight > 0 ? (
@@ -2491,8 +2494,8 @@ function OverviewLineChart({
                       y={contextBottomY - barHeight}
                       width={completionBarWidth}
                       height={barHeight}
-                      rx={Math.min(2, completionBarWidth / 2)}
-                      fill="rgba(52,211,153,0.16)"
+                      rx={completionBarWidth / 2}
+                      fill="rgba(110,231,183,0.13)"
                     />
                   ) : null}
                 </g>
@@ -2508,16 +2511,16 @@ function OverviewLineChart({
                     x2={svgPoints[activeIndex]?.x ?? 0}
                     y1={padding.top}
                     y2={contextBottomY}
-                    stroke="rgba(212,212,216,0.2)"
-                    strokeDasharray="2 7"
+                    stroke="rgba(244,244,245,0.2)"
+                    strokeDasharray="1 9"
                     vectorEffect="non-scaling-stroke"
                   />
                 ) : null}
                 <path
                   d={linePath}
                   fill="none"
-                  stroke="rgba(52,211,153,0.2)"
-                  strokeWidth={8}
+                  stroke="rgba(52,211,153,0.16)"
+                  strokeWidth={10}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
@@ -2526,7 +2529,7 @@ function OverviewLineChart({
                   d={linePath}
                   fill="none"
                   stroke="url(#overviewDailyLine)"
-                  strokeWidth={2.8}
+                  strokeWidth={3.6}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
@@ -2539,8 +2542,8 @@ function OverviewLineChart({
                   x2={padding.left + chartWidth}
                   y1={padding.top + trendHeight * 0.55}
                   y2={padding.top + trendHeight * 0.55}
-                  stroke="rgba(63,63,70,0.55)"
-                  strokeDasharray="4 6"
+                  stroke="rgba(161,161,170,0.25)"
+                  strokeDasharray="1 10"
                   vectorEffect="non-scaling-stroke"
                 />
               </g>
@@ -2564,7 +2567,7 @@ function OverviewLineChart({
             {yAxisLabels.map((label) => (
               <div
                 key={`y-axis-${label.value}`}
-                className="absolute -translate-y-1/2 -translate-x-full whitespace-nowrap text-[11px] font-medium leading-none text-zinc-400/80 tabular-nums"
+                className="absolute -translate-y-1/2 -translate-x-full whitespace-nowrap text-[10px] font-medium leading-none text-zinc-500/75 tabular-nums sm:text-[11px]"
                 style={{
                   left: `${yAxisLabelLeft}%`,
                   top: `${label.top}%`,
@@ -2580,13 +2583,13 @@ function OverviewLineChart({
                 className="absolute -translate-x-1/2 text-center leading-none"
                 style={{
                   left: `${(label.x / width) * 100}%`,
-                  top: `${((height - 34) / height) * 100}%`,
+                  top: `${((height - 30) / height) * 100}%`,
                 }}
               >
-                <div className="whitespace-nowrap text-[11px] font-medium text-zinc-400/90 tabular-nums">
+                <div className="whitespace-nowrap text-[10px] font-medium text-zinc-400/80 tabular-nums sm:text-[11px]">
                   {label.label}
                 </div>
-                <div className="mt-1 whitespace-nowrap text-[10px] font-medium text-zinc-500/95">
+                <div className="mt-1 hidden whitespace-nowrap text-[10px] font-medium text-zinc-500/80 min-[420px]:block">
                   {label.weekday}
                 </div>
               </div>
@@ -2594,7 +2597,7 @@ function OverviewLineChart({
 
             {activePoint ? (
               <div
-                className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-300/15"
+                className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-200/10 ring-1 ring-emerald-100/20"
                 style={{
                   left: `${(((svgPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
                     4
@@ -2604,7 +2607,7 @@ function OverviewLineChart({
                   )}%`,
                 }}
               >
-                <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/80 bg-emerald-100 shadow-[0_0_0_1px_rgba(209,250,229,0.42),0_0_18px_rgba(52,211,153,0.28)]" />
+                <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-100 shadow-[0_0_0_1px_rgba(209,250,229,0.55),0_0_18px_rgba(52,211,153,0.3)]" />
               </div>
             ) : null}
           </div>
@@ -2650,13 +2653,13 @@ function OverviewLineChart({
           {activePoint ? (
             <div
               className={classNames(
-                "pointer-events-none absolute z-10 min-w-[132px] rounded-lg border border-white/10 bg-zinc-950/85 px-2.5 py-2 text-[11px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur-md",
+                "pointer-events-none absolute z-10 min-w-[142px] rounded-2xl border border-white/12 bg-zinc-950/80 px-3 py-2.5 text-[11px] text-zinc-300 shadow-[0_18px_45px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
                 tooltip.left > 72
                   ? "-translate-x-full"
                   : tooltip.left < 28
                     ? "translate-x-0"
                     : "-translate-x-1/2",
-                tooltip.top > 58 ? "-translate-y-full" : "translate-y-2"
+                tooltip.top > 58 ? "-translate-y-[calc(100%+8px)]" : "translate-y-2"
               )}
               style={{
                 left: `${tooltip.left}%`,
@@ -2664,18 +2667,18 @@ function OverviewLineChart({
               }}
               role="tooltip"
             >
-              <div className="mb-1 flex items-center justify-between gap-3">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
                 <span className="font-medium text-zinc-100">
                   {formatTrendActiveLabel(activePoint.date, range)}
                 </span>
-                <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-200">
+                <span className="rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
                   XP
                 </span>
               </div>
-              <div className="text-base font-semibold leading-none text-zinc-50">
+              <div className="text-lg font-semibold leading-none text-zinc-50">
                 {formatCompactNumber(activePoint.xpGained)}
               </div>
-              <div className="mt-2 grid gap-1 border-t border-white/10 pt-1.5">
+              <div className="mt-2 grid gap-1 border-t border-white/10 pt-2">
                 <OverviewTooltipMetric
                   label="Completed"
                   value={activePoint.completedEvents}
@@ -2775,16 +2778,41 @@ function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
     )},${second.y.toFixed(2)}`;
   }
 
-  return points.slice(0, -1).reduce((path, point, index) => {
-    const previous = points[index - 1] ?? point;
+  const segmentSlopes = points.slice(0, -1).map((point, index) => {
     const next = points[index + 1];
-    const nextNext = points[index + 2] ?? next;
-    const minY = Math.min(point.y, next.y);
-    const maxY = Math.max(point.y, next.y);
-    const controlOneX = point.x + (next.x - previous.x) / 6;
-    const controlOneY = clampNumber(point.y + (next.y - previous.y) / 6, minY, maxY);
-    const controlTwoX = next.x - (nextNext.x - point.x) / 6;
-    const controlTwoY = clampNumber(next.y - (nextNext.y - point.y) / 6, minY, maxY);
+    const deltaX = Math.max(1, next.x - point.x);
+    return (next.y - point.y) / deltaX;
+  });
+  const tangents = points.map((_, index) => {
+    if (index === 0) {
+      return segmentSlopes[0] ?? 0;
+    }
+
+    if (index === points.length - 1) {
+      return segmentSlopes[segmentSlopes.length - 1] ?? 0;
+    }
+
+    const previousSlope = segmentSlopes[index - 1] ?? 0;
+    const nextSlope = segmentSlopes[index] ?? 0;
+
+    if (
+      previousSlope === 0 ||
+      nextSlope === 0 ||
+      Math.sign(previousSlope) !== Math.sign(nextSlope)
+    ) {
+      return 0;
+    }
+
+    return (previousSlope + nextSlope) / 2;
+  });
+
+  return points.slice(0, -1).reduce((path, point, index) => {
+    const next = points[index + 1];
+    const deltaX = next.x - point.x;
+    const controlOneX = point.x + deltaX / 3;
+    const controlOneY = point.y + (tangents[index] * deltaX) / 3;
+    const controlTwoX = next.x - deltaX / 3;
+    const controlTwoY = next.y - (tangents[index + 1] * deltaX) / 3;
 
     return `${path} C${controlOneX.toFixed(2)},${controlOneY.toFixed(
       2
@@ -2792,10 +2820,6 @@ function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
       2
     )},${next.y.toFixed(2)}`;
   }, `M${first.x.toFixed(2)},${first.y.toFixed(2)}`);
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function buildYTickValues(yMax: number) {

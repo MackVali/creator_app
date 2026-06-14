@@ -349,6 +349,17 @@ function computeHabitDueStatus(
   return { label: "No Due Match", rank: NO_DUE_MATCH_RANK };
 }
 
+function wasRelatedHabitCompletedOnDate(
+  habit: Pick<HabitSummary, "lastCompletedAt">,
+  dateKey: string,
+  timeZone: string
+): boolean {
+  const lastCompletedAt = parseOptionalDate(habit.lastCompletedAt);
+  if (!lastCompletedAt) return false;
+
+  return formatDateKeyInTimeZone(lastCompletedAt, timeZone) === dateKey;
+}
+
 function getHabitTypePriority(habitType: string | null | undefined): number {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return 0;
@@ -775,6 +786,12 @@ export function MonumentRelatedHabits({
   );
   const bypassMemoCaptureRef = useRef(false);
   const completionStateDateKeyRef = useRef<string | null>(null);
+  const isRelatedHabitCompletedForCurrentDay = useCallback(
+    (habit: Pick<HabitSummary, "id" | "lastCompletedAt">) =>
+      completedRelatedHabitIds.has(habit.id) ||
+      wasRelatedHabitCompletedOnDate(habit, currentDateKey, timeZone),
+    [completedRelatedHabitIds, currentDateKey, timeZone]
+  );
   const decoratedHabits = useMemo(
     () =>
       relatedHabits
@@ -816,14 +833,13 @@ export function MonumentRelatedHabits({
       if (!habit.routineId) continue;
 
       const existing = routineMap.get(habit.routineId);
+      const isCompletedToday = isRelatedHabitCompletedForCurrentDay(habit);
       const routineHabit = {
         id: habit.id,
         name: habit.name,
-        dueLabel: completedRelatedHabitIds.has(habit.id)
-          ? "COMPLETE"
-          : habit.dueLabel,
+        dueLabel: isCompletedToday ? "COMPLETE" : habit.dueLabel,
         skillIcon: habit.skillIcon,
-        completed: completedRelatedHabitIds.has(habit.id),
+        completed: isCompletedToday,
         pending: pendingRelatedHabitIds.has(habit.id),
         routinePosition: habit.routinePosition,
         currentStreakDays: habit.currentStreakDays,
@@ -855,7 +871,11 @@ export function MonumentRelatedHabits({
     return Array.from(routineMap.values()).sort((first, second) =>
       first.name.localeCompare(second.name, undefined, { sensitivity: "base" })
     );
-  }, [completedRelatedHabitIds, decoratedHabits, pendingRelatedHabitIds]);
+  }, [
+    decoratedHabits,
+    isRelatedHabitCompletedForCurrentDay,
+    pendingRelatedHabitIds,
+  ]);
   const relatedHabitPages = useMemo(() => {
     const sortRelatedHabitPageItems = (
       first: RelatedHabitPageItem,
@@ -896,7 +916,7 @@ export function MonumentRelatedHabits({
       habit: (typeof standaloneDecoratedHabits)[number]
     ) => {
       const isCompletedToday =
-        completedRelatedHabitIds.has(habit.id) ||
+        isRelatedHabitCompletedForCurrentDay(habit) ||
         pendingCompletedRelatedHabitIds.has(habit.id) ||
         collapsingCompletedRelatedHabitIds.has(habit.id);
 
@@ -939,7 +959,7 @@ export function MonumentRelatedHabits({
       .filter(
         (habit) =>
           !isStandaloneHabitDue(habit) &&
-          !completedRelatedHabitIds.has(habit.id) &&
+          !isRelatedHabitCompletedForCurrentDay(habit) &&
           !pendingCompletedRelatedHabitIds.has(habit.id) &&
           !collapsingCompletedRelatedHabitIds.has(habit.id)
       )
@@ -968,7 +988,7 @@ export function MonumentRelatedHabits({
     ].filter((page) => page.items.length > 0);
   }, [
     collapsingCompletedRelatedHabitIds,
-    completedRelatedHabitIds,
+    isRelatedHabitCompletedForCurrentDay,
     pendingCompletedRelatedHabitIds,
     relatedRoutines,
     standaloneDecoratedHabits,
@@ -1477,7 +1497,8 @@ export function MonumentRelatedHabits({
         return;
       }
 
-      const wasCompleted = completedRelatedHabitIds.has(habitId);
+      const wasCompleted =
+        isRelatedHabitCompletedForCurrentDay(habitBeforeUpdate);
       const action = wasCompleted ? "undo" : "complete";
       const completedAt = new Date().toISOString();
       const shouldDelayCompletedMove =
@@ -1612,9 +1633,9 @@ export function MonumentRelatedHabits({
     },
     [
       clearPendingCompletedRelatedHabitMove,
-      completedRelatedHabitIds,
       currentDateKey,
       currentUserId,
+      isRelatedHabitCompletedForCurrentDay,
       pendingRelatedHabitIds,
       relatedHabits,
       schedulePendingCompletedRelatedHabitMove,
@@ -2095,7 +2116,7 @@ export function MonumentRelatedHabits({
                           const isCollapsingCompletedMove =
                             collapsingCompletedRelatedHabitIds.has(habit.id);
                           const isHabitCompletedToday =
-                            completedRelatedHabitIds.has(habit.id) ||
+                            isRelatedHabitCompletedForCurrentDay(habit) ||
                             isPendingCompletedMove;
                           const isHabitPending =
                             pendingRelatedHabitIds.has(habit.id) &&

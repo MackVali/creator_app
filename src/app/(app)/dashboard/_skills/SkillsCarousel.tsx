@@ -1736,9 +1736,9 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     return (
       <div className="relative" role="status" aria-live="polite" aria-busy>
         <span className="sr-only">Loading skill categories…</span>
-        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
+        <div className="app-dashboard-skill-carousel-shell relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
           <div
-            className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"
+            className="app-dashboard-skill-carousel-glow pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"
             aria-hidden
           />
           <div className="relative flex gap-5 overflow-hidden px-2 sm:px-3">
@@ -1833,8 +1833,8 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
           }
         }}
       >
-        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
+        <div className="app-dashboard-skill-carousel-shell relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
+          <div className="app-dashboard-skill-carousel-glow pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
           {categories.length > 1 && (
             <>
               <button

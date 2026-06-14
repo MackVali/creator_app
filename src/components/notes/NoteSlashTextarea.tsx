@@ -1894,14 +1894,20 @@ export function NoteDatabaseFocusedView({
   if (!databaseSegment || !databaseDefinition || !activeDatabaseView) {
     return (
       <section className="flex min-h-full w-full flex-1 flex-col text-white">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-white/55 outline-none transition hover:bg-white/[0.06] hover:text-white/80 focus-visible:ring-1 focus-visible:ring-white/24"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Back
-        </button>
+        <div className="flex h-6 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="-ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.055] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <p className="text-xs font-medium leading-none text-white/38">Database</p>
+          <p className="ml-auto text-[11px] font-medium leading-none text-white/38">
+            {autosaveLabel}
+          </p>
+        </div>
         <div className="mt-6 rounded-xl border border-dashed border-white/[0.1] bg-white/[0.025] px-3 py-8 text-center text-sm text-white/42">
           Database not found in this note.
         </div>
@@ -1915,24 +1921,24 @@ export function NoteDatabaseFocusedView({
 
   return (
     <section className="flex min-h-full w-full flex-1 flex-col text-white">
-      <div className="flex min-h-8 items-center justify-between gap-3">
+      <div className="flex h-6 items-center gap-1.5">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-white/55 outline-none transition hover:bg-white/[0.06] hover:text-white/80 focus-visible:ring-1 focus-visible:ring-white/24"
+          aria-label="Back"
+          className="-ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.055] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Back
+          <ChevronLeft className="h-4 w-4" />
         </button>
-        <p className="text-[11px] font-medium leading-none text-white/38">{autosaveLabel}</p>
+        <p className="text-xs font-medium leading-none text-white/38">Database</p>
+        <p className="ml-auto text-[11px] font-medium leading-none text-white/38">
+          {autosaveLabel}
+        </p>
       </div>
 
-      <div className="mt-4 flex flex-col gap-4 border-b border-white/[0.07] pb-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mt-3 flex flex-col gap-4 border-b border-white/[0.07] pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/34">
-            Database
-          </p>
-          <h1 className="mt-1 truncate text-2xl font-semibold leading-8 text-white sm:text-3xl">
+          <h1 className="truncate text-2xl font-semibold leading-8 text-white sm:text-3xl">
             {displayTitle}
           </h1>
           {noteTitle ? (
