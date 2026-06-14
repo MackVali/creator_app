@@ -562,6 +562,9 @@ export function MonumentRelatedHabits({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [restoreRoutineDrawerId, setRestoreRoutineDrawerId] = useState<
+    string | null
+  >(null);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [completionLoading, setCompletionLoading] = useState(false);
   const [habitsError, setHabitsError] = useState<string | null>(null);
@@ -672,9 +675,13 @@ export function MonumentRelatedHabits({
   }, []);
   const handleRoutineAddHabit = useCallback(
     (routine: RelatedRoutineCardRoutine) => {
-      fabCreation?.requestHabitCreation(null, {
-        routineId: routine.id,
-      });
+      fabCreation?.requestHabitCreation(
+        null,
+        {
+          routineId: routine.id,
+        },
+        { preserveDrawer: { type: "routine", id: routine.id } }
+      );
     },
     [fabCreation]
   );
@@ -1790,14 +1797,39 @@ export function MonumentRelatedHabits({
   useEffect(() => cancelRelatedHabitLongPress, [cancelRelatedHabitLongPress]);
 
   useEffect(() => {
+    setRestoreRoutineDrawerId(null);
+  }, [monumentId]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
     const handleCreatorEntitySaved = (event: Event) => {
-      const detail = (event as CustomEvent<{ entityType?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          entityType?: string;
+          action?: string;
+          routineId?: string | null;
+          preserveDrawer?: {
+            type?: string;
+            id?: string;
+          } | null;
+        }>
+      ).detail;
       if (detail?.entityType !== "HABIT" && detail?.entityType !== "ROUTINE") {
         return;
+      }
+
+      if (
+        detail.entityType === "HABIT" &&
+        detail.action === "created" &&
+        detail.preserveDrawer?.type === "routine"
+      ) {
+        const routineId = detail.routineId ?? detail.preserveDrawer.id;
+        if (routineId) {
+          setRestoreRoutineDrawerId(routineId);
+        }
       }
 
       setRefreshVersion((current) => current + 1);
@@ -1991,6 +2023,20 @@ export function MonumentRelatedHabits({
     supabase,
   ]);
 
+  useEffect(() => {
+    if (habitsLoading || !restoreRoutineDrawerId) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setRestoreRoutineDrawerId(null);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [habitsLoading, restoreRoutineDrawerId]);
+
   return (
     <>
     <Card className="relative gap-0 overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] py-0 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
@@ -2110,6 +2156,9 @@ export function MonumentRelatedHabits({
                                   handleRoutineHabitCompletionToggle
                                 }
                                 onAddHabit={handleRoutineAddHabit}
+                                restoreOpen={
+                                  restoreRoutineDrawerId === item.routine.id
+                                }
                               />
                             );
                           }

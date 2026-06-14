@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
 import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
@@ -11,7 +10,6 @@ import {
   type NoteDatabaseEntries,
   type NoteSlashTextareaHandle,
 } from "@/components/notes/NoteSlashTextarea";
-import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import {
   createSkillNote,
@@ -511,27 +509,21 @@ export default function NotePage() {
 
   return (
     <main className="min-h-screen bg-[#020202] px-4 pb-[calc(10rem_+_env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] text-white sm:pb-[calc(9rem_+_env(safe-area-inset-bottom,0px))] sm:pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 sm:gap-3">
-        <div className="flex min-h-7 items-center justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-7 gap-1 rounded-full px-2 py-0 text-xs font-medium text-white/55 hover:bg-white/[0.06] hover:text-white/80"
-            onClick={handleBack}
-          >
-            <ChevronLeft className="size-3.5" />
-            Back
-          </Button>
-          <p className="text-[11px] font-medium leading-none text-white/38">
-            {isSaving ? "Saving…" : "Autosaved"}
-          </p>
-        </div>
-
-        <section className="rounded-[22px] border border-white/[0.07] bg-[#050505]/92 p-4 shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 sm:gap-3">
+        <section className="bg-transparent p-0">
           {isLoading ? (
             <p className="text-sm text-white/60">Loading note…</p>
           ) : (
             <div className="space-y-4">
+              <NoteEditorHeader
+                icon={noteIcon}
+                title={noteTitle}
+                onIconChange={setNoteIcon}
+                onTitleChange={setNoteTitle}
+                onBack={handleBack}
+                autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
+              />
+
               <div className="flex justify-end">
                 <Select
                   value={parentSelectValue}
@@ -558,11 +550,8 @@ export default function NotePage() {
                 </Select>
               </div>
 
-              <NoteEditorHeader
-                icon={noteIcon}
-                title={noteTitle}
-                onIconChange={setNoteIcon}
-                onTitleChange={setNoteTitle}
+              <NoteTextActionBar
+                onFormat={(command) => noteTextareaRef.current?.applyTextFormat(command)}
               />
 
               <NoteSlashTextarea
@@ -578,18 +567,12 @@ export default function NotePage() {
                 onOpenSubpage={handleOpenSubpage}
                 onOpenDatabase={handleOpenDatabase}
                 placeholder="Start typing, or press / for commands…"
-                className="min-h-[62vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
+                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
                 aria-label="Note editor"
               />
             </div>
           )}
         </section>
-
-        {!isLoading ? (
-          <NoteTextActionBar
-            onFormat={(command) => noteTextareaRef.current?.applyTextFormat(command)}
-          />
-        ) : null}
       </div>
     </main>
   );

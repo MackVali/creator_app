@@ -1071,6 +1071,15 @@ export function MonumentGoalsList({
     RoadmapWithItems[]
   >([]);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [restoreGoalDrawerId, setRestoreGoalDrawerId] = useState<string | null>(
+    null
+  );
+  const [restoreCampaignDrawerId, setRestoreCampaignDrawerId] = useState<
+    string | null
+  >(null);
+  const [restoreCampaignGoalId, setRestoreCampaignGoalId] = useState<
+    string | null
+  >(null);
   const [roadmapOpenGoal, setRoadmapOpenGoal] = useState<Goal | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
@@ -1305,7 +1314,7 @@ export function MonumentGoalsList({
     );
   }, []);
 
-  const renderGoalCardDensityToggle = () => (
+  const renderGoalCardDensityToggle = useCallback(() => (
     <button
       type="button"
       aria-label={isSmallGoalCardDensity ? "Use large cards" : "Use small cards"}
@@ -1320,7 +1329,7 @@ export function MonumentGoalsList({
         <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
       )}
     </button>
-  );
+  ), [handleGoalCardDensityToggle, isSmallGoalCardDensity]);
 
   const measureActiveGoalPanel = useCallback(() => {
     const nextHeight = goalsGridLoading
@@ -1354,6 +1363,8 @@ export function MonumentGoalsList({
     monumentView,
     openGoalId,
     roadmapOpenGoal,
+    restoreCampaignDrawerId,
+    restoreCampaignGoalId,
     recentlyCompletedGoalIds,
   ]);
 
@@ -1688,6 +1699,9 @@ export function MonumentGoalsList({
 
   useEffect(() => {
     setOpenGoalId(null);
+    setRestoreGoalDrawerId(null);
+    setRestoreCampaignDrawerId(null);
+    setRestoreCampaignGoalId(null);
     setRoadmapOpenGoal(null);
   }, [resolvedSourceType, resolvedSourceId]);
 
@@ -1997,8 +2011,15 @@ export function MonumentGoalsList({
         event as CustomEvent<{
           entityType?: string;
           entityId?: string;
+          action?: string;
           monumentId?: string | null;
           circleId?: string | null;
+          campaignId?: string | null;
+          goalId?: string | null;
+          preserveDrawer?: {
+            type?: string;
+            id?: string;
+          } | null;
         }>
       ).detail;
       const entityType = detail?.entityType;
@@ -2064,6 +2085,45 @@ export function MonumentGoalsList({
         }
       }
 
+      if (detail?.action === "created") {
+        if (
+          entityType === "GOAL" &&
+          detail.preserveDrawer?.type === "campaign"
+        ) {
+          const campaignId = detail.campaignId ?? detail.preserveDrawer.id;
+          if (campaignId) {
+            setRestoreCampaignDrawerId(campaignId);
+          }
+        }
+
+        if (
+          entityType === "PROJECT" &&
+          detail.preserveDrawer?.type === "goal"
+        ) {
+          const goalId = detail.goalId ?? detail.preserveDrawer.id;
+          if (goalId) {
+            setOpenGoalId(goalId);
+            setRestoreGoalDrawerId(goalId);
+
+            const campaignId = monumentRoadmapsWithItems
+              .flatMap((roadmap) => roadmap.items)
+              .find((item) =>
+                item.campaign?.goals.some((goal) => goal.id === goalId)
+              )?.campaign?.id;
+
+            if (campaignId) {
+              setRestoreCampaignDrawerId(campaignId);
+              setRestoreCampaignGoalId(goalId);
+            } else {
+              const currentGoal = goals.find((goal) => goal.id === goalId);
+              if (currentGoal) {
+                setRoadmapOpenGoal(currentGoal);
+              }
+            }
+          }
+        }
+      }
+
       setRefreshVersion((current) => current + 1);
     };
 
@@ -2077,7 +2137,7 @@ export function MonumentGoalsList({
         handleCreatorEntitySaved
       );
     };
-  }, [isGoalLinkedToCurrentSource]);
+  }, [goals, isGoalLinkedToCurrentSource, monumentRoadmapsWithItems]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2323,12 +2383,15 @@ export function MonumentGoalsList({
           return goalId;
         }
         if (current === goalId) {
+          if (restoreGoalDrawerId === goalId) {
+            setRestoreGoalDrawerId(null);
+          }
           return null;
         }
         return current;
       });
     },
-    [fetchGoalForDisplay, goals]
+    [fetchGoalForDisplay, goals, restoreGoalDrawerId]
   );
 
   const getGoalEditOriginRect = useCallback((goalId: string) => {
@@ -2374,7 +2437,9 @@ export function MonumentGoalsList({
 
   const handleCampaignAddGoal = useCallback(
     (campaignId: string) => {
-      creationContext?.requestGoalCreation(null, campaignId);
+      creationContext?.requestGoalCreation(null, campaignId, {
+        preserveDrawer: { type: "campaign", id: campaignId },
+      });
     },
     [creationContext]
   );
@@ -2687,6 +2752,9 @@ export function MonumentGoalsList({
       setRoadmapOpenGoal(null);
       return;
     }
+    if (openGoalId === restoreGoalDrawerId) {
+      return;
+    }
     if (
       !goals.some((goal) => goal.id === openGoalId) &&
       roadmapOpenGoal?.id !== openGoalId
@@ -2694,7 +2762,33 @@ export function MonumentGoalsList({
       setOpenGoalId(null);
       setRoadmapOpenGoal(null);
     }
-  }, [goals, openGoalId, roadmapOpenGoal]);
+  }, [goals, openGoalId, restoreGoalDrawerId, roadmapOpenGoal]);
+
+  useEffect(() => {
+    if (
+      goalsGridLoading ||
+      (!restoreGoalDrawerId &&
+        !restoreCampaignDrawerId &&
+        !restoreCampaignGoalId)
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setRestoreGoalDrawerId(null);
+      setRestoreCampaignDrawerId(null);
+      setRestoreCampaignGoalId(null);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    goalsGridLoading,
+    restoreGoalDrawerId,
+    restoreCampaignDrawerId,
+    restoreCampaignGoalId,
+  ]);
 
   const content = useMemo(() => {
     const renderGoalsRoadmapViewport = (
@@ -2834,7 +2928,6 @@ export function MonumentGoalsList({
       const isCompleted = normalizeGoalStatus(goal.status) === "COMPLETED";
       return section === "completed" ? isCompleted : !isCompleted;
     };
-
     const goalsForCurrentSource = goals.filter(isGoalLinkedToCurrentSource);
     const campaignGoalIds = new Set<string>(
       monumentRoadmapsWithItems.flatMap((roadmap) =>
@@ -2880,7 +2973,7 @@ export function MonumentGoalsList({
         weightBoost: 0,
         skills: [],
         globalRank: campaignGoal.global_rank ?? null,
-        priorityRank: campaignGoal.priority_rank ?? campaignGoal.position,
+        priorityRank: campaignGoal.position,
       });
     };
     const getCampaignGroupsForGoalGrid = (section: GoalPanel): {
@@ -2931,7 +3024,7 @@ export function MonumentGoalsList({
                   status: goal.status ?? null,
                   allProjectsCompleted: goal.allProjectsCompleted,
                   global_rank: goal.global_rank ?? null,
-                  priority_rank: goal.priority_rank ?? goal.position ?? null,
+                  priority_rank: goal.position ?? null,
                 })),
               };
 
@@ -3077,6 +3170,12 @@ export function MonumentGoalsList({
                   onAddGoal={handleCampaignAddGoal}
                   onCampaignDetailsSaved={() =>
                     setRefreshVersion((current) => current + 1)
+                  }
+                  restoreOpen={restoreCampaignDrawerId === roadmap.id}
+                  restoreOpenGoalId={
+                    restoreCampaignDrawerId === roadmap.id
+                      ? restoreCampaignGoalId
+                      : null
                   }
                   monumentContext
                   suppressReadyToast
@@ -3268,10 +3367,15 @@ export function MonumentGoalsList({
     roadmapEmptyState,
     monumentRoadmapsWithItems,
     roadmapOpenGoal,
+    restoreCampaignDrawerId,
+    restoreCampaignGoalId,
     recentlyCompletedGoalIds,
     activeGoalPanel,
+    goalGridClass,
     goalPanelHeight,
+    isSmallGoalCardDensity,
     openGoalId,
+    renderGoalCardDensityToggle,
     handleGoalEdit,
     handleManualGoalComplete,
     handleGoalOpenChange,

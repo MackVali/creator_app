@@ -553,11 +553,25 @@ function GoalCardImpl({
         await onAddTask?.(goal.id);
         return;
       }
-      fabCreation?.requestProjectCreation(goal.id, originRect ?? null);
+      fabCreation?.requestProjectCreation(
+        goal.id,
+        originRect ?? null,
+        open
+          ? { preserveDrawer: { type: "goal", id: goal.id } }
+          : undefined
+      );
     } finally {
       setAddingProject(false);
     }
-  }, [addingProject, fabCreation, goal.id, goal.projects, onAddTask, projectDropdownMode]);
+  }, [
+    addingProject,
+    fabCreation,
+    goal.id,
+    goal.projects,
+    onAddTask,
+    open,
+    projectDropdownMode,
+  ]);
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {

@@ -288,6 +288,10 @@ type CreatorEntitySavedEventDetail = {
   action: "created" | "updated" | "deleted";
   monumentId?: string | null;
   circleId?: string | null;
+  campaignId?: string | null;
+  goalId?: string | null;
+  routineId?: string | null;
+  preserveDrawer?: FabCreationRequest["preserveDrawer"];
 };
 type FabGoalDeleteConfirmTarget = {
   goalName: string;
@@ -14059,6 +14063,9 @@ export function Fab({
           throw error;
         };
         let createdEntityId: string | null = null;
+        let createdCampaignId: string | null = null;
+        let createdGoalId: string | null = null;
+        let createdRoutineId: string | null = null;
         let tagAttachmentFailed = false;
         let childDraftFailureMessage: string | null = null;
 
@@ -14623,6 +14630,7 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = goalData?.id ?? null;
+          createdCampaignId = effectiveGoalCampaignId;
           if (effectiveGoalCampaignId && goalData?.id) {
             const { data: campaignGoalRows, error: campaignGoalError } =
               await supabase
@@ -14665,6 +14673,7 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = projectData?.id ?? null;
+          createdGoalId = projectGoalId || null;
           if (projectData?.id && exactSchedule) {
             await upsertLockedScheduleInstance({
               supabase,
@@ -14785,6 +14794,7 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = habitData?.id ?? null;
+          createdRoutineId = routineIdToUse;
         }
         if (createdEntityId && selectedTagIdsSnapshot.length > 0) {
           try {
@@ -14919,6 +14929,10 @@ export function Fab({
               createdType === "GOAL"
                 ? goalRelationResolution.selectedCircleId
                 : null,
+            campaignId: createdCampaignId,
+            goalId: createdGoalId,
+            routineId: createdRoutineId,
+            preserveDrawer: creationRequest?.preserveDrawer ?? null,
           });
         }
         openingCreationRequestIdRef.current = null;
@@ -15039,6 +15053,7 @@ export function Fab({
     attachSelectedTagsToEntity,
     buildMemoCaptureConfig,
     closeExpandedPanel,
+    creationRequest,
     onEditClose,
     onEditSaved,
     resetFabFormState,

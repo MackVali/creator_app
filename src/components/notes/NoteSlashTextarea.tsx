@@ -1764,21 +1764,27 @@ function NoteDatabaseEntriesView({
 function NoteDatabaseFieldEditSheet({
   canRemoveField,
   field,
+  mode = "edit",
   onClose,
+  onConfirmCreate,
   onFieldNameChange,
   onFieldTypeChange,
   onRemoveField,
 }: {
   canRemoveField: boolean;
   field: NoteDatabaseFieldDefinition;
+  mode?: "edit" | "create";
   onClose: () => void;
+  onConfirmCreate?: () => void;
   onFieldNameChange: (name: string) => void;
   onFieldTypeChange: (type: NoteDatabaseFieldType) => void;
   onRemoveField: () => void;
 }) {
+  const isCreating = mode === "create";
   const removeFieldTitle = canRemoveField
     ? "Remove field"
     : "Title field cannot be removed";
+  const sheetTitle = isCreating ? "Add field" : "Edit field";
 
   useEffect(() => {
     const body = document.body;
@@ -1845,12 +1851,12 @@ function NoteDatabaseFieldEditSheet({
             id="note-database-field-edit-title"
             className="mt-4 text-center text-base font-semibold leading-6 text-white"
           >
-            Edit field
+            {sheetTitle}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close edit field sheet"
+            aria-label={`Close ${sheetTitle.toLowerCase()} sheet`}
             className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
           >
             <X className="h-4 w-4" />
@@ -1869,16 +1875,18 @@ function NoteDatabaseFieldEditSheet({
                 className="h-12 w-full rounded-2xl border border-white/[0.04] bg-white/[0.065] px-4 text-base font-semibold text-white outline-none transition placeholder:text-white/28 selection:bg-emerald-300/25 hover:border-white/[0.06] focus-visible:border-white/[0.1]"
               />
             </label>
-            <button
-              type="button"
-              aria-label={removeFieldTitle}
-              title={removeFieldTitle}
-              onClick={onRemoveField}
-              disabled={!canRemoveField}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-red-200/70 focus-visible:bg-white/[0.07] focus-visible:text-red-100 disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {isCreating ? null : (
+              <button
+                type="button"
+                aria-label={removeFieldTitle}
+                title={removeFieldTitle}
+                onClick={onRemoveField}
+                disabled={!canRemoveField}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/32 outline-none transition hover:bg-white/[0.055] hover:text-red-200/70 focus-visible:bg-white/[0.07] focus-visible:text-red-100 disabled:cursor-not-allowed disabled:text-white/14 disabled:hover:bg-transparent"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="mt-6">
@@ -1955,6 +1963,24 @@ function NoteDatabaseFieldEditSheet({
             </div>
           </div>
         </div>
+        {isCreating ? (
+          <div className="flex gap-2 border-t border-white/[0.04] p-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirmCreate}
+              className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24"
+            >
+              Add field
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -2189,6 +2215,7 @@ export function NoteDatabaseFocusedView({
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [draftField, setDraftField] = useState<NoteDatabaseFieldDefinition | null>(null);
   const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>({});
   const segments = useMemo(() => parseNoteSegments(noteContent), [noteContent]);
   const databaseSegment = useMemo(
@@ -2290,9 +2317,13 @@ export function NoteDatabaseFocusedView({
     });
   }
 
-  function addDatabaseField() {
+  function insertDatabaseField(field: NoteDatabaseFieldDefinition) {
     updateDatabaseDefinition((currentDefinition) => {
-      const nextField = createDefaultDatabaseField();
+      const nextField: NoteDatabaseFieldDefinition = {
+        ...field,
+        name: field.name.trim() || "Untitled field",
+        isTitle: false,
+      };
 
       return {
         ...currentDefinition,
@@ -2303,6 +2334,29 @@ export function NoteDatabaseFocusedView({
         })),
       };
     });
+  }
+
+  function openNewDatabaseFieldSheet() {
+    setEditingFieldId(null);
+    setDraftField({
+      ...createDefaultDatabaseField(),
+      name: "",
+    });
+  }
+
+  function updateDraftField(
+    updates: Partial<Pick<NoteDatabaseFieldDefinition, "name" | "type">>,
+  ) {
+    setDraftField((currentField) =>
+      currentField ? { ...currentField, ...updates } : currentField,
+    );
+  }
+
+  function confirmDraftField() {
+    if (!draftField) return;
+
+    insertDatabaseField(draftField);
+    setDraftField(null);
   }
 
   function updateDatabaseField(
@@ -2551,7 +2605,7 @@ export function NoteDatabaseFocusedView({
           activeView={activeDatabaseView}
           definition={databaseDefinition}
           entries={entries}
-          onAddField={addDatabaseField}
+          onAddField={openNewDatabaseFieldSheet}
           onFieldHeaderClick={(field) => setEditingFieldId(field.id)}
           size="full"
           titleField={titleField}
@@ -2559,7 +2613,18 @@ export function NoteDatabaseFocusedView({
         />
       </div>
 
-      {editingField ? (
+      {draftField ? (
+        <NoteDatabaseFieldEditSheet
+          canRemoveField={false}
+          field={draftField}
+          mode="create"
+          onClose={() => setDraftField(null)}
+          onConfirmCreate={confirmDraftField}
+          onFieldNameChange={(name) => updateDraftField({ name })}
+          onFieldTypeChange={(type) => updateDraftField({ type })}
+          onRemoveField={() => setDraftField(null)}
+        />
+      ) : editingField ? (
         <NoteDatabaseFieldEditSheet
           canRemoveField={
             editingField.id !== databaseDefinition.titleFieldId && editingField.isTitle !== true
@@ -2907,7 +2972,7 @@ export function NoteDatabaseFocusedView({
             <div className="border-t border-white/[0.04] p-3">
               <button
                 type="button"
-                onClick={addDatabaseField}
+                onClick={openNewDatabaseFieldSheet}
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.05] bg-white/[0.06] text-sm font-semibold text-white/76 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.085] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/18"
               >
                 <Plus className="h-4 w-4" />

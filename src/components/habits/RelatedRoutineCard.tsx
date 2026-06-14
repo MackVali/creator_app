@@ -54,6 +54,7 @@ type RelatedRoutineCardProps = {
   fallbackIcon?: string;
   onHabitCompletionToggle?: (habitId: string) => void | Promise<void>;
   onAddHabit?: (routine: RelatedRoutineCardRoutine) => void;
+  restoreOpen?: boolean;
 };
 
 const DEFAULT_ROUTINE_ICON = "🔁";
@@ -430,6 +431,7 @@ export function RelatedRoutineCard({
   fallbackIcon = "💡",
   onHabitCompletionToggle,
   onAddHabit,
+  restoreOpen = false,
 }: RelatedRoutineCardProps) {
   const headingId = useId();
   const prefersReducedMotion = useReducedMotion();
@@ -474,6 +476,12 @@ export function RelatedRoutineCard({
   const [localHabits, setLocalHabits] = useState(() =>
     sortRoutineHabitsByPosition(routineHabits)
   );
+
+  useEffect(() => {
+    if (!restoreOpen) return;
+    setOpen(true);
+  }, [restoreOpen]);
+
   const habitCount = routineHabits.length;
   const labelIcon = displayRoutineIcon || DEFAULT_ROUTINE_ICON;
   const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
