@@ -4,6 +4,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -244,6 +245,7 @@ function DraggableGoalCard({
   campaignDrawerRow = false,
   onGoalManualComplete,
   suppressReadyToast = false,
+  sourceCampaignId = null,
 }: {
   goal: Goal;
   index: number;
@@ -268,6 +270,7 @@ function DraggableGoalCard({
   hideEnergyPill?: boolean;
   campaignDrawerRow?: boolean;
   suppressReadyToast?: boolean;
+  sourceCampaignId?: string | null;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const {
@@ -711,7 +714,13 @@ function DraggableGoalCard({
                         fabCreation?.requestProjectCreation(
                           goal.id,
                           originRect ?? null,
-                          { preserveDrawer: { type: "goal", id: goal.id } }
+                          {
+                            preserveDrawer: {
+                              type: "goal",
+                              id: goal.id,
+                              parentId: sourceCampaignId,
+                            },
+                          }
                         )
                       }
                     />
@@ -902,7 +911,7 @@ function CampaignCardImpl({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!restoreOpen) return;
     setOpen(true);
   }, [restoreOpen]);
@@ -1280,7 +1289,7 @@ function CampaignDrawer({
     setLocalGoals(goals);
   }, [goals]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       !restoreOpen ||
       !restoreOpenGoalId ||
@@ -1681,6 +1690,7 @@ function CampaignDrawer({
       monumentContext={monumentContext}
       hideEnergyPill
       campaignDrawerRow
+      sourceCampaignId={roadmap.id}
       suppressReadyToast={suppressReadyToast}
     />
   );

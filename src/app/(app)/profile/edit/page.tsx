@@ -1473,36 +1473,36 @@ export default function ProfileEditPage() {
     return (
       <div className="min-h-screen bg-[#0F0F12] text-zinc-100" aria-busy="true">
         <section className="w-full border-b border-white/5 bg-gradient-to-b from-[#08090E] via-[#0F0F12] to-[#0F0F12]">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pb-4 pt-5">
-            <header className="flex items-center gap-2.5 text-white/80">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.04] text-white/35 ring-1 ring-white/10">
-                <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-3 pt-3">
+            <header className="flex items-center gap-2 text-white/80">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-white/35 ring-1 ring-white/10">
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               </div>
               <div className="h-3 w-32 rounded-full bg-white/10" />
             </header>
 
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#15161A]/85 px-4 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-5 sm:py-5">
-              <div className="flex items-center gap-4 sm:gap-5">
-                <div className="h-24 w-24 shrink-0 rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] ring-1 ring-white/10 sm:h-28 sm:w-28">
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#15161A]/85 px-3.5 py-3 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-4 sm:py-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="h-20 w-20 shrink-0 rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] ring-1 ring-white/10 sm:h-24 sm:w-24">
                   <div className="h-full w-full animate-pulse rounded-full bg-white/[0.035]" />
                 </div>
-                <div className="min-w-0 flex-1 space-y-2.5">
+                <div className="min-w-0 flex-1 space-y-2">
                   <div className="h-2.5 w-28 rounded-full bg-white/10" />
                   <div className="h-4 w-36 rounded-full bg-white/15" />
-                  <div className="space-y-1.5 pt-0.5">
+                  <div className="space-y-1 pt-0.5">
                     <div className="h-2.5 w-full max-w-[250px] rounded-full bg-white/[0.08]" />
                     <div className="h-2.5 w-full max-w-[190px] rounded-full bg-white/[0.06]" />
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <div className="mb-3 h-2.5 w-28 rounded-full bg-white/10" />
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <div className="mb-2 h-2.5 w-28 rounded-full bg-white/10" />
                 <div className="flex gap-2 overflow-hidden">
                   {[0, 1, 2, 3].map((item) => (
                     <div
                       key={item}
-                      className="flex h-10 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3"
+                      className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/45 px-2.5"
                     >
                       <div className="h-5 w-5 rounded-full bg-white/[0.07]" />
                       <div className="h-2 w-12 rounded-full bg-white/[0.08]" />
@@ -1514,73 +1514,73 @@ export default function ProfileEditPage() {
           </div>
         </section>
 
-        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-3">
-          <Card className="border border-white/5 bg-[#15161A] py-4 shadow-xl">
-            <CardContent className="px-4 sm:px-6">
-              <div className="space-y-6">
-                <div className="space-y-2">
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-10 pt-2">
+          <Card className="border border-white/5 bg-[#15161A] py-3 shadow-xl">
+            <CardContent className="px-3.5 sm:px-5">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
                   <div className="h-3 w-20 rounded-full bg-white/10" />
-                  <div className="h-12 rounded-lg border border-white/5 bg-black ring-1 ring-black">
-                    <div className="ml-3.5 mt-[1.125rem] h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
+                  <div className="h-11 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                    <div className="ml-3.5 mt-4 h-3 w-36 animate-pulse rounded-full bg-white/[0.08]" />
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="h-3 w-20 rounded-full bg-white/10" />
-                  <div className="relative h-12 rounded-lg border border-white/5 bg-black pl-8 ring-1 ring-black">
+                  <div className="relative h-11 rounded-lg border border-white/5 bg-black pl-8 ring-1 ring-black">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-zinc-500">
                       @
                     </span>
-                    <div className="mt-[1.125rem] h-3 w-44 animate-pulse rounded-full bg-white/[0.08]" />
+                    <div className="mt-4 h-3 w-44 animate-pulse rounded-full bg-white/[0.08]" />
                   </div>
                   <div className="h-2.5 w-56 rounded-full bg-white/[0.07]" />
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="h-3 w-10 rounded-full bg-white/10" />
-                  <div className="min-h-[100px] rounded-lg border border-white/5 bg-black ring-1 ring-black">
-                    <div className="space-y-2 px-3.5 pt-4">
+                  <div className="min-h-[88px] rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                    <div className="space-y-2 px-3.5 pt-3.5">
                       <div className="h-3 w-40 animate-pulse rounded-full bg-white/[0.08]" />
                       <div className="h-3 w-full max-w-[320px] rounded-full bg-white/[0.06]" />
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                       <div className="h-3 w-24 rounded-full bg-white/10" />
                     </div>
-                    <div className="h-12 rounded-lg border border-white/5 bg-black ring-1 ring-black">
-                      <div className="ml-3.5 mt-[1.125rem] h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
+                    <div className="h-11 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                      <div className="ml-3.5 mt-4 h-3 w-28 animate-pulse rounded-full bg-white/[0.08]" />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <MapPin className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                       <div className="h-3 w-10 rounded-full bg-white/10" />
                     </div>
-                    <div className="h-12 rounded-lg border border-white/5 bg-black ring-1 ring-black">
-                      <div className="ml-3.5 mt-[1.125rem] h-3 w-32 animate-pulse rounded-full bg-white/[0.08]" />
+                    <div className="h-11 rounded-lg border border-white/5 bg-black ring-1 ring-black">
+                      <div className="ml-3.5 mt-4 h-3 w-32 animate-pulse rounded-full bg-white/[0.08]" />
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <div className="h-3 w-28 rounded-full bg-white/10" />
                     <div className="h-2.5 w-14 rounded-full bg-emerald-400/25" />
                   </div>
-                  <div className="h-7 w-14 rounded-full bg-emerald-500/55 p-1 shadow-lg">
-                    <div className="h-5 w-5 rounded-full bg-white/85" />
+                  <div className="h-6 w-12 rounded-full bg-emerald-500/55 p-1 shadow-lg">
+                    <div className="h-4 w-4 rounded-full bg-white/85" />
                   </div>
                 </div>
 
-                <div className="pt-6">
-                  <div className="h-14 rounded-xl border border-stone-400/10 bg-stone-600/55 shadow-[0_16px_38px_rgba(0,0,0,0.35)]">
-                    <div className="mx-auto mt-[1.375rem] h-3 w-28 rounded-full bg-white/20" />
+                <div className="pt-3">
+                  <div className="h-12 rounded-xl border border-stone-400/10 bg-stone-600/55 shadow-[0_16px_38px_rgba(0,0,0,0.35)]">
+                    <div className="mx-auto mt-[1.125rem] h-3 w-28 rounded-full bg-white/20" />
                   </div>
                 </div>
               </div>
@@ -1628,20 +1628,20 @@ export default function ProfileEditPage() {
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
       <section className="w-full border-b border-white/5 bg-gradient-to-b from-[#08090E] via-[#0F0F12] to-[#0F0F12]">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pb-4 pt-5">
-          <header className="flex items-center gap-2.5 text-white/80">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-3 pt-3">
+          <header className="flex items-center gap-2 text-white/80">
             <Link href="/profile">
-              <Button variant="ghost" size="sm" className="p-2">
-                <ArrowLeft className="h-5 w-5" />
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-white/60 sm:text-sm">
+            <span className="text-xs font-semibold uppercase tracking-[0.28em] text-white/60">
               Edit profile
             </span>
           </header>
 
-          <div className="relative overflow-visible rounded-3xl border border-white/10 bg-[#15161A]/85 px-4 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-5 sm:py-5">
-            <div className="flex items-center gap-4 sm:gap-5">
+          <div className="relative overflow-visible rounded-2xl border border-white/10 bg-[#15161A]/85 px-3.5 py-3 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-4 sm:py-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <Dialog.Root
                 modal={false}
                 open={isAvatarSourceDialogOpen}
@@ -1657,7 +1657,7 @@ export default function ProfileEditPage() {
                       type="button"
                       disabled={avatarSourceLoading !== null}
                       aria-label="Change profile photo"
-                      className="group relative h-24 w-24 overflow-hidden rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] outline-none transition hover:border-white/30 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#15161A] disabled:cursor-not-allowed disabled:opacity-70 sm:h-28 sm:w-28"
+                      className="group relative h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] outline-none transition hover:border-white/30 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#15161A] disabled:cursor-not-allowed disabled:opacity-70 sm:h-24 sm:w-24"
                     >
                       {heroAvatarUrl ? (
                         <img
@@ -1667,7 +1667,7 @@ export default function ProfileEditPage() {
                         />
                       ) : (
                         <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 via-zinc-900 to-black text-zinc-500">
-                          <User className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden="true" />
+                          <User className="h-8 w-8 sm:h-10 sm:w-10" aria-hidden="true" />
                         </span>
                       )}
                       <span
@@ -1713,21 +1713,21 @@ export default function ProfileEditPage() {
                 </div>
               </Dialog.Root>
               <div className="min-w-0 flex-1">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-white/55">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-white/55">
                   Profile photo
                 </p>
-                <p className="mt-1 text-sm font-medium text-white">
+                <p className="mt-0.5 text-sm font-medium text-white">
                   {heroAvatarUrl ? "Update your photo" : "Add a profile photo"}
                 </p>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                <p className="mt-0.5 text-xs leading-4 text-zinc-400">
                   Tap the avatar to choose, capture, adjust, or remove it.
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 border-t border-white/10 pt-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-white/55">
+            <div className="mt-3 border-t border-white/10 pt-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-white/55">
                   Social links
                 </p>
               </div>
@@ -1893,40 +1893,40 @@ export default function ProfileEditPage() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-3">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 pb-10 pt-2">
         {onboarding && (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-zinc-200">
             <p className="font-medium">Complete your profile to continue.</p>
-            <p className="mt-1 text-zinc-400">
+            <p className="mt-0.5 text-zinc-400">
               Add your name, username, and details so we can personalize your experience.
             </p>
             {redirectPath && redirectPath.startsWith("/") && (
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className="mt-1.5 text-xs text-zinc-500">
                 You&apos;ll be redirected back to {redirectPath} once you&apos;re finished.
               </p>
             )}
           </div>
         )}
-        <Card className="border border-white/5 bg-[#15161A] py-4 shadow-xl">
-          <CardContent className="px-4 sm:px-6">
+        <Card className="border border-white/5 bg-[#15161A] py-3 shadow-xl">
+          <CardContent className="px-3.5 sm:px-5">
             {success && (
-              <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-lg">
-                <p className="text-zinc-200 text-center">
+              <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-3">
+                <p className="text-center text-sm text-zinc-200">
                   Profile updated successfully! Redirecting...
                 </p>
               </div>
             )}
 
             {error && (
-              <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-lg">
-                <p className="text-zinc-300 text-center">{error}</p>
+              <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-3">
+                <p className="text-center text-sm text-zinc-300">{error}</p>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {/* Name */}
-              <div className="space-y-2">
-                <Label htmlFor="name">
+              <div className="space-y-1.5">
+                <Label htmlFor="name" className="text-xs font-semibold text-zinc-300">
                   Full Name
                   {hasAttemptedSubmit ? (
                     <span className="text-red-400 ml-1">*</span>
@@ -1938,20 +1938,20 @@ export default function ProfileEditPage() {
                   value={formData.name}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   placeholder="Enter your full name"
-                  className={`h-12 text-lg bg-black text-white placeholder:text-zinc-500 ${
+                  className={`h-11 bg-black text-base text-white placeholder:text-zinc-500 ${
                     hasAttemptedSubmit && fieldErrors.name
                       ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
                       : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
                   }`}
                 />
                 {hasAttemptedSubmit && fieldErrors.name ? (
-                  <p className="text-sm text-red-400">{fieldErrors.name}</p>
+                  <p className="text-xs text-red-400">{fieldErrors.name}</p>
                 ) : null}
               </div>
 
               {/* Username */}
-              <div className="space-y-2">
-                <Label htmlFor="username">
+              <div className="space-y-1.5">
+                <Label htmlFor="username" className="text-xs font-semibold text-zinc-300">
                   Username
                   {hasAttemptedSubmit ? (
                     <span className="text-red-400 ml-1">*</span>
@@ -1960,7 +1960,7 @@ export default function ProfileEditPage() {
                 <div className="relative">
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-zinc-500"
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-medium text-zinc-500"
                   >
                     @
                   </span>
@@ -1970,36 +1970,38 @@ export default function ProfileEditPage() {
                     value={formData.username}
                     onChange={(e) => handleInputChange("username", e.target.value)}
                     placeholder="Choose a unique username"
-                    className={`h-12 bg-black pl-8 text-lg text-white placeholder:text-zinc-500 ${
+                    className={`h-11 bg-black pl-8 text-base text-white placeholder:text-zinc-500 ${
                       hasAttemptedSubmit && fieldErrors.username
                         ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
                         : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
                     }`}
                   />
                 </div>
-                <p className="text-sm text-zinc-400">
+                <p className="text-xs leading-4 text-zinc-400">
                   This will be your unique identifier: @{formData.username || "username"}
                 </p>
                 {hasAttemptedSubmit && fieldErrors.username ? (
-                  <p className="text-sm text-red-400">{fieldErrors.username}</p>
+                  <p className="text-xs text-red-400">{fieldErrors.username}</p>
                 ) : null}
               </div>
 
               {/* Bio */}
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="bio" className="text-xs font-semibold text-zinc-300">
+                  Bio
+                </Label>
                 <Textarea
                   id="bio"
                   value={formData.bio}
                   onChange={(e) => handleInputChange("bio", e.target.value)}
                   placeholder="Tell us about yourself..."
-                  className="min-h-[100px] text-lg resize-none bg-black text-white !border-black placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
+                  className="min-h-[88px] resize-none bg-black text-base text-white !border-black placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
                 />
               </div>
 
               {/* Date of Birth */}
-              <div className="space-y-2">
-                <Label htmlFor="dob" className="flex items-center space-x-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="dob" className="flex items-center space-x-1.5 text-xs font-semibold text-zinc-300">
                   <Calendar className="h-4 w-4 text-zinc-400" />
                   <span>
                     Date of Birth
@@ -2014,22 +2016,22 @@ export default function ProfileEditPage() {
                     type="date"
                     value={formData.dob}
                     onChange={(e) => handleInputChange("dob", e.target.value)}
-                    className={`h-12 w-full rounded-lg border bg-black text-lg text-white placeholder:text-zinc-500 transition-colors duration-200 appearance-none ${
+                    className={`h-11 w-full appearance-none rounded-lg border bg-black text-base text-white placeholder:text-zinc-500 transition-colors duration-200 ${
                       hasAttemptedSubmit && fieldErrors.dob
                         ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
                         : "!border-black focus-visible:border-zinc-200 focus-visible:ring-white/20"
                     } pr-12 pl-4`}
                   />
-                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-white/70" />
+                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/70" />
                 </div>
                 {hasAttemptedSubmit && fieldErrors.dob ? (
-                  <p className="text-sm text-red-400">{fieldErrors.dob}</p>
+                  <p className="text-xs text-red-400">{fieldErrors.dob}</p>
                 ) : null}
               </div>
 
               {/* City */}
-              <div className="space-y-2">
-                <Label htmlFor="city" className="flex items-center space-x-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="city" className="flex items-center space-x-1.5 text-xs font-semibold text-zinc-300">
                   <MapPin className="h-4 w-4 text-zinc-400" />
                   <span>City</span>
                 </Label>
@@ -2039,18 +2041,18 @@ export default function ProfileEditPage() {
                   value={formData.city}
                   onChange={(e) => handleInputChange("city", e.target.value)}
                   placeholder="Where are you located?"
-                  className="h-12 text-lg bg-black text-white !border-black placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                  className="h-11 bg-black text-base text-white !border-black placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
               </div>
 
               {/* Privacy Toggle */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-zinc-200">
                     Profile visibility
                   </span>
                     <span
-                      className={`text-xs uppercase tracking-[0.3em] transition-colors duration-300 ${
+                      className={`text-[0.68rem] uppercase tracking-[0.24em] transition-colors duration-300 ${
                         formData.is_private ? "text-zinc-400" : "text-emerald-400"
                       }`}
                       aria-live="polite"
@@ -2058,7 +2060,7 @@ export default function ProfileEditPage() {
                       {formData.is_private ? "Private" : "Public"}
                     </span>
                   </div>
-                  <label className="relative inline-flex h-7 w-14 cursor-pointer items-center">
+                  <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
                     <input
                       type="checkbox"
                       className="peer sr-only"
@@ -2066,25 +2068,25 @@ export default function ProfileEditPage() {
                       onChange={(e) => handlePrivacyChange(e.target.checked)}
                     />
                     <span className="absolute inset-0 rounded-full bg-emerald-500 transition-colors duration-300 ease-out peer-checked:bg-zinc-700 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70" />
-                    <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-lg transition-transform duration-300 ease-out peer-checked:translate-x-7" />
+                    <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-lg transition-transform duration-300 ease-out peer-checked:translate-x-6" />
                   </label>
               </div>
 
               {/* Submit Button */}
-              <div className="pt-6">
+              <div className="pt-3">
                 <Button
                   type="submit"
                   disabled={saving}
-                  className="h-14 w-full rounded-xl border border-stone-400/20 bg-stone-600 text-lg font-semibold text-white shadow-[0_16px_38px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-stone-300/30 hover:bg-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-12 w-full rounded-xl border border-stone-400/20 bg-stone-600 text-base font-semibold text-white shadow-[0_16px_38px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-stone-300/30 hover:bg-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? (
                     <div className="flex items-center space-x-2">
-                      <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-white"></div>
+                      <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
                       <span>Saving...</span>
                     </div>
                   ) : (
                     <div className="flex items-center space-x-2">
-                      <Save className="h-5 w-5" />
+                      <Save className="h-4 w-4" />
                       <span>Save Changes</span>
                     </div>
                   )}

@@ -1,15 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
-import { cn } from "@/lib/utils";
-import { getMonumentNotes, updateMonumentNote } from "@/lib/monumentNotesStorage";
+import {
+  createMonumentNote,
+  getMonumentNotes,
+  updateMonumentNote,
+} from "@/lib/monumentNotesStorage";
 import { MonumentNoteCard } from "./MonumentNoteCard";
 import { NotesHeaderControls } from "./NotesHeaderControls";
+import { NoteCreatePicker } from "./NoteCreatePicker";
+import {
+  createTopLevelDatabaseNotePayload,
+  getTopLevelDatabaseNoteDisplay,
+} from "@/lib/topLevelDatabaseNotes";
 
 interface MonumentNotesGridProps {
   monumentId: string;
@@ -23,6 +30,7 @@ const monumentNoteActionInnerClass =
   "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
 export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
+  const router = useRouter();
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,9 +72,11 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   const filteredNotes = notes.filter((note) => {
     const title = note.title?.toLowerCase() ?? "";
     const content = note.content?.toLowerCase() ?? "";
+    const databaseTitle =
+      getTopLevelDatabaseNoteDisplay(note.metadata)?.title.toLowerCase() ?? "";
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
-    return title.includes(q) || content.includes(q);
+    return title.includes(q) || content.includes(q) || databaseTitle.includes(q);
   });
   const hasVisibleNotes = filteredNotes.length > 0;
   const hasAnyNotes = notes.length > 0;
@@ -88,6 +98,21 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
         prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: target.isBookmarked } : n))
       );
     }
+  }
+
+  function handleCreateNote() {
+    router.push(`/monuments/${monumentId}/notes/new`);
+  }
+
+  async function handleCreateDatabase() {
+    const payload = createTopLevelDatabaseNotePayload();
+    const created = await createMonumentNote(monumentId, payload.note, {
+      metadata: payload.metadata,
+    });
+    if (!created) return;
+
+    setNotes((currentNotes) => [...currentNotes, created]);
+    setShowAllNotes(true);
   }
 
   return (
@@ -114,36 +139,13 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           />
         ))}
 
-        {(() => {
-          return (
-            <Link
-              href={`/monuments/${monumentId}/notes/new`}
-              className={monumentNoteActionOuterClass}
-              aria-label={hasAnyNotes ? "Add note" : "Create note"}
-            >
-              <div
-                className={cn(
-                  monumentNoteActionInnerClass,
-                  "w-full min-w-0"
-                )}
-              >
-                <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10">
-                    <Plus className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4" aria-hidden="true" />
-                  </div>
-                  <div className="flex w-full min-w-0 items-center justify-center">
-                    <span
-                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
-                      style={{ hyphens: "auto" }}
-                    >
-                      {hasAnyNotes ? "Add note" : "Create note"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </Link>
-          );
-        })()}
+        <NoteCreatePicker
+          label={hasAnyNotes ? "Add note" : "Create note"}
+          className={monumentNoteActionOuterClass}
+          innerClassName={monumentNoteActionInnerClass}
+          onCreateNote={handleCreateNote}
+          onCreateDatabase={handleCreateDatabase}
+        />
       </div>
 
       {!showAllNotes && hasMoreNotes ? (

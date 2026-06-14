@@ -1048,6 +1048,7 @@ export function MonumentGoalsList({
     resolvedSourceType === "circle"
       ? circleId ?? sourceId ?? null
       : sourceId ?? monumentId ?? null;
+  const goalsSourceKey = `${resolvedSourceType}:${resolvedSourceId ?? "none"}`;
   const resolvedMonumentId =
     resolvedSourceType === "monument" ? resolvedSourceId : null;
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -1113,6 +1114,7 @@ export function MonumentGoalsList({
   const loadingGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const readyGoalsToastSignatureRef = useRef<string | null>(null);
   const hydratedGoalIdsRef = useRef<Set<string>>(new Set());
+  const loadedGoalsSourceKeyRef = useRef<string | null>(null);
   const goalPanelWheelLockedRef = useRef(false);
   const goalPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -2019,6 +2021,7 @@ export function MonumentGoalsList({
           preserveDrawer?: {
             type?: string;
             id?: string;
+            parentId?: string | null;
           } | null;
         }>
       ).detail;
@@ -2092,7 +2095,9 @@ export function MonumentGoalsList({
         ) {
           const campaignId = detail.campaignId ?? detail.preserveDrawer.id;
           if (campaignId) {
+            setRestoreGoalDrawerId(null);
             setRestoreCampaignDrawerId(campaignId);
+            setRestoreCampaignGoalId(null);
           }
         }
 
@@ -2102,19 +2107,21 @@ export function MonumentGoalsList({
         ) {
           const goalId = detail.goalId ?? detail.preserveDrawer.id;
           if (goalId) {
-            setOpenGoalId(goalId);
-            setRestoreGoalDrawerId(goalId);
-
-            const campaignId = monumentRoadmapsWithItems
-              .flatMap((roadmap) => roadmap.items)
-              .find((item) =>
-                item.campaign?.goals.some((goal) => goal.id === goalId)
-              )?.campaign?.id;
+            const campaignId = detail.preserveDrawer.parentId ?? null;
 
             if (campaignId) {
+              setRestoreGoalDrawerId(null);
+              setRoadmapOpenGoal((current) =>
+                current?.id === goalId ? null : current
+              );
               setRestoreCampaignDrawerId(campaignId);
               setRestoreCampaignGoalId(goalId);
             } else {
+              setRestoreCampaignDrawerId(null);
+              setRestoreCampaignGoalId(null);
+              setOpenGoalId(goalId);
+              setRestoreGoalDrawerId(goalId);
+
               const currentGoal = goals.find((goal) => goal.id === goalId);
               if (currentGoal) {
                 setRoadmapOpenGoal(currentGoal);
@@ -2137,14 +2144,17 @@ export function MonumentGoalsList({
         handleCreatorEntitySaved
       );
     };
-  }, [goals, isGoalLinkedToCurrentSource, monumentRoadmapsWithItems]);
+  }, [goals, isGoalLinkedToCurrentSource]);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
+      const shouldPreserveDisplayState =
+        loadedGoalsSourceKeyRef.current === goalsSourceKey;
       const supabase = getSupabaseBrowser();
       if (!supabase || !resolvedSourceId) {
+        loadedGoalsSourceKeyRef.current = null;
         setMonumentRoadmapsWithItems([]);
         setGoals([]);
         setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -2152,18 +2162,25 @@ export function MonumentGoalsList({
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setGoals([]);
-      setGoalsDisplayReadyKey(null);
-      setRoadmapsDisplayReadyKey(null);
-      setMonumentRoadmapsWithItems([]);
-      hydratedGoalIdsRef.current.clear();
+      if (shouldPreserveDisplayState) {
+        setLoading(false);
+        setGoalsDisplayReadyKey(goalsDisplayKey);
+        setRoadmapsDisplayReadyKey(goalsDisplayKey);
+      } else {
+        setLoading(true);
+        setGoals([]);
+        setGoalsDisplayReadyKey(null);
+        setRoadmapsDisplayReadyKey(null);
+        setMonumentRoadmapsWithItems([]);
+        hydratedGoalIdsRef.current.clear();
+      }
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (cancelled) return;
         if (!user) {
+          loadedGoalsSourceKeyRef.current = goalsSourceKey;
           setGoalsDisplayReadyKey(goalsDisplayKey);
           setRoadmapsDisplayReadyKey(goalsDisplayKey);
           setLoading(false);
@@ -2223,6 +2240,7 @@ export function MonumentGoalsList({
           );
           setGoals(mapped);
           hydratedGoalIdsRef.current.clear();
+          loadedGoalsSourceKeyRef.current = goalsSourceKey;
           setGoalsDisplayReadyKey(goalsDisplayKey);
           setLoading(false);
           return;
@@ -2256,13 +2274,17 @@ export function MonumentGoalsList({
         hydratedGoalIdsRef.current = shouldUseMappedFallback
           ? new Set()
           : new Set(fullGoalsResult.fullRows.map((goalRow) => goalRow.id));
+        loadedGoalsSourceKeyRef.current = goalsSourceKey;
         setGoalsDisplayReadyKey(goalsDisplayKey);
         setLoading(false);
       } catch (err) {
         console.error(`Error loading ${resolvedSourceType} goals`, err);
         if (!cancelled) {
-          setGoals([]);
-          setMonumentRoadmapsWithItems([]);
+          if (!shouldPreserveDisplayState) {
+            loadedGoalsSourceKeyRef.current = null;
+            setGoals([]);
+            setMonumentRoadmapsWithItems([]);
+          }
           setGoalsDisplayReadyKey(goalsDisplayKey);
           setRoadmapsDisplayReadyKey(goalsDisplayKey);
           setLoading(false);
@@ -2279,6 +2301,7 @@ export function MonumentGoalsList({
     resolvedSourceType,
     monumentEmoji,
     decorate,
+    goalsSourceKey,
     goalsDisplayKey,
     mapGoalRowToDisplayGoal,
     refreshVersion,
@@ -2928,6 +2951,22 @@ export function MonumentGoalsList({
       const isCompleted = normalizeGoalStatus(goal.status) === "COMPLETED";
       return section === "completed" ? isCompleted : !isCompleted;
     };
+    const isCampaignGroupVisibleInSection = (
+      linkedGoals: RoadmapCampaignGoal[],
+      section: GoalPanel
+    ) => {
+      if (linkedGoals.length === 0) {
+        return false;
+      }
+
+      return section === "completed"
+        ? linkedGoals.every((goal) =>
+            filterRoadmapGoalBySection(goal, "completed")
+          )
+        : linkedGoals.some((goal) =>
+            filterRoadmapGoalBySection(goal, "active")
+          );
+    };
     const goalsForCurrentSource = goals.filter(isGoalLinkedToCurrentSource);
     const campaignGoalIds = new Set<string>(
       monumentRoadmapsWithItems.flatMap((roadmap) =>
@@ -2995,10 +3034,7 @@ export function MonumentGoalsList({
               const linkedGoals = campaign.goals.filter(
                 isRoadmapGoalLinkedToCurrentSource
               );
-              const goalsForSection = linkedGoals.filter((goal) =>
-                filterRoadmapGoalBySection(goal, section)
-              );
-              if (goalsForSection.length === 0) {
+              if (!isCampaignGroupVisibleInSection(linkedGoals, section)) {
                 return null;
               }
 

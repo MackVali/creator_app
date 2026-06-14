@@ -59,15 +59,20 @@ export default function SocialPillsRow({
 
   const hasSocials = availableSocials.length > 0;
 
-  const circleClasses =
-    "group relative inline-flex h-11 w-11 shrink-0 snap-center items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
+  const circleClasses = editMode
+    ? "group relative inline-flex h-10 w-10 shrink-0 snap-center items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white shadow-[0_10px_22px_rgba(0,0,0,0.25)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+    : "group relative inline-flex h-11 w-11 shrink-0 snap-center items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
   const rowClasses =
     layout === "vertical"
       ? "flex flex-col items-center gap-1.5"
       : editMode
-        ? "-mx-2 flex snap-x snap-mandatory items-center gap-1.5 overflow-x-auto overflow-y-visible px-2 pb-2 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+        ? "-mx-1.5 flex snap-x snap-mandatory items-center gap-1 overflow-x-auto overflow-y-visible px-1.5 pb-1.5 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
         : "-mx-2 flex snap-x snap-mandatory items-center gap-1.5 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
+  const iconShellClasses = editMode
+    ? "relative inline-flex h-7 w-7 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110"
+    : "relative inline-flex h-8 w-8 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110";
+  const iconClassName = editMode ? "h-3.5 w-3.5" : "h-4 w-4";
 
   if (!hasSocials && !editMode) {
     if (layout === "vertical") {
@@ -93,14 +98,11 @@ export default function SocialPillsRow({
                 className="pointer-events-none absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
                 aria-hidden="true"
               />
-              <span
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110"
-                aria-hidden="true"
-              >
+              <span className={iconShellClasses} aria-hidden="true">
                 <SocialIcon
                   platform={platform}
-                  className="h-8 w-8 shadow-none"
-                  iconClassName="h-4 w-4"
+                  className={`${editMode ? "h-7 w-7" : "h-8 w-8"} shadow-none`}
+                  iconClassName={iconClassName}
                 />
               </span>
               <span className="sr-only">{definition.label}</span>
@@ -144,8 +146,10 @@ export default function SocialPillsRow({
               className={circleClasses}
             >
               <span className="pointer-events-none absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true" />
-              <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/35">
-                <Plus className="h-4 w-4" aria-hidden="true" />
+              <span
+                className={`${iconShellClasses} border border-white/10 bg-black/35`}
+              >
+                <Plus className={iconClassName} aria-hidden="true" />
               </span>
             </button>
           </div>

@@ -1066,7 +1066,7 @@ function MonumentXpMixDonut({
 }
 
 export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
-  const { loading, error, summary, notes, levelHistory, xpSkillMix } =
+  const { loading, error, notes, levelHistory, xpSkillMix } =
     useMonumentActivity(monumentId);
 
   const storageKey = useMemo(
@@ -1183,22 +1183,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
     };
   }, [levelHistory, xpSkillMix]);
 
-  const monthlyChargeXp = summary.chargeXp;
-  const chargeMilestones = [
-    { label: "Lit", threshold: 1 },
-    { label: "EVO", threshold: 25 },
-    { label: "EVO 2", threshold: 75 },
-    { label: "EVO 3", threshold: 125 },
-    { label: "EVO 4", threshold: 225 },
-  ];
-  const activeChargeStageIndex = chargeMilestones.findIndex(
-    (milestone) => milestone.label === summary.evoLabel
-  );
-  const activeChargeCellFill = Math.min(
-    Math.max(summary.chargeProgressPercent, 0),
-    100
-  );
-
   return (
     <Card className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#050608] p-3 text-white shadow-[0_28px_80px_-46px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] sm:p-5 lg:p-6">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.03),_transparent_52%)]" />
@@ -1295,9 +1279,8 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                 </section>
               ) : null}
 
-              <section className="relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-4 sm:py-5">
-                <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-white/[0.06]" />
-                <div className="relative min-w-0 space-y-2">
+              <section className="min-w-0">
+                <div className="min-w-0 space-y-2">
                   <div className="min-w-0">
                     <header>
                       <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
@@ -1374,7 +1357,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           )}
         </div>
 
-        
       </div>
     </Card>
   );

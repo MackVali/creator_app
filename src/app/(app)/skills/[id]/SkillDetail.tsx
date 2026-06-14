@@ -2052,13 +2052,13 @@ export function SkillDetail({
   const detailMainClassName = clsx(
     "px-4 sm:px-6 lg:px-8",
     onClose
-      ? "pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[env(safe-area-inset-top,0px)] sm:pb-6 sm:pt-4"
+      ? "pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-0 sm:pb-6 sm:pt-4"
       : "pb-6 pt-3 sm:pt-4"
   );
   const errorMainClassName = clsx(
     "relative px-4",
     onClose
-      ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+1rem)]"
+      ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] pt-4"
       : "pb-16 pt-10"
   );
 

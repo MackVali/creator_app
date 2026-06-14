@@ -29,13 +29,20 @@ type PinnedBodyDatabase = {
   databaseId: string;
   title: string;
   noteId: string;
-  skillId: string;
+  href: string;
   iconKey: BodyDatabaseIconKey;
   systemDatabaseKey: string | null;
 };
 
 type NoteMetadataWithDatabases = {
   databases?: unknown;
+};
+
+type PinnedBodyDatabaseNoteRow = {
+  id: string;
+  skill_id: string | null;
+  monument_id: string | null;
+  metadata: unknown;
 };
 
 type NoteDatabaseMetadataDefinition = {
@@ -145,12 +152,14 @@ function getPinnedBodyDatabasesFromMetadata({
   metadata,
   noteId,
   skillId,
+  monumentId,
 }: {
   metadata: unknown;
   noteId: string;
   skillId: string | null;
+  monumentId: string | null;
 }): PinnedBodyDatabase[] {
-  if (!skillId) {
+  if (!skillId && !monumentId) {
     return [];
   }
 
@@ -181,13 +190,21 @@ function getPinnedBodyDatabasesFromMetadata({
         typeof definition.systemDatabaseKey === "string"
           ? definition.systemDatabaseKey
           : null;
+      const href = skillId
+        ? `/skills/${skillId}/notes/${noteId}/databases/${definitionId}`
+        : monumentId
+          ? `/monuments/${monumentId}/notes/${noteId}/databases/${definitionId}`
+          : null;
+      if (!href) {
+        return [];
+      }
 
       return [
         {
           databaseId: definitionId,
           title,
           noteId,
-          skillId,
+          href,
           iconKey: getBodyDatabaseIconKey({
             iconKey: definition.iconKey,
             systemDatabaseKey,
@@ -351,7 +368,7 @@ export default function TopNav() {
     const loadPinnedBodyDatabases = async () => {
       const { data, error } = await supabase
         .from("notes")
-        .select("id, skill_id, metadata")
+        .select("id, skill_id, monument_id, metadata")
         .eq("user_id", currentUser.id)
         .not("metadata", "is", null);
 
@@ -365,11 +382,12 @@ export default function TopNav() {
         return;
       }
 
-      const pinnedDatabases = (data ?? []).flatMap((note) =>
+      const pinnedDatabases = ((data ?? []) as PinnedBodyDatabaseNoteRow[]).flatMap((note) =>
         getPinnedBodyDatabasesFromMetadata({
           metadata: note.metadata,
           noteId: note.id,
           skillId: note.skill_id ?? null,
+          monumentId: note.monument_id ?? null,
         }),
       );
 
@@ -407,7 +425,7 @@ export default function TopNav() {
           iconKey: database.iconKey,
           onClick: () => {
             setIsBodyMenuOpen(false);
-            router.push(`/skills/${database.skillId}/notes/${database.noteId}`);
+            router.push(database.href);
           },
         }))
       : BODY_FALLBACK_ROWS.map((row) => ({

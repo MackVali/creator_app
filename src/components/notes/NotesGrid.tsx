@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   NoteCard,
@@ -10,9 +10,13 @@ import {
   skillNoteTileOuterClass,
 } from "./NoteCard";
 import type { Note } from "@/lib/types/note";
-import { getNotes } from "@/lib/notesStorage";
-import { cn } from "@/lib/utils";
+import { createSkillNote, getNotes } from "@/lib/notesStorage";
 import { NotesHeaderControls } from "./NotesHeaderControls";
+import { NoteCreatePicker } from "./NoteCreatePicker";
+import {
+  createTopLevelDatabaseNotePayload,
+  getTopLevelDatabaseNoteDisplay,
+} from "@/lib/topLevelDatabaseNotes";
 
 type MemoNoteGroup = {
   containerId: string;
@@ -87,6 +91,7 @@ interface NotesGridProps {
 }
 
 export function NotesGrid({ skillId }: NotesGridProps) {
+  const router = useRouter();
   const [notes, setNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -268,10 +273,35 @@ export function NotesGrid({ skillId }: NotesGridProps) {
     return regularNotes.filter((note) => {
       const title = note.title?.toLowerCase() ?? "";
       const content = note.content?.toLowerCase() ?? "";
-      return title.includes(normalizedSearchQuery) || content.includes(normalizedSearchQuery);
+      const databaseTitle =
+        getTopLevelDatabaseNoteDisplay(note.metadata)?.title.toLowerCase() ?? "";
+      return (
+        title.includes(normalizedSearchQuery) ||
+        content.includes(normalizedSearchQuery) ||
+        databaseTitle.includes(normalizedSearchQuery)
+      );
     });
   }, [normalizedSearchQuery, regularNotes]);
   const hasVisibleTopLevelNotes = visibleMemoGroups.length > 0 || visibleRegularNotes.length > 0;
+
+  function handleCreateNote() {
+    router.push(`/skills/${skillId}/notes/new`);
+  }
+
+  async function handleCreateDatabase() {
+    const payload = createTopLevelDatabaseNotePayload();
+    const created = await createSkillNote(skillId, payload.note, {
+      metadata: payload.metadata,
+    });
+    if (!created) return;
+
+    setNotes((currentNotes) => [...currentNotes, created]);
+    window.dispatchEvent(
+      new CustomEvent("creator:skill-notes-changed", {
+        detail: { skillId, noteId: created.id },
+      }),
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -298,74 +328,38 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         </div>
       ) : null}
 
-        {!hasTopLevelNotes && !isLoading ? (
-          <Link
-            href={`/skills/${skillId}/notes/new`}
-            className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5"
-            aria-label="Create note"
-          >
-            <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
-              aria-hidden="true"
-            >
-              <Plus className="h-4 w-4 text-white/45" />
-            </span>
-            <div className="min-w-0">
-              <h3 className="text-[13px] font-medium leading-tight text-white/84">
-                No notes linked yet
-              </h3>
-              <p className="mt-0.5 text-[11px] leading-4 text-white/48">
-                Create a note for this skill to keep ideas and references close.
-              </p>
-            </div>
-          </Link>
-        ) : (
-          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {visibleMemoGroups.map((group) => (
-              <MemoFolderCard key={group.habitId} group={group} skillId={skillId} />
-            ))}
+      {!hasTopLevelNotes && !isLoading ? (
+        <NoteCreatePicker
+          label="Create note"
+          className="flex min-h-[64px] w-full items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5 text-left text-white transition hover:border-white/15 hover:bg-white/[0.045] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+          innerClassName="flex min-h-0 flex-1 items-center justify-start text-left"
+          onCreateNote={handleCreateNote}
+          onCreateDatabase={handleCreateDatabase}
+        />
+      ) : (
+        <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {visibleMemoGroups.map((group) => (
+            <MemoFolderCard key={group.habitId} group={group} skillId={skillId} />
+          ))}
 
-            {visibleRegularNotes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                skillId={skillId}
-                childCount={childLookup.get(note.id)?.length ?? 0}
-              />
-            ))}
+          {visibleRegularNotes.map((note) => (
+            <NoteCard
+              key={note.id}
+              note={note}
+              skillId={skillId}
+              childCount={childLookup.get(note.id)?.length ?? 0}
+            />
+          ))}
 
-            {(() => {
-              return (
-                <Link
-                  href={`/skills/${skillId}/notes/new`}
-                  className={skillNoteTileOuterClass}
-                  aria-label="Add note"
-                >
-                  <div
-                    className={cn(
-                      skillNoteTileInnerClass,
-                      "w-full min-w-0"
-                    )}
-                  >
-                    <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10">
-                        <Plus className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4" aria-hidden="true" />
-                      </div>
-                      <div className="flex w-full min-w-0 items-center justify-center">
-                        <span
-                          className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
-                          style={{ hyphens: "auto" }}
-                        >
-                          Add note
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })()}
-          </div>
-        )}
+          <NoteCreatePicker
+            label="Add note"
+            className={skillNoteTileOuterClass}
+            innerClassName={skillNoteTileInnerClass}
+            onCreateNote={handleCreateNote}
+            onCreateDatabase={handleCreateDatabase}
+          />
+        </div>
+      )}
     </div>
   );
 }

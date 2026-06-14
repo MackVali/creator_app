@@ -2546,7 +2546,7 @@ export function NoteDatabaseFocusedView({
             }
             className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
               isPinned
-                ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                ? "bg-white/[0.12] text-white/86 hover:bg-white/[0.16] hover:text-white disabled:text-white/42 disabled:hover:bg-white/[0.12]"
                 : "bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72"
             }`}
           >
@@ -2854,7 +2854,7 @@ export function NoteDatabaseFocusedView({
                     }
                     className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
                       isPinned
-                        ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                        ? "bg-white/[0.12] text-white/86 hover:bg-white/[0.16] hover:text-white disabled:text-white/42 disabled:hover:bg-white/[0.12]"
                         : "bg-white/[0.045] text-white/42 hover:bg-white/[0.065] hover:text-white/68"
                     }`}
                   >
@@ -3583,7 +3583,7 @@ function NoteSlashTextarea({
 
     if (removedDatabaseDefinition?.lockedSystemDatabase === true) {
       console.warn("This system database is locked.", {
-        databaseId: removedSegment.databaseId,
+        databaseId: removedDatabaseDefinition.id,
         systemDatabaseKey: removedDatabaseDefinition.systemDatabaseKey,
       });
       return;
@@ -4824,7 +4824,7 @@ function NoteSlashTextarea({
                     className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl outline-none transition focus-visible:ring-1 focus-visible:ring-white/35 disabled:cursor-not-allowed ${
                       activeDatabaseDefinition.lockedSystemDatabase === true ||
                       activeDatabaseDefinition.pinnedSurface === "body"
-                        ? "bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/14 hover:text-emerald-50 disabled:text-emerald-100/44 disabled:hover:bg-emerald-300/10"
+                        ? "bg-white/[0.12] text-white/86 hover:bg-white/[0.16] hover:text-white disabled:text-white/42 disabled:hover:bg-white/[0.12]"
                         : "bg-white/[0.045] text-white/42 hover:bg-white/[0.065] hover:text-white/68"
                     }`}
                   >

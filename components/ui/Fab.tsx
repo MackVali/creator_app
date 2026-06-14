@@ -14917,6 +14917,11 @@ export function Fab({
           }
         }
         if (createdEntityId) {
+          const activeCreationRequest =
+            creationRequest &&
+            openingCreationRequestIdRef.current === creationRequest.id
+              ? creationRequest
+              : null;
           dispatchCreatorEntitySaved({
             entityType: createdType,
             entityId: createdEntityId,
@@ -14932,7 +14937,10 @@ export function Fab({
             campaignId: createdCampaignId,
             goalId: createdGoalId,
             routineId: createdRoutineId,
-            preserveDrawer: creationRequest?.preserveDrawer ?? null,
+            preserveDrawer:
+              activeCreationRequest?.type === createdType
+                ? activeCreationRequest.preserveDrawer
+                : null,
           });
         }
         openingCreationRequestIdRef.current = null;

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -477,7 +478,7 @@ export function RelatedRoutineCard({
     sortRoutineHabitsByPosition(routineHabits)
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!restoreOpen) return;
     setOpen(true);
   }, [restoreOpen]);
