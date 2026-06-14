@@ -2508,17 +2508,8 @@ function OverviewLineChart({
                 <path
                   d={linePath}
                   fill="none"
-                  stroke="rgba(52,211,153,0.16)"
-                  strokeWidth={10}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-                <path
-                  d={linePath}
-                  fill="none"
                   stroke="url(#overviewDailyLine)"
-                  strokeWidth={3.6}
+                  strokeWidth={3}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
@@ -2586,7 +2577,7 @@ function OverviewLineChart({
 
             {activePoint ? (
               <div
-                className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-200/10 ring-1 ring-emerald-100/20"
+                className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-100"
                 style={{
                   left: `${(((svgPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
                     4
@@ -2595,9 +2586,7 @@ function OverviewLineChart({
                     4
                   )}%`,
                 }}
-              >
-                <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-100 shadow-[0_0_0_1px_rgba(209,250,229,0.55),0_0_18px_rgba(52,211,153,0.3)]" />
-              </div>
+              />
             ) : null}
           </div>
 

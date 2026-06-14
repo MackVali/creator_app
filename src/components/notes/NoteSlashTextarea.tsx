@@ -1569,55 +1569,63 @@ function NoteDatabaseEntriesView({
   if (entries.length > 0 && activeView.type === "card") {
     if (isFull) {
       return (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="-mx-1 grid grid-cols-2 gap-2.5 px-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {entries.map((entry) => {
             const properties = getDatabaseEntryProperties(entry, definition);
-            const visibleProperties = properties.slice(0, 5);
-            const hiddenPropertyCount = Math.max(0, properties.length - visibleProperties.length);
+            const filledProperties = properties.filter(({ value }) => value);
+            const visibleProperties = filledProperties.slice(0, 2);
+            const hiddenPropertyCount = Math.max(0, filledProperties.length - visibleProperties.length);
+            const propertySummary =
+              filledProperties.length > 0
+                ? `${filledProperties.length} detail${filledProperties.length === 1 ? "" : "s"}`
+                : `${properties.length} field${properties.length === 1 ? "" : "s"}`;
 
             return (
               <article
                 key={entry.id}
-                className="group relative flex min-h-[11rem] flex-col overflow-hidden rounded-2xl border border-zinc-300/15 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-4 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 hover:-translate-y-px hover:border-zinc-100/28"
+                className="goal-card group relative flex aspect-[5/6] min-h-[108px] transform-gpu flex-col overflow-hidden rounded-2xl border border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.20),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)] p-3 text-white shadow-[0_18px_34px_-28px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.065),inset_0_-14px_22px_rgba(0,0,0,0.22)] transition duration-200 hover:-translate-y-0.5 hover:border-zinc-300/35 hover:brightness-110 active:translate-y-px active:scale-[0.99] sm:min-h-[124px]"
               >
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/24 to-transparent" />
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-base font-semibold leading-5 text-white/92">
-                    {getDatabaseEntryTitle(entry, definition)}
-                  </p>
-                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/28">
-                    {visibleFields.length} field{visibleFields.length === 1 ? "" : "s"}
-                  </p>
-                </div>
+                <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.055),transparent_60%)]" />
+                <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/28 to-transparent" />
+                <div className="relative z-[1] flex min-h-0 flex-1 flex-col items-center justify-between gap-2 text-center">
+                  <span className="max-w-full rounded-full border border-white/10 bg-white/[0.055] px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.06em] text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    {propertySummary}
+                  </span>
 
-                <div className="mt-4 flex flex-1 flex-col gap-2">
-                  {visibleProperties.length > 0 ? (
-                    visibleProperties.map(({ field, value }) => (
-                      <div key={field.id} className="min-w-0">
-                        <div className="flex items-center justify-between gap-2 rounded-full border border-white/[0.08] bg-white/[0.045] px-2.5 py-1.5 text-[11px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
-                          <span className="truncate text-white/38">{getDatabaseFieldName(field)}</span>
-                          <span
-                            className={`max-w-[58%] truncate ${
-                              value ? "text-white/78" : "text-white/28"
-                            }`}
-                          >
-                            {value || "Empty"}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="rounded-xl border border-dashed border-white/[0.08] bg-white/[0.025] px-3 py-4 text-center text-xs font-medium text-white/30">
-                      No visible fields
+                  <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                    <p
+                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[11px] font-semibold leading-tight text-white whitespace-normal sm:text-xs"
+                      style={{ hyphens: "auto" }}
+                    >
+                      {getDatabaseEntryTitle(entry, definition)}
                     </p>
-                  )}
-                </div>
+                  </div>
 
-                {hiddenPropertyCount > 0 ? (
-                  <p className="mt-3 text-[11px] font-semibold text-white/30">
-                    +{hiddenPropertyCount} more field{hiddenPropertyCount === 1 ? "" : "s"}
-                  </p>
-                ) : null}
+                  <div className="flex w-full min-w-0 flex-wrap items-center justify-center gap-1">
+                    {visibleProperties.length > 0 ? (
+                      visibleProperties.map(({ field, value }) => (
+                        <span
+                          key={field.id}
+                          className="flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.055] px-2 py-[3px] text-[8px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]"
+                        >
+                          <span className="max-w-[3.5rem] truncate text-white/38">
+                            {getDatabaseFieldName(field)}
+                          </span>
+                          <span className="max-w-[4.75rem] truncate text-white/78">{value}</span>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[9px] font-medium leading-none text-white/30">
+                        No details
+                      </span>
+                    )}
+                    {hiddenPropertyCount > 0 ? (
+                      <span className="rounded-full border border-white/10 bg-white/[0.045] px-1.5 py-[3px] text-[8px] font-semibold leading-none text-white/42">
+                        +{hiddenPropertyCount}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               </article>
             );
           })}
