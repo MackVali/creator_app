@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { FocusedNoteParentBreadcrumb } from "@/components/notes/FocusedNoteParentBreadcrumb";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
 import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
 import {
@@ -16,9 +17,16 @@ import {
   getMonumentNotes,
   updateMonumentNote,
 } from "@/lib/monumentNotesStorage";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
 const DEFAULT_NOTE_ICON = "📝";
+const DEFAULT_MONUMENT_ICON = "🏛️";
+
+type ParentContext = {
+  icon: string;
+  name: string;
+};
 
 function getMetadataIcon(metadata: Record<string, unknown> | null | undefined) {
   return typeof metadata?.icon === "string" && metadata.icon.trim()
@@ -100,6 +108,47 @@ export default function MonumentNotePage() {
   const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
   const [parentNoteId, setParentNoteId] = useState<string | null>(null);
   const [children, setChildren] = useState<MonumentNote[]>([]);
+  const [parentContext, setParentContext] = useState<ParentContext | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    setParentContext(null);
+    (async () => {
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+
+        const { data, error } = await supabase
+          .from("monuments")
+          .select("id,title,emoji")
+          .eq("id", monumentId)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (error) {
+          console.error("Failed to load monument note parent context", { error, monumentId });
+          return;
+        }
+
+        const monument = data as unknown as {
+          emoji?: string | null;
+          title?: string | null;
+        } | null;
+        setParentContext({
+          icon: monument?.emoji?.trim() || DEFAULT_MONUMENT_ICON,
+          name: monument?.title?.trim() || "Monument",
+        });
+      } catch (error) {
+        console.error("Failed to load monument note parent context", { error, monumentId });
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [monumentId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -422,29 +471,29 @@ export default function MonumentNotePage() {
     setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
   }
 
-  function handleBack() {
-    if (parentNoteId) {
-      router.push(`/monuments/${monumentId}/notes/${parentNoteId}`);
-      return;
-    }
-
+  function handleParentBack() {
     router.push(`/monuments/${monumentId}`);
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 pb-16 pt-4 text-white sm:pb-14 sm:pt-5">
+    <main className="min-h-screen bg-[#020202] px-4 pb-16 pt-2 text-white sm:pb-14 sm:pt-3">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 sm:gap-3">
         <section className="bg-transparent p-0">
           {isLoading ? (
             <p className="text-sm text-white/60">Loading note…</p>
           ) : (
-            <div className="space-y-4">
+            <div className="flex flex-col gap-2.5 sm:gap-3">
+              <FocusedNoteParentBreadcrumb
+                icon={parentContext?.icon ?? DEFAULT_MONUMENT_ICON}
+                name={parentContext?.name ?? "Monument"}
+                onBack={handleParentBack}
+              />
+
               <NoteEditorHeader
                 icon={noteIcon}
                 title={noteTitle}
                 onIconChange={setNoteIcon}
                 onTitleChange={setNoteTitle}
-                onBack={handleBack}
                 autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
               />
 

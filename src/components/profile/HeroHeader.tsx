@@ -95,6 +95,7 @@ function getPartnerBadgeIcon(name?: string | null) {
 interface HeroHeaderProps {
   profile: Profile;
   socials?: Record<string, string | undefined>;
+  socialsLoading?: boolean;
   onShare?: () => void;
   onBack?: () => void;
   topRightSlot?: ReactNode;
@@ -113,6 +114,7 @@ interface HeroHeaderProps {
 export default function HeroHeader({
   profile,
   socials,
+  socialsLoading = false,
   onShare,
   onBack,
   topRightSlot,
@@ -163,6 +165,7 @@ export default function HeroHeader({
   const pronouns = profile.pronouns?.trim() || null;
   const heroImageSizes = "(min-width: 420px) 104px, 92px";
   const hasSocialLinks = Object.values(socials ?? {}).some((url) => url && url !== "#");
+  const showSocialLinksRow = hasSocialLinks || socialsLoading;
   const partnerBadges = (profile.partner_badges ?? [])
     .filter((badge) => badge && badge.label?.trim())
     .map((badge) => ({
@@ -531,9 +534,23 @@ export default function HeroHeader({
             </div>
           ) : null}
 
-          {hasSocialLinks ? (
+          {showSocialLinksRow ? (
             <div className="mt-1 w-full [&>div]:!justify-start">
-              <SocialPillsRow socials={socials || {}} />
+              {hasSocialLinks ? (
+                <SocialPillsRow socials={socials || {}} />
+              ) : (
+                <div
+                  className="-mx-2 flex animate-pulse snap-x snap-mandatory items-center gap-1.5 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-start sm:overflow-visible sm:px-0"
+                  aria-hidden="true"
+                >
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <span
+                      key={`social-link-loading-${index}`}
+                      className="h-11 w-11 shrink-0 rounded-full border border-white/10 bg-white/[0.06]"
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ) : null}
 

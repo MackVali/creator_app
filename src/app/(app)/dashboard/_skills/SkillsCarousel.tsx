@@ -582,6 +582,9 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   const scrollFrame = useRef<number | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const previousBodyOverflow = useRef<string | null>(null);
+  const previousHtmlOverflow = useRef<string | null>(null);
+  const previousBodyOverscrollBehavior = useRef<string | null>(null);
+  const previousHtmlOverscrollBehavior = useRef<string | null>(null);
   const activeSkillScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [categories, setCategories] = useState(fetchedCategories);
@@ -679,17 +682,47 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     }
 
     previousFocus.current = document.activeElement as HTMLElement;
-    previousBodyOverflow.current = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.body.classList.add("monument-detail-open");
-    document.body.classList.add("skill-detail-open");
+    const { body, documentElement } = document;
+
+    previousBodyOverflow.current = body.style.overflow;
+    previousHtmlOverflow.current = documentElement.style.overflow;
+    previousBodyOverscrollBehavior.current = body.style.overscrollBehavior;
+    previousHtmlOverscrollBehavior.current =
+      documentElement.style.overscrollBehavior;
+
+    body.style.overflow = "hidden";
+    documentElement.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    documentElement.style.overscrollBehavior = "none";
+    body.classList.add("monument-detail-open");
+    body.classList.add("skill-detail-open");
 
     return () => {
-      document.body.style.overflow = previousBodyOverflow.current ?? "";
+      body.style.overflow = previousBodyOverflow.current ?? "";
+      documentElement.style.overflow = previousHtmlOverflow.current ?? "";
+      body.style.overscrollBehavior =
+        previousBodyOverscrollBehavior.current ?? "";
+      documentElement.style.overscrollBehavior =
+        previousHtmlOverscrollBehavior.current ?? "";
       previousBodyOverflow.current = null;
-      document.body.classList.remove("monument-detail-open");
-      document.body.classList.remove("skill-detail-open");
+      previousHtmlOverflow.current = null;
+      previousBodyOverscrollBehavior.current = null;
+      previousHtmlOverscrollBehavior.current = null;
+      body.classList.remove("monument-detail-open");
+      body.classList.remove("skill-detail-open");
     };
+  }, [activeSkillId]);
+
+  useEffect(() => {
+    if (!activeSkillId) return;
+
+    requestAnimationFrame(() => {
+      activeSkillScrollRef.current?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+    });
   }, [activeSkillId]);
 
   useEffect(() => {
@@ -2723,18 +2756,18 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
         {selectedSkill && (
           <motion.div
             key="skill-detail-overlay"
-            className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
+            ref={activeSkillScrollRef}
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeInOut" }}
           >
             <motion.div
-              ref={activeSkillScrollRef}
               layoutId={`skill-card-${selectedSkill.id}`}
               role="dialog"
               aria-modal="true"
-              className="app-card relative h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl bg-black shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              className="app-card relative min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] rounded-2xl bg-black shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
               style={detailOverlayStyle}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

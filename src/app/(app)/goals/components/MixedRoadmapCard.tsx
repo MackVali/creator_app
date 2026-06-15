@@ -1215,7 +1215,9 @@ function MixedRoadmapCardImpl({
     const campaignItem = orderedItems.find(
       (item) => item.item_type === "CAMPAIGN" && item.campaign?.id === campaignId
     );
-    const currentGoals = campaignItem?.campaign?.goals;
+    const currentGoals = campaignItem?.campaign
+      ? sortByPosition(campaignItem.campaign.goals)
+      : null;
 
     if (!campaignItem?.campaign || !currentGoals) {
       return;

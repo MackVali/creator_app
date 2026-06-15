@@ -166,6 +166,15 @@ function BodyPanelRowIcon({ iconKey }: { iconKey: BodyDatabaseIconKey }) {
     const CustomIcon = resolvedIcon.Icon;
     return <CustomIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />;
   }
+  if (resolvedIcon.kind === "iconify") {
+    return (
+      <Icon
+        icon={resolvedIcon.icon}
+        className="h-4 w-4 shrink-0 text-zinc-400"
+        aria-hidden="true"
+      />
+    );
+  }
 
   return (
     <span className="w-4 shrink-0 text-center text-sm leading-none" aria-hidden="true">

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -19,6 +20,7 @@ import {
   Target,
   Timer,
   MoreVertical,
+  User,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
@@ -110,7 +112,29 @@ interface RoutineMetadata {
   icon: string | null;
 }
 
+interface SkillLeaderboardProfile {
+  userId: string;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+}
+
+interface SkillLeaderboardRow {
+  userId: string;
+  rank: number;
+  xp: number;
+  profile: SkillLeaderboardProfile | null;
+}
+
+interface SkillLeaderboardXpEvent {
+  user_id: string | null;
+  amount: number | null;
+  schedule_instance_id: string | null;
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const SKILL_LEADERBOARD_WINDOW_DAYS = 7;
+const SKILL_LEADERBOARD_LIMIT = 25;
 const RELATED_HABIT_OVERDUE_VISUAL_THRESHOLD_MS = MS_PER_DAY * 7;
 const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
 const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
@@ -233,6 +257,51 @@ function readNumber(value: unknown): number | null {
         : NaN;
 
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function collectCancelledScheduleXpEventIds(events: SkillLeaderboardXpEvent[]) {
+  const aggregates = new Map<string, { sum: number; count: number }>();
+
+  for (const event of events) {
+    const scheduleInstanceId =
+      typeof event.schedule_instance_id === "string"
+        ? event.schedule_instance_id
+        : null;
+    if (!scheduleInstanceId) continue;
+
+    const current = aggregates.get(scheduleInstanceId);
+    const amount = Number(event.amount ?? 0);
+    if (current) {
+      current.sum += amount;
+      current.count += 1;
+    } else {
+      aggregates.set(scheduleInstanceId, { sum: amount, count: 1 });
+    }
+  }
+
+  const cancelled = new Set<string>();
+  for (const [scheduleInstanceId, stats] of aggregates.entries()) {
+    if (stats.count > 0 && stats.sum === 0) {
+      cancelled.add(scheduleInstanceId);
+    }
+  }
+
+  return cancelled;
+}
+
+function getProfileInitials(displayName: string, username: string | null) {
+  const source = displayName.trim() || username?.trim() || "";
+  const parts = source.split(/\s+/).filter(Boolean);
+  const initials =
+    parts.length > 1
+      ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`
+      : source.slice(0, 2);
+
+  return initials.toUpperCase() || "?";
+}
+
+function formatLeaderboardXp(xp: number) {
+  return `${new Intl.NumberFormat("en-US").format(xp)} XP`;
 }
 
 function formatRoutineRecord(routine: unknown): RoutineMetadata | null {
@@ -546,6 +615,15 @@ export function SkillDetail({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<SkillProgressData | null>(null);
+  const [skillLeaderboardRows, setSkillLeaderboardRows] = useState<
+    SkillLeaderboardRow[]
+  >([]);
+  const [skillLeaderboardLoading, setSkillLeaderboardLoading] = useState(true);
+  const [skillLeaderboardError, setSkillLeaderboardError] = useState<
+    string | null
+  >(null);
+  const [skillLeaderboardRefreshVersion, setSkillLeaderboardRefreshVersion] =
+    useState(0);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [relatedHabitsRefreshVersion, setRelatedHabitsRefreshVersion] = useState(0);
   const [habitsLoading, setHabitsLoading] = useState(true);
@@ -1233,6 +1311,154 @@ export function SkillDetail({
   }, []);
 
   useEffect(() => {
+    if (!supabase || !id) {
+      setSkillLeaderboardRows([]);
+      setSkillLeaderboardLoading(false);
+      setSkillLeaderboardError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSkillLeaderboard = async () => {
+      if (cancelled) return;
+
+      setSkillLeaderboardLoading(true);
+      setSkillLeaderboardError(null);
+
+      try {
+        const sinceIso = new Date(
+          Date.now() - SKILL_LEADERBOARD_WINDOW_DAYS * MS_PER_DAY
+        ).toISOString();
+
+        const { data: xpRows, error: xpError } = await supabase
+          .from("xp_events")
+          .select("user_id,amount,schedule_instance_id")
+          .eq("skill_id", id)
+          .gte("created_at", sinceIso);
+
+        if (xpError) {
+          throw xpError;
+        }
+
+        const events = (xpRows ?? []) as SkillLeaderboardXpEvent[];
+        const cancelledScheduleIds = collectCancelledScheduleXpEventIds(events);
+        const totalsByUserId = new Map<string, number>();
+
+        for (const event of events) {
+          const userId =
+            typeof event.user_id === "string" ? event.user_id : null;
+          if (!userId) continue;
+          const scheduleInstanceId =
+            typeof event.schedule_instance_id === "string"
+              ? event.schedule_instance_id
+              : null;
+          if (
+            scheduleInstanceId &&
+            cancelledScheduleIds.has(scheduleInstanceId)
+          ) {
+            continue;
+          }
+
+          const amount = Number(event.amount ?? 0);
+          if (!Number.isFinite(amount) || amount <= 0) continue;
+
+          totalsByUserId.set(userId, (totalsByUserId.get(userId) ?? 0) + amount);
+        }
+
+        const rankedUserIds = Array.from(totalsByUserId.entries())
+          .sort((first, second) => second[1] - first[1])
+          .slice(0, SKILL_LEADERBOARD_LIMIT)
+          .map(([userId]) => userId);
+
+        let profilesByUserId = new Map<string, SkillLeaderboardProfile>();
+
+        if (rankedUserIds.length > 0) {
+          const { data: profileRows, error: profileError } = await supabase
+            .from("profiles")
+            .select("user_id, username, name, avatar_url")
+            .in("user_id", rankedUserIds);
+
+          if (profileError) {
+            console.error("Unable to load skill leaderboard profiles", profileError);
+          } else {
+            profilesByUserId = new Map(
+              ((profileRows ?? []) as unknown[])
+                .map((profile): SkillLeaderboardProfile | null => {
+                  if (!profile || typeof profile !== "object") return null;
+                  const profileRecord = profile as Record<string, unknown>;
+                  const userId = readString(profileRecord.user_id);
+                  if (!userId) return null;
+
+                  return {
+                    userId,
+                    name: readString(profileRecord.name),
+                    username: readString(profileRecord.username),
+                    avatarUrl: readString(profileRecord.avatar_url),
+                  };
+                })
+                .filter(
+                  (profile): profile is SkillLeaderboardProfile =>
+                    profile !== null
+                )
+                .map((profile) => [profile.userId, profile])
+            );
+          }
+        }
+
+        if (cancelled) return;
+
+        setSkillLeaderboardRows(
+          rankedUserIds.map((userId, index) => ({
+            userId,
+            rank: index + 1,
+            xp: totalsByUserId.get(userId) ?? 0,
+            profile: profilesByUserId.get(userId) ?? null,
+          }))
+        );
+      } catch (leaderboardErr) {
+        if (!cancelled) {
+          console.error("Unable to load skill leaderboard", leaderboardErr);
+          setSkillLeaderboardRows([]);
+          setSkillLeaderboardError("Unable to load this week's leaderboard.");
+        }
+      } finally {
+        if (!cancelled) {
+          setSkillLeaderboardLoading(false);
+        }
+      }
+    };
+
+    void loadSkillLeaderboard();
+
+    const channel = supabase
+      .channel(`skill_leaderboard_${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "xp_events",
+          filter: `skill_id=eq.${id}`,
+        },
+        () => {
+          void loadSkillLeaderboard();
+        }
+      );
+
+    channel.subscribe((status) => {
+      if (status === "CHANNEL_ERROR") {
+        console.error("Failed to subscribe to skill leaderboard updates");
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [id, skillLeaderboardRefreshVersion, supabase]);
+
+  useEffect(() => {
     let cancelled = false;
     const habitIds = relatedHabitIdsKey
       .split(",")
@@ -1415,6 +1641,7 @@ export function SkillDetail({
           previousRelatedHabitStateRef.current.delete(habitId);
         }
         setRelatedHabitsRefreshVersion((current) => current + 1);
+        setSkillLeaderboardRefreshVersion((current) => current + 1);
       } catch (completionUpdateErr) {
         console.error(
           "Failed to update related habit completion:",
@@ -2037,10 +2264,10 @@ export function SkillDetail({
 
   const handlePullExitEnd = resetPullExit;
   const detailMainClassName = clsx(
-    "px-4 sm:px-6 lg:px-8",
+    "relative min-h-[var(--monument-detail-overlay-height,100dvh)] overflow-x-hidden bg-black px-4 sm:px-6 lg:px-8",
     onClose
-      ? "pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-2 sm:pb-6 sm:pt-4"
-      : "pb-6 pt-3 sm:pt-4"
+      ? "pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:pb-10 sm:pt-4"
+      : "pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-3 sm:pt-4"
   );
   const errorMainClassName = clsx(
     "relative px-4",
@@ -2823,6 +3050,133 @@ export function SkillDetail({
 
           </section>
         </div>
+
+        <section className="space-y-6" aria-label="Skill social">
+          <Card className="relative min-h-[360px] overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur sm:min-h-[430px]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.035),_transparent_68%)]" />
+            <CardHeader className="relative">
+              <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                SKILL COMMUNITY
+              </CardTitle>
+              <CardDescription className="max-w-2xl text-sm leading-6 text-white/58">
+                A dedicated space for creators practicing {skill.name} is coming
+                soon. Community prompts, shared wins, and skill-specific momentum
+                will live here.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="relative flex min-h-[250px] items-center justify-center sm:min-h-[310px]">
+              <div className="max-w-md rounded-2xl border border-white/8 bg-white/[0.025] px-5 py-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/44">
+                  Coming Soon
+                </p>
+                <p className="mt-3 text-sm leading-6 text-white/68">
+                  The community layer is being prepared with a premium, skill-first
+                  experience.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-[linear-gradient(145deg,#07080A_0%,#090A0D_58%,#0D0E11_100%)] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.035),_transparent_64%)]" />
+            <CardHeader className="relative pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                    SKILL LEADERBOARD
+                  </CardTitle>
+                  <CardDescription className="text-sm text-white/52">
+                    Weekly XP gained in the last 7 days.
+                  </CardDescription>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                  1 Week
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="relative">
+              {skillLeaderboardLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <Skeleton
+                      key={index}
+                      className="h-[62px] rounded-2xl bg-white/[0.06]"
+                    />
+                  ))}
+                </div>
+              ) : skillLeaderboardError ? (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-5">
+                  <p className="text-sm text-white/62">{skillLeaderboardError}</p>
+                </div>
+              ) : skillLeaderboardRows.length === 0 ? (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-5">
+                  <p className="text-sm font-medium text-white/78">
+                    No weekly XP yet
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-white/48">
+                    Earn XP in this skill and this leaderboard will start filling
+                    in.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {skillLeaderboardRows.map((row) => {
+                    const displayName =
+                      row.profile?.name ??
+                      row.profile?.username ??
+                      `Creator ${row.userId.slice(0, 6)}`;
+                    const username = row.profile?.username ?? null;
+                    const avatarUrl = row.profile?.avatarUrl ?? null;
+                    const initials = getProfileInitials(displayName, username);
+
+                    return (
+                      <div
+                        key={row.userId}
+                        className="flex min-h-[62px] items-center gap-3 rounded-2xl border border-white/8 bg-black/45 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-xs font-semibold text-white/72">
+                          {row.rank}
+                        </span>
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-zinc-950">
+                          {avatarUrl ? (
+                            <Image
+                              alt={`${displayName} avatar`}
+                              src={avatarUrl}
+                              width={40}
+                              height={40}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center bg-zinc-900 text-white/48">
+                              {initials !== "?" ? (
+                                <span className="text-xs font-semibold">
+                                  {initials}
+                                </span>
+                              ) : (
+                                <User className="h-4 w-4" aria-hidden />
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-white/86">
+                            {displayName}
+                          </p>
+                          <p className="truncate text-xs text-white/45">
+                            {username ? `@${username}` : "CREATOR member"}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-white/80">
+                          {formatLeaderboardXp(row.xp)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
       </div>
     </main>
     <MemoCompletionDialog

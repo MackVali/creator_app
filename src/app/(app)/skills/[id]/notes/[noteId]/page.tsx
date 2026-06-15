@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { FocusedNoteParentBreadcrumb } from "@/components/notes/FocusedNoteParentBreadcrumb";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
 import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
 import {
@@ -15,9 +16,16 @@ import {
   getNoteWithChildren,
   updateSkillNote,
 } from "@/lib/notesStorage";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Note } from "@/lib/types/note";
 
 const DEFAULT_NOTE_ICON = "📝";
+const DEFAULT_SKILL_ICON = "💡";
+
+type ParentContext = {
+  icon: string;
+  name: string;
+};
 
 function getNoteTitle(note: Note | null): string {
   if (!note) return "Untitled";
@@ -104,6 +112,44 @@ export default function NotePage() {
   const [isLoading, setIsLoading] = useState(noteId !== "new");
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
+  const [parentContext, setParentContext] = useState<ParentContext | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    setParentContext(null);
+    (async () => {
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+
+        const { data, error } = await supabase
+          .from("skills")
+          .select("id,name,icon")
+          .eq("id", skillId)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (error) {
+          console.error("Failed to load skill note parent context", { error, skillId });
+          return;
+        }
+
+        const skill = data as unknown as { icon?: string | null; name?: string | null } | null;
+        setParentContext({
+          icon: skill?.icon?.trim() || DEFAULT_SKILL_ICON,
+          name: skill?.name?.trim() || "Skill",
+        });
+      } catch (error) {
+        console.error("Failed to load skill note parent context", { error, skillId });
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [skillId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -422,29 +468,29 @@ export default function NotePage() {
     setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
   }
 
-  function handleBack() {
-    if (selectedParentId) {
-      router.push(`/skills/${skillId}/notes/${selectedParentId}`);
-      return;
-    }
-
+  function handleParentBack() {
     router.push(`/skills/${skillId}`);
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 pb-16 pt-4 text-white sm:pb-14 sm:pt-5">
+    <main className="min-h-screen bg-[#020202] px-4 pb-16 pt-2 text-white sm:pb-14 sm:pt-3">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 sm:gap-3">
         <section className="bg-transparent p-0">
           {isLoading ? (
             <p className="text-sm text-white/60">Loading note…</p>
           ) : (
-            <div className="space-y-4">
+            <div className="flex flex-col gap-2.5 sm:gap-3">
+              <FocusedNoteParentBreadcrumb
+                icon={parentContext?.icon ?? DEFAULT_SKILL_ICON}
+                name={parentContext?.name ?? "Skill"}
+                onBack={handleParentBack}
+              />
+
               <NoteEditorHeader
                 icon={noteIcon}
                 title={noteTitle}
                 onIconChange={setNoteIcon}
                 onTitleChange={setNoteTitle}
-                onBack={handleBack}
                 autosaveLabel={isSaving ? "Saving…" : "Autosaved"}
               />
 

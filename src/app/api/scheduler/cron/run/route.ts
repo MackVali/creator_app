@@ -290,7 +290,8 @@ async function deleteExpiredFriendMessages(
   const { count, error } = await adminClient
     .from("friend_messages")
     .delete({ count: "exact" })
-    .lt("created_at", expiresBeforeIso);
+    .lt("created_at", expiresBeforeIso)
+    .not("read_at", "is", null);
 
   if (error) {
     console.warn("[SCHEDULER_CRON] expired friend message cleanup failed", {
