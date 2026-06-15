@@ -858,7 +858,7 @@ export default function EditHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+      const recurrenceValue = normalizedRecurrence === "none" ? "none" : recurrence;
       const recurrenceDaysValue =
         !isPracticeHabit &&
         normalizedRecurrence === "every x days" &&

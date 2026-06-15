@@ -6,6 +6,7 @@ import {
   useRef,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   MonumentDetail,
@@ -29,6 +30,7 @@ export function MonumentGridWithSharedTransition({
   showNewCard = true,
 }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isPortalMounted, setIsPortalMounted] = useState(false);
   const isEmpty = monuments.length === 0;
   const selected = isEmpty
     ? null
@@ -44,6 +46,10 @@ export function MonumentGridWithSharedTransition({
   const [detailOverlayHeight, setDetailOverlayHeight] = useState<number | null>(
     null
   );
+
+  useEffect(() => {
+    setIsPortalMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!activeId) {
@@ -175,6 +181,43 @@ export function MonumentGridWithSharedTransition({
     </button>
   );
 
+  const monumentDetailOverlay = (
+    <AnimatePresence>
+      {!isEmpty && selected && (
+        <motion.div
+          key="overlay"
+          ref={detailOverlayScrollRef}
+          className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            className="app-card relative flex min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] flex-col overflow-visible rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+            style={detailOverlayStyle}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{
+              type: "spring",
+              stiffness: 500,
+              damping: 40,
+              mass: 0.9,
+            }}
+          >
+            <MonumentDetail
+              monument={selected}
+              onClose={() => setActiveId(null)}
+            />
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   if (!allowNewMonumentCard && isEmpty) {
     return (
       <div className="grid grid-cols-4 gap-1">
@@ -226,41 +269,7 @@ export function MonumentGridWithSharedTransition({
         {allowNewMonumentCard && renderNewMonumentCard()}
       </div>
 
-      <AnimatePresence>
-        {!isEmpty && selected && (
-          <motion.div
-            key="overlay"
-            ref={detailOverlayScrollRef}
-            className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-          >
-            <motion.div
-              layoutId={`card-${selected.id}`}
-              role="dialog"
-              aria-modal="true"
-              className="app-card relative min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
-              style={detailOverlayStyle}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{
-                type: "spring",
-                stiffness: 500,
-                damping: 40,
-                mass: 0.9,
-              }}
-            >
-              <MonumentDetail
-                monument={selected}
-                onClose={() => setActiveId(null)}
-              />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {isPortalMounted ? createPortal(monumentDetailOverlay, document.body) : null}
     </div>
   );
 }

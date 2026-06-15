@@ -537,7 +537,13 @@ type FocusPomoExecutionSortKey = {
   id: string;
 };
 
-const DAILY_RECURRENCE_VALUES = new Set(["", "daily", "everyday", "none"]);
+const DAILY_RECURRENCE_VALUES = new Set(["", "daily", "everyday"]);
+const NONE_RECURRENCE_NEVER_DUE_TYPES = new Set([
+  "HABIT",
+  "CHORE",
+  "SYNC",
+  "MEMO",
+]);
 
 function readRecordString(
   record: Record<string, unknown>,
@@ -646,6 +652,16 @@ function recurrenceInterval(
   return everyDays ? { days: everyDays } : { days: 1 };
 }
 
+function isPracticeQueueItem(item: FocusPomoQueueItem): boolean {
+  const raw = item.habitType ?? item.habit_type ?? "";
+  return raw.trim().toUpperCase() === "PRACTICE";
+}
+
+function isNoneRecurrenceNeverDueQueueItem(item: FocusPomoQueueItem): boolean {
+  const raw = item.habitType ?? item.habit_type ?? "HABIT";
+  return NONE_RECURRENCE_NEVER_DUE_TYPES.has(raw.trim().toUpperCase());
+}
+
 function startOfLocalDayMs(date: Date): number {
   return new Date(
     date.getFullYear(),
@@ -672,6 +688,15 @@ function isHabitDueNow(item: FocusPomoQueueItem, now: Date): boolean {
     }
   }
 
+  const recurrence = normalizeRecurrenceValue(readString(item.recurrence));
+  if (
+    recurrence === "none" &&
+    !isPracticeQueueItem(item) &&
+    isNoneRecurrenceNeverDueQueueItem(item)
+  ) {
+    return false;
+  }
+
   const lastCompletedAt = readRecordString(record, [
     "lastCompletedAt",
     "last_completed_at",
@@ -681,7 +706,6 @@ function isHabitDueNow(item: FocusPomoQueueItem, now: Date): boolean {
   const lastCompletedMs = Date.parse(lastCompletedAt);
   if (!Number.isFinite(lastCompletedMs)) return false;
 
-  const recurrence = normalizeRecurrenceValue(readString(item.recurrence));
   const recurrenceDays = Array.isArray(item.recurrence_days)
     ? item.recurrence_days
     : null;

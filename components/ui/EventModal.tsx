@@ -2517,7 +2517,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.recurrence = isPracticeHabit
           ? "none"
           : normalizedRecurrence === "none"
-            ? null
+            ? "none"
             : formData.recurrence;
         insertData.recurrence_days = isPracticeHabit
           ? null

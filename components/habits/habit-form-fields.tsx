@@ -92,11 +92,6 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     description: "Skill reps that keep you sharp.",
   },
   {
-    label: "Temp",
-    value: "TEMP",
-    description: "Temporary pushes tied to a goal.",
-  },
-  {
     label: "Chore",
     value: "CHORE",
     description: "Maintenance that keeps life running.",

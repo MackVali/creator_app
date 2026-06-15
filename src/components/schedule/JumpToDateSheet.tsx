@@ -145,7 +145,6 @@ const HABIT_TYPE_OPTIONS = [
   { label: "Habit", value: "HABIT" },
   { label: "Relaxer", value: "RELAXER" },
   { label: "Practice", value: "PRACTICE" },
-  { label: "Temp", value: "TEMP" },
   { label: "Chore", value: "CHORE" },
   { label: "Sync", value: "SYNC" },
   { label: "Memo", value: "MEMO" },

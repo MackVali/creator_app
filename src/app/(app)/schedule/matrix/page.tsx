@@ -952,10 +952,20 @@ function buildMatrixScheduledEvents({
             completed: isMatrixEventCompleted(event),
             routinePosition: habit.routine_position ?? index + 1,
             currentStreakDays: habit.current_streak_days,
-            sourceHabit: habit,
-            sourceInstance: event.instance,
+            habitType: habit.habit_type,
+            recurrence: habit.recurrence,
             durationMinutes:
               event.instance.duration_min ?? habit.duration_minutes,
+            energy: habit.energy,
+            goalId: habit.goal_id,
+            skillId: habit.skill_id,
+            routineId: habit.routine_id,
+            locationContextId: habit.location_context_id,
+            daylightPreference: habit.daylight_preference,
+            windowEdgePreference: habit.window_edge_preference,
+            nextDueOverride: habit.next_due_override,
+            sourceHabit: habit,
+            sourceInstance: event.instance,
           },
         ];
       }
@@ -1069,8 +1079,18 @@ function buildMatrixDueItems({
         completed: isMatrixDueHabitCompleted(habit),
         routinePosition: habit.routine_position ?? index + 1,
         currentStreakDays: habit.current_streak_days,
-        sourceHabit: habit,
+        habitType: habit.habit_type,
+        recurrence: habit.recurrence,
         durationMinutes: habit.duration_minutes,
+        energy: habit.energy,
+        goalId: habit.goal_id,
+        skillId: habit.skill_id,
+        routineId: habit.routine_id,
+        locationContextId: habit.location_context_id,
+        daylightPreference: habit.daylight_preference,
+        windowEdgePreference: habit.window_edge_preference,
+        nextDueOverride: habit.next_due_override,
+        sourceHabit: habit,
       })
     );
     const routineSkillIds = Array.from(

@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type TouchEvent,
 } from "react";
@@ -28,6 +29,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable } from "@dnd-kit/sortable";
 import FlameEmber from "@/components/FlameEmber";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 export type RelatedRoutineCardHabit = {
@@ -39,6 +41,16 @@ export type RelatedRoutineCardHabit = {
   pending?: boolean;
   routinePosition?: number | null;
   currentStreakDays?: number | null;
+  habitType?: string | null;
+  recurrence?: string | null;
+  durationMinutes?: number | null;
+  energy?: string | null;
+  goalId?: string | null;
+  skillId?: string | null;
+  locationContextId?: string | null;
+  daylightPreference?: string | null;
+  windowEdgePreference?: string | null;
+  nextDueOverride?: string | null;
 };
 
 export type RelatedRoutineCardRoutine = {
@@ -62,6 +74,9 @@ type RelatedRoutineCardProps = {
 
 const DEFAULT_ROUTINE_ICON = "🔁";
 const ROUTINE_HABIT_DOUBLE_TAP_MS = 350;
+const ROUTINE_HABIT_LONG_PRESS_MS = 300;
+const ROUTINE_HABIT_LONG_PRESS_SUPPRESS_MS = 1_000;
+const ROUTINE_HABIT_LONG_PRESS_MOVE_TOLERANCE = 12;
 const ROUTINE_HABIT_COMPLETED_MOVE_DELAY_MS = 850;
 const ROUTINE_HABIT_COMPLETED_COLLAPSE_MS = 320;
 const routineDrawerRowTransition = {
@@ -177,6 +192,22 @@ function dispatchRoutineUpdated(routineId: string) {
   );
 }
 
+function getRoutineHabitFabOriginRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const styles = window.getComputedStyle(element);
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    borderRadius: styles.borderRadius,
+    backgroundColor: styles.backgroundColor,
+    backgroundImage: styles.backgroundImage,
+    boxShadow: styles.boxShadow,
+  };
+}
+
 function readRoutinePosition(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
@@ -238,6 +269,12 @@ function RoutineHabitRowBody({
   habit,
   onHabitCompletionToggle,
   onDoubleClick,
+  onClickCapture,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onPointerLeave,
   onTouchEnd,
   dragHandle,
   isDragging = false,
@@ -250,6 +287,15 @@ function RoutineHabitRowBody({
     event: MouseEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
   ) => void;
+  onClickCapture: (event: MouseEvent<HTMLDivElement>) => void;
+  onPointerDown: (
+    event: ReactPointerEvent<HTMLDivElement>,
+    habit: RelatedRoutineCardHabit
+  ) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onTouchEnd: (
     event: TouchEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
@@ -303,7 +349,13 @@ function RoutineHabitRowBody({
             ? `. Double tap to ${habit.completed ? "undo" : "complete"}.`
             : ""
         }`}
+        onClickCapture={onClickCapture}
         onDoubleClick={(event) => onDoubleClick(event, habit)}
+        onPointerDown={(event) => onPointerDown(event, habit)}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onPointerLeave={onPointerLeave}
         onTouchEnd={(event) => onTouchEnd(event, habit)}
       >
         {dragHandle}
@@ -344,6 +396,12 @@ function DraggableRoutineHabitRow({
   fallbackIcon,
   onHabitCompletionToggle,
   onDoubleClick,
+  onClickCapture,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onPointerLeave,
   onTouchEnd,
 }: {
   habit: RelatedRoutineCardHabit;
@@ -353,6 +411,15 @@ function DraggableRoutineHabitRow({
     event: MouseEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
   ) => void;
+  onClickCapture: (event: MouseEvent<HTMLDivElement>) => void;
+  onPointerDown: (
+    event: ReactPointerEvent<HTMLDivElement>,
+    habit: RelatedRoutineCardHabit
+  ) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onTouchEnd: (
     event: TouchEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
@@ -372,6 +439,12 @@ function DraggableRoutineHabitRow({
       habit={habit}
       onHabitCompletionToggle={onHabitCompletionToggle}
       onDoubleClick={onDoubleClick}
+      onClickCapture={onClickCapture}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onPointerLeave={onPointerLeave}
       onTouchEnd={onTouchEnd}
       isDragging={isDragging}
       setNodeRef={setNodeRef}
@@ -408,6 +481,12 @@ function StaticRoutineHabitRow({
   fallbackIcon,
   onHabitCompletionToggle,
   onDoubleClick,
+  onClickCapture,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onPointerLeave,
   onTouchEnd,
 }: {
   habit: RelatedRoutineCardHabit;
@@ -417,6 +496,15 @@ function StaticRoutineHabitRow({
     event: MouseEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
   ) => void;
+  onClickCapture: (event: MouseEvent<HTMLDivElement>) => void;
+  onPointerDown: (
+    event: ReactPointerEvent<HTMLDivElement>,
+    habit: RelatedRoutineCardHabit
+  ) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onTouchEnd: (
     event: TouchEvent<HTMLDivElement>,
     habit: RelatedRoutineCardHabit
@@ -427,6 +515,12 @@ function StaticRoutineHabitRow({
       habit={habit}
       onHabitCompletionToggle={onHabitCompletionToggle}
       onDoubleClick={onDoubleClick}
+      onClickCapture={onClickCapture}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onPointerLeave={onPointerLeave}
       onTouchEnd={onTouchEnd}
       dragHandle={
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-black/35 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] transition sm:h-8 sm:w-8">
@@ -479,11 +573,19 @@ export function RelatedRoutineCard({
   newHabitRevealId = null,
   onNewHabitRevealComplete,
 }: RelatedRoutineCardProps) {
+  const fabCreation = useFabCreation();
   const headingId = useId();
   const prefersReducedMotion = useReducedMotion();
   const lastHabitTapRef = useRef<{
     habitId: string;
     timestamp: number;
+  } | null>(null);
+  const routineHabitLongPressTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routineHabitLongPressStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
   } | null>(null);
   const completingHabitIdsRef = useRef<Set<string>>(new Set());
   const suppressHabitCompletionUntilRef = useRef(0);
@@ -578,6 +680,28 @@ export function RelatedRoutineCard({
     showCompletedHabits ? "Hide completed" : "Show completed"
   } (${completedHabits.length})`;
   const completedHabitsRegionId = `${headingId}-completed-habits`;
+
+  const cancelRoutineHabitLongPress = useCallback(
+    (event?: ReactPointerEvent<HTMLDivElement>) => {
+      if (routineHabitLongPressTimerRef.current) {
+        clearTimeout(routineHabitLongPressTimerRef.current);
+        routineHabitLongPressTimerRef.current = null;
+      }
+
+      if (event) {
+        try {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
+        } catch {
+          // Pointer capture may already be released by the browser.
+        }
+      }
+
+      routineHabitLongPressStartRef.current = null;
+    },
+    []
+  );
 
   const clearPendingCompletedHabitMove = useCallback((habitId: string) => {
     const pendingTimer = pendingCompletedHabitMoveTimersRef.current.get(habitId);
@@ -753,6 +877,10 @@ export function RelatedRoutineCard({
     const collapsingTimers = collapsingCompletedHabitTimersRef.current;
 
     return () => {
+      if (routineHabitLongPressTimerRef.current) {
+        clearTimeout(routineHabitLongPressTimerRef.current);
+        routineHabitLongPressTimerRef.current = null;
+      }
       for (const timer of pendingMoveTimers.values()) {
         clearTimeout(timer);
       }
@@ -763,6 +891,12 @@ export function RelatedRoutineCard({
       collapsingTimers.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (open) return;
+
+    cancelRoutineHabitLongPress();
+  }, [cancelRoutineHabitLongPress, open]);
 
   useEffect(() => {
     if (newHabitRevealId) {
@@ -1035,6 +1169,119 @@ export function RelatedRoutineCard({
     [toggleHabitCompletionFromRoutine]
   );
 
+  const handleRoutineHabitClickCapture = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (Date.now() >= suppressHabitCompletionUntilRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    []
+  );
+
+  const handleRoutineHabitPointerDown = useCallback(
+    (
+      event: ReactPointerEvent<HTMLDivElement>,
+      habit: RelatedRoutineCardHabit
+    ) => {
+      if (
+        !fabCreation ||
+        (event.pointerType === "mouse" && event.button !== 0) ||
+        habit.pending ||
+        (event.target instanceof Element &&
+          event.target.closest("[data-routine-habit-drag-handle='true']"))
+      ) {
+        return;
+      }
+
+      const element = event.currentTarget;
+      const pointerId = event.pointerId;
+
+      cancelRoutineHabitLongPress();
+      lastHabitTapRef.current = null;
+      routineHabitLongPressStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId,
+      };
+
+      try {
+        element.setPointerCapture?.(pointerId);
+      } catch {
+        // Pointer capture is best-effort across browsers and input types.
+      }
+
+      routineHabitLongPressTimerRef.current = setTimeout(() => {
+        routineHabitLongPressTimerRef.current = null;
+        routineHabitLongPressStartRef.current = null;
+        suppressHabitCompletionUntilRef.current =
+          Date.now() + ROUTINE_HABIT_LONG_PRESS_SUPPRESS_MS;
+        lastHabitTapRef.current = null;
+
+        try {
+          if (element.hasPointerCapture?.(pointerId)) {
+            element.releasePointerCapture?.(pointerId);
+          }
+        } catch {
+          // Pointer capture can already be released by the browser.
+        }
+
+        fabCreation.requestEntityEdit({
+          entityType: "HABIT",
+          entityId: habit.id,
+          title: habit.name,
+          originRect: getRoutineHabitFabOriginRect(element),
+          habitSnapshot: {
+            name: habit.name,
+            habitType: habit.habitType,
+            recurrence: habit.recurrence,
+            durationMinutes: habit.durationMinutes,
+            energy: habit.energy,
+            goalId: habit.goalId,
+            skillId: habit.skillId,
+            routineId: routine.id,
+            locationContextId: habit.locationContextId,
+            daylightPreference: habit.daylightPreference,
+            windowEdgePreference: habit.windowEdgePreference,
+            nextDueOverride: habit.nextDueOverride,
+          },
+        });
+      }, ROUTINE_HABIT_LONG_PRESS_MS);
+    },
+    [cancelRoutineHabitLongPress, fabCreation, routine.id]
+  );
+
+  const handleRoutineHabitPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = routineHabitLongPressStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = Math.abs(event.clientX - start.x);
+      const deltaY = Math.abs(event.clientY - start.y);
+
+      if (
+        deltaX > ROUTINE_HABIT_LONG_PRESS_MOVE_TOLERANCE ||
+        deltaY > ROUTINE_HABIT_LONG_PRESS_MOVE_TOLERANCE
+      ) {
+        cancelRoutineHabitLongPress(event);
+      }
+    },
+    [cancelRoutineHabitLongPress]
+  );
+
+  const handleRoutineHabitPointerLeave = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse") {
+        cancelRoutineHabitLongPress(event);
+      }
+    },
+    [cancelRoutineHabitLongPress]
+  );
+
   const handleRoutineHabitTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>, habit: RelatedRoutineCardHabit) => {
       if (
@@ -1236,7 +1483,10 @@ export function RelatedRoutineCard({
                   </div>
 
                   <div className="flex min-h-0 flex-1 flex-col px-3 pb-4 sm:px-5">
-                    <div className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5">
+                    <div
+                      className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5"
+                      onScroll={() => cancelRoutineHabitLongPress()}
+                    >
                       {localHabits.length > 0 ? (
                         <div className="flex flex-col gap-1 sm:gap-1.5">
                           {incompleteHabits.length > 0 ? (
@@ -1337,6 +1587,24 @@ export function RelatedRoutineCard({
                                           onDoubleClick={
                                             handleRoutineHabitDoubleClick
                                           }
+                                          onClickCapture={
+                                            handleRoutineHabitClickCapture
+                                          }
+                                          onPointerDown={
+                                            handleRoutineHabitPointerDown
+                                          }
+                                          onPointerMove={
+                                            handleRoutineHabitPointerMove
+                                          }
+                                          onPointerUp={
+                                            cancelRoutineHabitLongPress
+                                          }
+                                          onPointerCancel={
+                                            cancelRoutineHabitLongPress
+                                          }
+                                          onPointerLeave={
+                                            handleRoutineHabitPointerLeave
+                                          }
                                           onTouchEnd={handleRoutineHabitTouchEnd}
                                         />
                                       </motion.div>
@@ -1407,6 +1675,24 @@ export function RelatedRoutineCard({
                                         }
                                         onDoubleClick={
                                           handleRoutineHabitDoubleClick
+                                        }
+                                        onClickCapture={
+                                          handleRoutineHabitClickCapture
+                                        }
+                                        onPointerDown={
+                                          handleRoutineHabitPointerDown
+                                        }
+                                        onPointerMove={
+                                          handleRoutineHabitPointerMove
+                                        }
+                                        onPointerUp={
+                                          cancelRoutineHabitLongPress
+                                        }
+                                        onPointerCancel={
+                                          cancelRoutineHabitLongPress
+                                        }
+                                        onPointerLeave={
+                                          handleRoutineHabitPointerLeave
                                         }
                                         onTouchEnd={handleRoutineHabitTouchEnd}
                                       />

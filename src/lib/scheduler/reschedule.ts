@@ -980,7 +980,13 @@ const HABIT_TYPE_PRIORITY: Record<string, number> = {
   MEMO: 2,
   SYNC: 3,
 };
-const DAILY_RECURRENCES = new Set(["daily", "none", "everyday", ""]);
+const DAILY_RECURRENCES = new Set(["daily", "everyday", ""]);
+const NONE_RECURRENCE_NEVER_DUE_TYPES = new Set([
+  "HABIT",
+  "CHORE",
+  "SYNC",
+  "MEMO",
+]);
 
 function habitTypePriority(value?: string | null) {
   const normalized = (value ?? "HABIT").toUpperCase();
@@ -1024,8 +1030,25 @@ function normalizeRecurrenceValue(value: string | null | undefined) {
   return value.toLowerCase().trim();
 }
 
-function isDailyRecurrenceValue(value: string | null | undefined) {
-  return DAILY_RECURRENCES.has(normalizeRecurrenceValue(value));
+function isDailyRecurrenceValue(
+  value: string | null | undefined,
+  habitType?: string | null
+) {
+  const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
+  if (
+    (raw === "" || raw === "none") &&
+    normalizeHabitTypeValue(habitType) === "PRACTICE"
+  ) {
+    return true;
+  }
+  if (
+    raw === "none" &&
+    NONE_RECURRENCE_NEVER_DUE_TYPES.has(normalizeHabitTypeValue(habitType))
+  ) {
+    return false;
+  }
+  const recurrence = normalizeRecurrenceValue(value);
+  return DAILY_RECURRENCES.has(recurrence) || recurrence === "none";
 }
 
 type ScheduleFailure = {
@@ -2518,10 +2541,10 @@ export async function scheduleBacklog(
     habitById.set(habit.id, habit);
   }
   const dailyHabits = habits.filter((habit) =>
-    isDailyRecurrenceValue(habit.recurrence)
+    isDailyRecurrenceValue(habit.recurrence, habit.habitType)
   );
   const nonDailyHabits = habits.filter(
-    (habit) => !isDailyRecurrenceValue(habit.recurrence)
+    (habit) => !isDailyRecurrenceValue(habit.recurrence, habit.habitType)
   );
   const nonDailyHabitIds = new Set(nonDailyHabits.map((habit) => habit.id));
   const habitTypeCounts: Record<string, number> = {};
@@ -6248,7 +6271,7 @@ export async function scheduleBacklog(
         if (
           overrideDayStart &&
           overrideDayStart.getTime() < finalDayStartMs &&
-          isDailyRecurrenceValue(habit.recurrence)
+          isDailyRecurrenceValue(habit.recurrence, habit.habitType)
         ) {
           return false;
         }
@@ -8669,7 +8692,7 @@ async function scheduleHabitsForDay(params: {
       normalizedType === "SYNC" ||
       repeatablePracticeIds.has(habitId) ||
       nonDailyHabitIds?.has(habitId) ||
-      !isDailyRecurrenceValue(habit?.recurrence)
+      !isDailyRecurrenceValue(habit?.recurrence, habit?.habitType)
     ) {
       return;
     }
@@ -9830,7 +9853,7 @@ async function scheduleHabitsForDay(params: {
       if (
         typeof dueStartMs === "number" &&
         Number.isFinite(dueStartMs) &&
-        isDailyRecurrenceValue(habit.recurrence ?? null)
+        isDailyRecurrenceValue(habit.recurrence ?? null, habit.habitType)
       ) {
         constraintLowerBound = Math.max(constraintLowerBound, dueStartMs);
       }

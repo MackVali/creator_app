@@ -1482,7 +1482,7 @@ export function HabitEditSheet({
         const recurrencePayload = isPracticeHabit
           ? "none"
           : normalizedRecurrence === "none"
-          ? null
+          ? "none"
           : recurrence;
 
         if (recurrenceMode === "ANCHORED") {

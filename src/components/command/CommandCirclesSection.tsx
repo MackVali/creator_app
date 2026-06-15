@@ -5044,7 +5044,7 @@ export const CommandCirclesSection = forwardRef<
           return (
             <div
               ref={circleDetailOverlayScrollRef}
-              className="fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-transparent [-webkit-overflow-scrolling:touch]"
+              className="fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-transparent pb-[calc(7rem+env(safe-area-inset-bottom,0px))] [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
               style={{
                 top: circleTransition.appViewportRect.top,
                 height: circleTransition.appViewportRect.height,

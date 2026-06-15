@@ -812,6 +812,11 @@ export function SkillDetail({
         pending: pendingRelatedHabitIds.has(habit.id),
         routinePosition: habit.routinePosition,
         currentStreakDays: habit.currentStreakDays,
+        habitType: habit.habitType,
+        recurrence: habit.recurrence,
+        skillId: id,
+        routineId: habit.routineId,
+        nextDueOverride: habit.nextDueOverride,
       };
 
       if (existing) {
@@ -842,6 +847,7 @@ export function SkillDetail({
     );
   }, [
     decoratedHabits,
+    id,
     isRelatedHabitCompletedForCurrentDay,
     pendingRelatedHabitIds,
     skill?.icon,
