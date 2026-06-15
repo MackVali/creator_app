@@ -9006,6 +9006,201 @@ describe("scheduleBacklog", () => {
     // proj-null-rank should be last (null ranks go last)
   });
 
+  it("recalculates project ranks by campaign goal order before stale project ranks", async () => {
+    instances = [];
+
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "goal-doctor-visit",
+        name: "DOCTOR VISIT",
+        status: "ACTIVE",
+        weight: 99999,
+        monumentId: "life",
+        priorityRank: 1,
+        priority_rank: 1,
+      },
+      {
+        id: "goal-fix-license",
+        name: "FIX LICENSE",
+        status: "ACTIVE",
+        weight: 99998,
+        monumentId: "life",
+        priorityRank: 2,
+        priority_rank: 2,
+      },
+    ]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-doctor-stale-20": {
+        id: "proj-doctor-stale-20",
+        name: "Doctor stale 20",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-doctor-visit",
+        globalRank: 20,
+      },
+      "proj-doctor-stale-10": {
+        id: "proj-doctor-stale-10",
+        name: "Doctor stale 10",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-doctor-visit",
+        globalRank: 10,
+      },
+      "proj-license-stale-1": {
+        id: "proj-license-stale-1",
+        name: "License stale 1",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-fix-license",
+        globalRank: 1,
+      },
+    });
+
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-doctor-stale-20": {
+        id: "proj-doctor-stale-20",
+        name: "Doctor stale 20",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-doctor-visit",
+        globalRank: 20,
+      },
+      "proj-doctor-stale-10": {
+        id: "proj-doctor-stale-10",
+        name: "Doctor stale 10",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-doctor-visit",
+        globalRank: 10,
+      },
+      "proj-license-stale-1": {
+        id: "proj-license-stale-1",
+        name: "License stale 1",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-fix-license",
+        globalRank: 1,
+      },
+    });
+
+    const { client, updateCalls } = createSupabaseMock();
+    await scheduleBacklog(userId, baseDate, client);
+
+    const rankByProjectId = new Map(
+      updateCalls
+        .filter(
+          (call) =>
+            call.payload &&
+            typeof call.payload.global_rank === "number"
+        )
+        .map((call) => [call.id, call.payload?.global_rank])
+    );
+
+    expect(rankByProjectId.get("proj-doctor-stale-10")).toBe(1);
+    expect(rankByProjectId.get("proj-doctor-stale-20")).toBe(2);
+    expect(rankByProjectId.get("proj-license-stale-1")).toBe(3);
+  });
+
+  it("does not use stale project ranks across different goals with equal goal rank", async () => {
+    instances = [];
+
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "goal-a",
+        name: "Goal A",
+        status: "ACTIVE",
+        weight: 99999,
+        monumentId: "life",
+        priorityRank: 1,
+        priority_rank: 1,
+      },
+      {
+        id: "goal-b",
+        name: "Goal B",
+        status: "ACTIVE",
+        weight: 99999,
+        monumentId: "life",
+        priorityRank: 1,
+        priority_rank: 1,
+      },
+    ]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-goal-b-stale-1": {
+        id: "proj-goal-b-stale-1",
+        name: "Goal B stale 1",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-b",
+        globalRank: 1,
+      },
+      "proj-goal-a-stale-99": {
+        id: "proj-goal-a-stale-99",
+        name: "Goal A stale 99",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-a",
+        globalRank: 99,
+      },
+    });
+
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-goal-b-stale-1": {
+        id: "proj-goal-b-stale-1",
+        name: "Goal B stale 1",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-b",
+        globalRank: 1,
+      },
+      "proj-goal-a-stale-99": {
+        id: "proj-goal-a-stale-99",
+        name: "Goal A stale 99",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+        goal_id: "goal-a",
+        globalRank: 99,
+      },
+    });
+
+    const { client, updateCalls } = createSupabaseMock();
+    await scheduleBacklog(userId, baseDate, client);
+
+    const rankByProjectId = new Map(
+      updateCalls
+        .filter(
+          (call) =>
+            call.payload &&
+            typeof call.payload.global_rank === "number"
+        )
+        .map((call) => [call.id, call.payload?.global_rank])
+    );
+
+    expect(rankByProjectId.get("proj-goal-a-stale-99")).toBe(1);
+    expect(rankByProjectId.get("proj-goal-b-stale-1")).toBe(2);
+  });
+
   it("keeps roadmap-backed critical projects ahead of equal non-roadmap critical projects when goal ranks are fetched canonically", async () => {
     instances = [];
 

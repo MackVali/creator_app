@@ -2757,6 +2757,7 @@ export async function scheduleBacklog(
     supabase: Client
   ) {
     type GoalRankRecord = CanonicalGoalRecord & {
+      id: string;
       monumentId?: string | null;
       monument_id?: string | null;
       priorityRank?: number | string | null;
@@ -2769,6 +2770,7 @@ export async function scheduleBacklog(
       string,
       Array<{
         id: string;
+        goalId: string;
         goalPriorityRank: number | null;
         projectGlobalRank: number | null;
         priorityStrength: number;
@@ -2807,6 +2809,7 @@ export async function scheduleBacklog(
         projectRankRecordsByMonument.get(monumentKey) ?? [];
       projectRankRecords.push({
         id: projectId,
+        goalId: goal.id,
         goalPriorityRank,
         projectGlobalRank,
         priorityStrength,
@@ -2825,6 +2828,10 @@ export async function scheduleBacklog(
         const aGoalRank = a.goalPriorityRank ?? Number.POSITIVE_INFINITY;
         const bGoalRank = b.goalPriorityRank ?? Number.POSITIVE_INFINITY;
         if (aGoalRank !== bGoalRank) return aGoalRank - bGoalRank;
+
+        if (a.goalId !== b.goalId) {
+          return a.goalId.localeCompare(b.goalId);
+        }
 
         const aProjectRank = a.projectGlobalRank ?? Number.POSITIVE_INFINITY;
         const bProjectRank = b.projectGlobalRank ?? Number.POSITIVE_INFINITY;

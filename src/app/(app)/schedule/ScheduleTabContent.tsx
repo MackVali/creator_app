@@ -1020,8 +1020,61 @@ type EditingSnapshot = {
   source_type: "PROJECT" | "HABIT";
   projectId: string | null;
   habitId: string | null;
+  habitSnapshot?: HabitEditSnapshot | null;
   originData?: ScheduleEditOrigin | null;
 };
+
+type EditableScheduleSourceType = EditingSnapshot["source_type"];
+
+type HabitEditSnapshot = {
+  name: string;
+  habitType: string | null;
+  recurrence: string | null;
+  durationMinutes: number | null;
+  energy: string | null;
+  goalId: string | null;
+  skillId: string | null;
+  routineId: string | null;
+  locationContextId: string | null;
+  daylightPreference: string | null;
+  windowEdgePreference: string | null;
+  nextDueOverride: string | null;
+  fixedStartLocal: string | null;
+  fixedEndLocal: string | null;
+};
+
+function normalizeEditableScheduleSourceType(
+  value: unknown
+): EditableScheduleSourceType | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  return normalized === "PROJECT" || normalized === "HABIT"
+    ? normalized
+    : null;
+}
+
+function buildHabitEditSnapshot(
+  habit?: HabitScheduleItem | null
+): HabitEditSnapshot | null {
+  if (!habit) return null;
+
+  return {
+    name: habit.name,
+    habitType: habit.habitType,
+    recurrence: habit.recurrence,
+    durationMinutes: habit.durationMinutes,
+    energy: habit.energy ?? habit.window?.energy ?? null,
+    goalId: habit.goalId,
+    skillId: habit.skillId,
+    routineId: null,
+    locationContextId: habit.locationContextId,
+    daylightPreference: habit.daylightPreference,
+    windowEdgePreference: habit.windowEdgePreference,
+    nextDueOverride: habit.nextDueOverride ?? null,
+    fixedStartLocal: habit.fixedStartLocal ?? null,
+    fixedEndLocal: habit.fixedEndLocal ?? null,
+  };
+}
 
 const scheduleEditNow = () =>
   typeof performance !== "undefined" && typeof performance.now === "function"
@@ -4714,13 +4767,18 @@ export default function ScheduleTabContent({
     }
 
     if (editingSnapshot?.source_type === "HABIT" && editingHabitId) {
+      const habitSnapshot =
+        editingSnapshot.habitSnapshot ??
+        buildHabitEditSnapshot(habitMap[editingHabitId] ?? null);
+
       return {
         entityType: "HABIT" as const,
         entityId: editingHabitId,
         instanceId: editingInstance?.id ?? null,
-        title: editingEventTitle ?? null,
+        title: habitSnapshot?.name ?? editingEventTitle ?? null,
         layoutId: editingLayoutId,
         originRect,
+        habitSnapshot,
       };
     }
 
@@ -4733,6 +4791,8 @@ export default function ScheduleTabContent({
     editingProjectId,
     editingSnapshot?.source_type,
     editingSnapshot?.originData,
+    editingSnapshot?.habitSnapshot,
+    habitMap,
   ]);
 
   const isProjectEditing =
@@ -6607,11 +6667,21 @@ export default function ScheduleTabContent({
 
   const openInstanceEditor = useCallback(
     (instance: ScheduleInstance, originData: ScheduleEditOrigin | null) => {
+      const sourceType = normalizeEditableScheduleSourceType(
+        instance.source_type
+      );
+      if (!sourceType || !instance.source_id) {
+        return;
+      }
+
       const nextSnapshot: EditingSnapshot = {
-        source_type: instance.source_type as "PROJECT" | "HABIT",
-        projectId:
-          instance.source_type === "PROJECT" ? instance.source_id : null,
-        habitId: instance.source_type === "HABIT" ? instance.source_id : null,
+        source_type: sourceType,
+        projectId: sourceType === "PROJECT" ? instance.source_id : null,
+        habitId: sourceType === "HABIT" ? instance.source_id : null,
+        habitSnapshot:
+          sourceType === "HABIT"
+            ? buildHabitEditSnapshot(habitMap[instance.source_id] ?? null)
+            : null,
         originData,
       };
       logEditingSnapshotEvent("openInstanceEditor", nextSnapshot, {
@@ -6623,7 +6693,19 @@ export default function ScheduleTabContent({
         instance,
       } as EditingSnapshot & { instance?: ScheduleInstance });
     },
-    []
+    [habitMap]
+  );
+
+  const preventTimelineCardSelectStart = useCallback((event: Event) => {
+    event.preventDefault();
+  }, []);
+
+  const bindProjectTimelineNoSelectSurface = useCallback(
+    (element: HTMLElement | null) => {
+      if (!element) return;
+      element.addEventListener("selectstart", preventTimelineCardSelectStart);
+    },
+    [preventTimelineCardSelectStart]
   );
 
   const handleInstancePointerDown = useCallback(
@@ -6831,9 +6913,12 @@ export default function ScheduleTabContent({
         if (
           instance &&
           instance.source_id &&
-          (instance.source_type === "PROJECT" ||
-            instance.source_type === "HABIT")
+          normalizeEditableScheduleSourceType(instance.source_type)
         ) {
+          const sourceType = normalizeEditableScheduleSourceType(
+            instance.source_type
+          );
+          if (!sourceType) return;
           if (DEBUG_LONG_PRESS) {
             console.log(`[LONGPRESS] feedback start`);
           }
@@ -6851,11 +6936,13 @@ export default function ScheduleTabContent({
             source_type: instance.source_type,
           });
           const nextSnapshot: EditingSnapshot = {
-            source_type: instance.source_type as "PROJECT" | "HABIT",
-            projectId:
-              instance.source_type === "PROJECT" ? instance.source_id : null,
-            habitId:
-              instance.source_type === "HABIT" ? instance.source_id : null,
+            source_type: sourceType,
+            projectId: sourceType === "PROJECT" ? instance.source_id : null,
+            habitId: sourceType === "HABIT" ? instance.source_id : null,
+            habitSnapshot:
+              sourceType === "HABIT"
+                ? buildHabitEditSnapshot(habitMap[instance.source_id] ?? null)
+                : null,
             originData,
           };
           logEditingSnapshotEvent("longpress-instance", nextSnapshot, {
@@ -6901,6 +6988,7 @@ export default function ScheduleTabContent({
             source_type: "HABIT",
             projectId: null,
             habitId,
+            habitSnapshot: buildHabitEditSnapshot(habitMap[habitId] ?? null),
             originData,
           };
           logEditingSnapshotEvent("longpress-habit-synthetic", nextSnapshot, {
@@ -6915,7 +7003,13 @@ export default function ScheduleTabContent({
       }, SCHEDULE_CARD_LONG_PRESS_MS);
       longPressTimerRef.current = timerId;
     },
-    [clearLongPressTimer, openInstanceEditor, triggerLongPressFeedback]
+    [
+      clearLongPressTimer,
+      habitMap,
+      triggerLongPressFeedback,
+      dayViewDateKey,
+      userId,
+    ]
   );
 
   const handleInstancePointerUp = useCallback(
@@ -8067,6 +8161,18 @@ export default function ScheduleTabContent({
                 hasHabitInstance && placement.instanceId
                   ? completionBounceId === placement.instanceId
                   : false;
+              const placementScheduleInstance = placement.instanceId
+                ? instancesById.get(placement.instanceId) ?? null
+                : null;
+              const placementScheduleSourceType =
+                normalizeEditableScheduleSourceType(
+                  placementScheduleInstance?.source_type
+                );
+              const placementCanonicalHabitId =
+                placementScheduleSourceType === "HABIT" &&
+                placementScheduleInstance?.source_id
+                  ? placementScheduleInstance.source_id
+                  : placement.habitId;
               const handleHabitPrimaryAction = () => {
                 if (disableHabitInteractions) {
                   console.log(
@@ -8134,22 +8240,47 @@ export default function ScheduleTabContent({
                               boxShadow,
                             };
                           }
-                          const nextSnapshot: EditingSnapshot = {
-                            source_type: "HABIT",
-                            projectId: null,
-                            habitId: placement.habitId,
-                            originData,
-                          };
                           const scheduledHabitInstance =
                             placement.instanceId
                               ? instancesById.get(placement.instanceId) ?? null
                               : null;
+                          const scheduledSourceType =
+                            normalizeEditableScheduleSourceType(
+                              scheduledHabitInstance?.source_type
+                            );
+                          const canonicalHabitId =
+                            scheduledSourceType === "HABIT" &&
+                            scheduledHabitInstance?.source_id
+                              ? scheduledHabitInstance.source_id
+                              : placement.habitId;
+                          const resolvedHabit =
+                            habitMap[canonicalHabitId] ?? null;
+                          const habitSnapshot =
+                            buildHabitEditSnapshot(resolvedHabit);
+                          const nextSnapshot: EditingSnapshot = {
+                            source_type: "HABIT",
+                            projectId: null,
+                            habitId: canonicalHabitId,
+                            habitSnapshot,
+                            originData,
+                          };
+                          if (process.env.NODE_ENV === "development") {
+                            console.log("[ScheduleEdit] habit timeline hold", {
+                              instanceId: scheduledHabitInstance?.id ?? null,
+                              sourceType:
+                                scheduledHabitInstance?.source_type ?? "HABIT",
+                              sourceId: canonicalHabitId,
+                              resolvedHabit: Boolean(resolvedHabit),
+                              title: habitSnapshot?.name ?? placement.habitName,
+                            });
+                          }
                           logEditingSnapshotEvent(
                             "habit-card-pointerdown",
                             nextSnapshot,
                             {
                               hasOrigin: Boolean(originData),
                               placementId: placement.instanceId,
+                              sourceId: canonicalHabitId,
                             }
                           );
                           setEditingSnapshot({
@@ -8180,7 +8311,7 @@ export default function ScheduleTabContent({
               const editorMounted =
                 editingProjectId !== null || editingHabitId !== null;
               const hideForEdit =
-                editorMounted && editingHabitId === placement.habitId;
+                editorMounted && editingHabitId === placementCanonicalHabitId;
 
               if (hideForEdit) {
                 return null;
@@ -8536,6 +8667,7 @@ export default function ScheduleTabContent({
                             key="project"
                             layout="position"
                             layoutId={layoutTokens.card}
+                            ref={bindProjectTimelineNoSelectSurface}
                             aria-label={`Project ${project.name}`}
                             role="button"
                             tabIndex={canToggle ? 0 : -1}
@@ -8665,6 +8797,8 @@ export default function ScheduleTabContent({
                             style={{
                               ...projectCardStyle,
                               ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+                              touchAction: TIMELINE_TOUCH_ACTION,
+                              WebkitTapHighlightColor: "transparent",
                             }}
                             initial={
                               prefersReducedMotion
@@ -9412,6 +9546,7 @@ export default function ScheduleTabContent({
       handleInstancePointerDown,
       handleInstancePointerUp,
       handleInstancePointerCancel,
+      bindProjectTimelineNoSelectSurface,
       shouldBlockClickFromLongPress,
       longPressBounceId,
       completionBounceId,
@@ -9419,6 +9554,7 @@ export default function ScheduleTabContent({
       editingInstance,
       editingProjectId,
       editingHabitId,
+      habitMap,
     ]
   );
 

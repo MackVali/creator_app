@@ -46,6 +46,10 @@ import {
   type RoadmapMixedItem,
   type RoadmapWithItems,
 } from "@/lib/queries/roadmaps";
+import {
+  findRoadmapCampaignGoalIds,
+  findRedundantStandaloneRoadmapItemIds,
+} from "@/lib/queries/roadmap-reconciliation";
 import { computeGoalWeight } from "@/lib/goals/weight";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 
@@ -810,6 +814,17 @@ async function fetchTrueRoadmapsForCircle(
 
   const campaignGoalRows =
     (campaignGoalsResult.data ?? []) as CircleCampaignGoalRow[];
+  const campaignGoalIdsByRoadmapId = findRoadmapCampaignGoalIds({
+    roadmapItems,
+    campaignGoals: campaignGoalRows,
+  });
+  const redundantStandaloneItemIds = findRedundantStandaloneRoadmapItemIds({
+    roadmapItems,
+    campaignGoals: campaignGoalRows,
+  });
+  const visibleRoadmapItems = roadmapItems.filter(
+    (item) => !redundantStandaloneItemIds.has(item.id)
+  );
   const campaignGoalIds = Array.from(
     new Set(campaignGoalRows.map((row) => row.goal_id).filter(Boolean))
   );
@@ -932,7 +947,7 @@ async function fetchTrueRoadmapsForCircle(
   const itemsByRoadmapId = new Map<string, RoadmapMixedItem[]>();
   const itemGoalIds = new Set<string>();
 
-  for (const item of roadmapItems) {
+  for (const item of visibleRoadmapItems) {
     if (item.goal_id) itemGoalIds.add(item.goal_id);
     const items = itemsByRoadmapId.get(item.roadmap_id) ?? [];
     items.push({
@@ -965,16 +980,20 @@ async function fetchTrueRoadmapsForCircle(
   return roadmaps.map((roadmap) => {
     const items = [...(itemsByRoadmapId.get(roadmap.id) ?? [])];
     const legacyGoals = legacyGoalsByRoadmapId.get(roadmap.id) ?? [];
-    legacyGoals.forEach((goal, index) => {
-      items.push({
-        id: `legacy-goal-${goal.id}`,
-        roadmap_id: roadmap.id,
-        item_type: "GOAL",
-        position: goal.priority_rank ?? items.length + index + 1,
-        campaign: null,
-        goal,
+    const nestedCampaignGoalIds =
+      campaignGoalIdsByRoadmapId.get(roadmap.id) ?? new Set<string>();
+    legacyGoals
+      .filter((goal) => !nestedCampaignGoalIds.has(goal.id))
+      .forEach((goal, index) => {
+        items.push({
+          id: `legacy-goal-${goal.id}`,
+          roadmap_id: roadmap.id,
+          item_type: "GOAL",
+          position: goal.priority_rank ?? items.length + index + 1,
+          campaign: null,
+          goal,
+        });
       });
-    });
 
     const filteredItems = items
       .filter((item) => {

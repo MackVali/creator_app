@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   buildWindowsForDateFromDayTypeBlocks,
+  fetchGoalsForUser,
   fetchWindowsForDate,
   type WindowLite,
 } from "../../../src/lib/scheduler/repo";
@@ -172,6 +173,268 @@ describe("fetchWindowsForDate", () => {
     ).resolves.toBeDefined();
 
     v2Spy.mockRestore();
+  });
+});
+
+describe("fetchGoalsForUser", () => {
+  function createTableMockClient(tables: Record<string, unknown[]>) {
+    type TableMockResult = { data: unknown[]; error: null };
+    type TableMockBuilder = {
+      select: () => TableMockBuilder;
+      eq: () => TableMockBuilder;
+      in: () => TableMockBuilder;
+      not: () => TableMockBuilder;
+      order: () => TableMockBuilder;
+      then: <TResult1 = TableMockResult, TResult2 = never>(
+        onFulfilled?:
+          | ((value: TableMockResult) => TResult1 | PromiseLike<TResult1>)
+          | null,
+        onRejected?:
+          | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+          | null
+      ) => Promise<TResult1 | TResult2>;
+    };
+
+    return {
+      from: vi.fn((table: string) => {
+        const result: TableMockResult = {
+          data: tables[table] ?? [],
+          error: null,
+        };
+        const builder: TableMockBuilder = {
+          select: vi.fn(() => builder),
+          eq: vi.fn(() => builder),
+          in: vi.fn(() => builder),
+          not: vi.fn(() => builder),
+          order: vi.fn(() => builder),
+          then: (onFulfilled, onRejected) =>
+            Promise.resolve(result).then(onFulfilled, onRejected),
+        };
+        return builder;
+      }),
+    };
+  }
+
+  it("derives active goal priority from visible monument roadmap order", async () => {
+    const client = createTableMockClient({
+      goals: [
+        {
+          id: "goal-standalone",
+          name: "Standalone",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: 9,
+          global_rank: null,
+          monument_id: "mon-1",
+        },
+        {
+          id: "goal-campaign",
+          name: "Campaign Goal",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: 7,
+          global_rank: null,
+          monument_id: "mon-1",
+        },
+        {
+          id: "goal-duplicate",
+          name: "Duplicate",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: 1,
+          global_rank: null,
+          monument_id: "mon-1",
+        },
+        {
+          id: "goal-paused",
+          name: "Paused",
+          status: "PAUSED",
+          active: false,
+          priority_rank: 2,
+          global_rank: null,
+          monument_id: "mon-1",
+        },
+        {
+          id: "goal-second-roadmap",
+          name: "Second Roadmap",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: 3,
+          global_rank: null,
+          monument_id: "mon-1",
+        },
+        {
+          id: "goal-no-roadmap",
+          name: "Legacy Fallback",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: 6,
+          global_rank: null,
+          monument_id: "mon-1",
+        },
+      ],
+      roadmaps: [
+        {
+          id: "roadmap-later",
+          monument_id: "mon-1",
+          created_at: "2024-01-02T00:00:00Z",
+        },
+        {
+          id: "roadmap-earlier",
+          monument_id: "mon-1",
+          created_at: "2024-01-01T00:00:00Z",
+        },
+      ],
+      roadmap_items: [
+        {
+          id: "item-second-roadmap",
+          roadmap_id: "roadmap-later",
+          item_type: "GOAL",
+          goal_id: "goal-second-roadmap",
+          position: 1,
+        },
+        {
+          id: "item-duplicate-late",
+          roadmap_id: "roadmap-earlier",
+          item_type: "GOAL",
+          goal_id: "goal-duplicate",
+          position: 3,
+        },
+        {
+          id: "item-campaign",
+          roadmap_id: "roadmap-earlier",
+          item_type: "CAMPAIGN",
+          campaign_id: "campaign-1",
+          position: 2,
+        },
+        {
+          id: "item-standalone",
+          roadmap_id: "roadmap-earlier",
+          item_type: "GOAL",
+          goal_id: "goal-standalone",
+          position: 1,
+        },
+      ],
+      campaign_goals: [
+        {
+          id: "campaign-goal-duplicate",
+          campaign_id: "campaign-1",
+          goal_id: "goal-duplicate",
+          position: 3,
+        },
+        {
+          id: "campaign-goal-paused",
+          campaign_id: "campaign-1",
+          goal_id: "goal-paused",
+          position: 1,
+        },
+        {
+          id: "campaign-goal-active",
+          campaign_id: "campaign-1",
+          goal_id: "goal-campaign",
+          position: 2,
+        },
+      ],
+    });
+
+    const goals = await fetchGoalsForUser("user-1", client as never);
+    const priorityById = new Map(
+      goals.map((goal) => [goal.id, goal.priorityRank])
+    );
+
+    expect(priorityById.get("goal-standalone")).toBe(1);
+    expect(priorityById.get("goal-campaign")).toBe(2);
+    expect(priorityById.get("goal-duplicate")).toBe(3);
+    expect(priorityById.get("goal-second-roadmap")).toBe(4);
+    expect(priorityById.get("goal-no-roadmap")).toBe(6);
+    expect(priorityById.get("goal-paused")).toBe(2);
+  });
+
+  it("ignores duplicate standalone roadmap items when the goal is inside a campaign in the same roadmap", async () => {
+    const client = createTableMockClient({
+      goals: [
+        {
+          id: "doctor-visit",
+          name: "Doctor Visit",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: null,
+          global_rank: null,
+          monument_id: "life",
+        },
+        {
+          id: "fix-license",
+          name: "Fix License",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: null,
+          global_rank: null,
+          monument_id: "life",
+        },
+        {
+          id: "standalone-after",
+          name: "Standalone After",
+          status: "ACTIVE",
+          active: true,
+          priority_rank: null,
+          global_rank: null,
+          monument_id: "life",
+        },
+      ],
+      roadmaps: [
+        {
+          id: "life-roadmap",
+          monument_id: "life",
+          created_at: "2024-01-01T00:00:00Z",
+        },
+      ],
+      roadmap_items: [
+        {
+          id: "duplicate-standalone",
+          roadmap_id: "life-roadmap",
+          item_type: "GOAL",
+          goal_id: "fix-license",
+          position: 1,
+        },
+        {
+          id: "life-campaign-item",
+          roadmap_id: "life-roadmap",
+          item_type: "CAMPAIGN",
+          campaign_id: "my-life",
+          position: 2,
+        },
+        {
+          id: "standalone-item",
+          roadmap_id: "life-roadmap",
+          item_type: "GOAL",
+          goal_id: "standalone-after",
+          position: 3,
+        },
+      ],
+      campaign_goals: [
+        {
+          id: "campaign-doctor",
+          campaign_id: "my-life",
+          goal_id: "doctor-visit",
+          position: 1,
+        },
+        {
+          id: "campaign-license",
+          campaign_id: "my-life",
+          goal_id: "fix-license",
+          position: 2,
+        },
+      ],
+    });
+
+    const goals = await fetchGoalsForUser("user-1", client as never);
+    const priorityById = new Map(
+      goals.map((goal) => [goal.id, goal.priorityRank])
+    );
+
+    expect(priorityById.get("doctor-visit")).toBe(1);
+    expect(priorityById.get("fix-license")).toBe(2);
+    expect(priorityById.get("standalone-after")).toBe(3);
   });
 });
 

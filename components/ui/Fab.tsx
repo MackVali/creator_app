@@ -3987,6 +3987,94 @@ export function Fab({
     setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
   }, []);
+  const applyHabitEditDraft = useCallback(
+    (
+      draft: FabHabitEditSnapshot | null | undefined,
+      options?: { titleFallback?: string | null },
+    ) => {
+      const hasDraftName =
+        !!draft && Object.prototype.hasOwnProperty.call(draft, "name");
+      const titleFallback =
+        typeof options?.titleFallback === "string"
+          ? options.titleFallback.trim()
+          : "";
+      const durationMinutes =
+        typeof draft?.durationMinutes === "number" &&
+        Number.isFinite(draft.durationMinutes)
+          ? draft.durationMinutes
+          : 15;
+
+      setHabitName(
+        hasDraftName
+          ? typeof draft?.name === "string"
+            ? draft.name
+            : ""
+          : titleFallback,
+      );
+      setHabitWhy(
+        typeof draft?.description === "string" ? draft.description : "",
+      );
+      setHabitType(normalizeHabitType(draft?.habitType) || defaultHabitType);
+      setHabitRecurrence(
+        typeof draft?.recurrence === "string" && draft.recurrence.length > 0
+          ? draft.recurrence
+          : defaultHabitRecurrence,
+      );
+      setHabitDuration(String(durationMinutes));
+      setHabitEnergy(
+        typeof draft?.energy === "string" && draft.energy.length > 0
+          ? draft.energy
+          : "LOW",
+      );
+      setHabitGoalId(typeof draft?.goalId === "string" ? draft.goalId : "");
+      setHabitSkillId(typeof draft?.skillId === "string" ? draft.skillId : "");
+      setHabitRoutineId(
+        typeof draft?.routineId === "string" ? draft.routineId : "",
+      );
+      setHabitCircleId(
+        typeof draft?.circleId === "string" ? draft.circleId : "",
+      );
+      setHabitLocationContextId(
+        typeof draft?.locationContextId === "string"
+          ? draft.locationContextId
+          : "",
+      );
+      setHabitDaylightPreference(
+        typeof draft?.daylightPreference === "string" &&
+          draft.daylightPreference.length > 0
+          ? draft.daylightPreference
+          : "ALL_DAY",
+      );
+      setHabitWindowEdgePreference(
+        typeof draft?.windowEdgePreference === "string" &&
+          draft.windowEdgePreference.length > 0
+          ? draft.windowEdgePreference
+          : "FRONT",
+      );
+      setHabitNextDueOverride(
+        formatDateTimeLocalInputValue(
+          typeof draft?.nextDueOverride === "string"
+            ? draft.nextDueOverride
+            : null,
+        ),
+      );
+      setHabitFixedStartTime(
+        formatLocalTimeInputValue(
+          typeof draft?.fixedStartLocal === "string"
+            ? draft.fixedStartLocal
+            : null,
+        ),
+      );
+      setHabitFixedEndTime(
+        formatLocalTimeInputValue(
+          typeof draft?.fixedEndLocal === "string"
+            ? draft.fixedEndLocal
+            : null,
+        ),
+      );
+    },
+    [defaultHabitRecurrence, defaultHabitType],
+  );
   const handleMemoCaptureActionToggle = useCallback(
     (action: MemoCaptureToggleAction) => {
       if (
@@ -4171,61 +4259,10 @@ export function Fab({
     const seededTitle =
       typeof editTarget.title === "string" ? editTarget.title.trim() : "";
 
-    if (snapshot?.name || seededTitle) {
-      setHabitName(snapshot?.name?.trim() || seededTitle);
-    }
-    if (snapshot?.description != null) {
-      setHabitWhy(snapshot.description);
-    }
-    if (snapshot?.habitType) {
-      setHabitType(normalizeHabitType(snapshot.habitType) || defaultHabitType);
-    }
-    if (snapshot?.recurrence) {
-      setHabitRecurrence(snapshot.recurrence);
-    }
-    if (
-      typeof snapshot?.durationMinutes === "number" &&
-      Number.isFinite(snapshot.durationMinutes)
-    ) {
-      setHabitDuration(String(snapshot.durationMinutes));
-    }
-    if (snapshot?.energy) {
-      setHabitEnergy(snapshot.energy);
-    }
-    if (snapshot?.goalId) {
-      setHabitGoalId(snapshot.goalId);
-    }
-    if (snapshot?.skillId) {
-      setHabitSkillId(snapshot.skillId);
-    }
-    if (snapshot?.routineId) {
-      setHabitRoutineId(snapshot.routineId);
-    }
-    if (snapshot?.circleId) {
-      setHabitCircleId(snapshot.circleId);
-    }
-    if (snapshot?.locationContextId) {
-      setHabitLocationContextId(snapshot.locationContextId);
-    }
-    if (snapshot?.daylightPreference) {
-      setHabitDaylightPreference(snapshot.daylightPreference);
-    }
-    if (snapshot?.windowEdgePreference) {
-      setHabitWindowEdgePreference(snapshot.windowEdgePreference);
-    }
-    if (snapshot?.nextDueOverride) {
-      setHabitNextDueOverride(
-        formatDateTimeLocalInputValue(snapshot.nextDueOverride),
-      );
-    }
-    if (snapshot?.fixedStartLocal) {
-      setHabitFixedStartTime(formatLocalTimeInputValue(snapshot.fixedStartLocal));
-    }
-    if (snapshot?.fixedEndLocal) {
-      setHabitFixedEndTime(formatLocalTimeInputValue(snapshot.fixedEndLocal));
-    }
+    if (!snapshot && !seededTitle) return;
+    applyHabitEditDraft(snapshot ?? {}, { titleFallback: seededTitle });
   }, [
-    defaultHabitType,
+    applyHabitEditDraft,
     editTarget?.entityId,
     editTarget?.entityType,
     editTarget?.habitSnapshot,
@@ -4249,6 +4286,9 @@ export function Fab({
       editTarget.instanceId.trim().length > 0
         ? editTarget.instanceId
         : null;
+    const habitSnapshot = editTarget?.habitSnapshot ?? null;
+    const habitTitleFallback =
+      typeof editTarget?.title === "string" ? editTarget.title.trim() : "";
     if (!entityType || !entityId) {
       setEditHydrating(false);
       return;
@@ -4266,6 +4306,13 @@ export function Fab({
     let cancelled = false;
 
     const hydrateEditTarget = async () => {
+      const applyHabitSnapshotFallback = () => {
+        if (entityType !== "HABIT") return;
+        if (!habitSnapshot && !habitTitleFallback) return;
+        applyHabitEditDraft(habitSnapshot ?? {}, {
+          titleFallback: habitTitleFallback,
+        });
+      };
       const supabase = getSupabaseBrowser();
       const safeEditTarget = {
         entityType,
@@ -4273,6 +4320,7 @@ export function Fab({
       };
       if (!supabase) {
         if (!cancelled) {
+          applyHabitSnapshotFallback();
           setEditHydrating(false);
         }
         return;
@@ -4289,6 +4337,7 @@ export function Fab({
         if (userError) throw userError;
         if (!user) {
           if (!cancelled) {
+            applyHabitSnapshotFallback();
             setEditHydrating(false);
           }
           return;
@@ -4661,7 +4710,9 @@ export function Fab({
           ]);
 
           if (habitError) throw habitError;
-          if (tagError) throw tagError;
+          if (tagError) {
+            console.error("Failed to hydrate FAB habit tags", tagError);
+          }
           if (cancelled) return;
 
           if (!habitRow) {
@@ -4671,8 +4722,9 @@ export function Fab({
               entityId,
               branch: "HABIT",
             });
+            applyHabitSnapshotFallback();
             setSelectedTagIds(
-              Array.isArray(tagRows)
+              !tagError && Array.isArray(tagRows)
                 ? tagRows
                     .map((row) => row.tag_id)
                     .filter((tagId): tagId is string => Boolean(tagId))
@@ -4697,84 +4749,70 @@ export function Fab({
                 ? habitRowRecord.duration_min
                 : 15;
 
-          setHabitName(
-            typeof habitRowRecord.name === "string" ? habitRowRecord.name : "",
-          );
-          setHabitType(normalizedHabitTypeValue);
-          setHabitRecurrence(
-            typeof habitRowRecord.recurrence === "string"
-              ? habitRowRecord.recurrence
-              : defaultHabitRecurrence,
-          );
-          setHabitDuration(String(durationValue));
-          setHabitEnergy(
-            typeof habitRowRecord.energy === "string"
-              ? habitRowRecord.energy
-              : "LOW",
-          );
-          setHabitGoalId(
-            typeof habitRowRecord.goal_id === "string"
-              ? habitRowRecord.goal_id
-              : "",
-          );
-          setHabitSkillId(
-            typeof habitRowRecord.skill_id === "string"
-              ? habitRowRecord.skill_id
-              : "",
-          );
-          setHabitWhy(
-            typeof habitRowRecord.description === "string"
-              ? habitRowRecord.description
-              : "",
-          );
-          setHabitLocationContextId(
-            typeof habitRowRecord.location_context_id === "string"
-              ? habitRowRecord.location_context_id
-              : "",
-          );
-          setHabitDaylightPreference(
-            typeof habitRowRecord.daylight_preference === "string"
-              ? habitRowRecord.daylight_preference
-              : "ALL_DAY",
-          );
-          setHabitWindowEdgePreference(
-            typeof habitRowRecord.window_edge_preference === "string"
-              ? habitRowRecord.window_edge_preference
-              : "FRONT",
-          );
-          setHabitNextDueOverride(
-            formatDateTimeLocalInputValue(
+          applyHabitEditDraft({
+            name:
+              typeof habitRowRecord.name === "string"
+                ? habitRowRecord.name
+                : null,
+            description:
+              typeof habitRowRecord.description === "string"
+                ? habitRowRecord.description
+                : typeof habitRowRecord.why === "string"
+                  ? habitRowRecord.why
+                  : null,
+            habitType: normalizedHabitTypeValue,
+            recurrence:
+              typeof habitRowRecord.recurrence === "string"
+                ? habitRowRecord.recurrence
+                : null,
+            durationMinutes: durationValue,
+            energy:
+              typeof habitRowRecord.energy === "string"
+                ? habitRowRecord.energy
+                : null,
+            goalId:
+              typeof habitRowRecord.goal_id === "string"
+                ? habitRowRecord.goal_id
+                : null,
+            skillId:
+              typeof habitRowRecord.skill_id === "string"
+                ? habitRowRecord.skill_id
+                : null,
+            routineId:
+              typeof habitRowRecord.routine_id === "string"
+                ? habitRowRecord.routine_id
+                : null,
+            circleId:
+              typeof habitRowRecord.circle_id === "string"
+                ? habitRowRecord.circle_id
+                : null,
+            locationContextId:
+              typeof habitRowRecord.location_context_id === "string"
+                ? habitRowRecord.location_context_id
+                : null,
+            daylightPreference:
+              typeof habitRowRecord.daylight_preference === "string"
+                ? habitRowRecord.daylight_preference
+                : null,
+            windowEdgePreference:
+              typeof habitRowRecord.window_edge_preference === "string"
+                ? habitRowRecord.window_edge_preference
+                : null,
+            nextDueOverride:
               typeof habitRowRecord.next_due_override === "string"
                 ? habitRowRecord.next_due_override
                 : null,
-            ),
-          );
-          setHabitFixedStartTime(
-            formatLocalTimeInputValue(
+            fixedStartLocal:
               typeof habitRowRecord.fixed_start_local === "string"
                 ? habitRowRecord.fixed_start_local
                 : null,
-            ),
-          );
-          setHabitFixedEndTime(
-            formatLocalTimeInputValue(
+            fixedEndLocal:
               typeof habitRowRecord.fixed_end_local === "string"
                 ? habitRowRecord.fixed_end_local
                 : null,
-            ),
-          );
-          setHabitRoutineId(
-            typeof habitRowRecord.routine_id === "string"
-              ? habitRowRecord.routine_id
-              : "",
-          );
-          setHabitCircleId(
-            typeof habitRowRecord.circle_id === "string"
-              ? habitRowRecord.circle_id
-              : "",
-          );
+          });
           setSelectedTagIds(
-            Array.isArray(tagRows)
+            !tagError && Array.isArray(tagRows)
               ? tagRows
                   .map((row) => row.tag_id)
                   .filter((tagId): tagId is string => Boolean(tagId))
@@ -4885,6 +4923,9 @@ export function Fab({
           hint: supabaseError?.hint ?? null,
           code: supabaseError?.code ?? null,
         });
+        if (!cancelled && entityType === "HABIT") {
+          applyHabitSnapshotFallback();
+        }
       } finally {
         if (!cancelled) {
           setEditHydrating(false);
@@ -4898,11 +4939,14 @@ export function Fab({
       cancelled = true;
     };
   }, [
+    applyHabitEditDraft,
     defaultHabitRecurrence,
     defaultHabitType,
     editTarget?.entityId,
     editTarget?.entityType,
+    editTarget?.habitSnapshot,
     editTarget?.instanceId,
+    editTarget?.title,
     resetHabitFormDraft,
     resetProjectFormDraft,
     resetTaskFormDraft,
@@ -13593,7 +13637,13 @@ export function Fab({
   };
 
   useEffect(() => {
+    const isEditTargetActive = Boolean(
+      editTarget?.entityId && editTarget?.entityType,
+    );
     if (!isOpen && !isDirectCreationOpen) {
+      if (isEditTargetActive) {
+        return;
+      }
       if (
         creationRequest &&
         openingCreationRequestIdRef.current === creationRequest.id
@@ -13617,6 +13667,8 @@ export function Fab({
     }
   }, [
     creationRequest,
+    editTarget?.entityId,
+    editTarget?.entityType,
     isDirectCreationOpen,
     isOpen,
     resetPageDragState,
