@@ -231,7 +231,7 @@ export function MonumentGridWithSharedTransition({
           <motion.div
             key="overlay"
             ref={detailOverlayScrollRef}
-            className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch]"
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

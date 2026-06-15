@@ -1,5 +1,9 @@
-import { getSupabaseBrowser } from "@/lib/supabase";
-import { findMissingMonumentRoadmapGoalIds } from "./roadmap-reconciliation";
+import { getSupabaseBrowser } from "../supabase";
+import {
+  findMissingMonumentRoadmapGoalIds,
+  findRoadmapCampaignGoalIds,
+  findRedundantStandaloneRoadmapItemIds,
+} from "./roadmap-reconciliation";
 
 export { findMissingMonumentRoadmapGoalIds } from "./roadmap-reconciliation";
 
@@ -249,6 +253,120 @@ async function requireCurrentUserId(): Promise<string> {
   return user.id;
 }
 
+async function getCampaignRoadmapIds(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  userId: string,
+  campaignId: string
+): Promise<string[]> {
+  const [
+    { data: campaignRows, error: campaignError },
+    { data: roadmapItemRows, error: roadmapItemsError },
+  ] = await Promise.all([
+    supabase
+      .from("campaigns")
+      .select("roadmap_id")
+      .eq("user_id", userId)
+      .eq("id", campaignId),
+    supabase
+      .from("roadmap_items")
+      .select("roadmap_id")
+      .eq("user_id", userId)
+      .eq("item_type", "CAMPAIGN")
+      .eq("campaign_id", campaignId),
+  ]);
+
+  if (campaignError) {
+    throw campaignError;
+  }
+  if (roadmapItemsError) {
+    throw roadmapItemsError;
+  }
+
+  return Array.from(
+    new Set(
+      [...(campaignRows ?? []), ...(roadmapItemRows ?? [])]
+        .map((row) => row.roadmap_id)
+        .filter((roadmapId): roadmapId is string => Boolean(roadmapId))
+    )
+  );
+}
+
+async function removeStandaloneRoadmapGoalItems(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  userId: string,
+  input: {
+    roadmapIds: string[];
+    goalId: string;
+  }
+): Promise<void> {
+  if (input.roadmapIds.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("roadmap_items")
+    .delete()
+    .eq("user_id", userId)
+    .eq("item_type", "GOAL")
+    .eq("goal_id", input.goalId)
+    .in("roadmap_id", input.roadmapIds);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function assertGoalIsNotNestedInRoadmapCampaign(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  userId: string,
+  input: {
+    roadmapId: string;
+    goalId: string;
+  }
+): Promise<void> {
+  const { data: campaignItemRows, error: campaignItemsError } = await supabase
+    .from("roadmap_items")
+    .select("campaign_id")
+    .eq("user_id", userId)
+    .eq("roadmap_id", input.roadmapId)
+    .eq("item_type", "CAMPAIGN")
+    .not("campaign_id", "is", null);
+
+  if (campaignItemsError) {
+    throw campaignItemsError;
+  }
+
+  const campaignIds = Array.from(
+    new Set(
+      (campaignItemRows ?? [])
+        .map((item) => item.campaign_id)
+        .filter((campaignId): campaignId is string => Boolean(campaignId))
+    )
+  );
+
+  if (campaignIds.length === 0) {
+    return;
+  }
+
+  const { data: campaignGoalRows, error: campaignGoalsError } = await supabase
+    .from("campaign_goals")
+    .select("campaign_id")
+    .eq("user_id", userId)
+    .eq("goal_id", input.goalId)
+    .in("campaign_id", campaignIds)
+    .limit(1);
+
+  if (campaignGoalsError) {
+    throw campaignGoalsError;
+  }
+
+  if ((campaignGoalRows ?? []).length > 0) {
+    throw new Error(
+      "Goal already belongs to a Campaign in this Roadmap. Move it out of the Campaign before adding it as a standalone Roadmap Goal."
+    );
+  }
+}
+
 export async function listRoadmaps(
   userId: string
 ): Promise<Roadmap[]> {
@@ -429,6 +547,18 @@ export async function listRoadmapsWithItems(
     throw campaignGoalGoalError;
   }
 
+  const campaignGoalIdsByRoadmapId = findRoadmapCampaignGoalIds({
+    roadmapItems,
+    campaignGoals: campaignGoalRows ?? [],
+  });
+  const redundantStandaloneItemIds = findRedundantStandaloneRoadmapItemIds({
+    roadmapItems,
+    campaignGoals: campaignGoalRows ?? [],
+  });
+  const visibleRoadmapItems = roadmapItems.filter(
+    (item) => !redundantStandaloneItemIds.has(item.id)
+  );
+
   const projectGoalIds = Array.from(
     new Set([...roadmapGoalIds, ...campaignGoalIds, ...legacyGoals.map(goal => goal.id)])
   );
@@ -554,7 +684,7 @@ export async function listRoadmapsWithItems(
   );
 
   const roadmapItemsByRoadmapId = new Map<string, RoadmapMixedItem[]>();
-  for (const item of roadmapItems) {
+  for (const item of visibleRoadmapItems) {
     const items = roadmapItemsByRoadmapId.get(item.roadmap_id) ?? [];
     items.push({
       id: item.id,
@@ -570,19 +700,23 @@ export async function listRoadmapsWithItems(
   return roadmaps.map(roadmap => {
     const existingItems = roadmapItemsByRoadmapId.get(roadmap.id) ?? [];
     const legacyRoadmapGoals = legacyGoalsByRoadmapId.get(roadmap.id) ?? [];
+    const nestedCampaignGoalIds =
+      campaignGoalIdsByRoadmapId.get(roadmap.id) ?? new Set<string>();
     const items = (
       existingItems.length > 0
         ? existingItems
-        : legacyRoadmapGoals.map(({ goal, priority_rank }, index) => {
-            return {
-              id: `legacy-goal-${goal.id}`,
-              roadmap_id: roadmap.id,
-              item_type: "GOAL" as const,
-              position: priority_rank ?? index + 1,
-              campaign: null,
-              goal,
-            };
-          })
+        : legacyRoadmapGoals
+            .filter(({ goal }) => !nestedCampaignGoalIds.has(goal.id))
+            .map(({ goal, priority_rank }, index) => {
+              return {
+                id: `legacy-goal-${goal.id}`,
+                roadmap_id: roadmap.id,
+                item_type: "GOAL" as const,
+                position: priority_rank ?? index + 1,
+                campaign: null,
+                goal,
+              };
+            })
     ).filter(item => {
       if (item.item_type === "CAMPAIGN") {
         return Boolean(item.campaign);
@@ -867,6 +1001,8 @@ export async function addGoalToRoadmapItems(
     throw new Error("Supabase client not available");
   }
 
+  await assertGoalIsNotNestedInRoadmapCampaign(supabase, userId, input);
+
   const { data, error } = await supabase
     .from("roadmap_items")
     .insert({
@@ -1106,6 +1242,12 @@ export async function addGoalToCampaign(
     throw new Error("Supabase client not available");
   }
 
+  const roadmapIds = await getCampaignRoadmapIds(
+    supabase,
+    userId,
+    input.campaignId
+  );
+
   const { data, error } = await supabase
     .from("campaign_goals")
     .insert({
@@ -1120,6 +1262,21 @@ export async function addGoalToCampaign(
   if (error) {
     console.error("Error adding goal to campaign:", error);
     throw error;
+  }
+
+  await removeStandaloneRoadmapGoalItems(supabase, userId, {
+    roadmapIds,
+    goalId: input.goalId,
+  });
+
+  const { error: rankError } = await supabase.rpc(
+    "recalculate_goal_global_rank"
+  );
+  if (rankError) {
+    console.warn(
+      "Unable to recalculate goal global rank after adding goal to campaign:",
+      rankError
+    );
   }
 
   return {

@@ -17,6 +17,7 @@ import {
   type GoalStatus,
 } from "../goals/status";
 import { log } from "@/lib/utils/logGate";
+import { findRedundantStandaloneRoadmapItemIds } from "@/lib/queries/roadmap-reconciliation";
 
 const PRIORITY_VALUES = [
   "NO",
@@ -1456,18 +1457,23 @@ export async function fetchGoalsForUser(
   type MonumentRoadmapRecord = {
     id: string;
     monument_id?: string | null;
+    created_at?: string | null;
   };
   type RoadmapItemRecord = {
+    id?: string | null;
     roadmap_id: string;
     item_type?: string | null;
     campaign_id?: string | null;
     goal_id?: string | null;
     position?: number | null;
+    created_at?: string | null;
   };
   type CampaignGoalRecord = {
+    id?: string | null;
     campaign_id: string;
     goal_id?: string | null;
     position?: number | null;
+    created_at?: string | null;
   };
   const normalizeFiniteNumber = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -1481,6 +1487,29 @@ export async function fetchGoalsForUser(
     }
     return null;
   };
+  const normalizeIdString = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+  const compareNullableText = (
+    a: string | null | undefined,
+    b: string | null | undefined
+  ) => (a ?? "").localeCompare(b ?? "");
+  const comparePosition = (
+    a: number | null | undefined,
+    b: number | null | undefined
+  ) => {
+    const aPosition =
+      typeof a === "number" && Number.isFinite(a)
+        ? a
+        : Number.POSITIVE_INFINITY;
+    const bPosition =
+      typeof b === "number" && Number.isFinite(b)
+        ? b
+        : Number.POSITIVE_INFINITY;
+    return aPosition - bPosition;
+  };
   const { data, error } = await supabase
     .from("goals")
     .select(
@@ -1491,9 +1520,15 @@ export async function fetchGoalsForUser(
   if (error) throw error;
 
   const goals = (data ?? []) as GoalRecord[];
+  const goalStatusById = new Map<string, GoalStatus>();
+  const goalMonumentIdById = new Map<string, string | null>();
+  for (const goal of goals) {
+    goalStatusById.set(goal.id, normalizeGoalStatus(goal.status, goal.active));
+    goalMonumentIdById.set(goal.id, normalizeIdString(goal.monument_id));
+  }
   const { data: roadmapData, error: roadmapError } = await supabase
     .from("roadmaps")
-    .select("id, monument_id")
+    .select("id, monument_id, created_at")
     .eq("user_id", userId)
     .not("monument_id", "is", null);
 
@@ -1509,7 +1544,9 @@ export async function fetchGoalsForUser(
   if (roadmapIds.length > 0) {
     const { data: roadmapItemData, error: roadmapItemError } = await supabase
       .from("roadmap_items")
-      .select("roadmap_id, item_type, campaign_id, goal_id, position")
+      .select(
+        "id, roadmap_id, item_type, campaign_id, goal_id, position, created_at"
+      )
       .in("roadmap_id", roadmapIds)
       .order("position", { ascending: true });
 
@@ -1532,7 +1569,7 @@ export async function fetchGoalsForUser(
     if (campaignIds.length > 0) {
       const { data: campaignGoalData, error: campaignGoalError } = await supabase
         .from("campaign_goals")
-        .select("campaign_id, goal_id, position")
+        .select("id, campaign_id, goal_id, position, created_at")
         .eq("user_id", userId)
         .in("campaign_id", campaignIds)
         .order("position", { ascending: true });
@@ -1540,6 +1577,21 @@ export async function fetchGoalsForUser(
       if (campaignGoalError) throw campaignGoalError;
       campaignGoals = (campaignGoalData ?? []) as CampaignGoalRecord[];
     }
+    campaignGoals.sort((a, b) => {
+      const campaignDelta = compareNullableText(a.campaign_id, b.campaign_id);
+      if (campaignDelta !== 0) return campaignDelta;
+      const positionDelta = comparePosition(a.position, b.position);
+      if (positionDelta !== 0) return positionDelta;
+      const createdDelta = compareNullableText(a.created_at, b.created_at);
+      if (createdDelta !== 0) return createdDelta;
+      const idDelta = compareNullableText(a.id, b.id);
+      if (idDelta !== 0) return idDelta;
+      return compareNullableText(a.goal_id, b.goal_id);
+    });
+    const redundantStandaloneItemIds = findRedundantStandaloneRoadmapItemIds({
+      roadmapItems,
+      campaignGoals,
+    });
 
     const campaignGoalIdsByCampaignId = new Map<string, string[]>();
     for (const campaignGoal of campaignGoals) {
@@ -1560,6 +1612,13 @@ export async function fetchGoalsForUser(
 
     const roadmapItemsByRoadmapId = new Map<string, RoadmapItemRecord[]>();
     for (const roadmapItem of roadmapItems) {
+      if (
+        roadmapItem.id &&
+        redundantStandaloneItemIds.has(roadmapItem.id)
+      ) {
+        continue;
+      }
+
       const roadmapId =
         typeof roadmapItem.roadmap_id === "string" &&
         roadmapItem.roadmap_id.length > 0
@@ -1571,42 +1630,67 @@ export async function fetchGoalsForUser(
       roadmapItemsByRoadmapId.set(roadmapId, existing);
     }
 
-    for (const roadmap of monumentRoadmaps) {
-      const roadmapId =
-        typeof roadmap.id === "string" && roadmap.id.length > 0 ? roadmap.id : null;
-      if (!roadmapId) continue;
+    const nextRankByMonumentId = new Map<string, number>();
+    const seenActiveGoalIdsByMonumentId = new Map<string, Set<string>>();
+    const sortedMonumentRoadmaps = [...monumentRoadmaps].sort((a, b) => {
+      const monumentDelta = compareNullableText(a.monument_id, b.monument_id);
+      if (monumentDelta !== 0) return monumentDelta;
+      const createdDelta = compareNullableText(a.created_at, b.created_at);
+      if (createdDelta !== 0) return createdDelta;
+      return compareNullableText(a.id, b.id);
+    });
 
-      const flattenedGoalIds: string[] = [];
-      for (const roadmapItem of roadmapItemsByRoadmapId.get(roadmapId) ?? []) {
-        const itemType = String(roadmapItem.item_type ?? "").trim().toUpperCase();
-        if (itemType === "GOAL") {
-          const goalId =
-            typeof roadmapItem.goal_id === "string" &&
-            roadmapItem.goal_id.length > 0
-              ? roadmapItem.goal_id
-              : null;
-          if (goalId) flattenedGoalIds.push(goalId);
-          continue;
-        }
+    for (const roadmap of sortedMonumentRoadmaps) {
+      const roadmapId = normalizeIdString(roadmap.id);
+      const monumentId = normalizeIdString(roadmap.monument_id);
+      if (!roadmapId || !monumentId) continue;
 
-        if (itemType === "CAMPAIGN") {
-          const campaignId =
-            typeof roadmapItem.campaign_id === "string" &&
-            roadmapItem.campaign_id.length > 0
-              ? roadmapItem.campaign_id
-              : null;
-          if (!campaignId) continue;
-          flattenedGoalIds.push(
-            ...(campaignGoalIdsByCampaignId.get(campaignId) ?? [])
+      let nextRank = nextRankByMonumentId.get(monumentId) ?? 1;
+      const seenActiveGoalIds =
+        seenActiveGoalIdsByMonumentId.get(monumentId) ?? new Set<string>();
+      const roadmapItems = [...(roadmapItemsByRoadmapId.get(roadmapId) ?? [])].sort(
+        (a, b) => {
+          const positionDelta = comparePosition(a.position, b.position);
+          if (positionDelta !== 0) return positionDelta;
+          const createdDelta = compareNullableText(a.created_at, b.created_at);
+          if (createdDelta !== 0) return createdDelta;
+          const idDelta = compareNullableText(a.id, b.id);
+          if (idDelta !== 0) return idDelta;
+          return compareNullableText(
+            a.goal_id ?? a.campaign_id,
+            b.goal_id ?? b.campaign_id
           );
         }
-      }
+      );
 
-      flattenedGoalIds.forEach((goalId, index) => {
-        if (!derivedPriorityRankByGoalId.has(goalId)) {
-          derivedPriorityRankByGoalId.set(goalId, index + 1);
+      for (const roadmapItem of roadmapItems) {
+        const itemType = String(roadmapItem.item_type ?? "").trim().toUpperCase();
+        let itemGoalIds: string[] = [];
+        if (itemType === "GOAL") {
+          const goalId = normalizeIdString(roadmapItem.goal_id);
+          itemGoalIds = goalId ? [goalId] : [];
+        } else if (itemType === "CAMPAIGN") {
+          const campaignId = normalizeIdString(roadmapItem.campaign_id);
+          itemGoalIds = campaignId
+            ? (campaignGoalIdsByCampaignId.get(campaignId) ?? [])
+            : [];
         }
-      });
+
+        for (const goalId of itemGoalIds) {
+          if (seenActiveGoalIds.has(goalId)) continue;
+          if (goalStatusById.get(goalId) !== "ACTIVE") continue;
+          const goalMonumentId = goalMonumentIdById.get(goalId) ?? null;
+          if (goalMonumentId && goalMonumentId !== monumentId) continue;
+
+          seenActiveGoalIds.add(goalId);
+          if (!derivedPriorityRankByGoalId.has(goalId)) {
+            derivedPriorityRankByGoalId.set(goalId, nextRank);
+          }
+          nextRank += 1;
+        }
+      }
+      nextRankByMonumentId.set(monumentId, nextRank);
+      seenActiveGoalIdsByMonumentId.set(monumentId, seenActiveGoalIds);
     }
   }
 
