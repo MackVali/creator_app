@@ -2457,6 +2457,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
   const [selectedMonumentIds, setSelectedMonumentIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [draftSelectedMonumentIds, setDraftSelectedMonumentIds] = useState<
+    string[]
+  >([]);
+  const [draftSelectedSkillIds, setDraftSelectedSkillIds] = useState<string[]>(
+    []
+  );
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedGoalIds, setSelectedGoalIds] = useState<string[]>([]);
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
@@ -2504,13 +2510,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        setDraftSelectedMonumentIds(selectedMonumentIds);
+        setDraftSelectedSkillIds(selectedSkillIds);
         setScopeOpen(false);
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [scopeOpen]);
+  }, [scopeOpen, selectedMonumentIds, selectedSkillIds]);
 
   useEffect(() => {
     if (!open) {
@@ -2739,6 +2747,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       setActiveIndex(0);
       setSelectedMonumentIds([]);
       setSelectedSkillIds([]);
+      setDraftSelectedMonumentIds([]);
+      setDraftSelectedSkillIds([]);
       setSelectedTagIds([]);
       setSelectedGoalIds([]);
       setSelectedCampaignIds([]);
@@ -2758,6 +2768,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setActiveIndex(0);
     setSelectedMonumentIds([]);
     setSelectedSkillIds([]);
+    setDraftSelectedMonumentIds([]);
+    setDraftSelectedSkillIds([]);
     setSelectedTagIds([]);
     setSelectedGoalIds([]);
     setSelectedCampaignIds([]);
@@ -2818,11 +2830,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     if (source.sourceType === "monument") {
       setSelectedMonumentIds([source.sourceId]);
       setSelectedSkillIds([]);
+      setDraftSelectedMonumentIds([source.sourceId]);
+      setDraftSelectedSkillIds([]);
       return;
     }
 
     setSelectedSkillIds([source.sourceId]);
     setSelectedMonumentIds([]);
+    setDraftSelectedSkillIds([source.sourceId]);
+    setDraftSelectedMonumentIds([]);
   }, [open, source?.sourceId, source?.sourceType]);
 
   useEffect(() => {
@@ -2980,6 +2996,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const displaySource = shouldShow ? source : lastSource;
   const hasSelectedScope =
     selectedMonumentIds.length > 0 || selectedSkillIds.length > 0;
+  const hasDraftSelectedScope =
+    draftSelectedMonumentIds.length > 0 || draftSelectedSkillIds.length > 0;
   const effectiveQueue = hasSelectedScope
     ? mergeScopeQueueItems([...queue, ...scopeQueue])
     : queue;
@@ -3498,6 +3516,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const resetExecutionFilters = () => {
     setSelectedMonumentIds([]);
     setSelectedSkillIds([]);
+    setDraftSelectedMonumentIds([]);
+    setDraftSelectedSkillIds([]);
     setSelectedTagIds([]);
     setSelectedGoalIds([]);
     setSelectedCampaignIds([]);
@@ -3508,6 +3528,48 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
+  };
+
+  const resetScopeEditorFilters = () => {
+    setDraftSelectedMonumentIds([]);
+    setDraftSelectedSkillIds([]);
+    setSelectedTagIds([]);
+    setSelectedGoalIds([]);
+    setSelectedCampaignIds([]);
+    setSelectedRoutineIds([]);
+    setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
+    setEnabledHabitTypes(null);
+    setActiveIndex(0);
+    setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
+  };
+
+  const sameSelectedIds = (left: string[], right: string[]) => {
+    if (left.length !== right.length) return false;
+
+    const rightIds = new Set(right);
+    return left.every((id) => rightIds.has(id));
+  };
+
+  const openScopeEditor = () => {
+    setDraftSelectedMonumentIds(selectedMonumentIds);
+    setDraftSelectedSkillIds(selectedSkillIds);
+    setScopeOpen(true);
+  };
+
+  const commitScopeEditor = () => {
+    const scopeChanged =
+      !sameSelectedIds(selectedMonumentIds, draftSelectedMonumentIds) ||
+      !sameSelectedIds(selectedSkillIds, draftSelectedSkillIds);
+
+    setSelectedMonumentIds(draftSelectedMonumentIds);
+    setSelectedSkillIds(draftSelectedSkillIds);
+    setScopeOpen(false);
+
+    if (scopeChanged) {
+      resetScopeRunState();
+    }
   };
 
   const toggleSelectedId = (
@@ -3570,34 +3632,32 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const toggleMonumentScope = (id: string) => {
-    const selected = selectedMonumentIds.includes(id);
+    const selected = draftSelectedMonumentIds.includes(id);
     const skillIds = getSkillIdsForMonument(id);
 
-    setSelectedMonumentIds((current) =>
+    setDraftSelectedMonumentIds((current) =>
       selected
         ? current.filter((selectedId) => selectedId !== id)
         : current.includes(id)
           ? current
           : [...current, id]
     );
-    setSelectedSkillIds((current) =>
+    setDraftSelectedSkillIds((current) =>
       selected
         ? current.filter((selectedId) => !skillIds.includes(selectedId))
         : uniqueScopeValues([...current, ...skillIds])
     );
-    resetScopeRunState();
   };
 
   const toggleSkillScope = (id: string) => {
-    const nextSkillIds = selectedSkillIds.includes(id)
-      ? selectedSkillIds.filter((selectedId) => selectedId !== id)
-      : [...selectedSkillIds, id];
+    const nextSkillIds = draftSelectedSkillIds.includes(id)
+      ? draftSelectedSkillIds.filter((selectedId) => selectedId !== id)
+      : [...draftSelectedSkillIds, id];
 
-    setSelectedSkillIds(nextSkillIds);
-    setSelectedMonumentIds((current) =>
+    setDraftSelectedSkillIds(nextSkillIds);
+    setDraftSelectedMonumentIds((current) =>
       reconcileMonumentScopesForSkills(current, nextSkillIds)
     );
-    resetScopeRunState();
   };
 
   const toggleItemType = (type: FocusExecutionItemType) => {
@@ -3814,7 +3874,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                     {scopeOpen ? (
                       <motion.div
                         id={executionScopePanelId}
-                        className="flex max-h-[min(62dvh,38rem)] flex-col overflow-hidden border-b border-black/40 bg-black/25 px-3 py-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4"
+                        className="flex max-h-[min(50dvh,32rem)] flex-col overflow-hidden border-b border-black/40 bg-black/25 px-3 py-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4"
                         initial={
                           prefersReducedMotion
                             ? { opacity: 0 }
@@ -3840,10 +3900,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
                               Focus Scope
                             </h3>
-                            {hasSelectedScope || hasCustomExecutionFilters ? (
+                            {hasDraftSelectedScope || hasCustomExecutionFilters ? (
                               <button
                                 type="button"
-                                onClick={resetExecutionFilters}
+                                onClick={resetScopeEditorFilters}
                                 className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
                               >
                                 Reset filters
@@ -3858,9 +3918,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             {monumentOptions.length > 0 ? (
                               <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                 {monumentOptions.map((option) => {
-                                  const selected = selectedMonumentIds.includes(
-                                    option.id
-                                  );
+                                  const selected =
+                                    draftSelectedMonumentIds.includes(option.id);
 
                                   return (
                                     <button
@@ -3902,9 +3961,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             {skillOptions.length > 0 ? (
                               <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                 {skillOptions.map((option) => {
-                                  const selected = selectedSkillIds.includes(
-                                    option.id
-                                  );
+                                  const selected =
+                                    draftSelectedSkillIds.includes(option.id);
 
                                   return (
                                     <button
@@ -4209,7 +4267,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         <div className="shrink-0 border-t border-black/40 bg-black/35 px-0 py-2 sm:py-3">
                           <button
                             type="button"
-                            onClick={() => setScopeOpen(false)}
+                            onClick={commitScopeEditor}
                             aria-controls={executionScopePanelId}
                             className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
                           >
@@ -4223,7 +4281,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
                           <button
                             type="button"
-                            onClick={() => setScopeOpen(true)}
+                            onClick={openScopeEditor}
                             aria-expanded={scopeOpen}
                             aria-controls={executionScopePanelId}
                             className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
@@ -4498,7 +4556,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 </section>
 
                 {currentItem || activeCardLoading ? (
-                  <div className="relative overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                  <div
+                    className={
+                      scopeOpen
+                        ? "relative hidden overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:block sm:rounded-[22px]"
+                        : "relative overflow-visible rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]"
+                    }
+                  >
                     <motion.div
                       layout
                       className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]"
