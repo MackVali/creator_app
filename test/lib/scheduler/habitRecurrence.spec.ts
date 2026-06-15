@@ -32,6 +32,45 @@ const createHabit = (
 describe("evaluateHabitDueOnDate", () => {
   const timeZone = "UTC";
 
+  describe("none recurrence", () => {
+    it.each(["HABIT", "CHORE", "SYNC", "MEMO"])(
+      "does not naturally become due for %s habits",
+      (habitType) => {
+        const habit = createHabit({
+          habitType,
+          recurrence: "none",
+          lastCompletedAt: null,
+        });
+
+        const result = evaluateHabitDueOnDate({
+          habit,
+          date: new Date("2024-01-15T00:00:00Z"),
+          timeZone,
+        });
+
+        expect(result.isDue).toBe(false);
+        expect(result.dueStart).toBeNull();
+        expect(result.debugTag).toBe("RECURRENCE_NONE");
+      }
+    );
+
+    it("keeps practice habits with none recurrence due for practice scheduling", () => {
+      const habit = createHabit({
+        habitType: "PRACTICE",
+        recurrence: "none",
+        lastCompletedAt: null,
+      });
+
+      const result = evaluateHabitDueOnDate({
+        habit,
+        date: new Date("2024-01-15T00:00:00Z"),
+        timeZone,
+      });
+
+      expect(result.isDue).toBe(true);
+    });
+  });
+
   describe("non-daily overdue habits", () => {
     it("returns due for monthly habit with last_completed_at null", () => {
       const habit = createHabit({

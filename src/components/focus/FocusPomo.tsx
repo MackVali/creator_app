@@ -1,16 +1,34 @@
 "use client";
 
 import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  rectSortingStrategy,
+  SortableContext,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   useEffect,
+  useCallback,
   useId,
   useRef,
   useState,
   type Dispatch,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Layers3, Play, Square, X } from "lucide-react";
+import { GripVertical, Layers3, Play, Square, X } from "lucide-react";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
   fetchFocusPomoQueue,
@@ -26,6 +44,8 @@ import {
 } from "@/lib/queries/roadmaps";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
+import type { FabEditTarget } from "@/components/ui/Fab";
 
 export type FocusPomoSourceType = "monument" | "skill";
 
@@ -114,6 +134,10 @@ const DEFAULT_ENABLED_ITEM_TYPES: FocusExecutionItemType[] = [
   "task",
   "habit",
 ];
+const FOCUS_QUEUE_LONG_PRESS_MS = 520;
+const FOCUS_QUEUE_LONG_PRESS_MOVE_TOLERANCE = 12;
+const FOCUS_QUEUE_LONG_PRESS_SUPPRESS_MS = 650;
+const FOCUS_QUEUE_MOVE_SUPPRESS_MS = 250;
 
 const INVALID_HABIT_TYPE_KEYS = new Set(["routine", "routines"]);
 const LOCKED_OFF_HABIT_TYPE_KEYS = new Set([
@@ -2195,6 +2219,414 @@ function buildRunResultDisplayMetadata(item: FocusPomoQueueItem): Pick<
   };
 }
 
+function getFocusPomoQueueItemKey(item: FocusPomoQueueItem): string {
+  return `${item.sourceType}:${item.id}`;
+}
+
+function readFirstScopeString(values: unknown[]): string | null {
+  for (const value of values) {
+    const stringValue = readScopeString(value);
+    if (stringValue) return stringValue;
+  }
+
+  return null;
+}
+
+function isRecordType(
+  record: Record<string, unknown> | null,
+  expectedType: FocusExecutionItemType
+): boolean {
+  if (!record) return false;
+
+  const candidates = [
+    readScopeString(record.type),
+    readScopeString(record.kind),
+    readScopeString(record.sourceType),
+    readScopeString(record.source_type),
+    readScopeString(record.itemType),
+    readScopeString(record.item_type),
+  ];
+
+  return candidates.some(
+    (candidate) =>
+      candidate &&
+      normalizeExecutionFilterValue(candidate) === expectedType
+  );
+}
+
+function getFocusQueueFabOriginRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function getFocusPomoQueueEditTarget(
+  item: FocusPomoQueueItem,
+  originElement: HTMLElement
+): FabEditTarget | null {
+  const itemKind = getFocusItemKind(item);
+  const record = item as unknown as Record<string, unknown>;
+  const source = readNestedScopeRecord(record, "source");
+  const raw = readNestedScopeRecord(record, "raw");
+  const taskSourceId = readFirstScopeString([
+    item.taskId,
+    item.task_id,
+    record.taskId,
+    record.task_id,
+    isRecordType(source, "task") ? source?.id : null,
+    isRecordType(raw, "task") ? raw?.id : null,
+    itemKind === "task" ? item.id : null,
+  ]);
+  const projectSourceId = readFirstScopeString([
+    item.projectId,
+    item.project_id,
+    record.projectId,
+    record.project_id,
+    isRecordType(source, "project") ? source?.id : null,
+    isRecordType(raw, "project") ? raw?.id : null,
+    item.sourceType === "PROJECT" ? item.id : null,
+    itemKind === "project" ? item.id : null,
+  ]);
+  const habitSourceId = readFirstScopeString([
+    record.habitId,
+    record.habit_id,
+    isRecordType(source, "habit") ? source?.id : null,
+    isRecordType(raw, "habit") ? raw?.id : null,
+    item.sourceType === "HABIT" ? item.id : null,
+    itemKind === "habit" ? item.id : null,
+  ]);
+  const originRect = getFocusQueueFabOriginRect(originElement);
+
+  if (itemKind === "task" && taskSourceId) {
+    return {
+      entityType: "TASK",
+      entityId: taskSourceId,
+      title: item.title,
+      originRect,
+    };
+  }
+
+  if (itemKind === "project" && projectSourceId) {
+    return {
+      entityType: "PROJECT",
+      entityId: projectSourceId,
+      title: item.title,
+      originRect,
+    };
+  }
+
+  if (itemKind === "habit" && habitSourceId) {
+    return {
+      entityType: "HABIT",
+      entityId: habitSourceId,
+      title: item.title,
+      originRect,
+      habitSnapshot: {
+        name: item.title,
+        habitType: getFocusItemHabitType(item),
+        recurrence: readScopeString(item.recurrence),
+        durationMinutes: item.durationMinutes,
+        energy: item.energyCode ?? item.energyLabel,
+        goalId: item.goalId ?? item.goal_id ?? null,
+        skillId: item.skillId ?? null,
+        routineId: item.routineId ?? item.routine_id ?? null,
+      },
+    };
+  }
+
+  return null;
+}
+
+function applyFocusPomoQueueOrder(
+  queueItems: FocusPomoQueueItem[],
+  customOrder: string[] | null
+): FocusPomoQueueItem[] {
+  if (!customOrder) return queueItems;
+
+  const itemsByKey = new Map(
+    queueItems.map((item) => [getFocusPomoQueueItemKey(item), item])
+  );
+  const orderedItems: FocusPomoQueueItem[] = [];
+  const usedKeys = new Set<string>();
+
+  for (const key of customOrder) {
+    const item = itemsByKey.get(key);
+    if (!item) continue;
+
+    orderedItems.push(item);
+    usedKeys.add(key);
+  }
+
+  for (const item of queueItems) {
+    const key = getFocusPomoQueueItemKey(item);
+    if (!usedKeys.has(key)) {
+      orderedItems.push(item);
+    }
+  }
+
+  return orderedItems;
+}
+
+type SortableFocusQueueItemProps = {
+  item: FocusPomoQueueItem;
+  position: number;
+  selected: boolean;
+  isQueueExpanded: boolean;
+  onSelect(): void;
+  onLongPressEdit(originElement: HTMLElement): void;
+};
+
+function SortableFocusQueueItem({
+  item,
+  position,
+  selected,
+  isQueueExpanded,
+  onSelect,
+  onLongPressEdit,
+}: SortableFocusQueueItemProps) {
+  const longPressTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(
+    null
+  );
+  const longPressStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+  } | null>(null);
+  const longPressOriginRef = useRef<HTMLButtonElement | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const suppressClickUntilRef = useRef(0);
+  const itemKey = getFocusPomoQueueItemKey(item);
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: itemKey });
+  const transformStyle = transform
+    ? CSS.Translate.toString(transform)
+    : undefined;
+  const previewIcon = itemDisplayIcon(item);
+  const queueEnergyLevel = normalizeFlameLevel(
+    item.energyCode,
+    item.energyLabel
+  );
+  const containerClassName = [
+    selected
+      ? "relative grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border border-white/10 bg-white/[0.055] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_0_18px_rgba(255,255,255,0.022),inset_0_-12px_20px_rgba(0,0,0,0.18)] transition"
+      : isQueueExpanded
+        ? "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 text-left opacity-60 transition hover:bg-white/[0.035] hover:opacity-90"
+        : "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-stretch border-t border-black/40 text-left opacity-60 transition hover:bg-white/[0.035] hover:opacity-90 sm:border-l sm:border-t-0",
+    isDragging
+      ? "z-20 bg-white/[0.075] opacity-95 shadow-[0_20px_45px_-28px_rgba(0,0,0,0.98),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-white/15"
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    longPressStartRef.current = null;
+    longPressOriginRef.current = null;
+  }, []);
+
+  const cancelLongPress = useCallback(
+    (options?: { suppressClick?: boolean }) => {
+      if (options?.suppressClick) {
+        suppressClickUntilRef.current = Date.now() + FOCUS_QUEUE_MOVE_SUPPRESS_MS;
+      }
+
+      clearLongPress();
+    },
+    [clearLongPress]
+  );
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!longPressStartRef.current) return;
+
+      suppressClickUntilRef.current = Date.now() + FOCUS_QUEUE_MOVE_SUPPRESS_MS;
+      clearLongPress();
+    };
+
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      clearLongPress();
+    };
+  }, [clearLongPress]);
+
+  const handlePressPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const element = event.currentTarget;
+    const pointerId = event.pointerId;
+
+    clearLongPress();
+    longPressTriggeredRef.current = false;
+    longPressStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId,
+    };
+    longPressOriginRef.current = element;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      longPressTriggeredRef.current = true;
+      suppressClickUntilRef.current =
+        Date.now() + FOCUS_QUEUE_LONG_PRESS_SUPPRESS_MS;
+      longPressStartRef.current = null;
+      longPressOriginRef.current = null;
+
+      onLongPressEdit(element);
+    }, FOCUS_QUEUE_LONG_PRESS_MS);
+  };
+
+  const handlePressPointerMove = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    const start = longPressStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+
+    const deltaX = Math.abs(event.clientX - start.x);
+    const deltaY = Math.abs(event.clientY - start.y);
+
+    if (
+      deltaX > FOCUS_QUEUE_LONG_PRESS_MOVE_TOLERANCE ||
+      deltaY > FOCUS_QUEUE_LONG_PRESS_MOVE_TOLERANCE
+    ) {
+      cancelLongPress({ suppressClick: true });
+    }
+  };
+
+  const handlePressPointerUp = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    const longPressTriggered = longPressTriggeredRef.current;
+
+    clearLongPress();
+
+    if (longPressTriggered) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  const handlePressPointerCancel = () => {
+    cancelLongPress({ suppressClick: true });
+  };
+
+  const handlePressPointerLeave = () => {
+    cancelLongPress({ suppressClick: true });
+  };
+
+  const handlePressClickCapture = (
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    if (
+      longPressTriggeredRef.current ||
+      Date.now() < suppressClickUntilRef.current
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      longPressTriggeredRef.current = false;
+    }
+  };
+
+  const handlePressContextMenu = (
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    if (
+      longPressTriggeredRef.current ||
+      longPressTimerRef.current !== null ||
+      Date.now() < suppressClickUntilRef.current
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transformStyle,
+        transition,
+      }}
+      className={containerClassName}
+    >
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${item.title}`}
+        className="flex min-h-full cursor-grab touch-none select-none items-center justify-center text-white/20 outline-none transition hover:bg-white/[0.045] hover:text-white/62 active:cursor-grabbing active:bg-white/[0.07] active:text-white/72 focus-visible:bg-white/[0.075] focus-visible:text-white/72 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/18"
+      >
+        <GripVertical className="size-3.5" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onPointerDown={handlePressPointerDown}
+        onPointerMove={handlePressPointerMove}
+        onPointerUp={handlePressPointerUp}
+        onPointerCancel={handlePressPointerCancel}
+        onPointerLeave={handlePressPointerLeave}
+        onClickCapture={handlePressClickCapture}
+        onClick={onSelect}
+        onContextMenu={handlePressContextMenu}
+        aria-current={selected ? "true" : undefined}
+        aria-pressed={selected}
+        aria-label={
+          selected
+            ? `Current event: ${item.title}`
+            : `Make current event: ${item.title}`
+        }
+        className="flex min-w-0 touch-pan-y select-none items-center gap-2 py-2.5 pr-3 text-left outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:gap-3 sm:py-4 sm:pr-4"
+      >
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.045] text-[11px] font-semibold text-white/78 sm:size-8 sm:rounded-lg sm:text-xs">
+          {position}
+        </span>
+        {previewIcon ? (
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+            <span aria-hidden="true">{previewIcon}</span>
+          </span>
+        ) : null}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
+            {item.title}
+          </span>
+          <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]">
+            {item.rawTypeLabel ?? item.kind}
+          </span>
+        </span>
+        <span className="ml-auto flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
+          <FlameEmber
+            level={queueEnergyLevel}
+            size="sm"
+            className="shrink-0 overflow-visible [&_svg]:overflow-visible"
+          />
+        </span>
+      </button>
+    </div>
+  );
+}
+
 async function fetchUserHabitTypeOptions(
   supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
   userId: string
@@ -2407,6 +2839,7 @@ async function fetchUserRoutineOptions(
 }
 
 export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
+  const fabCreation = useFabCreation();
   const [mounted, setMounted] = useState(false);
   const [lastSource, setLastSource] = useState<FocusPomoSource | null>(null);
   const [mode, setMode] = useState<FocusPomoMode>("pomo");
@@ -2438,10 +2871,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     new Map()
   );
   const [activeIndex, setActiveIndex] = useState(0);
+  const [customQueueOrder, setCustomQueueOrder] = useState<string[] | null>(
+    null
+  );
+  const [dismissedQueueItemKeys, setDismissedQueueItemKeys] = useState<
+    Set<string>
+  >(new Set());
   const [runHistory, setRunHistory] = useState<FocusPomoRunResult[]>([]);
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
   const previousActiveIndexRef = useRef(activeIndex);
+  const queueSourceSignatureRef = useRef("");
+  const suppressQueueClickRef = useRef(false);
   const initializedSourceScopeRef = useRef<string | null>(null);
   const previousTimerItemRef = useRef<{
     itemKey: string | null;
@@ -2484,6 +2925,16 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const titleId = useId();
   const executionScopePanelId = useId();
   const queueListId = useId();
+  const activeSourceId = source?.sourceId;
+  const activeSourceType = source?.sourceType;
+  const queueDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 180,
+        tolerance: 8,
+      },
+    })
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -2502,6 +2953,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       setIsQueueExpanded(false);
       setHasRunStarted(false);
       setIsRunLogExpanded(false);
+      setCustomQueueOrder(null);
     }
   }, [open]);
 
@@ -2745,6 +3197,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       setScopeQueueLoading(false);
       setScopeQueueError(null);
       setActiveIndex(0);
+      setCustomQueueOrder(null);
+      setDismissedQueueItemKeys(new Set());
       setSelectedMonumentIds([]);
       setSelectedSkillIds([]);
       setDraftSelectedMonumentIds([]);
@@ -2766,6 +3220,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     let stale = false;
 
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setSelectedMonumentIds([]);
     setSelectedSkillIds([]);
     setDraftSelectedMonumentIds([]);
@@ -2785,10 +3241,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setQueueError(null);
 
     fetchFocusPomoQueue(
-      source
+      activeSourceType && activeSourceId
         ? {
-            sourceType: source.sourceType,
-            sourceId: source.sourceId,
+            sourceType: activeSourceType,
+            sourceId: activeSourceId,
           }
         : {}
     )
@@ -2814,7 +3270,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     return () => {
       stale = true;
     };
-  }, [open, source?.sourceId, source?.sourceType]);
+  }, [open, activeSourceId, activeSourceType]);
 
   useEffect(() => {
     if (!open || !source?.sourceId) {
@@ -2851,6 +3307,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     if (shouldResetActiveIndex) {
       setActiveIndex(0);
+      setDismissedQueueItemKeys(new Set());
       setRunHistory([]);
       setHasRunStarted(false);
       setIsRunLogExpanded(false);
@@ -2924,6 +3381,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     if (selectedSourceScope) {
       setActiveIndex(0);
+      setCustomQueueOrder(null);
+      setDismissedQueueItemKeys(new Set());
 
       if (queueLoading) {
         setScopeQueueLoading(true);
@@ -2946,6 +3405,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     let stale = false;
 
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setScopeQueueLoading(true);
     setScopeQueueError(null);
 
@@ -3154,12 +3615,25 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       enabledHabitTypes: effectiveEnabledHabitTypes,
     })
   );
-  const sortedQueue = sortFocusPomoQueue(constrainedQueue, {
+  const sourceSortedQueue = sortFocusPomoQueue(constrainedQueue, {
     selectedMonumentIds,
     monumentOptions,
     goalOrderMap: roadmapGoalOrderMap,
     projectOrderMap,
   });
+  const sourceQueueSignature = sourceSortedQueue
+    .map(getFocusPomoQueueItemKey)
+    .join("\u001F");
+  const sortedQueue = applyFocusPomoQueueOrder(
+    sourceSortedQueue,
+    customQueueOrder
+  );
+  const sortedQueueIndexByKey = new Map(
+    sortedQueue.map((item, index) => [getFocusPomoQueueItemKey(item), index])
+  );
+  const pendingQueueItems = sortedQueue.filter(
+    (item) => !dismissedQueueItemKeys.has(getFocusPomoQueueItemKey(item))
+  );
   const hasCustomWorkTypeFilters = !isDefaultEnabledItemTypes(enabledItemTypes);
   const hasCustomHabitTypeFilters =
     showHabitTypeSection && enabledHabitTypes !== null;
@@ -3170,7 +3644,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     effectiveSelectedGoalIds.length > 0 ||
     effectiveSelectedCampaignIds.length > 0 ||
     effectiveSelectedRoutineIds.length > 0;
-  const currentItem = sortedQueue[activeIndex] ?? null;
+  const selectedQueueItem = sortedQueue[activeIndex] ?? null;
+  const currentItem =
+    selectedQueueItem &&
+    !dismissedQueueItemKeys.has(getFocusPomoQueueItemKey(selectedQueueItem))
+      ? selectedQueueItem
+      : (pendingQueueItems[0] ?? null);
+  const currentItemKey = currentItem ? getFocusPomoQueueItemKey(currentItem) : null;
   const pomoDurationMinutes = currentItem?.durationMinutes ?? 25;
   const currentTimerDurationMs = pomoDurationMinutes * 60 * 1000;
   const currentItemTimerKey = currentItem?.id ?? null;
@@ -3219,14 +3699,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const visibleEarlierRunResults = [...earlierRunResults].reverse();
   const earlierRunResultsCount = earlierRunResults.length;
   const collapsedQueueLimit = 3;
-  const queueCollapsedEndIndex = activeIndex + collapsedQueueLimit;
-  const hasMoreQueueItems = sortedQueue.length > queueCollapsedEndIndex;
-  const visibleQueueItems = sortedQueue.slice(
-    activeIndex,
-    isQueueExpanded ? sortedQueue.length : queueCollapsedEndIndex
-  );
+  const visibleQueueItems = isQueueExpanded
+    ? pendingQueueItems
+    : pendingQueueItems.slice(0, collapsedQueueLimit);
+  const hasMoreQueueItems = pendingQueueItems.length > collapsedQueueLimit;
+  const visibleQueueItemIds = visibleQueueItems.map(getFocusPomoQueueItemKey);
   const hiddenQueueCount = Math.max(
-    sortedQueue.length - queueCollapsedEndIndex,
+    pendingQueueItems.length - collapsedQueueLimit,
     0
   );
   const currentItemIcon = itemDisplayIcon(currentItem);
@@ -3422,6 +3901,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           };
 
   useEffect(() => {
+    if (queueSourceSignatureRef.current === sourceQueueSignature) return;
+
+    queueSourceSignatureRef.current = sourceQueueSignature;
+    setCustomQueueOrder(null);
+  }, [sourceQueueSignature]);
+
+  useEffect(() => {
     const previousActiveIndex = previousActiveIndexRef.current;
     previousActiveIndexRef.current = activeIndex;
 
@@ -3525,6 +4011,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
     setEnabledHabitTypes(null);
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
@@ -3540,6 +4028,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
     setEnabledHabitTypes(null);
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
@@ -3582,6 +4072,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         : [...current, id]
     );
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
@@ -3589,6 +4081,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
   const resetScopeRunState = () => {
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
@@ -3667,6 +4161,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         : [...current, type]
     );
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
@@ -3684,6 +4180,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         : [...enabledTypes, type];
     });
     setActiveIndex(0);
+    setCustomQueueOrder(null);
+    setDismissedQueueItemKeys(new Set());
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
@@ -3696,8 +4194,96 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setRemainingMs(currentTimerDurationMs);
   };
 
-  const advanceActiveItem = () => {
-    setActiveIndex((current) => Math.min(current + 1, sortedQueue.length));
+  const getNextPendingItemIndex = (dismissedItemKey: string) => {
+    const dismissedItemIndex =
+      sortedQueueIndexByKey.get(dismissedItemKey) ?? activeIndex;
+    const isPendingCandidate = (item: FocusPomoQueueItem) => {
+      const itemKey = getFocusPomoQueueItemKey(item);
+
+      return itemKey !== dismissedItemKey && !dismissedQueueItemKeys.has(itemKey);
+    };
+    const nextItem =
+      sortedQueue.find(
+        (item, index) => index > dismissedItemIndex && isPendingCandidate(item)
+      ) ?? sortedQueue.find(isPendingCandidate);
+
+    return nextItem
+      ? (sortedQueueIndexByKey.get(getFocusPomoQueueItemKey(nextItem)) ?? 0)
+      : 0;
+  };
+
+  const dismissCurrentQueueItem = (item: FocusPomoQueueItem) => {
+    const itemKey = getFocusPomoQueueItemKey(item);
+
+    setDismissedQueueItemKeys((current) => {
+      const next = new Set(current);
+      next.add(itemKey);
+      return next;
+    });
+    setActiveIndex(getNextPendingItemIndex(itemKey));
+  };
+
+  const handleSelectQueueItem = (nextIndex: number) => {
+    const nextItem = sortedQueue[nextIndex] ?? null;
+    const nextItemKey = nextItem ? getFocusPomoQueueItemKey(nextItem) : null;
+
+    if (nextItemKey === currentItemKey) return;
+
+    setActiveIndex(nextIndex);
+  };
+
+  const releaseQueueClickSuppression = () => {
+    window.setTimeout(() => {
+      suppressQueueClickRef.current = false;
+    }, 0);
+  };
+
+  const handleQueueRowSelect = (nextIndex: number) => {
+    if (suppressQueueClickRef.current) return;
+
+    handleSelectQueueItem(nextIndex);
+  };
+
+  const handleQueueItemLongPressEdit = (
+    item: FocusPomoQueueItem,
+    originElement: HTMLElement
+  ) => {
+    const editTarget = getFocusPomoQueueEditTarget(item, originElement);
+    if (!editTarget) return;
+
+    fabCreation?.requestEntityEdit(editTarget);
+  };
+
+  const handleQueueDragStart = () => {
+    suppressQueueClickRef.current = true;
+  };
+
+  const handleQueueDragCancel = () => {
+    releaseQueueClickSuppression();
+  };
+
+  const handleQueueDragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : null;
+    const currentOrder = sortedQueue.map(getFocusPomoQueueItemKey);
+    const previousActiveItemKey =
+      currentItem ? getFocusPomoQueueItemKey(currentItem) : null;
+    const fromIndex = currentOrder.indexOf(activeId);
+    const toIndex = overId ? currentOrder.indexOf(overId) : -1;
+
+    if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+      const nextOrder = arrayMove(currentOrder, fromIndex, toIndex);
+      const nextActiveIndex = previousActiveItemKey
+        ? nextOrder.indexOf(previousActiveItemKey)
+        : -1;
+
+      setCustomQueueOrder(nextOrder);
+      if (nextActiveIndex !== -1) {
+        setActiveIndex(nextActiveIndex);
+      }
+    }
+
+    releaseQueueClickSuppression();
   };
 
   const handlePrimaryAction = () => {
@@ -3739,7 +4325,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     setIsRunning(false);
     resetCurrentTimer();
-    advanceActiveItem();
+    dismissCurrentQueueItem(currentItem);
   };
 
   const handleComplete = () => {
@@ -3773,7 +4359,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     setIsRunning(false);
     resetCurrentTimer();
-    advanceActiveItem();
+    dismissCurrentQueueItem(currentItem);
   };
 
   return createPortal(
@@ -4584,71 +5170,64 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           ease: [0.22, 1, 0.36, 1],
                         }}
                       >
-                        {activeCardLoading
-                          ? Array.from({ length: 3 }).map((_, index) => (
-                              <div
-                                key={`queue-skeleton-${index}`}
-                                className={
-                                  index === 0
-                                    ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
-                                    : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
-                                }
-                              >
-                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:size-8 sm:rounded-lg" />
-                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.04] sm:size-8 sm:rounded-lg" />
-                                <div className="min-w-0 flex-1 space-y-1.5">
-                                  <div className="h-3.5 w-10/12 animate-pulse rounded-full bg-white/10 sm:h-4" />
-                                  <div className="h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06] sm:h-3" />
-                                </div>
-                                <div className="ml-auto h-7 w-5 shrink-0 animate-pulse rounded-full bg-white/[0.05] sm:h-9 sm:w-7" />
-                              </div>
-                            ))
-                          : visibleQueueItems.map((item, index) => {
-                          const position = activeIndex + index + 1;
-                          const selected = index === 0;
-                          const previewIcon = itemDisplayIcon(item);
-                          const queueEnergyLevel = normalizeFlameLevel(
-                            item.energyCode,
-                            item.energyLabel
-                          );
-
-                          return (
+                        {activeCardLoading ? (
+                          Array.from({ length: 3 }).map((_, index) => (
                             <div
-                              key={item.id}
+                              key={`queue-skeleton-${index}`}
                               className={
-                                selected
+                                index === 0
                                   ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
-                                  : isQueueExpanded
-                                    ? "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:px-4 sm:py-3.5"
-                                    : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
+                                  : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
                               }
                             >
-                              <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.045] text-[11px] font-semibold text-white/78 sm:size-8 sm:rounded-lg sm:text-xs">
-                                {position}
+                              <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:size-8 sm:rounded-lg" />
+                              <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.04] sm:size-8 sm:rounded-lg" />
+                              <div className="min-w-0 flex-1 space-y-1.5">
+                                <div className="h-3.5 w-10/12 animate-pulse rounded-full bg-white/10 sm:h-4" />
+                                <div className="h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06] sm:h-3" />
                               </div>
-                              {previewIcon ? (
-                                <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
-                                  <span aria-hidden="true">{previewIcon}</span>
-                                </div>
-                              ) : null}
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
-                                  {item.title}
-                                </p>
-                                <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]">
-                                  {item.rawTypeLabel ?? item.kind}
-                                </p>
-                              </div>
-                              <div className="ml-auto flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
-                                <FlameEmber
-                                  level={queueEnergyLevel}
-                                  size="sm"
-                                  className="shrink-0 overflow-visible [&_svg]:overflow-visible"
-                                />
-                              </div>
+                              <div className="ml-auto h-7 w-5 shrink-0 animate-pulse rounded-full bg-white/[0.05] sm:h-9 sm:w-7" />
                             </div>
-                          );
-                        })}
+                          ))
+                        ) : (
+                          <DndContext
+                            sensors={queueDragSensors}
+                            collisionDetection={closestCenter}
+                            onDragStart={handleQueueDragStart}
+                            onDragCancel={handleQueueDragCancel}
+                            onDragEnd={handleQueueDragEnd}
+                          >
+                            <SortableContext
+                              items={visibleQueueItemIds}
+                              strategy={rectSortingStrategy}
+                            >
+                              {visibleQueueItems.map((item, index) => {
+                                const itemKey = getFocusPomoQueueItemKey(item);
+                                const itemIndex =
+                                  sortedQueueIndexByKey.get(itemKey) ?? index;
+
+                                return (
+                                  <SortableFocusQueueItem
+                                    key={itemKey}
+                                    item={item}
+                                    position={itemIndex + 1}
+                                    selected={itemKey === currentItemKey}
+                                    isQueueExpanded={isQueueExpanded}
+                                    onSelect={() =>
+                                      handleQueueRowSelect(itemIndex)
+                                    }
+                                    onLongPressEdit={(originElement) =>
+                                      handleQueueItemLongPressEdit(
+                                        item,
+                                        originElement
+                                      )
+                                    }
+                                  />
+                                );
+                              })}
+                            </SortableContext>
+                          </DndContext>
+                        )}
                       </motion.div>
 
                       {hasMoreQueueItems ? (

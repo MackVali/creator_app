@@ -10,7 +10,11 @@ import {
   createMemoDatabaseEntryForHabit,
   createMemoNoteForHabit,
 } from "@/lib/notesStorage";
-import { getDefaultMemoDatabaseTarget } from "@/lib/skillStarterNotes";
+import {
+  getDatabaseCreatedAtInitialFormValues,
+  getDefaultMemoDatabaseTarget,
+  isDatabaseCreatedAtField,
+} from "@/lib/skillStarterNotes";
 import { cn } from "@/lib/utils";
 import type { Database as SupabaseDatabase } from "@/types/supabase";
 
@@ -125,23 +129,35 @@ export function MemoCompletionDialog({
   );
   const formFields = formTarget?.database.fields ?? [];
   const skillIcon = context?.skillIcon?.trim() || null;
+  const hasSubmittableFormValue = formFields.some(
+    (field) =>
+      !isDatabaseCreatedAtField(field) &&
+      formValues[field.id]?.trim().length > 0,
+  );
   const canSubmitNote =
     !saving && Boolean(noteSkillId) && noteContent.trim().length > 0;
   const canSubmitForm =
     !saving &&
     Boolean(context?.skillId) &&
     Boolean(formTarget) &&
-    formFields.some((field) => formValues[field.id]?.trim().length > 0);
+    hasSubmittableFormValue;
 
   useEffect(() => {
     if (!open) return;
     setActiveStepIndex(0);
     setNoteContent("");
-    setFormValues({});
+    setFormValues(
+      formTarget
+        ? getDatabaseCreatedAtInitialFormValues(
+            formTarget.database,
+            new Date().toISOString(),
+          )
+        : {},
+    );
     setFormSubmitted(false);
     setSaving(false);
     setError(null);
-  }, [open, context?.habitId]);
+  }, [open, context?.habitId, formTarget]);
 
   const finishCompletion = async () => {
     setSaving(true);
@@ -185,7 +201,7 @@ export function MemoCompletionDialog({
       return nextValues;
     }, {});
 
-    if (Object.keys(values).length === 0) {
+    if (!hasSubmittableFormValue) {
       setError("Add at least one database field before saving this MEMO.");
       return;
     }
@@ -366,6 +382,7 @@ export function MemoCompletionDialog({
                     <div className="mt-3 grid gap-2.5">
                       {formFields.map((field) => {
                         const value = formValues[field.id] ?? "";
+                        const isCreatedAtField = isDatabaseCreatedAtField(field);
                         const commonClassName =
                           "w-full rounded-lg border border-white/10 bg-black/35 px-2.5 py-1.5 text-xs text-white outline-none transition placeholder:text-white/24 focus:border-white/35";
                         const handleChange = (
@@ -384,7 +401,14 @@ export function MemoCompletionDialog({
                             <span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-white/42">
                               {field.name}
                             </span>
-                            {field.type === "longText" ? (
+                            {isCreatedAtField ? (
+                              <input
+                                readOnly
+                                value={value ? new Date(value).toLocaleString() : ""}
+                                className={cn(commonClassName, "cursor-default text-white/45")}
+                                aria-label={`${field.name} is set automatically`}
+                              />
+                            ) : field.type === "longText" ? (
                               <textarea
                                 value={value}
                                 onChange={handleChange}

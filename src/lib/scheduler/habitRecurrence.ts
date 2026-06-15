@@ -26,7 +26,13 @@ type EvaluateParams = {
   nextDueOverride?: Date | null;
 };
 
-const DAILY_RECURRENCES = new Set(["daily", "none", "everyday", ""]);
+const DAILY_RECURRENCES = new Set(["daily", "everyday", ""]);
+const NONE_RECURRENCE_NEVER_DUE_TYPES = new Set([
+  "HABIT",
+  "CHORE",
+  "SYNC",
+  "MEMO",
+]);
 const DAY_INTERVALS: Record<string, number> = {
   weekly: 7,
   "bi-weekly": 14,
@@ -85,6 +91,18 @@ function resolveCustomDayInterval(
 
 function isDailyRecurrence(recurrence: string) {
   return DAILY_RECURRENCES.has(recurrence);
+}
+
+function isPracticeHabit(habit: Pick<HabitScheduleItem, "habitType">) {
+  return habit.habitType?.toUpperCase().trim() === "PRACTICE";
+}
+
+function isNoneRecurrenceNeverDueType(
+  habit: Pick<HabitScheduleItem, "habitType">
+) {
+  return NONE_RECURRENCE_NEVER_DUE_TYPES.has(
+    habit.habitType?.toUpperCase().trim() ?? "HABIT"
+  );
 }
 
 export function resolveRecurrenceInterval(
@@ -448,6 +466,13 @@ export function evaluateHabitDueOnDate(
         };
       }
     }
+    if (
+      recurrence === "none" &&
+      !isPracticeHabit(habit) &&
+      isNoneRecurrenceNeverDueType(habit)
+    ) {
+      return { isDue: false, dueStart: null, debugTag: "RECURRENCE_NONE" };
+    }
     const recurrenceMode = normalizeRecurrenceMode(habit.recurrenceMode);
     if (recurrenceMode === "ANCHORED") {
       return evaluateAnchoredHabitDueOnDate({
@@ -485,7 +510,7 @@ export function evaluateHabitDueOnDate(
     // Recurrence anchor must advance ONLY on completion
     const lastStart = lastCompletionStart ?? anchorStart;
     const hasCompletion = lastCompletionStart !== null;
-    if (isDailyRecurrence(recurrence)) {
+    if (isDailyRecurrence(recurrence) || recurrence === "none") {
       const resolvedRecurrenceDays = normalizeDayList(
         habit.recurrenceDays ?? null
       );

@@ -11,6 +11,7 @@ import type {
 import {
   DEFAULT_MEMO_DATABASE_TARGETS,
   getDefaultMemoDatabaseTarget,
+  repairDefaultNutritionDatabaseEntries,
 } from "@/lib/skillStarterNotes";
 
 const NOTES_TABLE = "notes";
@@ -146,6 +147,8 @@ function getMemoDatabaseNoteMetadata(currentMetadata: unknown) {
     }
   }
 
+  const repairedEntries = repairDefaultNutritionDatabaseEntries(databaseEntries);
+
   return {
     ...current,
     icon: typeof current.icon === "string" ? current.icon : "DB",
@@ -153,7 +156,7 @@ function getMemoDatabaseNoteMetadata(currentMetadata: unknown) {
     lockedSystemNote: true,
     systemNoteKey: "memo-database-captures",
     databases,
-    databaseEntries,
+    databaseEntries: repairedEntries.databaseEntries,
   };
 }
 

@@ -444,6 +444,27 @@ describe("scheduleBacklog", () => {
     ).resolves.toBeDefined();
   });
 
+  it.each(["HABIT", "CHORE", "SYNC", "MEMO"])(
+    "does not naturally schedule %s habits with none recurrence",
+    async (habitType) => {
+      const habit = makeHabit({
+        id: `habit-none-${habitType.toLowerCase()}`,
+        habitType,
+        recurrence: "none",
+      });
+      fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+      const { client } = createSupabaseMock();
+      const result = await scheduleBacklog(userId, baseDate, client);
+
+      expect(attemptedProjectIds).not.toContain(habit.id);
+      expect(
+        result.timeline.some(
+          (entry) => entry.type === "HABIT" && entry.habit.id === habit.id
+        )
+      ).toBe(false);
+    }
+  );
 
   it("schedules habits and survives blockerCache being optional in project helpers", async () => {
     const habitWindow: repo.WindowLite = {

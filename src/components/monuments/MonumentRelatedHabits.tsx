@@ -852,6 +852,11 @@ export function MonumentRelatedHabits({
         pending: pendingRelatedHabitIds.has(habit.id),
         routinePosition: habit.routinePosition,
         currentStreakDays: habit.currentStreakDays,
+        habitType: habit.habitType,
+        recurrence: habit.recurrence,
+        skillId: habit.skillId,
+        routineId: habit.routineId,
+        nextDueOverride: habit.nextDueOverride,
       };
 
       if (existing) {

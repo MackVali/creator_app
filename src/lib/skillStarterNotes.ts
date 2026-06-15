@@ -1,6 +1,7 @@
 import type {
   NoteDatabaseDefinition,
   NoteDatabaseDefinitions,
+  NoteDatabaseEntries,
   NoteDatabaseFieldDefinition,
   NoteDatabaseViewDefinition,
 } from "@/components/notes/NoteSlashTextarea";
@@ -155,6 +156,38 @@ function buildStarterNote(
 export const NUTRITION_DATABASE_ID = "starter-health-nutrition";
 export const HYDRATION_DATABASE_ID = "starter-health-hydration";
 export const FITNESS_DATABASE_ID = "starter-fitness-fitness";
+export const NUTRITION_FOOD_FIELD_ID = `${NUTRITION_DATABASE_ID}-food`;
+export const NUTRITION_CREATED_AT_FIELD_ID = `${NUTRITION_DATABASE_ID}-created-at`;
+
+const LOCKED_STARTER_DATABASE_IDS = new Set([
+  NUTRITION_DATABASE_ID,
+  HYDRATION_DATABASE_ID,
+]);
+const LOCKED_STARTER_DATABASE_KEYS = new Set(["nutrition", "hydration"]);
+
+export function isLockedStarterDatabaseId(databaseId: string | null | undefined) {
+  return typeof databaseId === "string" && LOCKED_STARTER_DATABASE_IDS.has(databaseId);
+}
+
+export function isLockedStarterDatabase(
+  database:
+    | Pick<NoteDatabaseDefinition, "id" | "lockedSystemDatabase" | "systemDatabaseKey">
+    | null
+    | undefined,
+) {
+  if (!database) return false;
+  if (isLockedStarterDatabaseId(database.id)) return true;
+
+  return (
+    database.lockedSystemDatabase === true &&
+    typeof database.systemDatabaseKey === "string" &&
+    LOCKED_STARTER_DATABASE_KEYS.has(database.systemDatabaseKey)
+  );
+}
+
+const LEGACY_NUTRITION_CREATED_AT_FIELD_IDS = [
+  `${NUTRITION_DATABASE_ID}-date-time`,
+] as const;
 
 const NUTRITION_DATABASE = database(
   NUTRITION_DATABASE_ID,
@@ -162,10 +195,12 @@ const NUTRITION_DATABASE = database(
   "nutrition",
   "stomach",
   [
-    field(NUTRITION_DATABASE_ID, "name", "Name", "text", true),
+    field(NUTRITION_DATABASE_ID, "food", "Food", "text", true),
     field(NUTRITION_DATABASE_ID, "calories", "Calories", "number"),
+    field(NUTRITION_DATABASE_ID, "carbs", "Carbs", "number"),
     field(NUTRITION_DATABASE_ID, "protein", "Protein", "number"),
-    field(NUTRITION_DATABASE_ID, "notes", "Notes", "longText"),
+    field(NUTRITION_DATABASE_ID, "fat", "Fat", "number"),
+    field(NUTRITION_DATABASE_ID, "created-at", "When", "createdAt"),
   ],
 );
 
@@ -253,6 +288,130 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function hasSameDefaultNutritionSchema(
+  currentDatabase: Record<string, unknown>,
+  starterDatabase: NoteDatabaseDefinition,
+) {
+  return (
+    currentDatabase.titleFieldId === starterDatabase.titleFieldId &&
+    currentDatabase.activeViewId === starterDatabase.activeViewId &&
+    JSON.stringify(currentDatabase.fields) === JSON.stringify(starterDatabase.fields) &&
+    JSON.stringify(currentDatabase.views) === JSON.stringify(starterDatabase.views)
+  );
+}
+
+export function isDefaultNutritionDatabaseDefinition(
+  definition: Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey"> | null | undefined,
+) {
+  return (
+    definition?.systemDatabaseKey === "nutrition" ||
+    definition?.id === NUTRITION_DATABASE_ID
+  );
+}
+
+export function getNutritionCreatedAtField(
+  definition: Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey" | "fields"> | null | undefined,
+) {
+  if (!definition || !isDefaultNutritionDatabaseDefinition(definition)) return null;
+
+  return (
+    definition.fields.find((field) => field.id === NUTRITION_CREATED_AT_FIELD_ID) ??
+    definition.fields.find(
+      (field) => ["created at", "when"].includes(field.name.trim().toLowerCase()),
+    ) ??
+    null
+  );
+}
+
+export function getNutritionCreatedAtInitialFormValues(
+  definition: Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey" | "fields"> | null | undefined,
+  openedAt: string,
+) {
+  const createdAtField = getNutritionCreatedAtField(definition);
+  return createdAtField ? { [createdAtField.id]: openedAt } : {};
+}
+
+export function isDatabaseCreatedAtField(
+  field: Pick<NoteDatabaseFieldDefinition, "type">,
+) {
+  return field.type === "createdAt";
+}
+
+export function getDatabaseCreatedAtInitialFormValues(
+  definition: Pick<NoteDatabaseDefinition, "fields"> | null | undefined,
+  openedAt: string,
+) {
+  if (!definition) return {};
+
+  return Object.fromEntries(
+    definition.fields
+      .filter(isDatabaseCreatedAtField)
+      .map((field) => [field.id, openedAt]),
+  );
+}
+
+export function isNutritionCreatedAtField(
+  definition: Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey"> | null | undefined,
+  field: Pick<NoteDatabaseFieldDefinition, "id" | "name">,
+) {
+  return (
+    isDefaultNutritionDatabaseDefinition(definition) &&
+    (field.id === NUTRITION_CREATED_AT_FIELD_ID ||
+      ["created at", "when"].includes(field.name.trim().toLowerCase()))
+  );
+}
+
+export function repairDefaultNutritionDatabaseEntries(
+  databaseEntries: Record<string, unknown>,
+): { databaseEntries: NoteDatabaseEntries; changed: boolean } {
+  const nextDatabaseEntries: Record<string, unknown> = { ...databaseEntries };
+  const currentEntries = nextDatabaseEntries[NUTRITION_DATABASE_ID];
+
+  if (!Array.isArray(currentEntries)) {
+    return {
+      databaseEntries: nextDatabaseEntries as NoteDatabaseEntries,
+      changed: false,
+    };
+  }
+
+  let changed = false;
+  const repairedEntries = currentEntries.map((entry) => {
+    if (!isRecord(entry) || !isRecord(entry.values)) {
+      return entry;
+    }
+
+    const values = { ...entry.values };
+    let entryChanged = false;
+
+    for (const legacyFieldId of LEGACY_NUTRITION_CREATED_AT_FIELD_IDS) {
+      if (!Object.prototype.hasOwnProperty.call(values, legacyFieldId)) continue;
+
+      if (!Object.prototype.hasOwnProperty.call(values, NUTRITION_CREATED_AT_FIELD_ID)) {
+        values[NUTRITION_CREATED_AT_FIELD_ID] = values[legacyFieldId];
+      }
+      delete values[legacyFieldId];
+      entryChanged = true;
+    }
+
+    if (!entryChanged) return entry;
+
+    changed = true;
+    return {
+      ...entry,
+      values,
+    };
+  });
+
+  if (changed) {
+    nextDatabaseEntries[NUTRITION_DATABASE_ID] = repairedEntries;
+  }
+
+  return {
+    databaseEntries: nextDatabaseEntries as NoteDatabaseEntries,
+    changed,
+  };
+}
+
 export function findMatchingSkillStarterNote(
   notes: StarterNoteLike[],
   starterNote: SkillStarterNote,
@@ -325,6 +484,17 @@ export function getSkillStarterNoteMetadataRepair(
       pinnedSurface: "body" as const,
     };
 
+    if (starterDatabase.systemDatabaseKey === "nutrition") {
+      nextDatabase.titleFieldId = starterDatabase.titleFieldId;
+      nextDatabase.fields = starterDatabase.fields;
+      nextDatabase.views = starterDatabase.views;
+      nextDatabase.activeViewId = starterDatabase.activeViewId;
+
+      if (!hasSameDefaultNutritionSchema(currentDatabase, starterDatabase)) {
+        changed = true;
+      }
+    }
+
     nextDatabases[databaseId] = nextDatabase;
 
     if (
@@ -342,6 +512,10 @@ export function getSkillStarterNoteMetadataRepair(
   if (!isRecord(currentMetadata.databaseEntries)) {
     nextMetadata.databaseEntries = starterNote.metadata.databaseEntries;
     changed = true;
+  } else {
+    const entryRepair = repairDefaultNutritionDatabaseEntries(currentMetadata.databaseEntries);
+    nextMetadata.databaseEntries = entryRepair.databaseEntries;
+    changed = changed || entryRepair.changed;
   }
 
   return changed ? nextMetadata : null;
