@@ -193,7 +193,8 @@ type MatrixMonumentGroup = {
 type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
 type MatrixCardDensity = "large" | "small";
-type MatrixView = "monuments" | "skills" | "blocks";
+type MatrixView = "monuments" | "skills" | "blocks" | "types";
+type MatrixTypeGroupKey = "chore" | "habit" | "project" | "sync";
 type MatrixHabitDueStatus = {
   isDue: boolean;
   isOverdue: boolean;
@@ -216,6 +217,8 @@ type MatrixState = {
   skillUnscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   blockEventGroups: MonumentGroup<MatrixEvent>[];
   blockUnscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
+  typeEventGroups: MonumentGroup<MatrixEvent>[];
+  typeUnscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   dayLabel: string;
 };
 
@@ -228,11 +231,42 @@ const initialState: MatrixState = {
   skillUnscheduledDueHabitGroups: [],
   blockEventGroups: [],
   blockUnscheduledDueHabitGroups: [],
+  typeEventGroups: [],
+  typeUnscheduledDueHabitGroups: [],
   dayLabel: "",
 };
 
 const UNLINKED_GROUP_KEY = "__unlinked__";
 const NO_BLOCK_GROUP_KEY = "__no_block__";
+const MATRIX_TYPE_GROUP_DEFINITIONS: Record<
+  MatrixTypeGroupKey,
+  { key: string; title: string; emoji: string; sortValue: string }
+> = {
+  chore: {
+    key: "__type_chore__",
+    title: "Chore",
+    emoji: "◆",
+    sortValue: "0",
+  },
+  habit: {
+    key: "__type_habit__",
+    title: "Habit",
+    emoji: "✦",
+    sortValue: "1",
+  },
+  project: {
+    key: "__type_project__",
+    title: "Project",
+    emoji: "◇",
+    sortValue: "2",
+  },
+  sync: {
+    key: "__type_sync__",
+    title: "Sync",
+    emoji: "◇",
+    sortValue: "3",
+  },
+};
 const MATRIX_LIBRARY_GRID_CLASS =
   "-mx-3 grid grid-cols-3 items-stretch gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_SMALL_GRID_CLASS =
@@ -1180,6 +1214,129 @@ function groupBySkill<T extends { skillIds: string[] }>({
     if (b.key === UNLINKED_GROUP_KEY) return -1;
     return a.title.localeCompare(b.title);
   });
+}
+
+function getMatrixHabitTypeGroupKey(
+  habitType: string | null | undefined
+): MatrixTypeGroupKey {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "CHORE") return "chore";
+  if (normalized === "SYNC") return "sync";
+  return "habit";
+}
+
+function getMatrixRoutineTypeGroupKey(
+  routine: MatrixRoutine
+): MatrixTypeGroupKey {
+  const habitTypeGroups = new Set(
+    routine.habits.map((habit) =>
+      getMatrixHabitTypeGroupKey(habit.sourceHabit.habit_type)
+    )
+  );
+
+  if (habitTypeGroups.size === 1) {
+    return Array.from(habitTypeGroups)[0] ?? "habit";
+  }
+
+  return "habit";
+}
+
+function getMatrixEventTypeGroupKey(event: MatrixEvent): MatrixTypeGroupKey {
+  if (event.instance.source_type === "PROJECT" || event.goal) {
+    return "project";
+  }
+
+  if (event.habit) {
+    return getMatrixHabitTypeGroupKey(event.habit.habit_type);
+  }
+
+  if (event.routine) {
+    return getMatrixRoutineTypeGroupKey(event.routine);
+  }
+
+  return "habit";
+}
+
+function getMatrixDueItemTypeGroupKey(
+  item: MatrixDueItem
+): MatrixTypeGroupKey {
+  if (item.kind === "habit") {
+    return getMatrixHabitTypeGroupKey(item.habit.habit_type);
+  }
+
+  return getMatrixRoutineTypeGroupKey(item.routine);
+}
+
+function getMatrixSkillSortToken<T extends { skillIds: string[] }>(
+  item: T,
+  skills: Map<string, SkillRow>
+): string {
+  const tokens = item.skillIds
+    .map((skillId) => {
+      const skill = skills.get(skillId);
+      if (!skill) return null;
+
+      return `${skill.name.trim().toLocaleLowerCase()}|${skill.icon ?? ""}|${skill.id}`;
+    })
+    .filter((token): token is string => Boolean(token))
+    .sort((a, b) => a.localeCompare(b));
+
+  return tokens[0] ?? "\uFFFF|Unlinked";
+}
+
+function sortMatrixItemsBySkill<T extends { skillIds: string[] }>(
+  items: T[],
+  skills: Map<string, SkillRow>
+): T[] {
+  return [...items].sort((a, b) =>
+    getMatrixSkillSortToken(a, skills).localeCompare(
+      getMatrixSkillSortToken(b, skills)
+    )
+  );
+}
+
+function groupByType<T extends { skillIds: string[] }>({
+  items,
+  skills,
+  getTypeGroupKey,
+  sortItems,
+}: {
+  items: T[];
+  skills: Map<string, SkillRow>;
+  getTypeGroupKey(item: T): MatrixTypeGroupKey;
+  sortItems(items: T[]): T[];
+}): MonumentGroup<T>[] {
+  const groupLookup = new Map<MatrixTypeGroupKey, MonumentGroup<T>>();
+
+  for (const item of sortItems(items)) {
+    const typeGroupKey = getTypeGroupKey(item);
+    const definition = MATRIX_TYPE_GROUP_DEFINITIONS[typeGroupKey];
+    const existing = groupLookup.get(typeGroupKey);
+    if (existing) {
+      existing.items.push(item);
+      continue;
+    }
+
+    groupLookup.set(typeGroupKey, {
+      key: definition.key,
+      title: definition.title,
+      emoji: definition.emoji,
+      sortValue: definition.sortValue,
+      items: [item],
+    });
+  }
+
+  return Array.from(groupLookup.entries())
+    .sort(
+      ([firstKey], [secondKey]) =>
+        MATRIX_TYPE_GROUP_DEFINITIONS[firstKey].sortValue.localeCompare(
+          MATRIX_TYPE_GROUP_DEFINITIONS[secondKey].sortValue
+        )
+    )
+    .map(([, group]) => ({
+      ...group,
+      items: sortMatrixItemsBySkill(group.items, skills),
+    }));
 }
 
 function groupByMonument<T extends { monumentId: string | null }>({
@@ -2350,7 +2507,11 @@ function MatrixSettingsTray({
               selected={activeView === "blocks"}
               onClick={() => onViewChange("blocks")}
             />
-            <MatrixViewPill disabled />
+            <MatrixViewPill
+              label="Type"
+              selected={activeView === "types"}
+              onClick={() => onViewChange("types")}
+            />
           </div>
         </section>
 
@@ -2628,20 +2789,26 @@ function MatrixGridCarousel({
       groups
         .map((group) => ({
           group,
-          items: sortMatrixScheduledItems(group.scheduledItems),
+          items:
+            matrixView === "types"
+              ? group.scheduledItems
+              : sortMatrixScheduledItems(group.scheduledItems),
         }))
         .filter(({ items }) => items.length > 0),
-    [groups]
+    [groups, matrixView]
   );
   const activeUnscheduledDueHabitGroups = useMemo(
     () =>
       groups
         .map((group) => ({
           group,
-          items: sortMatrixDueItems(getVisibleMatrixDueItems(group)),
+          items:
+            matrixView === "types"
+              ? getVisibleMatrixDueItems(group)
+              : sortMatrixDueItems(getVisibleMatrixDueItems(group)),
         }))
         .filter(({ items }) => items.length > 0),
-    [groups]
+    [groups, matrixView]
   );
   const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
     const panels: MatrixPanel[] = [];
@@ -3484,6 +3651,7 @@ function MatrixContent() {
         eventGroups: updateScheduledEventGroups(current.eventGroups),
         skillEventGroups: updateScheduledEventGroups(current.skillEventGroups),
         blockEventGroups: updateScheduledEventGroups(current.blockEventGroups),
+        typeEventGroups: updateScheduledEventGroups(current.typeEventGroups),
       }));
     },
     [user?.id]
@@ -3495,6 +3663,7 @@ function MatrixContent() {
         state.unscheduledDueHabitGroups,
         state.skillUnscheduledDueHabitGroups,
         state.blockUnscheduledDueHabitGroups,
+        state.typeUnscheduledDueHabitGroups,
       ];
       for (const groups of groupSets) {
         for (const group of groups) {
@@ -3516,6 +3685,7 @@ function MatrixContent() {
         state.eventGroups,
         state.skillEventGroups,
         state.blockEventGroups,
+        state.typeEventGroups,
       ];
       for (const groups of eventGroupSets) {
         for (const group of groups) {
@@ -3537,6 +3707,8 @@ function MatrixContent() {
       state.eventGroups,
       state.skillEventGroups,
       state.skillUnscheduledDueHabitGroups,
+      state.typeEventGroups,
+      state.typeUnscheduledDueHabitGroups,
       state.unscheduledDueHabitGroups,
     ]
   );
@@ -3547,6 +3719,7 @@ function MatrixContent() {
         state.eventGroups,
         state.skillEventGroups,
         state.blockEventGroups,
+        state.typeEventGroups,
       ];
       for (const groups of groupSets) {
         for (const group of groups) {
@@ -3573,7 +3746,12 @@ function MatrixContent() {
       }
       return null;
     },
-    [state.blockEventGroups, state.eventGroups, state.skillEventGroups]
+    [
+      state.blockEventGroups,
+      state.eventGroups,
+      state.skillEventGroups,
+      state.typeEventGroups,
+    ]
   );
 
   const handleCompleteScheduledEvent = useCallback(
@@ -3766,6 +3944,9 @@ function MatrixContent() {
             ),
             blockUnscheduledDueHabitGroups: updateHabitInGroups(
               current.blockUnscheduledDueHabitGroups
+            ),
+            typeUnscheduledDueHabitGroups: updateHabitInGroups(
+              current.typeUnscheduledDueHabitGroups
             ),
           };
         });
@@ -4161,6 +4342,18 @@ function MatrixContent() {
             }),
             blockUnscheduledDueHabitGroups:
               groupUnscheduledDueHabitsByNoBlock(unscheduledDueItems),
+            typeEventGroups: groupByType({
+              items: events,
+              skills: skillLookup,
+              getTypeGroupKey: getMatrixEventTypeGroupKey,
+              sortItems: sortMatrixScheduledItems,
+            }),
+            typeUnscheduledDueHabitGroups: groupByType({
+              items: unscheduledDueItems,
+              skills: skillLookup,
+              getTypeGroupKey: getMatrixDueItemTypeGroupKey,
+              sortItems: sortMatrixDueItems,
+            }),
             dayLabel: formatDayLabel(today, timeZone),
           });
         }
@@ -4215,10 +4408,21 @@ function MatrixContent() {
     [state.blockEventGroups, state.blockUnscheduledDueHabitGroups]
   );
 
+  const matrixTypeGroups = useMemo(
+    () =>
+      mergeMatrixMonumentGroups({
+        scheduledGroups: state.typeEventGroups,
+        unscheduledDueHabitGroups: state.typeUnscheduledDueHabitGroups,
+      }),
+    [state.typeEventGroups, state.typeUnscheduledDueHabitGroups]
+  );
+
   const activeMatrixGroups =
     matrixView === "blocks"
       ? matrixBlockGroups
-      : matrixView === "skills"
+      : matrixView === "types"
+        ? matrixTypeGroups
+        : matrixView === "skills"
         ? matrixSkillGroups
         : matrixMonumentGroups;
 
