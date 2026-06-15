@@ -15,8 +15,12 @@ export function isMatrixRoute(pathname: string | null | undefined) {
   return pathname === "/schedule/matrix" || Boolean(pathname?.startsWith("/schedule/matrix/"));
 }
 
+export function isPriorityEditorRoute(pathname: string | null | undefined) {
+  return pathname === "/schedule/priorities" || Boolean(pathname?.startsWith("/schedule/priorities/"));
+}
+
 export function isScheduleRoute(pathname: string | null | undefined) {
-  if (isMatrixRoute(pathname)) {
+  if (isMatrixRoute(pathname) || isPriorityEditorRoute(pathname)) {
     return false;
   }
 

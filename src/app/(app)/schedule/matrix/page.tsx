@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Grid2x2, Grid3x3, LayoutGrid } from "lucide-react";
+import { Grid2x2, Grid3x3, LayoutGrid, List } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -10,6 +10,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
@@ -192,7 +194,7 @@ type MatrixMonumentGroup = {
 
 type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
-type MatrixCardDensity = "large" | "small";
+type MatrixCardDensity = "large" | "small" | "row";
 type MatrixView = "monuments" | "skills" | "blocks" | "types";
 type MatrixTypeGroupKey = "chore" | "habit" | "project" | "sync";
 type MatrixHabitDueStatus = {
@@ -271,10 +273,31 @@ const MATRIX_LIBRARY_GRID_CLASS =
   "-mx-3 grid grid-cols-3 items-stretch gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_SMALL_GRID_CLASS =
   "goal-grid grid w-full max-w-full auto-rows-[108px] grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] items-stretch gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+const MATRIX_LIBRARY_ROW_LIST_CLASS = "flex w-full min-w-0 flex-col gap-1.5 pt-0.5";
 const MATRIX_LIBRARY_CARD_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 const MATRIX_LIBRARY_SMALL_CARD_CLASS =
   "goal-card group relative flex h-full min-h-[108px] w-full transform-gpu flex-col rounded-xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-[0.65rem_0.45rem] text-white shadow-[0_14px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30";
+const MATRIX_HABIT_CHORE_CARD_BG_CLASS =
+  "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
+const MATRIX_HABIT_PRACTICE_CARD_BG_CLASS =
+  "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
+const MATRIX_HABIT_DEFAULT_CARD_BG_CLASS =
+  "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
+const MATRIX_ROW_PROJECT_CARD_CLASS =
+  "border-zinc-300/[0.15] bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.08),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] hover:border-zinc-100/[0.24]";
+const MATRIX_TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
+  "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
+const MATRIX_TIMELINE_COMPLETED_SHADOW =
+  "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+const MATRIX_TIMELINE_SYNC_COMPLETED_SHADOW =
+  "0 28px 48px rgba(0, 0, 0, 0.48), 0 10px 22px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
+const MATRIX_COMPLETED_GEM_BEVEL_INSET =
+  "inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -2px 8px rgba(0, 0, 0, 0.11), inset 0 0 0 1px rgba(0, 0, 0, 0.08)";
+const MATRIX_COMPLETED_PROJECT_BACKGROUND =
+  "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)";
+const MATRIX_COMPLETED_PROJECT_OUTLINE =
+  "1px solid rgba(22, 101, 52, 0.42)";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SCHEDULED_EVENT_DOUBLE_TAP_MS = 300;
 const MATRIX_CARD_LONG_PRESS_MS = 520;
@@ -287,9 +310,13 @@ const MATRIX_GROUP_REVEAL_EASE = [0.22, 1, 0.36, 1] as const;
 function getMatrixCompleteShimmerStyle() {
   return {
     "--matrix-complete-shimmer-delay": `-${Date.now() % MATRIX_COMPLETE_SHIMMER_DURATION_MS}ms`,
-  } as React.CSSProperties;
+  } as CSSProperties;
 }
 const MATRIX_CARD_DENSITY_STORAGE_KEY = "creator:matrix-card-density-by-group";
+
+function isMatrixCardDensity(value: unknown): value is MatrixCardDensity {
+  return value === "large" || value === "small" || value === "row";
+}
 
 function getMatrixFabOriginRect(element: HTMLElement) {
   const rect = element.getBoundingClientRect();
@@ -481,13 +508,13 @@ function sortMatrixDueItems(items: MatrixDueItem[]): MatrixDueItem[] {
 function getHabitCardTypeClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") {
-    return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
+    return MATRIX_HABIT_CHORE_CARD_BG_CLASS;
   }
   if (normalized === "SYNC" || normalized === "MEMO") return "habit-card--sync-gray";
   if (normalized === "PRACTICE") {
-    return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
+    return MATRIX_HABIT_PRACTICE_CARD_BG_CLASS;
   }
-  return "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
+  return MATRIX_HABIT_DEFAULT_CARD_BG_CLASS;
 }
 
 function getHabitCardBorderClass(habitType: string | null | undefined): string {
@@ -496,6 +523,108 @@ function getHabitCardBorderClass(habitType: string | null | undefined): string {
   if (normalized === "SYNC" || normalized === "MEMO") return "border-zinc-200/45";
   if (normalized === "PRACTICE") return "border-slate-500/50";
   return "border-white/10 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.055)]";
+}
+
+function getHabitRowTypeClass(habitType: string | null | undefined): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "CHORE") {
+    return cn(
+      MATRIX_HABIT_CHORE_CARD_BG_CLASS,
+      "border-rose-200/[0.26] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-rose-100/[0.34]"
+    );
+  }
+  if (normalized === "SYNC" || normalized === "MEMO") {
+    return "border-zinc-200/[0.24] bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.28),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.96)_0%,rgba(113,113,122,0.92)_48%,rgba(161,161,170,0.78)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.055)] hover:border-zinc-100/[0.32]";
+  }
+  if (normalized === "PRACTICE") {
+    return cn(
+      MATRIX_HABIT_PRACTICE_CARD_BG_CLASS,
+      "border-slate-400/[0.28] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-slate-300/[0.34]"
+    );
+  }
+  return cn(
+    MATRIX_HABIT_DEFAULT_CARD_BG_CLASS,
+    "border-white/[0.10] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.16]"
+  );
+}
+
+function getScheduleHabitTypeClass(
+  habitType: string | null | undefined
+): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "MEMO") return "habit-card--type-memo";
+  if (normalized === "CHORE") return "habit-card--type-chore";
+  if (normalized === "RELAXER") return "habit-card--type-relaxer";
+  if (normalized === "PRACTICE") return "habit-card--type-practice";
+  if (normalized === "SYNC") return "habit-card--type-sync";
+  return "habit-card--type-default";
+}
+
+function getCompletedHabitRowBorderClass(
+  habitType: string | null | undefined
+): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "SYNC" || normalized === "MEMO") {
+    return "border-emerald-300/25";
+  }
+  if (normalized === "CHORE") return "border-emerald-300/22";
+  return "border-emerald-300/24";
+}
+
+function getCompletedHabitRowOutline(
+  habitType: string | null | undefined
+): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "SYNC" || normalized === "MEMO") {
+    return "1px solid rgba(10, 60, 44, 0.52)";
+  }
+  if (normalized === "CHORE") return "1px solid rgba(10, 60, 44, 0.48)";
+  return "1px solid rgba(10, 60, 44, 0.50)";
+}
+
+function getCompletedHabitRowShadow(
+  habitType: string | null | undefined
+): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  const completedShadow =
+    normalized === "SYNC" || normalized === "MEMO"
+      ? MATRIX_TIMELINE_SYNC_COMPLETED_SHADOW
+      : MATRIX_TIMELINE_COMPLETED_SHADOW;
+
+  return `${completedShadow}, ${MATRIX_COMPLETED_GEM_BEVEL_INSET}`;
+}
+
+function getCompletedMatrixRowPresentation({
+  variant,
+  habitType,
+}: {
+  variant: "habit" | "project";
+  habitType?: string | null;
+}): { className: string; style: CSSProperties } {
+  if (variant === "project") {
+    return {
+      className: "border-green-900/45",
+      style: {
+        background: MATRIX_COMPLETED_PROJECT_BACKGROUND,
+        boxShadow: MATRIX_TIMELINE_COMPACT_CARD_COMPLETED_SHADOW,
+        outline: MATRIX_COMPLETED_PROJECT_OUTLINE,
+        outlineOffset: "-1px",
+      },
+    };
+  }
+
+  return {
+    className: cn(
+      "habit-card habit-card--completed habit-card--completed-gem",
+      getScheduleHabitTypeClass(habitType),
+      getCompletedHabitRowBorderClass(habitType)
+    ),
+    style: {
+      boxShadow: getCompletedHabitRowShadow(habitType),
+      outline: getCompletedHabitRowOutline(habitType),
+      outlineOffset: "-1px",
+    },
+  };
 }
 
 function mapPriority(priority: string | null | undefined): Goal["priority"] {
@@ -1617,6 +1746,113 @@ function MatrixSmallEventCard({
   );
 }
 
+function MatrixEventRowCard({
+  glyph,
+  title,
+  meta,
+  status,
+  completed = false,
+  completedVariant = "habit",
+  habitType,
+  overdue = false,
+  className,
+  open = false,
+  onOpenChange,
+}: {
+  glyph: string;
+  title: string;
+  meta: ReactNode;
+  status?: string | null;
+  completed?: boolean;
+  completedVariant?: "habit" | "project";
+  habitType?: string | null;
+  overdue?: boolean;
+  className?: string | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const completedPresentation = completed
+    ? getCompletedMatrixRowPresentation({
+        variant: completedVariant,
+        habitType,
+      })
+    : null;
+
+  return (
+    <div
+      role={onOpenChange ? "button" : undefined}
+      tabIndex={onOpenChange ? 0 : undefined}
+      aria-expanded={onOpenChange ? open : undefined}
+      onClick={onOpenChange ? () => onOpenChange(!open) : undefined}
+      onKeyDown={
+        onOpenChange
+          ? (event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onOpenChange(!open);
+            }
+          : undefined
+      }
+      className={cn(
+        "matrix-event-row-card group relative grid min-h-[3.65rem] w-full min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-stretch overflow-hidden rounded-md border text-left text-white transition sm:grid-cols-[2.25rem_minmax(0,1fr)]",
+        completed ? null : className,
+        completedPresentation?.className,
+        onOpenChange
+          ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25"
+          : null,
+        open && !completed ? "border-white/[0.18]" : null,
+        open ? "ring-1 ring-white/[0.08]" : null,
+        overdue && !completed
+          ? "outline outline-1 -outline-offset-1 outline-rose-300/[0.16] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),0_0_0_1px_rgba(244,63,94,0.045),inset_0_1px_0_rgba(255,255,255,0.045)]"
+          : null
+      )}
+      style={completedPresentation?.style}
+    >
+      <div className="relative z-[2] flex min-h-full items-center justify-center border-r border-white/[0.055] bg-black/20 px-1.5 text-white/72">
+        <span
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] text-[11px] font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)] sm:size-8 sm:rounded-lg sm:text-xs",
+            completed
+              ? "!border-white/10 !bg-white/[0.055] !text-white/82 !shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]"
+              : null
+          )}
+        >
+          {glyph}
+        </span>
+      </div>
+      <div className="relative z-[2] flex min-w-0 flex-col justify-center gap-1 px-2 py-2 sm:px-3">
+        <div className="flex min-w-0 items-start gap-2">
+          <span
+            className={cn(
+              "line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold leading-snug sm:text-sm",
+              completed ? "normal-case text-white/92" : "uppercase text-white/88"
+            )}
+            title={title}
+            style={{ hyphens: "auto" }}
+          >
+            {title}
+          </span>
+          {status && !completed ? (
+            <span
+              className={cn(
+                "mt-0.5 max-w-[42%] shrink-0 truncate rounded-full border border-white/[0.07] bg-black/25 px-1.5 py-[3px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em] text-white/45 sm:max-w-[36%]",
+                overdue
+                  ? "border-rose-200/[0.24] bg-rose-950/[0.28] text-rose-50/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  : null
+              )}
+            >
+              {status}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/42 sm:text-[10px]">
+          {meta}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MatrixHabitCard({
   glyph,
   title,
@@ -1645,10 +1881,40 @@ function MatrixHabitCard({
     : overdue
       ? "border-rose-200/20 bg-rose-950/35 text-rose-100/85"
       : "border-white/10 bg-white/[0.06] text-white/65";
+  const rowPillClass = isCompleted
+    ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+    : overdue
+      ? "border-rose-200/[0.22] bg-rose-950/[0.26] text-rose-50/90"
+      : "border-white/10 bg-white/[0.06] text-white/65";
   const glyphBadgeClass =
     "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.055] text-xs font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-7 sm:w-7";
   const completedGlyphBadgeClass =
     "!border-white/10 !bg-white/[0.055] !text-white/82 !shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]";
+
+  if (density === "row") {
+    return (
+      <MatrixEventRowCard
+        glyph={glyph}
+        title={title}
+        status={status}
+        completed={isCompleted}
+        completedVariant="habit"
+        habitType={habitType}
+        overdue={overdue}
+        className={getHabitRowTypeClass(habitType)}
+        meta={
+          <span
+            className={cn(
+              "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+              rowPillClass
+            )}
+          >
+            {displayPill}
+          </span>
+        }
+      />
+    );
+  }
 
   if (isSmall) {
     return (
@@ -1790,6 +2056,46 @@ function MatrixProjectCard({
     goal.emoji ||
     goal.monumentEmoji ||
     goal.title.slice(0, 2).toUpperCase();
+
+  if (density === "row") {
+    return (
+      <MatrixEventRowCard
+        glyph={displayGlyph}
+        title={goal.title}
+        completed={completed}
+        completedVariant="project"
+        status={completed ? "Completed" : null}
+        open={open}
+        onOpenChange={onOpenChange}
+        className={MATRIX_ROW_PROJECT_CARD_CLASS}
+        meta={
+          <>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em]",
+                completed
+                  ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                  : "border-white/10 bg-white/[0.06] text-white/65"
+              )}
+            >
+              {completed ? "Complete" : "Project"}
+            </span>
+            <span className="flex min-w-[5.5rem] max-w-[8rem] flex-1 items-center gap-1.5">
+              <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full border border-white/[0.06] bg-black/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.45)]">
+                <span
+                  className="block h-full rounded-full bg-emerald-400/55 shadow-[inset_0_1px_0_rgba(209,250,229,0.18),inset_0_-1px_0_rgba(0,0,0,0.24)] transition-[width] duration-200"
+                  style={{ width: `${progress}%` }}
+                />
+              </span>
+              <span className="shrink-0 text-[8px] tracking-normal text-white/45">
+                {progress}%
+              </span>
+            </span>
+          </>
+        }
+      />
+    );
+  }
 
   if (density === "large" && completed) {
     return (
@@ -2121,7 +2427,7 @@ function ScheduledEventCard({
       }}
     />
   ) : scheduledGoal ? (
-    density === "small" ? (
+    density !== "large" ? (
       <MatrixProjectCard
         goal={scheduledGoal}
         glyph={event.glyph}
@@ -2406,6 +2712,50 @@ function MatrixRoutineCard({
   const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
   const routineName = routine.name?.trim() || "Routine";
   const routineGlyph = routine.glyph || routine.icon?.trim() || "🔁";
+  const completed = routine.habits.every((habit) => habit.completed);
+
+  if (density === "row") {
+    return (
+      <div className="matrix-event-card-shell group/routine-card relative min-w-0 cursor-pointer">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+        >
+          <MatrixEventRowCard
+            glyph={routineGlyph}
+            title={routineName}
+            completed={completed}
+            completedVariant="habit"
+            habitType={null}
+            className={getHabitRowTypeClass(null)}
+            meta={
+              <span
+                className={cn(
+                  "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+                  completed
+                    ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                    : "border-white/10 bg-white/[0.06] text-white/65"
+                )}
+              >
+                {completed ? "COMPLETE" : habitCountLabel}
+              </span>
+            }
+          />
+        </div>
+        <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
+          <RelatedRoutineCard
+            routine={routine}
+            density="small"
+            fallbackIcon={routineGlyph}
+            onHabitCompletionToggle={(habitId) => {
+              const habit = routine.habits.find((item) => item.id === habitId);
+              onCompleteHabit(habitId, Boolean(habit?.completed));
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="matrix-event-card-shell group/routine-card relative h-full cursor-pointer">
@@ -2849,10 +3199,13 @@ function MatrixGridCarousel({
     return activeGroups.map(({ group }) => group.key).join("|");
   }, [activeMatrixPanel, activeScheduledGroups, activeUnscheduledDueHabitGroups]);
   const matrixLibraryGridClass =
-    cardDensity === "small"
-      ? MATRIX_LIBRARY_SMALL_GRID_CLASS
-      : MATRIX_LIBRARY_GRID_CLASS;
+    cardDensity === "row"
+      ? MATRIX_LIBRARY_ROW_LIST_CLASS
+      : cardDensity === "small"
+        ? MATRIX_LIBRARY_SMALL_GRID_CLASS
+        : MATRIX_LIBRARY_GRID_CLASS;
   const isSmallCardDensity = cardDensity === "small";
+  const isRowCardDensity = cardDensity === "row";
 
   const getMatrixPanelElement = useCallback((panel: MatrixPanel) => {
     return panel === "unscheduled"
@@ -2906,7 +3259,7 @@ function MatrixGridCarousel({
         : null;
       const storedDensity = parsedPreferences?.[cardDensityPreferenceKey];
 
-      if (storedDensity === "large" || storedDensity === "small") {
+      if (isMatrixCardDensity(storedDensity)) {
         setCardDensity(storedDensity);
       } else {
         setCardDensity("large");
@@ -2930,7 +3283,12 @@ function MatrixGridCarousel({
 
   const handleCardDensityToggle = useCallback(() => {
     setCardDensity((currentDensity) => {
-      const nextDensity = currentDensity === "large" ? "small" : "large";
+      const nextDensity =
+        currentDensity === "large"
+          ? "small"
+          : currentDensity === "small"
+            ? "row"
+            : "large";
 
       if (typeof window !== "undefined") {
         try {
@@ -2960,6 +3318,15 @@ function MatrixGridCarousel({
     });
   }, [cardDensityPreferenceKey]);
 
+  const nextCardDensity =
+    cardDensity === "large" ? "small" : cardDensity === "small" ? "row" : "large";
+  const nextCardDensityLabel =
+    nextCardDensity === "large"
+      ? "large Matrix cards"
+      : nextCardDensity === "small"
+        ? "small Matrix cards"
+        : "Matrix row cards";
+
   const matrixGridHeaderControls = (
     <>
       <span className="rounded-full border border-white/8 bg-white/[0.045] px-2 py-0.5 text-[9px] font-semibold leading-none text-white/50">
@@ -2967,18 +3334,19 @@ function MatrixGridCarousel({
       </span>
       <button
         type="button"
-        aria-label={
-          isSmallCardDensity ? "Use large Matrix cards" : "Use small Matrix cards"
-        }
+        aria-label={`Use ${nextCardDensityLabel}`}
+        title={`Use ${nextCardDensityLabel}`}
         onClick={handleCardDensityToggle}
         className={cn(
           "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/8 bg-white/[0.03] text-zinc-600 transition hover:border-white/15 hover:bg-white/[0.055] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-          isSmallCardDensity
+          cardDensity !== "large"
             ? "text-zinc-300 shadow-[0_0_14px_-9px_rgba(255,255,255,0.72)]"
             : null
         )}
       >
         {isSmallCardDensity ? (
+          <List className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+        ) : isRowCardDensity ? (
           <Grid2x2 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
         ) : (
           <Grid3x3 className="h-3 w-3" strokeWidth={1.8} aria-hidden />

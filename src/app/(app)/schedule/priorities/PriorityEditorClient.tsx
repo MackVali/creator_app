@@ -4,731 +4,412 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
+  type MutableRefObject,
+  type PointerEvent,
+  type UIEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
-  CollisionDetection,
+  closestCenter,
   DndContext,
-  DragEndEvent,
-  DragStartEvent,
-  DragOverlay,
-  MeasuringStrategy,
   PointerSensor,
   TouchSensor,
-  closestCorners,
-  pointerWithin,
-  useDroppable,
+  type DragEndEvent,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import {
+  arrayMove,
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { ChevronDown, GripVertical } from "lucide-react";
 
 import { getSupabaseBrowser } from "@/lib/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/supabase";
-import type { Goal } from "@/app/(app)/goals/types";
-import { computeGoalWeight } from "@/lib/goals/weight";
-import { normalizeGoalStatus } from "@/lib/goals/status";
+import { cn } from "@/lib/utils";
 import {
-  formatEnumLabel,
-  normalizePriority,
-  normalizeStage,
-  parseGlobalRank,
-  PRIORITY_LABELS,
-  PRIORITY_ORDER,
-  PriorityBucketId,
-  PriorityGoal,
-  PriorityProject,
-  StageId,
-  STAGE_ORDER,
+  type MonumentRoadmapPriority,
+  type RoadmapPriorityCampaign,
+  type RoadmapPriorityGoal,
 } from "./utils";
 
 interface PriorityEditorClientProps {
-  initialProjects: PriorityProject[];
-  initialGoals: PriorityGoal[];
+  initialRoadmaps: MonumentRoadmapPriority[];
   initialError?: string | null;
 }
 
-type PriorityView = "projects" | "goals";
+const ROADMAP_SWIPE_THRESHOLD_PX = 48;
 
-const VIEW_OPTIONS: Array<{ id: PriorityView; label: string }> = [
-  { id: "projects", label: "Projects" },
-  { id: "goals", label: "Goals" },
-];
+type MonumentPriorityRow = {
+  monumentId: string;
+  name: string;
+  emoji?: string | null;
+  priorityRank?: number;
+  createdAt?: string | null;
+};
 
-const collisionDetection: CollisionDetection = (args) => {
-  const pointerCollisions = pointerWithin(args);
-  return pointerCollisions.length ? pointerCollisions : closestCorners(args);
+type MonumentPriorityRpcClient = NonNullable<ReturnType<typeof getSupabaseBrowser>> & {
+  rpc(
+    fn: "save_monument_priority_order",
+    args: { p_monument_ids: string[] }
+  ): Promise<{ error: { message?: string } | null }>;
 };
 
 export default function PriorityEditorClient({
-  initialProjects,
-  initialGoals = [],
+  initialRoadmaps,
   initialError = null,
 }: PriorityEditorClientProps) {
-  const [projects, setProjects] = useState(initialProjects);
-  const [goals, setGoals] = useState(initialGoals);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const [roadmaps, setRoadmaps] = useState(initialRoadmaps);
+  const [focusedRoadmapId, setFocusedRoadmapId] = useState(
+    initialRoadmaps[0]?.id ?? ""
+  );
   const [error, setError] = useState<string | null>(initialError);
-  const [isRecalculating, setIsRecalculating] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [priorityUpdateError, setPriorityUpdateError] = useState<string | null>(null);
-  const [view, setView] = useState<PriorityView>("projects");
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [isGoalRecalculating, setIsGoalRecalculating] = useState(false);
-  const [goalActionError, setGoalActionError] = useState<string | null>(null);
-  const [goalActionMessage, setGoalActionMessage] = useState<string | null>(null);
+  const [monumentOrderError, setMonumentOrderError] = useState<string | null>(null);
+  const [isSavingMonumentOrder, setIsSavingMonumentOrder] = useState(false);
 
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  const scrollSyncTimeoutRef = useRef<number | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerDraggingRef = useRef(false);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    setRoadmaps(initialRoadmaps);
+    setFocusedRoadmapId((current) =>
+      initialRoadmaps.some((roadmap) => roadmap.id === current)
+        ? current
+        : initialRoadmaps[0]?.id ?? ""
+    );
+    setError(initialError);
+  }, [initialRoadmaps, initialError]);
+
+  const focusedIndex = useMemo(
+    () => roadmaps.findIndex((roadmap) => roadmap.id === focusedRoadmapId),
+    [focusedRoadmapId, roadmaps]
+  );
+  const monumentRows = useMemo(() => buildMonumentPriorityRows(roadmaps), [roadmaps]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
   );
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setPriorityUpdateError(null);
-    setActiveId(event.active.id);
+  const handleFocusRoadmap = useCallback((roadmapId: string) => {
+    setFocusedRoadmapId(roadmapId);
   }, []);
 
-  useEffect(() => {
-    setProjects(initialProjects);
-    setError(initialError);
-  }, [initialProjects, initialError]);
-
-  useEffect(() => {
-    setGoals(initialGoals);
-  }, [initialGoals]);
-
-  const priorityStageBuckets = useMemo(() => {
-    const buckets = PRIORITY_ORDER.reduce(
-      (acc, bucketId) => ({
-        ...acc,
-        [bucketId]: STAGE_ORDER.reduce(
-          (stageAcc, stageId) => ({ ...stageAcc, [stageId]: [] as PriorityProject[] }),
-          {} as Record<StageId, PriorityProject[]>,
-        ),
-      }),
-      {} as Record<PriorityBucketId, Record<StageId, PriorityProject[]>>,
-    );
-
-    const sortedProjects = [...projects].sort((a, b) => {
-      const priorityDelta =
-        PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
-      if (priorityDelta !== 0) return priorityDelta;
-
-      const aStage = normalizeStage(a.stage) ?? STAGE_ORDER[0];
-      const bStage = normalizeStage(b.stage) ?? STAGE_ORDER[0];
-      const stageDelta =
-        STAGE_ORDER.indexOf(aStage) - STAGE_ORDER.indexOf(bStage);
-      if (stageDelta !== 0) return stageDelta;
-
-      const rankDelta = compareGlobalRankValues(a.globalRank, b.globalRank);
-      if (rankDelta !== 0) return rankDelta;
-
-      return a.name.localeCompare(b.name);
-    });
-
-    for (const project of sortedProjects) {
-      const stageId = normalizeStage(project.stage) ?? STAGE_ORDER[0];
-      buckets[project.priority][stageId].push(project);
-    }
-    return buckets;
-  }, [projects]);
-
-  const goalBuckets = useMemo(() => {
-    const buckets = {} as Record<PriorityBucketId, PriorityGoal[]>;
-    for (const bucketId of PRIORITY_ORDER) {
-      buckets[bucketId] = [];
-    }
-
-    const sortedGoals = [...goals].sort((a, b) => {
-      const priorityDelta =
-        PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
-      if (priorityDelta !== 0) return priorityDelta;
-
-      const rankDelta = compareGlobalRankValues(a.globalRank, b.globalRank);
-      if (rankDelta !== 0) return rankDelta;
-
-      return a.name.localeCompare(b.name);
-    });
-    for (const goal of sortedGoals) {
-      buckets[goal.priority].push(goal);
-    }
-    return buckets;
-  }, [goals]);
-
-  const isProjectView = view === "projects";
-
-  const handleDragEnd = useCallback(
+  const handleMonumentDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
-      setActiveId(null);
-      const draggablePayload = parseDraggableId(active.id);
-      const targetBucket = parsePriorityDroppableId(over?.id);
-      if (!draggablePayload || !targetBucket) {
-        return;
-      }
+      if (!over || active.id === over.id) return;
 
-      const currentItems =
-        draggablePayload.type === "project" ? projects : goals;
-      const previousState = currentItems;
-      const item = currentItems.find((entry) => entry.id === draggablePayload.id);
-      if (!item || item.priority === targetBucket) {
-        return;
-      }
-
-      const updatedItems = currentItems.map((entry) =>
-        entry.id === draggablePayload.id
-          ? { ...entry, priority: targetBucket }
-          : entry,
+      const previousRoadmaps = roadmaps;
+      const oldIndex = monumentRows.findIndex(
+        (monument) => monument.monumentId === active.id
+      );
+      const newIndex = monumentRows.findIndex(
+        (monument) => monument.monumentId === over.id
       );
 
-      if (draggablePayload.type === "project") {
-        setProjects(updatedItems as PriorityProject[]);
-      } else {
-        setGoals(updatedItems as PriorityGoal[]);
-      }
+      if (oldIndex < 0 || newIndex < 0) return;
 
-      const revertLocalState = () => {
-        if (draggablePayload.type === "project") {
-          setProjects(previousState as PriorityProject[]);
-        } else {
-          setGoals(previousState as PriorityGoal[]);
-        }
-      };
+      const nextMonuments = arrayMove(monumentRows, oldIndex, newIndex);
+      const nextMonumentIds = nextMonuments.map((monument) => monument.monumentId);
+      const nextRoadmaps = reorderRoadmapsByMonumentOrder(
+        previousRoadmaps,
+        nextMonumentIds
+      );
 
-      const supabase = getSupabaseBrowser();
+      setMonumentOrderError(null);
+      setRoadmaps(nextRoadmaps);
+      setFocusedRoadmapId((current) =>
+        nextRoadmaps.some((roadmap) => roadmap.id === current)
+          ? current
+          : nextRoadmaps[0]?.id ?? ""
+      );
+
+      const supabase = getSupabaseBrowser() as MonumentPriorityRpcClient | null;
       if (!supabase) {
-        revertLocalState();
-        setPriorityUpdateError("Unable to contact the backend.");
+        setRoadmaps(previousRoadmaps);
+        setMonumentOrderError("Unable to save Monument order.");
         return;
       }
 
+      setIsSavingMonumentOrder(true);
       try {
-        const tableName =
-          draggablePayload.type === "project" ? "projects" : "goals";
-        const { error: updateError } = await supabase
-          .from(tableName)
-          .update({ priority: targetBucket })
-          .eq("id", draggablePayload.id);
+        const { error: saveError } = await supabase.rpc(
+          "save_monument_priority_order",
+          { p_monument_ids: nextMonumentIds }
+        );
 
-        if (updateError) {
-          throw updateError;
+        if (saveError) {
+          throw saveError;
         }
 
-        setPriorityUpdateError(null);
-      } catch (updateError) {
-        console.error("Failed to update priority", updateError);
-        revertLocalState();
-        setPriorityUpdateError(
-          `Could not move ${draggablePayload.type} to ${PRIORITY_LABELS[targetBucket]}. Try again.`,
-        );
+        router.refresh();
+      } catch (caught) {
+        console.error("Failed to save Monument priority order", caught);
+        setRoadmaps(previousRoadmaps);
+        setMonumentOrderError("Could not save Monument priority order.");
+      } finally {
+        setIsSavingMonumentOrder(false);
       }
     },
-    [goals, projects],
+    [monumentRows, roadmaps, router]
   );
 
-  const handleDragCancel = useCallback(() => {
-    setActiveId(null);
+  const handleRoadmapScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (pointerDraggingRef.current || suppressClickRef.current) {
+        return;
+      }
+
+      const scroller = event.currentTarget;
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        const scrollerRect = scroller.getBoundingClientRect();
+        const scrollerCenter = scrollerRect.left + scrollerRect.width / 2;
+        let closestRoadmapId = focusedRoadmapId;
+        let closestDistance = Number.POSITIVE_INFINITY;
+
+        scroller.querySelectorAll<HTMLElement>("[data-roadmap-key]").forEach((preview) => {
+          const previewRect = preview.getBoundingClientRect();
+          const previewCenter = previewRect.left + previewRect.width / 2;
+          const distance = Math.abs(previewCenter - scrollerCenter);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestRoadmapId = preview.dataset.roadmapKey ?? focusedRoadmapId;
+          }
+        });
+
+        scrollFrameRef.current = null;
+        if (closestRoadmapId !== focusedRoadmapId) {
+          handleFocusRoadmap(closestRoadmapId);
+        }
+      });
+    },
+    [focusedRoadmapId, handleFocusRoadmap]
+  );
+
+  const scrollFocusedRoadmapIntoView = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !focusedRoadmapId) return;
+
+    const preview = scroller.querySelector<HTMLElement>(
+      `[data-roadmap-key="${focusedRoadmapId}"]`
+    );
+    if (!preview) return;
+
+    const nextScrollLeft =
+      preview.offsetLeft - (scroller.clientWidth - preview.offsetWidth) / 2;
+    suppressClickRef.current = true;
+    scroller.scrollTo({
+      left: Math.max(0, nextScrollLeft),
+      behavior: "auto",
+    });
+
+    if (scrollSyncTimeoutRef.current !== null) {
+      window.clearTimeout(scrollSyncTimeoutRef.current);
+    }
+    scrollSyncTimeoutRef.current = window.setTimeout(() => {
+      suppressClickRef.current = false;
+      scrollSyncTimeoutRef.current = null;
+    }, 260);
+  }, [focusedRoadmapId]);
+
+  useEffect(() => {
+    scrollFocusedRoadmapIntoView();
+  }, [scrollFocusedRoadmapIntoView]);
+
+  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    pointerDraggingRef.current = true;
   }, []);
 
-  const handleRecalculate = async () => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      setActionError("Unable to contact the backend.");
-      return;
-    }
+  const clearPointer = useCallback(() => {
+    pointerStartRef.current = null;
+    pointerDraggingRef.current = false;
+  }, []);
 
-    setActionError(null);
-    setActionMessage(null);
-    setIsRecalculating(true);
-    setLoading(true);
+  const handlePointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = pointerStartRef.current;
+      clearPointer();
+      if (!start || roadmaps.length === 0) return;
 
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user?.id) {
-        console.error("RECALC USER ERROR", userError);
-        setActionError("Could not determine user for priority recalculation.");
+      const deltaX = start.x - event.clientX;
+      const deltaY = start.y - event.clientY;
+      if (
+        Math.abs(deltaX) < ROADMAP_SWIPE_THRESHOLD_PX ||
+        Math.abs(deltaX) < Math.abs(deltaY)
+      ) {
         return;
       }
 
-      const { goals: updatedGoals, projectRankById } = await rebuildPriorityStack(
-        supabase,
-        user.id,
-      );
-
-      setGoals(updatedGoals);
-      setProjects((previous) =>
-        previous.map((entry) => ({
-          ...entry,
-          globalRank: projectRankById.get(entry.id) ?? entry.globalRank,
-        })),
-      );
-
-      setActionMessage("Global ranks refreshed.");
-    } catch (caught) {
-      console.error("Failed to recalculate global rank", caught);
-      setActionError("Could not recalculate ranks.");
-    } finally {
-      setIsRecalculating(false);
-      setLoading(false);
-    }
-  };
-
-  const handleGoalRecalculate = async () => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      setGoalActionError("Unable to contact the backend.");
-      return;
-    }
-
-    setGoalActionError(null);
-    setGoalActionMessage(null);
-    setIsGoalRecalculating(true);
-    setLoading(true);
-
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user?.id) {
-        console.error("GOAL USER ERROR", userError);
-        setGoalActionError("Could not determine user for goal recompute.");
-        return;
+      const currentIndex = focusedIndex >= 0 ? focusedIndex : 0;
+      const nextIndex =
+        (currentIndex + (deltaX > 0 ? 1 : -1) + roadmaps.length) % roadmaps.length;
+      suppressClickRef.current = true;
+      if (scrollSyncTimeoutRef.current !== null) {
+        window.clearTimeout(scrollSyncTimeoutRef.current);
       }
+      scrollSyncTimeoutRef.current = window.setTimeout(() => {
+        suppressClickRef.current = false;
+        scrollSyncTimeoutRef.current = null;
+      }, 260);
+      handleFocusRoadmap(roadmaps[nextIndex]?.id ?? focusedRoadmapId);
+    },
+    [clearPointer, focusedIndex, focusedRoadmapId, handleFocusRoadmap, roadmaps]
+  );
 
-      const { goals: updatedGoals, projectRankById } = await rebuildPriorityStack(
-        supabase,
-        user.id,
-      );
-
-      setGoals(updatedGoals);
-      setProjects((previous) =>
-        previous.map((entry) => ({
-          ...entry,
-          globalRank: projectRankById.get(entry.id) ?? entry.globalRank,
-        })),
-      );
-
-      setGoalActionMessage("Goal ranks refreshed.");
-    } catch (caught) {
-      console.error("Goal recalc request failed", caught);
-      setGoalActionError("Could not recalculate goal ranks.");
-    } finally {
-      setIsGoalRecalculating(false);
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+      if (scrollSyncTimeoutRef.current !== null) {
+        window.clearTimeout(scrollSyncTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
-    <>
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-8 pt-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-semibold text-white">Priority Editor</h1>
-              <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1">
-                {VIEW_OPTIONS.map((option) => {
-                  const isActive = view === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      aria-pressed={isActive}
-                      onClick={() => setView(option.id)}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ${
-                        isActive
-                          ? "bg-white text-black border border-transparent shadow-sm"
-                          : "border border-transparent text-zinc-300 hover:text-white"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <p className="text-sm text-zinc-400">
-              Drag items between priority buckets to update priority.
-            </p>
-            {priorityUpdateError && (
-              <p className="text-xs text-red-300">{priorityUpdateError}</p>
-            )}
-          </div>
-        {isProjectView ? (
-          <div className="flex flex-col items-start gap-1 sm:items-end">
-            {/* Rebuilds the full priority stack: goals first, then projects. */}
-            <button
-              type="button"
-              disabled={isRecalculating || loading}
-              onClick={handleRecalculate}
-              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-60"
-            >
-              {isRecalculating ? "Recalculating…" : "Recalculate ranks"}
-            </button>
-            <p className="text-xs text-zinc-400">
-                Rebuilds the full priority stack: goals first, then projects.
-              </p>
-              {actionError && <p className="text-xs text-red-300">{actionError}</p>}
-              {!actionError && actionMessage && (
-                <p className="text-xs text-emerald-200">{actionMessage}</p>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-start gap-1 sm:items-end">
-              <button
-                type="button"
-                disabled={isGoalRecalculating || loading}
-                onClick={handleGoalRecalculate}
-                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-60"
-              >
-                {isGoalRecalculating ? "Recalculating…" : "Recalculate Goal Ranks"}
-              </button>
-              <p className="text-xs text-zinc-400">
-                Updates goal global_rank from the computed goal weight formula.
-              </p>
-              {goalActionError && (
-                <p className="text-xs text-red-300">{goalActionError}</p>
-              )}
-              {!goalActionError && goalActionMessage && (
-                <p className="text-xs text-emerald-200">{goalActionMessage}</p>
-              )}
-            </div>
-          )}
-        </div>
+    <main className="min-h-screen bg-[#050507] text-white">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-6 sm:px-6 sm:pb-12">
+        <header>
+          <h1 className="text-xs font-semibold text-white/45">
+            Priority Editor
+          </h1>
+        </header>
+
         {error && (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/5 p-4 text-sm text-red-100">
             {error}
           </div>
         )}
-        {isProjectView && loading && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-300">
-            Loading projects…
-          </div>
-        )}
-        <DndContext
-          sensors={sensors}
-          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-          collisionDetection={collisionDetection}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {PRIORITY_ORDER.map((bucketId) => {
-              const stageBuckets = priorityStageBuckets[bucketId];
-              const stageGroups = STAGE_ORDER.map((stageId) => ({
-                stageId,
-                projects: stageBuckets[stageId],
-              }));
-              const totalProjects = stageGroups.reduce(
-                (sum, group) => sum + group.projects.length,
-                0,
-              );
-              const goalItems = goalBuckets[bucketId];
-              const totalGoals = goalItems.length;
-              const totalItems = isProjectView ? totalProjects : totalGoals;
-              const itemLabel = isProjectView ? "project" : "goal";
-              const emptyLabel = isProjectView ? "projects" : "goals";
-              const bucketSortableItems = isProjectView
-                ? STAGE_ORDER.flatMap((stageId) =>
-                    stageBuckets[stageId].map((project) =>
-                      buildDraggableId("project", project.id),
-                    ),
-                  )
-                : goalItems.map((goal) => buildDraggableId("goal", goal.id));
 
-              return (
-                <PriorityBucketColumn
-                  key={bucketId}
-                  bucketId={bucketId}
-                  totalItems={totalItems}
-                  itemLabel={itemLabel}
-                  emptyLabel={emptyLabel}
-                  sortableItems={bucketSortableItems}
-                >
-                  {isProjectView ? (
-                    stageGroups.map((group) => {
-                      if (group.projects.length === 0) return null;
-                      return (
-                        <div key={group.stageId} className="flex flex-col gap-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                            {group.stageId}
-                          </p>
-                          <div className="flex flex-col gap-2">
-                            {group.projects.map((project) => (
-                              <PriorityItemCard
-                                key={project.id}
-                                type="project"
-                                item={project}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {goalItems.map((goal) => (
-                        <PriorityItemCard key={goal.id} type="goal" item={goal} />
-                      ))}
-                    </div>
-                  )}
-                </PriorityBucketColumn>
-              );
-            })}
-          </div>
-          <DragOverlay>
-            {activeId && (
-              <ActiveItemOverlay
-                activeId={activeId}
-                projects={projects}
-                goals={goals}
+        <section className="space-y-3">
+          <div
+            ref={scrollerRef}
+            className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth px-3 pb-3 touch-pan-x sm:-mx-4 sm:px-4"
+            onScroll={handleRoadmapScroll}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={clearPointer}
+          >
+            {roadmaps.map((roadmap) => (
+              <RoadmapCarouselCard
+                key={roadmap.id}
+                roadmap={roadmap}
+                active={roadmap.id === focusedRoadmapId}
+                onFocus={() => handleFocusRoadmap(roadmap.id)}
+                suppressClickRef={suppressClickRef}
               />
-            )}
-          </DragOverlay>
-        </DndContext>
+            ))}
+          </div>
+        </section>
+
+        {monumentRows.length > 0 ? (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <h2 className="text-[11px] font-semibold uppercase text-white/35">
+                Monument Priority
+              </h2>
+              {isSavingMonumentOrder ? (
+                <span className="text-[11px] font-medium text-white/35">
+                  Saving
+                </span>
+              ) : null}
+            </div>
+            {monumentOrderError ? (
+              <p className="px-1 text-xs text-red-200/85">{monumentOrderError}</p>
+            ) : null}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleMonumentDragEnd}
+            >
+              <SortableContext
+                items={monumentRows.map((monument) => monument.monumentId)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="overflow-hidden rounded-2xl border border-black bg-[#060607] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  {monumentRows.map((monument, index) => (
+                    <SortableMonumentPriorityRow
+                      key={monument.monumentId}
+                      monument={monument}
+                      rank={index + 1}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </section>
+        ) : null}
       </div>
-    </>
+    </main>
   );
 }
 
-type PriorityRebuildResult = {
-  goals: PriorityGoal[];
-  projectRankById: Map<string, number>;
-};
+function buildMonumentPriorityRows(
+  roadmaps: MonumentRoadmapPriority[]
+): MonumentPriorityRow[] {
+  const rowsByMonumentId = new Map<string, MonumentPriorityRow>();
 
-const PROJECT_PRIORITY_STRENGTH_MAP: Record<PriorityBucketId, number> = {
-  "ULTRA-CRITICAL": 6,
-  CRITICAL: 5,
-  HIGH: 4,
-  MEDIUM: 3,
-  LOW: 2,
-  NO: 1,
-};
-
-const PROJECT_STAGE_STRENGTH_MAP: Record<StageId, number> = {
-  RESEARCH: 6,
-  TEST: 5,
-  REFINE: 4,
-  BUILD: 3,
-  RELEASE: 2,
-};
-
-async function rebuildPriorityStack(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-): Promise<PriorityRebuildResult> {
-  const { data: goalRows, error: goalFetchError } = await supabase
-    .from("goals")
-    .select(
-      `
-        id,
-        name,
-        active,
-        roadmap_id,
-        priority_code,
-        priority_rank,
-        created_at,
-        updated_at,
-        projects (
-          id,
-          name,
-          stage
-        )
-      `,
-    )
-    .eq("user_id", userId);
-
-  if (goalFetchError) {
-    throw goalFetchError;
-  }
-
-  const weightUpdates =
-    (goalRows ?? []).map((goalRow) => {
-      const normalizedGoalStatus = normalizeGoalStatus(
-        goalRow.status,
-        goalRow.active,
-      );
-      const canonicalGoal = {
-        id: goalRow.id,
-        title: goalRow.name ?? "Untitled goal",
-        priority: "No",
-        energy: "No",
-        progress: 0,
-        status: normalizedGoalStatus,
-        active: normalizedGoalStatus === "ACTIVE",
-        createdAt:
-          goalRow.created_at ?? new Date().toISOString(),
-        updatedAt:
-          goalRow.updated_at ?? goalRow.created_at ?? new Date().toISOString(),
-        projects: (goalRow.projects ?? []).map((project) => ({
-          id: project.id,
-          name: project.name ?? "Untitled project",
-          status: "Active",
-          progress: 0,
-          energy: "No",
-          tasks: [],
-          weight: project.weight ?? 0,
-        })),
-        roadmapId: goalRow.roadmap_id ?? null,
-        priorityCode: goalRow.priority_code ?? null,
-        priorityRank:
-          typeof goalRow.priority_rank === "number" &&
-          Number.isFinite(goalRow.priority_rank)
-            ? goalRow.priority_rank
-            : null,
-      } as Goal;
-
-      return {
-        id: goalRow.id,
-        weight: computeGoalWeight(canonicalGoal),
-      };
+  for (const roadmap of roadmaps) {
+    if (rowsByMonumentId.has(roadmap.monumentId)) continue;
+    rowsByMonumentId.set(roadmap.monumentId, {
+      monumentId: roadmap.monumentId,
+      name: roadmap.monumentName,
+      emoji: roadmap.monumentEmoji,
+      priorityRank: roadmap.monumentPriorityRank,
+      createdAt: roadmap.monumentCreatedAt,
     });
-
-  for (const update of weightUpdates) {
-    const { error: updateError } = await supabase
-      .from("goals")
-      .update({ weight: update.weight })
-      .eq("id", update.id);
-
-    if (updateError) {
-      throw updateError;
-    }
   }
 
-  const { error: rpcError } = await supabase.rpc("recalculate_goal_global_rank");
-  if (rpcError) {
-    throw rpcError;
-  }
+  return Array.from(rowsByMonumentId.values());
+}
 
-  const { data: refreshedGoalRows, error: refreshedGoalError } = await supabase
-    .from("goals")
-    .select("id,name,emoji,priority,priority_code,status,global_rank")
-    .neq("status", "COMPLETED")
-    .eq("user_id", userId);
+function reorderRoadmapsByMonumentOrder(
+  roadmaps: MonumentRoadmapPriority[],
+  monumentIds: string[]
+): MonumentRoadmapPriority[] {
+  const orderByMonumentId = new Map(
+    monumentIds.map((monumentId, index) => [monumentId, index + 1])
+  );
 
-  if (refreshedGoalError) {
-    throw refreshedGoalError;
-  }
-
-  const normalizedGoals: PriorityGoal[] =
-    (refreshedGoalRows ?? []).map((row) => ({
-      id: row.id,
-      name: (row.name ?? "").trim() || "Untitled goal",
-      emoji: row.emoji ?? null,
-      priority: normalizePriority(row.priority ?? row.priority_code),
-      stage: null,
-      globalRank: parseGlobalRank(row.global_rank),
+  return roadmaps
+    .map((roadmap, index) => [roadmap, index] as const)
+    .sort((a, b) => {
+      const monumentDelta =
+        (orderByMonumentId.get(a[0].monumentId) ?? Number.POSITIVE_INFINITY) -
+        (orderByMonumentId.get(b[0].monumentId) ?? Number.POSITIVE_INFINITY);
+      if (monumentDelta !== 0) return monumentDelta;
+      return a[1] - b[1];
+    })
+    .map(([roadmap]) => ({
+      ...roadmap,
+      monumentPriorityRank:
+        orderByMonumentId.get(roadmap.monumentId) ?? roadmap.monumentPriorityRank,
     }));
-
-  const goalRankById = new Map<string, number | null>();
-  for (const goalRow of refreshedGoalRows ?? []) {
-    if (!goalRow?.id) continue;
-    goalRankById.set(goalRow.id, parseGlobalRank(goalRow.global_rank) ?? null);
-  }
-
-  const { data: projectRows, error: projectFetchError } = await supabase
-    .from("projects")
-    .select("id,name,priority,stage,goal_id")
-    .eq("user_id", userId)
-    .is("completed_at", null);
-
-  if (projectFetchError) {
-    throw projectFetchError;
-  }
-
-  type ProjectRankRecord = {
-    id: string;
-    goalGlobalRank: number | null;
-    priorityStrength: number;
-    stageStrength: number;
-  };
-
-  const projectRankRecords: ProjectRankRecord[] = [];
-  for (const projectRow of projectRows ?? []) {
-    if (!projectRow?.id) continue;
-    const projectGoalRank =
-      projectRow.goal_id && goalRankById.has(projectRow.goal_id)
-        ? goalRankById.get(projectRow.goal_id) ?? null
-        : null;
-    projectRankRecords.push({
-      id: projectRow.id,
-      goalGlobalRank: projectGoalRank,
-      priorityStrength: getPriorityStrength(projectRow.priority),
-      stageStrength: getStageStrength(projectRow.stage),
-    });
-  }
-
-  projectRankRecords.sort((a, b) => {
-    const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
-    const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
-    if (aGoalRank !== bGoalRank) {
-      return aGoalRank - bGoalRank;
-    }
-    if (a.stageStrength !== b.stageStrength) {
-      return b.stageStrength - a.stageStrength;
-    }
-    if (a.priorityStrength !== b.priorityStrength) {
-      return b.priorityStrength - a.priorityStrength;
-    }
-    return a.id.localeCompare(b.id);
-  });
-
-  const projectRankById = new Map<string, number>();
-  for (let index = 0; index < projectRankRecords.length; index++) {
-    const record = projectRankRecords[index];
-    const rank = index + 1;
-    const { error: projectUpdateError } = await supabase
-      .from("projects")
-      .update({ global_rank: rank })
-      .eq("id", record.id);
-
-    if (projectUpdateError) {
-      throw projectUpdateError;
-    }
-
-    projectRankById.set(record.id, rank);
-  }
-
-  return {
-    goals: normalizedGoals,
-    projectRankById,
-  };
 }
 
-function getPriorityStrength(value?: string | null): number {
-  const normalized = normalizePriority(value);
-  return PROJECT_PRIORITY_STRENGTH_MAP[normalized] ?? 3;
-}
-
-function getStageStrength(value?: string | null): number {
-  const normalized = normalizeStage(value);
-  if (normalized && normalized in PROJECT_STAGE_STRENGTH_MAP) {
-    return PROJECT_STAGE_STRENGTH_MAP[normalized];
-  }
-  return 3;
-}
-
-type PriorityItemCardProps =
-  | { type: "project"; item: PriorityProject }
-  | { type: "goal"; item: PriorityGoal };
-
-function PriorityItemCard({ type, item }: PriorityItemCardProps) {
-  const draggableId = buildDraggableId(type, item.id);
+function SortableMonumentPriorityRow({
+  monument,
+  rank,
+}: {
+  monument: MonumentPriorityRow;
+  rank: number;
+}) {
   const {
     attributes,
     listeners,
@@ -736,198 +417,353 @@ function PriorityItemCard({ type, item }: PriorityItemCardProps) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: draggableId });
-
-  const stageLabel = item.stage ? `Stage: ${formatEnumLabel(item.stage)}` : null;
-  const displayEmoji = item.emoji ?? (type === "goal" ? "🎯" : null);
-  const transformStyle = transform ? CSS.Transform.toString(transform) : undefined;
+  } = useSortable({ id: monument.monumentId });
+  const identity = monument.emoji?.trim() || getInitials(monument.name) || "◆";
   const style: CSSProperties = {
-    touchAction: "none",
-    ...(transformStyle ? { transform: transformStyle } : undefined),
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
     transition,
   };
 
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
       style={style}
-      className={`select-none flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-[var(--surface)] px-3 py-2 transition ${
-        isDragging ? "shadow-2xl shadow-black/40 opacity-0" : ""
-      } cursor-grab active:cursor-grabbing`}
+      className={cn(
+        "flex min-h-12 items-center gap-2 border-b border-white/[0.055] bg-[#08090A] px-2.5 py-2 last:border-b-0 sm:px-3",
+        isDragging ? "relative z-20 shadow-2xl shadow-black/50" : ""
+      )}
     >
-      <div>
-        <div className="flex items-center gap-2">
-          {displayEmoji && <span className="text-base">{displayEmoji}</span>}
-          <p className="text-sm font-semibold text-white">{item.name}</p>
-        </div>
-        {stageLabel && <p className="text-xs text-zinc-500">{stageLabel}</p>}
-      </div>
-      {type === "project" && item.globalRank !== undefined && (
-        <span className="text-xs font-semibold text-[var(--accent-red)]">
-          #{item.globalRank}
-        </span>
-      )}
-      {type === "goal" && item.globalRank !== undefined && (
-        <span className="text-xs font-semibold text-[var(--accent-red)]">
-          #{item.globalRank}
-        </span>
-      )}
+      <button
+        type="button"
+        className="flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg border border-white/[0.08] bg-black/35 text-white/52 transition hover:text-white/78 active:cursor-grabbing"
+        aria-label={`Drag ${monument.name} to reorder`}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-4" aria-hidden="true" />
+      </button>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-white/88">
+        {identity}
+      </span>
+      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/88">
+        {monument.name}
+      </p>
+      <span className="shrink-0 rounded-full border border-white/[0.07] bg-black/30 px-2 py-0.5 text-[10px] font-semibold leading-none text-white/52">
+        #{rank}
+      </span>
     </div>
   );
 }
 
-interface PriorityBucketColumnProps {
-  bucketId: PriorityBucketId;
-  totalItems: number;
-  itemLabel: string;
-  emptyLabel: string;
-  sortableItems: string[];
-  children: ReactNode;
+function RoadmapCarouselCard({
+  roadmap,
+  active,
+  onFocus,
+  suppressClickRef,
+}: {
+  roadmap: MonumentRoadmapPriority;
+  active: boolean;
+  onFocus: () => void;
+  suppressClickRef: MutableRefObject<boolean>;
+}) {
+  const [openCampaignIds, setOpenCampaignIds] = useState<Record<string, boolean>>(
+    {}
+  );
+  const identity =
+    roadmap.monumentEmoji?.trim() ||
+    roadmap.roadmapEmoji?.trim() ||
+    getInitials(roadmap.monumentName) ||
+    "◆";
+  const monumentEmoji = roadmap.monumentEmoji?.trim();
+  const handleToggleCampaign = useCallback((campaignId: string) => {
+    setOpenCampaignIds((current) => ({
+      ...current,
+      [campaignId]: !current[campaignId],
+    }));
+  }, []);
+
+  return (
+    <article
+      data-roadmap-key={roadmap.id}
+      role="button"
+      tabIndex={0}
+      aria-current={active ? "true" : undefined}
+      onClick={() => {
+        if (suppressClickRef.current) return;
+        onFocus();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onFocus();
+      }}
+      className={cn(
+        "group flex h-[72vh] min-h-[30rem] min-w-[88vw] snap-center flex-col overflow-hidden rounded-[22px] border-2 bg-[#040404] shadow-[0_24px_60px_-28px_rgba(0,0,0,0.95),0_10px_20px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition duration-200 sm:min-w-[24rem] lg:min-w-[28rem]",
+        active
+          ? "border-black opacity-100 ring-1 ring-black/80"
+          : "border-black/70 opacity-[0.78] hover:border-black/90 hover:opacity-100"
+      )}
+    >
+      <div className="border-b border-white/10 px-4 py-3.5 sm:px-5 sm:py-4">
+        <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold leading-tight text-white sm:text-base">
+          {monumentEmoji ? (
+            <span
+              aria-hidden
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            >
+              {monumentEmoji}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate">{roadmap.monumentName}</span>
+        </h3>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        {roadmap.items.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center p-6 text-center">
+            <div className="max-w-[18rem] rounded-2xl border border-dashed border-white/10 bg-white/[0.025] px-5 py-6">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-lg text-white/80">
+                {identity}
+              </div>
+              <p className="mt-4 text-sm font-semibold text-white">
+                No Roadmap Goals yet
+              </p>
+              <p className="mt-2 text-sm leading-6 text-white/42">
+                Goals will appear here after they are assigned to this Monument Roadmap.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3 sm:space-y-3 sm:px-4">
+            {roadmap.items.map((item) => {
+              if (item.type === "campaign") {
+                return (
+                  <CampaignGroup
+                    key={item.id}
+                    campaign={item.campaign}
+                    monumentEmoji={monumentEmoji}
+                    isOpen={openCampaignIds[item.campaign.id] ?? false}
+                    onToggle={() => handleToggleCampaign(item.campaign.id)}
+                  />
+                );
+              }
+
+              return (
+                <GoalRankRow
+                  key={item.id}
+                  goal={item.goal}
+                  monumentEmoji={monumentEmoji}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </article>
+  );
 }
 
-function PriorityBucketColumn({
-  bucketId,
-  totalItems,
-  itemLabel,
-  emptyLabel,
-  children,
-  sortableItems,
-}: PriorityBucketColumnProps) {
-  const droppableId = buildPriorityDroppableId(bucketId);
-  const { isOver, setNodeRef } = useDroppable({ id: droppableId });
+function getCampaignStateClasses(state?: string | null): {
+  shell: string;
+  countBadge: string;
+  title: string;
+  description: string;
+} {
+  switch (state?.toUpperCase()) {
+    case "PAUSED":
+      return {
+        shell:
+          "border-white/[0.06] bg-[#0D0E10] opacity-90 shadow-[0_16px_40px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
+        countBadge: "border-white/[0.07] bg-white/[0.035] text-white/48",
+        title: "text-white/88",
+        description: "text-white/42",
+      };
+    case "COMPLETED":
+      return {
+        shell:
+          "border-white/[0.055] bg-[#0B0C0D] shadow-[0_14px_34px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)]",
+        countBadge: "border-white/[0.06] bg-white/[0.03] text-white/40",
+        title: "text-white/76",
+        description: "text-white/38",
+      };
+    default:
+      return {
+        shell:
+          "border-white/[0.07] bg-[#101112] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)]",
+        countBadge: "border-white/[0.08] bg-white/[0.045] text-white/58",
+        title: "text-white",
+        description: "text-white/48",
+      };
+  }
+}
+
+function CampaignGroup({
+  campaign,
+  monumentEmoji,
+  isOpen,
+  onToggle,
+}: {
+  campaign: RoadmapPriorityCampaign;
+  monumentEmoji?: string | null;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const stateClasses = getCampaignStateClasses(campaign.schedulingState);
+  const identity = campaign.emoji?.trim() || getInitials(campaign.name) || "◇";
+
+  return (
+    <section
+      className={cn(
+        "relative min-w-0 overflow-hidden rounded-2xl border p-2.5 sm:rounded-[20px] sm:p-3.5",
+        stateClasses.shell
+      )}
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
+      <div className="space-y-2 sm:space-y-3">
+        <button
+          type="button"
+          aria-expanded={isOpen}
+          onClick={onToggle}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          className="flex w-full items-start gap-2 rounded-xl text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/20 sm:gap-2.5"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[12px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm">
+            {identity}
+          </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+                <h4
+                  className={cn(
+                    "min-w-0 truncate text-[13px] font-semibold leading-tight sm:text-sm",
+                    stateClasses.title
+                  )}
+                  title={campaign.name}
+                >
+                  {campaign.name}
+                </h4>
+                <span
+                  className={cn(
+                    "shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none sm:px-2 sm:py-1 sm:text-[10px]",
+                    stateClasses.countBadge
+                  )}
+                >
+                  {campaign.goals.length} Goal
+                  {campaign.goals.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <ChevronDown
+                className={cn(
+                  "mt-0.5 size-4 shrink-0 text-white/38 transition-transform",
+                  isOpen ? "rotate-180" : ""
+                )}
+                aria-hidden="true"
+              />
+            </div>
+            {isOpen && campaign.description ? (
+              <p
+                className={cn(
+                  "line-clamp-2 text-[12px] leading-5",
+                  stateClasses.description
+                )}
+              >
+                {campaign.description}
+              </p>
+            ) : null}
+          </div>
+        </button>
+        {isOpen && campaign.goals.length > 0 ? (
+          <div className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[#030407] px-1 pb-1.5 pt-1 sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
+            <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/10 sm:inset-y-3.5 sm:left-2" />
+            <div className="space-y-1.5 pt-1.5 sm:space-y-2 sm:pt-3">
+              {campaign.goals.map((goal) => (
+                <GoalRankRow
+                  key={goal.id}
+                  goal={goal}
+                  monumentEmoji={monumentEmoji}
+                  nested
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {isOpen && campaign.goals.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-white/45">
+            No Goals in this Campaign yet.
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function GoalRankRow({
+  goal,
+  monumentEmoji,
+  nested = false,
+}: {
+  goal: RoadmapPriorityGoal;
+  monumentEmoji?: string | null;
+  nested?: boolean;
+}) {
+  const identity =
+    monumentEmoji?.trim() || goal.monumentEmoji?.trim() || goal.emoji?.trim() || "";
+  const isCompleted = goal.status?.trim().toUpperCase() === "COMPLETED";
 
   return (
     <div
-      ref={setNodeRef}
-      className={`flex min-h-[220px] flex-col gap-3 rounded-2xl border bg-[var(--surface-elevated)] p-4 transition ${
-        isOver ? "border-white/40 ring-2 ring-emerald-300/40 shadow-lg shadow-emerald-400/10" : "border-white/10"
-      }`}
+      className={cn(
+        "min-w-0 rounded-2xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        nested
+          ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)]"
+          : "border-white/[0.07] bg-[#0D0E10] shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
+        isCompleted ? "opacity-[0.82]" : ""
+      )}
     >
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          {PRIORITY_LABELS[bucketId]}
-        </p>
-        <span className="text-xs font-semibold text-zinc-500">
-          {totalItems} {itemLabel}
-          {totalItems === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="flex flex-1 flex-col gap-2">
-        {totalItems === 0 ? (
-          <p className="text-sm text-zinc-500">No {emptyLabel}</p>
-        ) : (
-          <SortableContext
-            items={sortableItems}
-            strategy={verticalListSortingStrategy}
-          >
-            {children}
-          </SortableContext>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ActiveItemOverlayProps {
-  activeId: string;
-  projects: PriorityProject[];
-  goals: PriorityGoal[];
-}
-
-function ActiveItemOverlay({
-  activeId,
-  projects,
-  goals,
-}: ActiveItemOverlayProps) {
-  const payload = parseDraggableId(activeId);
-  if (!payload) return null;
-
-  const sharedClasses =
-    "pointer-events-none select-none flex w-full items-center justify-between gap-3 rounded-xl border border-white/5 bg-[var(--surface)] px-3 py-2 shadow-2xl shadow-black/40 opacity-90";
-
-  if (payload.type === "project") {
-    const project = projects.find((entry) => entry.id === payload.id);
-    if (!project) return null;
-
-    const stageLabel = project.stage ? `Stage: ${formatEnumLabel(project.stage)}` : null;
-
-    return (
-      <div className={sharedClasses}>
-        <div>
-          <p className="text-sm font-semibold text-white">{project.name}</p>
-          {stageLabel && <p className="text-xs text-zinc-500">{stageLabel}</p>}
-        </div>
-        {project.globalRank !== undefined && (
-          <span className="text-xs font-semibold text-[var(--accent-red)]">
-            #{project.globalRank}
+      <div className="flex items-center gap-2 px-2.5 py-2.5 sm:gap-2.5 sm:px-3">
+        {identity ? (
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-sm">
+            <span
+              aria-hidden
+              className="inline-flex items-center justify-center leading-none"
+            >
+              {identity}
+            </span>
           </span>
-        )}
-      </div>
-    );
-  }
-
-  const goal = goals.find((entry) => entry.id === payload.id);
-  if (!goal) return null;
-
-  return (
-    <div className={sharedClasses}>
-      <div>
-        <p className="text-sm font-semibold text-white">{goal.name}</p>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              "truncate text-[13px] font-semibold leading-tight sm:text-sm",
+              isCompleted ? "text-white/68" : "text-white"
+            )}
+            title={goal.name}
+          >
+            {goal.name}
+          </p>
+        </div>
+        {typeof goal.globalRank === "number" ? (
+          <span className="shrink-0 rounded-full border border-white/8 bg-black/25 px-2 py-0.5 text-[10px] font-semibold leading-none text-white/58 sm:text-[11px]">
+            #{goal.globalRank}
+          </span>
+        ) : null}
       </div>
     </div>
   );
 }
 
-const DROPPABLE_PRIORITY_PREFIX = "priority:";
-const DRAGGABLE_PROJECT_PREFIX = "project:";
-const DRAGGABLE_GOAL_PREFIX = "goal:";
-
-type DraggableType = "project" | "goal";
-type DraggablePayload = { type: DraggableType; id: string };
-
-function buildPriorityDroppableId(bucketId: PriorityBucketId) {
-  return `${DROPPABLE_PRIORITY_PREFIX}${bucketId}`;
-}
-
-function buildDraggableId(type: DraggableType, id: string) {
-  return `${type}:${id}`;
-}
-
-function parsePriorityDroppableId(id?: string | null): PriorityBucketId | null {
-  if (!id?.startsWith(DROPPABLE_PRIORITY_PREFIX)) {
-    return null;
+function getInitials(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "";
   }
-  const bucketId = id.substring(DROPPABLE_PRIORITY_PREFIX.length) as PriorityBucketId;
-  return PRIORITY_ORDER.includes(bucketId) ? bucketId : null;
-}
 
-function parseDraggableId(id?: string | null): DraggablePayload | null {
-  if (!id) return null;
-  if (id.startsWith(DRAGGABLE_PROJECT_PREFIX)) {
-    return {
-      type: "project",
-      id: id.substring(DRAGGABLE_PROJECT_PREFIX.length),
-    };
-  }
-  if (id.startsWith(DRAGGABLE_GOAL_PREFIX)) {
-    return {
-      type: "goal",
-      id: id.substring(DRAGGABLE_GOAL_PREFIX.length),
-    };
-  }
-  return null;
-}
-
-function compareGlobalRankValues(a?: number, b?: number): number {
-  const normalize = (value?: number): number =>
-    typeof value === "number" && Number.isFinite(value)
-      ? value
-      : Number.POSITIVE_INFINITY;
-
-  const aValue = normalize(a);
-  const bValue = normalize(b);
-  if (aValue === bValue) return 0;
-  return aValue < bValue ? -1 : 1;
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
 }
