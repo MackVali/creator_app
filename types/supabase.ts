@@ -506,22 +506,31 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          Title: string | null;
+          updated_at: string;
+          title: string | null;
           description: string | null;
+          emoji: string | null;
+          priority_rank: number | null;
           user_id: string | null;
         };
         Insert: {
           id?: string;
           created_at?: string;
-          Title?: string | null;
+          updated_at?: string;
+          title?: string | null;
           description?: string | null;
+          emoji?: string | null;
+          priority_rank?: number | null;
           user_id?: string | null;
         };
         Update: {
           id?: string;
           created_at?: string;
-          Title?: string | null;
+          updated_at?: string;
+          title?: string | null;
           description?: string | null;
+          emoji?: string | null;
+          priority_rank?: number | null;
           user_id?: string | null;
         };
       };
@@ -1653,6 +1662,12 @@ export interface Database {
         Args: {
           p_routine_id: string;
           p_habit_ids: string[];
+        };
+        Returns: undefined;
+      };
+      save_monument_priority_order: {
+        Args: {
+          p_monument_ids: string[];
         };
         Returns: undefined;
       };

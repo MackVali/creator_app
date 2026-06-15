@@ -317,7 +317,7 @@ function RoutineHabitRowBody({
     >
       <div
         className={clsx(
-          "relative flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2",
+          "relative flex w-full min-w-0 select-none items-center gap-2 overflow-hidden rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2",
           habit.completed
             ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_0_1px_0_rgba(255,255,255,0.04)]"
             : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
@@ -336,6 +336,13 @@ function RoutineHabitRowBody({
             ? `. Double tap to ${habit.completed ? "undo" : "complete"}.`
             : ""
         }`}
+        draggable={false}
+        style={{
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          WebkitTouchCallout: "none",
+          WebkitTapHighlightColor: "transparent",
+        }}
         role={onHabitCompletionToggle ? "button" : undefined}
         tabIndex={
           onHabitCompletionToggle && !habit.pending ? 0 : undefined
@@ -357,6 +364,8 @@ function RoutineHabitRowBody({
         onPointerCancel={onPointerCancel}
         onPointerLeave={onPointerLeave}
         onTouchEnd={(event) => onTouchEnd(event, habit)}
+        onContextMenu={(event) => event.preventDefault()}
+        onDragStart={(event) => event.preventDefault()}
       >
         {dragHandle}
         <span

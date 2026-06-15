@@ -19,6 +19,7 @@ import {
 import { useAppCart } from "@/components/cart/AppCartProvider";
 import { AppCartQuickView, AppCheckoutFullscreen } from "@/components/cart/AppCartPanels";
 import { resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
+import { isScheduleRoute } from "@/components/appChromeVisibility";
 
 type RoleMetadata = {
   role?: unknown;
@@ -298,10 +299,7 @@ function userIsTopNavAdmin(user: User | null) {
 export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const shouldHideNav =
-    pathname?.startsWith("/schedule") &&
-    pathname !== "/schedule/matrix" &&
-    !pathname?.startsWith("/schedule/matrix/");
+  const shouldHideNav = isScheduleRoute(pathname);
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
