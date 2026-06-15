@@ -190,6 +190,18 @@ function normalizeRoadmapGoal(
   };
 }
 
+function sortCampaignGoalsByPosition<T extends { position: number }>(
+  goals: T[]
+): T[] {
+  return [...goals]
+    .map((goal, index) => ({ goal, index }))
+    .sort((a, b) => {
+      const positionDiff = a.goal.position - b.goal.position;
+      return positionDiff === 0 ? a.index - b.index : positionDiff;
+    })
+    .map(({ goal }) => goal);
+}
+
 function isRoadmapGoalCompleted(goal: {
   status?: string | null;
   allProjectsCompleted?: boolean;
@@ -533,7 +545,9 @@ export async function listRoadmapsWithItems(
         roadmap_id: campaign.roadmap_id ?? null,
         primary_monument_id: campaign.primary_monument_id ?? null,
         primary_circle_id: campaign.primary_circle_id ?? null,
-        goals: campaignGoalsByCampaignId.get(campaign.id) ?? [],
+        goals: sortCampaignGoalsByPosition(
+          campaignGoalsByCampaignId.get(campaign.id) ?? []
+        ),
       }))
       .filter(campaign => campaign.goals.length > 0)
       .map(campaign => [campaign.id, campaign])
@@ -700,7 +714,7 @@ export async function listGoalCampaignCards(
     roadmap_id: campaign.roadmap_id ?? null,
     primary_monument_id: campaign.primary_monument_id ?? null,
     primary_circle_id: campaign.primary_circle_id ?? null,
-    goals: goalsByCampaignId.get(campaign.id) ?? [],
+    goals: sortCampaignGoalsByPosition(goalsByCampaignId.get(campaign.id) ?? []),
   }));
 }
 

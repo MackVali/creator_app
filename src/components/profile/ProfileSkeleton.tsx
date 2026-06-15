@@ -8,9 +8,9 @@ function SkeletonBlock({ className }: { className: string }) {
 
 function StatSkeleton({ width }: { width: string }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center gap-1 px-1">
-      <SkeletonBlock className={`h-4 rounded-full ${width}`} />
-      <SkeletonBlock className="h-2.5 w-12 rounded-full bg-white/8" />
+    <div className="flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-0">
+      <SkeletonBlock className={`h-[0.72rem] rounded-full ${width}`} />
+      <SkeletonBlock className="h-3 w-12 rounded-full bg-white/8" />
     </div>
   );
 }
@@ -75,7 +75,10 @@ function ActionRowsSkeleton({ actionLayout }: { actionLayout: ProfileSkeletonAct
   return (
     <div className="flex flex-col gap-2">
       {actionLayout === "owner" ? (
-        <SkeletonBlock className="min-h-[3.4rem] w-full rounded-md border border-black bg-white/14" />
+        <div className="flex min-h-[3.4rem] w-full flex-col items-start justify-center rounded-md border border-black bg-white/[0.14] px-3 py-2">
+          <SkeletonBlock className="h-3.5 w-40 max-w-[55%] rounded-full bg-white/14" />
+          <SkeletonBlock className="mt-1.5 h-2.5 w-32 max-w-[45%] rounded-full bg-white/10" />
+        </div>
       ) : null}
       <div className="grid grid-cols-2 gap-2">
         <SkeletonBlock className="h-9 rounded-md border border-black bg-white/14" />
@@ -85,12 +88,43 @@ function ActionRowsSkeleton({ actionLayout }: { actionLayout: ProfileSkeletonAct
   );
 }
 
+function RelationshipExtrasSkeleton() {
+  return (
+    <section className="flex flex-col space-y-1 px-6 py-3 text-center text-white sm:px-8">
+      <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-white/70">
+        <SkeletonBlock className="h-6 w-20 rounded-full border border-white/10 bg-white/10" />
+      </div>
+      <div className="flex flex-wrap justify-center gap-2">
+        <SkeletonBlock className="h-8 w-28 rounded-full border border-white/10 bg-white/10" />
+        <SkeletonBlock className="h-8 w-24 rounded-full border border-white/10 bg-white/10" />
+      </div>
+    </section>
+  );
+}
+
+export function SocialPillsSkeleton() {
+  return (
+    <div className="-mx-2 flex snap-x snap-mandatory items-center gap-1.5 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-start sm:overflow-visible sm:px-0">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <SkeletonBlock
+          key={`profile-social-pill-skeleton-${index}`}
+          className="h-11 w-11 shrink-0 rounded-full border border-white/10 bg-white/[0.06]"
+        />
+      ))}
+    </div>
+  );
+}
+
 type ProfileSkeletonActionLayout = "viewer" | "owner";
 
 export function ProfileSkeleton({
   actionLayout = "viewer",
+  showRelationshipExtras = false,
+  showSocialLinks = true,
 }: {
   actionLayout?: ProfileSkeletonActionLayout;
+  showRelationshipExtras?: boolean;
+  showSocialLinks?: boolean;
 }) {
   return (
     <div className="relative min-h-screen bg-black pb-[env(safe-area-inset-bottom)] text-white">
@@ -125,28 +159,24 @@ export function ProfileSkeleton({
                 </div>
               </div>
 
-              <div className="mt-2.5 space-y-2">
-                <SkeletonBlock className="h-3.5 w-full rounded-full bg-white/10 sm:h-4" />
-                <SkeletonBlock className="h-3.5 w-3/4 rounded-full bg-white/8 sm:h-4" />
-              </div>
-
-              <div className="mt-3 flex min-h-[2rem] flex-wrap justify-center gap-2 px-6">
-                <SkeletonBlock className="h-7 w-20 rounded-full border border-white/10 bg-white/10" />
-                <SkeletonBlock className="h-7 w-24 rounded-full border border-white/10 bg-white/10" />
+              <div className="mt-2.5 space-y-1.5">
+                <SkeletonBlock className="h-3.5 w-full rounded-full bg-white/10 sm:h-[0.95rem]" />
+                <SkeletonBlock className="h-3.5 w-3/4 rounded-full bg-white/8 sm:h-[0.95rem]" />
               </div>
             </div>
 
             <div className="animate-pulse flex flex-col gap-1 pt-2.5 sm:pt-3">
+              {showRelationshipExtras ? <RelationshipExtrasSkeleton /> : null}
               {actionLayout === "viewer" ? <FollowedBySkeleton /> : null}
               <div className={actionLayout === "viewer" ? "pt-3" : "pt-0"}>
                 <ActionRowsSkeleton actionLayout={actionLayout} />
               </div>
 
-              <div className="mt-1 flex w-full justify-start gap-2">
-                <SkeletonBlock className="h-8 w-8 rounded-full bg-white/10" />
-                <SkeletonBlock className="h-8 w-8 rounded-full bg-white/10" />
-                <SkeletonBlock className="h-8 w-8 rounded-full bg-white/10" />
-              </div>
+              {showSocialLinks ? (
+                <div className="mt-1 w-full">
+                  <SocialPillsSkeleton />
+                </div>
+              ) : null}
             </div>
           </div>
         </section>

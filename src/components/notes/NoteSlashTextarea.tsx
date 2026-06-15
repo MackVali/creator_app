@@ -57,6 +57,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 
 type SlashCommandId =
@@ -218,6 +219,13 @@ function DatabaseInlineIcon({ iconKey }: { iconKey?: string | null }) {
   if (resolvedIcon.kind === "lucide") {
     const Icon = resolvedIcon.Icon;
     return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+  if (resolvedIcon.kind === "iconify") {
+    return (
+      <span className="inline-flex h-3.5 w-3.5 items-center justify-center" aria-hidden="true">
+        <IconifyIcon icon={resolvedIcon.icon} className="h-3.5 w-3.5" />
+      </span>
+    );
   }
 
   return (

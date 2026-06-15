@@ -1015,6 +1015,7 @@ export default function ProfileByHandlePage() {
         <HeroHeader
           profile={profile}
           socials={socialsData}
+          socialsLoading={secondaryProfileLoading}
           onShare={handleShare}
           onBack={handleBack}
           isOwner={isOwner}

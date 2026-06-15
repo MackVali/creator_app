@@ -241,6 +241,13 @@ function isCampaignDrawerGoalCompleted(goal: Goal): boolean {
   return normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
 }
 
+function getFinitePriorityRank(goal: Goal): number | null {
+  return typeof goal.priorityRank === "number" &&
+    Number.isFinite(goal.priorityRank)
+    ? goal.priorityRank
+    : null;
+}
+
 function DraggableGoalCard({
   goal,
   index,
@@ -1031,19 +1038,19 @@ function CampaignCardImpl({
   useEffect(() => {
     // Sort goals by priority_rank if available, otherwise maintain original order
     const sortedGoals = [...goals].sort((a, b) => {
-      const aRank = a.priorityRank;
-      const bRank = b.priorityRank;
+      const aRank = getFinitePriorityRank(a);
+      const bRank = getFinitePriorityRank(b);
 
       // If both have priority_rank, sort by it
-      if (aRank !== undefined && bRank !== undefined) {
+      if (aRank !== null && bRank !== null) {
         return aRank - bRank;
       }
 
       // If only one has priority_rank, prioritize the one that has it
-      if (aRank !== undefined && bRank === undefined) {
+      if (aRank !== null && bRank === null) {
         return -1;
       }
-      if (bRank !== undefined && aRank === undefined) {
+      if (bRank !== null && aRank === null) {
         return 1;
       }
 

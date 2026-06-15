@@ -37,6 +37,10 @@ export function MonumentGridWithSharedTransition({
 
   const previousFocus = useRef<HTMLElement | null>(null);
   const previousBodyOverflow = useRef<string | null>(null);
+  const previousHtmlOverflow = useRef<string | null>(null);
+  const previousBodyOverscrollBehavior = useRef<string | null>(null);
+  const previousHtmlOverscrollBehavior = useRef<string | null>(null);
+  const detailOverlayScrollRef = useRef<HTMLDivElement | null>(null);
   const [detailOverlayHeight, setDetailOverlayHeight] = useState<number | null>(
     null
   );
@@ -48,15 +52,45 @@ export function MonumentGridWithSharedTransition({
     }
 
     previousFocus.current = document.activeElement as HTMLElement;
-    previousBodyOverflow.current = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const { body, documentElement } = document;
+
+    previousBodyOverflow.current = body.style.overflow;
+    previousHtmlOverflow.current = documentElement.style.overflow;
+    previousBodyOverscrollBehavior.current = body.style.overscrollBehavior;
+    previousHtmlOverscrollBehavior.current =
+      documentElement.style.overscrollBehavior;
+
+    body.style.overflow = "hidden";
+    documentElement.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    documentElement.style.overscrollBehavior = "none";
     document.body.classList.add("monument-detail-open");
 
     return () => {
-      document.body.style.overflow = previousBodyOverflow.current ?? "";
+      body.style.overflow = previousBodyOverflow.current ?? "";
+      documentElement.style.overflow = previousHtmlOverflow.current ?? "";
+      body.style.overscrollBehavior =
+        previousBodyOverscrollBehavior.current ?? "";
+      documentElement.style.overscrollBehavior =
+        previousHtmlOverscrollBehavior.current ?? "";
       previousBodyOverflow.current = null;
+      previousHtmlOverflow.current = null;
+      previousBodyOverscrollBehavior.current = null;
+      previousHtmlOverscrollBehavior.current = null;
       document.body.classList.remove("monument-detail-open");
     };
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!activeId) return;
+
+    requestAnimationFrame(() => {
+      detailOverlayScrollRef.current?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+    });
   }, [activeId]);
 
   useEffect(() => {
@@ -196,7 +230,8 @@ export function MonumentGridWithSharedTransition({
         {!isEmpty && selected && (
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
+            ref={detailOverlayScrollRef}
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -206,7 +241,7 @@ export function MonumentGridWithSharedTransition({
               layoutId={`card-${selected.id}`}
               role="dialog"
               aria-modal="true"
-              className="app-card relative h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              className="app-card relative min-h-[var(--monument-detail-overlay-height,100dvh)] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.18)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
               style={detailOverlayStyle}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

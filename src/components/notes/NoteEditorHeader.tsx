@@ -21,6 +21,7 @@ import {
   Crosshair,
   Database,
   Dumbbell,
+  Droplet,
   Eye,
   File,
   FilePlus2,
@@ -67,6 +68,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
+import { Icon as IconifyIcon } from "@iconify/react";
 
 export const DEFAULT_NOTE_ICON = "lucide:NotebookPen";
 
@@ -164,8 +166,20 @@ const iconButtonIdleClass = "border-white/[0.08] bg-white/[0.04] text-white/78 h
 
 export function resolveNoteIcon(
   iconValue?: string | null,
-): { kind: "lucide"; Icon: LucideIcon } | { kind: "emoji"; emoji: string } {
+):
+  | { kind: "lucide"; Icon: LucideIcon }
+  | { kind: "iconify"; icon: string }
+  | { kind: "emoji"; emoji: string } {
   const value = iconValue?.trim() || DEFAULT_NOTE_ICON;
+  const normalizedValue = value.toLowerCase();
+
+  if (normalizedValue === "stomach") return { kind: "iconify", icon: "game-icons:stomach" };
+  if (normalizedValue === "droplet") return { kind: "lucide", Icon: Droplet };
+  if (normalizedValue === "dumbbell") return { kind: "lucide", Icon: Dumbbell };
+  if (normalizedValue === "database" || normalizedValue === "table") {
+    return { kind: "lucide", Icon: Database };
+  }
+
   const lucidePreset = LUCIDE_ICON_PRESETS.find((preset) => preset.value === value);
 
   if (lucidePreset) return { kind: "lucide", Icon: lucidePreset.icon };
@@ -201,10 +215,12 @@ export function NoteIconPicker({
       )
     : LUCIDE_ICON_PRESETS;
   const resolvedIcon = resolveNoteIcon(icon);
-  const customEmojiValue = currentIconValue.startsWith("lucide:") ? "" : currentIconValue;
+  const customEmojiValue = resolvedIcon.kind === "emoji" ? currentIconValue : "";
   const triggerIconNode =
     resolvedIcon.kind === "lucide" ? (
       <resolvedIcon.Icon className="h-5 w-5 text-white/85" aria-hidden="true" />
+    ) : resolvedIcon.kind === "iconify" ? (
+      <IconifyIcon icon={resolvedIcon.icon} className="h-5 w-5 text-white/85" aria-hidden="true" />
     ) : (
       <span aria-hidden="true">{resolvedIcon.emoji}</span>
     );
@@ -318,7 +334,7 @@ export function NoteEditorHeader({
   autosaveLabel,
 }: NoteEditorHeaderProps) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="flex items-center gap-2.5 sm:gap-3">
         {onBack ? (
           <button

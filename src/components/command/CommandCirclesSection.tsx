@@ -5,10 +5,10 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type MouseEvent,
   type PointerEvent,
@@ -440,6 +440,18 @@ function getCircleDetailPopupRect(
     left: Math.max(horizontalInset, (viewportWidth - width) / 2),
     width,
     height: appViewportRect.height,
+  };
+}
+
+function getCircleDetailTransform(
+  rect: MeasuredCircleRect,
+  targetRect: MeasuredCircleRect,
+) {
+  return {
+    x: rect.left - targetRect.left,
+    y: rect.top - targetRect.top,
+    scaleX: targetRect.width > 0 ? rect.width / targetRect.width : 1,
+    scaleY: targetRect.height > 0 ? rect.height / targetRect.height : 1,
   };
 }
 
@@ -4058,11 +4070,6 @@ function CircleCommandDetail({
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null,
   );
-  const detailScrollRef = useRef<HTMLElement | null>(null);
-
-  useLayoutEffect(() => {
-    detailScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  }, [circle.id]);
 
   useEffect(() => {
     setCircleView("goals");
@@ -4328,12 +4335,11 @@ function CircleCommandDetail({
   }, [selectedMemberId]);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+    <div className="relative min-h-full w-full overflow-visible">
       <main
-        ref={detailScrollRef}
         key={circle.id}
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] lg:px-8",
+          "relative min-h-full overflow-x-hidden px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] lg:px-8",
           detailTopPaddingClass,
         )}
       >
@@ -4541,9 +4547,11 @@ export const CommandCirclesSection = forwardRef<
   const circleCardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const previousFocus = useRef<HTMLElement | null>(null);
   const previousBodyOverflow = useRef<string | null>(null);
+  const previousHtmlOverflow = useRef<string | null>(null);
   const previousHtmlOverscroll = useRef<string | null>(null);
   const previousBodyOverscroll = useRef<string | null>(null);
   const openScrollFrameRef = useRef<number | null>(null);
+  const circleDetailOverlayScrollRef = useRef<HTMLDivElement | null>(null);
 
   const activeCircle =
     circles.find((circle) => circle.id === activeCircleId) ?? null;
@@ -4734,6 +4742,12 @@ export const CommandCirclesSection = forwardRef<
     if (!activeCircleId) {
       return;
     }
+
+    circleDetailOverlayScrollRef.current?.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "auto",
+    });
 
     const closeRect = getCircleCardRect(activeCircleId);
 
@@ -4954,32 +4968,48 @@ export const CommandCirclesSection = forwardRef<
   }, [closeCircleDetail]);
 
   useEffect(() => {
+    if (!activeCircleId) return;
+
+    requestAnimationFrame(() => {
+      circleDetailOverlayScrollRef.current?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+    });
+  }, [activeCircleId]);
+
+  useEffect(() => {
     if (!isCircleDetailMounted) {
       previousFocus.current?.focus();
       return;
     }
 
     previousFocus.current = document.activeElement as HTMLElement;
-    previousBodyOverflow.current = document.body.style.overflow;
-    previousHtmlOverscroll.current =
-      document.documentElement.style.overscrollBehavior;
-    previousBodyOverscroll.current = document.body.style.overscrollBehavior;
+    const { body, documentElement } = document;
 
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overscrollBehavior = "none";
-    document.body.style.overscrollBehavior = "none";
-    document.body.classList.add("command-circle-detail-open");
+    previousBodyOverflow.current = body.style.overflow;
+    previousHtmlOverflow.current = documentElement.style.overflow;
+    previousHtmlOverscroll.current = documentElement.style.overscrollBehavior;
+    previousBodyOverscroll.current = body.style.overscrollBehavior;
+
+    body.style.overflow = "hidden";
+    documentElement.style.overflow = "hidden";
+    documentElement.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    body.classList.add("command-circle-detail-open");
 
     return () => {
-      document.body.style.overflow = previousBodyOverflow.current ?? "";
-      document.documentElement.style.overscrollBehavior =
+      body.style.overflow = previousBodyOverflow.current ?? "";
+      documentElement.style.overflow = previousHtmlOverflow.current ?? "";
+      documentElement.style.overscrollBehavior =
         previousHtmlOverscroll.current ?? "";
-      document.body.style.overscrollBehavior =
-        previousBodyOverscroll.current ?? "";
+      body.style.overscrollBehavior = previousBodyOverscroll.current ?? "";
       previousBodyOverflow.current = null;
+      previousHtmlOverflow.current = null;
       previousHtmlOverscroll.current = null;
       previousBodyOverscroll.current = null;
-      document.body.classList.remove("command-circle-detail-open");
+      body.classList.remove("command-circle-detail-open");
     };
   }, [isCircleDetailMounted]);
 
@@ -4996,75 +5026,119 @@ export const CommandCirclesSection = forwardRef<
 
   const shouldShowCircles = isLoading || !!error || circles.length > 0;
   const circleDetailOverlay =
-    activeCircle && circleTransition && circleShellRect ? (
-      <div
-        className="pointer-events-none fixed inset-x-0 z-40 overflow-hidden"
-        style={{
-          top: circleTransition.appViewportRect.top,
-          height: circleTransition.appViewportRect.height,
-        }}
-      >
-        <motion.div
-          className="pointer-events-auto absolute inset-0 bg-black/60 backdrop-blur-md"
-          initial={{ opacity: 0 }}
-          animate={{
-            opacity: circleTransition.phase === "closing" ? 0 : 1,
-          }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-        />
-        <motion.div
-          role="dialog"
-          aria-modal="true"
-          className="app-card pointer-events-auto fixed flex min-h-0 flex-col overflow-hidden border border-white/10 bg-[#050507] shadow-[0_38px_120px_rgba(0,0,0,0.72)] ring-1 ring-white/[0.06]"
-          initial={{
-            top: circleTransition.sourceRect.top,
-            left: circleTransition.sourceRect.left,
-            width: circleTransition.sourceRect.width,
-            height: circleTransition.sourceRect.height,
-            borderRadius: circleTransition.sourceBorderRadius,
-            opacity: 1,
-            scale: 1,
-          }}
-          animate={{
-            top: circleShellRect.top,
-            left: circleShellRect.left,
-            width: circleShellRect.width,
-            height: circleShellRect.height,
-            borderRadius: circleShellBorderRadius,
-            opacity: circleShellIsFallbackClose ? 0 : 1,
-            scale: circleShellIsFallbackClose ? 0.96 : 1,
-          }}
-          transition={{
-            type: "spring",
-            stiffness: 520,
-            damping: 44,
-            mass: 0.9,
-          }}
-          onAnimationComplete={handleCircleShellAnimationComplete}
-        >
-          <motion.div
-            className="h-full min-h-0 w-full overflow-hidden"
-            initial={false}
-            animate={{ opacity: circleDetailContentVisible ? 1 : 0 }}
-            transition={{ duration: 0.14, ease: "easeOut" }}
-          >
-            <CircleCommandDetail
-              circle={activeCircle}
-              needsSafeAreaTopPadding={circleTransition.appViewportRect.top <= 1}
-              onCircleUpdated={(updatedCircle) => {
-                setCircles((currentCircles) =>
-                  currentCircles.map((circle) =>
-                    circle.id === updatedCircle.id
-                      ? { ...circle, ...updatedCircle }
-                      : circle,
-                  ),
-                );
+    activeCircle && circleTransition && circleShellRect
+      ? (() => {
+          const openingTransform = getCircleDetailTransform(
+            circleTransition.sourceRect,
+            circleTransition.targetRect,
+          );
+          const activeShellRect =
+            circleTransition.phase === "closing" && circleTransition.closeRect
+              ? circleTransition.closeRect
+              : circleTransition.targetRect;
+          const activeTransform = getCircleDetailTransform(
+            activeShellRect,
+            circleTransition.targetRect,
+          );
+
+          return (
+            <div
+              ref={circleDetailOverlayScrollRef}
+              className="fixed inset-x-0 z-40 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-transparent [-webkit-overflow-scrolling:touch]"
+              style={{
+                top: circleTransition.appViewportRect.top,
+                height: circleTransition.appViewportRect.height,
               }}
-            />
-          </motion.div>
-        </motion.div>
-      </div>
-    ) : null;
+            >
+              <motion.div
+                className="pointer-events-auto fixed inset-0 bg-black/60 backdrop-blur-md"
+                initial={{ opacity: 0 }}
+                animate={{
+                  opacity: circleTransition.phase === "closing" ? 0 : 1,
+                }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              />
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                className={cn(
+                  "app-card relative z-10 mx-auto flex min-h-[var(--circle-detail-overlay-height,100dvh)] flex-col border border-white/10 bg-[#050507] shadow-[0_38px_120px_rgba(0,0,0,0.72)] ring-1 ring-white/[0.06]",
+                  circleTransition.phase === "open"
+                    ? "overflow-visible"
+                    : "overflow-hidden",
+                )}
+                style={{
+                  width: circleTransition.targetRect.width,
+                  "--circle-detail-overlay-height": `${circleTransition.targetRect.height}px`,
+                  transformOrigin: "top left",
+                } as CSSProperties}
+                initial={{
+                  x: openingTransform.x,
+                  y: openingTransform.y,
+                  scaleX: openingTransform.scaleX,
+                  scaleY: openingTransform.scaleY,
+                  borderRadius: circleTransition.sourceBorderRadius,
+                  opacity: 1,
+                }}
+                animate={{
+                  x:
+                    circleTransition.phase === "closing"
+                      ? activeTransform.x
+                      : 0,
+                  y:
+                    circleTransition.phase === "closing"
+                      ? activeTransform.y
+                      : 0,
+                  scaleX:
+                    circleShellIsFallbackClose
+                      ? 0.96
+                      : circleTransition.phase === "closing"
+                      ? activeTransform.scaleX
+                      : 1,
+                  scaleY:
+                    circleShellIsFallbackClose
+                      ? 0.96
+                      : circleTransition.phase === "closing"
+                      ? activeTransform.scaleY
+                      : 1,
+                  borderRadius: circleShellBorderRadius,
+                  opacity: circleShellIsFallbackClose ? 0 : 1,
+                }}
+                transition={{
+                  type: "spring",
+                  stiffness: 520,
+                  damping: 44,
+                  mass: 0.9,
+                }}
+                onAnimationComplete={handleCircleShellAnimationComplete}
+              >
+                <motion.div
+                  className="min-h-full w-full overflow-visible"
+                  initial={false}
+                  animate={{ opacity: circleDetailContentVisible ? 1 : 0 }}
+                  transition={{ duration: 0.14, ease: "easeOut" }}
+                >
+                  <CircleCommandDetail
+                    circle={activeCircle}
+                    needsSafeAreaTopPadding={
+                      circleTransition.appViewportRect.top <= 1
+                    }
+                    onCircleUpdated={(updatedCircle) => {
+                      setCircles((currentCircles) =>
+                        currentCircles.map((circle) =>
+                          circle.id === updatedCircle.id
+                            ? { ...circle, ...updatedCircle }
+                            : circle,
+                        ),
+                      );
+                    }}
+                  />
+                </motion.div>
+              </motion.div>
+            </div>
+          );
+        })()
+      : null;
 
   return (
     <section className={cn("relative text-white", className)}>

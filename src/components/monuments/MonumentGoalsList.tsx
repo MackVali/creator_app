@@ -3025,6 +3025,16 @@ export function MonumentGoalsList({
             filterRoadmapGoalBySection(goal, "active")
           );
     };
+    const sortCampaignGoalsByPosition = (
+      linkedGoals: RoadmapCampaignGoal[]
+    ) =>
+      linkedGoals
+        .map((goal, index) => ({ goal, index }))
+        .sort((a, b) => {
+          const positionDiff = a.goal.position - b.goal.position;
+          return positionDiff === 0 ? a.index - b.index : positionDiff;
+        })
+        .map(({ goal }) => goal);
     const goalsForCurrentSource = goals.filter(isGoalLinkedToCurrentSource);
     const campaignGoalIds = new Set<string>(
       monumentRoadmapsWithItems.flatMap((roadmap) =>
@@ -3118,7 +3128,10 @@ export function MonumentGoalsList({
     ): Goal => {
       const fullGoal = goalsById.get(campaignGoal.id);
       if (fullGoal) {
-        return fullGoal;
+        return {
+          ...fullGoal,
+          priorityRank: campaignGoal.position,
+        };
       }
 
       return decorate({
@@ -3156,8 +3169,8 @@ export function MonumentGoalsList({
       eligibleCircleCampaignCards
         .map((campaignCard, campaignIndex) => {
           const campaign = buildCampaignFromCard(campaignCard);
-          const linkedGoals = campaign.goals.filter(
-            isRoadmapGoalLinkedToCurrentSource
+          const linkedGoals = sortCampaignGoalsByPosition(
+            campaign.goals.filter(isRoadmapGoalLinkedToCurrentSource)
           );
           if (!isCampaignGroupVisibleInSection(linkedGoals, section)) {
             return null;
@@ -3221,8 +3234,8 @@ export function MonumentGoalsList({
                 return null;
               }
 
-              const linkedGoals = campaign.goals.filter(
-                isRoadmapGoalLinkedToCurrentSource
+              const linkedGoals = sortCampaignGoalsByPosition(
+                campaign.goals.filter(isRoadmapGoalLinkedToCurrentSource)
               );
               if (!isCampaignGroupVisibleInSection(linkedGoals, section)) {
                 return null;
@@ -3391,8 +3404,13 @@ export function MonumentGoalsList({
         filteredStandaloneGoals.length === 0 &&
         !openRoadmapGoalForSection
       ) {
+        const emptyStateClassName =
+          resolvedSourceType === "circle" && section === "completed"
+            ? "rounded-2xl border border-white/[0.06] bg-[#151515] p-4 text-center text-sm text-zinc-500 shadow-[0_6px_24px_rgba(0,0,0,0.35)]"
+            : "rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]";
+
         return (
-          <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          <Card className={emptyStateClassName}>
             {section === "completed"
               ? `No completed goals linked to this ${ownerLabel} yet.`
               : `No active goals linked to this ${ownerLabel} yet.`}
