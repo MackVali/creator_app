@@ -12,7 +12,7 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
-import { Grid2x2, Grid3x3 } from "lucide-react";
+import { ChevronDown, Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
@@ -52,11 +52,24 @@ import {
 } from "@/lib/queries/roadmap-reconciliation";
 import { computeGoalWeight } from "@/lib/goals/weight";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import { cn } from "@/lib/utils";
+import {
+  normalizeCampaignPriority,
+  normalizePriority,
+  parseGlobalRank,
+  PRIORITY_LABELS,
+  PRIORITY_ORDER,
+  sortGlobalPriorityItems,
+  type GlobalPriorityRoadmapItem,
+  type PriorityBucketId,
+  type RoadmapPriorityGoal,
+} from "@/app/(app)/schedule/priorities/utils";
 
 type GoalRowWithRelations = GoalRow & {
   circle_id?: string | null;
   due_date?: string | null;
   priority_code?: string | null;
+  priority_order?: number | string | null;
   energy_code?: string | null;
   emoji?: string | null;
   projects?: {
@@ -85,6 +98,7 @@ type GoalRowWithRelations = GoalRow & {
     }[];
   }[];
   priority_rank?: number | null;
+  global_rank?: number | string | null;
 };
 
 type GoalPanel = "active" | "completed";
@@ -92,7 +106,7 @@ type GoalPanelSwipeAxis = "horizontal" | "vertical" | null;
 type GoalCardDensity = "large" | "small";
 
 const GOAL_RELATIONS_BASE_SELECT =
-  "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
+  "id, name, priority, energy, priority_code, priority_order, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank, global_rank";
 const GOAL_RELATIONS_SELECT = `
   ${GOAL_RELATIONS_BASE_SELECT},
   projects (
@@ -268,6 +282,24 @@ function markRoadmapGoalCompleted(
         : item.campaign,
     })),
   }));
+}
+
+function removeGoalFromPriorityRoadmapItems(
+  items: GlobalPriorityRoadmapItem[],
+  goalId: string
+): GlobalPriorityRoadmapItem[] {
+  return items
+    .map((item) => {
+      if (item.type === "goal") {
+        return item.id === goalId ? null : item;
+      }
+
+      return {
+        ...item,
+        goals: (item.goals ?? []).filter((goal) => goal.id !== goalId),
+      };
+    })
+    .filter((item): item is GlobalPriorityRoadmapItem => Boolean(item));
 }
 
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
@@ -547,6 +579,518 @@ async function fetchTrueRoadmapsForMonument(
   return allRoadmapsWithItems.filter(
     (roadmap) => roadmap.monument_id === monumentId
   );
+}
+
+type MonumentPriorityGoalRow = {
+  id: string;
+  name?: string | null;
+  emoji?: string | null;
+  monument_id?: string | null;
+  circle_id?: string | null;
+  roadmap_id?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  priority_code?: string | null;
+  priority_order?: number | string | null;
+  global_rank?: number | string | null;
+  priority_rank?: number | string | null;
+  created_at?: string | null;
+  monument?: {
+    emoji?: string | null;
+  } | null;
+};
+
+type MonumentPriorityCampaignRow = {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  emoji?: string | null;
+  priority_code?: string | null;
+  priority_order?: number | string | null;
+  scheduling_state?: string | null;
+  position?: number | string | null;
+  roadmap_id?: string | null;
+  primary_monument_id?: string | null;
+  primary_circle_id?: string | null;
+  created_at?: string | null;
+};
+
+type MonumentPriorityCampaignGoalRow = {
+  campaign_id: string;
+  goal_id: string;
+  position?: number | string | null;
+  created_at?: string | null;
+};
+
+function comparePriorityRoadmapText(a?: string | null, b?: string | null) {
+  return (a ?? "").localeCompare(b ?? "");
+}
+
+function normalizeMonumentPriorityGoal(
+  goal: MonumentPriorityGoalRow,
+  campaignGoal?: MonumentPriorityCampaignGoalRow
+): RoadmapPriorityGoal {
+  return {
+    id: goal.id,
+    name: (goal.name ?? "").trim() || "Untitled Goal",
+    emoji: goal.emoji ?? null,
+    monumentId: goal.monument_id ?? null,
+    monumentEmoji: goal.monument?.emoji ?? null,
+    priority: normalizePriority(goal.priority_code ?? goal.priority),
+    status: goal.status ?? null,
+    globalRank: parseGlobalRank(goal.global_rank),
+    priorityOrder: parseGlobalRank(goal.priority_order),
+    priorityRank: parseGlobalRank(goal.priority_rank),
+    campaignPosition: parseGlobalRank(campaignGoal?.position),
+    campaignGoalCreatedAt: campaignGoal?.created_at ?? null,
+    createdAt: goal.created_at ?? null,
+  };
+}
+
+function compareMonumentPriorityCampaignGoals(
+  a: RoadmapPriorityGoal,
+  b: RoadmapPriorityGoal
+) {
+  const priorityDelta =
+    PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+  if (priorityDelta !== 0) return priorityDelta;
+
+  const orderDelta = compareNullableRank(
+    a.priorityOrder ?? a.priorityRank,
+    b.priorityOrder ?? b.priorityRank
+  );
+  if (orderDelta !== 0) return orderDelta;
+
+  const campaignPositionDelta = compareNullableRank(
+    a.campaignPosition,
+    b.campaignPosition
+  );
+  if (campaignPositionDelta !== 0) return campaignPositionDelta;
+
+  const campaignCreatedDelta = comparePriorityRoadmapText(
+    a.campaignGoalCreatedAt,
+    b.campaignGoalCreatedAt
+  );
+  if (campaignCreatedDelta !== 0) return campaignCreatedDelta;
+
+  const createdDelta = comparePriorityRoadmapText(a.createdAt, b.createdAt);
+  if (createdDelta !== 0) return createdDelta;
+
+  return comparePriorityRoadmapText(a.id, b.id);
+}
+
+function compareNullableRank(a?: number, b?: number) {
+  const aValue =
+    typeof a === "number" && Number.isFinite(a) && a > 0
+      ? a
+      : Number.POSITIVE_INFINITY;
+  const bValue =
+    typeof b === "number" && Number.isFinite(b) && b > 0
+      ? b
+      : Number.POSITIVE_INFINITY;
+
+  if (aValue === bValue) return 0;
+  return aValue < bValue ? -1 : 1;
+}
+
+function dedupeMonumentPriorityGoals(goals: RoadmapPriorityGoal[]) {
+  const goalsById = new Map<string, RoadmapPriorityGoal>();
+
+  for (const goal of goals) {
+    const existingGoal = goalsById.get(goal.id);
+    goalsById.set(
+      goal.id,
+      existingGoal
+        ? {
+            ...goal,
+            ...existingGoal,
+            emoji: existingGoal.emoji ?? goal.emoji,
+            monumentId: existingGoal.monumentId ?? goal.monumentId,
+            monumentName: existingGoal.monumentName ?? goal.monumentName,
+            monumentIcon: existingGoal.monumentIcon ?? goal.monumentIcon,
+            monumentEmoji: existingGoal.monumentEmoji ?? goal.monumentEmoji,
+            skills: existingGoal.skills ?? goal.skills,
+            globalRank: existingGoal.globalRank ?? goal.globalRank,
+            priorityOrder: existingGoal.priorityOrder ?? goal.priorityOrder,
+            priorityRank: existingGoal.priorityRank ?? goal.priorityRank,
+            campaignPosition:
+              existingGoal.campaignPosition ?? goal.campaignPosition,
+            campaignGoalCreatedAt:
+              existingGoal.campaignGoalCreatedAt ?? goal.campaignGoalCreatedAt,
+            createdAt: existingGoal.createdAt ?? goal.createdAt,
+          }
+        : goal
+    );
+  }
+
+  return Array.from(goalsById.values()).sort(compareMonumentPriorityCampaignGoals);
+}
+
+function dedupeMonumentPriorityStandaloneGoals(
+  items: GlobalPriorityRoadmapItem[],
+  monumentId?: string | null
+) {
+  const goalsById = new Map<string, GlobalPriorityRoadmapItem>();
+
+  for (const item of items) {
+    if (item.type !== "goal") continue;
+    if (monumentId && item.monumentId !== monumentId) continue;
+
+    const existing = goalsById.get(item.id);
+    goalsById.set(
+      item.id,
+      existing
+        ? {
+            ...item,
+            ...existing,
+            emoji: existing.emoji ?? item.emoji,
+            monumentId: existing.monumentId ?? item.monumentId,
+            monumentName: existing.monumentName ?? item.monumentName,
+            monumentIcon: existing.monumentIcon ?? item.monumentIcon,
+            monumentEmoji: existing.monumentEmoji ?? item.monumentEmoji,
+            skills: existing.skills ?? item.skills,
+            priorityOrder: existing.priorityOrder ?? item.priorityOrder,
+            globalRank: existing.globalRank ?? item.globalRank,
+            priorityRank: existing.priorityRank ?? item.priorityRank,
+            position: existing.position ?? item.position,
+            createdAt: existing.createdAt ?? item.createdAt,
+          }
+        : item
+    );
+  }
+
+  return Array.from(goalsById.values());
+}
+
+function getMonumentPriorityCampaignId(item: GlobalPriorityRoadmapItem) {
+  return item.sourceIds?.[0] ?? item.id;
+}
+
+function getMonumentPriorityCampaignNameKey(item: GlobalPriorityRoadmapItem) {
+  return item.name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getVisibleMonumentPriorityCampaignGoals(
+  goals: RoadmapPriorityGoal[],
+  monumentId?: string | null
+) {
+  return goals.filter(
+    (goal) =>
+      (!monumentId || goal.monumentId === monumentId) &&
+      normalizeGoalStatus(goal.status) !== "COMPLETED"
+  );
+}
+
+function hasOverlappingMonumentPriorityCampaignGoals(
+  a: GlobalPriorityRoadmapItem,
+  b: GlobalPriorityRoadmapItem
+) {
+  const aGoalIds = new Set((a.goals ?? []).map((goal) => goal.id));
+  if (aGoalIds.size === 0) return false;
+
+  return (b.goals ?? []).some((goal) => aGoalIds.has(goal.id));
+}
+
+function compareMonumentPriorityCampaignPreference(
+  a: GlobalPriorityRoadmapItem,
+  b: GlobalPriorityRoadmapItem,
+  monumentId?: string | null
+) {
+  const aPrimary = monumentId && a.monumentId === monumentId ? 1 : 0;
+  const bPrimary = monumentId && b.monumentId === monumentId ? 1 : 0;
+  if (aPrimary !== bPrimary) return bPrimary - aPrimary;
+
+  const goalCountDelta = (b.goals?.length ?? 0) - (a.goals?.length ?? 0);
+  if (goalCountDelta !== 0) return goalCountDelta;
+
+  const aHasEmoji = a.emoji?.trim() ? 1 : 0;
+  const bHasEmoji = b.emoji?.trim() ? 1 : 0;
+  if (aHasEmoji !== bHasEmoji) return bHasEmoji - aHasEmoji;
+
+  const orderDelta = compareNullableRank(
+    a.priorityOrder ?? a.position,
+    b.priorityOrder ?? b.position
+  );
+  if (orderDelta !== 0) return orderDelta;
+
+  const createdDelta = comparePriorityRoadmapText(a.createdAt, b.createdAt);
+  if (createdDelta !== 0) return createdDelta;
+
+  return comparePriorityRoadmapText(
+    getMonumentPriorityCampaignId(a),
+    getMonumentPriorityCampaignId(b)
+  );
+}
+
+function mergeMonumentPriorityCampaignGroup(
+  items: GlobalPriorityRoadmapItem[],
+  monumentId?: string | null
+) {
+  const preferred = [...items].sort((a, b) =>
+    compareMonumentPriorityCampaignPreference(a, b, monumentId)
+  )[0];
+  const preferredId = getMonumentPriorityCampaignId(preferred);
+  const sourceIds = new Set<string>([preferredId]);
+
+  for (const item of items) {
+    sourceIds.add(getMonumentPriorityCampaignId(item));
+    for (const sourceId of item.sourceIds ?? []) {
+      sourceIds.add(sourceId);
+    }
+  }
+
+  return {
+    ...preferred,
+    id: preferredId,
+    sourceIds: Array.from(sourceIds),
+    goals: dedupeMonumentPriorityGoals(
+      items.flatMap((item) => item.goals ?? [])
+    ),
+  };
+}
+
+function mergeOverlappingMonumentPriorityCampaignNames(
+  items: GlobalPriorityRoadmapItem[],
+  monumentId?: string | null
+) {
+  const campaignsByName = new Map<string, GlobalPriorityRoadmapItem[]>();
+
+  for (const item of items) {
+    const nameKey = getMonumentPriorityCampaignNameKey(item);
+    const campaigns = campaignsByName.get(nameKey) ?? [];
+    campaigns.push(item);
+    campaignsByName.set(nameKey, campaigns);
+  }
+
+  const mergedCampaigns: GlobalPriorityRoadmapItem[] = [];
+
+  for (const campaigns of campaignsByName.values()) {
+    const visitedIndexes = new Set<number>();
+
+    for (let index = 0; index < campaigns.length; index += 1) {
+      if (visitedIndexes.has(index)) continue;
+
+      const componentIndexes = [index];
+      const queue = [index];
+      visitedIndexes.add(index);
+
+      while (queue.length > 0) {
+        const currentIndex = queue.shift();
+        if (currentIndex === undefined) continue;
+
+        for (let nextIndex = 0; nextIndex < campaigns.length; nextIndex += 1) {
+          if (visitedIndexes.has(nextIndex)) continue;
+          if (
+            !hasOverlappingMonumentPriorityCampaignGoals(
+              campaigns[currentIndex],
+              campaigns[nextIndex]
+            )
+          ) {
+            continue;
+          }
+
+          visitedIndexes.add(nextIndex);
+          componentIndexes.push(nextIndex);
+          queue.push(nextIndex);
+        }
+      }
+
+      mergedCampaigns.push(
+        mergeMonumentPriorityCampaignGroup(
+          componentIndexes.map((componentIndex) => campaigns[componentIndex]),
+          monumentId
+        )
+      );
+    }
+  }
+
+  return mergedCampaigns;
+}
+
+function mergeMonumentPriorityCampaignItems(
+  items: GlobalPriorityRoadmapItem[],
+  monumentId?: string | null
+): GlobalPriorityRoadmapItem[] {
+  const campaignsById = new Map<string, GlobalPriorityRoadmapItem>();
+
+  for (const item of items) {
+    if (item.type !== "campaign") continue;
+
+    const campaignId = getMonumentPriorityCampaignId(item);
+    const itemGoals = dedupeMonumentPriorityGoals(
+      getVisibleMonumentPriorityCampaignGoals(item.goals ?? [], monumentId)
+    );
+    const campaignItem: GlobalPriorityRoadmapItem = {
+      ...item,
+      id: campaignId,
+      sourceIds: Array.from(new Set([campaignId, ...(item.sourceIds ?? [])])),
+      goals: itemGoals,
+    };
+    const existing = campaignsById.get(campaignId);
+    if (!existing) {
+      campaignsById.set(campaignId, campaignItem);
+      continue;
+    }
+
+    campaignsById.set(
+      campaignId,
+      mergeMonumentPriorityCampaignGroup([existing, campaignItem], monumentId)
+    );
+  }
+
+  const campaignItems = Array.from(campaignsById.values()).filter(
+    (campaign) => (campaign.goals ?? []).length > 0
+  );
+
+  return mergeOverlappingMonumentPriorityCampaignNames(campaignItems, monumentId);
+}
+
+function finalizeMonumentPriorityRoadmapItems(
+  items: GlobalPriorityRoadmapItem[],
+  monumentId?: string | null
+) {
+  const visibleCampaignItems = mergeMonumentPriorityCampaignItems(
+    items,
+    monumentId
+  );
+  const visibleCampaignGoalIds = new Set<string>(
+    visibleCampaignItems.flatMap((campaign) =>
+      (campaign.goals ?? []).map((goal) => goal.id)
+    )
+  );
+  const standaloneGoalItems = dedupeMonumentPriorityStandaloneGoals(
+    items,
+    monumentId
+  ).filter((goal) => !visibleCampaignGoalIds.has(goal.id));
+
+  return sortGlobalPriorityItems([...visibleCampaignItems, ...standaloneGoalItems]);
+}
+
+async function fetchMonumentPriorityRoadmapItems(
+  userId: string,
+  monumentId: string
+): Promise<GlobalPriorityRoadmapItem[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+
+  const [goalsResult, campaignsResult] = await Promise.all([
+    supabase
+      .from("goals")
+      .select(
+        "id,name,emoji,monument_id,circle_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
+      )
+      .eq("user_id", userId)
+      .eq("monument_id", monumentId),
+    supabase
+      .from("campaigns")
+      .select(
+        "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,primary_circle_id,created_at"
+      )
+      .eq("user_id", userId)
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (goalsResult.error) {
+    console.error("Error fetching Monument priority goals:", goalsResult.error);
+    return [];
+  }
+  if (campaignsResult.error) {
+    console.error(
+      "Error fetching Monument priority campaigns:",
+      campaignsResult.error
+    );
+    return [];
+  }
+
+  const goalRows = ((goalsResult.data ?? []) as MonumentPriorityGoalRow[]).filter(
+    (goal) => normalizeGoalStatus(goal.status) !== "COMPLETED"
+  );
+  const campaignRows = (campaignsResult.data ?? []) as MonumentPriorityCampaignRow[];
+  const campaignIds = campaignRows.map((campaign) => campaign.id);
+  const campaignGoalRows =
+    campaignIds.length > 0
+      ? await supabase
+          .from("campaign_goals")
+          .select("campaign_id,goal_id,position,created_at")
+          .eq("user_id", userId)
+          .in("campaign_id", campaignIds)
+          .order("position", { ascending: true, nullsFirst: false })
+      : { data: [], error: null };
+
+  if (campaignGoalRows.error) {
+    console.error(
+      "Error fetching Monument priority campaign goals:",
+      campaignGoalRows.error
+    );
+    return [];
+  }
+
+  const goalsById = new Map(goalRows.map((goal) => [goal.id, goal]));
+  const campaignGoalsByCampaignId = new Map<
+    string,
+    MonumentPriorityCampaignGoalRow[]
+  >();
+  for (const campaignGoal of
+    (campaignGoalRows.data ?? []) as MonumentPriorityCampaignGoalRow[]) {
+    const goals = campaignGoalsByCampaignId.get(campaignGoal.campaign_id) ?? [];
+    goals.push(campaignGoal);
+    campaignGoalsByCampaignId.set(campaignGoal.campaign_id, goals);
+  }
+
+  const campaignItems: GlobalPriorityRoadmapItem[] = [];
+  for (const campaign of campaignRows) {
+    const nestedGoals = (campaignGoalsByCampaignId.get(campaign.id) ?? [])
+      .map((campaignGoal) => {
+        const goal = goalsById.get(campaignGoal.goal_id);
+        if (!goal) return null;
+        return normalizeMonumentPriorityGoal(goal, campaignGoal);
+      })
+      .filter(
+        (goal): goal is RoadmapPriorityGoal =>
+          Boolean(goal) &&
+          goal.monumentId === monumentId &&
+          normalizeGoalStatus(goal.status) !== "COMPLETED"
+      )
+      .sort(compareMonumentPriorityCampaignGoals);
+
+    if (nestedGoals.length === 0) continue;
+
+    campaignItems.push({
+      id: campaign.id,
+      type: "campaign",
+      sourceIds: [campaign.id],
+      name: (campaign.name ?? "").trim() || "Untitled Campaign",
+      emoji: campaign.emoji ?? null,
+      monumentId: campaign.primary_monument_id ?? null,
+      priority: normalizeCampaignPriority(campaign.priority_code),
+      priorityOrder: parseGlobalRank(campaign.priority_order),
+      position: parseGlobalRank(campaign.position),
+      createdAt: campaign.created_at ?? null,
+      goals: nestedGoals,
+    });
+  }
+
+  const standaloneGoalItems: GlobalPriorityRoadmapItem[] = goalRows
+    .map((goal) => {
+      const normalizedGoal = normalizeMonumentPriorityGoal(goal);
+
+      return {
+        id: goal.id,
+        type: "goal",
+        name: normalizedGoal.name,
+        emoji: normalizedGoal.emoji,
+        monumentId: normalizedGoal.monumentId,
+        monumentEmoji: normalizedGoal.monumentEmoji,
+        priority: normalizedGoal.priority,
+        priorityOrder: normalizedGoal.priorityOrder,
+        globalRank: normalizedGoal.globalRank,
+        priorityRank: normalizedGoal.priorityRank,
+        createdAt: normalizedGoal.createdAt,
+      };
+    });
+
+  return sortGlobalPriorityItems([...campaignItems, ...standaloneGoalItems]);
 }
 
 type CircleRoadmapRow = {
@@ -1021,6 +1565,296 @@ async function fetchTrueRoadmapsForCircle(
   });
 }
 
+function getPriorityRoadmapIdentity(
+  item: Pick<GlobalPriorityRoadmapItem, "emoji" | "monumentEmoji" | "name" | "type">
+) {
+  return (
+    item.emoji?.trim() ||
+    item.monumentEmoji?.trim() ||
+    getInitials(item.name) ||
+    (item.type === "campaign" ? "C" : "G")
+  );
+}
+
+function getPriorityGoalIdentity(goal: RoadmapPriorityGoal) {
+  return goal.emoji?.trim() || goal.monumentEmoji?.trim() || "";
+}
+
+function getInitials(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function groupPriorityRoadmapCampaignGoals(goals: RoadmapPriorityGoal[]) {
+  const grouped = new Map<PriorityBucketId, RoadmapPriorityGoal[]>(
+    PRIORITY_ORDER.map((priority) => [priority, []])
+  );
+
+  for (const goal of [...goals].sort(compareMonumentPriorityCampaignGoals)) {
+    grouped.get(normalizePriority(goal.priority))?.push(goal);
+  }
+
+  return PRIORITY_ORDER.map((priority) => ({
+    priority,
+    goals: grouped.get(priority) ?? [],
+  })).filter((bucket) => bucket.goals.length > 0);
+}
+
+function MonumentPriorityRoadmap({
+  items,
+  monumentId,
+  onGoalOpen,
+}: {
+  items: GlobalPriorityRoadmapItem[];
+  monumentId?: string | null;
+  onGoalOpen: (goalId: string) => void;
+}) {
+  const [openCampaignIds, setOpenCampaignIds] = useState<Record<string, boolean>>(
+    {}
+  );
+  const itemsByPriority = useMemo(() => {
+    const grouped = new Map<PriorityBucketId, GlobalPriorityRoadmapItem[]>(
+      PRIORITY_ORDER.map((priority) => [priority, []])
+    );
+
+    const finalRoadmapItems = finalizeMonumentPriorityRoadmapItems(
+      items,
+      monumentId
+    );
+
+    for (const item of finalRoadmapItems) {
+      grouped.get(normalizePriority(item.priority))?.push(item);
+    }
+
+    return grouped;
+  }, [items, monumentId]);
+
+  const handleToggleCampaign = useCallback((campaignId: string) => {
+    setOpenCampaignIds((current) => ({
+      ...current,
+      [campaignId]: !(current[campaignId] ?? false),
+    }));
+  }, []);
+
+  return (
+    <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+      <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
+        <div className="space-y-3">
+          {PRIORITY_ORDER.map((priority) => {
+            const bucketItems = itemsByPriority.get(priority) ?? [];
+
+            return (
+              <div key={priority} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <p className="text-[10px] font-semibold uppercase leading-none tracking-normal text-zinc-600">
+                    {PRIORITY_LABELS[priority]}
+                  </p>
+                  <span className="text-[10px] font-semibold leading-none text-zinc-700">
+                    {bucketItems.length}
+                  </span>
+                </div>
+                <div className="min-h-8 overflow-hidden rounded-[16px] border border-black/60 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  {bucketItems.length > 0 ? (
+                    bucketItems.map((item) => (
+                      <MonumentPriorityRoadmapItem
+                        key={`${item.type}:${item.id}`}
+                        item={item}
+                        isOpen={
+                          item.type === "campaign"
+                            ? openCampaignIds[item.id] ?? false
+                            : false
+                        }
+                        onToggle={() => handleToggleCampaign(item.id)}
+                        onGoalOpen={onGoalOpen}
+                      />
+                    ))
+                  ) : (
+                    <div className="min-h-8 px-2 py-2 text-[11px] font-medium text-zinc-800">
+                      Empty
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MonumentPriorityRoadmapItem({
+  item,
+  isOpen,
+  onToggle,
+  onGoalOpen,
+}: {
+  item: GlobalPriorityRoadmapItem;
+  isOpen: boolean;
+  onToggle: () => void;
+  onGoalOpen: (goalId: string) => void;
+}) {
+  const identity = getPriorityRoadmapIdentity(item);
+  const isCampaign = item.type === "campaign";
+  const nestedBuckets = useMemo(
+    () => groupPriorityRoadmapCampaignGoals(item.goals ?? []),
+    [item.goals]
+  );
+
+  return (
+    <div className="border-b border-black/40 bg-white/[0.026] last:border-b-0">
+      <div className="flex min-h-10 items-center gap-2 px-2 py-1.5 sm:px-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+          {identity}
+        </span>
+        {isCampaign ? (
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            onClick={onToggle}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
+              {item.name}
+            </p>
+            <PriorityRankPills
+              globalRank={item.globalRank}
+              priorityRank={item.priorityRank}
+              priorityOrder={item.priorityOrder}
+            />
+            <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-600">
+              {item.goals?.length ?? 0} Goal{item.goals?.length === 1 ? "" : "s"}
+            </span>
+            <ChevronDown
+              className={cn(
+                "size-3.5 shrink-0 text-zinc-600 transition-transform",
+                isOpen ? "rotate-180" : ""
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onGoalOpen(item.id)}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
+              {item.name}
+            </p>
+            <PriorityRankPills
+              globalRank={item.globalRank}
+              priorityRank={item.priorityRank}
+              priorityOrder={item.priorityOrder}
+            />
+          </button>
+        )}
+      </div>
+      {isCampaign && isOpen ? (
+        <div className="border-t border-black/35 bg-black/20 px-2 pb-2 pt-1.5 sm:px-2.5">
+          {nestedBuckets.length > 0 ? (
+            <div className="ml-1 space-y-1.5">
+              {nestedBuckets.map((bucket) => (
+                <div key={bucket.priority} className="space-y-1">
+                  <p className="px-1 text-[9px] font-semibold uppercase leading-none tracking-normal text-zinc-700">
+                    {PRIORITY_LABELS[bucket.priority]}
+                  </p>
+                  <div className="min-h-8 space-y-1 rounded-lg border border-black/40 bg-black/20 p-1">
+                    {bucket.goals.map((goal) => (
+                      <MonumentPriorityCampaignGoalRow
+                        key={goal.id}
+                        goal={goal}
+                        onGoalOpen={onGoalOpen}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-black/40 bg-black/20 px-2 py-2 text-[11px] font-medium text-zinc-700">
+              No Monument Goals in this Campaign.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MonumentPriorityCampaignGoalRow({
+  goal,
+  onGoalOpen,
+}: {
+  goal: RoadmapPriorityGoal;
+  onGoalOpen: (goalId: string) => void;
+}) {
+  const identity = getPriorityGoalIdentity(goal);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onGoalOpen(goal.id)}
+      className="flex min-h-8 w-full items-center gap-2 rounded-lg border border-black/45 bg-white/[0.018] px-2 py-1.5 text-left outline-none transition hover:bg-white/[0.035] focus-visible:ring-1 focus-visible:ring-white/15"
+    >
+      {identity ? (
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
+          {identity}
+        </span>
+      ) : null}
+      <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
+        {goal.name}
+      </p>
+      <PriorityRankPills
+        globalRank={goal.globalRank}
+        priorityRank={goal.priorityRank}
+        priorityOrder={goal.priorityOrder}
+      />
+    </button>
+  );
+}
+
+function PriorityRankPills({
+  globalRank,
+  priorityRank,
+  priorityOrder,
+}: {
+  globalRank?: number | null;
+  priorityRank?: number | null;
+  priorityOrder?: number | null;
+}) {
+  const ranks = [
+    { label: "G", value: globalRank },
+    { label: "P", value: priorityRank },
+    { label: "#", value: priorityOrder },
+  ].filter(
+    (rank): rank is { label: string; value: number } =>
+      typeof rank.value === "number" &&
+      Number.isFinite(rank.value) &&
+      rank.value > 0
+  );
+
+  if (ranks.length === 0) return null;
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {ranks.slice(0, 2).map((rank) => (
+        <span
+          key={rank.label}
+          className="rounded-md border border-black/50 bg-black/25 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-zinc-600"
+        >
+          {rank.label}
+          {rank.value}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function MonumentGoalsList({
   monumentId,
   sourceType = "monument",
@@ -1073,6 +1907,10 @@ export function MonumentGoalsList({
   const [monumentRoadmapsWithItems, setMonumentRoadmapsWithItems] = useState<
     RoadmapWithItems[]
   >([]);
+  const [
+    monumentPriorityRoadmapItems,
+    setMonumentPriorityRoadmapItems,
+  ] = useState<GlobalPriorityRoadmapItem[]>([]);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [restoreGoalDrawerId, setRestoreGoalDrawerId] = useState<string | null>(
     null
@@ -1374,6 +2212,7 @@ export function MonumentGoalsList({
     goalsGridLoading,
     measureActiveGoalPanel,
     monumentRoadmapsWithItems,
+    monumentPriorityRoadmapItems,
     monumentView,
     openGoalId,
     roadmapOpenGoal,
@@ -1431,6 +2270,7 @@ export function MonumentGoalsList({
     loading,
     measureSelectedGoalsRoadmapPanel,
     monumentRoadmapsWithItems,
+    monumentPriorityRoadmapItems,
     openGoalId,
     roadmapOpenGoal,
     goalsRoadmapViewportWidth,
@@ -1722,6 +2562,7 @@ export function MonumentGoalsList({
     setRestoreCampaignGoalId(null);
     setRoadmapOpenGoal(null);
     setGoalCampaignCards([]);
+    setMonumentPriorityRoadmapItems([]);
   }, [resolvedSourceType, resolvedSourceId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -1898,6 +2739,7 @@ export function MonumentGoalsList({
           Number.isFinite(goalRow.priority_rank)
             ? goalRow.priority_rank
             : fallback?.priorityRank,
+        globalRank: parseGlobalRank(goalRow.global_rank) ?? fallback?.globalRank,
         why: goalRow.why || fallback?.why,
       });
     },
@@ -1979,6 +2821,7 @@ export function MonumentGoalsList({
     const supabase = getSupabaseBrowser();
     if (!supabase || !resolvedSourceId) {
       setMonumentRoadmapsWithItems([]);
+      setMonumentPriorityRoadmapItems([]);
       setGoalCampaignCards([]);
       return;
     }
@@ -1988,12 +2831,13 @@ export function MonumentGoalsList({
     } = await supabase.auth.getUser();
     if (!user) {
       setMonumentRoadmapsWithItems([]);
+      setMonumentPriorityRoadmapItems([]);
       setGoalCampaignCards([]);
       return;
     }
 
     setUserId(user.id);
-    const [trueRoadmaps, campaignCards] = await Promise.all([
+    const [trueRoadmaps, campaignCards, priorityRoadmapItems] = await Promise.all([
       resolvedSourceType === "circle"
         ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
         : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
@@ -2005,9 +2849,18 @@ export function MonumentGoalsList({
             return [] as GoalCampaignCardData[];
           })
         : Promise.resolve([] as GoalCampaignCardData[]),
+      resolvedSourceType === "monument"
+        ? fetchMonumentPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+            (err) => {
+              console.error("Error refreshing Monument priority roadmap", err);
+              return [] as GlobalPriorityRoadmapItem[];
+            }
+          )
+        : Promise.resolve([] as GlobalPriorityRoadmapItem[]),
     ]);
     setMonumentRoadmapsWithItems(trueRoadmaps);
     setGoalCampaignCards(campaignCards);
+    setMonumentPriorityRoadmapItems(priorityRoadmapItems);
   }, [resolvedSourceId, resolvedSourceType]);
 
   const isGoalLinkedToCurrentSource = useCallback(
@@ -2106,6 +2959,9 @@ export function MonumentGoalsList({
                 }),
             }))
           );
+          setMonumentPriorityRoadmapItems((current) =>
+            removeGoalFromPriorityRoadmapItems(current, movedGoalId)
+          );
           setRoadmapOpenGoal((current) =>
             current?.id === movedGoalId ? null : current
           );
@@ -2192,6 +3048,7 @@ export function MonumentGoalsList({
       if (!supabase || !resolvedSourceId) {
         loadedGoalsSourceKeyRef.current = null;
         setMonumentRoadmapsWithItems([]);
+        setMonumentPriorityRoadmapItems([]);
         setGoalCampaignCards([]);
         setGoals([]);
         setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -2209,6 +3066,7 @@ export function MonumentGoalsList({
         setGoalsDisplayReadyKey(null);
         setRoadmapsDisplayReadyKey(null);
         setMonumentRoadmapsWithItems([]);
+        setMonumentPriorityRoadmapItems([]);
         setGoalCampaignCards([]);
         hydratedGoalIdsRef.current.clear();
       }
@@ -2219,6 +3077,7 @@ export function MonumentGoalsList({
         if (cancelled) return;
         if (!user) {
           setGoalCampaignCards([]);
+          setMonumentPriorityRoadmapItems([]);
           loadedGoalsSourceKeyRef.current = goalsSourceKey;
           setGoalsDisplayReadyKey(goalsDisplayKey);
           setRoadmapsDisplayReadyKey(goalsDisplayKey);
@@ -2251,6 +3110,15 @@ export function MonumentGoalsList({
                 return [] as GoalCampaignCardData[];
               })
             : Promise.resolve([] as GoalCampaignCardData[]);
+        const priorityRoadmapItemsPromise =
+          resolvedSourceType === "monument"
+            ? fetchMonumentPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+                (err) => {
+                  console.error("Error loading Monument priority roadmap", err);
+                  return [] as GlobalPriorityRoadmapItem[];
+                }
+              )
+            : Promise.resolve([] as GlobalPriorityRoadmapItem[]);
         const fullGoalsPromise = fetchGoalsFullRelationsForSource(
           resolvedSourceType,
           resolvedSourceId,
@@ -2268,6 +3136,7 @@ export function MonumentGoalsList({
           trueMonumentRoadmaps,
           skills,
           campaignCards,
+          priorityRoadmapItems,
           fullGoalsResult,
         ] =
           await Promise.all([
@@ -2275,6 +3144,7 @@ export function MonumentGoalsList({
             roadmapsPromise,
             skillsPromise,
             campaignCardsPromise,
+            priorityRoadmapItemsPromise,
             fullGoalsResultPromise,
           ]);
         if (cancelled) return;
@@ -2285,6 +3155,7 @@ export function MonumentGoalsList({
 
         setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
         setGoalCampaignCards(campaignCards);
+        setMonumentPriorityRoadmapItems(priorityRoadmapItems);
         setRoadmapsDisplayReadyKey(goalsDisplayKey);
 
         if (fullGoalsResult.error) {
@@ -2338,6 +3209,7 @@ export function MonumentGoalsList({
             loadedGoalsSourceKeyRef.current = null;
             setGoals([]);
             setMonumentRoadmapsWithItems([]);
+            setMonumentPriorityRoadmapItems([]);
             setGoalCampaignCards([]);
           }
           setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -2602,6 +3474,9 @@ export function MonumentGoalsList({
         );
         setMonumentRoadmapsWithItems((current) =>
           markRoadmapGoalCompleted(current, goal.id)
+        );
+        setMonumentPriorityRoadmapItems((current) =>
+          removeGoalFromPriorityRoadmapItems(current, goal.id)
         );
         holdRecentlyCompletedGoal(goal.id);
         setOpenGoalId((current) => (current === goal.id ? null : current));
@@ -3119,7 +3994,7 @@ export function MonumentGoalsList({
       primary_monument_id: campaignCard.primary_monument_id ?? null,
       primary_circle_id: campaignCard.primary_circle_id ?? null,
       goals: campaignCard.goals
-        .map((campaignGoal) => {
+        .map((campaignGoal): RoadmapCampaignGoal | null => {
           const goal = goalsById.get(campaignGoal.id);
           if (!goal) {
             return null;
@@ -3320,88 +4195,103 @@ export function MonumentGoalsList({
         : goalsForCurrentSource.filter((goal) => !campaignGoalIds.has(goal.id));
 
     const hasTrueRoadmaps = monumentRoadmapsWithItems.length > 0;
-
-    const roadmapContent = !hasTrueRoadmaps ? (
-      roadmapEmptyState ?? (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          No true roadmap linked to this {ownerLabel} yet.
-        </Card>
-      )
-    ) : (
-      <div
-        className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
-      >
-        {monumentRoadmapsWithItems.map((roadmap) => (
-          <div
-            key={roadmap.id}
-            className="goal-card-wrapper"
-          >
-            <MixedRoadmapCard
-              roadmap={roadmap}
-              variant="compact"
-              defaultOpen
-              onGoalOpen={handleRoadmapGoalOpen}
-              onReorderSaved={refreshTrueRoadmaps}
-              enableCampaignCollapse
-            />
-          </div>
-        ))}
-        {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
-          <div
-            className="goal-card-wrapper"
-            data-monument-goal-card-id={roadmapOpenGoal.id}
-          >
-            <GoalCard
-              goal={roadmapOpenGoal}
-              showWeight={false}
-              showCreatedAt={false}
-              showEmojiPrefix={false}
-              variant="compact"
-              monumentContext
-              completeWhenProjectsDone
-              completionTheme="border"
-              suppressReadyToast
-              hideGoalEditAction
-              onEdit={() => handleGoalEdit(roadmapOpenGoal)}
-              onProjectUpdated={(projectId, updates) =>
-                handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
-              }
-              onProjectDeleted={(projectId) =>
-                handleProjectDeleted(roadmapOpenGoal.id, projectId)
-              }
-              onProjectEditOpen={(target, project, origin) =>
-                handleProjectEditOpen(
-                  target,
-                  project.id,
-                  roadmapOpenGoal.id,
-                  origin
-                )
-              }
-              onTaskEditOpen={handleTaskEditOpen}
-              onTaskToggleCompletion={handleTaskToggleCompletion}
-              onManualComplete={handleManualGoalComplete}
-              open={openGoalId === roadmapOpenGoal.id}
-              newProjectRevealId={
-                newProjectReveal?.goalId === roadmapOpenGoal.id &&
-                !newProjectReveal.campaignId
-                  ? newProjectReveal.projectId
-                  : null
-              }
-              onNewProjectRevealComplete={(projectId) =>
-                handleNewProjectRevealComplete(roadmapOpenGoal.id, projectId)
-              }
-              suppressDrawerOpenAnimation={
-                restoreGoalDrawerId === roadmapOpenGoal.id
-              }
-              onOpenChange={(isOpen) => {
-                handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
-                if (!isOpen) setRoadmapOpenGoal(null);
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
+    const roadmapEmptyContent = roadmapEmptyState ?? (
+      <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+        No true roadmap linked to this {ownerLabel} yet.
+      </Card>
     );
+    const openRoadmapGoalCard =
+      roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
+        <div
+          className="goal-card-wrapper"
+          data-monument-goal-card-id={roadmapOpenGoal.id}
+        >
+          <GoalCard
+            goal={roadmapOpenGoal}
+            showWeight={false}
+            showCreatedAt={false}
+            showEmojiPrefix={false}
+            variant="compact"
+            monumentContext
+            completeWhenProjectsDone
+            completionTheme="border"
+            suppressReadyToast
+            hideGoalEditAction
+            onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+            onProjectUpdated={(projectId, updates) =>
+              handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
+            }
+            onProjectDeleted={(projectId) =>
+              handleProjectDeleted(roadmapOpenGoal.id, projectId)
+            }
+            onProjectEditOpen={(target, project, origin) =>
+              handleProjectEditOpen(
+                target,
+                project.id,
+                roadmapOpenGoal.id,
+                origin
+              )
+            }
+            onTaskEditOpen={handleTaskEditOpen}
+            onTaskToggleCompletion={handleTaskToggleCompletion}
+            onManualComplete={handleManualGoalComplete}
+            open={openGoalId === roadmapOpenGoal.id}
+            newProjectRevealId={
+              newProjectReveal?.goalId === roadmapOpenGoal.id &&
+              !newProjectReveal.campaignId
+                ? newProjectReveal.projectId
+                : null
+            }
+            onNewProjectRevealComplete={(projectId) =>
+              handleNewProjectRevealComplete(roadmapOpenGoal.id, projectId)
+            }
+            suppressDrawerOpenAnimation={
+              restoreGoalDrawerId === roadmapOpenGoal.id
+            }
+            onOpenChange={(isOpen) => {
+              handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
+              if (!isOpen) setRoadmapOpenGoal(null);
+            }}
+          />
+        </div>
+      ) : null;
+    const roadmapContent =
+      resolvedSourceType === "monument" ? (
+        monumentPriorityRoadmapItems.length === 0 ? (
+          roadmapEmptyContent
+        ) : (
+          <div
+            className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
+          >
+            <MonumentPriorityRoadmap
+              items={monumentPriorityRoadmapItems}
+              monumentId={resolvedSourceId}
+              onGoalOpen={handleRoadmapGoalOpen}
+            />
+            {openRoadmapGoalCard}
+          </div>
+        )
+      ) : !hasTrueRoadmaps ? (
+        roadmapEmptyContent
+      ) : (
+        <div
+          className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
+        >
+          {monumentRoadmapsWithItems.map((roadmap) => (
+            <div key={roadmap.id} className="goal-card-wrapper">
+              <MixedRoadmapCard
+                roadmap={roadmap}
+                variant="compact"
+                defaultOpen
+                onGoalOpen={handleRoadmapGoalOpen}
+                onReorderSaved={refreshTrueRoadmaps}
+                enableCampaignCollapse
+              />
+            </div>
+          ))}
+          {openRoadmapGoalCard}
+        </div>
+      );
 
     const renderGoalsPanel = (section: GoalPanel) => {
       const campaignGroupsForGoalGrid =
@@ -3694,6 +4584,7 @@ export function MonumentGoalsList({
     goalsRoadmapViewIndex,
     roadmapEmptyState,
     monumentRoadmapsWithItems,
+    monumentPriorityRoadmapItems,
     roadmapOpenGoal,
     restoreGoalDrawerId,
     restoreCampaignDrawerId,
