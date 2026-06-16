@@ -1687,6 +1687,70 @@ function MonumentPriorityRoadmap({
   );
 }
 
+function MonumentPriorityRoadmapSkeleton() {
+  return (
+    <section
+      className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]"
+      aria-hidden="true"
+    >
+      <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
+        <div className="space-y-3">
+          {PRIORITY_ORDER.map((priority, bucketIndex) => {
+            const rowCount = bucketIndex < 3 ? 2 : 1;
+
+            return (
+              <div key={priority} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <p className="text-[10px] font-semibold uppercase leading-none tracking-normal text-zinc-600">
+                    {PRIORITY_LABELS[priority]}
+                  </p>
+                  <Skeleton className="h-2.5 w-3 rounded-sm bg-white/[0.055]" />
+                </div>
+                <div className="min-h-8 overflow-hidden rounded-[16px] border border-black/60 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  {Array.from({ length: rowCount }).map((_, rowIndex) => (
+                    <MonumentPriorityRoadmapSkeletonRow
+                      key={`${priority}-${rowIndex}`}
+                      isCampaign={rowIndex === 0}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MonumentPriorityRoadmapSkeletonRow({
+  isCampaign,
+}: {
+  isCampaign: boolean;
+}) {
+  return (
+    <div className="border-b border-black/40 bg-white/[0.026] last:border-b-0">
+      <div className="flex min-h-10 items-center gap-2 px-2 py-1.5 sm:px-2.5">
+        <Skeleton className="size-7 shrink-0 rounded-lg bg-white/[0.055]" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3 w-3/4 max-w-[220px] rounded-sm bg-white/[0.06]" />
+          {isCampaign ? (
+            <Skeleton className="h-2 w-24 rounded-sm bg-white/[0.045]" />
+          ) : null}
+        </div>
+        {isCampaign ? (
+          <Skeleton className="h-3 w-10 shrink-0 rounded-sm bg-white/[0.045]" />
+        ) : (
+          <div className="flex shrink-0 items-center gap-1">
+            <Skeleton className="h-4 w-7 rounded-md bg-white/[0.045]" />
+            <Skeleton className="hidden h-4 w-7 rounded-md bg-white/[0.045] sm:block" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MonumentPriorityRoadmapItem({
   item,
   isOpen,
@@ -3858,16 +3922,23 @@ export function MonumentGoalsList({
           </div>
         </section>
       );
-      const loadingRoadmapContent = (
-        <div className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton
-              key={i}
-              className="h-full min-h-[100px] rounded-2xl bg-white/[0.06]"
-            />
-          ))}
-        </div>
-      );
+      const loadingRoadmapContent =
+        resolvedSourceType === "monument" ? (
+          <div
+            className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
+          >
+            <MonumentPriorityRoadmapSkeleton />
+          </div>
+        ) : (
+          <div className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton
+                key={i}
+                className="h-full min-h-[100px] rounded-2xl bg-white/[0.06]"
+              />
+            ))}
+          </div>
+        );
 
       return renderGoalsRoadmapViewport(
         loadingGoalsContent,

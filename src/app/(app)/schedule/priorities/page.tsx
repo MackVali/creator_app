@@ -22,11 +22,6 @@ import {
 
 export const runtime = "nodejs";
 
-type AuthUserForAdmin = {
-  user_metadata?: Record<string, unknown>;
-  app_metadata?: Record<string, unknown>;
-} | null;
-
 type GoalRow = {
   id: string;
   name?: string | null;
@@ -131,33 +126,6 @@ type MonumentRow = {
   emoji?: string | null;
   created_at?: string | null;
 };
-
-function userIsAdmin(user: AuthUserForAdmin) {
-  if (!user) return false;
-
-  const possibleRoles = new Set<string>();
-  const addRole = (value: unknown) => {
-    if (typeof value === "string") {
-      possibleRoles.add(value.toLowerCase());
-    }
-  };
-  const addRoles = (values: unknown) => {
-    if (Array.isArray(values)) {
-      values.forEach((role) => addRole(role));
-    }
-  };
-
-  addRole(user.user_metadata?.role);
-  addRole(user.app_metadata?.role);
-  addRoles(user.user_metadata?.roles);
-  addRoles(user.app_metadata?.roles);
-
-  if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
-    possibleRoles.add("admin");
-  }
-
-  return possibleRoles.has("admin");
-}
 
 function isCompletedGoal(status?: string | null) {
   return typeof status === "string" && status.trim().toUpperCase() === "COMPLETED";
@@ -703,10 +671,6 @@ export default async function PriorityEditorPage() {
 
   if (authError || !user) {
     redirect("/auth");
-  }
-
-  if (!userIsAdmin(user)) {
-    redirect("/schedule");
   }
 
   const userId = user.id;

@@ -21,12 +21,6 @@ import { AppCartQuickView, AppCheckoutFullscreen } from "@/components/cart/AppCa
 import { resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 import { isScheduleRoute } from "@/components/appChromeVisibility";
 
-type RoleMetadata = {
-  role?: unknown;
-  roles?: unknown;
-  is_admin?: unknown;
-};
-
 type PinnedBodyDatabase = {
   databaseId: string;
   title: string;
@@ -253,49 +247,6 @@ function getPinnedBodyDatabasesFromMetadata({
   );
 }
 
-function normalizeRole(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function collectRoles(value: unknown): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap(collectRoles);
-  }
-
-  return [];
-}
-
-function userIsTopNavAdmin(user: User | null) {
-  if (!user) {
-    return false;
-  }
-
-  const userMetadata = (user.user_metadata ?? {}) as RoleMetadata;
-  const appMetadata = (user.app_metadata ?? {}) as RoleMetadata;
-
-  if (userMetadata.is_admin === true || appMetadata.is_admin === true) {
-    return true;
-  }
-
-  const roles = [
-    ...collectRoles(userMetadata.role),
-    ...collectRoles(appMetadata.role),
-    ...collectRoles(userMetadata.roles),
-    ...collectRoles(appMetadata.roles),
-  ];
-
-  return roles.some((role) => normalizeRole(role) === "admin");
-}
-
-
 export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -321,6 +272,10 @@ export default function TopNav() {
     clearCart,
     initiateCheckout,
   } = useAppCart();
+
+  const prefetchPriorityEditor = useCallback(() => {
+    router.prefetch("/schedule/priorities");
+  }, [router]);
 
   const handleQuickViewCheckout = useCallback(() => {
     setIsCartQuickViewOpen(false);
@@ -503,7 +458,13 @@ export default function TopNav() {
     <>
       <nav className="app-top-nav w-full flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] pb-2 border-b backdrop-blur">
         <div className="flex items-center gap-0.5">
-          <DropdownMenu>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (open) {
+                prefetchPriorityEditor();
+              }
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <button
                 className="h-11 w-11 p-2 hover:text-gray-200 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 [-webkit-tap-highlight-color:transparent]"
@@ -516,13 +477,17 @@ export default function TopNav() {
               align="start"
               className="app-nav-menu"
             >
-              {userIsTopNavAdmin(currentUser) ? (
-                <DropdownMenuItem asChild>
-                  <Link href="/schedule/priorities" className="text-[var(--muted)]">
-                    Priority Editor
-                  </Link>
-                </DropdownMenuItem>
-              ) : null}
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/schedule/priorities"
+                  prefetch
+                  className="text-[var(--muted)]"
+                  onFocus={prefetchPriorityEditor}
+                  onMouseEnter={prefetchPriorityEditor}
+                >
+                  Priority Editor
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/focus-pomo" className="text-[var(--muted)]">
                   FocusPomo
