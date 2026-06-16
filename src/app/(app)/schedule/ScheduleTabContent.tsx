@@ -217,7 +217,15 @@ const TIMELINE_COMPACT_CARD_HEIGHT_PX = 56;
 const TIMELINE_COMPACT_CARD_SHADOW =
   "0 14px 28px rgba(6, 8, 20, 0.45), 0 8px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
-  "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
+  "0 18px 34px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(2, 44, 34, 0.36), inset 0 1px 0 rgba(236, 253, 245, 0.34), inset 0 -10px 18px rgba(1, 22, 15, 0.32)";
+const SCHEDULE_INSTANCE_COMPLETED_CARD_CLASS =
+  "schedule-instance-card--completed text-emerald-50 backdrop-blur";
+const SCHEDULE_INSTANCE_COMPLETED_PROGRESS_CLASS =
+  "schedule-instance-card__progress--completed";
+const SCHEDULE_INSTANCE_COMPLETED_BACKGROUND =
+  "radial-gradient(circle at 18% 0%, rgba(187, 247, 208, 0.18), transparent 34%), linear-gradient(180deg, rgba(52, 211, 153, 0.2) 0%, rgba(52, 211, 153, 0) 31%), linear-gradient(155deg, rgba(24, 160, 87, 0.98) 0%, rgba(18, 135, 72, 0.98) 45%, rgba(8, 95, 51, 0.99) 72%, rgba(3, 61, 35, 1) 100%)";
+const SCHEDULE_INSTANCE_COMPLETED_SHADOW =
+  "0 22px 40px rgba(0, 0, 0, 0.42), 0 10px 22px rgba(2, 44, 34, 0.34), inset 0 1px 0 rgba(236, 253, 245, 0.36), inset 0 -12px 20px rgba(1, 22, 15, 0.34)";
 const TIMELINE_RESTING_CARD_SHADOW =
   "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
@@ -8615,18 +8623,18 @@ export default function ScheduleTabContent({
                   }
                 };
                 const projectBackground = isCompleted
-                  ? "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)"
+                  ? SCHEDULE_INSTANCE_COMPLETED_BACKGROUND
                   : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
                 const resolvedProjectShadow = isCompleted
                   ? useCompactProjectShadow
                     ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12)"
+                    : SCHEDULE_INSTANCE_COMPLETED_SHADOW
                   : sharedCardShadow;
                 const projectCardStyle: CSSProperties = {
                   ...sharedCardStyle,
                   boxShadow: resolvedProjectShadow,
                   outline: isCompleted
-                    ? "1px solid rgba(22, 101, 52, 0.42)"
+                    ? "1px solid rgba(2, 44, 34, 0.86)"
                     : sharedCardStyle.outline,
                   background: projectBackground,
                   opacity: displacedPreview ? 0.92 : undefined,
@@ -8635,7 +8643,7 @@ export default function ScheduleTabContent({
                     : sharedCardStyle.outlineOffset,
                 };
                 const projectBorderClass = isCompleted
-                  ? "border-green-900/45"
+                  ? "border-emerald-950/90"
                   : "border-black/70";
                 const instanceEnergyLevel = resolveEnergyLevel(
                   instance.energy_resolved
@@ -8789,7 +8797,7 @@ export default function ScheduleTabContent({
                               event.preventDefault();
                               handleProjectPrimaryAction();
                             }}
-                            className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none${
+                            className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} ${isCompleted ? SCHEDULE_INSTANCE_COMPLETED_CARD_CLASS : ""} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none${
                               canExpand || (canToggle && !isPending)
                                 ? " cursor-pointer"
                                 : ""
@@ -9013,6 +9021,8 @@ export default function ScheduleTabContent({
                                 const shinyTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
                                 const completedTaskClasses =
+                                  SCHEDULE_INSTANCE_COMPLETED_CARD_CLASS;
+                                const fallbackCompletedTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] text-emerald-50 shadow-[0_18px_38px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur";
                                 const fallbackTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]";
@@ -9060,12 +9070,26 @@ export default function ScheduleTabContent({
                                   ? fallbackCompleted
                                   : scheduledCompleted;
                                 const cardClasses = `${baseTaskClasses} ${
-                                  isCompleted
+                                  scheduledCompleted
                                     ? completedTaskClasses
-                                    : isFallbackCard
-                                      ? fallbackTaskClasses
-                                      : shinyTaskClasses
+                                    : fallbackCompleted
+                                      ? fallbackCompletedTaskClasses
+                                      : isFallbackCard
+                                        ? fallbackTaskClasses
+                                        : shinyTaskClasses
                                 }`;
+                                const taskStyle: CSSProperties =
+                                  scheduledCompleted
+                                    ? {
+                                        ...tStyle,
+                                        background:
+                                          SCHEDULE_INSTANCE_COMPLETED_BACKGROUND,
+                                        boxShadow:
+                                          SCHEDULE_INSTANCE_COMPLETED_SHADOW,
+                                        outline:
+                                          "1px solid rgba(2, 44, 34, 0.86)",
+                                      }
+                                    : tStyle;
                                 const progressValue =
                                   kind === "scheduled"
                                     ? Math.max(
@@ -9079,11 +9103,13 @@ export default function ScheduleTabContent({
                                     : isCompleted
                                       ? 100
                                       : 0;
-                                const progressBarClass = isCompleted
-                                  ? "absolute left-0 bottom-0 h-[3px] bg-emerald-300/80"
-                                  : kind === "scheduled"
-                                    ? "absolute left-0 bottom-0 h-[3px] bg-white/40"
-                                    : "absolute left-0 bottom-0 h-[3px] bg-white/25";
+                                const progressBarClass = scheduledCompleted
+                                  ? `${SCHEDULE_INSTANCE_COMPLETED_PROGRESS_CLASS} absolute left-0 bottom-0 h-[3px]`
+                                  : isCompleted
+                                    ? "absolute left-0 bottom-0 h-[3px] bg-emerald-300/80"
+                                    : kind === "scheduled"
+                                      ? "absolute left-0 bottom-0 h-[3px] bg-white/40"
+                                      : "absolute left-0 bottom-0 h-[3px] bg-white/25";
                                 const hasInteractiveRole =
                                   isFallbackCard ||
                                   (kind === "scheduled" && !!instanceId);
@@ -9166,7 +9192,7 @@ export default function ScheduleTabContent({
                                         ? " cursor-pointer"
                                         : ""
                                     }`}
-                                    style={tStyle}
+                                    style={taskStyle}
                                     onPointerDown={(event) => {
                                       if (!instanceId) return;
                                       const taskInstance =
@@ -9354,7 +9380,12 @@ export default function ScheduleTabContent({
                       boxShadow: isCompleted
                         ? completedStandaloneShadow
                         : baseStandaloneShadow,
-                      outline: "1px solid var(--event-border)",
+                      background: isCompleted
+                        ? SCHEDULE_INSTANCE_COMPLETED_BACKGROUND
+                        : undefined,
+                      outline: isCompleted
+                        ? "1px solid rgba(2, 44, 34, 0.86)"
+                        : "1px solid var(--event-border)",
                       outlineOffset: "-1px",
                     },
                     layoutMode,
@@ -9371,7 +9402,7 @@ export default function ScheduleTabContent({
                   const standaloneBaseClass =
                     "absolute flex items-center justify-between px-3 py-2";
                   const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)] bg-[linear-gradient(135deg,_rgba(46,46,52,0.94)_0%,_rgba(58,58,66,0.92)_45%,_rgba(82,82,92,0.88)_100%)]`;
-                  const standaloneCompletedClass = `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`;
+                  const standaloneCompletedClass = `${standaloneBaseClass} ${SCHEDULE_INSTANCE_COMPLETED_CARD_CLASS}`;
                   const standaloneCornerClass =
                     getTimelineCardCornerClass(layoutMode);
                   const standaloneClassName = [
@@ -9512,7 +9543,7 @@ export default function ScheduleTabContent({
                       <div
                         className={
                           isCompleted
-                            ? "absolute left-0 bottom-0 h-[3px] bg-emerald-300/80"
+                            ? `${SCHEDULE_INSTANCE_COMPLETED_PROGRESS_CLASS} absolute left-0 bottom-0 h-[3px]`
                             : "absolute left-0 bottom-0 h-[3px] bg-zinc-900/25"
                         }
                         style={{ width: `${progress}%` }}
