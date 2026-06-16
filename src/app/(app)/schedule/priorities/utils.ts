@@ -48,7 +48,11 @@ export type RoadmapPriorityGoal = {
   priority: PriorityBucketId;
   status?: string | null;
   globalRank?: number;
+  priorityOrder?: number;
   priorityRank?: number;
+  campaignPosition?: number;
+  campaignGoalCreatedAt?: string | null;
+  createdAt?: string | null;
 };
 
 export type RoadmapPriorityCampaign = {
@@ -56,9 +60,26 @@ export type RoadmapPriorityCampaign = {
   name: string;
   emoji?: string | null;
   description?: string | null;
+  priority: PriorityBucketId;
   schedulingState?: string | null;
   position?: number;
   goals: RoadmapPriorityGoal[];
+};
+
+export type GlobalPriorityRoadmapItem = {
+  id: string;
+  type: "goal" | "campaign";
+  sourceIds?: string[];
+  name: string;
+  priority: PriorityBucketId;
+  priorityOrder?: number;
+  emoji?: string | null;
+  monumentEmoji?: string | null;
+  globalRank?: number;
+  priorityRank?: number;
+  position?: number;
+  createdAt?: string | null;
+  goals?: RoadmapPriorityGoal[];
 };
 
 export type RoadmapPriorityItem =
@@ -147,5 +168,37 @@ export function sortRoadmapItems(items: RoadmapPriorityItem[]): RoadmapPriorityI
     if (priorityRankDelta !== 0) return priorityRankDelta;
 
     return compareRankValues(aGoal?.globalRank, bGoal?.globalRank);
+  });
+}
+
+export function sortGlobalPriorityItems(
+  items: GlobalPriorityRoadmapItem[]
+): GlobalPriorityRoadmapItem[] {
+  return [...items].sort((a, b) => {
+    const priorityDelta =
+      PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+    if (priorityDelta !== 0) return priorityDelta;
+
+    const aRank =
+      a.type === "campaign"
+        ? a.priorityOrder
+        : a.priorityOrder ?? a.priorityRank ?? a.globalRank;
+    const bRank =
+      b.type === "campaign"
+        ? b.priorityOrder
+        : b.priorityOrder ?? b.priorityRank ?? b.globalRank;
+    const rankDelta = compareRankValues(aRank, bRank);
+    if (rankDelta !== 0) return rankDelta;
+
+    const createdDelta = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+    if (createdDelta !== 0) return createdDelta;
+
+    const typeDelta = a.type.localeCompare(b.type);
+    if (typeDelta !== 0) return typeDelta;
+
+    const idDelta = a.id.localeCompare(b.id);
+    if (idDelta !== 0) return idDelta;
+
+    return a.name.localeCompare(b.name);
   });
 }

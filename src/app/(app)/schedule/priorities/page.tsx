@@ -7,7 +7,10 @@ import {
   compareRankValues,
   normalizePriority,
   parseGlobalRank,
+  PRIORITY_ORDER,
+  sortGlobalPriorityItems,
   sortRoadmapItems,
+  type GlobalPriorityRoadmapItem,
   type MonumentRoadmapPriority,
   type RoadmapPriorityCampaign,
   type RoadmapPriorityGoal,
@@ -43,9 +46,11 @@ type GoalRow = {
   emoji?: string | null;
   monument_id?: string | null;
   roadmap_id?: string | null;
+  circle_id?: string | null;
   status?: string | null;
   priority?: string | null;
   priority_code?: string | null;
+  priority_order?: number | string | null;
   global_rank?: number | string | null;
   priority_rank?: number | string | null;
   created_at?: string | null;
@@ -67,6 +72,8 @@ type CampaignRow = {
   name?: string | null;
   description?: string | null;
   emoji?: string | null;
+  priority_code?: string | null;
+  priority_order?: number | string | null;
   scheduling_state?: string | null;
   position?: number | null;
   roadmap_id?: string | null;
@@ -79,6 +86,15 @@ type CampaignGoalRow = {
   goal_id: string;
   position?: number | null;
   created_at?: string | null;
+};
+
+type GlobalPriorityCampaignCandidate = GlobalPriorityRoadmapItem & {
+  normalizedName: string;
+};
+
+type GlobalPriorityCampaignGroup = {
+  candidates: GlobalPriorityCampaignCandidate[];
+  goalIds: Set<string>;
 };
 
 function userIsAdmin(user: AuthUserForAdmin) {
@@ -147,7 +163,36 @@ function normalizeGoal(row: GoalRow): RoadmapPriorityGoal {
     priority: normalizePriority(row.priority_code ?? row.priority),
     status: row.status ?? null,
     globalRank: parseGlobalRank(row.global_rank),
+    priorityOrder: parseGlobalRank(row.priority_order),
     priorityRank: parseGlobalRank(row.priority_rank),
+    createdAt: row.created_at ?? null,
+  };
+}
+
+function normalizeCampaignGoal(
+  row: GoalRow,
+  campaignGoal: CampaignGoalRow
+): RoadmapPriorityGoal {
+  return {
+    ...normalizeGoal(row),
+    campaignPosition: parseGlobalRank(campaignGoal.position),
+    campaignGoalCreatedAt: campaignGoal.created_at ?? null,
+  };
+}
+
+function normalizeCampaign(
+  campaign: CampaignRow,
+  goals: RoadmapPriorityGoal[] = []
+): RoadmapPriorityCampaign {
+  return {
+    id: campaign.id,
+    name: (campaign.name ?? "").trim() || "Untitled Campaign",
+    emoji: campaign.emoji ?? null,
+    description: campaign.description ?? null,
+    priority: normalizePriority(campaign.priority_code),
+    schedulingState: campaign.scheduling_state ?? null,
+    position: parseGlobalRank(campaign.position),
+    goals,
   };
 }
 
@@ -178,6 +223,39 @@ function sortGoalsForRoadmap(goals: GoalRow[]) {
     if (createdDelta !== 0) return createdDelta;
 
     return compareText(a.name, b.name);
+  });
+}
+
+function sortCampaignNestedGoals(
+  goals: RoadmapPriorityGoal[]
+): RoadmapPriorityGoal[] {
+  return [...goals].sort((a, b) => {
+    const priorityDelta =
+      PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+    if (priorityDelta !== 0) return priorityDelta;
+
+    const rankDelta = compareRankValues(
+      a.priorityOrder ?? a.priorityRank,
+      b.priorityOrder ?? b.priorityRank
+    );
+    if (rankDelta !== 0) return rankDelta;
+
+    const campaignPositionDelta = compareRankValues(
+      a.campaignPosition,
+      b.campaignPosition
+    );
+    if (campaignPositionDelta !== 0) return campaignPositionDelta;
+
+    const campaignCreatedDelta = compareText(
+      a.campaignGoalCreatedAt,
+      b.campaignGoalCreatedAt
+    );
+    if (campaignCreatedDelta !== 0) return campaignCreatedDelta;
+
+    const createdDelta = compareText(a.createdAt, b.createdAt);
+    if (createdDelta !== 0) return createdDelta;
+
+    return compareText(a.id, b.id);
   });
 }
 
@@ -310,13 +388,8 @@ function buildRoadmapCards({
             if (campaignGoalsForCard.length === 0) return null;
 
             const normalizedCampaign: RoadmapPriorityCampaign = {
-              id: campaign.id,
-              name: (campaign.name ?? "").trim() || "Untitled Campaign",
-              emoji: campaign.emoji ?? null,
-              description: campaign.description ?? null,
-              schedulingState: campaign.scheduling_state ?? null,
+              ...normalizeCampaign(campaign, campaignGoalsForCard.map(normalizeGoal)),
               position,
-              goals: campaignGoalsForCard.map(normalizeGoal),
             };
 
             return {
@@ -393,6 +466,243 @@ function buildRoadmapCards({
   return cards;
 }
 
+function buildGlobalPriorityItems({
+  goals,
+  campaigns,
+  campaignGoals,
+}: {
+  goals: GoalRow[];
+  campaigns: CampaignRow[];
+  campaignGoals: CampaignGoalRow[];
+}): GlobalPriorityRoadmapItem[] {
+  const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
+  const campaignGoalIds = new Set<string>();
+  const campaignGoalsByCampaignId = new Map<string, CampaignGoalRow[]>();
+  const campaignCandidatesById = new Map<string, GlobalPriorityCampaignCandidate>();
+
+  for (const campaignGoal of campaignGoals) {
+    campaignGoalIds.add(campaignGoal.goal_id);
+    const existing = campaignGoalsByCampaignId.get(campaignGoal.campaign_id) ?? [];
+    existing.push(campaignGoal);
+    campaignGoalsByCampaignId.set(campaignGoal.campaign_id, existing);
+  }
+
+  for (const groupedCampaignGoals of campaignGoalsByCampaignId.values()) {
+    groupedCampaignGoals.sort((a, b) => {
+      const aPosition = a.position ?? Number.POSITIVE_INFINITY;
+      const bPosition = b.position ?? Number.POSITIVE_INFINITY;
+      if (aPosition !== bPosition) return aPosition - bPosition;
+      const createdDelta = compareText(a.created_at, b.created_at);
+      if (createdDelta !== 0) return createdDelta;
+      return compareText(a.goal_id, b.goal_id);
+    });
+  }
+
+  for (const campaign of campaigns) {
+    const campaignNestedGoalsById = new Map<string, RoadmapPriorityGoal>();
+    for (const campaignGoal of campaignGoalsByCampaignId.get(campaign.id) ?? []) {
+      const goal = goalsById.get(campaignGoal.goal_id);
+      if (
+        !goal ||
+        goal.circle_id ||
+        isCompletedGoal(goal.status) ||
+        campaignNestedGoalsById.has(goal.id)
+      ) {
+        continue;
+      }
+      campaignNestedGoalsById.set(goal.id, normalizeCampaignGoal(goal, campaignGoal));
+    }
+
+    if (campaignNestedGoalsById.size === 0) continue;
+
+    const normalizedCampaign = normalizeCampaign(
+      campaign,
+      sortCampaignNestedGoals(Array.from(campaignNestedGoalsById.values()))
+    );
+    const candidate: GlobalPriorityCampaignCandidate = {
+      id: campaign.id,
+      type: "campaign",
+      sourceIds: [campaign.id],
+      normalizedName: normalizeGlobalPriorityCampaignName(normalizedCampaign.name),
+      name: normalizedCampaign.name,
+      emoji: normalizedCampaign.emoji,
+      priority: normalizedCampaign.priority,
+      priorityOrder: parseGlobalRank(campaign.priority_order),
+      position: normalizedCampaign.position,
+      createdAt: campaign.created_at ?? null,
+      goals: normalizedCampaign.goals,
+    };
+    const existing = campaignCandidatesById.get(campaign.id);
+
+    if (!existing) {
+      campaignCandidatesById.set(campaign.id, candidate);
+      continue;
+    }
+
+    const goalsForMergedItem = mergeGlobalPriorityCampaignGoals(
+      existing.goals,
+      candidate.goals
+    );
+    const preferredItem =
+      compareGlobalPriorityCampaignStability(candidate, existing) < 0
+        ? candidate
+        : existing;
+
+    campaignCandidatesById.set(campaign.id, {
+      ...preferredItem,
+      sourceIds: mergeSourceIds(existing.sourceIds, candidate.sourceIds),
+      goals: sortCampaignNestedGoals(goalsForMergedItem),
+    });
+  }
+
+  const campaignItems = buildGlobalPriorityCampaignItems(
+    Array.from(campaignCandidatesById.values())
+  );
+
+  const standaloneGoalItems: GlobalPriorityRoadmapItem[] = goals
+    .filter(
+      (goal) =>
+        !goal.circle_id && !isCompletedGoal(goal.status) && !campaignGoalIds.has(goal.id)
+    )
+    .map((goal) => {
+      const normalizedGoal = normalizeGoal(goal);
+
+      return {
+        id: goal.id,
+        type: "goal",
+        name: normalizedGoal.name,
+        emoji: normalizedGoal.emoji,
+        monumentEmoji: normalizedGoal.monumentEmoji,
+        priority: normalizedGoal.priority,
+        priorityOrder: parseGlobalRank(goal.priority_order),
+        globalRank: normalizedGoal.globalRank,
+        priorityRank: normalizedGoal.priorityRank,
+        createdAt: goal.created_at ?? null,
+      };
+    });
+
+  return sortGlobalPriorityItems([...campaignItems, ...standaloneGoalItems]);
+}
+
+function compareGlobalPriorityCampaignStability(
+  a: GlobalPriorityRoadmapItem,
+  b: GlobalPriorityRoadmapItem
+) {
+  const priorityOrderDelta = compareRankValues(a.priorityOrder, b.priorityOrder);
+  if (priorityOrderDelta !== 0) return priorityOrderDelta;
+
+  const createdDelta = compareText(a.createdAt, b.createdAt);
+  if (createdDelta !== 0) return createdDelta;
+
+  return compareText(a.id, b.id);
+}
+
+function mergeGlobalPriorityCampaignGoals(
+  first?: RoadmapPriorityGoal[],
+  second?: RoadmapPriorityGoal[]
+) {
+  const goalsById = new Map<string, RoadmapPriorityGoal>();
+
+  for (const goal of [...(first ?? []), ...(second ?? [])]) {
+    if (goalsById.has(goal.id)) continue;
+    goalsById.set(goal.id, goal);
+  }
+
+  return Array.from(goalsById.values());
+}
+
+function normalizeGlobalPriorityCampaignName(name: string) {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function mergeSourceIds(first?: string[], second?: string[]) {
+  return Array.from(new Set([...(first ?? []), ...(second ?? [])]));
+}
+
+function campaignCandidatesOverlap(
+  group: GlobalPriorityCampaignGroup,
+  candidate: GlobalPriorityCampaignCandidate
+) {
+  if (!candidate.normalizedName) return false;
+  const candidateGoalIds = new Set((candidate.goals ?? []).map((goal) => goal.id));
+  if (candidateGoalIds.size === 0) return false;
+
+  for (const goalId of candidateGoalIds) {
+    if (group.goalIds.has(goalId)) return true;
+  }
+
+  return false;
+}
+
+function mergeGlobalPriorityCampaignGroup(
+  group: GlobalPriorityCampaignGroup
+): GlobalPriorityRoadmapItem {
+  const { candidates } = group;
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    throw new Error(
+      "Invalid Global Priority Campaign group: expected a non-empty candidates array."
+    );
+  }
+
+  const sortedCandidates = [...candidates].sort(
+    compareGlobalPriorityCampaignStability
+  );
+  const preferredItem = sortedCandidates[0];
+  const sourceIds = sortedCandidates.reduce<string[]>(
+    (mergedIds, candidate) =>
+      mergeSourceIds(mergedIds, candidate.sourceIds ?? [candidate.id]),
+    []
+  );
+  return {
+    id: preferredItem.id,
+    type: "campaign",
+    name: preferredItem.name,
+    emoji: preferredItem.emoji,
+    priority: preferredItem.priority,
+    priorityOrder: preferredItem.priorityOrder,
+    position: preferredItem.position,
+    createdAt: preferredItem.createdAt,
+    sourceIds,
+    goals: sortCampaignNestedGoals(
+      sortedCandidates.reduce<RoadmapPriorityGoal[]>(
+        (mergedGoals, candidate) =>
+          mergeGlobalPriorityCampaignGoals(mergedGoals, candidate.goals),
+        []
+      )
+    ),
+  };
+}
+
+function buildGlobalPriorityCampaignItems(
+  candidates: GlobalPriorityCampaignCandidate[]
+) {
+  const groupsByName = new Map<string, GlobalPriorityCampaignGroup[]>();
+
+  for (const candidate of candidates) {
+    const groups = groupsByName.get(candidate.normalizedName) ?? [];
+    const overlappingGroup = groups.find((group) =>
+      campaignCandidatesOverlap(group, candidate)
+    );
+
+    if (overlappingGroup) {
+      overlappingGroup.candidates.push(candidate);
+      for (const goal of candidate.goals ?? []) {
+        overlappingGroup.goalIds.add(goal.id);
+      }
+    } else {
+      groups.push({
+        candidates: [candidate],
+        goalIds: new Set((candidate.goals ?? []).map((goal) => goal.id)),
+      });
+      groupsByName.set(candidate.normalizedName, groups);
+    }
+  }
+
+  return Array.from(groupsByName.values())
+    .flat()
+    .map((group) => mergeGlobalPriorityCampaignGroup(group));
+}
+
 export default async function PriorityEditorPage() {
   const cookieStore = await cookies();
   const supabase = getSupabaseServer({
@@ -436,7 +746,7 @@ export default async function PriorityEditorPage() {
     supabase
       .from("goals")
       .select(
-        "id,name,emoji,monument_id,roadmap_id,status,priority,priority_code,global_rank,priority_rank,created_at,monument:monuments(emoji)"
+        "id,name,emoji,monument_id,roadmap_id,circle_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
       )
       .eq("user_id", userId),
   ]);
@@ -476,49 +786,39 @@ export default async function PriorityEditorPage() {
     } else {
       roadmapItems = (roadmapItemData ?? []) as RoadmapItemRow[];
     }
+  }
 
-    const campaignIds = Array.from(
-      new Set(
-        roadmapItems
-          .map((item) => item.campaign_id)
-          .filter((campaignId): campaignId is string => Boolean(campaignId))
-      )
-    );
+  const { data: campaignData, error: campaignError } = await supabase
+    .from("campaigns")
+    .select(
+      "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,created_at"
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
 
-    if (campaignIds.length > 0) {
-      const [
-        { data: campaignData, error: campaignError },
-        { data: campaignGoalData, error: campaignGoalError },
-      ] = await Promise.all([
-        supabase
-          .from("campaigns")
-          .select(
-            "id,name,description,emoji,scheduling_state,position,roadmap_id,primary_monument_id,created_at"
-          )
-          .eq("user_id", userId)
-          .in("id", campaignIds),
-        supabase
-          .from("campaign_goals")
-          .select("campaign_id,goal_id,position,created_at")
-          .eq("user_id", userId)
-          .in("campaign_id", campaignIds)
-          .order("position", { ascending: true }),
-      ]);
+  if (campaignError) {
+    console.error("Failed to load campaigns for priority editor", campaignError);
+    campaignErrorMessage = campaignError.message || "Unable to load Campaigns.";
+  } else {
+    campaigns = (campaignData ?? []) as CampaignRow[];
+  }
 
-      if (campaignError) {
-        console.error("Failed to load campaigns for priority editor", campaignError);
-        campaignErrorMessage = campaignError.message || "Unable to load Campaigns.";
-      } else {
-        campaigns = (campaignData ?? []) as CampaignRow[];
-      }
+  const campaignIds = campaigns.map((campaign) => campaign.id);
 
-      if (campaignGoalError) {
-        console.error("Failed to load campaign goals for priority editor", campaignGoalError);
-        campaignGoalErrorMessage =
-          campaignGoalError.message || "Unable to load Campaign Goals.";
-      } else {
-        campaignGoals = (campaignGoalData ?? []) as CampaignGoalRow[];
-      }
+  if (campaignIds.length > 0) {
+    const { data: campaignGoalData, error: campaignGoalError } = await supabase
+      .from("campaign_goals")
+      .select("campaign_id,goal_id,position,created_at")
+      .eq("user_id", userId)
+      .in("campaign_id", campaignIds)
+      .order("position", { ascending: true });
+
+    if (campaignGoalError) {
+      console.error("Failed to load campaign goals for priority editor", campaignGoalError);
+      campaignGoalErrorMessage =
+        campaignGoalError.message || "Unable to load Campaign Goals.";
+    } else {
+      campaignGoals = (campaignGoalData ?? []) as CampaignGoalRow[];
     }
   }
 
@@ -548,11 +848,18 @@ export default async function PriorityEditorPage() {
     fetchErrorMessages.push(`Campaign Goals select error: ${campaignGoalErrorMessage}`);
   }
 
+  const goals = (goalData ?? []) as GoalRow[];
+  const nonCompletedGoals = goals.filter((goal) => !isCompletedGoal(goal.status));
   const roadmapCards = buildRoadmapCards({
     monuments: (monumentData ?? []) as MonumentRow[],
     roadmaps,
-    goals: ((goalData ?? []) as GoalRow[]).filter((goal) => !isCompletedGoal(goal.status)),
+    goals: nonCompletedGoals,
     roadmapItems,
+    campaigns,
+    campaignGoals,
+  });
+  const globalPriorityItems = buildGlobalPriorityItems({
+    goals: nonCompletedGoals,
     campaigns,
     campaignGoals,
   });
@@ -561,6 +868,7 @@ export default async function PriorityEditorPage() {
     <ProtectedRoute>
       <PriorityEditorClient
         initialRoadmaps={roadmapCards}
+        initialGlobalPriorityItems={globalPriorityItems}
         initialError={fetchErrorMessages.length ? fetchErrorMessages.join(" ") : null}
       />
     </ProtectedRoute>

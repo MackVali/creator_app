@@ -21,7 +21,6 @@ import {
   useId,
   useRef,
   useState,
-  type CSSProperties,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -29,7 +28,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { GripVertical, Layers3, Play, Square, X } from "lucide-react";
+import {
+  Check,
+  GripVertical,
+  Layers3,
+  Play,
+  Slash,
+  Square,
+  X,
+} from "lucide-react";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
   fetchFocusPomoQueue,
@@ -44,6 +51,7 @@ import {
   type RoadmapWithItems,
 } from "@/lib/queries/roadmaps";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
@@ -130,6 +138,20 @@ type AvailableConstraintOptions = {
   habitTypes: HabitTypeOption[];
 };
 
+type FocusPomoCompletionKind = "habit" | "project";
+
+type FocusPomoProjectCompletionUpdate = {
+  update(values: {
+    completed_at: string;
+    updated_at: string;
+    stage: string;
+  }): {
+    eq(column: string, value: string): {
+      eq(column: string, value: string): Promise<{ error: unknown | null }>;
+    };
+  };
+};
+
 const DEFAULT_ENABLED_ITEM_TYPES: FocusExecutionItemType[] = [
   "project",
   "task",
@@ -139,16 +161,10 @@ const FOCUS_QUEUE_LONG_PRESS_MS = 520;
 const FOCUS_QUEUE_LONG_PRESS_MOVE_TOLERANCE = 12;
 const FOCUS_QUEUE_LONG_PRESS_SUPPRESS_MS = 650;
 const FOCUS_QUEUE_MOVE_SUPPRESS_MS = 250;
-const FOCUS_POMO_COMPLETED_EVENT_CARD_CLASS =
-  "relative flex min-w-0 items-center gap-2 border border-green-900/45 px-3 py-2.5 text-emerald-50 sm:gap-3 sm:px-4 sm:py-3";
-const FOCUS_POMO_COMPLETED_EVENT_CARD_STYLE: CSSProperties = {
-  background:
-    "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)",
-  boxShadow:
-    "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
-  outline: "1px solid rgba(22, 101, 52, 0.42)",
-  outlineOffset: "-1px",
-};
+const FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS =
+  "flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-zinc-950/55 text-[11px] font-semibold text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] sm:size-8 sm:rounded-lg sm:text-xs";
+const FOCUS_POMO_QUEUE_ICON_BADGE_CLASS =
+  "flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-zinc-950/50 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:size-8 sm:rounded-lg sm:text-base";
 
 const INVALID_HABIT_TYPE_KEYS = new Set(["routine", "routines"]);
 const LOCKED_OFF_HABIT_TYPE_KEYS = new Set([
@@ -2243,6 +2259,297 @@ function readFirstScopeString(values: unknown[]): string | null {
   return null;
 }
 
+function readFocusPomoScheduleInstanceId(item: FocusPomoQueueItem): string | null {
+  const record = item as unknown as Record<string, unknown>;
+  const source = readNestedScopeRecord(record, "source");
+  const raw = readNestedScopeRecord(record, "raw");
+  const scheduleInstance =
+    readNestedScopeRecord(record, "schedule_instance") ??
+    readNestedScopeRecord(record, "scheduleInstance");
+
+  return readFirstScopeString([
+    record.scheduleInstanceId,
+    record.schedule_instance_id,
+    record.schedule_instanceId,
+    record.instanceId,
+    record.instance_id,
+    source?.scheduleInstanceId,
+    source?.schedule_instance_id,
+    raw?.scheduleInstanceId,
+    raw?.schedule_instance_id,
+    scheduleInstance?.id,
+    scheduleInstance?.scheduleInstanceId,
+    scheduleInstance?.schedule_instance_id,
+  ]);
+}
+
+function getFocusPomoCompletionKind(
+  item: FocusPomoQueueItem
+): FocusPomoCompletionKind | null {
+  if (item.sourceType === "PROJECT") return "project";
+  if (item.sourceType === "HABIT") return "habit";
+
+  const itemKind = getFocusItemKind(item);
+  if (itemKind === "project" || itemKind === "habit") return itemKind;
+  return null;
+}
+
+function readFocusPomoCompletionSourceType(
+  kind: FocusPomoCompletionKind
+): "PROJECT" | "HABIT" {
+  return kind === "project" ? "PROJECT" : "HABIT";
+}
+
+function normalizeFocusPomoDurationMinutes(value: unknown): number | null {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(numeric) && numeric >= 0 ? Math.round(numeric) : null;
+}
+
+function getBrowserTimeZone(): string {
+  return (
+    Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC"
+  );
+}
+
+function getFocusPomoCompletionSkillIds(item: FocusPomoQueueItem): string[] {
+  const record = item as unknown as Record<string, unknown>;
+  return uniqueScopeValues([
+    item.skillId ?? null,
+    readScopeString(record.skill_id),
+  ]);
+}
+
+function getFocusPomoCompletionMonumentIds(item: FocusPomoQueueItem): string[] {
+  const record = item as unknown as Record<string, unknown>;
+  const source = readNestedScopeRecord(record, "source");
+  const raw = readNestedScopeRecord(record, "raw");
+  const goalMetadata = readGoalMonumentMetadata(record, source, raw);
+
+  return uniqueScopeValues([
+    item.goalMonumentId ?? null,
+    item.goal_monument_id ?? null,
+    goalMetadata.monumentId ?? null,
+    ...getItemMonumentOptions(item)
+      .map((option) => option.id)
+      .filter((id) => !id.startsWith("name:")),
+  ]);
+}
+
+function buildFocusPomoAwardKeyBase({
+  item,
+  kind,
+  scheduleInstanceId,
+  dateKey,
+}: {
+  item: FocusPomoQueueItem;
+  kind: FocusPomoCompletionKind;
+  scheduleInstanceId: string | null;
+  dateKey: string;
+}) {
+  if (scheduleInstanceId) return `sched:${scheduleInstanceId}:${kind}`;
+  return `focuspomo:${item.sourceType}:${item.id}:${dateKey}:${kind}`;
+}
+
+async function awardFocusPomoCompletionXp({
+  item,
+  kind,
+  completedAt,
+  timeZone,
+  durationMin,
+  scheduleInstanceId,
+  productivityDayKey,
+}: {
+  item: FocusPomoQueueItem;
+  kind: FocusPomoCompletionKind;
+  completedAt: string;
+  timeZone: string;
+  durationMin: number | null;
+  scheduleInstanceId: string | null;
+  productivityDayKey: string;
+}) {
+  const sourceType = readFocusPomoCompletionSourceType(kind);
+  const skillIds = getFocusPomoCompletionSkillIds(item);
+  const monumentIds = getFocusPomoCompletionMonumentIds(item);
+  const body: Record<string, unknown> = {
+    kind,
+    amount: kind === "project" ? 3 : 1,
+    awardKeyBase: buildFocusPomoAwardKeyBase({
+      item,
+      kind,
+      scheduleInstanceId,
+      dateKey: productivityDayKey,
+    }),
+    completion: {
+      action: "complete",
+      sourceType,
+      sourceId: item.id,
+      completedAt,
+      wasScheduled: Boolean(scheduleInstanceId),
+      scheduleInstanceId: scheduleInstanceId ?? undefined,
+      durationMin,
+      timeZone,
+      productivityDayKey,
+    },
+  };
+
+  if (scheduleInstanceId) {
+    body.scheduleInstanceId = scheduleInstanceId;
+  }
+  if (skillIds.length > 0) {
+    body.skillIds = skillIds;
+  }
+  if (monumentIds.length > 0) {
+    body.monumentIds = monumentIds;
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      console.error(
+        "FocusPomo failed to award completion XP",
+        await response.text()
+      );
+    }
+  } catch (error) {
+    console.error("FocusPomo failed to award completion XP", error);
+  }
+}
+
+async function completeFocusPomoScheduleInstance(
+  scheduleInstanceId: string | null,
+  completedAt: string
+) {
+  if (!scheduleInstanceId) return;
+
+  try {
+    const response = await fetch("/api/schedule/instances/batchStatus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        updates: [
+          {
+            id: scheduleInstanceId,
+            status: "completed",
+            completed_at: completedAt,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        "FocusPomo failed to complete schedule instance",
+        await response.text()
+      );
+    }
+  } catch (error) {
+    console.error("FocusPomo failed to complete schedule instance", error);
+  }
+}
+
+async function completeFocusPomoItem({
+  item,
+  completedAt,
+  timeZone,
+}: {
+  item: FocusPomoQueueItem;
+  completedAt: string;
+  timeZone: string;
+}) {
+  const kind = getFocusPomoCompletionKind(item);
+  if (!kind) return;
+
+  const scheduleInstanceId = readFocusPomoScheduleInstanceId(item);
+  const durationMin = normalizeFocusPomoDurationMinutes(item.durationMinutes);
+  const productivityDayKey = completionProductivityDayKey(
+    new Date(completedAt),
+    timeZone
+  );
+
+  await completeFocusPomoScheduleInstance(scheduleInstanceId, completedAt);
+
+  if (kind === "project") {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn("FocusPomo could not complete project: Supabase unavailable");
+      return;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error("FocusPomo could not complete project: user unavailable", userError);
+      return;
+    }
+
+    const projectsTable = supabase.from(
+      "projects"
+    ) as unknown as FocusPomoProjectCompletionUpdate;
+    const { error } = await projectsTable
+      .update({
+        completed_at: completedAt,
+        updated_at: new Date().toISOString(),
+        stage: "RELEASE",
+      })
+      .eq("id", item.id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("FocusPomo failed to complete project", error);
+      return;
+    }
+  } else {
+    try {
+      const response = await fetch("/api/habits/completion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          habitId: item.id,
+          completedAt,
+          timeZone,
+          action: "complete",
+          scheduleInstanceId: scheduleInstanceId ?? undefined,
+          durationMin,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "FocusPomo failed to record habit completion",
+          await response.text()
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("FocusPomo failed to record habit completion", error);
+      return;
+    }
+  }
+
+  await awardFocusPomoCompletionXp({
+    item,
+    kind,
+    completedAt,
+    timeZone,
+    durationMin,
+    scheduleInstanceId,
+    productivityDayKey,
+  });
+}
+
 function isRecordType(
   record: Record<string, unknown> | null,
   expectedType: FocusExecutionItemType
@@ -2610,11 +2917,11 @@ function SortableFocusQueueItem({
         }
         className="flex min-w-0 touch-pan-y select-none items-center gap-2 py-2.5 pr-3 text-left outline-none focus:ring-2 focus:ring-inset focus:ring-white/35 sm:gap-3 sm:py-4 sm:pr-4"
       >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.045] text-[11px] font-semibold text-white/78 sm:size-8 sm:rounded-lg sm:text-xs">
+        <span className={FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS}>
           {position}
         </span>
         {previewIcon ? (
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+          <span className={FOCUS_POMO_QUEUE_ICON_BADGE_CLASS}>
             <span aria-hidden="true">{previewIcon}</span>
           </span>
         ) : null}
@@ -3733,10 +4040,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     session: FocusPomoRunResult,
     variant: "latest" | "earlier"
   ) => {
-    const completed =
-      session.action === "completed" &&
-      session.actualMs !== null &&
-      session.deltaMs !== null;
+    const isCompleted = session.action === "completed";
     const hasEnergy = Boolean(session.energyCode || session.energyLabel);
     const energyLevel = normalizeFlameLevel(
       session.energyCode,
@@ -3744,81 +4048,64 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     );
     const rowClassName =
       variant === "latest"
-        ? completed
-          ? FOCUS_POMO_COMPLETED_EVENT_CARD_CLASS
-          : "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
-        : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-70 sm:gap-3 sm:px-4 sm:py-3";
-    const rowStyle =
-      variant === "latest" && completed
-        ? FOCUS_POMO_COMPLETED_EVENT_CARD_STYLE
-        : undefined;
-    const statusClassName = completed
-      ? "text-emerald-50"
-      : "text-zinc-400";
-    const timeClassName = completed
-      ? "text-emerald-50/90"
-      : "text-zinc-400";
+        ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.03] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:px-3 sm:py-2.5"
+        : "flex min-w-0 items-center gap-2 border-t border-black/40 px-2.5 py-1.5 opacity-70 sm:px-3 sm:py-2";
+    const metadataLine = [
+      isCompleted ? "COMPLETED" : "SKIPPED",
+      session.workTypeLabel,
+      session.relationLabel,
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
     return (
-      <div key={session.id} className={rowClassName} style={rowStyle}>
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+      <div key={session.id} className={rowClassName}>
+        <span className={FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS}>
+          {isCompleted ? (
+            <Check
+              className="size-3.5 text-emerald-400 sm:size-4"
+              strokeWidth={2.4}
+              aria-hidden="true"
+            />
+          ) : (
+            <Slash
+              className="size-3.5 text-orange-400 sm:size-4"
+              strokeWidth={2.4}
+              aria-hidden="true"
+            />
+          )}
+        </span>
+        <div className={FOCUS_POMO_QUEUE_ICON_BADGE_CLASS}>
           <span aria-hidden="true">
             {session.icon ?? initialsFallback(session.title, "•")}
           </span>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
-            <p
-              className={
-                variant === "latest"
-                  ? "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm"
-                  : "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-normal text-white/68 sm:text-sm"
-              }
-            >
-              {session.title}
-            </p>
-            {hasEnergy ? (
-              <span className="flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
-                <FlameEmber
-                  level={energyLevel}
-                  size="sm"
-                  className="shrink-0 overflow-visible [&_svg]:overflow-visible"
-                />
-              </span>
-            ) : null}
-          </div>
-
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 sm:mt-1 sm:gap-1.5">
-            <span className="inline-flex max-w-full items-center rounded-md border border-black/60 bg-black/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:text-[9px] sm:tracking-[0.12em]">
-              <span className="min-w-0 truncate">{session.workTypeLabel}</span>
-            </span>
-            {session.relationLabel ? (
-              <span className="inline-flex min-w-0 max-w-[9.5rem] items-center gap-1 rounded-md border border-black/60 bg-black/20 px-1.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:max-w-[13rem] sm:gap-1.5">
-                {session.relationIcon ? (
-                  <span className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[7px] font-semibold text-zinc-200 sm:size-4 sm:text-[8px]">
-                    {session.relationIcon}
-                  </span>
-                ) : null}
-                <span className="min-w-0 truncate text-[9px] font-semibold text-zinc-400 sm:text-[10px]">
-                  {session.relationLabel}
-                </span>
-              </span>
-            ) : null}
-            <span
-              className={`ml-auto whitespace-nowrap pl-1 text-[9px] font-bold uppercase tracking-[0.12em] sm:text-[10px] ${statusClassName}`}
-            >
-              {completed ? "COMPLETED" : "SKIPPED"}
-            </span>
-            {completed ? (
-              <span
-                className={`whitespace-nowrap font-mono text-[9px] font-semibold tabular-nums sm:text-[10px] ${timeClassName}`}
-              >
-                {formatSignedTimerMs(session.actualMs)}
-              </span>
-            ) : null}
-          </div>
-        </div>
+        <span className="min-w-0 flex-1">
+          <span
+            className={
+              variant === "latest"
+                ? "block truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm"
+                : "block truncate text-xs font-semibold uppercase tracking-normal text-white/68 sm:text-sm"
+            }
+          >
+            {session.title}
+          </span>
+          <span
+            className="mt-0.5 block truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]"
+          >
+            {metadataLine}
+          </span>
+        </span>
+        {hasEnergy ? (
+          <span className="ml-auto flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
+            <FlameEmber
+              level={energyLevel}
+              size="sm"
+              className="shrink-0 overflow-visible [&_svg]:overflow-visible"
+            />
+          </span>
+        ) : null}
       </div>
     );
   };
@@ -4345,8 +4632,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         ? plannedMs - remainingMsRef.current
         : elapsedMsRef.current;
     const deltaMs = actualMs - plannedMs;
+    const completedAt = new Date().toISOString();
+    const timeZone = getBrowserTimeZone();
 
-    // TODO: Wire this to the app's existing completion pathways by item kind/sourceType.
     setHasRunStarted(true);
     setIsRunLogExpanded(false);
     setRunHistory((current) => [
@@ -4359,7 +4647,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         plannedMs,
         actualMs,
         deltaMs,
-        completedAt: new Date().toISOString(),
+        completedAt,
         resultTone: deltaMs <= 0 ? "under" : "over",
       },
       ...current,
@@ -4368,6 +4656,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setIsRunning(false);
     resetCurrentTimer();
     dismissCurrentQueueItem(currentItem);
+    void completeFocusPomoItem({ item: currentItem, completedAt, timeZone });
   };
 
   return createPortal(
