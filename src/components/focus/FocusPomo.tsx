@@ -21,6 +21,7 @@ import {
   useId,
   useRef,
   useState,
+  type CSSProperties,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -138,6 +139,16 @@ const FOCUS_QUEUE_LONG_PRESS_MS = 520;
 const FOCUS_QUEUE_LONG_PRESS_MOVE_TOLERANCE = 12;
 const FOCUS_QUEUE_LONG_PRESS_SUPPRESS_MS = 650;
 const FOCUS_QUEUE_MOVE_SUPPRESS_MS = 250;
+const FOCUS_POMO_COMPLETED_EVENT_CARD_CLASS =
+  "relative flex min-w-0 items-center gap-2 border border-green-900/45 px-3 py-2.5 text-emerald-50 sm:gap-3 sm:px-4 sm:py-3";
+const FOCUS_POMO_COMPLETED_EVENT_CARD_STYLE: CSSProperties = {
+  background:
+    "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)",
+  boxShadow:
+    "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
+  outline: "1px solid rgba(22, 101, 52, 0.42)",
+  outlineOffset: "-1px",
+};
 
 const INVALID_HABIT_TYPE_KEYS = new Set(["routine", "routines"]);
 const LOCKED_OFF_HABIT_TYPE_KEYS = new Set([
@@ -3726,7 +3737,6 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       session.action === "completed" &&
       session.actualMs !== null &&
       session.deltaMs !== null;
-    const over = session.resultTone === "over";
     const hasEnergy = Boolean(session.energyCode || session.energyLabel);
     const energyLevel = normalizeFlameLevel(
       session.energyCode,
@@ -3735,24 +3745,22 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     const rowClassName =
       variant === "latest"
         ? completed
-          ? over
-            ? "relative flex min-w-0 items-center gap-2 border border-red-300/15 bg-red-500/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(239,68,68,0.025),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
-            : "relative flex min-w-0 items-center gap-2 border border-emerald-300/15 bg-emerald-500/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(16,185,129,0.025),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
+          ? FOCUS_POMO_COMPLETED_EVENT_CARD_CLASS
           : "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
         : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-70 sm:gap-3 sm:px-4 sm:py-3";
+    const rowStyle =
+      variant === "latest" && completed
+        ? FOCUS_POMO_COMPLETED_EVENT_CARD_STYLE
+        : undefined;
     const statusClassName = completed
-      ? over
-        ? "text-red-200/85"
-        : "text-emerald-200/85"
+      ? "text-emerald-50"
       : "text-zinc-400";
     const timeClassName = completed
-      ? over
-        ? "text-red-300/85"
-        : "text-emerald-300/85"
+      ? "text-emerald-50/90"
       : "text-zinc-400";
 
     return (
-      <div key={session.id} className={rowClassName}>
+      <div key={session.id} className={rowClassName} style={rowStyle}>
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
           <span aria-hidden="true">
             {session.icon ?? initialsFallback(session.title, "•")}

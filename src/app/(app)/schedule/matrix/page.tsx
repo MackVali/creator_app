@@ -197,6 +197,7 @@ type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
 type MatrixCardDensity = "large" | "small" | "row";
 type MatrixView = "monuments" | "skills" | "blocks" | "types";
 type MatrixTypeGroupKey = "chore" | "habit" | "project" | "sync";
+type MatrixReorderHoldScope = "scheduled" | "due";
 type MatrixHabitDueStatus = {
   isDue: boolean;
   isOverdue: boolean;
@@ -273,7 +274,7 @@ const MATRIX_LIBRARY_GRID_CLASS =
   "-mx-3 grid grid-cols-3 items-stretch gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const MATRIX_LIBRARY_SMALL_GRID_CLASS =
   "goal-grid grid w-full max-w-full auto-rows-[108px] grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] items-stretch gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
-const MATRIX_LIBRARY_ROW_LIST_CLASS = "flex w-full min-w-0 flex-col gap-1.5 pt-0.5";
+const MATRIX_LIBRARY_ROW_LIST_CLASS = "flex w-full min-w-0 flex-col gap-0.5 pt-0.5";
 const MATRIX_LIBRARY_CARD_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 const MATRIX_LIBRARY_SMALL_CARD_CLASS =
@@ -285,7 +286,7 @@ const MATRIX_HABIT_PRACTICE_CARD_BG_CLASS =
 const MATRIX_HABIT_DEFAULT_CARD_BG_CLASS =
   "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
 const MATRIX_ROW_PROJECT_CARD_CLASS =
-  "border-zinc-300/[0.15] bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.08),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] hover:border-zinc-100/[0.24]";
+  "border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.08),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] hover:border-black/80";
 const MATRIX_TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
   "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
 const MATRIX_TIMELINE_COMPLETED_SHADOW =
@@ -304,8 +305,13 @@ const MATRIX_CARD_LONG_PRESS_MS = 520;
 const MATRIX_CARD_LONG_PRESS_MOVE_TOLERANCE = 12;
 const MATRIX_CARD_LONG_PRESS_SUPPRESS_MS = 650;
 const MATRIX_COMPLETE_SHIMMER_DURATION_MS = 3000;
+const MATRIX_COMPLETION_REORDER_HOLD_MS = 720;
 const MATRIX_LOADING_ROW_COUNT = 8;
 const MATRIX_GROUP_REVEAL_EASE = [0.22, 1, 0.36, 1] as const;
+const MATRIX_REORDER_LAYOUT_TRANSITION = {
+  duration: 0.42,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
 
 function getMatrixCompleteShimmerStyle() {
   return {
@@ -461,10 +467,17 @@ function isMatrixDueItemCompleted(item: MatrixDueItem): boolean {
   return item.routine.habits.every((habit) => habit.completed);
 }
 
-function sortMatrixScheduledItems(items: MatrixEvent[]): MatrixEvent[] {
+function sortMatrixScheduledItems(
+  items: MatrixEvent[],
+  heldCompletedItemIds?: ReadonlySet<string>
+): MatrixEvent[] {
   return [...items].sort((a, b) => {
+    const aCompleted =
+      isMatrixEventCompleted(a) && !heldCompletedItemIds?.has(a.instance.id);
+    const bCompleted =
+      isMatrixEventCompleted(b) && !heldCompletedItemIds?.has(b.instance.id);
     const completionDifference =
-      Number(isMatrixEventCompleted(a)) - Number(isMatrixEventCompleted(b));
+      Number(aCompleted) - Number(bCompleted);
     if (completionDifference !== 0) return completionDifference;
 
     const rankDifference = getMatrixEventTypeRank(a) - getMatrixEventTypeRank(b);
@@ -486,10 +499,17 @@ function getMatrixScheduledHabitLabel(
   return "SCHEDULED";
 }
 
-function sortMatrixDueItems(items: MatrixDueItem[]): MatrixDueItem[] {
+function sortMatrixDueItems(
+  items: MatrixDueItem[],
+  heldCompletedItemIds?: ReadonlySet<string>
+): MatrixDueItem[] {
   return [...items].sort((a, b) => {
+    const aCompleted =
+      isMatrixDueItemCompleted(a) && !heldCompletedItemIds?.has(a.id);
+    const bCompleted =
+      isMatrixDueItemCompleted(b) && !heldCompletedItemIds?.has(b.id);
     const completionDifference =
-      Number(isMatrixDueItemCompleted(a)) - Number(isMatrixDueItemCompleted(b));
+      Number(aCompleted) - Number(bCompleted);
     if (completionDifference !== 0) return completionDifference;
 
     const rankDifference =
@@ -530,21 +550,21 @@ function getHabitRowTypeClass(habitType: string | null | undefined): string {
   if (normalized === "CHORE") {
     return cn(
       MATRIX_HABIT_CHORE_CARD_BG_CLASS,
-      "border-rose-200/[0.26] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-rose-100/[0.34]"
+      "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-black/80"
     );
   }
   if (normalized === "SYNC" || normalized === "MEMO") {
-    return "border-zinc-200/[0.24] bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.28),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.96)_0%,rgba(113,113,122,0.92)_48%,rgba(161,161,170,0.78)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.055)] hover:border-zinc-100/[0.32]";
+    return "border-black/70 bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.28),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.96)_0%,rgba(113,113,122,0.92)_48%,rgba(161,161,170,0.78)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.055)] hover:border-black/80";
   }
   if (normalized === "PRACTICE") {
     return cn(
       MATRIX_HABIT_PRACTICE_CARD_BG_CLASS,
-      "border-slate-400/[0.28] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-slate-300/[0.34]"
+      "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-black/80"
     );
   }
   return cn(
     MATRIX_HABIT_DEFAULT_CARD_BG_CLASS,
-    "border-white/[0.10] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.16]"
+    "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-black/80"
   );
 }
 
@@ -1800,7 +1820,7 @@ function MatrixEventRowCard({
         onOpenChange
           ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25"
           : null,
-        open && !completed ? "border-white/[0.18]" : null,
+        open && !completed ? "border-black/80" : null,
         open ? "ring-1 ring-white/[0.08]" : null,
         overdue && !completed
           ? "outline outline-1 -outline-offset-1 outline-rose-300/[0.16] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),0_0_0_1px_rgba(244,63,94,0.045),inset_0_1px_0_rgba(255,255,255,0.045)]"
@@ -3085,6 +3105,8 @@ function MatrixGridCarousel({
   onCompleteScheduledEvent,
   onCompleteDueHabit,
   completingDueHabitIds,
+  heldScheduledCompletionItemIds,
+  heldDueCompletionItemIds,
 }: {
   groups: MatrixMonumentGroup[];
   matrixView: MatrixView;
@@ -3094,6 +3116,8 @@ function MatrixGridCarousel({
   ): void;
   onCompleteDueHabit(habitId: string, completedToday: boolean): void;
   completingDueHabitIds: Set<string>;
+  heldScheduledCompletionItemIds: ReadonlySet<string>;
+  heldDueCompletionItemIds: ReadonlySet<string>;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
@@ -3142,10 +3166,13 @@ function MatrixGridCarousel({
           items:
             matrixView === "types"
               ? group.scheduledItems
-              : sortMatrixScheduledItems(group.scheduledItems),
+              : sortMatrixScheduledItems(
+                  group.scheduledItems,
+                  heldScheduledCompletionItemIds
+                ),
         }))
         .filter(({ items }) => items.length > 0),
-    [groups, matrixView]
+    [groups, heldScheduledCompletionItemIds, matrixView]
   );
   const activeUnscheduledDueHabitGroups = useMemo(
     () =>
@@ -3155,10 +3182,13 @@ function MatrixGridCarousel({
           items:
             matrixView === "types"
               ? getVisibleMatrixDueItems(group)
-              : sortMatrixDueItems(getVisibleMatrixDueItems(group)),
+              : sortMatrixDueItems(
+                  getVisibleMatrixDueItems(group),
+                  heldDueCompletionItemIds
+                ),
         }))
         .filter(({ items }) => items.length > 0),
-    [groups, matrixView]
+    [groups, heldDueCompletionItemIds, matrixView]
   );
   const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
     const panels: MatrixPanel[] = [];
@@ -3800,23 +3830,29 @@ function MatrixGridCarousel({
                           )}
                         >
                           {items.map((event) => (
-                            <ScheduledEventCard
+                            <motion.div
                               key={event.instance.id}
-                              event={event}
-                              density={cardDensity}
-                              onComplete={onCompleteScheduledEvent}
-                              open={
-                                Boolean(event.goal?.id) &&
-                                openGoalId === event.goal?.id
-                              }
-                              onOpenChange={(nextOpen) =>
-                                setOpenGoalId(
-                                  nextOpen && event.goal?.id
-                                    ? event.goal.id
-                                    : null
-                                )
-                              }
-                            />
+                              layout="position"
+                              transition={MATRIX_REORDER_LAYOUT_TRANSITION}
+                              className="h-full min-w-0"
+                            >
+                              <ScheduledEventCard
+                                event={event}
+                                density={cardDensity}
+                                onComplete={onCompleteScheduledEvent}
+                                open={
+                                  Boolean(event.goal?.id) &&
+                                  openGoalId === event.goal?.id
+                                }
+                                onOpenChange={(nextOpen) =>
+                                  setOpenGoalId(
+                                    nextOpen && event.goal?.id
+                                      ? event.goal.id
+                                      : null
+                                  )
+                                }
+                              />
+                            </motion.div>
                           ))}
                         </div>
                       </MatrixRevealGroupSection>
@@ -3854,26 +3890,31 @@ function MatrixGridCarousel({
                                 : null
                             )}
                           >
-                            {items.map((item) =>
-                              item.kind === "routine" ? (
-                                <MatrixRoutineCard
-                                  key={item.id}
-                                  routine={item.routine}
-                                  density={cardDensity}
-                                  onCompleteHabit={onCompleteDueHabit}
-                                />
-                              ) : (
-                                <DueHabitCard
-                                  key={item.id}
-                                  habit={item.habit}
-                                  density={cardDensity}
-                                  completing={completingDueHabitIds.has(
-                                    item.habit.id
-                                  )}
-                                  onComplete={onCompleteDueHabit}
-                                />
-                              )
-                            )}
+                            {items.map((item) => (
+                              <motion.div
+                                key={item.id}
+                                layout="position"
+                                transition={MATRIX_REORDER_LAYOUT_TRANSITION}
+                                className="h-full min-w-0"
+                              >
+                                {item.kind === "routine" ? (
+                                  <MatrixRoutineCard
+                                    routine={item.routine}
+                                    density={cardDensity}
+                                    onCompleteHabit={onCompleteDueHabit}
+                                  />
+                                ) : (
+                                  <DueHabitCard
+                                    habit={item.habit}
+                                    density={cardDensity}
+                                    completing={completingDueHabitIds.has(
+                                      item.habit.id
+                                    )}
+                                    onComplete={onCompleteDueHabit}
+                                  />
+                                )}
+                              </motion.div>
+                            ))}
                           </div>
                         </MatrixRevealGroupSection>
                       )
@@ -3937,6 +3978,13 @@ function MatrixContent() {
   const [completingDueHabitIds, setCompletingDueHabitIds] = useState<
     Set<string>
   >(new Set());
+  const [heldMatrixReorderItemIds, setHeldMatrixReorderItemIds] = useState<{
+    scheduled: Set<string>;
+    due: Set<string>;
+  }>(() => ({
+    scheduled: new Set(),
+    due: new Set(),
+  }));
   const [memoCompletionState, setMemoCompletionState] = useState<{
     habit: MatrixHabit;
     source: "scheduled" | "due";
@@ -3945,8 +3993,177 @@ function MatrixContent() {
     completionDate: string;
   } | null>(null);
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
+  const matrixStateRef = useRef<MatrixState>(initialState);
   const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
+  const matrixReorderHoldTimeoutsRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
   const bypassMemoCaptureRef = useRef(false);
+
+  useEffect(() => {
+    matrixStateRef.current = state;
+  }, [state]);
+
+  const getMatrixReorderHoldTimerKey = useCallback(
+    (scope: MatrixReorderHoldScope, itemId: string) => `${scope}:${itemId}`,
+    []
+  );
+
+  const releaseMatrixReorderHold = useCallback(
+    (scope: MatrixReorderHoldScope, itemIds: string[]) => {
+      const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
+      if (!uniqueItemIds.length) return;
+
+      for (const itemId of uniqueItemIds) {
+        const timerKey = getMatrixReorderHoldTimerKey(scope, itemId);
+        const timer = matrixReorderHoldTimeoutsRef.current.get(timerKey);
+        if (timer) clearTimeout(timer);
+        matrixReorderHoldTimeoutsRef.current.delete(timerKey);
+      }
+
+      setHeldMatrixReorderItemIds((current) => {
+        const key = scope === "scheduled" ? "scheduled" : "due";
+        const nextIds = new Set(current[key]);
+        let changed = false;
+
+        for (const itemId of uniqueItemIds) {
+          if (nextIds.delete(itemId)) changed = true;
+        }
+
+        if (!changed) return current;
+        return {
+          ...current,
+          [key]: nextIds,
+        };
+      });
+    },
+    [getMatrixReorderHoldTimerKey]
+  );
+
+  const holdMatrixReorderItems = useCallback(
+    (scope: MatrixReorderHoldScope, itemIds: string[]) => {
+      const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
+      if (!uniqueItemIds.length) return;
+
+      setHeldMatrixReorderItemIds((current) => {
+        const key = scope === "scheduled" ? "scheduled" : "due";
+        const nextIds = new Set(current[key]);
+        let changed = false;
+
+        for (const itemId of uniqueItemIds) {
+          if (!nextIds.has(itemId)) {
+            nextIds.add(itemId);
+            changed = true;
+          }
+        }
+
+        if (!changed) return current;
+        return {
+          ...current,
+          [key]: nextIds,
+        };
+      });
+
+      for (const itemId of uniqueItemIds) {
+        const timerKey = getMatrixReorderHoldTimerKey(scope, itemId);
+        const existingTimer =
+          matrixReorderHoldTimeoutsRef.current.get(timerKey);
+        if (existingTimer) clearTimeout(existingTimer);
+
+        const timer = setTimeout(() => {
+          matrixReorderHoldTimeoutsRef.current.delete(timerKey);
+          setHeldMatrixReorderItemIds((current) => {
+            const key = scope === "scheduled" ? "scheduled" : "due";
+            if (!current[key].has(itemId)) return current;
+
+            const nextIds = new Set(current[key]);
+            nextIds.delete(itemId);
+
+            return {
+              ...current,
+              [key]: nextIds,
+            };
+          });
+        }, MATRIX_COMPLETION_REORDER_HOLD_MS);
+
+        matrixReorderHoldTimeoutsRef.current.set(timerKey, timer);
+      }
+    },
+    [getMatrixReorderHoldTimerKey]
+  );
+
+  const getScheduledCompletionHoldIds = useCallback((instanceId: string) => {
+    const currentState = matrixStateRef.current;
+    const itemIds = new Set<string>();
+    const groupSets = [
+      currentState.eventGroups,
+      currentState.skillEventGroups,
+      currentState.blockEventGroups,
+      currentState.typeEventGroups,
+    ];
+
+    for (const groups of groupSets) {
+      for (const group of groups) {
+        for (const event of group.items) {
+          if (event.instance.id === instanceId) {
+            itemIds.add(event.instance.id);
+            continue;
+          }
+
+          if (
+            event.routine?.habits.some(
+              (habit) => habit.sourceInstance?.id === instanceId
+            )
+          ) {
+            itemIds.add(event.instance.id);
+          }
+        }
+      }
+    }
+
+    return itemIds.size ? Array.from(itemIds) : [instanceId];
+  }, []);
+
+  const getDueCompletionHoldIds = useCallback((habitId: string) => {
+    const currentState = matrixStateRef.current;
+    const itemIds = new Set<string>();
+    const groupSets = [
+      currentState.unscheduledDueHabitGroups,
+      currentState.skillUnscheduledDueHabitGroups,
+      currentState.blockUnscheduledDueHabitGroups,
+      currentState.typeUnscheduledDueHabitGroups,
+    ];
+
+    for (const groups of groupSets) {
+      for (const group of groups) {
+        for (const item of group.items) {
+          if (item.kind === "habit" && item.habit.id === habitId) {
+            itemIds.add(item.id);
+            continue;
+          }
+
+          if (
+            item.kind === "routine" &&
+            item.routine.habits.some((habit) => habit.id === habitId)
+          ) {
+            itemIds.add(item.id);
+          }
+        }
+      }
+    }
+
+    return itemIds.size ? Array.from(itemIds) : [habitId];
+  }, []);
+
+  useEffect(() => {
+    const holdTimeouts = matrixReorderHoldTimeoutsRef.current;
+    return () => {
+      for (const timer of holdTimeouts.values()) {
+        clearTimeout(timer);
+      }
+      holdTimeouts.clear();
+    };
+  }, []);
 
   const commitScheduledEventCompletion = useCallback(
     async (instanceId: string, nextStatus: ScheduleInstance["status"]) => {
@@ -3967,6 +4184,13 @@ function MatrixContent() {
       if (error) {
         console.error("Failed to toggle scheduled Matrix Event", error);
         return;
+      }
+
+      const heldItemIds = getScheduledCompletionHoldIds(instanceId);
+      if (nextStatus === "completed") {
+        holdMatrixReorderItems("scheduled", heldItemIds);
+      } else {
+        releaseMatrixReorderHold("scheduled", heldItemIds);
       }
 
       const updateScheduledEventGroups = (
@@ -4022,7 +4246,12 @@ function MatrixContent() {
         typeEventGroups: updateScheduledEventGroups(current.typeEventGroups),
       }));
     },
-    [user?.id]
+    [
+      getScheduledCompletionHoldIds,
+      holdMatrixReorderItems,
+      releaseMatrixReorderHold,
+      user?.id,
+    ]
   );
 
   const findMatrixHabit = useCallback(
@@ -4191,6 +4420,13 @@ function MatrixContent() {
           );
         }
 
+        const heldItemIds = getDueCompletionHoldIds(habitId);
+        if (completedToday) {
+          releaseMatrixReorderHold("due", heldItemIds);
+        } else {
+          holdMatrixReorderItems("due", heldItemIds);
+        }
+
         setState((current) => {
           const updateHabitInGroups = (
             groups: MonumentGroup<MatrixDueItem>[]
@@ -4330,7 +4566,14 @@ function MatrixContent() {
         });
       }
     },
-    [findMatrixHabit, timeZone, user?.id]
+    [
+      findMatrixHabit,
+      getDueCompletionHoldIds,
+      holdMatrixReorderItems,
+      releaseMatrixReorderHold,
+      timeZone,
+      user?.id,
+    ]
   );
 
   const handlePullRefresh = useCallback(async () => {
@@ -4935,6 +5178,10 @@ function MatrixContent() {
               onCompleteScheduledEvent={handleCompleteScheduledEvent}
               onCompleteDueHabit={handleCompleteDueHabit}
               completingDueHabitIds={completingDueHabitIds}
+              heldScheduledCompletionItemIds={
+                heldMatrixReorderItemIds.scheduled
+              }
+              heldDueCompletionItemIds={heldMatrixReorderItemIds.due}
             />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">

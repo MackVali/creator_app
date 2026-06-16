@@ -8,7 +8,6 @@ import {
   useState,
   type CSSProperties,
   type MutableRefObject,
-  type PointerEvent,
   type UIEvent,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -42,7 +41,9 @@ interface PriorityEditorClientProps {
   initialError?: string | null;
 }
 
-const ROADMAP_SWIPE_THRESHOLD_PX = 48;
+const ROADMAP_SCROLL_SETTLE_MS = 140;
+const ROADMAP_SCROLL_RELEASE_MS = 90;
+const ROADMAP_PROGRAMMATIC_SCROLL_RELEASE_MS = 420;
 
 type MonumentPriorityRow = {
   monumentId: string;
@@ -74,10 +75,10 @@ export default function PriorityEditorClient({
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const scrollSettleTimeoutRef = useRef<number | null>(null);
   const scrollSyncTimeoutRef = useRef<number | null>(null);
-  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const pointerDraggingRef = useRef(false);
   const suppressClickRef = useRef(false);
+  const hasCenteredRoadmapRef = useRef(false);
 
   useEffect(() => {
     setRoadmaps(initialRoadmaps);
@@ -89,10 +90,6 @@ export default function PriorityEditorClient({
     setError(initialError);
   }, [initialRoadmaps, initialError]);
 
-  const focusedIndex = useMemo(
-    () => roadmaps.findIndex((roadmap) => roadmap.id === focusedRoadmapId),
-    [focusedRoadmapId, roadmaps]
-  );
   const monumentRows = useMemo(() => buildMonumentPriorityRows(roadmaps), [roadmaps]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -163,40 +160,62 @@ export default function PriorityEditorClient({
     [monumentRows, roadmaps, router]
   );
 
+  const releaseSuppressedRoadmapClick = useCallback((delay: number) => {
+    if (scrollSyncTimeoutRef.current !== null) {
+      window.clearTimeout(scrollSyncTimeoutRef.current);
+    }
+
+    scrollSyncTimeoutRef.current = window.setTimeout(() => {
+      suppressClickRef.current = false;
+      scrollSyncTimeoutRef.current = null;
+    }, delay);
+  }, []);
+
+  const syncFocusedRoadmapFromScroll = useCallback((scroller: HTMLDivElement) => {
+    const scrollerRect = scroller.getBoundingClientRect();
+    const scrollerCenter = scrollerRect.left + scrollerRect.width / 2;
+    let closestRoadmapId = "";
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    scroller.querySelectorAll<HTMLElement>("[data-roadmap-key]").forEach((preview) => {
+      const previewRect = preview.getBoundingClientRect();
+      const previewCenter = previewRect.left + previewRect.width / 2;
+      const distance = Math.abs(previewCenter - scrollerCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestRoadmapId = preview.dataset.roadmapKey ?? "";
+      }
+    });
+
+    if (closestRoadmapId) {
+      setFocusedRoadmapId((current) =>
+        current === closestRoadmapId ? current : closestRoadmapId
+      );
+    }
+  }, []);
+
   const handleRoadmapScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
-      if (pointerDraggingRef.current || suppressClickRef.current) {
-        return;
-      }
-
       const scroller = event.currentTarget;
+      suppressClickRef.current = true;
+
+      if (scrollSettleTimeoutRef.current !== null) {
+        window.clearTimeout(scrollSettleTimeoutRef.current);
+      }
       if (scrollFrameRef.current !== null) {
         window.cancelAnimationFrame(scrollFrameRef.current);
       }
 
-      scrollFrameRef.current = window.requestAnimationFrame(() => {
-        const scrollerRect = scroller.getBoundingClientRect();
-        const scrollerCenter = scrollerRect.left + scrollerRect.width / 2;
-        let closestRoadmapId = focusedRoadmapId;
-        let closestDistance = Number.POSITIVE_INFINITY;
-
-        scroller.querySelectorAll<HTMLElement>("[data-roadmap-key]").forEach((preview) => {
-          const previewRect = preview.getBoundingClientRect();
-          const previewCenter = previewRect.left + previewRect.width / 2;
-          const distance = Math.abs(previewCenter - scrollerCenter);
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestRoadmapId = preview.dataset.roadmapKey ?? focusedRoadmapId;
-          }
+      scrollSettleTimeoutRef.current = window.setTimeout(() => {
+        scrollSettleTimeoutRef.current = null;
+        scrollFrameRef.current = window.requestAnimationFrame(() => {
+          scrollFrameRef.current = null;
+          syncFocusedRoadmapFromScroll(scroller);
+          releaseSuppressedRoadmapClick(ROADMAP_SCROLL_RELEASE_MS);
         });
-
-        scrollFrameRef.current = null;
-        if (closestRoadmapId !== focusedRoadmapId) {
-          handleFocusRoadmap(closestRoadmapId);
-        }
-      });
+      }, ROADMAP_SCROLL_SETTLE_MS);
     },
-    [focusedRoadmapId, handleFocusRoadmap]
+    [releaseSuppressedRoadmapClick, syncFocusedRoadmapFromScroll]
   );
 
   const scrollFocusedRoadmapIntoView = useCallback(() => {
@@ -210,71 +229,41 @@ export default function PriorityEditorClient({
 
     const nextScrollLeft =
       preview.offsetLeft - (scroller.clientWidth - preview.offsetWidth) / 2;
+    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+    const clampedScrollLeft = Math.min(
+      Math.max(0, nextScrollLeft),
+      Math.max(0, maxScrollLeft)
+    );
+
+    if (Math.abs(scroller.scrollLeft - clampedScrollLeft) < 1) {
+      hasCenteredRoadmapRef.current = true;
+      return;
+    }
+
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
     suppressClickRef.current = true;
     scroller.scrollTo({
-      left: Math.max(0, nextScrollLeft),
-      behavior: "auto",
+      left: clampedScrollLeft,
+      behavior:
+        hasCenteredRoadmapRef.current && !prefersReducedMotion ? "smooth" : "auto",
     });
-
-    if (scrollSyncTimeoutRef.current !== null) {
-      window.clearTimeout(scrollSyncTimeoutRef.current);
-    }
-    scrollSyncTimeoutRef.current = window.setTimeout(() => {
-      suppressClickRef.current = false;
-      scrollSyncTimeoutRef.current = null;
-    }, 260);
-  }, [focusedRoadmapId]);
+    hasCenteredRoadmapRef.current = true;
+    releaseSuppressedRoadmapClick(ROADMAP_PROGRAMMATIC_SCROLL_RELEASE_MS);
+  }, [focusedRoadmapId, releaseSuppressedRoadmapClick]);
 
   useEffect(() => {
     scrollFocusedRoadmapIntoView();
   }, [scrollFocusedRoadmapIntoView]);
 
-  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    pointerStartRef.current = { x: event.clientX, y: event.clientY };
-    pointerDraggingRef.current = true;
-  }, []);
-
-  const clearPointer = useCallback(() => {
-    pointerStartRef.current = null;
-    pointerDraggingRef.current = false;
-  }, []);
-
-  const handlePointerUp = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const start = pointerStartRef.current;
-      clearPointer();
-      if (!start || roadmaps.length === 0) return;
-
-      const deltaX = start.x - event.clientX;
-      const deltaY = start.y - event.clientY;
-      if (
-        Math.abs(deltaX) < ROADMAP_SWIPE_THRESHOLD_PX ||
-        Math.abs(deltaX) < Math.abs(deltaY)
-      ) {
-        return;
-      }
-
-      const currentIndex = focusedIndex >= 0 ? focusedIndex : 0;
-      const nextIndex =
-        (currentIndex + (deltaX > 0 ? 1 : -1) + roadmaps.length) % roadmaps.length;
-      suppressClickRef.current = true;
-      if (scrollSyncTimeoutRef.current !== null) {
-        window.clearTimeout(scrollSyncTimeoutRef.current);
-      }
-      scrollSyncTimeoutRef.current = window.setTimeout(() => {
-        suppressClickRef.current = false;
-        scrollSyncTimeoutRef.current = null;
-      }, 260);
-      handleFocusRoadmap(roadmaps[nextIndex]?.id ?? focusedRoadmapId);
-    },
-    [clearPointer, focusedIndex, focusedRoadmapId, handleFocusRoadmap, roadmaps]
-  );
-
   useEffect(() => {
     return () => {
       if (scrollFrameRef.current !== null) {
         window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+      if (scrollSettleTimeoutRef.current !== null) {
+        window.clearTimeout(scrollSettleTimeoutRef.current);
       }
       if (scrollSyncTimeoutRef.current !== null) {
         window.clearTimeout(scrollSyncTimeoutRef.current);
@@ -297,14 +286,55 @@ export default function PriorityEditorClient({
           </div>
         )}
 
+        {monumentRows.length > 0 ? (
+          <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+            <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
+              <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                <h2 className="text-[11px] font-semibold uppercase text-white/35">
+                  Adjust
+                </h2>
+                {isSavingMonumentOrder ? (
+                  <span className="text-[11px] font-medium text-white/35">
+                    Saving
+                  </span>
+                ) : null}
+              </div>
+              {monumentOrderError ? (
+                <p className="mb-2 px-1 text-xs text-red-200/85">
+                  {monumentOrderError}
+                </p>
+              ) : null}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleMonumentDragEnd}
+              >
+                <SortableContext
+                  items={monumentRows.map((monument) => monument.monumentId)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.28)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+                    <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px]">
+                      {monumentRows.map((monument, index) => (
+                        <SortableMonumentPriorityRow
+                          key={monument.monumentId}
+                          monument={monument}
+                          rank={index + 1}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+          </section>
+        ) : null}
+
         <section className="space-y-3">
           <div
             ref={scrollerRef}
-            className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth px-3 pb-3 touch-pan-x sm:-mx-4 sm:px-4"
+            className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-3 pb-3 touch-pan-x [-webkit-overflow-scrolling:touch] sm:-mx-4 sm:px-4"
             onScroll={handleRoadmapScroll}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={clearPointer}
           >
             {roadmaps.map((roadmap) => (
               <RoadmapCarouselCard
@@ -317,44 +347,6 @@ export default function PriorityEditorClient({
             ))}
           </div>
         </section>
-
-        {monumentRows.length > 0 ? (
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-3 px-1">
-              <h2 className="text-[11px] font-semibold uppercase text-white/35">
-                Monument Priority
-              </h2>
-              {isSavingMonumentOrder ? (
-                <span className="text-[11px] font-medium text-white/35">
-                  Saving
-                </span>
-              ) : null}
-            </div>
-            {monumentOrderError ? (
-              <p className="px-1 text-xs text-red-200/85">{monumentOrderError}</p>
-            ) : null}
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleMonumentDragEnd}
-            >
-              <SortableContext
-                items={monumentRows.map((monument) => monument.monumentId)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="overflow-hidden rounded-2xl border border-black bg-[#060607] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
-                  {monumentRows.map((monument, index) => (
-                    <SortableMonumentPriorityRow
-                      key={monument.monumentId}
-                      monument={monument}
-                      rank={index + 1}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          </section>
-        ) : null}
       </div>
     </main>
   );
@@ -431,26 +423,28 @@ function SortableMonumentPriorityRow({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex min-h-12 items-center gap-2 border-b border-white/[0.055] bg-[#08090A] px-2.5 py-2 last:border-b-0 sm:px-3",
-        isDragging ? "relative z-20 shadow-2xl shadow-black/50" : ""
+        "flex min-h-12 items-center gap-2 border-b border-black/40 bg-white/[0.025] px-2.5 py-2 last:border-b-0 sm:px-3",
+        isDragging
+          ? "relative z-20 bg-white/[0.055] shadow-2xl shadow-black/50"
+          : ""
       )}
     >
       <button
         type="button"
-        className="flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg border border-white/[0.08] bg-black/35 text-white/52 transition hover:text-white/78 active:cursor-grabbing"
+        className="flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg border border-black/60 bg-black/30 text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition hover:bg-white/[0.045] hover:text-zinc-200 active:cursor-grabbing"
         aria-label={`Drag ${monument.name} to reorder`}
         {...attributes}
         {...listeners}
       >
         <GripVertical className="size-4" aria-hidden="true" />
       </button>
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-white/88">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-sm font-semibold text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
         {identity}
       </span>
-      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/88">
+      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
         {monument.name}
       </p>
-      <span className="shrink-0 rounded-full border border-white/[0.07] bg-black/30 px-2 py-0.5 text-[10px] font-semibold leading-none text-white/52">
+      <span className="shrink-0 rounded-full border border-black/60 bg-black/30 px-2 py-0.5 text-[10px] font-semibold leading-none text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
         #{rank}
       </span>
     </div>
@@ -500,66 +494,70 @@ function RoadmapCarouselCard({
         onFocus();
       }}
       className={cn(
-        "group flex h-[72vh] min-h-[30rem] min-w-[88vw] snap-center flex-col overflow-hidden rounded-[22px] border-2 bg-[#040404] shadow-[0_24px_60px_-28px_rgba(0,0,0,0.95),0_10px_20px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition duration-200 sm:min-w-[24rem] lg:min-w-[28rem]",
+        "group h-[72vh] min-h-[30rem] min-w-[88vw] snap-center overflow-hidden rounded-[22px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] outline-none transition duration-200 sm:min-w-[24rem] sm:rounded-[24px] lg:min-w-[28rem]",
         active
-          ? "border-black opacity-100 ring-1 ring-black/80"
-          : "border-black/70 opacity-[0.78] hover:border-black/90 hover:opacity-100"
+          ? "opacity-100 ring-1 ring-white/[0.055]"
+          : "opacity-[0.78] hover:opacity-100 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_20px_52px_rgba(0,0,0,0.5)]"
       )}
     >
-      <div className="border-b border-white/10 px-4 py-3.5 sm:px-5 sm:py-4">
-        <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold leading-tight text-white sm:text-base">
-          {monumentEmoji ? (
-            <span
-              aria-hidden
-              className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-            >
-              {monumentEmoji}
-            </span>
-          ) : null}
-          <span className="min-w-0 truncate">{roadmap.monumentName}</span>
-        </h3>
-      </div>
+      <div className="relative flex h-full flex-col overflow-hidden rounded-[21px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[23px]">
+        <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(145deg,rgba(255,255,255,0.045),transparent_26%,rgba(255,255,255,0.018)_72%,rgba(0,0,0,0.32))]" />
+        <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/24 to-transparent" />
+        <div className="relative border-b border-black/40 bg-black/20 px-4 py-3.5 sm:px-5 sm:py-4">
+          <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold leading-tight text-white/82 sm:text-base">
+            {monumentEmoji ? (
+              <span
+                aria-hidden
+                className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-10px_16px_rgba(0,0,0,0.24)]"
+              >
+                {monumentEmoji}
+              </span>
+            ) : null}
+            <span className="min-w-0 truncate">{roadmap.monumentName}</span>
+          </h3>
+        </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        {roadmap.items.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center p-6 text-center">
-            <div className="max-w-[18rem] rounded-2xl border border-dashed border-white/10 bg-white/[0.025] px-5 py-6">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-lg text-white/80">
-                {identity}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {roadmap.items.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center p-6 text-center">
+              <div className="max-w-[18rem] rounded-2xl border border-dashed border-black/60 bg-white/[0.025] px-5 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+                <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-black/60 bg-white/[0.04] text-lg text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                  {identity}
+                </div>
+                <p className="mt-4 text-sm font-semibold text-white/82">
+                  No Roadmap Goals yet
+                </p>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">
+                  Goals will appear here after they are assigned to this Monument Roadmap.
+                </p>
               </div>
-              <p className="mt-4 text-sm font-semibold text-white">
-                No Roadmap Goals yet
-              </p>
-              <p className="mt-2 text-sm leading-6 text-white/42">
-                Goals will appear here after they are assigned to this Monument Roadmap.
-              </p>
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3 sm:space-y-3 sm:px-4">
-            {roadmap.items.map((item) => {
-              if (item.type === "campaign") {
+          ) : (
+            <div className="flex-1 space-y-[0.5px] overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+              {roadmap.items.map((item) => {
+                if (item.type === "campaign") {
+                  return (
+                    <CampaignGroup
+                      key={item.id}
+                      campaign={item.campaign}
+                      monumentEmoji={monumentEmoji}
+                      isOpen={openCampaignIds[item.campaign.id] ?? false}
+                      onToggle={() => handleToggleCampaign(item.campaign.id)}
+                    />
+                  );
+                }
+
                 return (
-                  <CampaignGroup
+                  <GoalRankRow
                     key={item.id}
-                    campaign={item.campaign}
+                    goal={item.goal}
                     monumentEmoji={monumentEmoji}
-                    isOpen={openCampaignIds[item.campaign.id] ?? false}
-                    onToggle={() => handleToggleCampaign(item.campaign.id)}
                   />
                 );
-              }
-
-              return (
-                <GoalRankRow
-                  key={item.id}
-                  goal={item.goal}
-                  monumentEmoji={monumentEmoji}
-                />
-              );
-            })}
-          </div>
-        )}
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </article>
   );
@@ -575,26 +573,26 @@ function getCampaignStateClasses(state?: string | null): {
     case "PAUSED":
       return {
         shell:
-          "border-white/[0.06] bg-[#0D0E10] opacity-90 shadow-[0_16px_40px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
-        countBadge: "border-white/[0.07] bg-white/[0.035] text-white/48",
-        title: "text-white/88",
-        description: "text-white/42",
+          "border-black/60 bg-white/[0.03] opacity-90 shadow-[0_16px_40px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-12px_20px_rgba(0,0,0,0.18)]",
+        countBadge: "border-black/60 bg-black/25 text-zinc-500",
+        title: "text-white/82",
+        description: "text-zinc-500",
       };
     case "COMPLETED":
       return {
         shell:
-          "border-white/[0.055] bg-[#0B0C0D] shadow-[0_14px_34px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)]",
-        countBadge: "border-white/[0.06] bg-white/[0.03] text-white/40",
-        title: "text-white/76",
-        description: "text-white/38",
+          "border-black/60 bg-white/[0.025] shadow-[0_14px_34px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-12px_20px_rgba(0,0,0,0.16)]",
+        countBadge: "border-black/60 bg-black/25 text-zinc-600",
+        title: "text-white/68",
+        description: "text-zinc-600",
       };
     default:
       return {
         shell:
-          "border-white/[0.07] bg-[#101112] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)]",
-        countBadge: "border-white/[0.08] bg-white/[0.045] text-white/58",
-        title: "text-white",
-        description: "text-white/48",
+          "border-black/60 bg-white/[0.035] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.18)]",
+        countBadge: "border-black/60 bg-black/25 text-zinc-400",
+        title: "text-white/82",
+        description: "text-zinc-400",
       };
   }
 }
@@ -620,7 +618,7 @@ function CampaignGroup({
         stateClasses.shell
       )}
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
+      <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
       <div className="space-y-2 sm:space-y-3">
         <button
           type="button"
@@ -629,9 +627,9 @@ function CampaignGroup({
           onKeyDown={(event) => {
             event.stopPropagation();
           }}
-          className="flex w-full items-start gap-2 rounded-xl text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/20 sm:gap-2.5"
+          className="flex w-full items-start gap-2 rounded-xl text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15 sm:gap-2.5"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[12px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[12px] font-semibold text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_-10px_16px_rgba(0,0,0,0.22)] sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm">
             {identity}
           </span>
           <div className="min-w-0 flex-1 space-y-1">
@@ -648,7 +646,7 @@ function CampaignGroup({
                 </h4>
                 <span
                   className={cn(
-                    "shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none sm:px-2 sm:py-1 sm:text-[10px]",
+                    "shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-2 sm:py-1 sm:text-[10px]",
                     stateClasses.countBadge
                   )}
                 >
@@ -658,7 +656,7 @@ function CampaignGroup({
               </div>
               <ChevronDown
                 className={cn(
-                  "mt-0.5 size-4 shrink-0 text-white/38 transition-transform",
+                  "mt-0.5 size-4 shrink-0 text-zinc-500 transition-transform",
                   isOpen ? "rotate-180" : ""
                 )}
                 aria-hidden="true"
@@ -677,9 +675,9 @@ function CampaignGroup({
           </div>
         </button>
         {isOpen && campaign.goals.length > 0 ? (
-          <div className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[#030407] px-1 pb-1.5 pt-1 sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
-            <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/10 sm:inset-y-3.5 sm:left-2" />
-            <div className="space-y-1.5 pt-1.5 sm:space-y-2 sm:pt-3">
+          <div className="relative overflow-hidden rounded-[16px] border border-black/60 bg-black/25 px-1 pb-1.5 pt-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
+            <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/[0.055] sm:inset-y-3.5 sm:left-2" />
+            <div className="space-y-[0.5px] pt-1.5 sm:pt-3">
               {campaign.goals.map((goal) => (
                 <GoalRankRow
                   key={goal.id}
@@ -692,7 +690,7 @@ function CampaignGroup({
           </div>
         ) : null}
         {isOpen && campaign.goals.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-white/45">
+          <p className="rounded-xl border border-dashed border-black/60 bg-white/[0.025] px-3 py-3 text-xs text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
             No Goals in this Campaign yet.
           </p>
         ) : null}
@@ -719,14 +717,14 @@ function GoalRankRow({
       className={cn(
         "min-w-0 rounded-2xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
         nested
-          ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)]"
-          : "border-white/[0.07] bg-[#0D0E10] shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
+          ? "border-black/60 bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_0_18px_rgba(255,255,255,0.012),inset_0_-12px_20px_rgba(0,0,0,0.16)]"
+          : "border-black/60 bg-white/[0.035] shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.18)]",
         isCompleted ? "opacity-[0.82]" : ""
       )}
     >
       <div className="flex items-center gap-2 px-2.5 py-2.5 sm:gap-2.5 sm:px-3">
         {identity ? (
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-sm">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_-10px_16px_rgba(0,0,0,0.22)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-sm">
             <span
               aria-hidden
               className="inline-flex items-center justify-center leading-none"
@@ -739,7 +737,7 @@ function GoalRankRow({
           <p
             className={cn(
               "truncate text-[13px] font-semibold leading-tight sm:text-sm",
-              isCompleted ? "text-white/68" : "text-white"
+              isCompleted ? "text-zinc-500" : "text-white/82"
             )}
             title={goal.name}
           >
@@ -747,7 +745,7 @@ function GoalRankRow({
           </p>
         </div>
         {typeof goal.globalRank === "number" ? (
-          <span className="shrink-0 rounded-full border border-white/8 bg-black/25 px-2 py-0.5 text-[10px] font-semibold leading-none text-white/58 sm:text-[11px]">
+          <span className="shrink-0 rounded-full border border-black/60 bg-black/25 px-2 py-0.5 text-[10px] font-semibold leading-none text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:text-[11px]">
             #{goal.globalRank}
           </span>
         ) : null}
