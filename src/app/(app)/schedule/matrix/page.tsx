@@ -3375,11 +3375,11 @@ function MatrixGridCarousel({
         )}
       >
         {isSmallCardDensity ? (
-          <List className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        ) : isRowCardDensity ? (
-          <Grid2x2 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        ) : (
           <Grid3x3 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+        ) : isRowCardDensity ? (
+          <List className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+        ) : (
+          <Grid2x2 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
         )}
       </button>
     </>

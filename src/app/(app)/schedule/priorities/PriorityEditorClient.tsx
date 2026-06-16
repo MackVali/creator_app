@@ -17,6 +17,7 @@ import {
   PointerSensor,
   TouchSensor,
   type DragEndEvent,
+  useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -31,13 +32,18 @@ import { ChevronDown, GripVertical } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
+  type GlobalPriorityRoadmapItem,
   type MonumentRoadmapPriority,
+  PRIORITY_ORDER,
+  type PriorityBucketId,
   type RoadmapPriorityCampaign,
   type RoadmapPriorityGoal,
+  sortGlobalPriorityItems,
 } from "./utils";
 
 interface PriorityEditorClientProps {
   initialRoadmaps: MonumentRoadmapPriority[];
+  initialGlobalPriorityItems: GlobalPriorityRoadmapItem[];
   initialError?: string | null;
 }
 
@@ -60,18 +66,40 @@ type MonumentPriorityRpcClient = NonNullable<ReturnType<typeof getSupabaseBrowse
   ): Promise<{ error: { message?: string } | null }>;
 };
 
+type GlobalPriorityOrderPayloadItem = {
+  id: string;
+  type: "goal" | "campaign";
+  priority: PriorityBucketId;
+};
+
+type GlobalPriorityRpcClient = NonNullable<ReturnType<typeof getSupabaseBrowser>> & {
+  rpc(
+    fn: "save_global_priority_order",
+    args: { p_items: GlobalPriorityOrderPayloadItem[] }
+  ): Promise<{ error: { message?: string } | null }>;
+};
+
+const GLOBAL_PRIORITY_BUCKET_PREFIX = "global-priority-bucket:";
+
 export default function PriorityEditorClient({
   initialRoadmaps,
+  initialGlobalPriorityItems,
   initialError = null,
 }: PriorityEditorClientProps) {
   const router = useRouter();
   const [roadmaps, setRoadmaps] = useState(initialRoadmaps);
+  const [globalPriorityItems, setGlobalPriorityItems] = useState(
+    initialGlobalPriorityItems
+  );
   const [focusedRoadmapId, setFocusedRoadmapId] = useState(
     initialRoadmaps[0]?.id ?? ""
   );
   const [error, setError] = useState<string | null>(initialError);
   const [monumentOrderError, setMonumentOrderError] = useState<string | null>(null);
+  const [globalPriorityError, setGlobalPriorityError] = useState<string | null>(null);
   const [isSavingMonumentOrder, setIsSavingMonumentOrder] = useState(false);
+  const [isSavingGlobalPriorityOrder, setIsSavingGlobalPriorityOrder] =
+    useState(false);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -82,13 +110,14 @@ export default function PriorityEditorClient({
 
   useEffect(() => {
     setRoadmaps(initialRoadmaps);
+    setGlobalPriorityItems(initialGlobalPriorityItems);
     setFocusedRoadmapId((current) =>
       initialRoadmaps.some((roadmap) => roadmap.id === current)
         ? current
         : initialRoadmaps[0]?.id ?? ""
     );
     setError(initialError);
-  }, [initialRoadmaps, initialError]);
+  }, [initialRoadmaps, initialGlobalPriorityItems, initialError]);
 
   const monumentRows = useMemo(() => buildMonumentPriorityRows(roadmaps), [roadmaps]);
   const sensors = useSensors(
@@ -158,6 +187,69 @@ export default function PriorityEditorClient({
       }
     },
     [monumentRows, roadmaps, router]
+  );
+
+  const handleGlobalPriorityDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const activeData = active.data.current as
+        | { item?: GlobalPriorityRoadmapItem }
+        | undefined;
+      const draggedItem = activeData?.item;
+      if (!draggedItem) return;
+
+      const overData = over.data.current as
+        | { bucket?: PriorityBucketId; item?: GlobalPriorityRoadmapItem }
+        | undefined;
+      const overBucket =
+        overData?.bucket ??
+        overData?.item?.priority ??
+        parseGlobalPriorityBucketId(String(over.id));
+      if (!overBucket) return;
+
+      const previousItems = globalPriorityItems;
+      const nextItems = moveGlobalPriorityItem(
+        previousItems,
+        draggedItem,
+        overBucket,
+        overData?.item
+      );
+      if (globalPriorityOrdersMatch(previousItems, nextItems)) return;
+      const payload = buildGlobalPriorityOrderPayload(nextItems);
+
+      setGlobalPriorityError(null);
+      setGlobalPriorityItems(nextItems);
+
+      const supabase = getSupabaseBrowser() as GlobalPriorityRpcClient | null;
+      if (!supabase) {
+        setGlobalPriorityItems(previousItems);
+        setGlobalPriorityError("Unable to save priority order.");
+        return;
+      }
+
+      setIsSavingGlobalPriorityOrder(true);
+      try {
+        const { error: saveError } = await supabase.rpc(
+          "save_global_priority_order",
+          { p_items: payload }
+        );
+
+        if (saveError) {
+          throw saveError;
+        }
+
+        router.refresh();
+      } catch (caught) {
+        console.error("Failed to save global priority item", caught);
+        setGlobalPriorityItems(previousItems);
+        setGlobalPriorityError("Could not save priority order.");
+      } finally {
+        setIsSavingGlobalPriorityOrder(false);
+      }
+    },
+    [globalPriorityItems, router]
   );
 
   const releaseSuppressedRoadmapClick = useCallback((delay: number) => {
@@ -330,6 +422,16 @@ export default function PriorityEditorClient({
           </section>
         ) : null}
 
+        {globalPriorityItems.length > 0 ? (
+          <GlobalPriorityRoadmap
+            items={globalPriorityItems}
+            error={globalPriorityError}
+            isSaving={isSavingGlobalPriorityOrder}
+            sensors={sensors}
+            onDragEnd={handleGlobalPriorityDragEnd}
+          />
+        ) : null}
+
         <section className="space-y-3">
           <div
             ref={scrollerRef}
@@ -349,6 +451,413 @@ export default function PriorityEditorClient({
         </section>
       </div>
     </main>
+  );
+}
+
+function parseGlobalPriorityBucketId(value: string): PriorityBucketId | null {
+  if (!value.startsWith(GLOBAL_PRIORITY_BUCKET_PREFIX)) return null;
+  const bucket = value.slice(GLOBAL_PRIORITY_BUCKET_PREFIX.length);
+  return PRIORITY_ORDER.includes(bucket as PriorityBucketId)
+    ? (bucket as PriorityBucketId)
+    : null;
+}
+
+function getGlobalPriorityItemDragId(item: GlobalPriorityRoadmapItem) {
+  return `global-priority-item:${item.type}:${item.id}`;
+}
+
+function isSameGlobalPriorityItem(
+  a: Pick<GlobalPriorityRoadmapItem, "id" | "type">,
+  b: Pick<GlobalPriorityRoadmapItem, "id" | "type">
+) {
+  return a.type === b.type && a.id === b.id;
+}
+
+function assignGlobalPriorityOrders(
+  items: GlobalPriorityRoadmapItem[]
+): GlobalPriorityRoadmapItem[] {
+  const nextOrderByPriority = new Map<PriorityBucketId, number>();
+
+  return items.map((item) => {
+    const nextOrder = (nextOrderByPriority.get(item.priority) ?? 0) + 1;
+    nextOrderByPriority.set(item.priority, nextOrder);
+    return { ...item, priorityOrder: nextOrder };
+  });
+}
+
+function buildGlobalPriorityOrderPayload(
+  items: GlobalPriorityRoadmapItem[]
+): GlobalPriorityOrderPayloadItem[] {
+  const seenItems = new Set<string>();
+  const payload: GlobalPriorityOrderPayloadItem[] = [];
+
+  for (const item of items) {
+    const itemIds =
+      item.type === "campaign" && item.sourceIds && item.sourceIds.length > 0
+        ? item.sourceIds
+        : [item.id];
+
+    for (const itemId of itemIds) {
+      const itemKey = `${item.type}:${itemId}`;
+      if (seenItems.has(itemKey)) continue;
+      seenItems.add(itemKey);
+      payload.push({
+        id: itemId,
+        type: item.type,
+        priority: item.priority,
+      });
+    }
+  }
+
+  return payload;
+}
+
+function moveGlobalPriorityItem(
+  items: GlobalPriorityRoadmapItem[],
+  draggedItem: GlobalPriorityRoadmapItem,
+  targetPriority: PriorityBucketId,
+  overItem?: GlobalPriorityRoadmapItem
+): GlobalPriorityRoadmapItem[] {
+  const sortedItems = sortGlobalPriorityItems(items);
+  const buckets = new Map<PriorityBucketId, GlobalPriorityRoadmapItem[]>(
+    PRIORITY_ORDER.map((priority) => [
+      priority,
+      sortedItems.filter((item) => item.priority === priority),
+    ])
+  );
+  const currentItem =
+    sortedItems.find((item) => isSameGlobalPriorityItem(item, draggedItem)) ??
+    draggedItem;
+  const currentBucket = buckets.get(currentItem.priority) ?? [];
+
+  if (
+    overItem &&
+    currentItem.priority === targetPriority &&
+    overItem.priority === targetPriority
+  ) {
+    const oldIndex = currentBucket.findIndex((item) =>
+      isSameGlobalPriorityItem(item, currentItem)
+    );
+    const newIndex = currentBucket.findIndex((item) =>
+      isSameGlobalPriorityItem(item, overItem)
+    );
+
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
+      return sortedItems;
+    }
+
+    buckets.set(
+      targetPriority,
+      arrayMove(currentBucket, oldIndex, newIndex)
+    );
+    return assignGlobalPriorityOrders(
+      PRIORITY_ORDER.flatMap((priority) => buckets.get(priority) ?? [])
+    );
+  }
+
+  for (const priority of PRIORITY_ORDER) {
+    buckets.set(
+      priority,
+      (buckets.get(priority) ?? []).filter(
+        (item) => !isSameGlobalPriorityItem(item, currentItem)
+      )
+    );
+  }
+
+  const targetItems = buckets.get(targetPriority) ?? [];
+  const movedItem = { ...currentItem, priority: targetPriority };
+
+  if (overItem && overItem.priority === targetPriority) {
+    const overIndex = targetItems.findIndex((item) =>
+      isSameGlobalPriorityItem(item, overItem)
+    );
+    targetItems.splice(overIndex >= 0 ? overIndex : targetItems.length, 0, movedItem);
+  } else {
+    targetItems.push(movedItem);
+  }
+
+  buckets.set(targetPriority, targetItems);
+
+  return assignGlobalPriorityOrders(
+    PRIORITY_ORDER.flatMap((priority) => buckets.get(priority) ?? [])
+  );
+}
+
+function globalPriorityOrdersMatch(
+  previousItems: GlobalPriorityRoadmapItem[],
+  nextItems: GlobalPriorityRoadmapItem[]
+) {
+  const previous = sortGlobalPriorityItems(previousItems);
+  if (previous.length !== nextItems.length) return false;
+
+  return previous.every((item, index) => {
+    const nextItem = nextItems[index];
+    return (
+      nextItem &&
+      isSameGlobalPriorityItem(item, nextItem) &&
+      item.priority === nextItem.priority &&
+      item.priorityOrder === nextItem.priorityOrder
+    );
+  });
+}
+
+function GlobalPriorityRoadmap({
+  items,
+  error,
+  isSaving,
+  sensors,
+  onDragEnd,
+}: {
+  items: GlobalPriorityRoadmapItem[];
+  error: string | null;
+  isSaving: boolean;
+  sensors: ReturnType<typeof useSensors>;
+  onDragEnd: (event: DragEndEvent) => void;
+}) {
+  const [openCampaignIds, setOpenCampaignIds] = useState<Record<string, boolean>>(
+    {}
+  );
+  const itemsByPriority = useMemo(() => {
+    const grouped = new Map<PriorityBucketId, GlobalPriorityRoadmapItem[]>(
+      PRIORITY_ORDER.map((priority) => [priority, []])
+    );
+
+    for (const item of sortGlobalPriorityItems(items)) {
+      grouped.get(item.priority)?.push(item);
+    }
+
+    return grouped;
+  }, [items]);
+  const handleToggleCampaign = useCallback((campaignId: string) => {
+    setOpenCampaignIds((current) => ({
+      ...current,
+      [campaignId]: !current[campaignId],
+    }));
+  }, []);
+
+  return (
+    <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+      <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
+        {isSaving ? (
+          <div className="mb-2 flex justify-end px-1">
+            <span className="text-[11px] font-medium text-white/35">Saving</span>
+          </div>
+        ) : null}
+        {error ? <p className="mb-2 px-1 text-xs text-red-200/85">{error}</p> : null}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
+          <div className="space-y-3">
+            {PRIORITY_ORDER.map((priority) => {
+              const bucketItems = itemsByPriority.get(priority) ?? [];
+
+              return (
+                <GlobalPriorityBucket
+                  key={priority}
+                  priority={priority}
+                  items={bucketItems}
+                  openCampaignIds={openCampaignIds}
+                  onToggleCampaign={handleToggleCampaign}
+                />
+              );
+            })}
+          </div>
+        </DndContext>
+      </div>
+    </section>
+  );
+}
+
+function GlobalPriorityBucket({
+  priority,
+  items,
+  openCampaignIds,
+  onToggleCampaign,
+}: {
+  priority: PriorityBucketId;
+  items: GlobalPriorityRoadmapItem[];
+  openCampaignIds: Record<string, boolean>;
+  onToggleCampaign: (campaignId: string) => void;
+}) {
+  const bucketId = `${GLOBAL_PRIORITY_BUCKET_PREFIX}${priority}`;
+  const { setNodeRef, isOver } = useDroppable({
+    id: bucketId,
+    data: { bucket: priority },
+  });
+
+  return (
+    <div ref={setNodeRef} className="space-y-1.5">
+      <p className="px-1 text-[10px] font-semibold uppercase leading-none tracking-normal text-zinc-600">
+        {priority}
+      </p>
+      <SortableContext
+        items={items.map(getGlobalPriorityItemDragId)}
+        strategy={verticalListSortingStrategy}
+      >
+        <div
+          className={cn(
+            "min-h-8 overflow-hidden rounded-[16px] border border-black/60 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+            isOver ? "bg-white/[0.035]" : ""
+          )}
+        >
+          {items.map((item) => (
+            <SortableGlobalPriorityItem
+              key={`${item.type}:${item.id}`}
+              item={item}
+              isOpen={
+                item.type === "campaign" ? openCampaignIds[item.id] ?? false : false
+              }
+              onToggle={() => onToggleCampaign(item.id)}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </div>
+  );
+}
+
+function SortableGlobalPriorityItem({
+  item,
+  isOpen,
+  onToggle,
+}: {
+  item: GlobalPriorityRoadmapItem;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: getGlobalPriorityItemDragId(item),
+    data: { item, bucket: item.priority },
+  });
+  const identity =
+    item.emoji?.trim() ||
+    item.monumentEmoji?.trim() ||
+    getInitials(item.name) ||
+    (item.type === "campaign" ? "◇" : "◆");
+  const globalRank =
+    item.type === "goal" &&
+    typeof item.globalRank === "number" &&
+    Number.isFinite(item.globalRank) &&
+    item.globalRank > 0
+      ? item.globalRank
+      : null;
+  const isCampaign = item.type === "campaign";
+  const style: CSSProperties = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "border-b border-black/40 bg-white/[0.026] last:border-b-0",
+        isDragging ? "relative z-20 bg-white/[0.06] shadow-2xl shadow-black/50" : ""
+      )}
+    >
+      <div className="flex min-h-10 items-center gap-2 px-2 py-1.5 sm:px-2.5">
+        <button
+          type="button"
+          className="flex size-7 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg border border-black/60 bg-black/30 text-zinc-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition hover:bg-white/[0.045] hover:text-zinc-300 active:cursor-grabbing"
+          aria-label={`Move ${item.name} priority`}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-3.5" aria-hidden="true" />
+        </button>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+          {identity}
+        </span>
+        {isCampaign ? (
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            onClick={onToggle}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
+              {item.name}
+            </p>
+            <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-600">
+              {item.goals?.length ?? 0} Goal{item.goals?.length === 1 ? "" : "s"}
+            </span>
+            <ChevronDown
+              className={cn(
+                "size-3.5 shrink-0 text-zinc-600 transition-transform",
+                isOpen ? "rotate-180" : ""
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        ) : (
+          <>
+            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
+              {item.name}
+            </p>
+            {globalRank ? (
+              <span className="shrink-0 text-[11px] font-semibold leading-none text-zinc-600">
+                #{globalRank}
+              </span>
+            ) : null}
+          </>
+        )}
+      </div>
+      {isCampaign && isOpen ? (
+        <div className="border-t border-black/35 bg-black/20 px-2 pb-2 pt-1.5 sm:px-2.5">
+          {item.goals && item.goals.length > 0 ? (
+            <div className="ml-9 space-y-1">
+              {item.goals.map((goal) => (
+                <GlobalCampaignGoalRow key={goal.id} goal={goal} />
+              ))}
+            </div>
+          ) : (
+            <p className="ml-9 rounded-lg border border-dashed border-black/50 bg-white/[0.018] px-2.5 py-2 text-[11px] text-zinc-600">
+              No Goals in this Campaign yet.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GlobalCampaignGoalRow({ goal }: { goal: RoadmapPriorityGoal }) {
+  const identity = goal.emoji?.trim() || goal.monumentEmoji?.trim() || "";
+  const globalRank =
+    typeof goal.globalRank === "number" &&
+    Number.isFinite(goal.globalRank) &&
+    goal.globalRank > 0
+      ? goal.globalRank
+      : null;
+
+  return (
+    <div className="flex min-h-8 items-center gap-2 rounded-lg border border-black/45 bg-white/[0.018] px-2 py-1.5">
+      {identity ? (
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
+          {identity}
+        </span>
+      ) : null}
+      <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
+        {goal.name}
+      </p>
+      {globalRank ? (
+        <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-700">
+          #{globalRank}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -494,70 +1003,66 @@ function RoadmapCarouselCard({
         onFocus();
       }}
       className={cn(
-        "group h-[72vh] min-h-[30rem] min-w-[88vw] snap-center overflow-hidden rounded-[22px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] outline-none transition duration-200 sm:min-w-[24rem] sm:rounded-[24px] lg:min-w-[28rem]",
+        "group flex h-[72vh] min-h-[30rem] min-w-[88vw] snap-center flex-col overflow-hidden rounded-[22px] border-2 bg-[#040404] shadow-[0_24px_60px_-28px_rgba(0,0,0,0.95),0_10px_20px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition duration-200 sm:min-w-[24rem] lg:min-w-[28rem]",
         active
-          ? "opacity-100 ring-1 ring-white/[0.055]"
-          : "opacity-[0.78] hover:opacity-100 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_20px_52px_rgba(0,0,0,0.5)]"
+          ? "border-black opacity-100 ring-1 ring-black/80"
+          : "border-black/70 opacity-[0.78] hover:border-black/90 hover:opacity-100"
       )}
     >
-      <div className="relative flex h-full flex-col overflow-hidden rounded-[21px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[23px]">
-        <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(145deg,rgba(255,255,255,0.045),transparent_26%,rgba(255,255,255,0.018)_72%,rgba(0,0,0,0.32))]" />
-        <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/24 to-transparent" />
-        <div className="relative border-b border-black/40 bg-black/20 px-4 py-3.5 sm:px-5 sm:py-4">
-          <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold leading-tight text-white/82 sm:text-base">
-            {monumentEmoji ? (
-              <span
-                aria-hidden
-                className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-10px_16px_rgba(0,0,0,0.24)]"
-              >
-                {monumentEmoji}
-              </span>
-            ) : null}
-            <span className="min-w-0 truncate">{roadmap.monumentName}</span>
-          </h3>
-        </div>
+      <div className="border-b border-white/10 px-4 py-3.5 sm:px-5 sm:py-4">
+        <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold leading-tight text-white sm:text-base">
+          {monumentEmoji ? (
+            <span
+              aria-hidden
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            >
+              {monumentEmoji}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate">{roadmap.monumentName}</span>
+        </h3>
+      </div>
 
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          {roadmap.items.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center p-6 text-center">
-              <div className="max-w-[18rem] rounded-2xl border border-dashed border-black/60 bg-white/[0.025] px-5 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
-                <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-black/60 bg-white/[0.04] text-lg text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                  {identity}
-                </div>
-                <p className="mt-4 text-sm font-semibold text-white/82">
-                  No Roadmap Goals yet
-                </p>
-                <p className="mt-2 text-sm leading-6 text-zinc-500">
-                  Goals will appear here after they are assigned to this Monument Roadmap.
-                </p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {roadmap.items.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center p-6 text-center">
+            <div className="max-w-[18rem] rounded-2xl border border-dashed border-white/10 bg-white/[0.025] px-5 py-6">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-lg text-white/80">
+                {identity}
               </div>
+              <p className="mt-4 text-sm font-semibold text-white">
+                No Roadmap Goals yet
+              </p>
+              <p className="mt-2 text-sm leading-6 text-white/42">
+                Goals will appear here after they are assigned to this Monument Roadmap.
+              </p>
             </div>
-          ) : (
-            <div className="flex-1 space-y-[0.5px] overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
-              {roadmap.items.map((item) => {
-                if (item.type === "campaign") {
-                  return (
-                    <CampaignGroup
-                      key={item.id}
-                      campaign={item.campaign}
-                      monumentEmoji={monumentEmoji}
-                      isOpen={openCampaignIds[item.campaign.id] ?? false}
-                      onToggle={() => handleToggleCampaign(item.campaign.id)}
-                    />
-                  );
-                }
-
+          </div>
+        ) : (
+          <div className="flex-1 space-y-[0.5px] overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+            {roadmap.items.map((item) => {
+              if (item.type === "campaign") {
                 return (
-                  <GoalRankRow
+                  <CampaignGroup
                     key={item.id}
-                    goal={item.goal}
+                    campaign={item.campaign}
                     monumentEmoji={monumentEmoji}
+                    isOpen={openCampaignIds[item.campaign.id] ?? false}
+                    onToggle={() => handleToggleCampaign(item.campaign.id)}
                   />
                 );
-              })}
-            </div>
-          )}
-        </div>
+              }
+
+              return (
+                <GoalRankRow
+                  key={item.id}
+                  goal={item.goal}
+                  monumentEmoji={monumentEmoji}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </article>
   );
@@ -573,26 +1078,26 @@ function getCampaignStateClasses(state?: string | null): {
     case "PAUSED":
       return {
         shell:
-          "border-black/60 bg-white/[0.03] opacity-90 shadow-[0_16px_40px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-12px_20px_rgba(0,0,0,0.18)]",
-        countBadge: "border-black/60 bg-black/25 text-zinc-500",
-        title: "text-white/82",
-        description: "text-zinc-500",
+          "border-white/[0.06] bg-[#0D0E10] opacity-90 shadow-[0_16px_40px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
+        countBadge: "border-white/[0.07] bg-white/[0.035] text-white/48",
+        title: "text-white/88",
+        description: "text-white/42",
       };
     case "COMPLETED":
       return {
         shell:
-          "border-black/60 bg-white/[0.025] shadow-[0_14px_34px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-12px_20px_rgba(0,0,0,0.16)]",
-        countBadge: "border-black/60 bg-black/25 text-zinc-600",
-        title: "text-white/68",
-        description: "text-zinc-600",
+          "border-white/[0.055] bg-[#0B0C0D] shadow-[0_14px_34px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)]",
+        countBadge: "border-white/[0.06] bg-white/[0.03] text-white/40",
+        title: "text-white/76",
+        description: "text-white/38",
       };
     default:
       return {
         shell:
-          "border-black/60 bg-white/[0.035] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.18)]",
-        countBadge: "border-black/60 bg-black/25 text-zinc-400",
-        title: "text-white/82",
-        description: "text-zinc-400",
+          "border-white/[0.07] bg-[#101112] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)]",
+        countBadge: "border-white/[0.08] bg-white/[0.045] text-white/58",
+        title: "text-white",
+        description: "text-white/48",
       };
   }
 }
@@ -618,7 +1123,7 @@ function CampaignGroup({
         stateClasses.shell
       )}
     >
-      <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
       <div className="space-y-2 sm:space-y-3">
         <button
           type="button"
@@ -627,9 +1132,9 @@ function CampaignGroup({
           onKeyDown={(event) => {
             event.stopPropagation();
           }}
-          className="flex w-full items-start gap-2 rounded-xl text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15 sm:gap-2.5"
+          className="flex w-full items-start gap-2 rounded-xl text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/20 sm:gap-2.5"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[12px] font-semibold text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_-10px_16px_rgba(0,0,0,0.22)] sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[12px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm">
             {identity}
           </span>
           <div className="min-w-0 flex-1 space-y-1">
@@ -646,7 +1151,7 @@ function CampaignGroup({
                 </h4>
                 <span
                   className={cn(
-                    "shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-2 sm:py-1 sm:text-[10px]",
+                    "shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none sm:px-2 sm:py-1 sm:text-[10px]",
                     stateClasses.countBadge
                   )}
                 >
@@ -656,7 +1161,7 @@ function CampaignGroup({
               </div>
               <ChevronDown
                 className={cn(
-                  "mt-0.5 size-4 shrink-0 text-zinc-500 transition-transform",
+                  "mt-0.5 size-4 shrink-0 text-white/38 transition-transform",
                   isOpen ? "rotate-180" : ""
                 )}
                 aria-hidden="true"
@@ -675,8 +1180,8 @@ function CampaignGroup({
           </div>
         </button>
         {isOpen && campaign.goals.length > 0 ? (
-          <div className="relative overflow-hidden rounded-[16px] border border-black/60 bg-black/25 px-1 pb-1.5 pt-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
-            <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/[0.055] sm:inset-y-3.5 sm:left-2" />
+          <div className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[#030407] px-1 pb-1.5 pt-1 sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
+            <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/10 sm:inset-y-3.5 sm:left-2" />
             <div className="space-y-[0.5px] pt-1.5 sm:pt-3">
               {campaign.goals.map((goal) => (
                 <GoalRankRow
@@ -690,7 +1195,7 @@ function CampaignGroup({
           </div>
         ) : null}
         {isOpen && campaign.goals.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-black/60 bg-white/[0.025] px-3 py-3 text-xs text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+          <p className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-white/45">
             No Goals in this Campaign yet.
           </p>
         ) : null}
@@ -717,14 +1222,14 @@ function GoalRankRow({
       className={cn(
         "min-w-0 rounded-2xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
         nested
-          ? "border-black/60 bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_0_18px_rgba(255,255,255,0.012),inset_0_-12px_20px_rgba(0,0,0,0.16)]"
-          : "border-black/60 bg-white/[0.035] shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.18)]",
+          ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)]"
+          : "border-white/[0.07] bg-[#0D0E10] shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
         isCompleted ? "opacity-[0.82]" : ""
       )}
     >
       <div className="flex items-center gap-2 px-2.5 py-2.5 sm:gap-2.5 sm:px-3">
         {identity ? (
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_-10px_16px_rgba(0,0,0,0.22)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-sm">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-9 sm:w-9 sm:rounded-xl sm:text-sm">
             <span
               aria-hidden
               className="inline-flex items-center justify-center leading-none"
@@ -737,7 +1242,7 @@ function GoalRankRow({
           <p
             className={cn(
               "truncate text-[13px] font-semibold leading-tight sm:text-sm",
-              isCompleted ? "text-zinc-500" : "text-white/82"
+              isCompleted ? "text-white/68" : "text-white"
             )}
             title={goal.name}
           >
@@ -745,7 +1250,7 @@ function GoalRankRow({
           </p>
         </div>
         {typeof goal.globalRank === "number" ? (
-          <span className="shrink-0 rounded-full border border-black/60 bg-black/25 px-2 py-0.5 text-[10px] font-semibold leading-none text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:text-[11px]">
+          <span className="shrink-0 rounded-full border border-white/8 bg-black/25 px-2 py-0.5 text-[10px] font-semibold leading-none text-white/58 sm:text-[11px]">
             #{goal.globalRank}
           </span>
         ) : null}

@@ -38,6 +38,71 @@ export interface Database {
           user_id?: string;
         };
       };
+      campaigns: {
+        Row: {
+          id: string;
+          user_id: string;
+          roadmap_id: string | null;
+          primary_monument_id: string | null;
+          name: string;
+          description: string | null;
+          emoji: string | null;
+          priority_code:
+            | "ULTRA-CRITICAL"
+            | "CRITICAL"
+            | "HIGH"
+            | "MEDIUM"
+            | "LOW"
+            | "NO";
+          priority_order: number | null;
+          scheduling_state: string;
+          position: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          roadmap_id?: string | null;
+          primary_monument_id?: string | null;
+          name: string;
+          description?: string | null;
+          emoji?: string | null;
+          priority_code?:
+            | "ULTRA-CRITICAL"
+            | "CRITICAL"
+            | "HIGH"
+            | "MEDIUM"
+            | "LOW"
+            | "NO";
+          priority_order?: number | null;
+          scheduling_state?: string;
+          position?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          roadmap_id?: string | null;
+          primary_monument_id?: string | null;
+          name?: string;
+          description?: string | null;
+          emoji?: string | null;
+          priority_code?:
+            | "ULTRA-CRITICAL"
+            | "CRITICAL"
+            | "HIGH"
+            | "MEDIUM"
+            | "LOW"
+            | "NO";
+          priority_order?: number | null;
+          scheduling_state?: string;
+          position?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       habits: {
         Row: {
           id: string;
@@ -1668,6 +1733,12 @@ export interface Database {
       save_monument_priority_order: {
         Args: {
           p_monument_ids: string[];
+        };
+        Returns: undefined;
+      };
+      save_global_priority_order: {
+        Args: {
+          p_items: Json;
         };
         Returns: undefined;
       };
