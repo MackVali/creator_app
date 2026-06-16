@@ -4,17 +4,20 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { getSupabaseServer } from "@/lib/supabase";
 import PriorityEditorClient from "./PriorityEditorClient";
 import {
+  normalizeHabitBucket,
   compareRankValues,
+  sortHabitRoadmapItems,
+  normalizeCampaignPriority,
   normalizePriority,
   parseGlobalRank,
   PRIORITY_ORDER,
   sortGlobalPriorityItems,
-  sortRoadmapItems,
+  type RoadmapFilterOptionData,
   type GlobalPriorityRoadmapItem,
-  type MonumentRoadmapPriority,
+  type RoadmapHabitItem,
   type RoadmapPriorityCampaign,
   type RoadmapPriorityGoal,
-  type RoadmapPriorityItem,
+  type UserPriorityFilterOptionData,
 } from "./utils";
 
 export const runtime = "nodejs";
@@ -23,22 +26,6 @@ type AuthUserForAdmin = {
   user_metadata?: Record<string, unknown>;
   app_metadata?: Record<string, unknown>;
 } | null;
-
-type MonumentRow = {
-  id: string;
-  title?: string | null;
-  emoji?: string | null;
-  priority_rank?: number | string | null;
-  created_at?: string | null;
-};
-
-type RoadmapRow = {
-  id: string;
-  title?: string | null;
-  emoji?: string | null;
-  monument_id?: string | null;
-  created_at?: string | null;
-};
 
 type GoalRow = {
   id: string;
@@ -54,17 +41,8 @@ type GoalRow = {
   global_rank?: number | string | null;
   priority_rank?: number | string | null;
   created_at?: string | null;
-  monument?: { emoji?: string | null } | null;
-};
-
-type RoadmapItemRow = {
-  id: string;
-  roadmap_id: string;
-  item_type?: string | null;
-  position?: number | null;
-  campaign_id?: string | null;
-  goal_id?: string | null;
-  created_at?: string | null;
+  monument?: { id?: string | null; title?: string | null; emoji?: string | null } | null;
+  projects?: GoalProjectRow[] | null;
 };
 
 type CampaignRow = {
@@ -81,6 +59,56 @@ type CampaignRow = {
   created_at?: string | null;
 };
 
+type GoalProjectRow = {
+  tasks?: GoalProjectTaskSkillRow[] | null;
+  project_skills?: GoalProjectSkillRow[] | null;
+};
+
+type GoalProjectTaskSkillRow = {
+  skill_id?: string | null;
+  skills?: SkillMetadataRow | null;
+};
+
+type GoalProjectSkillRow = {
+  skill_id?: string | null;
+  skills?: SkillMetadataRow | null;
+};
+
+type SkillMetadataRow = {
+  id?: string | null;
+  name?: string | null;
+  icon?: string | null;
+  monument_id?: string | null;
+  sort_order?: number | string | null;
+  created_at?: string | null;
+};
+
+type HabitGoalMetadataRow = {
+  id?: string | null;
+  monument_id?: string | null;
+};
+
+type HabitRow = {
+  id: string;
+  name?: string | null;
+  habit_type?: string | null;
+  global_order?: number | string | null;
+  skill_id?: string | null;
+  goal_id?: string | null;
+  routine_id?: string | null;
+  routine_position?: number | string | null;
+  duration_minutes?: number | null;
+  energy?: string | null;
+  recurrence_mode?: string | null;
+  current_streak_days?: number | null;
+  last_completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  circle_id?: string | null;
+  skill?: SkillMetadataRow | SkillMetadataRow[] | null;
+  goal?: HabitGoalMetadataRow | HabitGoalMetadataRow[] | null;
+};
+
 type CampaignGoalRow = {
   campaign_id: string;
   goal_id: string;
@@ -95,6 +123,13 @@ type GlobalPriorityCampaignCandidate = GlobalPriorityRoadmapItem & {
 type GlobalPriorityCampaignGroup = {
   candidates: GlobalPriorityCampaignCandidate[];
   goalIds: Set<string>;
+};
+
+type MonumentRow = {
+  id: string;
+  title?: string | null;
+  emoji?: string | null;
+  created_at?: string | null;
 };
 
 function userIsAdmin(user: AuthUserForAdmin) {
@@ -132,34 +167,137 @@ function compareText(a?: string | null, b?: string | null) {
   return (a ?? "").localeCompare(b ?? "");
 }
 
-function getMonumentName(monument: MonumentRow) {
-  return (monument.title ?? "").trim() || "Untitled Monument";
+function createUserPriorityFilterOption(
+  id?: string | null,
+  name?: string | null,
+  icon?: string | null
+): UserPriorityFilterOptionData | null {
+  const optionId = (id ?? "").trim();
+  if (!optionId) return null;
+
+  return {
+    id: optionId,
+    name: (name ?? "").trim() || optionId,
+    icon: icon?.trim() || null,
+  };
 }
 
-function compareMonumentsByPriority(a: MonumentRow, b: MonumentRow) {
-  const aRank = parseGlobalRank(a.priority_rank);
-  const bRank = parseGlobalRank(b.priority_rank);
-  const rankDelta = compareRankValues(aRank, bRank);
-  if (rankDelta !== 0) {
-    return rankDelta;
-  }
-
-  if (typeof aRank === "number" && typeof bRank === "number") {
-    return 0;
-  }
-
-  const createdDelta = compareText(a.created_at, b.created_at);
-  if (createdDelta !== 0) return createdDelta;
-
-  return compareText(a.id, b.id);
+function createMonumentFilterOption(
+  monument: MonumentRow
+): UserPriorityFilterOptionData | null {
+  return createUserPriorityFilterOption(
+    monument.id,
+    monument.title ?? null,
+    monument.emoji ?? null
+  );
 }
 
-function normalizeGoal(row: GoalRow): RoadmapPriorityGoal {
+function createSkillFilterOption(
+  skill: SkillMetadataRow
+): UserPriorityFilterOptionData | null {
+  return createUserPriorityFilterOption(
+    skill.id ?? null,
+    skill.name ?? null,
+    skill.icon ?? null
+  );
+}
+
+function normalizeMetadataKey(value?: string | null) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function mergeFilterOptionData(
+  optionsByKey: Map<string, RoadmapFilterOptionData>,
+  option: RoadmapFilterOptionData | null
+) {
+  const id = (option?.id ?? "").trim();
+  const name = (option?.name ?? "").trim();
+  if (!id && !name) return;
+
+  const key = normalizeMetadataKey(id || name);
+  const existing = optionsByKey.get(key);
+  optionsByKey.set(key, {
+    id: (existing?.id ?? id) || null,
+    name: (existing?.name ?? name) || null,
+    icon: existing?.icon ?? option?.icon ?? null,
+  });
+}
+
+function collectGoalSkillIds(row: GoalRow) {
+  const skillIds = new Set<string>();
+
+  for (const project of row.projects ?? []) {
+    for (const task of project.tasks ?? []) {
+      if (task.skill_id) {
+        skillIds.add(task.skill_id);
+      }
+    }
+
+    for (const projectSkill of project.project_skills ?? []) {
+      if (projectSkill.skill_id) {
+        skillIds.add(projectSkill.skill_id);
+      }
+    }
+  }
+
+  return Array.from(skillIds);
+}
+
+function collectGoalSkills(
+  row: GoalRow,
+  skillsById: Map<string, SkillMetadataRow> = new Map()
+): RoadmapFilterOptionData[] {
+  const optionsByKey = new Map<string, RoadmapFilterOptionData>();
+
+  for (const project of row.projects ?? []) {
+    for (const task of project.tasks ?? []) {
+      const skill = task.skill_id ? skillsById.get(task.skill_id) : undefined;
+      mergeFilterOptionData(optionsByKey, {
+        id: task.skill_id ?? task.skills?.id ?? null,
+        name: skill?.name ?? task.skills?.name ?? null,
+        icon: skill?.icon ?? task.skills?.icon ?? null,
+      });
+    }
+
+    for (const projectSkill of project.project_skills ?? []) {
+      const skill = projectSkill.skill_id
+        ? skillsById.get(projectSkill.skill_id)
+        : undefined;
+      mergeFilterOptionData(optionsByKey, {
+        id: projectSkill.skill_id ?? projectSkill.skills?.id ?? null,
+        name: skill?.name ?? projectSkill.skills?.name ?? null,
+        icon: skill?.icon ?? projectSkill.skills?.icon ?? null,
+      });
+    }
+  }
+
+  return Array.from(optionsByKey.values()).sort((a, b) =>
+    (a.name ?? a.id ?? "").localeCompare(b.name ?? b.id ?? "", undefined, {
+      sensitivity: "base",
+    })
+  );
+}
+
+function firstRelatedRow<T>(value?: T | T[] | null): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return value ?? null;
+}
+
+function normalizeGoal(
+  row: GoalRow,
+  skillsById: Map<string, SkillMetadataRow> = new Map()
+): RoadmapPriorityGoal {
   return {
     id: row.id,
     name: (row.name ?? "").trim() || "Untitled Goal",
     emoji: row.emoji ?? null,
+    monumentId: row.monument_id ?? row.monument?.id ?? null,
+    monumentName: row.monument?.title ?? null,
+    monumentIcon: row.monument?.emoji ?? null,
     monumentEmoji: row.monument?.emoji ?? null,
+    skills: collectGoalSkills(row, skillsById),
     priority: normalizePriority(row.priority_code ?? row.priority),
     status: row.status ?? null,
     globalRank: parseGlobalRank(row.global_rank),
@@ -169,12 +307,52 @@ function normalizeGoal(row: GoalRow): RoadmapPriorityGoal {
   };
 }
 
+function normalizeHabit(
+  row: HabitRow,
+  monumentsById: Map<string, MonumentRow> = new Map()
+): RoadmapHabitItem {
+  const skill = firstRelatedRow(row.skill);
+  const goal = firstRelatedRow(row.goal);
+  const skillMonumentId = skill?.monument_id ?? null;
+  const goalMonumentId = goal?.monument_id ?? null;
+  const monumentId = skillMonumentId ?? goalMonumentId;
+  const monument = monumentId ? monumentsById.get(monumentId) : undefined;
+
+  return {
+    id: row.id,
+    name: (row.name ?? "").trim() || "Untitled Habit",
+    habitType: normalizeHabitBucket(row.habit_type),
+    rawHabitType: row.habit_type ?? null,
+    globalOrder: parseGlobalRank(row.global_order),
+    skillId: row.skill_id ?? skill?.id ?? null,
+    skillName: skill?.name ?? null,
+    skillIcon: skill?.icon ?? null,
+    skillMonumentId,
+    goalId: row.goal_id ?? goal?.id ?? null,
+    goalMonumentId,
+    monumentId,
+    monumentName: monument?.title ?? null,
+    monumentIcon: monument?.emoji ?? null,
+    monumentEmoji: monument?.emoji ?? null,
+    routineId: row.routine_id ?? null,
+    routinePosition: parseGlobalRank(row.routine_position),
+    durationMinutes: row.duration_minutes ?? null,
+    energy: row.energy ?? null,
+    recurrenceMode: row.recurrence_mode ?? null,
+    currentStreakDays: row.current_streak_days ?? null,
+    lastCompletedAt: row.last_completed_at ?? null,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
 function normalizeCampaignGoal(
   row: GoalRow,
-  campaignGoal: CampaignGoalRow
+  campaignGoal: CampaignGoalRow,
+  skillsById: Map<string, SkillMetadataRow> = new Map()
 ): RoadmapPriorityGoal {
   return {
-    ...normalizeGoal(row),
+    ...normalizeGoal(row, skillsById),
     campaignPosition: parseGlobalRank(campaignGoal.position),
     campaignGoalCreatedAt: campaignGoal.created_at ?? null,
   };
@@ -182,48 +360,26 @@ function normalizeCampaignGoal(
 
 function normalizeCampaign(
   campaign: CampaignRow,
-  goals: RoadmapPriorityGoal[] = []
+  goals: RoadmapPriorityGoal[] = [],
+  monumentsById: Map<string, MonumentRow> = new Map()
 ): RoadmapPriorityCampaign {
+  const monument = campaign.primary_monument_id
+    ? monumentsById.get(campaign.primary_monument_id)
+    : undefined;
+
   return {
     id: campaign.id,
     name: (campaign.name ?? "").trim() || "Untitled Campaign",
     emoji: campaign.emoji ?? null,
     description: campaign.description ?? null,
-    priority: normalizePriority(campaign.priority_code),
+    monumentId: campaign.primary_monument_id ?? null,
+    monumentName: monument?.title ?? null,
+    monumentIcon: monument?.emoji ?? null,
+    priority: normalizeCampaignPriority(campaign.priority_code),
     schedulingState: campaign.scheduling_state ?? null,
     position: parseGlobalRank(campaign.position),
     goals,
   };
-}
-
-function goalBelongsToRoadmap(
-  goal: GoalRow | undefined,
-  roadmap: RoadmapRow,
-  monumentId: string
-) {
-  if (!goal) return false;
-  return goal.roadmap_id === roadmap.id || goal.monument_id === monumentId;
-}
-
-function sortGoalsForRoadmap(goals: GoalRow[]) {
-  return [...goals].sort((a, b) => {
-    const priorityRankDelta = compareRankValues(
-      parseGlobalRank(a.priority_rank),
-      parseGlobalRank(b.priority_rank)
-    );
-    if (priorityRankDelta !== 0) return priorityRankDelta;
-
-    const globalRankDelta = compareRankValues(
-      parseGlobalRank(a.global_rank),
-      parseGlobalRank(b.global_rank)
-    );
-    if (globalRankDelta !== 0) return globalRankDelta;
-
-    const createdDelta = compareText(a.created_at, b.created_at);
-    if (createdDelta !== 0) return createdDelta;
-
-    return compareText(a.name, b.name);
-  });
 }
 
 function sortCampaignNestedGoals(
@@ -259,221 +415,18 @@ function sortCampaignNestedGoals(
   });
 }
 
-function buildRoadmapCards({
-  monuments,
-  roadmaps,
-  goals,
-  roadmapItems,
-  campaigns,
-  campaignGoals,
-}: {
-  monuments: MonumentRow[];
-  roadmaps: RoadmapRow[];
-  goals: GoalRow[];
-  roadmapItems: RoadmapItemRow[];
-  campaigns: CampaignRow[];
-  campaignGoals: CampaignGoalRow[];
-}): MonumentRoadmapPriority[] {
-  const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
-  const roadmapsByMonumentId = new Map<string, RoadmapRow[]>();
-  const itemsByRoadmapId = new Map<string, RoadmapItemRow[]>();
-  const campaignById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
-  const campaignGoalsByCampaignId = new Map<string, CampaignGoalRow[]>();
-
-  for (const roadmap of roadmaps) {
-    if (!roadmap.monument_id) continue;
-    const existing = roadmapsByMonumentId.get(roadmap.monument_id) ?? [];
-    existing.push(roadmap);
-    roadmapsByMonumentId.set(roadmap.monument_id, existing);
-  }
-
-  for (const item of roadmapItems) {
-    const existing = itemsByRoadmapId.get(item.roadmap_id) ?? [];
-    existing.push(item);
-    itemsByRoadmapId.set(item.roadmap_id, existing);
-  }
-
-  for (const campaignGoal of campaignGoals) {
-    const existing = campaignGoalsByCampaignId.get(campaignGoal.campaign_id) ?? [];
-    existing.push(campaignGoal);
-    campaignGoalsByCampaignId.set(campaignGoal.campaign_id, existing);
-  }
-
-  for (const groupedRoadmaps of roadmapsByMonumentId.values()) {
-    groupedRoadmaps.sort((a, b) => {
-      const createdDelta = compareText(a.created_at, b.created_at);
-      if (createdDelta !== 0) return createdDelta;
-      return compareText(a.title, b.title);
-    });
-  }
-
-  for (const groupedItems of itemsByRoadmapId.values()) {
-    groupedItems.sort((a, b) => {
-      const aPosition = a.position ?? Number.POSITIVE_INFINITY;
-      const bPosition = b.position ?? Number.POSITIVE_INFINITY;
-      if (aPosition !== bPosition) return aPosition - bPosition;
-      const createdDelta = compareText(a.created_at, b.created_at);
-      if (createdDelta !== 0) return createdDelta;
-      return compareText(a.id, b.id);
-    });
-  }
-
-  for (const groupedCampaignGoals of campaignGoalsByCampaignId.values()) {
-    groupedCampaignGoals.sort((a, b) => {
-      const aPosition = a.position ?? Number.POSITIVE_INFINITY;
-      const bPosition = b.position ?? Number.POSITIVE_INFINITY;
-      if (aPosition !== bPosition) return aPosition - bPosition;
-      const createdDelta = compareText(a.created_at, b.created_at);
-      if (createdDelta !== 0) return createdDelta;
-      return compareText(a.goal_id, b.goal_id);
-    });
-  }
-
-  const cards: MonumentRoadmapPriority[] = [];
-
-  for (const monument of [...monuments].sort(compareMonumentsByPriority)) {
-    const monumentId = monument.id;
-    const monumentRoadmaps = roadmapsByMonumentId.get(monumentId) ?? [];
-    const monumentPriorityRank = parseGlobalRank(monument.priority_rank);
-    const monumentName = getMonumentName(monument);
-
-    if (monumentRoadmaps.length === 0) {
-      cards.push({
-        id: `monument:${monumentId}:empty`,
-        monumentId,
-        monumentName,
-        monumentEmoji: monument.emoji ?? null,
-        monumentPriorityRank,
-        monumentCreatedAt: monument.created_at ?? null,
-        roadmapId: null,
-        roadmapTitle: null,
-        roadmapEmoji: null,
-        items: [],
-        goalCount: 0,
-        campaignCount: 0,
-      });
-      continue;
-    }
-
-    for (const roadmap of monumentRoadmaps) {
-      const nestedCampaignGoalIds = new Set<string>();
-      const existingItems = itemsByRoadmapId.get(roadmap.id) ?? [];
-
-      for (const item of existingItems) {
-        if (item.item_type?.toUpperCase() !== "CAMPAIGN" || !item.campaign_id) {
-          continue;
-        }
-        for (const campaignGoal of campaignGoalsByCampaignId.get(item.campaign_id) ?? []) {
-          nestedCampaignGoalIds.add(campaignGoal.goal_id);
-        }
-      }
-
-      const mixedItems: RoadmapPriorityItem[] = existingItems
-        .map((item, index): RoadmapPriorityItem | null => {
-          const position = item.position ?? index + 1;
-          const itemType = item.item_type?.toUpperCase();
-
-          if (itemType === "CAMPAIGN" && item.campaign_id) {
-            const campaign = campaignById.get(item.campaign_id);
-            if (!campaign) return null;
-
-            const campaignGoalsForCard = (campaignGoalsByCampaignId.get(campaign.id) ?? [])
-              .map((campaignGoal) => goalsById.get(campaignGoal.goal_id))
-              .filter((goal): goal is GoalRow =>
-                Boolean(goal) &&
-                !isCompletedGoal(goal?.status) &&
-                goalBelongsToRoadmap(goal, roadmap, monumentId)
-              );
-
-            if (campaignGoalsForCard.length === 0) return null;
-
-            const normalizedCampaign: RoadmapPriorityCampaign = {
-              ...normalizeCampaign(campaign, campaignGoalsForCard.map(normalizeGoal)),
-              position,
-            };
-
-            return {
-              id: item.id,
-              type: "campaign",
-              position,
-              campaign: normalizedCampaign,
-            };
-          }
-
-          if (itemType === "GOAL" && item.goal_id) {
-            if (nestedCampaignGoalIds.has(item.goal_id)) return null;
-            const goal = goalsById.get(item.goal_id);
-            if (
-              !goal ||
-              isCompletedGoal(goal.status) ||
-              !goalBelongsToRoadmap(goal, roadmap, monumentId)
-            ) {
-              return null;
-            }
-
-            return {
-              id: item.id,
-              type: "goal",
-              position,
-              goal: normalizeGoal(goal),
-            };
-          }
-
-          return null;
-        })
-        .filter((item): item is RoadmapPriorityItem => Boolean(item));
-
-      const items =
-        mixedItems.length > 0
-          ? sortRoadmapItems(mixedItems)
-          : sortGoalsForRoadmap(
-              goals.filter(
-                (goal) =>
-                  goal.roadmap_id === roadmap.id &&
-                  goal.monument_id === monumentId &&
-                  !isCompletedGoal(goal.status)
-              )
-            ).map((goal, index) => ({
-              id: `legacy-goal-${goal.id}`,
-              type: "goal" as const,
-              position: parseGlobalRank(goal.priority_rank) ?? index + 1,
-              goal: normalizeGoal(goal),
-            }));
-
-      const goalCount = items.reduce(
-        (count, item) =>
-          count + (item.type === "campaign" ? item.campaign.goals.length : 1),
-        0
-      );
-
-      cards.push({
-        id: `roadmap:${roadmap.id}`,
-        monumentId,
-        monumentName,
-        monumentEmoji: monument.emoji ?? null,
-        monumentPriorityRank,
-        monumentCreatedAt: monument.created_at ?? null,
-        roadmapId: roadmap.id,
-        roadmapTitle: (roadmap.title ?? "").trim() || "Roadmap",
-        roadmapEmoji: roadmap.emoji ?? null,
-        items,
-        goalCount,
-        campaignCount: items.filter((item) => item.type === "campaign").length,
-      });
-    }
-  }
-
-  return cards;
-}
-
 function buildGlobalPriorityItems({
   goals,
   campaigns,
   campaignGoals,
+  monumentsById,
+  skillsById,
 }: {
   goals: GoalRow[];
   campaigns: CampaignRow[];
   campaignGoals: CampaignGoalRow[];
+  monumentsById?: Map<string, MonumentRow>;
+  skillsById?: Map<string, SkillMetadataRow>;
 }): GlobalPriorityRoadmapItem[] {
   const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
   const campaignGoalIds = new Set<string>();
@@ -510,14 +463,18 @@ function buildGlobalPriorityItems({
       ) {
         continue;
       }
-      campaignNestedGoalsById.set(goal.id, normalizeCampaignGoal(goal, campaignGoal));
+      campaignNestedGoalsById.set(
+        goal.id,
+        normalizeCampaignGoal(goal, campaignGoal, skillsById)
+      );
     }
 
     if (campaignNestedGoalsById.size === 0) continue;
 
     const normalizedCampaign = normalizeCampaign(
       campaign,
-      sortCampaignNestedGoals(Array.from(campaignNestedGoalsById.values()))
+      sortCampaignNestedGoals(Array.from(campaignNestedGoalsById.values())),
+      monumentsById
     );
     const candidate: GlobalPriorityCampaignCandidate = {
       id: campaign.id,
@@ -526,6 +483,9 @@ function buildGlobalPriorityItems({
       normalizedName: normalizeGlobalPriorityCampaignName(normalizedCampaign.name),
       name: normalizedCampaign.name,
       emoji: normalizedCampaign.emoji,
+      monumentId: normalizedCampaign.monumentId,
+      monumentName: normalizedCampaign.monumentName,
+      monumentIcon: normalizedCampaign.monumentIcon,
       priority: normalizedCampaign.priority,
       priorityOrder: parseGlobalRank(campaign.priority_order),
       position: normalizedCampaign.position,
@@ -565,14 +525,18 @@ function buildGlobalPriorityItems({
         !goal.circle_id && !isCompletedGoal(goal.status) && !campaignGoalIds.has(goal.id)
     )
     .map((goal) => {
-      const normalizedGoal = normalizeGoal(goal);
+      const normalizedGoal = normalizeGoal(goal, skillsById);
 
       return {
         id: goal.id,
         type: "goal",
         name: normalizedGoal.name,
         emoji: normalizedGoal.emoji,
+        monumentId: normalizedGoal.monumentId,
+        monumentName: normalizedGoal.monumentName,
+        monumentIcon: normalizedGoal.monumentIcon,
         monumentEmoji: normalizedGoal.monumentEmoji,
+        skills: normalizedGoal.skills,
         priority: normalizedGoal.priority,
         priorityOrder: parseGlobalRank(goal.priority_order),
         globalRank: normalizedGoal.globalRank,
@@ -609,6 +573,17 @@ function mergeGlobalPriorityCampaignGoals(
   }
 
   return Array.from(goalsById.values());
+}
+
+function mergeRoadmapFilterOptions(
+  first?: RoadmapFilterOptionData[],
+  second?: RoadmapFilterOptionData[]
+) {
+  const optionsByKey = new Map<string, RoadmapFilterOptionData>();
+  for (const option of [...(first ?? []), ...(second ?? [])]) {
+    mergeFilterOptionData(optionsByKey, option);
+  }
+  return Array.from(optionsByKey.values());
 }
 
 function normalizeGlobalPriorityCampaignName(name: string) {
@@ -658,6 +633,14 @@ function mergeGlobalPriorityCampaignGroup(
     type: "campaign",
     name: preferredItem.name,
     emoji: preferredItem.emoji,
+    monumentId: preferredItem.monumentId,
+    monumentName: preferredItem.monumentName,
+    monumentIcon: preferredItem.monumentIcon,
+    skills: sortedCandidates.reduce<RoadmapFilterOptionData[]>(
+      (mergedOptions, candidate) =>
+        mergeRoadmapFilterOptions(mergedOptions, candidate.skills),
+      []
+    ),
     priority: preferredItem.priority,
     priorityOrder: preferredItem.priorityOrder,
     position: preferredItem.position,
@@ -728,65 +711,63 @@ export default async function PriorityEditorPage() {
 
   const userId = user.id;
 
-  const [
-    { data: monumentData, error: monumentError },
-    { data: roadmapData, error: roadmapError },
-    { data: goalData, error: goalError },
-  ] = await Promise.all([
-    supabase
-      .from("monuments")
-      .select("id,title,emoji,priority_rank,created_at")
-      .eq("user_id", userId)
-      .order("priority_rank", { ascending: true, nullsFirst: false }),
-    supabase
-      .from("roadmaps")
-      .select("id,title,emoji,monument_id,created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("goals")
-      .select(
-        "id,name,emoji,monument_id,roadmap_id,circle_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
-      )
-      .eq("user_id", userId),
-  ]);
+  const { data: allMonumentData, error: allMonumentError } = await supabase
+    .from("monuments")
+    .select("id,title,emoji,created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
 
-  if (monumentError) {
-    console.error("Failed to load monuments for priority editor", monumentError);
+  if (allMonumentError) {
+    console.error(
+      "Failed to load Monument options for priority editor",
+      allMonumentError
+    );
   }
-  if (roadmapError) {
-    console.error("Failed to load roadmaps for priority editor", roadmapError);
+
+  const { data: allSkillData, error: allSkillError } = await supabase
+    .from("skills")
+    .select("id,name,icon,monument_id,sort_order,created_at")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (allSkillError) {
+    console.error("Failed to load Skill options for priority editor", allSkillError);
   }
+
+  const { data: goalData, error: goalError } = await supabase
+    .from("goals")
+    .select(
+      `id,name,emoji,monument_id,roadmap_id,circle_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(id,title,emoji),
+      projects(
+        tasks(skill_id),
+        project_skills(skill_id)
+      )`
+    )
+    .eq("user_id", userId);
+
   if (goalError) {
     console.error("Failed to load goals for priority editor", goalError);
   }
 
-  const roadmaps = (roadmapData ?? []) as RoadmapRow[];
-  const roadmapIds = roadmaps.map((roadmap) => roadmap.id);
+  const { data: habitData, error: habitError } = await supabase
+    .from("habits")
+    .select(
+      `id,name,habit_type,global_order,skill_id,goal_id,routine_id,routine_position,duration_minutes,energy,recurrence_mode,current_streak_days,last_completed_at,created_at,updated_at,circle_id,
+      skill:skills(id,name,icon,monument_id),
+      goal:goals(id,monument_id)`
+    )
+    .eq("user_id", userId)
+    .is("circle_id", null);
 
-  let roadmapItems: RoadmapItemRow[] = [];
+  if (habitError) {
+    console.error("Failed to load habits for priority editor", habitError);
+  }
+
   let campaigns: CampaignRow[] = [];
   let campaignGoals: CampaignGoalRow[] = [];
-  let roadmapItemErrorMessage: string | null = null;
   let campaignErrorMessage: string | null = null;
   let campaignGoalErrorMessage: string | null = null;
-
-  if (roadmapIds.length > 0) {
-    const { data: roadmapItemData, error: roadmapItemError } = await supabase
-      .from("roadmap_items")
-      .select("id,roadmap_id,item_type,position,campaign_id,goal_id,created_at")
-      .eq("user_id", userId)
-      .in("roadmap_id", roadmapIds)
-      .order("position", { ascending: true });
-
-    if (roadmapItemError) {
-      console.error("Failed to load roadmap items for priority editor", roadmapItemError);
-      roadmapItemErrorMessage =
-        roadmapItemError.message || "Unable to load Roadmap item order.";
-    } else {
-      roadmapItems = (roadmapItemData ?? []) as RoadmapItemRow[];
-    }
-  }
 
   const { data: campaignData, error: campaignError } = await supabase
     .from("campaigns")
@@ -822,15 +803,85 @@ export default async function PriorityEditorPage() {
     }
   }
 
+  const goals = (goalData ?? []) as GoalRow[];
+  const habits = (habitData ?? []) as HabitRow[];
+  const allMonuments = (allMonumentData ?? []) as MonumentRow[];
+  const allSkills = (allSkillData ?? []) as SkillMetadataRow[];
+  const skillIds = Array.from(
+    new Set(goals.flatMap((goal) => collectGoalSkillIds(goal)))
+  );
+  const skillsById = new Map<string, SkillMetadataRow>();
+
+  if (!allSkillError) {
+    for (const skill of allSkills) {
+      if (skill.id) {
+        skillsById.set(skill.id, skill);
+      }
+    }
+  } else if (skillIds.length > 0) {
+    const { data: skillData, error: skillError } = await supabase
+      .from("skills")
+      .select("id,name,icon,monument_id")
+      .eq("user_id", userId)
+      .in("id", skillIds);
+
+    if (skillError) {
+      console.error("Failed to load skills for priority editor", skillError);
+    } else {
+      for (const skill of (skillData ?? []) as SkillMetadataRow[]) {
+        if (skill.id) {
+          skillsById.set(skill.id, skill);
+        }
+      }
+    }
+  }
+
+  const monumentIds = Array.from(
+    new Set(
+      [
+        ...goals.map((goal) => goal.monument_id),
+        ...campaigns.map((campaign) => campaign.primary_monument_id),
+        ...habits.flatMap((habit) => {
+          const skill = firstRelatedRow(habit.skill);
+          const goal = firstRelatedRow(habit.goal);
+          return [skill?.monument_id, goal?.monument_id];
+        }),
+      ].filter((id): id is string => Boolean(id))
+    )
+  );
+  const monumentsById = new Map<string, MonumentRow>();
+
+  if (!allMonumentError) {
+    for (const monument of allMonuments) {
+      monumentsById.set(monument.id, monument);
+    }
+  } else if (monumentIds.length > 0) {
+    const { data: monumentData, error: monumentError } = await supabase
+      .from("monuments")
+      .select("id,title,emoji")
+      .eq("user_id", userId)
+      .in("id", monumentIds);
+
+    if (monumentError) {
+      console.error("Failed to load monuments for priority editor", monumentError);
+    } else {
+      for (const monument of (monumentData ?? []) as MonumentRow[]) {
+        monumentsById.set(monument.id, monument);
+      }
+    }
+  }
+
   const fetchErrorMessages = [];
-  if (monumentError) {
+  if (allMonumentError) {
     fetchErrorMessages.push(
-      `Monuments select error: ${monumentError.message || "Unable to load Monuments."}`
+      `Monuments select error: ${
+        allMonumentError.message || "Unable to load Monument options."
+      }`
     );
   }
-  if (roadmapError) {
+  if (allSkillError) {
     fetchErrorMessages.push(
-      `Roadmaps select error: ${roadmapError.message || "Unable to load Roadmaps."}`
+      `Skills select error: ${allSkillError.message || "Unable to load Skill options."}`
     );
   }
   if (goalError) {
@@ -838,8 +889,10 @@ export default async function PriorityEditorPage() {
       `Goals select error: ${goalError.message || "Unable to load Goals."}`
     );
   }
-  if (roadmapItemErrorMessage) {
-    fetchErrorMessages.push(`Roadmap items select error: ${roadmapItemErrorMessage}`);
+  if (habitError) {
+    fetchErrorMessages.push(
+      `Habits select error: ${habitError.message || "Unable to load Habits."}`
+    );
   }
   if (campaignErrorMessage) {
     fetchErrorMessages.push(`Campaigns select error: ${campaignErrorMessage}`);
@@ -848,27 +901,34 @@ export default async function PriorityEditorPage() {
     fetchErrorMessages.push(`Campaign Goals select error: ${campaignGoalErrorMessage}`);
   }
 
-  const goals = (goalData ?? []) as GoalRow[];
   const nonCompletedGoals = goals.filter((goal) => !isCompletedGoal(goal.status));
-  const roadmapCards = buildRoadmapCards({
-    monuments: (monumentData ?? []) as MonumentRow[],
-    roadmaps,
-    goals: nonCompletedGoals,
-    roadmapItems,
-    campaigns,
-    campaignGoals,
-  });
   const globalPriorityItems = buildGlobalPriorityItems({
     goals: nonCompletedGoals,
     campaigns,
     campaignGoals,
+    monumentsById,
+    skillsById,
   });
+  const habitItems = sortHabitRoadmapItems(
+    habits
+      .filter((habit) => !habit.circle_id)
+      .map((habit) => normalizeHabit(habit, monumentsById))
+  );
+  const monumentFilterOptions = allMonuments
+    .map(createMonumentFilterOption)
+    .filter((option): option is UserPriorityFilterOptionData => Boolean(option));
+  const skillFilterOptions = allSkills
+    .map(createSkillFilterOption)
+    .filter((option): option is UserPriorityFilterOptionData => Boolean(option));
 
   return (
     <ProtectedRoute>
       <PriorityEditorClient
-        initialRoadmaps={roadmapCards}
+        userId={userId}
         initialGlobalPriorityItems={globalPriorityItems}
+        initialHabitItems={habitItems}
+        initialMonumentOptions={monumentFilterOptions}
+        initialSkillOptions={skillFilterOptions}
         initialError={fetchErrorMessages.length ? fetchErrorMessages.join(" ") : null}
       />
     </ProtectedRoute>

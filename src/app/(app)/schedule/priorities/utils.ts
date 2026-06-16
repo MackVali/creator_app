@@ -9,6 +9,8 @@ export const PRIORITY_ORDER = [
 
 export type PriorityBucketId = (typeof PRIORITY_ORDER)[number];
 
+export const DEFAULT_CAMPAIGN_PRIORITY: PriorityBucketId = "HIGH";
+
 export const PRIORITY_LABELS: Record<PriorityBucketId, string> = {
   NO: "No Priority",
   LOW: "Low",
@@ -18,33 +20,26 @@ export const PRIORITY_LABELS: Record<PriorityBucketId, string> = {
   "ULTRA-CRITICAL": "Ultra",
 };
 
-export const STAGE_ORDER = ["RESEARCH", "BUILD", "TEST", "REFINE", "RELEASE"] as const;
-export type StageId = (typeof STAGE_ORDER)[number];
+export const HABIT_TYPE_ORDER = ["CHORE", "HABIT", "SYNC", "PRACTICE"] as const;
 
-export type PriorityProject = {
-  id: string;
-  name: string;
-  priority: PriorityBucketId;
-  stage?: string | null;
-  globalRank?: number;
-  emoji?: string | null;
-};
+export type HabitBucketId = (typeof HABIT_TYPE_ORDER)[number];
 
-export type PriorityGoal = {
-  id: string;
-  name: string;
-  priority: PriorityBucketId;
-  stage?: string | null;
-  emoji?: string | null;
-  globalRank?: number;
-  priorityRank?: number;
+export const HABIT_TYPE_LABELS: Record<HabitBucketId, string> = {
+  CHORE: "CHORES",
+  HABIT: "HABITS",
+  SYNC: "SYNC",
+  PRACTICE: "PRACTICE",
 };
 
 export type RoadmapPriorityGoal = {
   id: string;
   name: string;
   emoji?: string | null;
+  monumentId?: string | null;
+  monumentName?: string | null;
+  monumentIcon?: string | null;
   monumentEmoji?: string | null;
+  skills?: RoadmapFilterOptionData[];
   priority: PriorityBucketId;
   status?: string | null;
   globalRank?: number;
@@ -60,10 +55,25 @@ export type RoadmapPriorityCampaign = {
   name: string;
   emoji?: string | null;
   description?: string | null;
+  monumentId?: string | null;
+  monumentName?: string | null;
+  monumentIcon?: string | null;
   priority: PriorityBucketId;
   schedulingState?: string | null;
   position?: number;
   goals: RoadmapPriorityGoal[];
+};
+
+export type RoadmapFilterOptionData = {
+  id?: string | null;
+  name?: string | null;
+  icon?: string | null;
+};
+
+export type UserPriorityFilterOptionData = {
+  id: string;
+  name: string;
+  icon: string | null;
 };
 
 export type GlobalPriorityRoadmapItem = {
@@ -74,7 +84,11 @@ export type GlobalPriorityRoadmapItem = {
   priority: PriorityBucketId;
   priorityOrder?: number;
   emoji?: string | null;
+  monumentId?: string | null;
+  monumentName?: string | null;
+  monumentIcon?: string | null;
   monumentEmoji?: string | null;
+  skills?: RoadmapFilterOptionData[];
   globalRank?: number;
   priorityRank?: number;
   position?: number;
@@ -82,40 +96,32 @@ export type GlobalPriorityRoadmapItem = {
   goals?: RoadmapPriorityGoal[];
 };
 
-export type RoadmapPriorityItem =
-  | {
-      id: string;
-      type: "goal";
-      position: number;
-      goal: RoadmapPriorityGoal;
-    }
-  | {
-      id: string;
-      type: "campaign";
-      position: number;
-      campaign: RoadmapPriorityCampaign;
-    };
-
-export type MonumentRoadmapPriority = {
+export type RoadmapHabitItem = {
   id: string;
-  monumentId: string;
-  monumentName: string;
+  name: string;
+  habitType: HabitBucketId;
+  rawHabitType?: string | null;
+  globalOrder?: number;
+  skillId?: string | null;
+  skillName?: string | null;
+  skillIcon?: string | null;
+  skillMonumentId?: string | null;
+  goalId?: string | null;
+  goalMonumentId?: string | null;
+  monumentId?: string | null;
+  monumentName?: string | null;
+  monumentIcon?: string | null;
   monumentEmoji?: string | null;
-  monumentPriorityRank?: number;
-  monumentCreatedAt?: string | null;
-  roadmapId?: string | null;
-  roadmapTitle?: string | null;
-  roadmapEmoji?: string | null;
-  items: RoadmapPriorityItem[];
-  goalCount: number;
-  campaignCount: number;
+  routineId?: string | null;
+  routinePosition?: number;
+  durationMinutes?: number | null;
+  energy?: string | null;
+  recurrenceMode?: string | null;
+  currentStreakDays?: number | null;
+  lastCompletedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
-
-export function normalizeStage(value?: string | null): StageId | null {
-  if (!value) return null;
-  const normalized = value.trim().toUpperCase();
-  return STAGE_ORDER.includes(normalized as StageId) ? (normalized as StageId) : null;
-}
 
 export function normalizePriority(value?: string | null): PriorityBucketId {
   if (!value) return "NO";
@@ -126,6 +132,22 @@ export function normalizePriority(value?: string | null): PriorityBucketId {
   return "NO";
 }
 
+export function normalizeCampaignPriority(
+  value?: string | null
+): PriorityBucketId {
+  if (!value?.trim()) return DEFAULT_CAMPAIGN_PRIORITY;
+  return normalizePriority(value);
+}
+
+export function normalizeHabitBucket(value?: string | null): HabitBucketId {
+  const normalized = (value ?? "").trim().toUpperCase();
+  if (normalized === "ASYNC") return "SYNC";
+  if (HABIT_TYPE_ORDER.includes(normalized as HabitBucketId)) {
+    return normalized as HabitBucketId;
+  }
+  return "HABIT";
+}
+
 export function parseGlobalRank(value?: number | string | null): number | undefined {
   if (value === null || value === undefined) return undefined;
   if (typeof value === "number") {
@@ -133,15 +155,6 @@ export function parseGlobalRank(value?: number | string | null): number | undefi
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-export function formatEnumLabel(value?: string | null): string | null {
-  if (!value) return null;
-  const fragments = value
-    .toLowerCase()
-    .split(/[\s_-]+/)
-    .map((segment) => (segment.length === 0 ? "" : segment[0].toUpperCase() + segment.slice(1)));
-  return fragments.join(" ").trim() || null;
 }
 
 export function compareRankValues(a?: number, b?: number): number {
@@ -154,21 +167,6 @@ export function compareRankValues(a?: number, b?: number): number {
   const bValue = normalize(b);
   if (aValue === bValue) return 0;
   return aValue < bValue ? -1 : 1;
-}
-
-export function sortRoadmapItems(items: RoadmapPriorityItem[]): RoadmapPriorityItem[] {
-  return [...items].sort((a, b) => {
-    if (a.position !== b.position) {
-      return a.position - b.position;
-    }
-
-    const aGoal = a.type === "goal" ? a.goal : a.campaign.goals[0];
-    const bGoal = b.type === "goal" ? b.goal : b.campaign.goals[0];
-    const priorityRankDelta = compareRankValues(aGoal?.priorityRank, bGoal?.priorityRank);
-    if (priorityRankDelta !== 0) return priorityRankDelta;
-
-    return compareRankValues(aGoal?.globalRank, bGoal?.globalRank);
-  });
 }
 
 export function sortGlobalPriorityItems(
@@ -195,6 +193,36 @@ export function sortGlobalPriorityItems(
 
     const typeDelta = a.type.localeCompare(b.type);
     if (typeDelta !== 0) return typeDelta;
+
+    const idDelta = a.id.localeCompare(b.id);
+    if (idDelta !== 0) return idDelta;
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function sortHabitRoadmapItems(
+  items: RoadmapHabitItem[]
+): RoadmapHabitItem[] {
+  return [...items].sort((a, b) => {
+    const typeDelta =
+      HABIT_TYPE_ORDER.indexOf(a.habitType) - HABIT_TYPE_ORDER.indexOf(b.habitType);
+    if (typeDelta !== 0) return typeDelta;
+
+    const globalOrderDelta = compareRankValues(a.globalOrder, b.globalOrder);
+    if (globalOrderDelta !== 0) return globalOrderDelta;
+
+    const routinePositionDelta = compareRankValues(
+      a.routinePosition,
+      b.routinePosition
+    );
+    if (routinePositionDelta !== 0) return routinePositionDelta;
+
+    const updatedDelta = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+    if (updatedDelta !== 0) return updatedDelta;
+
+    const createdDelta = (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+    if (createdDelta !== 0) return createdDelta;
 
     const idDelta = a.id.localeCompare(b.id);
     if (idDelta !== 0) return idDelta;

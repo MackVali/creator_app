@@ -37,6 +37,8 @@ export type CampaignSchedulingState =
   | "PAUSED"
   | "COMPLETED";
 
+const DEFAULT_CAMPAIGN_PRIORITY_CODE = "HIGH";
+
 export interface RoadmapCampaignGoal {
   id: string;
   name: string;
@@ -861,6 +863,7 @@ export async function createCampaign(
     name: string;
     description?: string | null;
     emoji?: string | null;
+    priorityCode?: string | null;
     schedulingState?: CampaignSchedulingState;
     position?: number | null;
   }
@@ -880,6 +883,9 @@ export async function createCampaign(
       name: input.name.trim(),
       description: input.description?.trim() || null,
       emoji: input.emoji?.trim() || null,
+      priority_code:
+        input.priorityCode?.trim().toUpperCase() ||
+        DEFAULT_CAMPAIGN_PRIORITY_CODE,
       scheduling_state: input.schedulingState ?? "ACTIVE",
       position: input.position ?? null,
     })

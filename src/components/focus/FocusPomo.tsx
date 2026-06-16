@@ -30,6 +30,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Check,
+  ChevronLeft,
   GripVertical,
   Layers3,
   Play,
@@ -82,6 +83,7 @@ type FocusPomoCardState = {
 
 type FocusPomoRunResult = {
   id: string;
+  item: FocusPomoQueueItem;
   itemId: string;
   itemKind: string;
   title: string;
@@ -98,6 +100,7 @@ type FocusPomoRunResult = {
   actualMs: number | null;
   deltaMs: number | null;
   completedAt: string;
+  timeZone: string;
   resultTone: "under" | "over" | "skipped";
 };
 
@@ -142,7 +145,7 @@ type FocusPomoCompletionKind = "habit" | "project";
 
 type FocusPomoProjectCompletionUpdate = {
   update(values: {
-    completed_at: string;
+    completed_at: string | null;
     updated_at: string;
     stage: string;
   }): {
@@ -2425,6 +2428,76 @@ async function awardFocusPomoCompletionXp({
   }
 }
 
+async function awardFocusPomoCompletionUndoXp({
+  item,
+  kind,
+  completedAt,
+  timeZone,
+  durationMin,
+  scheduleInstanceId,
+  productivityDayKey,
+}: {
+  item: FocusPomoQueueItem;
+  kind: FocusPomoCompletionKind;
+  completedAt: string;
+  timeZone: string;
+  durationMin: number | null;
+  scheduleInstanceId: string | null;
+  productivityDayKey: string;
+}) {
+  const sourceType = readFocusPomoCompletionSourceType(kind);
+  const skillIds = getFocusPomoCompletionSkillIds(item);
+  const monumentIds = getFocusPomoCompletionMonumentIds(item);
+  const body: Record<string, unknown> = {
+    kind,
+    amount: kind === "project" ? -3 : -1,
+    awardKeyBase: `${buildFocusPomoAwardKeyBase({
+      item,
+      kind,
+      scheduleInstanceId,
+      dateKey: productivityDayKey,
+    })}:undo`,
+    completion: {
+      action: "undo",
+      sourceType,
+      sourceId: item.id,
+      completedAt,
+      wasScheduled: Boolean(scheduleInstanceId),
+      scheduleInstanceId: scheduleInstanceId ?? undefined,
+      durationMin,
+      timeZone,
+      productivityDayKey,
+    },
+  };
+
+  if (scheduleInstanceId) {
+    body.scheduleInstanceId = scheduleInstanceId;
+  }
+  if (skillIds.length > 0) {
+    body.skillIds = skillIds;
+  }
+  if (monumentIds.length > 0) {
+    body.monumentIds = monumentIds;
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      console.error(
+        "FocusPomo failed to reverse completion XP",
+        await response.text()
+      );
+    }
+  } catch (error) {
+    console.error("FocusPomo failed to reverse completion XP", error);
+  }
+}
+
 async function completeFocusPomoScheduleInstance(
   scheduleInstanceId: string | null,
   completedAt: string
@@ -2454,6 +2527,38 @@ async function completeFocusPomoScheduleInstance(
     }
   } catch (error) {
     console.error("FocusPomo failed to complete schedule instance", error);
+  }
+}
+
+async function undoFocusPomoScheduleInstance(scheduleInstanceId: string | null) {
+  if (!scheduleInstanceId) return;
+
+  try {
+    const response = await fetch("/api/schedule/instances/batchStatus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        updates: [
+          {
+            id: scheduleInstanceId,
+            status: "scheduled",
+            completed_at: null,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        "FocusPomo failed to undo schedule instance completion",
+        await response.text()
+      );
+    }
+  } catch (error) {
+    console.error(
+      "FocusPomo failed to undo schedule instance completion",
+      error
+    );
   }
 }
 
@@ -2540,6 +2645,104 @@ async function completeFocusPomoItem({
   }
 
   await awardFocusPomoCompletionXp({
+    item,
+    kind,
+    completedAt,
+    timeZone,
+    durationMin,
+    scheduleInstanceId,
+    productivityDayKey,
+  });
+}
+
+async function undoFocusPomoItem({
+  item,
+  completedAt,
+  timeZone,
+}: {
+  item: FocusPomoQueueItem;
+  completedAt: string;
+  timeZone: string;
+}) {
+  const kind = getFocusPomoCompletionKind(item);
+  if (!kind) return;
+
+  const scheduleInstanceId = readFocusPomoScheduleInstanceId(item);
+  const durationMin = normalizeFocusPomoDurationMinutes(item.durationMinutes);
+  const productivityDayKey = completionProductivityDayKey(
+    new Date(completedAt),
+    timeZone
+  );
+
+  await undoFocusPomoScheduleInstance(scheduleInstanceId);
+
+  if (kind === "project") {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn(
+        "FocusPomo could not undo project completion: Supabase unavailable"
+      );
+      return;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error(
+        "FocusPomo could not undo project completion: user unavailable",
+        userError
+      );
+      return;
+    }
+
+    const projectsTable = supabase.from(
+      "projects"
+    ) as unknown as FocusPomoProjectCompletionUpdate;
+    const { error } = await projectsTable
+      .update({
+        completed_at: null,
+        updated_at: new Date().toISOString(),
+        stage: "BUILD",
+      })
+      .eq("id", item.id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("FocusPomo failed to undo project completion", error);
+      return;
+    }
+  } else {
+    try {
+      const response = await fetch("/api/habits/completion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          habitId: item.id,
+          completedAt,
+          timeZone,
+          action: "undo",
+          scheduleInstanceId: scheduleInstanceId ?? undefined,
+          durationMin,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(
+          "FocusPomo failed to undo habit completion",
+          await response.text()
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("FocusPomo failed to undo habit completion", error);
+      return;
+    }
+  }
+
+  await awardFocusPomoCompletionUndoXp({
     item,
     kind,
     completedAt,
@@ -3198,6 +3401,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const [runHistory, setRunHistory] = useState<FocusPomoRunResult[]>([]);
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
+  const completionRequestsRef = useRef(new Map<string, Promise<void>>());
   const previousActiveIndexRef = useRef(activeIndex);
   const queueSourceSignatureRef = useRef("");
   const suppressQueueClickRef = useRef(false);
@@ -4031,6 +4235,61 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const currentRoutineDisplay = getItemRoutineDisplay(currentItem);
   const currentMetaDisplay =
     currentItem?.kind === "project" ? currentGoalDisplay : currentRoutineDisplay;
+  const resetTimerToDuration = (durationMs: number) => {
+    elapsedMsRef.current = 0;
+    remainingMsRef.current = durationMs;
+    setElapsedMs(0);
+    setRemainingMs(durationMs);
+  };
+  const handleUndoRunHistorySession = (session: FocusPomoRunResult) => {
+    const restoredItemKey = getFocusPomoQueueItemKey(session.item);
+    const nextRunHistory = runHistory.filter((result) => result.id !== session.id);
+    const restoredIndex = sortedQueueIndexByKey.get(restoredItemKey);
+
+    setRunHistory(nextRunHistory);
+    setHasRunStarted(nextRunHistory.length > 0);
+    setDismissedQueueItemKeys((current) => {
+      if (!current.has(restoredItemKey)) return current;
+
+      const next = new Set(current);
+      next.delete(restoredItemKey);
+      return next;
+    });
+
+    if (typeof restoredIndex === "number") {
+      const restoredItem = sortedQueue[restoredIndex] ?? session.item;
+      const restoredDurationMs = (restoredItem.durationMinutes ?? 25) * 60 * 1000;
+
+      setActiveIndex(restoredIndex);
+      setIsRunning(false);
+      resetTimerToDuration(restoredDurationMs);
+    }
+
+    if (session.action === "completed") {
+      const undoCompletedSession = async () => {
+        const completionRequest = completionRequestsRef.current.get(session.id);
+
+        if (completionRequest) {
+          try {
+            await completionRequest;
+          } catch (error) {
+            console.error(
+              "FocusPomo completion request failed before undo",
+              error
+            );
+          }
+        }
+
+        await undoFocusPomoItem({
+          item: session.item,
+          completedAt: session.completedAt,
+          timeZone: session.timeZone,
+        });
+      };
+
+      void undoCompletedSession();
+    }
+  };
   const activeCardLoading = effectiveQueueLoading && !currentItem;
   const currentEnergyLevel = normalizeFlameLevel(
     currentItem?.energyCode,
@@ -4060,6 +4319,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     return (
       <div key={session.id} className={rowClassName}>
+        <button
+          type="button"
+          aria-label={`Restore ${session.title} to Next Up`}
+          onClick={() => handleUndoRunHistorySession(session)}
+          className="flex h-7 w-4 shrink-0 items-center justify-center text-white/24 outline-none transition hover:text-white/62 active:text-white/72 focus-visible:text-white/72 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/18 sm:h-8 sm:w-5"
+        >
+          <ChevronLeft
+            className="size-3.5"
+            strokeWidth={2.5}
+            aria-hidden="true"
+          />
+        </button>
         <span className={FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS}>
           {isCompleted ? (
             <Check
@@ -4483,10 +4754,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const resetCurrentTimer = () => {
-    elapsedMsRef.current = 0;
-    remainingMsRef.current = currentTimerDurationMs;
-    setElapsedMs(0);
-    setRemainingMs(currentTimerDurationMs);
+    resetTimerToDuration(currentTimerDurationMs);
   };
 
   const getNextPendingItemIndex = (dismissedItemKey: string) => {
@@ -4600,11 +4868,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const handleSkip = () => {
     if (!currentItem) return;
 
+    const completedAt = new Date().toISOString();
+    const timeZone = getBrowserTimeZone();
+
     setHasRunStarted(true);
     setIsRunLogExpanded(false);
     setRunHistory((current) => [
       {
         id: createLocalSessionId(),
+        item: currentItem,
         itemId: currentItem.id,
         title: currentItem.title,
         ...buildRunResultDisplayMetadata(currentItem),
@@ -4612,7 +4884,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         plannedMs: currentTimerDurationMs,
         actualMs: null,
         deltaMs: null,
-        completedAt: new Date().toISOString(),
+        completedAt,
+        timeZone,
         resultTone: "skipped",
       },
       ...current,
@@ -4634,12 +4907,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     const deltaMs = actualMs - plannedMs;
     const completedAt = new Date().toISOString();
     const timeZone = getBrowserTimeZone();
+    const sessionId = createLocalSessionId();
 
     setHasRunStarted(true);
     setIsRunLogExpanded(false);
     setRunHistory((current) => [
       {
-        id: createLocalSessionId(),
+        id: sessionId,
+        item: currentItem,
         itemId: currentItem.id,
         title: currentItem.title,
         ...buildRunResultDisplayMetadata(currentItem),
@@ -4648,6 +4923,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         actualMs,
         deltaMs,
         completedAt,
+        timeZone,
         resultTone: deltaMs <= 0 ? "under" : "over",
       },
       ...current,
@@ -4656,7 +4932,20 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setIsRunning(false);
     resetCurrentTimer();
     dismissCurrentQueueItem(currentItem);
-    void completeFocusPomoItem({ item: currentItem, completedAt, timeZone });
+
+    const completionRequest = completeFocusPomoItem({
+      item: currentItem,
+      completedAt,
+      timeZone,
+    });
+    completionRequestsRef.current.set(sessionId, completionRequest);
+    void completionRequest
+      .catch((error) => {
+        console.error("FocusPomo failed to complete run-history session", error);
+      })
+      .finally(() => {
+        completionRequestsRef.current.delete(sessionId);
+      });
   };
 
   return createPortal(
