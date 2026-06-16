@@ -16,6 +16,7 @@ import {
   PointerSensor,
   TouchSensor,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
   useDroppable,
   useSensor,
@@ -230,15 +231,23 @@ export default function PriorityEditorClient({
     globalPriorityItems.length > 0 || habitRoadmapItems.length > 0;
 
   const handleGlobalPriorityDragEnd = useCallback(
-    async (event: DragEndEvent) => {
+    async (
+      event: DragEndEvent,
+      previewItems?: GlobalPriorityRoadmapItem[] | null
+    ) => {
       const { active, over } = event;
-      if (!over || active.id === over.id) return;
+      if (!over) return;
 
       const activeData = active.data.current as
         | { item?: GlobalPriorityRoadmapItem }
         | undefined;
       const draggedItem = activeData?.item;
       if (!draggedItem) return;
+
+      const previousItems = globalPriorityItems;
+      const previewItemsChanged = previewItems
+        ? !globalPriorityOrdersMatch(previousItems, previewItems)
+        : false;
 
       const overData = over.data.current as
         | { bucket?: PriorityBucketId; item?: GlobalPriorityRoadmapItem }
@@ -247,15 +256,22 @@ export default function PriorityEditorClient({
         overData?.bucket ??
         overData?.item?.priority ??
         parseGlobalPriorityBucketId(String(over.id));
-      if (!overBucket) return;
-
-      const previousItems = globalPriorityItems;
-      const nextItems = moveGlobalPriorityItem(
-        previousItems,
-        draggedItem,
-        overBucket,
-        overData?.item
-      );
+      let nextItems = overBucket
+        ? moveGlobalPriorityItem(
+            previousItems,
+            draggedItem,
+            overBucket,
+            overData?.item
+          )
+        : null;
+      if (
+        (!nextItems || globalPriorityOrdersMatch(previousItems, nextItems)) &&
+        previewItemsChanged &&
+        previewItems
+      ) {
+        nextItems = previewItems;
+      }
+      if (!nextItems) return;
       if (globalPriorityOrdersMatch(previousItems, nextItems)) return;
       const payload = buildGlobalPriorityOrderPayload(nextItems);
 
@@ -1979,7 +1995,10 @@ function GlobalPriorityRoadmap({
   isSaving: boolean;
   sensors: ReturnType<typeof useSensors>;
   isFiltered: boolean;
-  onDragEnd: (event: DragEndEvent) => void;
+  onDragEnd: (
+    event: DragEndEvent,
+    previewItems?: GlobalPriorityRoadmapItem[] | null
+  ) => void;
   onCampaignGoalDragEnd: (
     campaign: GlobalPriorityRoadmapItem,
     event: DragEndEvent
@@ -1990,21 +2009,25 @@ function GlobalPriorityRoadmap({
   );
   const [activePriorityItem, setActivePriorityItem] =
     useState<GlobalPriorityRoadmapItem | null>(null);
+  const [previewPriorityItems, setPreviewPriorityItems] = useState<
+    GlobalPriorityRoadmapItem[] | null
+  >(null);
   const {
     start: startEdgeAutoscroll,
     stop: stopEdgeAutoscroll,
   } = usePriorityDragEdgeAutoscroll();
+  const displayedItems = previewPriorityItems ?? items;
   const itemsByPriority = useMemo(() => {
     const grouped = new Map<PriorityBucketId, GlobalPriorityRoadmapItem[]>(
       PRIORITY_ORDER.map((priority) => [priority, []])
     );
 
-    for (const item of sortGlobalPriorityItems(items)) {
+    for (const item of sortGlobalPriorityItems(displayedItems)) {
       grouped.get(item.priority)?.push(item);
     }
 
     return grouped;
-  }, [items]);
+  }, [displayedItems]);
   const handleToggleCampaign = useCallback((campaignId: string) => {
     setOpenCampaignIds((current) => ({
       ...current,
@@ -2019,22 +2042,64 @@ function GlobalPriorityRoadmap({
       if (isFiltered || !activeData?.item) return;
 
       setActivePriorityItem(activeData.item);
+      setPreviewPriorityItems(items);
       startEdgeAutoscroll(event.activatorEvent);
     },
-    [isFiltered, startEdgeAutoscroll]
+    [isFiltered, items, startEdgeAutoscroll]
+  );
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      if (isFiltered) return;
+
+      const { active, over } = event;
+      if (!over) return;
+
+      const activeData = active.data.current as
+        | { item?: GlobalPriorityRoadmapItem }
+        | undefined;
+      const draggedItem = activeData?.item;
+      if (!draggedItem) return;
+
+      const overData = over.data.current as
+        | { bucket?: PriorityBucketId; item?: GlobalPriorityRoadmapItem }
+        | undefined;
+      const overBucket =
+        overData?.bucket ??
+        overData?.item?.priority ??
+        parseGlobalPriorityBucketId(String(over.id));
+      if (!overBucket) return;
+
+      setPreviewPriorityItems((currentPreviewItems) => {
+        const previousItems = currentPreviewItems ?? items;
+        const nextPreviewItems = moveGlobalPriorityItem(
+          previousItems,
+          draggedItem,
+          overBucket,
+          overData?.item
+        );
+
+        return globalPriorityOrdersMatch(previousItems, nextPreviewItems)
+          ? currentPreviewItems
+          : nextPreviewItems;
+      });
+    },
+    [isFiltered, items]
   );
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      const previewItemsOnDrop = previewPriorityItems;
       setActivePriorityItem(null);
+      setPreviewPriorityItems(null);
       stopEdgeAutoscroll();
       if (isFiltered) return;
-      onDragEnd(event);
+      onDragEnd(event, previewItemsOnDrop);
     },
-    [isFiltered, onDragEnd, stopEdgeAutoscroll]
+    [isFiltered, onDragEnd, previewPriorityItems, stopEdgeAutoscroll]
   );
   const handleDragCancel = useCallback(
     () => {
       setActivePriorityItem(null);
+      setPreviewPriorityItems(null);
       stopEdgeAutoscroll();
     },
     [stopEdgeAutoscroll]
@@ -2051,6 +2116,7 @@ function GlobalPriorityRoadmap({
             collisionDetection={closestCenter}
             autoScroll={PRIORITY_DND_AUTO_SCROLL}
             onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
