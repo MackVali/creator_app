@@ -69,6 +69,7 @@ interface MonumentDetailProps {
   monument: MonumentDetailMonument;
   notes?: MonumentNote[];
   onClose?: () => void;
+  suppressWindowScrollReset?: boolean;
 }
 
 type MonumentView = "goals" | "roadmap";
@@ -521,6 +522,7 @@ export function MonumentDetail({
   monument,
   notes = [],
   onClose,
+  suppressWindowScrollReset = false,
 }: MonumentDetailProps) {
   const { id } = monument;
   const router = useRouter();
@@ -572,13 +574,15 @@ export function MonumentDetail({
         behavior: "auto",
       });
 
-      window.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: "auto",
-      });
+      if (!suppressWindowScrollReset) {
+        window.scrollTo({
+          top: 0,
+          left: 0,
+          behavior: "auto",
+        });
+      }
     });
-  }, [id]);
+  }, [id, suppressWindowScrollReset]);
 
   useEffect(() => {
     return () => {

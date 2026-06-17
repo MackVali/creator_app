@@ -12,7 +12,8 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
-import { ChevronDown, Grid2x2, Grid3x3 } from "lucide-react";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
@@ -52,7 +53,6 @@ import {
 } from "@/lib/queries/roadmap-reconciliation";
 import { computeGoalWeight } from "@/lib/goals/weight";
 import { normalizeGoalStatus } from "@/lib/goals/status";
-import { cn } from "@/lib/utils";
 import {
   normalizeCampaignPriority,
   normalizePriority,
@@ -64,6 +64,24 @@ import {
   type PriorityBucketId,
   type RoadmapPriorityGoal,
 } from "@/app/(app)/schedule/priorities/utils";
+import {
+  GlobalPriorityRoadmap,
+  applyCampaignGoalOrder,
+  buildCampaignGoalPriorityUpdates,
+  buildGlobalPriorityOrderPayload,
+  campaignGoalOrdersMatch,
+  clearGlobalPriorityRanks,
+  globalPriorityOrdersMatch,
+  mergeVisibleCampaignGoalOrder,
+  moveCampaignGoal,
+  moveGlobalPriorityItem,
+  parseCampaignGoalBucketId,
+  parseGlobalPriorityBucketId,
+  usePriorityRoadmapSensors,
+  type CampaignGoalPriorityUpdate,
+  type GlobalPriorityGoalLongPressEditHandler,
+  type GlobalPriorityOrderPayloadItem,
+} from "@/app/(app)/schedule/priorities/GlobalPriorityRoadmap";
 
 type GoalRowWithRelations = GoalRow & {
   circle_id?: string | null;
@@ -622,6 +640,18 @@ type MonumentPriorityCampaignGoalRow = {
   created_at?: string | null;
 };
 
+type MonumentPrioritySupabaseClient = NonNullable<
+  ReturnType<typeof getSupabaseBrowser>
+> & {
+  rpc(
+    fn: "save_global_priority_order",
+    args: { p_items: GlobalPriorityOrderPayloadItem[] }
+  ): Promise<{ error: { message?: string } | null }>;
+  rpc(
+    fn: "recalculate_goal_global_rank"
+  ): Promise<{ error: { message?: string } | null }>;
+};
+
 function comparePriorityRoadmapText(a?: string | null, b?: string | null) {
   return (a ?? "").localeCompare(b ?? "");
 }
@@ -967,8 +997,7 @@ function finalizeMonumentPriorityRoadmapItems(
 }
 
 async function fetchMonumentPriorityRoadmapItems(
-  userId: string,
-  monumentId: string
+  userId: string
 ): Promise<GlobalPriorityRoadmapItem[]> {
   const supabase = getSupabaseBrowser();
   if (!supabase) return [];
@@ -980,7 +1009,7 @@ async function fetchMonumentPriorityRoadmapItems(
         "id,name,emoji,monument_id,circle_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
       )
       .eq("user_id", userId)
-      .eq("monument_id", monumentId),
+      .is("circle_id", null),
     supabase
       .from("campaigns")
       .select(
@@ -1027,6 +1056,11 @@ async function fetchMonumentPriorityRoadmapItems(
   }
 
   const goalsById = new Map(goalRows.map((goal) => [goal.id, goal]));
+  const campaignGoalIds = new Set(
+    ((campaignGoalRows.data ?? []) as MonumentPriorityCampaignGoalRow[]).map(
+      (campaignGoal) => campaignGoal.goal_id
+    )
+  );
   const campaignGoalsByCampaignId = new Map<
     string,
     MonumentPriorityCampaignGoalRow[]
@@ -1048,9 +1082,7 @@ async function fetchMonumentPriorityRoadmapItems(
       })
       .filter(
         (goal): goal is RoadmapPriorityGoal =>
-          Boolean(goal) &&
-          goal.monumentId === monumentId &&
-          normalizeGoalStatus(goal.status) !== "COMPLETED"
+          Boolean(goal) && normalizeGoalStatus(goal.status) !== "COMPLETED"
       )
       .sort(compareMonumentPriorityCampaignGoals);
 
@@ -1072,6 +1104,7 @@ async function fetchMonumentPriorityRoadmapItems(
   }
 
   const standaloneGoalItems: GlobalPriorityRoadmapItem[] = goalRows
+    .filter((goal) => !campaignGoalIds.has(goal.id))
     .map((goal) => {
       const normalizedGoal = normalizeMonumentPriorityGoal(goal);
 
@@ -1090,7 +1123,38 @@ async function fetchMonumentPriorityRoadmapItems(
       };
     });
 
-  return sortGlobalPriorityItems([...campaignItems, ...standaloneGoalItems]);
+  return sortGlobalPriorityItems([
+    ...mergeMonumentPriorityCampaignItems(campaignItems),
+    ...standaloneGoalItems,
+  ]);
+}
+
+async function saveMonumentCampaignGoalPriorityOrder(
+  supabase: MonumentPrioritySupabaseClient,
+  updates: CampaignGoalPriorityUpdate[]
+) {
+  await Promise.all(
+    updates.map(async (update) => {
+      const { error } = await supabase
+        .from("goals")
+        .update({
+          priority_code: update.priority,
+          priority_order: update.priorityOrder,
+        })
+        .eq("id", update.id);
+
+      if (error) {
+        throw error;
+      }
+    })
+  );
+
+  const { error: rankError } = await supabase.rpc(
+    "recalculate_goal_global_rank"
+  );
+  if (rankError) {
+    throw rankError;
+  }
 }
 
 type CircleRoadmapRow = {
@@ -1565,128 +1629,6 @@ async function fetchTrueRoadmapsForCircle(
   });
 }
 
-function getPriorityRoadmapIdentity(
-  item: Pick<GlobalPriorityRoadmapItem, "emoji" | "monumentEmoji" | "name" | "type">
-) {
-  return (
-    item.emoji?.trim() ||
-    item.monumentEmoji?.trim() ||
-    getInitials(item.name) ||
-    (item.type === "campaign" ? "C" : "G")
-  );
-}
-
-function getPriorityGoalIdentity(goal: RoadmapPriorityGoal) {
-  return goal.emoji?.trim() || goal.monumentEmoji?.trim() || "";
-}
-
-function getInitials(value: string): string {
-  const parts = value.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "";
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
-function groupPriorityRoadmapCampaignGoals(goals: RoadmapPriorityGoal[]) {
-  const grouped = new Map<PriorityBucketId, RoadmapPriorityGoal[]>(
-    PRIORITY_ORDER.map((priority) => [priority, []])
-  );
-
-  for (const goal of [...goals].sort(compareMonumentPriorityCampaignGoals)) {
-    grouped.get(normalizePriority(goal.priority))?.push(goal);
-  }
-
-  return PRIORITY_ORDER.map((priority) => ({
-    priority,
-    goals: grouped.get(priority) ?? [],
-  })).filter((bucket) => bucket.goals.length > 0);
-}
-
-function MonumentPriorityRoadmap({
-  items,
-  monumentId,
-  onGoalOpen,
-}: {
-  items: GlobalPriorityRoadmapItem[];
-  monumentId?: string | null;
-  onGoalOpen: (goalId: string) => void;
-}) {
-  const [openCampaignIds, setOpenCampaignIds] = useState<Record<string, boolean>>(
-    {}
-  );
-  const itemsByPriority = useMemo(() => {
-    const grouped = new Map<PriorityBucketId, GlobalPriorityRoadmapItem[]>(
-      PRIORITY_ORDER.map((priority) => [priority, []])
-    );
-
-    const finalRoadmapItems = finalizeMonumentPriorityRoadmapItems(
-      items,
-      monumentId
-    );
-
-    for (const item of finalRoadmapItems) {
-      grouped.get(normalizePriority(item.priority))?.push(item);
-    }
-
-    return grouped;
-  }, [items, monumentId]);
-
-  const handleToggleCampaign = useCallback((campaignId: string) => {
-    setOpenCampaignIds((current) => ({
-      ...current,
-      [campaignId]: !(current[campaignId] ?? false),
-    }));
-  }, []);
-
-  return (
-    <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
-      <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
-        <div className="space-y-3">
-          {PRIORITY_ORDER.map((priority) => {
-            const bucketItems = itemsByPriority.get(priority) ?? [];
-
-            return (
-              <div key={priority} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2 px-1">
-                  <p className="text-[10px] font-semibold uppercase leading-none tracking-normal text-zinc-600">
-                    {PRIORITY_LABELS[priority]}
-                  </p>
-                  <span className="text-[10px] font-semibold leading-none text-zinc-700">
-                    {bucketItems.length}
-                  </span>
-                </div>
-                <div className="min-h-8 overflow-hidden rounded-[16px] border border-black/60 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
-                  {bucketItems.length > 0 ? (
-                    bucketItems.map((item) => (
-                      <MonumentPriorityRoadmapItem
-                        key={`${item.type}:${item.id}`}
-                        item={item}
-                        isOpen={
-                          item.type === "campaign"
-                            ? openCampaignIds[item.id] ?? false
-                            : false
-                        }
-                        onToggle={() => handleToggleCampaign(item.id)}
-                        onGoalOpen={onGoalOpen}
-                      />
-                    ))
-                  ) : (
-                    <div className="min-h-8 px-2 py-2 text-[11px] font-medium text-zinc-800">
-                      Empty
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function MonumentPriorityRoadmapSkeleton() {
   return (
     <section
@@ -1751,174 +1693,6 @@ function MonumentPriorityRoadmapSkeletonRow({
   );
 }
 
-function MonumentPriorityRoadmapItem({
-  item,
-  isOpen,
-  onToggle,
-  onGoalOpen,
-}: {
-  item: GlobalPriorityRoadmapItem;
-  isOpen: boolean;
-  onToggle: () => void;
-  onGoalOpen: (goalId: string) => void;
-}) {
-  const identity = getPriorityRoadmapIdentity(item);
-  const isCampaign = item.type === "campaign";
-  const nestedBuckets = useMemo(
-    () => groupPriorityRoadmapCampaignGoals(item.goals ?? []),
-    [item.goals]
-  );
-
-  return (
-    <div className="border-b border-black/40 bg-white/[0.026] last:border-b-0">
-      <div className="flex min-h-10 items-center gap-2 px-2 py-1.5 sm:px-2.5">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-          {identity}
-        </span>
-        {isCampaign ? (
-          <button
-            type="button"
-            aria-expanded={isOpen}
-            onClick={onToggle}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
-          >
-            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
-              {item.name}
-            </p>
-            <PriorityRankPills
-              globalRank={item.globalRank}
-              priorityRank={item.priorityRank}
-              priorityOrder={item.priorityOrder}
-            />
-            <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-600">
-              {item.goals?.length ?? 0} Goal{item.goals?.length === 1 ? "" : "s"}
-            </span>
-            <ChevronDown
-              className={cn(
-                "size-3.5 shrink-0 text-zinc-600 transition-transform",
-                isOpen ? "rotate-180" : ""
-              )}
-              aria-hidden="true"
-            />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onGoalOpen(item.id)}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
-          >
-            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
-              {item.name}
-            </p>
-            <PriorityRankPills
-              globalRank={item.globalRank}
-              priorityRank={item.priorityRank}
-              priorityOrder={item.priorityOrder}
-            />
-          </button>
-        )}
-      </div>
-      {isCampaign && isOpen ? (
-        <div className="border-t border-black/35 bg-black/20 px-2 pb-2 pt-1.5 sm:px-2.5">
-          {nestedBuckets.length > 0 ? (
-            <div className="ml-1 space-y-1.5">
-              {nestedBuckets.map((bucket) => (
-                <div key={bucket.priority} className="space-y-1">
-                  <p className="px-1 text-[9px] font-semibold uppercase leading-none tracking-normal text-zinc-700">
-                    {PRIORITY_LABELS[bucket.priority]}
-                  </p>
-                  <div className="min-h-8 space-y-1 rounded-lg border border-black/40 bg-black/20 p-1">
-                    {bucket.goals.map((goal) => (
-                      <MonumentPriorityCampaignGoalRow
-                        key={goal.id}
-                        goal={goal}
-                        onGoalOpen={onGoalOpen}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-lg border border-black/40 bg-black/20 px-2 py-2 text-[11px] font-medium text-zinc-700">
-              No Monument Goals in this Campaign.
-            </p>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MonumentPriorityCampaignGoalRow({
-  goal,
-  onGoalOpen,
-}: {
-  goal: RoadmapPriorityGoal;
-  onGoalOpen: (goalId: string) => void;
-}) {
-  const identity = getPriorityGoalIdentity(goal);
-
-  return (
-    <button
-      type="button"
-      onClick={() => onGoalOpen(goal.id)}
-      className="flex min-h-8 w-full items-center gap-2 rounded-lg border border-black/45 bg-white/[0.018] px-2 py-1.5 text-left outline-none transition hover:bg-white/[0.035] focus-visible:ring-1 focus-visible:ring-white/15"
-    >
-      {identity ? (
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
-          {identity}
-        </span>
-      ) : null}
-      <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
-        {goal.name}
-      </p>
-      <PriorityRankPills
-        globalRank={goal.globalRank}
-        priorityRank={goal.priorityRank}
-        priorityOrder={goal.priorityOrder}
-      />
-    </button>
-  );
-}
-
-function PriorityRankPills({
-  globalRank,
-  priorityRank,
-  priorityOrder,
-}: {
-  globalRank?: number | null;
-  priorityRank?: number | null;
-  priorityOrder?: number | null;
-}) {
-  const ranks = [
-    { label: "G", value: globalRank },
-    { label: "P", value: priorityRank },
-    { label: "#", value: priorityOrder },
-  ].filter(
-    (rank): rank is { label: string; value: number } =>
-      typeof rank.value === "number" &&
-      Number.isFinite(rank.value) &&
-      rank.value > 0
-  );
-
-  if (ranks.length === 0) return null;
-
-  return (
-    <span className="flex shrink-0 items-center gap-1">
-      {ranks.slice(0, 2).map((rank) => (
-        <span
-          key={rank.label}
-          className="rounded-md border border-black/50 bg-black/25 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-zinc-600"
-        >
-          {rank.label}
-          {rank.value}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 export function MonumentGoalsList({
   monumentId,
   sourceType = "monument",
@@ -1975,6 +1749,21 @@ export function MonumentGoalsList({
     monumentPriorityRoadmapItems,
     setMonumentPriorityRoadmapItems,
   ] = useState<GlobalPriorityRoadmapItem[]>([]);
+  const visibleMonumentPriorityRoadmapItems = useMemo(
+    () =>
+      resolvedSourceType === "monument"
+        ? finalizeMonumentPriorityRoadmapItems(
+            monumentPriorityRoadmapItems,
+            resolvedSourceId
+          )
+        : [],
+    [monumentPriorityRoadmapItems, resolvedSourceId, resolvedSourceType]
+  );
+  const [monumentPriorityRoadmapError, setMonumentPriorityRoadmapError] =
+    useState<string | null>(null);
+  const [isSavingMonumentPriorityOrder, setIsSavingMonumentPriorityOrder] =
+    useState(false);
+  const monumentPriorityRoadmapSensors = usePriorityRoadmapSensors();
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [restoreGoalDrawerId, setRestoreGoalDrawerId] = useState<string | null>(
     null
@@ -2627,6 +2416,7 @@ export function MonumentGoalsList({
     setRoadmapOpenGoal(null);
     setGoalCampaignCards([]);
     setMonumentPriorityRoadmapItems([]);
+    setMonumentPriorityRoadmapError(null);
   }, [resolvedSourceType, resolvedSourceId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -2886,6 +2676,7 @@ export function MonumentGoalsList({
     if (!supabase || !resolvedSourceId) {
       setMonumentRoadmapsWithItems([]);
       setMonumentPriorityRoadmapItems([]);
+      setMonumentPriorityRoadmapError(null);
       setGoalCampaignCards([]);
       return;
     }
@@ -2896,6 +2687,7 @@ export function MonumentGoalsList({
     if (!user) {
       setMonumentRoadmapsWithItems([]);
       setMonumentPriorityRoadmapItems([]);
+      setMonumentPriorityRoadmapError(null);
       setGoalCampaignCards([]);
       return;
     }
@@ -2914,7 +2706,7 @@ export function MonumentGoalsList({
           })
         : Promise.resolve([] as GoalCampaignCardData[]),
       resolvedSourceType === "monument"
-        ? fetchMonumentPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+        ? fetchMonumentPriorityRoadmapItems(user.id).catch(
             (err) => {
               console.error("Error refreshing Monument priority roadmap", err);
               return [] as GlobalPriorityRoadmapItem[];
@@ -2925,6 +2717,7 @@ export function MonumentGoalsList({
     setMonumentRoadmapsWithItems(trueRoadmaps);
     setGoalCampaignCards(campaignCards);
     setMonumentPriorityRoadmapItems(priorityRoadmapItems);
+    setMonumentPriorityRoadmapError(null);
   }, [resolvedSourceId, resolvedSourceType]);
 
   const isGoalLinkedToCurrentSource = useCallback(
@@ -3113,6 +2906,7 @@ export function MonumentGoalsList({
         loadedGoalsSourceKeyRef.current = null;
         setMonumentRoadmapsWithItems([]);
         setMonumentPriorityRoadmapItems([]);
+        setMonumentPriorityRoadmapError(null);
         setGoalCampaignCards([]);
         setGoals([]);
         setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -3131,6 +2925,7 @@ export function MonumentGoalsList({
         setRoadmapsDisplayReadyKey(null);
         setMonumentRoadmapsWithItems([]);
         setMonumentPriorityRoadmapItems([]);
+        setMonumentPriorityRoadmapError(null);
         setGoalCampaignCards([]);
         hydratedGoalIdsRef.current.clear();
       }
@@ -3142,6 +2937,7 @@ export function MonumentGoalsList({
         if (!user) {
           setGoalCampaignCards([]);
           setMonumentPriorityRoadmapItems([]);
+          setMonumentPriorityRoadmapError(null);
           loadedGoalsSourceKeyRef.current = goalsSourceKey;
           setGoalsDisplayReadyKey(goalsDisplayKey);
           setRoadmapsDisplayReadyKey(goalsDisplayKey);
@@ -3176,7 +2972,7 @@ export function MonumentGoalsList({
             : Promise.resolve([] as GoalCampaignCardData[]);
         const priorityRoadmapItemsPromise =
           resolvedSourceType === "monument"
-            ? fetchMonumentPriorityRoadmapItems(user.id, resolvedSourceId).catch(
+            ? fetchMonumentPriorityRoadmapItems(user.id).catch(
                 (err) => {
                   console.error("Error loading Monument priority roadmap", err);
                   return [] as GlobalPriorityRoadmapItem[];
@@ -3220,6 +3016,7 @@ export function MonumentGoalsList({
         setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
         setGoalCampaignCards(campaignCards);
         setMonumentPriorityRoadmapItems(priorityRoadmapItems);
+        setMonumentPriorityRoadmapError(null);
         setRoadmapsDisplayReadyKey(goalsDisplayKey);
 
         if (fullGoalsResult.error) {
@@ -3274,6 +3071,7 @@ export function MonumentGoalsList({
             setGoals([]);
             setMonumentRoadmapsWithItems([]);
             setMonumentPriorityRoadmapItems([]);
+            setMonumentPriorityRoadmapError(null);
             setGoalCampaignCards([]);
           }
           setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -3470,6 +3268,32 @@ export function MonumentGoalsList({
     },
     [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
+
+  const handleMonumentPriorityGoalLongPressEdit =
+    useCallback<GlobalPriorityGoalLongPressEditHandler>(
+      (goal, element) => {
+        const rect = element.getBoundingClientRect();
+        const styles = window.getComputedStyle(element);
+
+        setFabEditTarget({
+          entityType: "GOAL",
+          entityId: goal.id,
+          title: goal.name,
+          originRect: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+            borderRadius: styles.borderRadius,
+            backgroundColor: styles.backgroundColor,
+            backgroundImage: styles.backgroundImage,
+            boxShadow: styles.boxShadow,
+          },
+        });
+        closeGoalDetailAfterFabOpen();
+      },
+      [closeGoalDetailAfterFabOpen]
+    );
 
   const handleCampaignAddGoal = useCallback(
     (campaignId: string) => {
@@ -3681,6 +3505,174 @@ export function MonumentGoalsList({
       monumentRoadmapsWithItems,
       resolvedMonumentId,
     ]
+  );
+
+  const handleMonumentPriorityDragEnd = useCallback(
+    async (
+      event: DragEndEvent,
+      previewItems?: GlobalPriorityRoadmapItem[] | null
+    ) => {
+      const { active, over } = event;
+      if (!over) return;
+
+      const activeData = active.data.current as
+        | { item?: GlobalPriorityRoadmapItem }
+        | undefined;
+      const draggedItem = activeData?.item;
+      if (!draggedItem) return;
+
+      const previousItems = monumentPriorityRoadmapItems;
+      const previewItemsChanged = previewItems
+        ? !globalPriorityOrdersMatch(previousItems, previewItems)
+        : false;
+      const overData = over.data.current as
+        | { bucket?: PriorityBucketId; item?: GlobalPriorityRoadmapItem }
+        | undefined;
+      const overBucket =
+        overData?.bucket ??
+        overData?.item?.priority ??
+        parseGlobalPriorityBucketId(String(over.id));
+      let nextItems = overBucket
+        ? moveGlobalPriorityItem(
+            previousItems,
+            draggedItem,
+            overBucket,
+            overData?.item
+          )
+        : null;
+
+      if (
+        (!nextItems || globalPriorityOrdersMatch(previousItems, nextItems)) &&
+        previewItemsChanged &&
+        previewItems
+      ) {
+        nextItems = previewItems;
+      }
+      if (!nextItems || globalPriorityOrdersMatch(previousItems, nextItems)) return;
+
+      const payload = buildGlobalPriorityOrderPayload(nextItems);
+
+      setMonumentPriorityRoadmapError(null);
+      setMonumentPriorityRoadmapItems(clearGlobalPriorityRanks(nextItems));
+
+      const supabase =
+        getSupabaseBrowser() as MonumentPrioritySupabaseClient | null;
+      if (!supabase) {
+        setMonumentPriorityRoadmapItems(previousItems);
+        setMonumentPriorityRoadmapError("Unable to save priority order.");
+        return;
+      }
+
+      setIsSavingMonumentPriorityOrder(true);
+      try {
+        const { error: saveError } = await supabase.rpc(
+          "save_global_priority_order",
+          { p_items: payload }
+        );
+
+        if (saveError) {
+          throw saveError;
+        }
+
+        const { error: rankError } = await supabase.rpc(
+          "recalculate_goal_global_rank"
+        );
+        if (rankError) {
+          throw rankError;
+        }
+
+        await refreshTrueRoadmaps();
+      } catch (caught) {
+        console.error("Failed to save Monument priority item order", caught);
+        setMonumentPriorityRoadmapItems(previousItems);
+        setMonumentPriorityRoadmapError("Could not save priority order.");
+      } finally {
+        setIsSavingMonumentPriorityOrder(false);
+      }
+    },
+    [monumentPriorityRoadmapItems, refreshTrueRoadmaps]
+  );
+
+  const handleMonumentCampaignGoalDragEnd = useCallback(
+    async (campaign: GlobalPriorityRoadmapItem, event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id || campaign.type !== "campaign") return;
+
+      const activeData = active.data.current as
+        | { campaignId?: string; goal?: RoadmapPriorityGoal }
+        | undefined;
+      const draggedGoal = activeData?.goal;
+      if (!draggedGoal || activeData?.campaignId !== campaign.id) return;
+
+      const overData = over.data.current as
+        | {
+            campaignId?: string;
+            bucket?: PriorityBucketId;
+            goal?: RoadmapPriorityGoal;
+          }
+        | undefined;
+      if (overData?.campaignId && overData.campaignId !== campaign.id) return;
+
+      const targetPriority =
+        overData?.bucket ??
+        overData?.goal?.priority ??
+        parseCampaignGoalBucketId(String(over.id), campaign.id);
+      if (!targetPriority) return;
+
+      const previousItems = monumentPriorityRoadmapItems;
+      const currentCampaign =
+        previousItems.find(
+          (item) => item.type === "campaign" && item.id === campaign.id
+        ) ?? campaign;
+      const previousGoals = currentCampaign.goals ?? [];
+      const visibleGoals = campaign.goals ?? previousGoals;
+      if (!visibleGoals.some((goal) => goal.id === draggedGoal.id)) return;
+
+      const nextVisibleGoals = moveCampaignGoal(
+        visibleGoals,
+        draggedGoal,
+        targetPriority,
+        overData?.goal
+      );
+      const nextGoals = mergeVisibleCampaignGoalOrder(
+        previousGoals,
+        visibleGoals,
+        nextVisibleGoals
+      );
+
+      if (campaignGoalOrdersMatch(previousGoals, nextGoals)) return;
+
+      const updates = buildCampaignGoalPriorityUpdates(previousGoals, nextGoals);
+      if (updates.length === 0) return;
+
+      setMonumentPriorityRoadmapError(null);
+      setMonumentPriorityRoadmapItems(
+        clearGlobalPriorityRanks(
+          applyCampaignGoalOrder(previousItems, currentCampaign.id, nextGoals)
+        )
+      );
+
+      const supabase =
+        getSupabaseBrowser() as MonumentPrioritySupabaseClient | null;
+      if (!supabase) {
+        setMonumentPriorityRoadmapItems(previousItems);
+        setMonumentPriorityRoadmapError("Unable to save Campaign Goal order.");
+        return;
+      }
+
+      setIsSavingMonumentPriorityOrder(true);
+      try {
+        await saveMonumentCampaignGoalPriorityOrder(supabase, updates);
+        await refreshTrueRoadmaps();
+      } catch (caught) {
+        console.error("Failed to save Monument Campaign Goal order", caught);
+        setMonumentPriorityRoadmapItems(previousItems);
+        setMonumentPriorityRoadmapError("Could not save Campaign Goal order.");
+      } finally {
+        setIsSavingMonumentPriorityOrder(false);
+      }
+    },
+    [monumentPriorityRoadmapItems, refreshTrueRoadmaps]
   );
 
   const handleProjectEditOpen = useCallback(
@@ -4328,16 +4320,23 @@ export function MonumentGoalsList({
       ) : null;
     const roadmapContent =
       resolvedSourceType === "monument" ? (
-        monumentPriorityRoadmapItems.length === 0 ? (
+        visibleMonumentPriorityRoadmapItems.length === 0 ? (
           roadmapEmptyContent
         ) : (
           <div
             className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
           >
-            <MonumentPriorityRoadmap
-              items={monumentPriorityRoadmapItems}
-              monumentId={resolvedSourceId}
+            <GlobalPriorityRoadmap
+              title="Monument Roadmap"
+              items={visibleMonumentPriorityRoadmapItems}
+              error={monumentPriorityRoadmapError}
+              isSaving={isSavingMonumentPriorityOrder}
+              sensors={monumentPriorityRoadmapSensors}
+              isFiltered={true}
               onGoalOpen={handleRoadmapGoalOpen}
+              onGoalLongPressEdit={handleMonumentPriorityGoalLongPressEdit}
+              onDragEnd={handleMonumentPriorityDragEnd}
+              onCampaignGoalDragEnd={handleMonumentCampaignGoalDragEnd}
             />
             {openRoadmapGoalCard}
           </div>
@@ -4655,7 +4654,10 @@ export function MonumentGoalsList({
     goalsRoadmapViewIndex,
     roadmapEmptyState,
     monumentRoadmapsWithItems,
-    monumentPriorityRoadmapItems,
+    visibleMonumentPriorityRoadmapItems,
+    monumentPriorityRoadmapError,
+    isSavingMonumentPriorityOrder,
+    monumentPriorityRoadmapSensors,
     roadmapOpenGoal,
     restoreGoalDrawerId,
     restoreCampaignDrawerId,
@@ -4678,6 +4680,9 @@ export function MonumentGoalsList({
     handleNewProjectRevealComplete,
     handleRoadmapGoalEdit,
     handleRoadmapGoalOpen,
+    handleMonumentPriorityGoalLongPressEdit,
+    handleMonumentPriorityDragEnd,
+    handleMonumentCampaignGoalDragEnd,
     handleProjectEditOpen,
     handleTaskEditOpen,
     handleTaskToggleCompletion,

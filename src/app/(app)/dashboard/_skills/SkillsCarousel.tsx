@@ -40,6 +40,7 @@ const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
 const RECOMMENDED_SKILL_DIRECT_MATCH_THRESHOLD = 4;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DASHBOARD_DETAIL_SAFE_TOP_GAP = 8;
 type CommunitySkill = {
   id: string | null;
   name: string;
@@ -337,6 +338,54 @@ export type SkillsCarouselHandle = {
   refresh: () => Promise<void>;
 };
 
+function getSafeAreaInsetTop() {
+  if (typeof document === "undefined") {
+    return 0;
+  }
+
+  const probe = document.createElement("div");
+  probe.style.position = "fixed";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  probe.style.paddingTop = "env(safe-area-inset-top, 0px)";
+  document.body.appendChild(probe);
+
+  const safeAreaInsetTop = Number.parseFloat(
+    window.getComputedStyle(probe).paddingTop
+  );
+
+  probe.remove();
+
+  return Number.isFinite(safeAreaInsetTop) ? safeAreaInsetTop : 0;
+}
+
+function getDashboardDetailViewport() {
+  const viewportHeight = Math.max(
+    window.innerHeight || 0,
+    window.visualViewport?.height ?? 0
+  );
+  const topNav = document.querySelector<HTMLElement>(".app-top-nav");
+  const safeAreaInsetTop = getSafeAreaInsetTop();
+
+  let top =
+    safeAreaInsetTop > 0
+      ? Math.min(viewportHeight, safeAreaInsetTop + DASHBOARD_DETAIL_SAFE_TOP_GAP)
+      : 0;
+
+  if (topNav) {
+    const topNavRect = topNav.getBoundingClientRect();
+
+    if (topNavRect.bottom > 0 && topNavRect.top < viewportHeight) {
+      top = Math.max(top, Math.min(topNavRect.bottom, viewportHeight));
+    }
+  }
+
+  return {
+    top,
+    height: Math.max(0, viewportHeight - top),
+  };
+}
+
 function parseHex(hex?: string | null) {
   if (!hex) {
     return { r: 99, g: 102, b: 241 };
@@ -590,6 +639,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
 
   const [categories, setCategories] = useState(fetchedCategories);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [detailOverlayTop, setDetailOverlayTop] = useState(0);
   const [detailOverlayHeight, setDetailOverlayHeight] = useState<number | null>(null);
   const [isPortalMounted, setIsPortalMounted] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -672,6 +722,11 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
 
   const openSkillDetail = useCallback((skill: Skill) => {
     scrollDashboardToTopSmooth();
+    const nextViewport = getDashboardDetailViewport();
+    setDetailOverlayTop(Math.round(nextViewport.top));
+    if (nextViewport.height > 0) {
+      setDetailOverlayHeight(Math.round(nextViewport.height));
+    }
     setActiveSkillId(skill.id);
   }, []);
 
@@ -679,6 +734,10 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     "--monument-detail-overlay-height": detailOverlayHeight
       ? `${detailOverlayHeight}px`
       : "100dvh",
+  } as CSSProperties;
+  const detailOverlayScrollStyle = {
+    top: `${detailOverlayTop}px`,
+    height: detailOverlayHeight ? `${detailOverlayHeight}px` : "100dvh",
   } as CSSProperties;
 
   useEffect(() => {
@@ -740,17 +799,16 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
 
   useEffect(() => {
     if (!activeSkillId) {
+      setDetailOverlayTop(0);
       setDetailOverlayHeight(null);
       return;
     }
 
     const updateStableOverlayHeight = () => {
-      const nextHeight = Math.max(
-        window.innerHeight || 0,
-        window.visualViewport?.height ?? 0
-      );
-      if (nextHeight > 0) {
-        setDetailOverlayHeight(Math.round(nextHeight));
+      const nextViewport = getDashboardDetailViewport();
+      setDetailOverlayTop(Math.round(nextViewport.top));
+      if (nextViewport.height > 0) {
+        setDetailOverlayHeight(Math.round(nextViewport.height));
       }
     };
 
@@ -1964,7 +2022,8 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
         <motion.div
           key="skill-detail-overlay"
           ref={activeSkillScrollRef}
-          className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+          className="fixed inset-x-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-black/60 px-0 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-0 backdrop-blur-md [-webkit-overflow-scrolling:touch] sm:pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+          style={detailOverlayScrollStyle}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

@@ -205,6 +205,14 @@ type MatrixHabitDueStatus = {
   label: "DUE" | "OVERDUE" | "DUE TODAY" | "COMPLETE";
 };
 type MatrixHabitDueEvaluation = ReturnType<typeof evaluateHabitDueOnDate>;
+type MatrixCardDensityPreferenceMap = Record<string, MatrixCardDensity>;
+type MatrixCollapsedGroupPreferences = Partial<Record<MatrixView, string[]>>;
+type MatrixPreferences = {
+  view?: MatrixView;
+  panel?: MatrixPanel;
+  cardDensityByGroup?: MatrixCardDensityPreferenceMap;
+  collapsedGroupKeysByView?: MatrixCollapsedGroupPreferences;
+};
 
 const MATRIX_PANEL_LABELS: Record<MatrixPanel, string> = {
   scheduled: "Active",
@@ -318,10 +326,157 @@ function getMatrixCompleteShimmerStyle() {
     "--matrix-complete-shimmer-delay": `-${Date.now() % MATRIX_COMPLETE_SHIMMER_DURATION_MS}ms`,
   } as CSSProperties;
 }
+
+const MATRIX_PREFERENCES_STORAGE_KEY = "creator:matrix-preferences";
 const MATRIX_CARD_DENSITY_STORAGE_KEY = "creator:matrix-card-density-by-group";
+
+function isMatrixView(value: unknown): value is MatrixView {
+  return (
+    value === "monuments" ||
+    value === "skills" ||
+    value === "blocks" ||
+    value === "types"
+  );
+}
+
+function isMatrixPanel(value: unknown): value is MatrixPanel {
+  return value === "scheduled" || value === "unscheduled";
+}
 
 function isMatrixCardDensity(value: unknown): value is MatrixCardDensity {
   return value === "large" || value === "small" || value === "row";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readMatrixJsonObject(storageKey: string): Record<string, unknown> {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const rawValue = window.localStorage.getItem(storageKey);
+    if (!rawValue) return {};
+
+    const parsedValue = JSON.parse(rawValue);
+    return isRecord(parsedValue) ? parsedValue : {};
+  } catch {
+    return {};
+  }
+}
+
+function sanitizeMatrixCardDensityPreferences(
+  value: unknown
+): MatrixCardDensityPreferenceMap {
+  if (!isRecord(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, MatrixCardDensity] =>
+      isMatrixCardDensity(entry[1])
+    )
+  );
+}
+
+function sanitizeMatrixCollapsedGroupPreferences(
+  value: unknown
+): MatrixCollapsedGroupPreferences {
+  if (!isRecord(value)) return {};
+
+  const preferences: MatrixCollapsedGroupPreferences = {};
+  for (const [view, groupKeys] of Object.entries(value)) {
+    if (!isMatrixView(view) || !Array.isArray(groupKeys)) continue;
+
+    preferences[view] = groupKeys.filter(
+      (groupKey): groupKey is string => typeof groupKey === "string"
+    );
+  }
+
+  return preferences;
+}
+
+function readMatrixPreferences(): MatrixPreferences {
+  const storedPreferences = readMatrixJsonObject(MATRIX_PREFERENCES_STORAGE_KEY);
+  const preferences: MatrixPreferences = {};
+
+  if (isMatrixView(storedPreferences.view)) {
+    preferences.view = storedPreferences.view;
+  }
+
+  if (isMatrixPanel(storedPreferences.panel)) {
+    preferences.panel = storedPreferences.panel;
+  }
+
+  const cardDensityByGroup = sanitizeMatrixCardDensityPreferences(
+    storedPreferences.cardDensityByGroup
+  );
+  if (Object.keys(cardDensityByGroup).length > 0) {
+    preferences.cardDensityByGroup = cardDensityByGroup;
+  }
+
+  const collapsedGroupKeysByView = sanitizeMatrixCollapsedGroupPreferences(
+    storedPreferences.collapsedGroupKeysByView
+  );
+  if (Object.keys(collapsedGroupKeysByView).length > 0) {
+    preferences.collapsedGroupKeysByView = collapsedGroupKeysByView;
+  }
+
+  return preferences;
+}
+
+function writeMatrixPreferences(
+  updatePreferences: (currentPreferences: MatrixPreferences) => MatrixPreferences
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const nextPreferences = updatePreferences(readMatrixPreferences());
+    window.localStorage.setItem(
+      MATRIX_PREFERENCES_STORAGE_KEY,
+      JSON.stringify(nextPreferences)
+    );
+  } catch {
+    // Ignore localStorage failures; Matrix can still update for this session.
+  }
+}
+
+function readMatrixLegacyCardDensityPreferences() {
+  return sanitizeMatrixCardDensityPreferences(
+    readMatrixJsonObject(MATRIX_CARD_DENSITY_STORAGE_KEY)
+  );
+}
+
+function readMatrixCardDensityPreference(preferenceKey: string) {
+  const preferences = readMatrixPreferences();
+  const storedDensity = preferences.cardDensityByGroup?.[preferenceKey];
+  if (isMatrixCardDensity(storedDensity)) return storedDensity;
+
+  return readMatrixLegacyCardDensityPreferences()[preferenceKey];
+}
+
+function writeMatrixCardDensityPreference(
+  preferenceKey: string,
+  density: MatrixCardDensity
+) {
+  writeMatrixPreferences((currentPreferences) => ({
+    ...currentPreferences,
+    cardDensityByGroup: {
+      ...(currentPreferences.cardDensityByGroup ?? {}),
+      [preferenceKey]: density,
+    },
+  }));
+
+  if (typeof window === "undefined") return;
+
+  try {
+    const legacyPreferences = readMatrixLegacyCardDensityPreferences();
+    legacyPreferences[preferenceKey] = density;
+    window.localStorage.setItem(
+      MATRIX_CARD_DENSITY_STORAGE_KEY,
+      JSON.stringify(legacyPreferences)
+    );
+  } catch {
+    // Ignore localStorage failures; Matrix can still update for this session.
+  }
 }
 
 function getMatrixFabOriginRect(element: HTMLElement) {
@@ -3137,6 +3292,7 @@ function MatrixGridCarousel({
   const matrixPanelViewportRef = useRef<HTMLDivElement | null>(null);
   const scheduledPanelRef = useRef<HTMLDivElement | null>(null);
   const unscheduledPanelRef = useRef<HTMLDivElement | null>(null);
+  const matrixPanelPreferenceRestoredRef = useRef(false);
   const initialMatrixRevealActiveRef = useRef(false);
   const initialMatrixRevealTimeoutRef = useRef<ReturnType<
     typeof setTimeout
@@ -3260,6 +3416,10 @@ function MatrixGridCarousel({
       }
       setMatrixPanelDragOffset(0);
       setMatrixPanel(panel);
+      writeMatrixPreferences((currentPreferences) => ({
+        ...currentPreferences,
+        panel,
+      }));
     },
     [availableMatrixPanels, getMatrixPanelHeight]
   );
@@ -3278,26 +3438,29 @@ function MatrixGridCarousel({
   const cardDensityPreferenceKey = `${matrixView}:grid`;
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const storedPreferences = window.localStorage.getItem(
-        MATRIX_CARD_DENSITY_STORAGE_KEY
-      );
-      const parsedPreferences = storedPreferences
-        ? JSON.parse(storedPreferences)
-        : null;
-      const storedDensity = parsedPreferences?.[cardDensityPreferenceKey];
-
-      if (isMatrixCardDensity(storedDensity)) {
-        setCardDensity(storedDensity);
-      } else {
-        setCardDensity("large");
-      }
-    } catch {
-      setCardDensity("large");
-    }
+    const storedDensity = readMatrixCardDensityPreference(
+      cardDensityPreferenceKey
+    );
+    setCardDensity(storedDensity ?? "large");
   }, [cardDensityPreferenceKey]);
+
+  useEffect(() => {
+    const storedGroupKeys =
+      readMatrixPreferences().collapsedGroupKeysByView?.[matrixView] ?? [];
+    setCollapsedMatrixGroupKeys(new Set(storedGroupKeys));
+  }, [matrixView]);
+
+  useEffect(() => {
+    if (matrixPanelPreferenceRestoredRef.current) return;
+    if (availableMatrixPanels.length === 0) return;
+
+    matrixPanelPreferenceRestoredRef.current = true;
+    const storedPanel = readMatrixPreferences().panel;
+    if (storedPanel && availableMatrixPanels.includes(storedPanel)) {
+      setMatrixPanelDragOffset(0);
+      setMatrixPanel(storedPanel);
+    }
+  }, [availableMatrixPanels]);
 
   const handleMatrixGroupToggle = useCallback((groupKey: string) => {
     setCollapsedMatrixGroupKeys((currentKeys) => {
@@ -3307,9 +3470,16 @@ function MatrixGridCarousel({
       } else {
         nextKeys.add(groupKey);
       }
+      writeMatrixPreferences((currentPreferences) => ({
+        ...currentPreferences,
+        collapsedGroupKeysByView: {
+          ...(currentPreferences.collapsedGroupKeysByView ?? {}),
+          [matrixView]: Array.from(nextKeys),
+        },
+      }));
       return nextKeys;
     });
-  }, []);
+  }, [matrixView]);
 
   const handleCardDensityToggle = useCallback(() => {
     setCardDensity((currentDensity) => {
@@ -3320,29 +3490,7 @@ function MatrixGridCarousel({
             ? "row"
             : "large";
 
-      if (typeof window !== "undefined") {
-        try {
-          const storedPreferences = window.localStorage.getItem(
-            MATRIX_CARD_DENSITY_STORAGE_KEY
-          );
-          const parsedPreferences = storedPreferences
-            ? JSON.parse(storedPreferences)
-            : {};
-          const nextPreferences =
-            parsedPreferences && typeof parsedPreferences === "object"
-              ? parsedPreferences
-              : {};
-
-          nextPreferences[cardDensityPreferenceKey] = nextDensity;
-
-          window.localStorage.setItem(
-            MATRIX_CARD_DENSITY_STORAGE_KEY,
-            JSON.stringify(nextPreferences)
-          );
-        } catch {
-          // Ignore localStorage failures; density can still update for this session.
-        }
-      }
+      writeMatrixCardDensityPreference(cardDensityPreferenceKey, nextDensity);
 
       return nextDensity;
     });
@@ -3999,6 +4147,21 @@ function MatrixContent() {
     Map<string, ReturnType<typeof setTimeout>>
   >(new Map());
   const bypassMemoCaptureRef = useRef(false);
+
+  useEffect(() => {
+    const storedView = readMatrixPreferences().view;
+    if (storedView) {
+      setMatrixView(storedView);
+    }
+  }, []);
+
+  const handleMatrixViewChange = useCallback((view: MatrixView) => {
+    setMatrixView(view);
+    writeMatrixPreferences((currentPreferences) => ({
+      ...currentPreferences,
+      view,
+    }));
+  }, []);
 
   useEffect(() => {
     matrixStateRef.current = state;
@@ -5155,7 +5318,7 @@ function MatrixContent() {
               <div ref={matrixTrayRef} className="pb-1">
                 <MatrixSettingsTray
                   activeView={matrixView}
-                  onViewChange={setMatrixView}
+                  onViewChange={handleMatrixViewChange}
                 />
               </div>
             </motion.div>
