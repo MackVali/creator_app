@@ -150,6 +150,7 @@ import {
 import { useProfile } from "@/lib/hooks/useProfile";
 import { applyStatusTargets, type StatusTarget } from "./statusMutations";
 import {
+  getHabitCompletionStateKey,
   type HabitCompletionByDate,
   type HabitCompletionStatus,
   resolveHabitCompletionStatus,
@@ -5580,11 +5581,11 @@ export default function ScheduleTabContent({
   );
 
   const toggleHabitCompletionStatus = useCallback(
-    (dateKey: string, habitId: string): HabitCompletionStatus => {
-      const current = getHabitCompletionStatus(dateKey, habitId);
+    (dateKey: string, completionKey: string): HabitCompletionStatus => {
+      const current = getHabitCompletionStatus(dateKey, completionKey);
       const nextStatus: HabitCompletionStatus =
         current === "completed" ? "scheduled" : "completed";
-      updateHabitCompletionStatus(dateKey, habitId, nextStatus);
+      updateHabitCompletionStatus(dateKey, completionKey, nextStatus);
       return nextStatus;
     },
     [getHabitCompletionStatus, updateHabitCompletionStatus]
@@ -5612,7 +5613,7 @@ export default function ScheduleTabContent({
         : false;
       const currentStatus = getHabitCompletionStatus(
         dateKey,
-        placement.habitId
+        getHabitCompletionStateKey(placement)
       );
       const plannedNextStatus: HabitCompletionStatus =
         currentStatus === "completed" ? "scheduled" : "completed";
@@ -5652,7 +5653,7 @@ export default function ScheduleTabContent({
       }
       const nextStatus = toggleHabitCompletionStatus(
         dateKey,
-        placement.habitId
+        getHabitCompletionStateKey(placement)
       );
       const instanceId = placement.instanceId;
       if (instanceId) {
@@ -5692,7 +5693,7 @@ export default function ScheduleTabContent({
 
     updateHabitCompletionStatus(
       memoCompletionState.dateKey,
-      memoCompletionState.habitId,
+      getHabitCompletionStateKey(memoCompletionState),
       "completed"
     );
     if (memoCompletionState.instanceId) {

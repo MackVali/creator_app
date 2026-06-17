@@ -8223,7 +8223,7 @@ export function Fab({
 
     return (
       <span
-        className="mt-0.5 flex h-5 min-w-5 shrink-0 items-center justify-center rounded border border-red-400/25 bg-red-500/10 px-1 text-[9px] font-black leading-none text-red-300 shadow-[0_0_10px_rgba(248,113,113,0.12)]"
+        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded border border-red-400/25 bg-red-500/10 px-1 text-[9px] font-black leading-none text-red-300 shadow-[0_0_10px_rgba(248,113,113,0.12)]"
         title={`Priority ${formatFabPriorityLabel(normalizedPriority)}`}
         aria-label={`Priority ${formatFabPriorityLabel(normalizedPriority)}`}
       >
@@ -8314,12 +8314,12 @@ export function Fab({
                 style={associatedEditCardStyle}
               >
                 {renderAssociatedSkillBadge(skillVisual, skillLabel)}
-                <span className="relative z-[2] flex min-w-0 flex-col justify-center gap-1 px-2 py-2">
-                  <span className="flex min-w-0 items-start gap-1.5">
+                <span className="relative z-[2] flex h-full min-w-0 flex-col justify-center gap-1 self-stretch px-2 py-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {renderAssociatedPriorityIndicator(project.priority)}
                     <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white/90">
                       {project.name}
                     </span>
-                    {renderAssociatedPriorityIndicator(project.priority)}
                   </span>
                   {metaItems.length > 0 ? (
                     <span className="truncate text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/48">
@@ -8846,12 +8846,12 @@ export function Fab({
                 aria-label={`Edit task ${task.name}`}
               >
                 {renderAssociatedSkillBadge(skillVisual, skillLabel)}
-                <span className="relative z-[2] flex min-w-0 flex-col justify-center gap-1 px-2 py-2">
-                  <span className="flex min-w-0 items-start gap-1.5">
+                <span className="relative z-[2] flex h-full min-w-0 flex-col justify-center gap-1 self-stretch px-2 py-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {renderAssociatedPriorityIndicator(task.priority)}
                     <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white/90">
                       {task.name}
                     </span>
-                    {renderAssociatedPriorityIndicator(task.priority)}
                   </span>
                   {durationLabel ? (
                     <span className="truncate text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/48">
