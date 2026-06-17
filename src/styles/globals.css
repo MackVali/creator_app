@@ -87,7 +87,8 @@
     color: #ffffff;
   }
 
-  body.command-circle-detail-open .app-top-nav {
+  body.command-circle-detail-open .app-top-nav,
+  body.monument-detail-open .app-top-nav {
     position: relative;
     z-index: 50;
   }

@@ -485,7 +485,7 @@ export function MonumentGridWithSharedTransition({
               style={detailOverlayScrollStyle}
             >
               <motion.div
-                className="pointer-events-auto fixed inset-0 bg-black/60 backdrop-blur-md"
+                className="pointer-events-none fixed inset-0 bg-black/60 backdrop-blur-md"
                 initial={{ opacity: 0 }}
                 animate={{
                   opacity: monumentTransition.phase === "closing" ? 0 : 1,
