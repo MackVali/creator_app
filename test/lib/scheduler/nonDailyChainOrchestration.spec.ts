@@ -16,6 +16,14 @@ const userId = "user-non-daily";
 const toISODate = (date: Date) =>
   startOfDayInTimeZone(date, tz).toISOString().slice(0, 10);
 
+type NonDailyDebugMetadata = {
+  nonDaily?: {
+    role?: string | null;
+    dueAtUtc?: string | null;
+    anchorCompletedAtUtc?: string | null;
+  } | null;
+};
+
 const buildHabit = (overrides: Partial<HabitScheduleItem> = {}) =>
   ({
     id: "habit-weekly",
@@ -132,16 +140,19 @@ describe("non-daily chain orchestration", () => {
         (a, b) =>
           new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
       );
-    const payload = scheduled.map((inst) => ({
-      id: inst.id,
-      role: (inst.metadata as any)?.nonDaily?.role ?? null,
-      start_utc: inst.start_utc,
-      local_day: toISODate(new Date(inst.start_utc)),
-      dueAtUtc: (inst.metadata as any)?.nonDaily?.dueAtUtc ?? null,
-      anchorCompletedAtUtc:
-        (inst.metadata as any)?.nonDaily?.anchorCompletedAtUtc ?? null,
-      status: inst.status,
-    }));
+    const payload = scheduled.map((inst) => {
+      const metadata = inst.metadata as NonDailyDebugMetadata | null;
+      return {
+        id: inst.id,
+        role: metadata?.nonDaily?.role ?? null,
+        start_utc: inst.start_utc,
+        local_day: toISODate(new Date(inst.start_utc)),
+        dueAtUtc: metadata?.nonDaily?.dueAtUtc ?? null,
+        anchorCompletedAtUtc:
+          metadata?.nonDaily?.anchorCompletedAtUtc ?? null,
+        status: inst.status,
+      };
+    });
     // eslint-disable-next-line no-console
     console.log(`[${label}] non-daily chain`, payload);
   };

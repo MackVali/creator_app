@@ -13,6 +13,9 @@ export interface FocusPomoQueueItem {
   durationLabel: string;
   energyLabel: string | null;
   statusLabel: string;
+  status?: string | null;
+  completedAt?: string | null;
+  completed_at?: string | null;
   icon?: string | null;
   skillId?: string | null;
   skillName?: string | null;
@@ -738,6 +741,37 @@ function isHabitItem(item: FocusPomoQueueItem): boolean {
   return item.sourceType === "HABIT" || item.kind === "habit" || item.kind === "chore";
 }
 
+function isCompletedQueueItem(item: FocusPomoQueueItem): boolean {
+  const record = item as unknown as Record<string, unknown>;
+  const completedAt = readRecordString(record, ["completedAt", "completed_at"]);
+  if (completedAt) return true;
+
+  const status = readRecordString(record, ["status", "statusLabel"]);
+  const normalizedStatus = status?.trim().toUpperCase();
+  return (
+    normalizedStatus === "COMPLETE" ||
+    normalizedStatus === "COMPLETED" ||
+    normalizedStatus === "DONE" ||
+    normalizedStatus === "FINISHED"
+  );
+}
+
+function isQueueItemEligibleToRun(
+  item: FocusPomoQueueItem,
+  now: Date
+): boolean {
+  if (isCompletedQueueItem(item)) return false;
+  if (isHabitItem(item)) return isHabitDueNow(item, now);
+  return true;
+}
+
+function filterEligibleQueueItems(
+  items: FocusPomoQueueItem[],
+  now: Date
+): FocusPomoQueueItem[] {
+  return items.filter((item) => isQueueItemEligibleToRun(item, now));
+}
+
 function isChoreItem(item: FocusPomoQueueItem): boolean {
   const raw = (item.habitType ?? item.habit_type ?? item.kind ?? "")
     .trim()
@@ -1139,6 +1173,8 @@ function mapProject(
     deadline: readString(row.deadline),
     targetDate: readString(row.target_date),
     target_date: readString(row.target_date),
+    completedAt: readString(row.completed_at),
+    completed_at: readString(row.completed_at),
     createdAt: readString(row.created_at),
     created_at: readString(row.created_at),
     updatedAt: readString(row.updated_at),
@@ -1622,7 +1658,10 @@ export async function fetchFocusPomoQueue(params: {
       fetchProjects(supabase, user.id, { sourceType: "all" }),
     ]);
 
-    return [...habits, ...projects].sort(compareQueueItems);
+    const now = new Date();
+    return filterEligibleQueueItems([...habits, ...projects], now).sort(
+      compareQueueItems
+    );
   }
 
   if (!sourceId) return [];
@@ -1652,5 +1691,8 @@ export async function fetchFocusPomoQueue(params: {
     fetchProjects(supabase, user.id, projectScope),
   ]);
 
-  return [...habits, ...projects].sort(compareQueueItems);
+  const now = new Date();
+  return filterEligibleQueueItems([...habits, ...projects], now).sort(
+    compareQueueItems
+  );
 }
