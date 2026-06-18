@@ -1,5 +1,6 @@
 export type ConstraintItem = {
   habitType?: string | null;
+  sourceType?: string | null;
   skillId?: string | null;
   skillIds?: string[] | null;
   monumentId?: string | null;
@@ -10,12 +11,15 @@ export type ConstraintItem = {
 };
 
 export type WindowConstraint = {
+  allowAllInstanceTypes?: boolean;
   allowAllHabitTypes?: boolean;
   allowAllSkills?: boolean;
   allowAllMonuments?: boolean;
+  allowedInstanceTypes?: string[] | null;
   allowedHabitTypes?: string[] | null;
   allowedSkillIds?: string[] | null;
   allowedMonumentIds?: string[] | null;
+  allowedInstanceTypesSet?: Set<string> | null;
   allowedHabitTypesSet?: Set<string> | null;
   allowedSkillIdsSet?: Set<string> | null;
   allowedMonumentIdsSet?: Set<string> | null;
@@ -68,9 +72,11 @@ export function passesTimeBlockConstraints(
   window: WindowConstraint
 ): boolean {
   const {
+    allowAllInstanceTypes = true,
     allowAllHabitTypes = true,
     allowAllSkills = true,
     allowAllMonuments = true,
+    allowedInstanceTypes,
     allowedHabitTypes,
     allowedSkillIds,
     allowedMonumentIds,
@@ -83,6 +89,18 @@ export function passesTimeBlockConstraints(
   if (windowKind === "BREAK") {
     if (item.isProject) return false;
     if (normalizedHabitType !== "RELAXER") return false;
+  }
+
+  if (!allowAllInstanceTypes) {
+    const instanceType = item.isProject
+      ? "PROJECT"
+      : typeof item.sourceType === "string" && item.sourceType.trim()
+        ? item.sourceType.trim().toUpperCase()
+        : normalizedHabitType;
+    const allowed =
+      window.allowedInstanceTypesSet ?? normalizeSet(allowedInstanceTypes);
+    if (!instanceType || !allowed || allowed.size === 0) return false;
+    if (!allowed.has(instanceType)) return false;
   }
 
   // Habit type dimension

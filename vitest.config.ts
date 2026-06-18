@@ -24,6 +24,10 @@ export default defineConfig({
     alias: [
       { find: "@/components", replacement: path.resolve(projectRoot, "src/components") },
       { find: "@/lib/scheduler", replacement: path.resolve(projectRoot, "src/lib/scheduler") },
+      { find: "@/lib/supabase/server", replacement: path.resolve(projectRoot, "lib/supabase/server.ts") },
+      { find: "@/lib/supabase/admin", replacement: path.resolve(projectRoot, "src/lib/supabase/admin.ts") },
+      { find: "@/lib/supabase/retry-fetch", replacement: path.resolve(projectRoot, "lib/supabase/retry-fetch.ts") },
+      { find: "@/lib/supabase", replacement: path.resolve(projectRoot, "lib/supabase.ts") },
       { find: "@/types", replacement: path.resolve(projectRoot, "src/types") },
       {
         find: /^@\/lib\/(.*)$/,

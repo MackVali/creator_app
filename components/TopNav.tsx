@@ -475,6 +475,7 @@ export default function TopNav() {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
+              alignOffset={-16}
               className="app-nav-menu"
             >
               <DropdownMenuItem asChild>

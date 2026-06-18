@@ -74,6 +74,27 @@ export interface EventTags {
   created_at: string;
 }
 
+export type OverlayBlockMode = "MANUAL" | "DYNAMIC";
+export type OverlayBlockType = "FOCUS" | "BREAK" | "PRACTICE";
+export type OverlayEnergy =
+  | "NO"
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH"
+  | "ULTRA"
+  | "EXTREME";
+export type OverlayAllowedInstanceType =
+  | "PROJECT"
+  | "TASK"
+  | "HABIT"
+  | "CHORE"
+  | "ASYNC"
+  | "SYNC"
+  | "TEMP"
+  | "MEMO"
+  | "RELAXER"
+  | "PRACTICE";
+
 export interface OverlayWindows {
   id: string;
   created_at: string;
@@ -83,6 +104,13 @@ export interface OverlayWindows {
   start_utc: string;
   end_utc: string;
   label: string | null;
+  mode: OverlayBlockMode;
+  block_type: OverlayBlockType | null;
+  energy: OverlayEnergy | null;
+  location_context_id: string | null;
+  allow_all_instance_types: boolean;
+  allow_all_skills: boolean;
+  allow_all_monuments: boolean;
 }
 
 export interface OverlayWindowItems {
@@ -98,6 +126,33 @@ export interface OverlayWindowItems {
   locked: boolean;
   event_name: string | null;
   schedule_instance_id: string | null;
+}
+
+export interface OverlayWindowAllowedInstanceTypes {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  overlay_window_id: string;
+  user_id: string;
+  instance_type: OverlayAllowedInstanceType;
+}
+
+export interface OverlayWindowAllowedSkills {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  overlay_window_id: string;
+  user_id: string;
+  skill_id: string;
+}
+
+export interface OverlayWindowAllowedMonuments {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  overlay_window_id: string;
+  user_id: string;
+  monument_id: string;
 }
 
 // Lookup tables
@@ -578,10 +633,29 @@ export interface Database {
       };
       overlay_windows: {
         Row: OverlayWindows;
-        Insert: Omit<OverlayWindows, "id" | "created_at" | "updated_at"> & {
+        Insert: Omit<
+          OverlayWindows,
+          | "id"
+          | "created_at"
+          | "updated_at"
+          | "mode"
+          | "block_type"
+          | "energy"
+          | "location_context_id"
+          | "allow_all_instance_types"
+          | "allow_all_skills"
+          | "allow_all_monuments"
+        > & {
           id?: string;
           created_at?: string;
           updated_at?: string;
+          mode?: OverlayBlockMode;
+          block_type?: OverlayBlockType | null;
+          energy?: OverlayEnergy | null;
+          location_context_id?: string | null;
+          allow_all_instance_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_monuments?: boolean;
         };
         Update: Partial<
           Omit<OverlayWindows, "id" | "created_at" | "updated_at">
@@ -599,6 +673,54 @@ export interface Database {
         };
         Update: Partial<
           Omit<OverlayWindowItems, "id" | "created_at" | "updated_at">
+        >;
+      };
+      overlay_window_allowed_instance_types: {
+        Row: OverlayWindowAllowedInstanceTypes;
+        Insert: Omit<
+          OverlayWindowAllowedInstanceTypes,
+          "id" | "created_at" | "updated_at"
+        > & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Omit<
+            OverlayWindowAllowedInstanceTypes,
+            "id" | "created_at" | "updated_at"
+          >
+        >;
+      };
+      overlay_window_allowed_skills: {
+        Row: OverlayWindowAllowedSkills;
+        Insert: Omit<
+          OverlayWindowAllowedSkills,
+          "id" | "created_at" | "updated_at"
+        > & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Omit<OverlayWindowAllowedSkills, "id" | "created_at" | "updated_at">
+        >;
+      };
+      overlay_window_allowed_monuments: {
+        Row: OverlayWindowAllowedMonuments;
+        Insert: Omit<
+          OverlayWindowAllowedMonuments,
+          "id" | "created_at" | "updated_at"
+        > & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Omit<
+            OverlayWindowAllowedMonuments,
+            "id" | "created_at" | "updated_at"
+          >
         >;
       };
       energy: {

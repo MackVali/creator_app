@@ -3,6 +3,12 @@ import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import {
+  getCanonicalProjectGlobalRankUpdates,
+  normalizeGoalGlobalRank,
+  type CanonicalGoalRecord,
+  type CanonicalProjectRecord,
+} from "@/lib/scheduler/projectOrdering";
 
 export const LIMIT_ERROR_CODES = [
   "GOAL_LIMIT_REACHED",
@@ -103,48 +109,6 @@ const collectProjectSkillIds = (project: Project) => {
 
 const GOAL_CODE_COLUMN_TOKENS = ["priority_code", "energy_code"];
 const PG_COLUMN_MISSING_CODE = "42703";
-
-const PROJECT_PRIORITY_STRENGTH: Record<string, number> = {
-  "ULTRA-CRITICAL": 5,
-  CRITICAL: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1,
-  NO: 0,
-};
-
-const PROJECT_STAGE_STRENGTH: Record<string, number> = {
-  RESEARCH: 5,
-  TEST: 4,
-  REFINE: 3,
-  BUILD: 2,
-  RELEASE: 1,
-};
-
-function normalizeFiniteRank(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
-function getPriorityStrength(value?: string | null): number {
-  if (typeof value !== "string") return 0;
-  const normalized = value.trim().toUpperCase();
-  return PROJECT_PRIORITY_STRENGTH[normalized] ?? 0;
-}
-
-function getStageStrength(value?: string | null): number {
-  if (typeof value !== "string") return 0;
-  const normalized = value.trim().toUpperCase();
-  return PROJECT_STAGE_STRENGTH[normalized] ?? 0;
-}
 
 export function isGoalCodeColumnMissingError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -345,9 +309,8 @@ async function persistProjectGlobalRanks(
       supabase.from("goals").select("id, global_rank").eq("user_id", userId),
       supabase
         .from("projects")
-        .select("id, goal_id, priority, stage")
+        .select("id, goal_id, priority, stage, due_date, created_at, completed_at")
         .eq("user_id", userId)
-        .is("completed_at", null),
     ]);
 
   if (goalError) {
@@ -357,59 +320,23 @@ async function persistProjectGlobalRanks(
     throw projectError;
   }
 
-  const goalRankById = new Map<string, number>();
+  const goalsById = new Map<string, CanonicalGoalRecord>();
   for (const goal of goalRows ?? []) {
     if (!goal?.id) continue;
-    const goalRank = normalizeFiniteRank(goal.global_rank);
-    if (goalRank !== null) {
-      goalRankById.set(goal.id, goalRank);
-    }
-  }
-
-  const projectRankRecords: Array<{
-    id: string;
-    goalGlobalRank: number | null;
-    priorityStrength: number;
-    stageStrength: number;
-  }> = [];
-
-  for (const project of projectRows ?? []) {
-    if (!project?.id) continue;
-
-    const goalGlobalRank =
-      project.goal_id && goalRankById.has(project.goal_id)
-        ? goalRankById.get(project.goal_id) ?? null
-        : null;
-
-    projectRankRecords.push({
-      id: project.id,
-      goalGlobalRank,
-      priorityStrength: getPriorityStrength(project.priority),
-      stageStrength: getStageStrength(project.stage),
+    goalsById.set(goal.id, {
+      global_rank: normalizeGoalGlobalRank(goal.global_rank),
     });
   }
 
-  projectRankRecords.sort((a, b) => {
-    const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
-    const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
-    if (aGoalRank !== bGoalRank) {
-      return aGoalRank - bGoalRank;
-    }
-    if (a.stageStrength !== b.stageStrength) {
-      return b.stageStrength - a.stageStrength;
-    }
-    if (a.priorityStrength !== b.priorityStrength) {
-      return b.priorityStrength - a.priorityStrength;
-    }
-    return a.id.localeCompare(b.id);
-  });
+  const projectRankUpdates = getCanonicalProjectGlobalRankUpdates(
+    (projectRows ?? []) as CanonicalProjectRecord[],
+    goalsById
+  );
 
-  for (let index = 0; index < projectRankRecords.length; index += 1) {
-    const { id } = projectRankRecords[index];
-    const rank = index + 1;
+  for (const { id, global_rank } of projectRankUpdates) {
     const { error } = await supabase
       .from("projects")
-      .update({ global_rank: rank })
+      .update({ global_rank })
       .eq("id", id);
     if (error) {
       throw error;

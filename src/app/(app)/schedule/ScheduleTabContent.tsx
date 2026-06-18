@@ -217,10 +217,17 @@ const HABIT_COMPACT_SHADOW =
 const TIMELINE_COMPACT_CARD_HEIGHT_PX = 56;
 const TIMELINE_COMPACT_CARD_SHADOW =
   "0 14px 28px rgba(6, 8, 20, 0.45), 0 8px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
-const TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
-  "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
 const TIMELINE_RESTING_CARD_SHADOW =
   "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+const FOCUS_POMO_COMPLETE_BACKGROUND =
+  "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)";
+const FOCUS_POMO_COMPLETE_SHADOW =
+  "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -2px 8px rgba(0, 0, 0, 0.11), inset 0 0 0 1px rgba(0, 0, 0, 0.08)";
+const FOCUS_POMO_COMPLETE_OUTLINE = "1px solid rgba(22, 101, 52, 0.42)";
+const FOCUS_POMO_COMPLETE_EFFECT_CLASSES =
+  "shimmer-border-complete focus-pomo-start-glint z-0 [&>.absolute]:!absolute";
+const SCHEDULE_SCHEDULER_RUNNING_EVENT =
+  "schedule:scheduler-running-changed";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 
@@ -3875,6 +3882,14 @@ export default function ScheduleTabContent({
   const PRIMARY_WRITE_WINDOW_DAYS = 28;
   const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
   const isSchedulingRef = useRef(false);
+  const isManualSchedulingRef = useRef(false);
+  const externalSchedulingRunsRef = useRef(0);
+  const syncSchedulingState = useCallback(() => {
+    const running =
+      isManualSchedulingRef.current || externalSchedulingRunsRef.current > 0;
+    isSchedulingRef.current = running;
+    setIsScheduling(running);
+  }, []);
 
   const persistAutoRunDate = useCallback(
     (dateKey: string) => {
@@ -5889,8 +5904,8 @@ export default function ScheduleTabContent({
 
       if (!background) {
         if (isSchedulingRef.current) return;
-        isSchedulingRef.current = true;
-        setIsScheduling(true);
+        isManualSchedulingRef.current = true;
+        syncSchedulingState();
       }
 
       try {
@@ -6024,8 +6039,8 @@ export default function ScheduleTabContent({
         }
       } finally {
         if (!background) {
-          isSchedulingRef.current = false;
-          setIsScheduling(false);
+          isManualSchedulingRef.current = false;
+          syncSchedulingState();
           try {
             await loadInstancesRef.current();
           } catch (error) {
@@ -6045,6 +6060,7 @@ export default function ScheduleTabContent({
       localTimeZone,
       resolvedModePayload,
       loadInstancesRef,
+      syncSchedulingState,
     ]
   );
 
@@ -6060,6 +6076,45 @@ export default function ScheduleTabContent({
       delete globalWithScheduler.__runScheduler;
     };
   }, [runScheduler]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSchedulerRunningChange = (event: Event) => {
+      const detail =
+        event instanceof CustomEvent
+          ? (event.detail as { running?: unknown } | null)
+          : null;
+
+      if (detail?.running === true) {
+        externalSchedulingRunsRef.current += 1;
+        syncSchedulingState();
+        return;
+      }
+
+      externalSchedulingRunsRef.current = Math.max(
+        0,
+        externalSchedulingRunsRef.current - 1
+      );
+      syncSchedulingState();
+      void loadInstancesRef.current().catch((error) => {
+        console.error("Failed to reload schedule instances", error);
+      });
+      void refreshScheduledProjectIds().catch((error) => {
+        console.error("Failed to refresh scheduled project history", error);
+      });
+    };
+
+    window.addEventListener(
+      SCHEDULE_SCHEDULER_RUNNING_EVENT,
+      handleSchedulerRunningChange
+    );
+    return () => {
+      window.removeEventListener(
+        SCHEDULE_SCHEDULER_RUNNING_EVENT,
+        handleSchedulerRunningChange
+      );
+    };
+  }, [refreshScheduledProjectIds, syncSchedulingState]);
 
   useEffect(() => {
     if (!userId) return;
@@ -8022,25 +8077,10 @@ export default function ScheduleTabContent({
                 "0 8px 18px rgba(82, 62, 18, 0.24)",
                 "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
               ].join(", ");
-              const syncCompletedShadow = [
-                "0 28px 48px rgba(0, 0, 0, 0.48)",
-                "0 10px 22px rgba(0, 6, 4, 0.34)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.06)",
-              ].join(", ");
               const practiceShadow = [
                 "0 30px 60px rgba(2, 2, 6, 0.72)",
                 "0 12px 28px rgba(0, 0, 0, 0.48)",
                 "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-              ].join(", ");
-              const completedShadow = [
-                "0 22px 38px rgba(0, 0, 0, 0.34)",
-                "0 9px 18px rgba(3, 83, 45, 0.22)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
-              ].join(", ");
-              const completedGemBevelInset = [
-                "inset 0 1px 0 rgba(255, 255, 255, 0.045)",
-                "inset 0 -2px 8px rgba(0, 0, 0, 0.11)",
-                "inset 0 0 0 1px rgba(0, 0, 0, 0.08)",
               ].join(", ");
               let cardShadow = scheduledShadow;
               let cardOutline = "1px solid rgba(10, 10, 12, 0.85)";
@@ -8064,17 +8104,17 @@ export default function ScheduleTabContent({
                   normalizedHabitType === "MEMO") &&
                 isHabitCompleted
               ) {
-                cardShadow = syncCompletedShadow;
-                cardOutline = "1px solid rgba(10, 60, 44, 0.52)";
-                habitBorderClass = "border-emerald-300/25";
+                cardShadow = FOCUS_POMO_COMPLETE_SHADOW;
+                cardOutline = FOCUS_POMO_COMPLETE_OUTLINE;
+                habitBorderClass = "border-green-900/45";
               } else if (normalizedHabitType === "CHORE" && isHabitCompleted) {
-                cardShadow = completedShadow;
-                cardOutline = "1px solid rgba(10, 60, 44, 0.48)";
-                habitBorderClass = "border-emerald-300/22";
+                cardShadow = FOCUS_POMO_COMPLETE_SHADOW;
+                cardOutline = FOCUS_POMO_COMPLETE_OUTLINE;
+                habitBorderClass = "border-green-900/45";
               } else if (isHabitCompleted) {
-                cardShadow = completedShadow;
-                cardOutline = "1px solid rgba(10, 60, 44, 0.50)";
-                habitBorderClass = "border-emerald-300/24";
+                cardShadow = FOCUS_POMO_COMPLETE_SHADOW;
+                cardOutline = FOCUS_POMO_COMPLETE_OUTLINE;
+                habitBorderClass = "border-green-900/45";
               } else if (normalizedHabitType === "CHORE") {
                 cardShadow = choreShadow;
                 cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
@@ -8120,13 +8160,11 @@ export default function ScheduleTabContent({
               const useCompactShadow =
                 habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX;
               const isCompletedHabitCard = isHabitCompleted;
-              const isCompactCompletedCard =
-                isHabitCompleted && habitHeightPx <= 44;
               const habitCardShadowBase = useCompactShadow
                 ? HABIT_COMPACT_SHADOW
                 : cardShadow;
               const habitCardShadow = isCompletedHabitCard
-                ? `${habitCardShadowBase}, ${completedGemBevelInset}`
+                ? FOCUS_POMO_COMPLETE_SHADOW
                 : habitCardShadowBase;
               const isCompletedGemCard = isHabitCompleted;
               const stackingZIndex =
@@ -8149,7 +8187,9 @@ export default function ScheduleTabContent({
                 outline: cardOutline,
                 outlineOffset: "-1px",
                 background:
-                  normalizedHabitType === "HABIT" && !isHabitCompleted
+                  isHabitCompleted
+                    ? FOCUS_POMO_COMPLETE_BACKGROUND
+                    : normalizedHabitType === "HABIT"
                     ? "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)"
                     : undefined,
               };
@@ -8360,9 +8400,8 @@ export default function ScheduleTabContent({
                       habitPaddingClass,
                       habitBorderClass,
                       habitTypeClass,
-                      isCompletedGemCard && "habit-card--completed-gem",
-                      isCompactCompletedCard &&
-                        "habit-card--completed-compact",
+                      isCompletedGemCard &&
+                        FOCUS_POMO_COMPLETE_EFFECT_CLASSES,
                       isHabitCompleted
                         ? "habit-card--completed"
                         : "habit-card--scheduled",
@@ -8616,18 +8655,16 @@ export default function ScheduleTabContent({
                   }
                 };
                 const projectBackground = isCompleted
-                  ? "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)"
+                  ? FOCUS_POMO_COMPLETE_BACKGROUND
                   : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
                 const resolvedProjectShadow = isCompleted
-                  ? useCompactProjectShadow
-                    ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12)"
+                  ? FOCUS_POMO_COMPLETE_SHADOW
                   : sharedCardShadow;
                 const projectCardStyle: CSSProperties = {
                   ...sharedCardStyle,
                   boxShadow: resolvedProjectShadow,
                   outline: isCompleted
-                    ? "1px solid rgba(22, 101, 52, 0.42)"
+                    ? FOCUS_POMO_COMPLETE_OUTLINE
                     : sharedCardStyle.outline,
                   background: projectBackground,
                   opacity: displacedPreview ? 0.92 : undefined,
@@ -8790,11 +8827,16 @@ export default function ScheduleTabContent({
                               event.preventDefault();
                               handleProjectPrimaryAction();
                             }}
-                            className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none${
-                              canExpand || (canToggle && !isPending)
-                                ? " cursor-pointer"
-                                : ""
-                            }`}
+                            className={clsx(
+                              "relative flex h-full w-full items-center justify-between px-3 text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
+                              projectCornerClass,
+                              collapsedCardPaddingClass,
+                              projectBorderClass,
+                              isCompleted &&
+                                FOCUS_POMO_COMPLETE_EFFECT_CLASSES,
+                              (canExpand || (canToggle && !isPending)) &&
+                                "cursor-pointer"
+                            )}
                             style={{
                               ...projectCardStyle,
                               ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
@@ -8999,11 +9041,6 @@ export default function ScheduleTabContent({
                                   heightRatio * 100,
                                   minHeightRatio * 100
                                 );
-                                const tStyle: CSSProperties = {
-                                  top: `${topPercent}%`,
-                                  height: `${heightPercent}%`,
-                                  ...sharedCardStyle,
-                                };
                                 const allowTaskTitleWrap =
                                   taskCard.displayDurationMinutes >= 30;
                                 const taskTitleClass = allowTaskTitleWrap
@@ -9013,8 +9050,7 @@ export default function ScheduleTabContent({
                                   "absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2 select-none";
                                 const shinyTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
-                                const completedTaskClasses =
-                                  "bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] text-emerald-50 shadow-[0_18px_38px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur";
+                                const completedTaskClasses = `${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 backdrop-blur`;
                                 const fallbackTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]";
                                 const isFallbackCard = kind === "fallback";
@@ -9067,6 +9103,18 @@ export default function ScheduleTabContent({
                                       ? fallbackTaskClasses
                                       : shinyTaskClasses
                                 }`;
+                                const tStyle: CSSProperties = {
+                                  position: "absolute",
+                                  top: `${topPercent}%`,
+                                  height: `${heightPercent}%`,
+                                  ...sharedCardStyle,
+                                  ...(isCompleted
+                                    ? {
+                                        boxShadow: FOCUS_POMO_COMPLETE_SHADOW,
+                                        outline: FOCUS_POMO_COMPLETE_OUTLINE,
+                                      }
+                                    : null),
+                                };
                                 const progressValue =
                                   kind === "scheduled"
                                     ? Math.max(
@@ -9343,19 +9391,19 @@ export default function ScheduleTabContent({
                   const baseStandaloneShadow = useCompactStandaloneShadow
                     ? TIMELINE_COMPACT_CARD_SHADOW
                     : "var(--elev-card)";
-                  const completedStandaloneShadow = useCompactStandaloneShadow
-                    ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 22px 42px rgba(4, 47, 39, 0.55)";
                   const layoutMode = taskLayouts[index] ?? "full";
                   const style: CSSProperties = applyTimelineLayoutStyle(
                     {
                       ...TIMELINE_CARD_BOUNDS,
+                      position: "absolute",
                       top: toTimelinePosition(startOffsetMinutes),
                       height: toTimelinePosition(durationMinutes),
                       boxShadow: isCompleted
-                        ? completedStandaloneShadow
+                        ? FOCUS_POMO_COMPLETE_SHADOW
                         : baseStandaloneShadow,
-                      outline: "1px solid var(--event-border)",
+                      outline: isCompleted
+                        ? FOCUS_POMO_COMPLETE_OUTLINE
+                        : "1px solid var(--event-border)",
                       outlineOffset: "-1px",
                     },
                     layoutMode,
@@ -9372,7 +9420,7 @@ export default function ScheduleTabContent({
                   const standaloneBaseClass =
                     "absolute flex items-center justify-between px-3 py-2";
                   const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)] bg-[linear-gradient(135deg,_rgba(46,46,52,0.94)_0%,_rgba(58,58,66,0.92)_45%,_rgba(82,82,92,0.88)_100%)]`;
-                  const standaloneCompletedClass = `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`;
+                  const standaloneCompletedClass = `${standaloneBaseClass} ${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45`;
                   const standaloneCornerClass =
                     getTimelineCardCornerClass(layoutMode);
                   const standaloneClassName = [

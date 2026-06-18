@@ -1,19 +1,10 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent,
-} from "react";
+import { useCallback, useMemo, useRef, type PointerEvent } from "react";
 import { Plus } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
-import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 interface ProjectsDropdownProps {
   id: string;
@@ -26,8 +17,6 @@ interface ProjectsDropdownProps {
   projectTasksOnly?: boolean;
   onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
-  newProjectRevealId?: string | null;
-  onNewProjectRevealComplete?: (projectId: string) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -38,39 +27,6 @@ interface ProjectsDropdownProps {
 
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
-const PROJECT_COMPLETION_REBUCKET_DELAY_MS = 650;
-
-const completedProjectsRevealTransition = {
-  duration: 0.56,
-  ease: [0.22, 1, 0.36, 1],
-} as const;
-
-const newProjectRevealTransition = {
-  duration: 0.56,
-  ease: [0.16, 1, 0.3, 1],
-} as const;
-
-const isProjectCompleted = (project: Project) =>
-  project.status === "Done" ||
-  project.stage === "RELEASE" ||
-  Number(project.progress ?? 0) >= 100;
-
-const energyCodeToFlameLevel = (value?: string | null): FlameLevel => {
-  switch (value?.toUpperCase()) {
-    case "LOW":
-      return "LOW";
-    case "MEDIUM":
-      return "MEDIUM";
-    case "HIGH":
-      return "HIGH";
-    case "ULTRA":
-      return "ULTRA";
-    case "EXTREME":
-      return "EXTREME";
-    default:
-      return "NO";
-  }
-};
 
 export function ProjectsDropdown({
   id,
@@ -83,160 +39,11 @@ export function ProjectsDropdown({
   projectTasksOnly = false,
   onAddProject,
   addingProject = false,
-  newProjectRevealId = null,
-  onNewProjectRevealComplete,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
-  const prefersReducedMotion = useReducedMotion();
-  const [showCompletedProjects, setShowCompletedProjects] = useState(false);
-  const [rebucketDelayedProjectIds, setRebucketDelayedProjectIds] = useState<
-    Set<string>
-  >(() => new Set());
-  const rebucketTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
-    new Map()
-  );
-
-  useEffect(() => {
-    const timers = rebucketTimersRef.current;
-    return () => {
-      timers.forEach((timer) => clearTimeout(timer));
-      timers.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    const currentProjectIds = new Set(projects.map((project) => project.id));
-    setRebucketDelayedProjectIds((current) => {
-      let changed = false;
-      const next = new Set(current);
-
-      current.forEach((projectId) => {
-        if (!currentProjectIds.has(projectId)) {
-          next.delete(projectId);
-          changed = true;
-          const timer = rebucketTimersRef.current.get(projectId);
-          if (timer) {
-            clearTimeout(timer);
-            rebucketTimersRef.current.delete(projectId);
-          }
-        }
-      });
-
-      return changed ? next : current;
-    });
-  }, [projects]);
-
   const selectedProject = useMemo(
     () => (projectTasksOnly ? projects[0] ?? null : null),
     [projectTasksOnly, projects]
-  );
-
-  const { activeProjects, completedProjects } = useMemo(
-    () => ({
-      activeProjects: projects.filter(
-        (project) =>
-          !isProjectCompleted(project) || rebucketDelayedProjectIds.has(project.id)
-      ),
-      completedProjects: projects.filter(
-        (project) =>
-          isProjectCompleted(project) && !rebucketDelayedProjectIds.has(project.id)
-      ),
-    }),
-    [projects, rebucketDelayedProjectIds]
-  );
-
-  const handleProjectUpdated = useCallback(
-    (projectId: string, updates: Partial<Project>) => {
-      const isCompleting =
-        updates.status === "Done" ||
-        updates.stage === "RELEASE" ||
-        Number(updates.progress ?? Number.NaN) >= 100;
-
-      const existingTimer = rebucketTimersRef.current.get(projectId);
-      if (existingTimer) {
-        clearTimeout(existingTimer);
-        rebucketTimersRef.current.delete(projectId);
-      }
-
-      if (isCompleting) {
-        setRebucketDelayedProjectIds((current) => {
-          const next = new Set(current);
-          next.add(projectId);
-          return next;
-        });
-
-        const timer = setTimeout(() => {
-          rebucketTimersRef.current.delete(projectId);
-          setRebucketDelayedProjectIds((current) => {
-            if (!current.has(projectId)) return current;
-            const next = new Set(current);
-            next.delete(projectId);
-            return next;
-          });
-        }, PROJECT_COMPLETION_REBUCKET_DELAY_MS);
-
-        rebucketTimersRef.current.set(projectId, timer);
-      } else {
-        setRebucketDelayedProjectIds((current) => {
-          if (!current.has(projectId)) return current;
-          const next = new Set(current);
-          next.delete(projectId);
-          return next;
-        });
-      }
-
-      onProjectUpdated?.(projectId, updates);
-    },
-    [onProjectUpdated]
-  );
-
-  const renderProjectRow = useCallback(
-    (project: Project, projectOrder: number) => {
-      const row = (
-        <ProjectRow
-          key={project.id}
-          project={project}
-          projectOrder={projectOrder}
-          variant="compactNested"
-          onLongPress={onProjectLongPress}
-          onUpdated={handleProjectUpdated}
-        />
-      );
-
-      if (newProjectRevealId !== project.id) {
-        return row;
-      }
-
-      return (
-        <motion.div
-          key={project.id}
-          className="overflow-hidden"
-          initial={
-            prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }
-          }
-          animate={
-            prefersReducedMotion
-              ? { opacity: 1 }
-              : { opacity: 1, height: "auto", y: 0 }
-          }
-          transition={
-            prefersReducedMotion
-              ? { duration: 0.12, ease: "easeOut" }
-              : newProjectRevealTransition
-          }
-          onAnimationComplete={() => onNewProjectRevealComplete?.(project.id)}
-        >
-          {row}
-        </motion.div>
-      );
-    },
-    [
-      handleProjectUpdated,
-      newProjectRevealId,
-      onNewProjectRevealComplete,
-      onProjectLongPress,
-      prefersReducedMotion,
-    ]
   );
 
   const taskEntries = useMemo(() => {
@@ -268,8 +75,7 @@ export function ProjectsDropdown({
           />
         ) : projectTasksOnly ? (
           taskEntries.length > 0 ? (
-            <div className="relative space-y-1.5" role="list">
-              <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
+            <div className="space-y-3">
               {taskEntries.map(({ project, task }) => (
                 <TaskRow
                   key={`${project.id}-${task.id}`}
@@ -288,60 +94,16 @@ export function ProjectsDropdown({
           )
         ) : projects.length > 0 ? (
           <div className="space-y-1 sm:space-y-1.5">
-            {activeProjects.length > 0 ? (
-              activeProjects.map((p, index) => renderProjectRow(p, index + 1))
-            ) : completedProjects.length > 0 ? (
-              <div className="px-2 py-1.5 text-xs text-white/45">
-                All projects are complete.
-              </div>
-            ) : null}
-            {completedProjects.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowCompletedProjects((current) => !current)}
-                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
-                aria-expanded={showCompletedProjects}
-              >
-                <span>
-                  {showCompletedProjects
-                    ? `Hide completed projects (${completedProjects.length})`
-                    : `Show completed projects (${completedProjects.length})`}
-                </span>
-              </button>
-            ) : null}
-            <AnimatePresence initial={false}>
-              {showCompletedProjects ? (
-                <motion.div
-                  className="overflow-hidden"
-                  initial={
-                    prefersReducedMotion
-                      ? { opacity: 0 }
-                      : { height: 0, opacity: 0, y: -4 }
-                  }
-                  animate={
-                    prefersReducedMotion
-                      ? { opacity: 1 }
-                      : { height: "auto", opacity: 1, y: 0 }
-                  }
-                  exit={
-                    prefersReducedMotion
-                      ? { opacity: 0 }
-                      : { height: 0, opacity: 0, y: -4 }
-                  }
-                  transition={
-                    prefersReducedMotion
-                      ? { duration: 0.12, ease: "easeOut" }
-                      : completedProjectsRevealTransition
-                  }
-                >
-                  <div className="space-y-1 sm:space-y-1.5">
-                    {completedProjects.map((p, index) =>
-                      renderProjectRow(p, activeProjects.length + index + 1)
-                    )}
-                  </div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+            {projects.map((p, index) => (
+              <ProjectRow
+                key={p.id}
+                project={p}
+                projectOrder={index + 1}
+                variant="compactNested"
+                onLongPress={onProjectLongPress}
+                onUpdated={onProjectUpdated}
+              />
+            ))}
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
@@ -368,11 +130,11 @@ export function ProjectsDropdown({
             <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]">
               {addingProject
                 ? projectTasksOnly
-                  ? "Adding task…"
-                  : "Adding project…"
+                  ? "adding TASK"
+                  : "adding PROJECT"
                 : projectTasksOnly
-                  ? "Add task"
-                  : "Add project"}
+                  ? "add TASK"
+                  : "add PROJECT"}
             </span>
           </button>
         </div>
@@ -390,8 +152,6 @@ type TaskLite = {
   id: string;
   name: string;
   stage: string;
-  energyCode?: string | null;
-  skillIcon?: string | null;
 };
 
 interface TaskRowProps {
@@ -473,12 +233,6 @@ function TaskRow({
   }, [clearTimer]);
 
   const completed = task.stage === "PERFECT";
-  const taskRowClass = completed
-    ? "border-emerald-300/60 bg-[linear-gradient(135deg,rgba(6,78,59,0.96)_0%,rgba(4,120,87,0.9)_48%,rgba(16,185,129,0.84)_100%)] text-emerald-50 ring-1 ring-emerald-200/30 shadow-[0_12px_26px_-16px_rgba(16,185,129,0.72),0_0_22px_rgba(16,185,129,0.14),inset_2px_0_0_rgba(209,250,229,0.24),inset_0_1px_0_rgba(255,255,255,0.14)]"
-    : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.34)_24%,rgba(24,24,24,0.92)_100%)] text-white/78 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03)]";
-  const markerClass = completed
-    ? "border-emerald-50/40 bg-emerald-100/22 text-white shadow-[0_0_12px_rgba(16,185,129,0.28)]"
-    : "border-white/10 bg-white/[0.05] text-white/50";
 
   return (
     <button
@@ -487,25 +241,18 @@ function TaskRow({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerCancel}
-      className={`flex w-full min-w-0 items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs leading-4 ${taskRowClass}`}
-      role="listitem"
+      className={`flex w-full flex-col gap-2 rounded-[26px] border px-5 py-4 text-left transition-transform duration-200 ${
+        completed
+          ? "border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur hover:-translate-y-1 hover:shadow-[0_35px_50px_rgba(4,47,39,0.65)]"
+          : "border-white/10 bg-gradient-to-br from-white/[0.08] to-black/20 text-white shadow-[0_25px_40px_rgba(0,0,0,0.55),inset_0_-2px_1px_rgba(255,255,255,0.1)] hover:-translate-y-1 hover:shadow-[0_35px_50px_rgba(0,0,0,0.65),inset_0_-2px_2px_rgba(255,255,255,0.2)]"
+      }`}
     >
-      <span
-        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none ${markerClass}`}
-        aria-hidden="true"
-      >
-        {task.skillIcon ?? (
-          <span className="h-1.5 w-1.5 rounded-full bg-current" />
-        )}
-      </span>
-      <span className="min-w-0 flex-1 break-words pr-1">{task.name}</span>
-      {task.energyCode ? (
-        <FlameEmber
-          level={energyCodeToFlameLevel(task.energyCode)}
-          size="sm"
-          className="shrink-0"
-        />
-      ) : null}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold leading-tight">{task.name}</span>
+        <span className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+          {task.stage}
+        </span>
+      </div>
     </button>
   );
 }

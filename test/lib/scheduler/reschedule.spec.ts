@@ -37,6 +37,112 @@ const schedNoon = (iso: string, tz: string) => atSchedDayHour(iso, tz, 8);
 // 8 hours after scheduler-day start = noon-ish; adjust if you prefer
 // Why: some tests actually care about "partially elapsed windows" — for those you want a non-midnight time but still on the same scheduler day.
 
+type OverlayWindowRowForTest = {
+  id?: string;
+  start_utc?: string | null;
+  end_utc?: string | null;
+  label?: string | null;
+  mode?: "MANUAL" | "DYNAMIC" | null;
+  block_type?: string | null;
+  energy?: string | null;
+  location_context_id?: string | null;
+  allow_all_instance_types?: boolean | null;
+  allow_all_skills?: boolean | null;
+  allow_all_monuments?: boolean | null;
+};
+
+const createOverlayWindowOnlySupabaseMock = (
+  overlayWindows: OverlayWindowRowForTest[],
+  options?: {
+    allowedInstanceTypes?: Array<{
+      overlay_window_id: string;
+      instance_type: string;
+    }>;
+    allowedSkills?: Array<{ overlay_window_id: string; skill_id: string }>;
+    allowedMonuments?: Array<{
+      overlay_window_id: string;
+      monument_id: string;
+    }>;
+  }
+) => {
+  const mock = createSupabaseMock();
+  const baseFrom = mock.client.from as ReturnType<typeof vi.fn>;
+  const buildRowsChain = <T,>(rows: T[]) => {
+    const chain: Record<string, any> = {};
+    chain.eq = vi.fn(() => chain);
+    chain.lt = vi.fn(() => chain);
+    chain.gt = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.or = vi.fn(() => chain);
+    chain.then = (onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+      Promise.resolve({
+        data: rows,
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      }).then(onFulfilled, onRejected);
+    return chain;
+  };
+  const from = vi.fn((table: string) => {
+    if (table === "overlay_window_allowed_instance_types") {
+      return {
+        select: vi.fn(() =>
+          buildRowsChain(options?.allowedInstanceTypes ?? [])
+        ),
+      };
+    }
+    if (table === "overlay_window_allowed_skills") {
+      return {
+        select: vi.fn(() => buildRowsChain(options?.allowedSkills ?? [])),
+      };
+    }
+    if (table === "overlay_window_allowed_monuments") {
+      return {
+        select: vi.fn(() => buildRowsChain(options?.allowedMonuments ?? [])),
+      };
+    }
+    if (table !== "overlay_windows") {
+      return baseFrom(table);
+    }
+    const chain: {
+      eq: ReturnType<typeof vi.fn>;
+      lt: ReturnType<typeof vi.fn>;
+      gt: ReturnType<typeof vi.fn>;
+      in: ReturnType<typeof vi.fn>;
+      or: ReturnType<typeof vi.fn>;
+      then: Promise<{
+        data: OverlayWindowRowForTest[];
+        error: null;
+        count: null;
+        status: number;
+        statusText: string;
+      }>["then"];
+    } = {
+      eq: vi.fn(() => chain),
+      lt: vi.fn(() => chain),
+      gt: vi.fn(() => chain),
+      in: vi.fn(() => chain),
+      or: vi.fn(() => chain),
+      then: (onFulfilled, onRejected) =>
+        Promise.resolve({
+          data: overlayWindows,
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        }).then(onFulfilled, onRejected),
+    };
+    return {
+      select: vi.fn(() => chain),
+    };
+  });
+  mock.client.from = from;
+  return mock;
+};
+
 describe("scheduleBacklog", () => {
   const failDiag = (label: string, payload: any) => {
     throw new Error(label + " " + JSON.stringify(payload));
@@ -258,6 +364,151 @@ describe("scheduleBacklog", () => {
     ...overrides,
   });
 
+  type TestQueryChain<T> = {
+    select: ReturnType<typeof vi.fn>;
+    eq: ReturnType<typeof vi.fn>;
+    in: ReturnType<typeof vi.fn>;
+    gte: ReturnType<typeof vi.fn>;
+    lte: ReturnType<typeof vi.fn>;
+    lt: ReturnType<typeof vi.fn>;
+    gt: ReturnType<typeof vi.fn>;
+    order: ReturnType<typeof vi.fn>;
+    contains: ReturnType<typeof vi.fn>;
+    is: ReturnType<typeof vi.fn>;
+    or: ReturnType<typeof vi.fn>;
+    single: ReturnType<typeof vi.fn>;
+    limit: ReturnType<typeof vi.fn>;
+    then: Promise<{
+      data: T[];
+      error: null;
+      count: null;
+      status: number;
+      statusText: string;
+    }>["then"];
+  };
+
+  const buildThenableQuery = <T,>(getData: () => T[]) => {
+    const chain = {} as TestQueryChain<T>;
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
+    chain.lt = vi.fn(() => chain);
+    chain.gt = vi.fn(() => chain);
+    chain.order = vi.fn(() => chain);
+    chain.contains = vi.fn(() => chain);
+    chain.is = vi.fn(() => chain);
+    chain.or = vi.fn(() => chain);
+    chain.single = vi.fn(async () => ({
+      data: getData()[0] ?? null,
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+    chain.limit = vi.fn(async () => ({
+      data: getData(),
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+    chain.then = (
+      onFulfilled?: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown
+    ) =>
+      Promise.resolve({
+        data: getData(),
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      }).then(onFulfilled, onRejected);
+    return chain;
+  };
+
+  const createOverlayAwareSupabaseMock = (options?: {
+    overlayWindows?: Array<{
+      id?: string;
+      start_utc?: string | null;
+      end_utc?: string | null;
+    }>;
+    expiredOverlayWindows?: Array<{ id: string; mode?: string | null }>;
+    overlayInstances?: Array<{
+      id: string;
+      source_type: string | null;
+      status: string | null;
+      overlay_window_id?: string | null;
+    }>;
+  }) => {
+    const mock = createSupabaseMock();
+    const baseFrom = mock.client.from as ReturnType<typeof vi.fn>;
+
+    const from = vi.fn((table: string) => {
+      if (table === "overlay_windows") {
+        return {
+          select: vi.fn((columns?: string) => {
+            if (columns === "id" || columns === "id,mode") {
+              return buildThenableQuery(() => options?.expiredOverlayWindows ?? []);
+            }
+            return buildThenableQuery(() => options?.overlayWindows ?? []);
+          }),
+        };
+      }
+
+      if (table === "schedule_instances") {
+        const baseTable = baseFrom(table) as Record<string, unknown>;
+        return {
+          ...baseTable,
+          select: vi.fn((columns?: string) => {
+            if (columns === "id,source_type,status") {
+              const filters: {
+                overlayWindowIds?: string[];
+                statuses?: string[];
+              } = {};
+              const chain = buildThenableQuery(() => {
+                const rows = options?.overlayInstances ?? [];
+                return rows.filter((row) => {
+                  if (
+                    filters.overlayWindowIds &&
+                    !filters.overlayWindowIds.includes(
+                      row.overlay_window_id ?? ""
+                    )
+                  ) {
+                    return false;
+                  }
+                  if (filters.statuses && !filters.statuses.includes(row.status ?? "")) {
+                    return false;
+                  }
+                  return true;
+                });
+              });
+              chain.in = vi.fn((column: string, values: string[]) => {
+                if (column === "overlay_window_id") {
+                  filters.overlayWindowIds = values;
+                }
+                if (column === "status") {
+                  filters.statuses = values;
+                }
+                return chain;
+              });
+              return chain;
+            }
+            return (
+              baseTable.select as (selectedColumns?: string) => unknown
+            )(columns);
+          }),
+        };
+      }
+
+      return baseFrom(table);
+    });
+
+    mock.client.from = from;
+    return mock;
+  };
+
   const makeHabit = (
     overrides: Partial<HabitScheduleItem> = {}
   ): HabitScheduleItem => ({
@@ -442,6 +693,156 @@ describe("scheduleBacklog", () => {
     await expect(
       scheduleBacklog(userId, baseDate, client, { debug: true })
     ).resolves.toBeDefined();
+  });
+
+  it("preserves locked overlay-backed project instances during reschedule rebuild", async () => {
+    instances = [
+      createInstanceRecord({
+        id: "inst-overlay-locked-project",
+        source_id: "proj-overlay-locked",
+        source_type: "PROJECT",
+        status: "scheduled",
+        start_utc: "2024-01-02T10:00:00Z",
+        end_utc: "2024-01-02T11:00:00Z",
+        duration_min: 60,
+        window_id: "win-overlay-candidate",
+        energy_resolved: "LOW",
+        locked: true,
+        overlay_window_id: "overlay-active",
+      }),
+    ];
+
+    const overlayProject = {
+      id: "proj-overlay-locked",
+      name: "Overlay Locked Project",
+      priority: "HIGH",
+      stage: "PLAN",
+      energy: "LOW",
+      duration_min: 60,
+      globalRank: 1,
+    };
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [overlayProject.id]: overlayProject,
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [overlayProject.id]: overlayProject,
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    fetchHabitsForScheduleSpy.mockResolvedValue([]);
+
+    const { client, canceledIds, updateCalls } = createOverlayAwareSupabaseMock();
+
+    await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(canceledIds).not.toContain("inst-overlay-locked-project");
+    expect(
+      updateCalls.some(
+        (call) =>
+          call.id === "inst-overlay-locked-project" &&
+          (call.payload?.status === "canceled" ||
+            call.payload?.status === "missed" ||
+            call.payload?.start_utc === null)
+      )
+    ).toBe(false);
+  });
+
+  it("releases unfinished expired manual overlay project instances without rewriting completed or canceled history", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    fetchHabitsForScheduleSpy.mockResolvedValue([]);
+
+    const { client, updateCalls } = createOverlayAwareSupabaseMock({
+      expiredOverlayWindows: [{ id: "overlay-expired" }],
+      overlayInstances: [
+        {
+          id: "inst-overlay-scheduled-project",
+          source_type: "PROJECT",
+          status: "scheduled",
+          overlay_window_id: "overlay-expired",
+        },
+        {
+          id: "inst-overlay-missed-project",
+          source_type: "PROJECT",
+          status: "missed",
+          overlay_window_id: "overlay-expired",
+        },
+        {
+          id: "inst-overlay-completed-project",
+          source_type: "PROJECT",
+          status: "completed",
+          overlay_window_id: "overlay-expired",
+        },
+        {
+          id: "inst-overlay-canceled-project",
+          source_type: "PROJECT",
+          status: "canceled",
+          overlay_window_id: "overlay-expired",
+        },
+      ],
+    });
+
+    await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    const releaseCalls = updateCalls.filter(
+      (call) => call.payload?.overlay_window_id === null
+    );
+    expect(releaseCalls.map((call) => call.id).sort()).toEqual([
+      "inst-overlay-missed-project",
+      "inst-overlay-scheduled-project",
+    ]);
+    expect(releaseCalls[0]?.payload).toMatchObject({
+      status: "missed",
+      start_utc: null,
+      end_utc: null,
+      window_id: null,
+      day_type_time_block_id: null,
+      time_block_id: null,
+      locked: false,
+      overlay_window_id: null,
+    });
+    expect(updateCalls.map((call) => call.id)).not.toContain(
+      "inst-overlay-completed-project"
+    );
+    expect(updateCalls.map((call) => call.id)).not.toContain(
+      "inst-overlay-canceled-project"
+    );
+  });
+
+  it("does not release expired dynamic overlay rows during manual overlay reconciliation", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    fetchHabitsForScheduleSpy.mockResolvedValue([]);
+
+    const { client, updateCalls } = createOverlayAwareSupabaseMock({
+      expiredOverlayWindows: [{ id: "overlay-dynamic-expired", mode: "DYNAMIC" }],
+      overlayInstances: [
+        {
+          id: "inst-dynamic-overlay-project",
+          source_type: "PROJECT",
+          status: "scheduled",
+          overlay_window_id: "overlay-dynamic-expired",
+        },
+      ],
+    });
+
+    await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(
+      updateCalls.some((call) => call.payload?.overlay_window_id === null)
+    ).toBe(false);
+    expect(updateCalls.map((call) => call.id)).not.toContain(
+      "inst-dynamic-overlay-project"
+    );
   });
 
   it.each(["HABIT", "CHORE", "SYNC", "MEMO"])(
@@ -10123,5 +10524,306 @@ describe("fetchCompatibleWindowsForItem", () => {
       }
     );
     expect(withMatchingLocation.windows).toHaveLength(1);
+  });
+
+  it("treats manual overlay windows as blockers, not candidate schedulable windows", async () => {
+    const tz = "UTC";
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-02-02T12:00:00Z"),
+      tz
+    );
+    const userId = "manual-overlay-blocker-user";
+    const normalWindow: repo.WindowLite = {
+      id: "win-normal-candidate",
+      label: "Normal Candidate",
+      energy: "LOW",
+      start_local: "09:00",
+      end_local: "12:00",
+      days: null,
+      window_kind: "DEFAULT",
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+      allowAllHabitTypes: true,
+      allowAllSkills: true,
+      allowAllMonuments: true,
+    };
+    const { client } = createOverlayWindowOnlySupabaseMock([
+      {
+        id: "overlay-manual-middle",
+        start_utc: "2026-02-02T10:00:00.000Z",
+        end_utc: "2026-02-02T11:00:00.000Z",
+      },
+    ]);
+
+    const compatible = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+        isProject: true,
+      },
+      tz,
+      {
+        userId,
+        allowedWindowKinds: ["DEFAULT"],
+        preloadedWindows: [normalWindow],
+      }
+    );
+
+    // Future Dynamic mode note: legacy/null/manual overlay rows must keep
+    // entering this blocker path unless explicitly marked schedulable.
+    expect(compatible.windows.length).toBeGreaterThan(0);
+    expect(
+      compatible.windows.every((window) => window.id === "win-normal-candidate")
+    ).toBe(true);
+    expect(
+      compatible.windows.some(
+        (window) =>
+          window.availableStartLocal < new Date("2026-02-02T11:00:00.000Z") &&
+          window.endLocal > new Date("2026-02-02T10:00:00.000Z")
+      )
+    ).toBe(false);
+  });
+
+  it("treats dynamic overlay windows as candidates instead of blockers", async () => {
+    const tz = "UTC";
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-07-02T12:00:00Z"),
+      tz
+    );
+    const normalWindow: repo.WindowLite = {
+      id: "win-normal-dynamic-candidate",
+      label: "Normal Candidate",
+      energy: "LOW",
+      start_local: "09:00",
+      end_local: "12:00",
+      days: null,
+      window_kind: "DEFAULT",
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+      allowAllHabitTypes: true,
+      allowAllSkills: true,
+      allowAllMonuments: true,
+    };
+    const { client } = createOverlayWindowOnlySupabaseMock([
+      {
+        id: "overlay-dynamic-middle",
+        mode: "DYNAMIC",
+        start_utc: "2026-07-02T10:00:00.000Z",
+        end_utc: "2026-07-02T11:00:00.000Z",
+        block_type: "FOCUS",
+        energy: "LOW",
+        allow_all_instance_types: true,
+        allow_all_skills: true,
+        allow_all_monuments: true,
+      },
+    ]);
+
+    const compatible = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+        isProject: true,
+      },
+      tz,
+      {
+        userId: "dynamic-overlay-candidate-user",
+        allowedWindowKinds: ["DEFAULT"],
+        now: new Date("2026-07-02T08:00:00.000Z"),
+        preloadedWindows: [normalWindow],
+      }
+    );
+
+    expect(compatible.windows.map((window) => window.id)).toContain(
+      "overlay:overlay-dynamic-middle"
+    );
+    expect(
+      compatible.windows.some(
+        (window) =>
+          window.id === "win-normal-dynamic-candidate" &&
+          window.availableStartLocal < new Date("2026-07-02T11:00:00.000Z") &&
+          window.endLocal > new Date("2026-07-02T10:00:00.000Z")
+      )
+    ).toBe(true);
+  });
+
+  it("ignores expired dynamic overlay windows as candidates", async () => {
+    const tz = "UTC";
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-07-03T12:00:00Z"),
+      tz
+    );
+    const { client } = createOverlayWindowOnlySupabaseMock([
+      {
+        id: "overlay-dynamic-expired",
+        mode: "DYNAMIC",
+        start_utc: "2026-07-03T08:00:00.000Z",
+        end_utc: "2026-07-03T09:00:00.000Z",
+        block_type: "FOCUS",
+        energy: "LOW",
+        allow_all_instance_types: true,
+        allow_all_skills: true,
+        allow_all_monuments: true,
+      },
+    ]);
+
+    const compatible = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+        isProject: true,
+      },
+      tz,
+      {
+        userId: "dynamic-overlay-expired-user",
+        allowedWindowKinds: ["DEFAULT"],
+        now: new Date("2026-07-03T10:00:00.000Z"),
+        preloadedWindows: [],
+      }
+    );
+
+    expect(compatible.windows).toHaveLength(0);
+  });
+
+  it("applies dynamic overlay instance type and skill constraints", async () => {
+    const tz = "UTC";
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-07-04T12:00:00Z"),
+      tz
+    );
+    const { client } = createOverlayWindowOnlySupabaseMock(
+      [
+        {
+          id: "overlay-dynamic-constrained",
+          mode: "DYNAMIC",
+          start_utc: "2026-07-04T13:00:00.000Z",
+          end_utc: "2026-07-04T15:00:00.000Z",
+          block_type: "FOCUS",
+          energy: "LOW",
+          allow_all_instance_types: false,
+          allow_all_skills: false,
+          allow_all_monuments: true,
+        },
+      ],
+      {
+        allowedInstanceTypes: [
+          {
+            overlay_window_id: "overlay-dynamic-constrained",
+            instance_type: "PROJECT",
+          },
+        ],
+        allowedSkills: [
+          {
+            overlay_window_id: "overlay-dynamic-constrained",
+            skill_id: "skill-allowed",
+          },
+        ],
+      }
+    );
+
+    const baseOptions = {
+      userId: "dynamic-overlay-constraints-user",
+      allowedWindowKinds: ["DEFAULT" as repo.WindowKind],
+      now: new Date("2026-07-04T12:00:00.000Z"),
+      preloadedWindows: [],
+      dynamicOverlayCache: reschedule.createDynamicOverlayWindowCache(
+        new Date("2026-07-04T12:00:00.000Z")
+      ),
+    };
+
+    const mismatched = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+        isProject: true,
+        skillIds: ["skill-other"],
+      },
+      tz,
+      baseOptions
+    );
+    const matched = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+        isProject: true,
+        skillIds: ["skill-allowed"],
+      },
+      tz,
+      baseOptions
+    );
+
+    expect(mismatched.windows).toHaveLength(0);
+    expect(matched.windows.map((window) => window.id)).toEqual([
+      "overlay:overlay-dynamic-constrained",
+    ]);
+    const fromMock = client.from as ReturnType<typeof vi.fn>;
+    expect(
+      fromMock.mock.calls.filter(([table]) => table === "overlay_windows")
+    ).toHaveLength(2);
+    expect(
+      fromMock.mock.calls.filter(
+        ([table]) => table === "overlay_window_allowed_instance_types"
+      )
+    ).toHaveLength(1);
+    expect(
+      fromMock.mock.calls.filter(
+        ([table]) => table === "overlay_window_allowed_skills"
+      )
+    ).toHaveLength(1);
+    expect(
+      fromMock.mock.calls.filter(
+        ([table]) => table === "overlay_window_allowed_monuments"
+      )
+    ).toHaveLength(1);
+  });
+
+  it("does not persist dynamic overlay candidates as overlay-backed manual instances", async () => {
+    const { client } = createSupabaseMock();
+    const result = await realPlaceItemInWindows({
+      userId: "dynamic-overlay-persist-user",
+      item: {
+        id: "proj-dynamic-overlay",
+        sourceType: "PROJECT",
+        duration_min: 30,
+        energy: "LOW",
+        weight: 1,
+        eventName: "Dynamic Overlay Project",
+      },
+      windows: [
+        {
+          id: "overlay:overlay-dynamic-persist",
+          key: "overlay:overlay-dynamic-persist",
+          startLocal: new Date("2026-07-05T10:00:00.000Z"),
+          endLocal: new Date("2026-07-05T11:00:00.000Z"),
+          availableStartLocal: new Date("2026-07-05T10:00:00.000Z"),
+          isOverlayCandidate: true,
+          overlayWindowId: "overlay-dynamic-persist",
+        },
+      ],
+      date: new Date("2026-07-05T12:00:00.000Z"),
+      timeZone: "UTC",
+      client,
+      existingInstances: [],
+    });
+
+    expect("data" in result ? result.data?.window_id : "NO_DATA").toBeNull();
+    expect(
+      "data" in result ? result.data?.day_type_time_block_id : "NO_DATA"
+    ).toBeNull();
+    expect("data" in result ? result.data?.time_block_id : "NO_DATA").toBeNull();
+    expect(
+      "data" in result ? (result.data as any)?.overlay_window_id : "NO_DATA"
+    ).toBeUndefined();
   });
 });

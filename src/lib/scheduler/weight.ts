@@ -31,6 +31,7 @@ export type ProjectLite = {
   due_date?: string | null;
   dueDate?: string | null;
   globalRank?: number | null;
+  global_rank?: number | null;
 };
 
 export type GoalLite = {

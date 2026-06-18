@@ -251,6 +251,16 @@ function readScopeString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function readScopePositiveNumber(value: unknown): number | null {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function readScopeRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1623,7 +1633,7 @@ function buildRoadmapGoalOrderMap(
 
 type FocusPomoProjectOrderRow = {
   id?: string | null;
-  goal_id?: string | null;
+  global_rank?: number | string | null;
   created_at?: string | null;
   completed_at?: string | null;
 };
@@ -1635,8 +1645,8 @@ async function fetchFocusPomoProjectOrderMap(
   if (!supabase) return new Map();
 
   const selects = [
-    "id, goal_id, created_at, completed_at",
-    "id, goal_id, created_at",
+    "id, global_rank, created_at, completed_at",
+    "id, created_at, completed_at",
   ];
   let lastError: unknown = null;
 
@@ -1645,7 +1655,10 @@ async function fetchFocusPomoProjectOrderMap(
       .from("projects")
       .select(select)
       .eq("user_id", userId)
-      .order("created_at", { ascending: true });
+      .order(select.includes("global_rank") ? "global_rank" : "created_at", {
+        ascending: true,
+        nullsFirst: false,
+      });
 
     if (error) {
       lastError = error;
@@ -1656,21 +1669,15 @@ async function fetchFocusPomoProjectOrderMap(
       (row) => !readScopeString(row.completed_at)
     );
     const orderMap = new Map<string, number>();
-    const nextGoalProjectOrder = new Map<string, number>();
 
     rows.forEach((row, createdAtIndex) => {
       const projectId = readScopeString(row.id);
       if (!projectId) return;
 
-      const goalId = readScopeString(row.goal_id);
-      if (!goalId) {
-        orderMap.set(projectId, 1_000_000 + createdAtIndex);
-        return;
-      }
-
-      const projectOrder = nextGoalProjectOrder.get(goalId) ?? 0;
-      orderMap.set(projectId, projectOrder);
-      nextGoalProjectOrder.set(goalId, projectOrder + 1);
+      orderMap.set(
+        projectId,
+        readScopePositiveNumber(row.global_rank) ?? 1_000_000 + createdAtIndex
+      );
     });
 
     return orderMap;

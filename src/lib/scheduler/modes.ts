@@ -4,11 +4,13 @@ export type SchedulerModeType =
   | 'MONUMENTAL'
   | 'SKILLED'
   | 'REST'
+  | 'OVERLAY'
 
 export type SchedulerModePayload =
   | { type: 'REGULAR' }
   | { type: 'RUSH' }
   | { type: 'REST' }
+  | { type: 'OVERLAY'; overlayWindowId: string }
   | { type: 'MONUMENTAL'; monumentId: string }
   | { type: 'SKILLED'; skillIds: string[] }
 
@@ -16,6 +18,7 @@ export type SchedulerModeSelection =
   | { type: 'REGULAR' }
   | { type: 'RUSH' }
   | { type: 'REST' }
+  | { type: 'OVERLAY'; overlayWindowId: string | null }
   | { type: 'MONUMENTAL'; monumentId: string | null }
   | { type: 'SKILLED'; skillIds: string[] }
 
@@ -36,6 +39,16 @@ export function normalizeSchedulerModePayload(
       return { type: 'RUSH' }
     case 'REST':
       return { type: 'REST' }
+    case 'OVERLAY': {
+      const overlayWindowId =
+        record && typeof (record as { overlayWindowId?: unknown }).overlayWindowId === 'string'
+          ? ((record as { overlayWindowId?: string }).overlayWindowId ?? '').trim()
+          : ''
+      if (overlayWindowId.length === 0) {
+        return { type: 'REGULAR' }
+      }
+      return { type: 'OVERLAY', overlayWindowId }
+    }
     case 'MONUMENTAL': {
       const monumentId =
         record && typeof (record as { monumentId?: unknown }).monumentId === 'string'
@@ -76,6 +89,8 @@ export function schedulerModeLabel(mode: SchedulerModePayload): string {
       return 'Monumental'
     case 'SKILLED':
       return 'Skilled'
+    case 'OVERLAY':
+      return 'Overlay'
     case 'REGULAR':
     default:
       return 'Regular'
@@ -89,6 +104,9 @@ export function isConfiguredMode(mode: SchedulerModePayload): boolean {
   if (mode.type === 'SKILLED') {
     return mode.skillIds.length > 0
   }
+  if (mode.type === 'OVERLAY') {
+    return mode.overlayWindowId.trim().length > 0
+  }
   return true
 }
 
@@ -100,6 +118,10 @@ export function selectionToSchedulerModePayload(
       return { type: 'RUSH' }
     case 'REST':
       return { type: 'REST' }
+    case 'OVERLAY':
+      return selection.overlayWindowId && selection.overlayWindowId.trim().length > 0
+        ? { type: 'OVERLAY', overlayWindowId: selection.overlayWindowId.trim() }
+        : { type: 'REGULAR' }
     case 'MONUMENTAL':
       return selection.monumentId && selection.monumentId.trim().length > 0
         ? { type: 'MONUMENTAL', monumentId: selection.monumentId.trim() }
