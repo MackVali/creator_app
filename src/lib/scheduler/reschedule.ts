@@ -19,9 +19,7 @@ import {
   pickProjectOverlapLoser,
   type CanonicalGoalRecord,
   type CanonicalProjectRecord,
-  getPriorityIndex,
-  getStageIndex,
-  normalizeGoalGlobalRank,
+  getCanonicalProjectGlobalRankUpdates,
 } from "./projectOrdering";
 import {
   fetchReadyTasks,
@@ -108,6 +106,12 @@ import {
 } from "./constraints";
 import { log, type ThrottleOptions } from "@/lib/utils/logGate";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "./limits";
+import {
+  elapsedMs,
+  recordSchedulerDbWrite,
+  schedulerNowMs,
+  type SchedulerTiming,
+} from "./timing";
 
 type Client = SupabaseClient<Database>;
 
@@ -124,12 +128,47 @@ type CompatibleWindowRecord = {
   timeBlockId?: string | null;
   locationContextId?: string | null;
   locationContextValue?: string | null;
+  isOverlayCandidate?: boolean;
+  overlayWindowId?: string | null;
   gateTrace: BlockGateSample;
 };
 
 type OverlayWindowBlock = {
   startMs: number;
   endMs: number;
+};
+
+export type DynamicOverlayWindowCache = {
+  effectiveNow: Date;
+  windowsByKey: Map<string, Promise<WindowLite[]>>;
+};
+
+export function createDynamicOverlayWindowCache(
+  effectiveNow = new Date()
+): DynamicOverlayWindowCache {
+  return {
+    effectiveNow: new Date(effectiveNow),
+    windowsByKey: new Map<string, Promise<WindowLite[]>>(),
+  };
+}
+
+type DynamicOverlayWindowRow = {
+  id?: string | null;
+  label?: string | null;
+  start_utc?: string | null;
+  end_utc?: string | null;
+  mode?: string | null;
+  block_type?: string | null;
+  energy?: string | null;
+  location_context_id?: string | null;
+  allow_all_instance_types?: boolean | null;
+  allow_all_skills?: boolean | null;
+  allow_all_monuments?: boolean | null;
+  location_context?: {
+    id?: string | null;
+    value?: string | null;
+    label?: string | null;
+  } | null;
 };
 
 type ScheduleSegment = {
@@ -870,9 +909,11 @@ function logHabitWindowCompatibilityFailureDebug(params: {
       windowId: window.id,
       windowLabel: window.label ?? null,
       windowKind: window.window_kind ?? null,
+      allowAllInstanceTypes: window.allowAllInstanceTypes ?? null,
       allowAllHabitTypes: window.allowAllHabitTypes ?? null,
       allowAllSkills: window.allowAllSkills ?? null,
       allowAllMonuments: window.allowAllMonuments ?? null,
+      allowedInstanceTypes: window.allowedInstanceTypes ?? null,
       allowedHabitTypes: window.allowedHabitTypes ?? null,
       allowedSkillIds: window.allowedSkillIds ?? null,
       allowedMonumentIds: window.allowedMonumentIds ?? null,
@@ -2247,8 +2288,13 @@ export async function markMissedAndQueue(
 async function normalizeProjectInstances(
   userId: string,
   projectsMap: Record<string, ProjectLite>,
-  supabase: Client
+  supabase: Client,
+  timing?: SchedulerTiming | null
 ) {
+  const startedAt = schedulerNowMs();
+  let insertedMissed = 0;
+  let canceledDuplicates = 0;
+  try {
   // Load ALL existing PROJECT schedule_instances for user (no filters)
   const { data: allProjectInstances, error } = await supabase
     .from("schedule_instances")
@@ -2320,6 +2366,8 @@ async function normalizeProjectInstances(
           `Failed to create missed instance for project ${projectId}: ${insertError.message}`
         );
       }
+      insertedMissed += 1;
+      recordSchedulerDbWrite(timing, "inserts", 1);
     } else if (instances.length > 1) {
       // Select canonical and mark extras as canceled
       const canonical = selectCanonical(instances);
@@ -2334,9 +2382,21 @@ async function normalizeProjectInstances(
             `Failed to cancel duplicate instance ${extra.id}: ${updateError.message}`
           );
         }
+        canceledDuplicates += 1;
+        recordSchedulerDbWrite(timing, "cancels", 1);
       }
     }
     // If exactly one, leave it as is
+  }
+  } finally {
+    if (timing) {
+      timing.schedule.normalizeProjectInstances.ms += elapsedMs(startedAt);
+      timing.schedule.normalizeProjectInstances.loaded =
+        Object.keys(projectsMap).length;
+      timing.schedule.normalizeProjectInstances.insertedMissed += insertedMissed;
+      timing.schedule.normalizeProjectInstances.canceledDuplicates +=
+        canceledDuplicates;
+    }
   }
 }
 
@@ -2353,8 +2413,12 @@ export async function scheduleBacklog(
     utcOffsetMinutes?: number | null;
     debug?: boolean | null;
     parity?: boolean | null;
+    timing?: SchedulerTiming | null;
   }
 ): Promise<ScheduleBacklogResult> {
+  const timing = options?.timing ?? null;
+  const scheduleStartedAt = schedulerNowMs();
+  try {
   const supabase = await ensureClient(client);
   await reconcileExpiredOverlayWindows(supabase, userId);
   const parityEnabled = options?.parity === true;
@@ -2518,6 +2582,7 @@ export async function scheduleBacklog(
       ? options.utcOffsetMinutes
       : null;
 
+  const loadDataStartedAt = schedulerNowMs();
   const missed = await fetchBacklogNeedingSchedule(userId, supabase);
   if (missed.error) {
     result.error = missed.error;
@@ -2527,9 +2592,23 @@ export async function scheduleBacklog(
   const tasks = await fetchReadyTasks(supabase);
   const allProjectsMap = await fetchAllProjectsMap(supabase);
   const fetchedProjectsMap = await fetchProjectsMap(supabase);
-  await normalizeProjectInstances(userId, allProjectsMap, supabase);
+  await normalizeProjectInstances(userId, allProjectsMap, supabase, timing);
   const goals = await fetchGoalsForUser(userId, supabase);
   const habits = await fetchHabitsForSchedule(userId, supabase);
+  if (timing) {
+    timing.schedule.loadData.ms += elapsedMs(loadDataStartedAt);
+    timing.schedule.loadData.counts = {
+      missed: missed.data?.length ?? 0,
+      tasks: tasks.length,
+      allProjects: Object.keys(allProjectsMap).length,
+      fetchedProjects: Object.keys(fetchedProjectsMap).length,
+      goals: goals.length,
+      habits: habits.length,
+    };
+    timing.schedule.backlog.tasks = tasks.length;
+    timing.schedule.backlog.habits = habits.length;
+    timing.schedule.backlog.projects = Object.keys(fetchedProjectsMap).length;
+  }
   const habitAllowsOverlap = new Map<string, boolean>();
   const habitById = new Map<string, HabitScheduleItem>();
   const habitTypeById = new Map<string, string>();
@@ -2772,116 +2851,23 @@ export async function scheduleBacklog(
     excludedByGoalStatus: ineligibleProjectCountsByGoalStatus,
   });
 
-  await recalculateGlobalRanks(userId, projectsMap, supabase);
+  await recalculateGlobalRanks(projectsMap, supabase);
 
   async function recalculateGlobalRanks(
-    userId: string,
     projectsMap: Record<string, CanonicalProjectRecord>,
     supabase: Client
   ) {
-    type GoalRankRecord = CanonicalGoalRecord & {
-      id: string;
-      monumentId?: string | null;
-      monument_id?: string | null;
-      priorityRank?: number | string | null;
-      priority_rank?: number | string | null;
-    };
+    const projectRankUpdates = getCanonicalProjectGlobalRankUpdates(
+      Object.values(projectsMap),
+      goalsById
+    );
 
-    // Monument-isolated project ranking: roadmap-derived goal priority first,
-    // then existing project global rank, with project stage/priority only as fallbacks.
-    const projectRankRecordsByMonument = new Map<
-      string,
-      Array<{
-        id: string;
-        goalId: string;
-        goalPriorityRank: number | null;
-        projectGlobalRank: number | null;
-        priorityStrength: number;
-        stageStrength: number;
-      }>
-    >();
+    for (const { id, global_rank } of projectRankUpdates) {
+      await supabase.from("projects").update({ global_rank }).eq("id", id);
 
-    const normalizeMonumentId = (value: unknown): string | null => {
-      if (typeof value !== "string") return null;
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    };
-
-    for (const [projectId, project] of Object.entries(projectsMap)) {
-      const goal = project.goal_id
-        ? (goalsById.get(project.goal_id) as GoalRankRecord | undefined)
-        : null;
-      if (!goal) continue;
-
-      const monumentId = normalizeMonumentId(
-        goal.monumentId ?? goal.monument_id
-      );
-      const monumentKey = monumentId ?? "__NO_MONUMENT__";
-      const goalPriorityRank = normalizeGoalGlobalRank(
-        goal.priorityRank ?? goal.priority_rank
-      );
-      const projectGlobalRank = normalizeGoalGlobalRank(
-        project.globalRank ?? project.global_rank
-      );
-      const priorityStrength = project.priority
-        ? getPriorityIndex(project.priority)
-        : 0;
-      const stageStrength = project.stage ? getStageIndex(project.stage) : 0;
-
-      const projectRankRecords =
-        projectRankRecordsByMonument.get(monumentKey) ?? [];
-      projectRankRecords.push({
-        id: projectId,
-        goalId: goal.id,
-        goalPriorityRank,
-        projectGlobalRank,
-        priorityStrength,
-        stageStrength,
-      });
-      projectRankRecordsByMonument.set(monumentKey, projectRankRecords);
-    }
-
-    for (const monumentKey of Array.from(
-      projectRankRecordsByMonument.keys()
-    ).sort()) {
-      const projectRankRecords = projectRankRecordsByMonument.get(monumentKey);
-      if (!projectRankRecords) continue;
-
-      projectRankRecords.sort((a, b) => {
-        const aGoalRank = a.goalPriorityRank ?? Number.POSITIVE_INFINITY;
-        const bGoalRank = b.goalPriorityRank ?? Number.POSITIVE_INFINITY;
-        if (aGoalRank !== bGoalRank) return aGoalRank - bGoalRank;
-
-        if (a.goalId !== b.goalId) {
-          return a.goalId.localeCompare(b.goalId);
-        }
-
-        const aProjectRank = a.projectGlobalRank ?? Number.POSITIVE_INFINITY;
-        const bProjectRank = b.projectGlobalRank ?? Number.POSITIVE_INFINITY;
-        if (aProjectRank !== bProjectRank) return aProjectRank - bProjectRank;
-
-        if (a.stageStrength !== b.stageStrength) {
-          return b.stageStrength - a.stageStrength;
-        }
-        if (a.priorityStrength !== b.priorityStrength) {
-          return b.priorityStrength - a.priorityStrength;
-        }
-        return a.id.localeCompare(b.id);
-      });
-
-      // Update global_rank in database (rank 1 = highest priority within each monument)
-      for (let i = 0; i < projectRankRecords.length; i++) {
-        const rank = i + 1;
-        const projectId = projectRankRecords[i].id;
-        await supabase
-          .from("projects")
-          .update({ global_rank: rank })
-          .eq("id", projectId);
-
-        if (projectsMap[projectId]) {
-          projectsMap[projectId].globalRank = rank;
-          projectsMap[projectId].global_rank = rank;
-        }
+      if (projectsMap[id]) {
+        projectsMap[id].globalRank = global_rank;
+        projectsMap[id].global_rank = global_rank;
       }
     }
   }
@@ -3152,6 +3138,13 @@ export async function scheduleBacklog(
     HABIT_WRITE_LOOKAHEAD_DAYS,
     effectiveDayLimit
   );
+  if (timing) {
+    timing.schedule.lookaheadDays = lookaheadDays;
+    timing.schedule.effectiveDayLimit = effectiveDayLimit;
+    timing.schedule.effectiveHorizonDays = effectiveHorizonDays;
+    timing.schedule.backlog.queue = queue.length;
+    timing.schedule.backlog.days = effectiveDayLimit;
+  }
   const cleanupOffsetLimit = Math.max(effectiveDayLimit, habitWriteLookaheadDays);
   const dedupeWindowDays = Math.max(lookaheadDays, 28);
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone);
@@ -3159,6 +3152,7 @@ export async function scheduleBacklog(
     effectiveDayLimit > 0
       ? addDaysInTimeZone(baseStart, effectiveDayLimit, timeZone)
       : baseStart;
+  const cleanupDedupeStartedAt = schedulerNowMs();
 
   if (writeThroughEnd.getTime() > baseStartMs) {
     const { error } = await supabase
@@ -3176,6 +3170,7 @@ export async function scheduleBacklog(
       result.error = error;
       return result;
     }
+    recordSchedulerDbWrite(timing, "cancels");
   }
 
   const futureOverridePauses: Array<{
@@ -3210,6 +3205,7 @@ export async function scheduleBacklog(
         });
       } else {
         canceledHabitIds.push(habitId);
+        recordSchedulerDbWrite(timing, "cancels");
       }
     }
   }
@@ -3320,6 +3316,12 @@ export async function scheduleBacklog(
     writeThroughEnd,
     debugEnabled
   );
+  if (timing) {
+    timing.schedule.cleanupDedupe.dedupeFetched = dedupe.allInstances.length;
+    timing.schedule.cleanupDedupe.canceled += Array.from(
+      dedupe.canceledByProject.values()
+    ).reduce((sum, ids) => sum + ids.length, 0);
+  }
   if (dedupe.error) {
     result.error = dedupe.error;
     return result;
@@ -3352,6 +3354,10 @@ export async function scheduleBacklog(
     habitTypeById
   );
   const invalidatedInstanceIds = resolveOverlapChain(timelineInstances);
+  if (timing) {
+    timing.schedule.cleanupDedupe.overlapInvalidated =
+      invalidatedInstanceIds.size;
+  }
   const timelineById = new Map(
     timelineInstances
       .map((entry) => [entry.instance.id, entry] as const)
@@ -3442,8 +3448,8 @@ export async function scheduleBacklog(
   if (isRescheduleRebuild) {
     reuseInstanceByProject.clear();
   }
-  const keptLockedInstances: ScheduleInstance[] = [];
-  const keptLockedProjects: ScheduleInstance[] = [];
+  let keptLockedInstances: ScheduleInstance[] = [];
+  let keptLockedProjects: ScheduleInstance[] = [];
   const rebuildCanceledInstances: ScheduleInstance[] = [];
   const rebuildCanceledInstanceIds = new Set<string>();
   const rebuildCanceledProjectIds = new Set<string>();
@@ -3476,6 +3482,10 @@ export async function scheduleBacklog(
       supabase,
       Array.from(rebuildCanceledInstanceIds)
     );
+    if (timing) {
+      timing.schedule.cleanupDedupe.canceled += rebuildCanceledInstanceIds.size;
+      recordSchedulerDbWrite(timing, "cancels", rebuildCanceledInstanceIds.size);
+    }
     for (const inst of rebuildCanceledInstances) {
       if (inst.id) {
         removeInstanceFromBuckets(inst.id);
@@ -3492,6 +3502,9 @@ export async function scheduleBacklog(
         }
       }
     }
+  }
+  if (timing) {
+    timing.schedule.cleanupDedupe.ms += elapsedMs(cleanupDedupeStartedAt);
   }
 
   const keptInstancesByProject = new Map<string, ScheduleInstance>();
@@ -3939,6 +3952,7 @@ export async function scheduleBacklog(
     Map<string, HabitReservation>
   >();
   const windowCache = new Map<string, WindowLite[]>();
+  const dynamicOverlayCache = createDynamicOverlayWindowCache(baseDate);
   const dayMaxGapCache = new Map<string, number>();
   const projectDayWindowsCache = new Map<string, WindowLite[]>();
   const pendingWindowLoads = new Map<string, Promise<void>>();
@@ -3994,6 +4008,9 @@ export async function scheduleBacklog(
             useDayTypes: true, // Explicitly enable day-type awareness
           }
         );
+        if (timing) {
+          timing.schedule.backlog.windowsLoaded += windows.length;
+        }
 
         // Debug logging for window results
         if (process.env.SCHEDULER_DEBUG_WINDOWS === "true") {
@@ -4061,6 +4078,7 @@ export async function scheduleBacklog(
       availability,
       baseDate,
       windowCache,
+      dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
       client: supabase,
@@ -4088,6 +4106,7 @@ export async function scheduleBacklog(
       nonDailyHabitIds,
       nonDailyReplacementInstanceIds,
       isRescheduleRebuild,
+      timing,
     });
 
     if (dayResult.placements.length > 0) {
@@ -4553,6 +4572,7 @@ export async function scheduleBacklog(
                   ? baseDate
                   : undefined,
               cache: windowCache,
+              dynamicOverlayCache,
               restMode: isRestMode,
             userId,
             parity: parityOptions,
@@ -4566,6 +4586,7 @@ export async function scheduleBacklog(
               hasExplicitLocationContext:
                 Boolean(locationContextId) || Boolean(locationContextValue),
               locationDebugContext,
+              timing,
             }
           );
           const compatibleWindows = compatibleDayResult.windows;
@@ -4604,6 +4625,7 @@ export async function scheduleBacklog(
             chainKey,
             }),
           debugEnabled,
+          timing,
           });
           if (!("status" in placement)) {
             if (placement.error && placement.error !== "NO_FIT") {
@@ -4781,6 +4803,7 @@ export async function scheduleBacklog(
 
     return nonDailyReplacementInstanceIds;
   };
+  const initialHabitPassStartedAt = schedulerNowMs();
   nonDailyReplacementInstanceIds =
     await scheduleNonDailyHabitsAcrossHorizon(nonDailyHabits);
   const scheduleSyncHabitsAcrossHorizon = async () => {
@@ -4948,6 +4971,7 @@ export async function scheduleBacklog(
       if (!syncInstance?.id) {
         continue;
       }
+      recordSchedulerDbWrite(timing, "inserts", 1);
 
       syncInstancesCreated.push(syncInstance);
       const syncStartMs = new Date(startUtc).getTime();
@@ -5028,6 +5052,8 @@ export async function scheduleBacklog(
             reason: "error",
             detail: pairingError,
           });
+        } else {
+          recordSchedulerDbWrite(timing, "upserts", pairingRows.length);
         }
       }
     }
@@ -5039,6 +5065,9 @@ export async function scheduleBacklog(
     return syncPairingsByInstanceId;
   };
   result.syncPairings = await scheduleSyncHabitsAcrossHorizon();
+  if (timing) {
+    timing.schedule.habitPasses.totalMs += elapsedMs(initialHabitPassStartedAt);
+  }
 
   logSchedulerDebug("[SCHEDULER_ORDER] HABIT_PASS_END", {
     habitCount: habitPassState.blockingInstances.length,
@@ -5167,6 +5196,7 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       client: supabase,
       sunlightLocation: location,
@@ -5179,6 +5209,7 @@ export async function scheduleBacklog(
       audit: habitAudit,
       debugEnabled,
       isRescheduleRebuild,
+      timing,
     });
 
     const overlapInvalidated = overlapInvalidatedHabitsByOffset.get(offset);
@@ -5304,6 +5335,11 @@ export async function scheduleBacklog(
   const scheduledProjectIds = new Set<string>();
   const projectAttemptCounts = new Map<string, number>();
   const projectAttemptLimit = 1;
+  const projectPassStartedAt = schedulerNowMs();
+  if (timing) {
+    timing.schedule.projectPass.queued = projectPassState.queue.length;
+    timing.schedule.backlog.blockers = projectPassState.blockingInstances.length;
+  }
 
   for (const item of projectPassState.queue) {
     placementDebugCollector?.recordProjectQueued(item.id);
@@ -5517,12 +5553,14 @@ export async function scheduleBacklog(
           forceDayScopedAvailabilityKey: true,
           now: dayOffset === 0 ? baseDate : undefined, // Only apply "now" constraint on first day
           cache: projectPassState.dayWindowsCache,
+          dynamicOverlayCache,
           restMode: isRestMode,
           userId,
           parity: parityOptions,
           preloadedWindows: preloadedDayWindows,
           locationDebugContext,
           trackFilterCounters: debugEnabled,
+          timing,
           // Don't use horizonEnd here - we're searching day by day
         }
         );
@@ -5672,6 +5710,7 @@ export async function scheduleBacklog(
         blockerCache,
         windowEdgePreference: null,
         debugEnabled,
+        timing,
         debugOnFailure: debugEnabled
           ? (info) => {
                 projectFailureTrace = info;
@@ -5883,6 +5922,8 @@ export async function scheduleBacklog(
           });
         if (createError) {
           log("error", "Failed to create missed instance:", createError);
+        } else {
+          recordSchedulerDbWrite(timing, "inserts", 1);
         }
       } else {
         // Update existing instance with detailed reason
@@ -5892,6 +5933,8 @@ export async function scheduleBacklog(
           .eq("id", item.instanceId);
         if (updateError) {
           log("error", "Failed to update missed reason:", updateError);
+        } else {
+          recordSchedulerDbWrite(timing, "updates", 1);
         }
       }
 
@@ -5997,8 +6040,17 @@ export async function scheduleBacklog(
   }
 
   logSchedulerDebug("[SCHEDULER] EXIT project placement pass");
+  if (timing) {
+    timing.schedule.projectPass.ms += elapsedMs(projectPassStartedAt);
+    timing.schedule.projectPass.placed = scheduledProjectIds.size;
+    timing.schedule.projectPass.failed = Math.max(
+      0,
+      projectPassState.queue.length - scheduledProjectIds.size
+    );
+  }
   // ==========================================
 
+  const postProjectHabitPassStartedAt = schedulerNowMs();
   for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
     const allowSchedulingToday = offset < effectiveDayLimit;
     const shouldScheduleHabits =
@@ -6024,6 +6076,7 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
       client: supabase,
@@ -6051,6 +6104,7 @@ export async function scheduleBacklog(
       nonDailyHabitIds,
       nonDailyReplacementInstanceIds,
       isRescheduleRebuild,
+      timing,
     });
 
     if (dayResult.placements.length > 0) {
@@ -6065,6 +6119,11 @@ export async function scheduleBacklog(
     if (dayResult.failures.length > 0) {
       result.failures.push(...dayResult.failures);
     }
+  }
+  if (timing) {
+    timing.schedule.habitPasses.totalMs += elapsedMs(
+      postProjectHabitPassStartedAt
+    );
   }
 
   const habitPassRemovedInstanceIds = new Set<string>();
@@ -6085,6 +6144,7 @@ export async function scheduleBacklog(
   }
   removeInstancesFromBlockerCache(habitPassRemovedInstanceIds);
 
+  const cleanupHabitPassStartedAt = schedulerNowMs();
   for (let offset = 0; offset < cleanupOffsetLimit; offset += 1) {
     let windowAvailability = windowAvailabilityByDay.get(offset);
     if (!windowAvailability) {
@@ -6161,6 +6221,7 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
       client: supabase,
@@ -6189,12 +6250,16 @@ export async function scheduleBacklog(
         nonDailyHabitIds,
         nonDailyReplacementInstanceIds,
         isRescheduleRebuild,
+        timing,
       });
         if (cleanupResult.failures.length > 0) {
           result.failures.push(...cleanupResult.failures);
         }
       }
     }
+  }
+  if (timing) {
+    timing.schedule.habitPasses.totalMs += elapsedMs(cleanupHabitPassStartedAt);
   }
 
   const runFinalSyncRetryForDay = async (offset: number, day: Date) => {
@@ -6306,6 +6371,7 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
       client: supabase,
@@ -6333,6 +6399,7 @@ export async function scheduleBacklog(
       nonDailyReplacementInstanceIds,
       isRescheduleRebuild,
       postAnchorSyncRetry: true,
+      timing,
     });
 
     if (finalResult.placements.length > 0) {
@@ -6349,6 +6416,7 @@ export async function scheduleBacklog(
     }
   };
 
+  const finalSyncHabitPassStartedAt = schedulerNowMs();
   for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
     const allowSchedulingToday = offset < effectiveDayLimit;
     const shouldScheduleHabits =
@@ -6358,6 +6426,11 @@ export async function scheduleBacklog(
     const day =
       offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
     await runFinalSyncRetryForDay(offset, day);
+  }
+  if (timing) {
+    timing.schedule.habitPasses.totalMs += elapsedMs(
+      finalSyncHabitPassStartedAt
+    );
   }
 
   for (const [projectId, inst] of keptInstancesByProject) {
@@ -6428,6 +6501,7 @@ export async function scheduleBacklog(
     }
   }
 
+  const finalInvariantStartedAt = schedulerNowMs();
   const finalRangeResponse = await fetchInstancesForRange(
     userId,
     baseStart.toISOString(),
@@ -6439,10 +6513,16 @@ export async function scheduleBacklog(
     throw finalRangeResponse.error;
   }
   const finalInstances = (finalRangeResponse.data ?? []) as ScheduleInstance[];
+  if (timing) {
+    timing.schedule.finalInvariant.fetched = finalInstances.length;
+  }
   const finalInvariantInstances = buildFinalInvariantInstances(
     finalInstances,
     habitTypeById
   );
+  if (timing) {
+    timing.schedule.finalInvariant.scanned = finalInvariantInstances.length;
+  }
   const finalInstanceById = new Map<string, ScheduleInstance>();
   for (const entry of finalInvariantInstances) {
     if (entry.instance.id) {
@@ -6468,6 +6548,10 @@ export async function scheduleBacklog(
       );
     }
     await cancelInstancesAsIllegalOverlap(supabase, Array.from(cancelIdSet));
+    if (timing) {
+      timing.schedule.finalInvariant.canceled += cancelIdSet.size;
+      recordSchedulerDbWrite(timing, "cancels", cancelIdSet.size);
+    }
   }
   const remainingInstances = finalInvariantInstances.filter((entry) => {
     const id = entry.instance.id ?? "";
@@ -6563,6 +6647,13 @@ export async function scheduleBacklog(
       });
       removeInstanceFromBuckets(id);
     }
+    if (timing) {
+      timing.schedule.finalInvariant.canceled += remainingCancels.size;
+      recordSchedulerDbWrite(timing, "cancels", remainingCancels.size);
+    }
+  }
+  if (timing) {
+    timing.schedule.finalInvariant.ms += elapsedMs(finalInvariantStartedAt);
   }
 
   // Always clean up old missed HABIT instances so accumulation doesn't depend on a perfect run
@@ -6585,6 +6676,8 @@ export async function scheduleBacklog(
       reason: "error",
       detail: missedCleanupError,
     });
+  } else {
+    recordSchedulerDbWrite(timing, "deletes");
   }
 
   if (typeof supabase.from === "function") {
@@ -6739,6 +6832,11 @@ export async function scheduleBacklog(
   }
 
   return result;
+  } finally {
+    if (timing) {
+      timing.schedule.totalMs += elapsedMs(scheduleStartedAt);
+    }
+  }
 }
 
 type DedupeResult = {
@@ -6921,6 +7019,7 @@ async function reserveMandatoryHabitsForDay(params: {
   availability: Map<string, WindowAvailabilityBounds>;
   baseDate: Date;
   windowCache: Map<string, WindowLite[]>;
+  dynamicOverlayCache?: DynamicOverlayWindowCache;
   maxGapCache: Map<string, number>;
   client: Client;
   sunlightLocation?: GeoCoordinates | null;
@@ -6934,6 +7033,7 @@ async function reserveMandatoryHabitsForDay(params: {
   audit?: HabitAuditTracker;
   debugEnabled?: boolean;
   isRescheduleRebuild?: boolean;
+  timing?: SchedulerTiming | null;
 }): Promise<Map<string, HabitReservation>> {
   const {
     userId,
@@ -6944,6 +7044,7 @@ async function reserveMandatoryHabitsForDay(params: {
     availability,
     baseDate,
     windowCache,
+    dynamicOverlayCache,
     maxGapCache,
     client,
     sunlightLocation,
@@ -6956,6 +7057,7 @@ async function reserveMandatoryHabitsForDay(params: {
     parity,
     audit,
     isRescheduleRebuild = false,
+    timing = null,
   } = params;
 
   const reservations = new Map<string, HabitReservation>();
@@ -7643,6 +7745,7 @@ async function reserveMandatoryHabitsForDay(params: {
         {
           availability: clonedAvailability,
           cache: windowCache,
+          dynamicOverlayCache,
           now: offset === 0 ? baseDate : undefined,
           locationContextId: attempt.locationId,
           locationContextValue: attempt.locationValue,
@@ -7663,6 +7766,7 @@ async function reserveMandatoryHabitsForDay(params: {
               ? nightEligibleWindows
               : windows,
           allowedWindowKinds,
+          timing,
           auditZeroStageCallback: auditEnabled
             ? (stage) => {
                 lastZeroStage = stage;
@@ -8045,6 +8149,7 @@ async function scheduleHabitsForDay(params: {
   availability: Map<string, WindowAvailabilityBounds>;
   baseDate: Date;
   windowCache: Map<string, WindowLite[]>;
+  dynamicOverlayCache?: DynamicOverlayWindowCache;
   maxGapCache?: Map<string, number>;
   blockerCache?: BlockerCache;
   client: Client;
@@ -8083,6 +8188,7 @@ async function scheduleHabitsForDay(params: {
   onPersistedHabit?: (instance: ScheduleInstance | null | undefined) => void;
   isRescheduleRebuild?: boolean;
   postAnchorSyncRetry?: boolean;
+  timing?: SchedulerTiming | null;
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -8093,6 +8199,7 @@ async function scheduleHabitsForDay(params: {
     availability,
     baseDate,
     windowCache,
+    dynamicOverlayCache,
     maxGapCache,
     blockerCache,
     client,
@@ -8124,6 +8231,7 @@ async function scheduleHabitsForDay(params: {
     onPersistedHabit,
     isRescheduleRebuild = false,
     postAnchorSyncRetry = false,
+    timing = null,
   } = params;
 
   const result: HabitScheduleDayResult = {
@@ -9723,6 +9831,7 @@ async function scheduleHabitsForDay(params: {
           {
             availability: clonedAvailability,
             cache: windowCache,
+            dynamicOverlayCache,
             now: offset === 0 ? baseDate : undefined,
             locationContextId: attempt.locationId,
             locationContextValue: attempt.locationValue,
@@ -9742,6 +9851,7 @@ async function scheduleHabitsForDay(params: {
                 ? nightEligibleWindows
                 : windows,
             allowedWindowKinds,
+            timing,
             auditZeroStageCallback: auditEnabled || shouldLogPlacementAudit
               ? (stage) => {
                   lastZeroStage = stage;
@@ -10453,6 +10563,7 @@ async function scheduleHabitsForDay(params: {
           habitTypeById,
           windowEdgePreference: habit.windowEdgePreference,
           debugEnabled,
+          timing,
         });
 
         if (!("status" in placement)) {
@@ -11149,6 +11260,7 @@ type ConstraintAwareItem = {
   energy: string;
   duration_min: number;
   habitType?: string | null;
+  sourceType?: string | null;
   skillId?: string | null;
   skillIds?: string[] | null;
   monumentId?: string | null;
@@ -11168,6 +11280,8 @@ type FetchCompatibleWindowsResult = {
     dayTypeTimeBlockId: string | null;
     timeBlockId: string | null;
     fromPrevDay?: boolean;
+    isOverlayCandidate?: boolean;
+    overlayWindowId?: string | null;
     energy?: string | null;
     locationContextId?: string | null;
     locationContextValue?: string | null;
@@ -11188,6 +11302,7 @@ export async function fetchCompatibleWindowsForItem(
     cloneAvailabilityBeforeMutating?: boolean;
     forceDayScopedAvailabilityKey?: boolean;
     cache?: Map<string, WindowLite[]>;
+    dynamicOverlayCache?: DynamicOverlayWindowCache;
     locationContextId?: string | null;
     locationContextValue?: string | null;
     daylight?: DaylightConstraint | null;
@@ -11211,8 +11326,22 @@ export async function fetchCompatibleWindowsForItem(
     auditZeroStageCallback?: (stage: string | null) => void;
     horizonEnd?: Date;
   parity?: FetchWindowsParityOptions | null;
+    timing?: SchedulerTiming | null;
   }
 ): Promise<FetchCompatibleWindowsResult> {
+  const timing = options?.timing ?? null;
+  const startedAt = schedulerNowMs();
+  const isProjectCall = item.isProject === true || item.sourceType === "PROJECT";
+  const isHabitCall =
+    Boolean(item.habitType) || item.sourceType === "HABIT" || !isProjectCall;
+  let windowsIn = 0;
+  let windowsOut = 0;
+  if (timing) {
+    timing.schedule.compatibleWindows.calls += 1;
+    if (isProjectCall) timing.schedule.compatibleWindows.projectCalls += 1;
+    if (isHabitCall) timing.schedule.compatibleWindows.habitCalls += 1;
+  }
+  try {
   // Debug pipeline tracking
   const debugPipeline = process.env.SCHEDULER_DEBUG_WINDOW_PIPELINE === "true";
   let pipelineLogCount = 0;
@@ -11306,6 +11435,7 @@ export async function fetchCompatibleWindowsForItem(
 
   const constraintItem = {
     habitType: item.habitType ?? null,
+    sourceType: item.sourceType ?? null,
     skillId: item.skillId ?? null,
     skillIds: item.skillIds ?? null,
     monumentId: item.monumentId ?? null,
@@ -11315,16 +11445,59 @@ export async function fetchCompatibleWindowsForItem(
     allowEmptyProjectCandidates: item.allowEmptyProjectCandidates ?? false,
   };
 
+  if (userId && userId.length > 0) {
+    const overlayNow =
+      options?.now ?? options?.dynamicOverlayCache?.effectiveNow ?? new Date();
+    if (windowOccurrences) {
+      const occurrenceDays: Date[] = [];
+      let cursor = new Date(date);
+      const endDate = options?.horizonEnd ? new Date(options.horizonEnd) : date;
+      while (cursor <= endDate) {
+        occurrenceDays.push(new Date(cursor));
+        cursor = addDaysInTimeZone(cursor, 1, timeZone);
+      }
+      for (const occurrenceDate of occurrenceDays) {
+        const dynamicWindows = await getCachedDynamicOverlayWindowsForDate(
+          supabase,
+          occurrenceDate,
+          timeZone,
+          userId,
+          overlayNow,
+          options?.dynamicOverlayCache
+        );
+        for (const window of dynamicWindows) {
+          windowOccurrences.push({ window, occurrenceDate });
+        }
+      }
+      windows = windowOccurrences.map((occ) => occ.window);
+    } else {
+      const dynamicWindows = await getCachedDynamicOverlayWindowsForDate(
+        supabase,
+        date,
+        timeZone,
+        userId,
+        overlayNow,
+        options?.dynamicOverlayCache
+      );
+      if (dynamicWindows.length > 0) {
+        windows = [...windows, ...dynamicWindows];
+      }
+    }
+  }
+
   const windowOccurrencesBeforeConstraints = windowOccurrences;
   const windowsBeforeConstraints = windows;
   const originalWindowCount =
     windowOccurrencesBeforeConstraints?.length ?? windowsBeforeConstraints.length;
+  windowsIn = originalWindowCount;
   const hasConstraints =
     (windows?.some?.(
       (win) =>
+        win.allowAllInstanceTypes === false ||
         win.allowAllHabitTypes === false ||
         win.allowAllSkills === false ||
         win.allowAllMonuments === false ||
+        (win.allowedInstanceTypes && win.allowedInstanceTypes.length > 0) ||
         (win.allowedHabitTypes && win.allowedHabitTypes.length > 0) ||
         (win.allowedSkillIds && win.allowedSkillIds.length > 0) ||
         (win.allowedMonumentIds && win.allowedMonumentIds.length > 0)
@@ -11332,9 +11505,11 @@ export async function fetchCompatibleWindowsForItem(
       false) ||
     (windowOccurrences?.some?.(
       ({ window: win }) =>
+        win.allowAllInstanceTypes === false ||
         win.allowAllHabitTypes === false ||
         win.allowAllSkills === false ||
         win.allowAllMonuments === false ||
+        (win.allowedInstanceTypes && win.allowedInstanceTypes.length > 0) ||
         (win.allowedHabitTypes && win.allowedHabitTypes.length > 0) ||
         (win.allowedSkillIds && win.allowedSkillIds.length > 0) ||
         (win.allowedMonumentIds && win.allowedMonumentIds.length > 0)
@@ -11349,12 +11524,15 @@ export async function fetchCompatibleWindowsForItem(
 
     const evaluateConstraint = (win: WindowLite) => {
       const passes = passesTimeBlockConstraints(constraintItem, {
+        allowAllInstanceTypes: win.allowAllInstanceTypes,
         allowAllHabitTypes: win.allowAllHabitTypes,
         allowAllSkills: win.allowAllSkills,
         allowAllMonuments: win.allowAllMonuments,
+        allowedInstanceTypes: win.allowedInstanceTypes,
         allowedHabitTypes: win.allowedHabitTypes,
         allowedSkillIds: win.allowedSkillIds,
         allowedMonumentIds: win.allowedMonumentIds,
+        allowedInstanceTypesSet: win.allowedInstanceTypesSet ?? null,
         allowedHabitTypesSet: win.allowedHabitTypesSet ?? null,
         allowedSkillIdsSet: win.allowedSkillIdsSet ?? null,
         allowedMonumentIdsSet: win.allowedMonumentIdsSet ?? null,
@@ -11849,6 +12027,8 @@ export async function fetchCompatibleWindowsForItem(
       energy: energyLabel,
       locationContextId: windowLocationId,
       locationContextValue: windowLocationValue,
+      isOverlayCandidate: win.isOverlayCandidate ?? false,
+      overlayWindowId: win.overlayWindowId ?? null,
       gateTrace,
     });
   }
@@ -11964,12 +12144,42 @@ export async function fetchCompatibleWindowsForItem(
     dayTypeTimeBlockId: win.dayTypeTimeBlockId ?? null,
     timeBlockId: win.timeBlockId ?? null,
     fromPrevDay: win.fromPrevDay ?? undefined,
+    isOverlayCandidate: win.isOverlayCandidate ?? undefined,
+    overlayWindowId: win.overlayWindowId ?? null,
   }));
+  windowsOut = compatibleWindows.length;
+  if (timing) {
+    timing.schedule.compatibleWindows.windowsIn += windowsIn;
+    timing.schedule.compatibleWindows.windowsOut += windowsOut;
+    if (windowsOut === 0) {
+      timing.schedule.compatibleWindows.zeroResults += 1;
+    }
+    if (filterCounters) {
+      const target = timing.schedule.compatibleWindows.constraintRejections;
+      target.dayTypeIncompatible =
+        (target.dayTypeIncompatible ?? 0) + filterCounters.dayTypeIncompatible;
+      target.itemTypeNotAllowed =
+        (target.itemTypeNotAllowed ?? 0) + filterCounters.itemTypeNotAllowed;
+      target.skillNotAllowed =
+        (target.skillNotAllowed ?? 0) + filterCounters.skillNotAllowed;
+      target.monumentNotAllowed =
+        (target.monumentNotAllowed ?? 0) + filterCounters.monumentNotAllowed;
+      target.locationMismatch =
+        (target.locationMismatch ?? 0) + filterCounters.locationMismatch;
+      target.energyMismatch =
+        (target.energyMismatch ?? 0) + filterCounters.energyMismatch;
+    }
+  }
   return {
     windows: compatibleWindows,
     filterCounters: filterCounters ?? undefined,
     expiredToday,
   };
+  } finally {
+    if (timing) {
+      timing.schedule.compatibleWindows.totalMs += elapsedMs(startedAt);
+    }
+  }
 }
 
 function createEmptyFilterCounters(): PlacementFilterWaterfall {
@@ -12045,10 +12255,15 @@ async function loadOverlayWindowBlocksForDate(
 
   const { data, error } = await supabase
     .from("overlay_windows" as any)
-    .select<{ start_utc: string | null; end_utc: string | null }>(
-      "start_utc,end_utc"
+    .select<{
+      start_utc: string | null;
+      end_utc: string | null;
+      mode?: string | null;
+    }>(
+      "start_utc,end_utc,mode"
     )
     .eq("user_id", userId)
+    .or("mode.is.null,mode.eq.MANUAL")
     .lt("start_utc", isoEnd)
     .gt("end_utc", isoStart);
 
@@ -12065,6 +12280,9 @@ async function loadOverlayWindowBlocksForDate(
 
   const blocks: OverlayWindowBlock[] = [];
   for (const row of data ?? []) {
+    const mode =
+      typeof row.mode === "string" ? row.mode.toUpperCase().trim() : null;
+    if (mode && mode !== "MANUAL") continue;
     const start = safeDate(row.start_utc ?? null);
     const end = safeDate(row.end_utc ?? null);
     if (!start || !end) continue;
@@ -12083,6 +12301,262 @@ async function loadOverlayWindowBlocksForDate(
   blocks.sort((a, b) => a.startMs - b.startMs);
   overlayWindowCache.set(cacheKey, blocks);
   return blocks;
+}
+
+function dynamicOverlayCacheKey(
+  userId: string,
+  date: Date,
+  timeZone: string,
+  now: Date
+) {
+  const tz = timeZone || "UTC";
+  const nowMs = now.getTime();
+  const effectiveNow =
+    Number.isFinite(nowMs) ? now.toISOString() : new Date().toISOString();
+  return `${userId}:${formatDateKeyInTimeZone(date, tz)}:${tz}:${effectiveNow}`;
+}
+
+function getCachedDynamicOverlayWindowsForDate(
+  supabase: Client,
+  date: Date,
+  timeZone: string,
+  userId: string,
+  now: Date | null | undefined,
+  cache: DynamicOverlayWindowCache | null | undefined
+): Promise<WindowLite[]> {
+  const effectiveNow = now ?? cache?.effectiveNow ?? new Date();
+  if (!cache) {
+    return loadDynamicOverlayWindowsForDate(
+      supabase,
+      date,
+      timeZone,
+      userId,
+      effectiveNow
+    );
+  }
+
+  const key = dynamicOverlayCacheKey(userId, date, timeZone, effectiveNow);
+  const cached = cache.windowsByKey.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = loadDynamicOverlayWindowsForDate(
+    supabase,
+    date,
+    timeZone,
+    userId,
+    effectiveNow
+  ).catch((error) => {
+    cache.windowsByKey.delete(key);
+    throw error;
+  });
+  cache.windowsByKey.set(key, pending);
+  return pending;
+}
+
+async function loadDynamicOverlayWindowsForDate(
+  supabase: Client,
+  date: Date,
+  timeZone: string,
+  userId: string,
+  now: Date
+): Promise<WindowLite[]> {
+  const tz = timeZone || "UTC";
+  const dayStart = startOfDayInTimeZone(date, tz);
+  const dayEnd = addDaysInTimeZone(dayStart, 1, tz);
+  const isoStart = dayStart.toISOString();
+  const isoEnd = dayEnd.toISOString();
+  const nowMs = now.getTime();
+  const isoNow = Number.isFinite(nowMs) ? now.toISOString() : new Date().toISOString();
+  const contextJoin = "location_context:location_contexts(id, value, label)";
+
+  const { data, error } = await supabase
+    .from("overlay_windows" as any)
+    .select<DynamicOverlayWindowRow>(
+      `id,label,start_utc,end_utc,mode,block_type,energy,location_context_id,allow_all_instance_types,allow_all_skills,allow_all_monuments,${contextJoin}`
+    )
+    .eq("user_id", userId)
+    .eq("mode", "DYNAMIC")
+    .lt("start_utc", isoEnd)
+    .gt("end_utc", isoStart)
+    .gt("end_utc", isoNow);
+
+  if (error) {
+    logSchedulerDebug("[OVERLAY_WINDOWS] dynamic load failed", {
+      userId,
+      date: date.toISOString(),
+      timeZone: tz,
+      error,
+    });
+    return [];
+  }
+
+  const rows = (data ?? []).filter((row) => {
+    const mode =
+      typeof row.mode === "string" ? row.mode.toUpperCase().trim() : null;
+    if (mode !== "DYNAMIC") return false;
+    const start = safeDate(row.start_utc ?? null);
+    const end = safeDate(row.end_utc ?? null);
+    if (!start || !end) return false;
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    return (
+      Number.isFinite(startMs) &&
+      Number.isFinite(endMs) &&
+      startMs < dayEnd.getTime() &&
+      endMs > dayStart.getTime() &&
+      endMs > nowMs &&
+      startMs < endMs
+    );
+  });
+
+  const overlayIds = rows
+    .map((row) => row.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  type InstanceTypeWhitelistRow = {
+    overlay_window_id: string | null;
+    instance_type: string | null;
+  };
+  type SkillWhitelistRow = {
+    overlay_window_id: string | null;
+    skill_id: string | null;
+  };
+  type MonumentWhitelistRow = {
+    overlay_window_id: string | null;
+    monument_id: string | null;
+  };
+
+  const [instanceWhitelist, skillWhitelist, monumentWhitelist] =
+    overlayIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from("overlay_window_allowed_instance_types" as any)
+            .select("overlay_window_id,instance_type")
+            .in("overlay_window_id", overlayIds),
+          supabase
+            .from("overlay_window_allowed_skills" as any)
+            .select("overlay_window_id,skill_id")
+            .in("overlay_window_id", overlayIds),
+          supabase
+            .from("overlay_window_allowed_monuments" as any)
+            .select("overlay_window_id,monument_id")
+            .in("overlay_window_id", overlayIds),
+        ])
+      : [
+          { data: [] as InstanceTypeWhitelistRow[] | null, error: null },
+          { data: [] as SkillWhitelistRow[] | null, error: null },
+          { data: [] as MonumentWhitelistRow[] | null, error: null },
+        ];
+
+  if (instanceWhitelist.error) throw instanceWhitelist.error;
+  if (skillWhitelist.error) throw skillWhitelist.error;
+  if (monumentWhitelist.error) throw monumentWhitelist.error;
+
+  const instanceAllowMap = new Map<string, Set<string>>();
+  for (const row of (instanceWhitelist.data ?? []) as InstanceTypeWhitelistRow[]) {
+    const key = row.overlay_window_id ?? "";
+    if (!key || !row.instance_type) continue;
+    const normalized = row.instance_type.toUpperCase().trim();
+    if (!normalized) continue;
+    const existing = instanceAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    instanceAllowMap.set(key, existing);
+  }
+
+  const skillAllowMap = new Map<string, Set<string>>();
+  for (const row of (skillWhitelist.data ?? []) as SkillWhitelistRow[]) {
+    const key = row.overlay_window_id ?? "";
+    if (!key || !row.skill_id) continue;
+    const normalized = row.skill_id.trim();
+    if (!normalized) continue;
+    const existing = skillAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    skillAllowMap.set(key, existing);
+  }
+
+  const monumentAllowMap = new Map<string, Set<string>>();
+  for (const row of (monumentWhitelist.data ?? []) as MonumentWhitelistRow[]) {
+    const key = row.overlay_window_id ?? "";
+    if (!key || !row.monument_id) continue;
+    const normalized = row.monument_id.trim();
+    if (!normalized) continue;
+    const existing = monumentAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    monumentAllowMap.set(key, existing);
+  }
+
+  const normalizeAllowAllFlag = (
+    flag: boolean | null | undefined,
+    whitelistSize: number
+  ): boolean => flag === true || (flag == null && whitelistSize === 0);
+
+  const localTimeLabel = (value: Date) => {
+    const parts = getDateTimeParts(value, tz);
+    return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+  };
+
+  const windows: WindowLite[] = [];
+  for (const row of rows) {
+    if (!row.id) continue;
+    const start = safeDate(row.start_utc ?? null);
+    const end = safeDate(row.end_utc ?? null);
+    if (!start || !end) continue;
+    const overlayId = row.id;
+    const instanceWhitelist = instanceAllowMap.get(overlayId);
+    const skillWhitelist = skillAllowMap.get(overlayId);
+    const monumentWhitelist = monumentAllowMap.get(overlayId);
+    const locationValue =
+      row.location_context_id && row.location_context?.value
+        ? String(row.location_context.value).toUpperCase().trim()
+        : null;
+    const locationLabel =
+      row.location_context?.label ?? (locationValue ? locationValue : null);
+
+    windows.push({
+      id: `overlay:${overlayId}`,
+      label: row.label ?? "Dynamic Overlay",
+      energy:
+        typeof row.energy === "string" && row.energy.trim().length > 0
+          ? row.energy.trim().toUpperCase()
+          : "",
+      start_local: localTimeLabel(start),
+      end_local: localTimeLabel(end),
+      days: null,
+      location_context_id: row.location_context_id ?? null,
+      location_context_value: locationValue,
+      location_context_name: locationLabel,
+      window_kind: normalizeBlockType(row.block_type),
+      dayTypeStartUtcMs: start.getTime(),
+      dayTypeEndUtcMs: end.getTime(),
+      isOverlayCandidate: true,
+      overlayWindowId: overlayId,
+      allowAllInstanceTypes: normalizeAllowAllFlag(
+        row.allow_all_instance_types,
+        instanceWhitelist?.size ?? 0
+      ),
+      allowAllHabitTypes: true,
+      allowAllSkills: normalizeAllowAllFlag(
+        row.allow_all_skills,
+        skillWhitelist?.size ?? 0
+      ),
+      allowAllMonuments: normalizeAllowAllFlag(
+        row.allow_all_monuments,
+        monumentWhitelist?.size ?? 0
+      ),
+      allowedInstanceTypes: Array.from(instanceWhitelist ?? []),
+      allowedSkillIds: Array.from(skillWhitelist ?? []),
+      allowedMonumentIds: Array.from(monumentWhitelist ?? []),
+    });
+  }
+
+  return windows.sort((a, b) => {
+    const startDiff =
+      (a.dayTypeStartUtcMs ?? 0) - (b.dayTypeStartUtcMs ?? 0);
+    if (startDiff !== 0) return startDiff;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 function applyOverlayBlocks(
@@ -12160,8 +12634,9 @@ async function reconcileExpiredOverlayWindows(
   const isoNow = now.toISOString();
   const { data: windows, error: windowError } = await supabase
     .from("overlay_windows" as any)
-    .select("id")
+    .select("id,mode")
     .eq("user_id", userId)
+    .or("mode.is.null,mode.eq.MANUAL")
     .lte("end_utc", isoNow);
 
   if (windowError) {
@@ -12173,6 +12648,11 @@ async function reconcileExpiredOverlayWindows(
   }
 
   const expiredWindowIds = (windows ?? [])
+    .filter((row) => {
+      const mode =
+        typeof row?.mode === "string" ? row.mode.toUpperCase().trim() : null;
+      return mode === null || mode === "" || mode === "MANUAL";
+    })
     .map((row) => row?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   if (expiredWindowIds.length === 0) {
@@ -12264,6 +12744,22 @@ function determineConstraintFailureReason(
   item: ConstraintAwareItem,
   window: WindowLite
 ): PlacementReasonCode | null {
+  if (window.allowAllInstanceTypes === false) {
+    const instanceType = item.isProject
+      ? "PROJECT"
+      : typeof item.sourceType === "string" && item.sourceType.trim()
+        ? item.sourceType.toUpperCase().trim()
+        : typeof item.habitType === "string"
+          ? item.habitType.toUpperCase().trim()
+          : null;
+    const allowed =
+      window.allowedInstanceTypesSet ??
+      normalizeSet(window.allowedInstanceTypes);
+    if (!instanceType || !allowed || allowed.size === 0 || !allowed.has(instanceType)) {
+      return "ITEM_TYPE_NOT_ALLOWED";
+    }
+  }
+
   if (window.allowAllHabitTypes === false) {
     const habitType =
       typeof item.habitType === "string"

@@ -194,6 +194,8 @@ const goalManualCompleteRejectClass =
   "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]";
 const campaignDrawerNoSelectClass =
   "select-none [-webkit-user-select:none] [-webkit-touch-callout:none]";
+const focusPomoCompleteSurfaceClass =
+  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-visible border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
 
 const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
   if (typeof window === "undefined") {
@@ -572,7 +574,7 @@ function DraggableGoalCard({
     manualCompleteRejected
       ? goalManualCompleteRejectClass
       : isCompleted
-      ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      ? focusPomoCompleteSurfaceClass
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
   }`;
 
@@ -593,7 +595,7 @@ function DraggableGoalCard({
           : manualCompleteRejected
           ? goalManualCompleteRejectClass
           : isCompleted
-          ? "habit-card--completed habit-card--completed-gem rounded-lg border border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)] sm:rounded-xl"
+          ? focusPomoCompleteSurfaceClass
           : "rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 sm:rounded-xl"
       }`}
       {...shellMotionProps}

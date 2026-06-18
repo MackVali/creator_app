@@ -94,9 +94,11 @@
   }
 
   .app-nav-menu {
-    background: rgba(17, 17, 17, 0.96);
-    border-color: #2a2a2a;
-    color: #e6e6e6;
+    --muted: #a1a1aa;
+    background: #000000;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f5f5f5;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
   }
 
   .app-nav-icon {
@@ -296,10 +298,11 @@
 }
 
 :root[data-theme="light"] .app-nav-menu {
-  background: rgba(199, 200, 193, 0.98);
-  border-color: rgba(39, 39, 42, 0.28);
-  color: #18181b;
-  box-shadow: 0 18px 44px rgba(24, 24, 27, 0.2);
+  --muted: #a1a1aa;
+  background: #000000;
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #f5f5f5;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
 }
 
 :root[data-theme="light"] .app-nav-icon {

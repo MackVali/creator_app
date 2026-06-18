@@ -309,6 +309,8 @@ type GoalRowWithRelations = GoalRow & {
     stage: string | null;
     duration_min?: number | null;
     created_at: string;
+    due_date?: string | null;
+    global_rank?: number | null;
     tasks?: {
       id: string;
       project_id: string | null;
@@ -332,7 +334,7 @@ async function fetchGoalsWithRelations(
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
+      id, name, goal_id, stage, duration_min, created_at, due_date, global_rank,
       priority,
       energy,
       tasks (
@@ -346,7 +348,7 @@ async function fetchGoalsWithRelations(
   const selectWithLookupRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
+      id, name, goal_id, stage, duration_min, created_at, due_date, global_rank,
       priority,
       energy,
       tasks (
@@ -922,6 +924,12 @@ export default function GoalsPage() {
               stage: p.stage ?? "BUILD",
               priorityCode,
               weight: projectWeightValue,
+              globalRank:
+                typeof p.global_rank === "number" &&
+                Number.isFinite(p.global_rank) &&
+                p.global_rank > 0
+                  ? p.global_rank
+                  : null,
               isNew: false,
               tasks: normalizedTasks,
             };
@@ -1378,6 +1386,15 @@ export default function GoalsPage() {
         try {
           await persistGoalWeights(supabase, weightUpdates);
           await persistGoalGlobalRanks(supabase, recomputedGoals);
+          const { error: projectRankError } = await supabase.rpc(
+            "recalculate_project_global_rank"
+          );
+          if (projectRankError) {
+            console.error(
+              "Failed to recalculate project global rank",
+              projectRankError
+            );
+          }
           const weightMap = new Map(
             recomputedGoals.map((goal) => [goal.id, goal.weight ?? 0])
           );

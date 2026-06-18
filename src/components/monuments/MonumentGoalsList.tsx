@@ -100,6 +100,7 @@ type GoalRowWithRelations = GoalRow & {
     completed_at?: string | null;
     duration_min?: number | null;
     created_at: string;
+    global_rank?: number | null;
     due_date?: string | null;
     tasks?: {
       id: string;
@@ -128,7 +129,7 @@ const GOAL_RELATIONS_BASE_SELECT =
 const GOAL_RELATIONS_SELECT = `
   ${GOAL_RELATIONS_BASE_SELECT},
   projects (
-    id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
+    id, name, goal_id, stage, completed_at, duration_min, created_at, due_date, global_rank,
     priority,
     energy,
     tasks (
@@ -2539,6 +2540,12 @@ export function MonumentGoalsList({
               : null,
           skillIds: projectSkillIds,
           weight: projectWeightValue,
+          globalRank:
+            typeof project.global_rank === "number" &&
+            Number.isFinite(project.global_rank) &&
+            project.global_rank > 0
+              ? project.global_rank
+              : null,
           isNew: false,
           tasks: normalizedTasks,
         };

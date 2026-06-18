@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
@@ -9,7 +9,10 @@ import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
 import { getMonumentNotes, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import { MonumentNoteCard } from "./MonumentNoteCard";
-import { NotesHeaderControls } from "./NotesHeaderControls";
+import {
+  NotesHeaderControls,
+  type NoteCardDensity,
+} from "./NotesHeaderControls";
 
 interface MonumentNotesGridProps {
   monumentId: string;
@@ -22,11 +25,19 @@ const monumentNoteActionOuterClass =
 const monumentNoteActionInnerClass =
   "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
+const monumentNoteGridClass =
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+
+const monumentNoteSmallGridClass =
+  "-mx-3 grid grid-cols-4 gap-2 px-3 sm:grid-cols-5 sm:gap-2.5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
+
 export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [noteCardDensity, setNoteCardDensity] =
+    useState<NoteCardDensity>("large");
   const latestInitialNotesRef = useRef(initialNotes ?? []);
 
   useEffect(() => {
@@ -72,6 +83,13 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   const hasAnyNotes = notes.length > 0;
   const hasMoreNotes = filteredNotes.length > 3;
   const visibleNotes = showAllNotes ? filteredNotes : filteredNotes.slice(0, 3);
+  const isSmallNoteCardDensity = noteCardDensity === "small";
+
+  const handleNoteCardDensityToggle = useCallback(() => {
+    setNoteCardDensity((currentDensity) =>
+      currentDensity === "large" ? "small" : "large"
+    );
+  }, []);
 
   async function handleToggleBookmark(noteId: string) {
     const target = notes.find((note) => note.id === noteId);
@@ -92,7 +110,12 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
 
   return (
     <div className="max-w-full space-y-3">
-      <NotesHeaderControls searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+      <NotesHeaderControls
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        density={noteCardDensity}
+        onDensityToggle={handleNoteCardDensityToggle}
+      />
       {hasAnyNotes && !hasVisibleNotes && !isLoading ? (
         <div className="w-full rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-3 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
           <p className="text-sm font-semibold tracking-tight text-white/90">
@@ -104,13 +127,18 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
         </div>
       ) : null}
 
-      <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div
+        className={
+          isSmallNoteCardDensity ? monumentNoteSmallGridClass : monumentNoteGridClass
+        }
+      >
         {visibleNotes.map((note) => (
           <MonumentNoteCard
             key={note.id}
             note={note}
             monumentId={monumentId}
             onToggleBookmark={handleToggleBookmark}
+            density={noteCardDensity}
           />
         ))}
 
@@ -118,7 +146,12 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           return (
             <Link
               href={`/monuments/${monumentId}/notes/new`}
-              className={monumentNoteActionOuterClass}
+              className={cn(
+                monumentNoteActionOuterClass,
+                isSmallNoteCardDensity
+                  ? "aspect-square min-h-[70px] rounded-xl p-2 sm:min-h-[78px] sm:p-2.5"
+                  : ""
+              )}
               aria-label={hasAnyNotes ? "Add note" : "Create note"}
             >
               <div
@@ -127,13 +160,36 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
                   "w-full min-w-0"
                 )}
               >
-                <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10">
-                    <Plus className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4" aria-hidden="true" />
+                <div
+                  className={cn(
+                    "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
+                    isSmallNoteCardDensity ? "gap-1" : ""
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10",
+                      isSmallNoteCardDensity
+                        ? "h-7 w-7 rounded-md sm:h-8 sm:w-8"
+                        : ""
+                    )}
+                  >
+                    <Plus
+                      className={cn(
+                        "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
+                        isSmallNoteCardDensity ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
+                      )}
+                      aria-hidden="true"
+                    />
                   </div>
                   <div className="flex w-full min-w-0 items-center justify-center">
                     <span
-                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
+                      className={cn(
+                        "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
+                        isSmallNoteCardDensity
+                          ? "line-clamp-2 text-[8px] sm:text-[9px]"
+                          : ""
+                      )}
                       style={{ hyphens: "auto" }}
                     >
                       {hasAnyNotes ? "Add note" : "Create note"}

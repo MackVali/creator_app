@@ -214,12 +214,17 @@ export type WindowLite = {
   dayTypeTimeBlockId?: string | null;
   dayTypeStartUtcMs?: number | null;
   dayTypeEndUtcMs?: number | null;
+  isOverlayCandidate?: boolean;
+  overlayWindowId?: string | null;
+  allowAllInstanceTypes?: boolean;
   allowAllHabitTypes?: boolean;
   allowAllSkills?: boolean;
   allowAllMonuments?: boolean;
+  allowedInstanceTypes?: string[] | null;
   allowedHabitTypes?: string[] | null;
   allowedSkillIds?: string[] | null;
   allowedMonumentIds?: string[] | null;
+  allowedInstanceTypesSet?: Set<string>;
   allowedHabitTypesSet?: Set<string>;
   allowedSkillIdsSet?: Set<string>;
   allowedMonumentIdsSet?: Set<string>;
@@ -1323,6 +1328,7 @@ export async function fetchProjectsMap(
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
       globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
+      global_rank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
     };
   }
   return map;
@@ -1384,6 +1390,7 @@ export async function fetchAllProjectsMap(
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
       globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
+      global_rank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
     };
   }
   return map;

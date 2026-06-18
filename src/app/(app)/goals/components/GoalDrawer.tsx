@@ -205,6 +205,8 @@ const TASK_STAGE_OPTIONS = [
 
 const DEFAULT_PROJECT_STAGE = "RESEARCH";
 const DEFAULT_TASK_STAGE = "PREPARE";
+const focusPomoCompleteDrawerHeaderClass =
+  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-visible bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
 
 const toDateInputValue = (iso?: string | null) => {
   if (!iso) return "";
@@ -810,6 +812,11 @@ export function GoalDrawer({
     onClose();
   };
 
+  const isCompletedGoalDrawer =
+    editing &&
+    normalizeGoalStatus(initialGoal?.status, initialGoal?.active) ===
+      "COMPLETED";
+
   return (
     <Sheet
       open={open}
@@ -825,8 +832,13 @@ export function GoalDrawer({
         className="h-[90vh] w-full max-w-3xl overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
         style={{ zIndex: 9999 }}
       >
-        <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
-          <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
+        <SheetHeader
+          className={cn(
+            "border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6",
+            isCompletedGoalDrawer && focusPomoCompleteDrawerHeaderClass
+          )}
+        >
+          <SheetTitle className="relative z-10 text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
             {editing ? "Edit goal" : "Create a goal"}
           </SheetTitle>
         </SheetHeader>

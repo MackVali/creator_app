@@ -10,6 +10,7 @@ import {
   type UIEvent,
 } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -160,6 +161,41 @@ const SCHEDULER_MODE_OPTIONS: Array<{ value: SchedulerModeType; label: string; d
   { value: "SKILLED", label: "SKILLED", description: "Concentrate on skill-building work." },
   { value: "REST", label: "REST", description: "Keep the day light and recovery-friendly." },
 ];
+
+const CONSTRAINTS_PANEL_TRANSITION = {
+  duration: 0.38,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+const constraintControlPillClassName =
+  "inline-flex h-6 max-w-[11rem] shrink-0 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[9px] font-semibold tracking-[0.08em] text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-black/40 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35";
+const constraintOptionPillBaseClassName =
+  "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs";
+const constraintOptionPillSelectedClassName =
+  "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]";
+const constraintOptionPillUnselectedClassName =
+  "border-black/60 bg-black/30 text-zinc-400 hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200";
+const constraintOptionIconClassName =
+  "inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]";
+const blockTypeSelectItemClassName =
+  "text-white shadow-none hover:bg-white/10 hover:text-white aria-selected:bg-white/10 aria-selected:text-white aria-selected:shadow-none aria-selected:ring-1 aria-selected:ring-white/10";
+
+function formatConstraintSummary(
+  values: Set<string>,
+  options: Array<{ value: string; label: string }>,
+  allowAll: boolean,
+) {
+  if (allowAll) return "Allow ALL";
+  if (values.size === 0) return "None";
+  const selectedLabels = Array.from(values)
+    .map((value) => options.find((option) => option.value === value)?.label)
+    .filter((label): label is string => Boolean(label));
+  if (selectedLabels.length === 0) return `${values.size} selected`;
+  const visibleLabels = selectedLabels.slice(0, 2).join(", ");
+  return selectedLabels.length > 2
+    ? `${visibleLabels} +${selectedLabels.length - 2}`
+    : visibleLabels;
+}
 
 type CoverageStatus =
   | { ok: true }
@@ -2306,6 +2342,15 @@ export default function NewDayTypePage() {
     emitConstraintsOpenedEvent();
   };
 
+  const toggleTimeBlockCard = (block: TimeBlock, dayTypeId: string | null | undefined) => {
+    if (constraintsTarget?.id === block.id) {
+      setConstraintsTarget(null);
+      return;
+    }
+
+    openTimeBlockCard(block, dayTypeId);
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const focusWorkConstraints = () => {
@@ -4005,39 +4050,49 @@ export default function NewDayTypePage() {
                       (monument.title ?? "").toLowerCase().includes(monumentSearch.toLowerCase())
                     )
                     .sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+                  const skillSummaryOptions = skills.map((skill) => ({
+                    value: skill.id,
+                    label: skill.name || "Untitled skill",
+                  }));
+                  const monumentSummaryOptions = monuments.map((monument) => ({
+                    value: monument.id,
+                    label: monument.title || "Untitled monument",
+                  }));
                   return (
-	                    <div
-	                      key={block.id}
-	                      role="button"
-	                      tabIndex={0}
-	                      data-tour={tourHighlightBlock ? "selected-time-block" : undefined}
-	                      onClick={() =>
-	                        openTimeBlockCard(
-	                          block,
-	                          cardEditContext.mode === "selected-day-type" ? cardEditContext.dayTypeId : null
-	                        )
-	                      }
-	                      onKeyDown={(event) => {
-	                        if (event.key === "Enter" || event.key === " ") {
-	                          event.preventDefault();
-	                          openTimeBlockCard(
+		                    <div
+		                      key={block.id}
+		                      data-tour={tourHighlightBlock ? "selected-time-block" : undefined}
+		                      className={cn(
+		                        "flex w-full flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.34)] transition",
+	                        "border-black/55 bg-[#101219] hover:border-black/75 hover:bg-[#13151c]",
+	                        selected && "border-black/85 bg-[#18191d]",
+	                        isConstraintsTargetBlock && "border-black bg-[#17191d]"
+	                      )}
+	                    >
+	                      <div
+	                        role="button"
+	                        tabIndex={0}
+	                        onClick={() =>
+	                          toggleTimeBlockCard(
 	                            block,
 	                            cardEditContext.mode === "selected-day-type" ? cardEditContext.dayTypeId : null
-	                          );
+	                          )
 	                        }
-	                      }}
-	                      className={cn(
-	                        "flex w-full cursor-pointer flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.34)] transition focus:outline-none focus:ring-1 focus:ring-black/70",
-                        "border-black/55 bg-[#101219] hover:border-black/75 hover:bg-[#13151c]",
-                        selected && "border-black/85 bg-[#18191d]",
-                        isConstraintsTargetBlock && "border-black bg-[#17191d]"
-                      )}
-                    >
-                      <div className="flex w-full items-center gap-2">
-		                        <DropdownMenu
-		                          open={menuOpenId === block.id}
-		                          onOpenChange={(open) => setMenuOpenId(open ? block.id : null)}
-		                        >
+	                        onKeyDown={(event) => {
+	                          if (event.key === "Enter" || event.key === " ") {
+	                            event.preventDefault();
+	                            toggleTimeBlockCard(
+	                              block,
+	                              cardEditContext.mode === "selected-day-type" ? cardEditContext.dayTypeId : null
+	                            );
+	                          }
+	                        }}
+	                        className="flex w-full cursor-pointer items-center gap-2 rounded-xl focus:outline-none focus:ring-1 focus:ring-black/70"
+	                      >
+			                        <DropdownMenu
+			                          open={menuOpenId === block.id}
+			                          onOpenChange={(open) => setMenuOpenId(open ? block.id : null)}
+			                        >
                           <DropdownMenuTrigger asChild>
 	                            <button
 	                              type="button"
@@ -4113,10 +4168,10 @@ export default function NewDayTypePage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
-	                              type="button"
-	                              disabled={!visibleDayTypeId}
-	                              onClick={async (event) => {
+	                            <button
+		                              type="button"
+		                              disabled={!visibleDayTypeId}
+		                              onClick={async (event) => {
 	                                event.preventDefault();
 	                                event.stopPropagation();
 	                                if (!visibleDayTypeId) return;
@@ -4131,13 +4186,14 @@ export default function NewDayTypePage() {
 	                                  } catch (err) {
 	                                    console.error(err);
 	                                    setSaveMessage("Unable to update block energy right now.");
-	                                  }
-	                                }
-	                              }}
-	                              className="rounded-md bg-white/5 px-1 py-0.5 text-white/70 transition hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/30 disabled:cursor-default disabled:opacity-70"
-                              aria-label={`Cycle energy for ${label}`}
-                              data-tour={tourEnergyHighlightId === block.id ? "selected-time-block-energy" : undefined}
-                            >
+		                                  }
+		                                }
+		                              }}
+		                              onKeyDown={(event) => event.stopPropagation()}
+		                              className="rounded-md bg-white/5 px-1 py-0.5 text-white/70 transition hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/30 disabled:cursor-default disabled:opacity-70"
+	                              aria-label={`Cycle energy for ${label}`}
+	                              data-tour={tourEnergyHighlightId === block.id ? "selected-time-block-energy" : undefined}
+	                            >
                               <FlameEmber level={energyLevel} size="sm" />
                             </button>
                             <button
@@ -4209,12 +4265,21 @@ export default function NewDayTypePage() {
 	                          </div>
 	                        </div>
 	                      ) : null}
-	                      {constraintsTarget?.id === block.id ? (
-	                        <div
-	                          className="rounded-2xl border border-black/60 bg-[#0d0f14] px-4 py-3 text-sm text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.34)]"
-	                          data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints-panel" : undefined}
-	                          onClick={(event) => event.stopPropagation()}
-	                        >
+	                      <AnimatePresence initial={false}>
+	                        {constraintsTarget?.id === block.id ? (
+	                          <motion.div
+	                            key={`constraints-panel-${block.id}`}
+	                            initial={{ height: 0, marginTop: -12, opacity: 0, y: -10 }}
+	                            animate={{ height: "auto", marginTop: 0, opacity: 1, y: 0 }}
+	                            exit={{ height: 0, marginTop: -12, opacity: 0, y: -10 }}
+	                            transition={CONSTRAINTS_PANEL_TRANSITION}
+	                            className="overflow-hidden"
+	                            onClick={(event) => event.stopPropagation()}
+	                          >
+	                            <div
+	                              className="rounded-2xl border border-black/60 bg-[#0d0f14] px-4 py-3 text-sm text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.34)]"
+	                              data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints-panel" : undefined}
+	                            >
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-4">
                               <div className="text-[11px] uppercase tracking-[0.16em] text-white/55">
@@ -4244,7 +4309,7 @@ export default function NewDayTypePage() {
                                     }}
                                   >
                                     <SelectTrigger
-                                      className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none"
+                                      className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none focus:ring-0"
                                       dataTour={isConstraintsTargetBlock ? "selected-time-block-type" : undefined}
                                     >
                                       <SelectValue placeholder="Block type" />
@@ -4260,6 +4325,7 @@ export default function NewDayTypePage() {
                                               : undefined
                                           }
                                           label={BLOCK_TYPE_LABEL[type]}
+                                          className={blockTypeSelectItemClassName}
                                         >
                                           {BLOCK_TYPE_LABEL[type]}
                                         </SelectItem>
@@ -4354,36 +4420,56 @@ export default function NewDayTypePage() {
                               </div>
 
                               <div className="grid gap-3 md:grid-cols-2">
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                    <span>Habits</span>
-                                    <label className="flex items-center gap-2 text-xs text-white/70">
-                                      <input
-                                        type="checkbox"
-                                        checked={allowAllHabits}
-                                        onChange={(event) =>
-                                          setBlockAllowAllHabitTypes((prev) => {
-                                            if (!stateKey) return prev;
-                                            const next = new Map(prev);
-                                            next.set(stateKey, event.target.checked);
-                                            return next;
-                                          })
-                                        }
-                                        className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
-                                      />
-                                      <span>Allow all habit types</span>
-                                    </label>
-                                  </div>
-                                  {!allowAllHabits ? (
-                                    <>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        {HABIT_TYPE_OPTIONS.map((option) => {
-                                          const selectedHabit = allowedHabitTypes.has(option.value);
-                                          return (
-                                            <button
-                                              key={option.value}
-                                              type="button"
-                                              onClick={() =>
+                                <details className="group grid gap-1">
+                                  <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                    <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                                      Instance Types
+                                    </span>
+                                    <span className={constraintControlPillClassName}>
+                                      <span className="truncate group-open:hidden">
+                                        {formatConstraintSummary(
+                                          allowedHabitTypes,
+                                          HABIT_TYPE_OPTIONS,
+                                          allowAllHabits
+                                        )}
+                                      </span>
+                                      <span className="hidden truncate group-open:inline">Choose</span>
+                                    </span>
+                                  </summary>
+                                  <div className="flex flex-wrap gap-1.5 pt-1 sm:gap-2">
+                                    <button
+                                      type="button"
+                                      className={cn(
+                                        constraintOptionPillBaseClassName,
+                                        allowAllHabits
+                                          ? constraintOptionPillSelectedClassName
+                                          : constraintOptionPillUnselectedClassName
+                                      )}
+                                      onClick={() =>
+                                        setBlockAllowAllHabitTypes((prev) => {
+                                          if (!stateKey) return prev;
+                                          const next = new Map(prev);
+                                          next.set(stateKey, true);
+                                          return next;
+                                        })
+                                      }
+                                    >
+                                      Allow ALL
+                                    </button>
+                                    {HABIT_TYPE_OPTIONS.map((option) => {
+                                      const selectedHabit = !allowAllHabits && allowedHabitTypes.has(option.value);
+                                      return (
+                                        <button
+                                          key={option.value}
+                                          type="button"
+                                          aria-pressed={selectedHabit}
+                                          onClick={() => {
+                                            setBlockAllowAllHabitTypes((prev) => {
+                                              if (!stateKey) return prev;
+                                              const next = new Map(prev);
+                                              next.set(stateKey, false);
+                                              return next;
+                                            });
                                             setBlockAllowedHabitTypes((prev) => {
                                               if (!stateKey) return prev;
                                               const next = new Map(prev);
@@ -4395,93 +4481,144 @@ export default function NewDayTypePage() {
                                               }
                                               next.set(stateKey, set);
                                               return next;
-                                            })
-                                              }
-                                              className={cn(
-                                                "flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition",
-                                                selectedHabit
-                                                  ? "border-white/40 bg-white/15 text-white"
-                                                  : "border-white/10 bg-black/20 text-white/70 hover:border-white/20"
-                                              )}
-                                            >
-                                              <span className="truncate">{option.label}</span>
-                                              {selectedHabit ? <Check className="h-4 w-4" /> : null}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                      {allowedHabitTypes.size === 0 ? (
-                                        <div className="text-xs text-white/60">
-                                          Nothing allowed in this block for habits.
-                                        </div>
-                                      ) : null}
-                                    </>
+                                            });
+                                          }}
+                                          className={cn(
+                                            constraintOptionPillBaseClassName,
+                                            selectedHabit
+                                              ? constraintOptionPillSelectedClassName
+                                              : constraintOptionPillUnselectedClassName
+                                          )}
+                                        >
+                                          <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                            {option.label}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {!allowAllHabits && allowedHabitTypes.size === 0 ? (
+                                    <div className="pt-1 text-[10px] text-white/35">
+                                      No instance types allowed.
+                                    </div>
                                   ) : null}
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                    <span>Skills</span>
-                                    <label className="flex items-center gap-2 text-xs text-white/70">
-                                      <input
-                                        type="checkbox"
-                                        checked={allowAllSkills}
-                                        onChange={(event) =>
+                                </details>
+
+                                <details className="group grid gap-1">
+                                  <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                    <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                                      Skills
+                                    </span>
+                                    <span className={constraintControlPillClassName}>
+                                      <span className="truncate group-open:hidden">
+                                        {formatConstraintSummary(
+                                          allowedSkillIds,
+                                          skillSummaryOptions,
+                                          allowAllSkills
+                                        )}
+                                      </span>
+                                      <span className="hidden truncate group-open:inline">Choose</span>
+                                    </span>
+                                  </summary>
+                                  <div className="space-y-2 pt-1">
+                                    <Input
+                                      value={skillSearch}
+                                      onChange={(event) => setSkillSearch(event.target.value)}
+                                      placeholder="Search skills..."
+                                      className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
+                                    />
+                                    <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                                      <button
+                                        type="button"
+                                        className={cn(
+                                          constraintOptionPillBaseClassName,
+                                          allowAllSkills
+                                            ? constraintOptionPillSelectedClassName
+                                            : constraintOptionPillUnselectedClassName
+                                        )}
+                                        onClick={() =>
                                           setBlockAllowAllSkills((prev) => {
                                             if (!stateKey) return prev;
                                             const next = new Map(prev);
-                                            next.set(stateKey, event.target.checked);
+                                            next.set(stateKey, true);
                                             return next;
                                           })
                                         }
-                                        className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
-                                      />
-                                      <span>Allow all skills</span>
-                                    </label>
-                                  </div>
-                                  {!allowAllSkills ? (
-                                    <>
-                                      <Input
-                                        value={skillSearch}
-                                        onChange={(event) => setSkillSearch(event.target.value)}
-                                        placeholder="Search skills..."
-                                        className="h-10 rounded-lg border border-white/10 bg-black/25 text-sm text-white placeholder:text-white/40"
-                                      />
-                                      <div className="max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2">
-                                        {skillsLoading ? (
-                                          <p className="px-2 py-1 text-xs text-white/60">Loading skills…</p>
-                                        ) : filteredSkills.length === 0 ? (
-                                          <p className="px-2 py-1 text-xs text-white/60">No skills found.</p>
-                                        ) : (
-                                          <div className="space-y-3">
-                                            {skillGroups.map((group) => {
-                                              const groupSkillIds = group.skills.map((skill) => skill.id);
-                                              const selectedCount = groupSkillIds.filter((id) =>
-                                                allowedSkillIds.has(id)
-                                              ).length;
-                                              const allSelected =
-                                                selectedCount === groupSkillIds.length && groupSkillIds.length > 0;
-                                              const someSelected =
-                                                selectedCount > 0 && selectedCount < groupSkillIds.length;
-                                              const toggleGroup = () =>
-                                                setBlockAllowedSkillIds((prev) => {
-                                                  if (!stateKey) return prev;
-                                                  const next = new Map(prev);
-                                                  const set = new Set(next.get(stateKey) ?? []);
-                                                  if (allSelected) {
-                                                    groupSkillIds.forEach((id) => set.delete(id));
-                                                  } else {
-                                                    groupSkillIds.forEach((id) => set.add(id));
-                                                  }
-                                                  next.set(stateKey, set);
-                                                  return next;
-                                                });
-                                              const skillButtons = group.skills.map((skill) => {
-                                                const selectedSkill = allowedSkillIds.has(skill.id);
-                                                return (
-                                                  <button
-                                                    key={skill.id}
-                                                    type="button"
-                                                      onClick={() =>
+                                      >
+                                        Allow ALL
+                                      </button>
+                                      {skillsLoading ? (
+                                        <p className="text-[10px] text-white/35">Loading skills...</p>
+                                      ) : filteredSkills.length === 0 ? (
+                                        <p className="text-[10px] text-white/35">No skills found.</p>
+                                      ) : (
+                                        skillGroups.map((group) => {
+                                          const groupSkillIds = group.skills.map((skill) => skill.id);
+                                          const selectedCount = groupSkillIds.filter((id) =>
+                                            allowedSkillIds.has(id)
+                                          ).length;
+                                          const allSelected =
+                                            !allowAllSkills &&
+                                            selectedCount === groupSkillIds.length &&
+                                            groupSkillIds.length > 0;
+                                          const someSelected =
+                                            !allowAllSkills &&
+                                            selectedCount > 0 &&
+                                            selectedCount < groupSkillIds.length;
+                                          const toggleGroup = () => {
+                                            setBlockAllowAllSkills((prev) => {
+                                              if (!stateKey) return prev;
+                                              const next = new Map(prev);
+                                              next.set(stateKey, false);
+                                              return next;
+                                            });
+                                            setBlockAllowedSkillIds((prev) => {
+                                              if (!stateKey) return prev;
+                                              const next = new Map(prev);
+                                              const set = new Set(next.get(stateKey) ?? []);
+                                              if (allSelected) {
+                                                groupSkillIds.forEach((id) => set.delete(id));
+                                              } else {
+                                                groupSkillIds.forEach((id) => set.add(id));
+                                              }
+                                              next.set(stateKey, set);
+                                              return next;
+                                            });
+                                          };
+                                          return (
+                                            <div key={group.id} className="space-y-1.5">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="min-w-0 truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/35">
+                                                  {group.label}
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={toggleGroup}
+                                                  className={cn(
+                                                    "h-6 shrink-0 rounded-full border px-2 text-[9px] font-semibold uppercase tracking-[0.16em] transition",
+                                                    allSelected || someSelected
+                                                      ? constraintOptionPillSelectedClassName
+                                                      : constraintOptionPillUnselectedClassName
+                                                  )}
+                                                >
+                                                  {allSelected ? "All" : someSelected ? "Some" : "All"}
+                                                </button>
+                                              </div>
+                                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                                                {group.skills.map((skill) => {
+                                                  const selectedSkill = !allowAllSkills && allowedSkillIds.has(skill.id);
+                                                  return (
+                                                    <button
+                                                      key={skill.id}
+                                                      type="button"
+                                                      aria-pressed={selectedSkill}
+                                                      onClick={() => {
+                                                        setBlockAllowAllSkills((prev) => {
+                                                          if (!stateKey) return prev;
+                                                          const next = new Map(prev);
+                                                          next.set(stateKey, false);
+                                                          return next;
+                                                        });
                                                         setBlockAllowedSkillIds((prev) => {
                                                           if (!stateKey) return prev;
                                                           const next = new Map(prev);
@@ -4493,173 +4630,146 @@ export default function NewDayTypePage() {
                                                           }
                                                           next.set(stateKey, set);
                                                           return next;
-                                                        })
-                                                      }
-                                                    className={cn(
-                                                      "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
-                                                      selectedSkill
-                                                        ? "bg-white/15 text-white"
-                                                        : "text-white/75 hover:bg-white/10"
-                                                    )}
-                                                  >
-                                                    <span className="flex items-center gap-2 truncate">
-                                                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
-                                                        {(skill.icon ?? "🎯").trim() || "🎯"}
+                                                        });
+                                                      }}
+                                                      className={cn(
+                                                        constraintOptionPillBaseClassName,
+                                                        selectedSkill
+                                                          ? constraintOptionPillSelectedClassName
+                                                          : constraintOptionPillUnselectedClassName
+                                                      )}
+                                                    >
+                                                      <span className={constraintOptionIconClassName}>
+                                                        {(skill.icon ?? "*").trim() || "*"}
                                                       </span>
-                                                      <span className="truncate">{skill.name}</span>
-                                                    </span>
-                                                    {selectedSkill ? <Check className="h-4 w-4" /> : null}
-                                                  </button>
-                                                );
-                                              });
-                                              return (
-                                                <div key={group.id} className="space-y-1">
-                                                  <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-white/50">
-                                                    <span className="text-[10px] uppercase tracking-[0.18em]">
-                                                      {group.label}
-                                                    </span>
-                                                    <label className="relative flex h-3.5 w-3.5 items-center justify-center">
-                                                      <input
-                                                        type="checkbox"
-                                                        checked={allSelected}
-                                                        ref={(el) => {
-                                                          if (!el) return;
-                                                          el.indeterminate = someSelected;
-                                                          if (someSelected) {
-                                                            el.setAttribute("aria-checked", "mixed");
-                                                          } else {
-                                                            el.setAttribute(
-                                                              "aria-checked",
-                                                              allSelected ? "true" : "false"
-                                                            );
-                                                          }
-                                                        }}
-                                                        onChange={toggleGroup}
-                                                        className="peer absolute inset-0 h-full w-full opacity-0"
-                                                      />
-                                                      <span className="pointer-events-none absolute inset-0 h-full w-full rounded border border-slate-600 bg-slate-900 transition peer-checked:bg-slate-400 peer-checked:border-slate-400 peer-[aria-checked=mixed]:bg-slate-600"></span>
-                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-slate-950 opacity-0 peer-checked:opacity-100">
-                                                        ✓
+                                                      <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                                        {skill.name}
                                                       </span>
-                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-slate-200 opacity-0 peer-[aria-checked=mixed]:opacity-100">
-                                                        —
-                                                      </span>
-                                                    </label>
-                                                  </div>
-                                                  <div className="grid gap-1">{skillButtons}</div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                      {allowedSkillIds.size === 0 ? (
-                                        <div className="text-xs text-white/60">
-                                          No skills allowed yet
-                                        </div>
-                                      ) : null}
-                                    </>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                <span>Monuments</span>
-                                <label className="flex items-center gap-2 text-xs text-white/70">
-                                    <input
-                                      type="checkbox"
-                                      checked={allowAllMonuments}
-                                      onChange={(event) =>
-                                        setBlockAllowAllMonuments((prev) => {
-                                          if (!stateKey) return prev;
-                                          const next = new Map(prev);
-                                          next.set(stateKey, event.target.checked);
-                                          return next;
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          );
                                         })
-                                      }
-                                      className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
-                                    />
-                                    <span>Allow all monuments</span>
-                                  </label>
-                                </div>
-                                {!allowAllMonuments ? (
-                                  <>
-                                    <Input
-                                      value={monumentSearch}
-                                      onChange={(event) => setMonumentSearch(event.target.value)}
-                                      placeholder="Search monuments..."
-                                      className="h-10 rounded-lg border border-white/10 bg-black/25 text-sm text-white placeholder:text-white/40"
-                                    />
-                                    <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2">
-                                      {monumentsLoading ? (
-                                        <p className="px-2 py-1 text-xs text-white/60">Loading monuments…</p>
-                                      ) : filteredMonuments.length === 0 ? (
-                                        <p className="px-2 py-1 text-xs text-white/60">No monuments found.</p>
-                                      ) : (
-                                        <div className="grid gap-1">
-                                          {filteredMonuments.map((monument) => {
-                                            const selectedMonument = allowedMonumentIds.has(monument.id);
-                                            return (
-                                              <button
-                                                key={monument.id}
-                                                type="button"
-                                                onClick={() =>
-                                                setBlockAllowedMonumentIds((prev) => {
-                                                    if (!stateKey) return prev;
-                                                    const next = new Map(prev);
-                                                    const set = new Set(next.get(stateKey) ?? []);
-                                                    if (set.has(monument.id)) {
-                                                      set.delete(monument.id);
-                                                    } else {
-                                                      set.add(monument.id);
-                                                    }
-                                                    next.set(stateKey, set);
-                                                    return next;
-                                                  })
-                                                }
-                                                className={cn(
-                                                  "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
-                                                  selectedMonument
-                                                    ? "bg-white/15 text-white"
-                                                    : "text-white/75 hover:bg-white/10"
-                                                )}
-                                              >
-                                                <span className="flex items-center gap-2 truncate">
-                                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
-                                                    {(monument.emoji ?? "🗿").trim() || "🗿"}
-                                                  </span>
-                                                  <span className="truncate">{monument.title}</span>
-                                                </span>
-                                                {selectedMonument ? <Check className="h-4 w-4" /> : null}
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
                                       )}
                                     </div>
-                                    {allowedMonumentIds.size === 0 ? (
-                                      <div className="text-xs text-white/60">
-                                        Nothing allowed in this block for monuments.
-                                      </div>
+                                    {!allowAllSkills && allowedSkillIds.size === 0 ? (
+                                      <div className="text-[10px] text-white/35">No skills allowed.</div>
                                     ) : null}
-                                  </>
-                                ) : null}
+                                  </div>
+                                </details>
                               </div>
-                            </div>
-                            <button
-                              type="button"
-                              data-tour="constraints-save"
-	                              onClick={() => {
-	                                setConstraintsTarget(null);
-	                              }}
-	                              className="rounded-full border border-black/70 bg-black/35 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/78 shadow-[0_6px_14px_rgba(0,0,0,0.28)] transition hover:border-black hover:bg-black/25 hover:text-white/90"
-	                            >
-                              Close
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
+
+                              <details className="group grid gap-1">
+                                <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                  <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                                    Monuments
+                                  </span>
+                                  <span className={constraintControlPillClassName}>
+                                    <span className="truncate group-open:hidden">
+                                      {formatConstraintSummary(
+                                        allowedMonumentIds,
+                                        monumentSummaryOptions,
+                                        allowAllMonuments
+                                      )}
+                                    </span>
+                                    <span className="hidden truncate group-open:inline">Choose</span>
+                                  </span>
+                                </summary>
+                                <div className="space-y-2 pt-1">
+                                  <Input
+                                    value={monumentSearch}
+                                    onChange={(event) => setMonumentSearch(event.target.value)}
+                                    placeholder="Search monuments..."
+                                    className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
+                                  />
+                                  <div className="max-h-40 overflow-y-auto pr-1">
+                                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                                      <button
+                                        type="button"
+                                        className={cn(
+                                          constraintOptionPillBaseClassName,
+                                          allowAllMonuments
+                                            ? constraintOptionPillSelectedClassName
+                                            : constraintOptionPillUnselectedClassName
+                                        )}
+                                        onClick={() =>
+                                          setBlockAllowAllMonuments((prev) => {
+                                            if (!stateKey) return prev;
+                                            const next = new Map(prev);
+                                            next.set(stateKey, true);
+                                            return next;
+                                          })
+                                        }
+                                      >
+                                        Allow ALL
+                                      </button>
+                                      {monumentsLoading ? (
+                                        <p className="w-full text-[10px] text-white/35">Loading monuments...</p>
+                                      ) : filteredMonuments.length === 0 ? (
+                                        <p className="w-full text-[10px] text-white/35">No monuments found.</p>
+                                      ) : (
+                                        filteredMonuments.map((monument) => {
+                                          const selectedMonument =
+                                            !allowAllMonuments && allowedMonumentIds.has(monument.id);
+                                          return (
+                                            <button
+                                              key={monument.id}
+                                              type="button"
+                                              aria-pressed={selectedMonument}
+                                              onClick={() => {
+                                                setBlockAllowAllMonuments((prev) => {
+                                                  if (!stateKey) return prev;
+                                                  const next = new Map(prev);
+                                                  next.set(stateKey, false);
+                                                  return next;
+                                                });
+                                                setBlockAllowedMonumentIds((prev) => {
+                                                  if (!stateKey) return prev;
+                                                  const next = new Map(prev);
+                                                  const set = new Set(next.get(stateKey) ?? []);
+                                                  if (set.has(monument.id)) {
+                                                    set.delete(monument.id);
+                                                  } else {
+                                                    set.add(monument.id);
+                                                  }
+                                                  next.set(stateKey, set);
+                                                  return next;
+                                                });
+                                              }}
+                                              className={cn(
+                                                constraintOptionPillBaseClassName,
+                                                selectedMonument
+                                                  ? constraintOptionPillSelectedClassName
+                                                  : constraintOptionPillUnselectedClassName
+                                              )}
+                                            >
+                                              <span className={constraintOptionIconClassName}>
+                                                {(monument.emoji ?? "*").trim() || "*"}
+                                              </span>
+                                              <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                                {monument.title}
+                                              </span>
+                                            </button>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  </div>
+                                  {!allowAllMonuments && allowedMonumentIds.size === 0 ? (
+                                    <div className="text-[10px] text-white/35">
+                                      No monuments allowed.
+                                    </div>
+                                  ) : null}
+                                </div>
+	                              </details>
+	                            </div>
+	                          </div>
+	                        </div>
+		                        </motion.div>
+		                      ) : null}
+		                    </AnimatePresence>
                     </div>
               );
             })}

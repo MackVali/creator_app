@@ -29,6 +29,7 @@ import {
 import {
   CircleDot,
   Check,
+  ChevronDown,
   Clock,
   Filter,
   FileText,
@@ -82,7 +83,10 @@ import type { CatRow } from "@/lib/types/cat";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
-import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
+import {
+  useLocationContexts,
+  type LocationContextOption,
+} from "@/lib/hooks/useLocationContexts";
 import {
   addCampaignToRoadmap,
   addGoalToCampaign,
@@ -95,6 +99,7 @@ import {
   HABIT_TYPE_OPTIONS,
 } from "@/components/habits/habit-form-fields";
 import { SCHEDULER_PRIORITY_LABELS } from "@/lib/types/ai";
+import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import type {
   AiIntent,
   AiIntentResponse,
@@ -179,6 +184,25 @@ export interface FabProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
+type OverlayBlockMode = "MANUAL" | "DYNAMIC";
+type OverlayDynamicBlockType = "FOCUS" | "BREAK" | "PRACTICE";
+type OverlayDynamicEnergy = NonNullable<
+  Database["public"]["Tables"]["overlay_windows"]["Insert"]["energy"]
+>;
+type OverlayAllowedInstanceType =
+  Database["public"]["Tables"]["overlay_window_allowed_instance_types"]["Insert"]["instance_type"];
+type OverlayDynamicConstraintGroup = "instanceTypes" | "skills" | "monuments";
+type OverlayConstraintChipOption = {
+  id: string;
+  value?: string;
+  label: string;
+  icon?: string | null;
+  detail?: string | null;
+};
+type OverlayDynamicExpandedConstraintState = Record<
+  OverlayDynamicConstraintGroup,
+  boolean
+>;
 type FabEditOriginRect = {
   top: number;
   left: number;
@@ -314,6 +338,7 @@ type FabHabitEditSnapshot = {
   nextDueOverride?: string | null;
   fixedStartLocal?: string | null;
   fixedEndLocal?: string | null;
+  lastCompletedAt?: string | null;
 };
 export type FabEditTarget = {
   entityType: CreationType;
@@ -507,6 +532,12 @@ type FabSearchCursor = {
   startUtc: string;
   sourceType: "PROJECT" | "HABIT";
   sourceId: string;
+};
+
+type FabSearchCacheEntry = {
+  key: string;
+  results: FabSearchResult[];
+  cursor: FabSearchCursor | null;
 };
 
 type GoalCampaignOption = {
@@ -855,6 +886,7 @@ const FAB_SELECTION_EXIT_MS = 140;
 const FAB_CREATION_ENTER_MS = 220;
 const FAB_CREATION_FOCUS_DELAY_MS =
   FAB_SELECTION_EXIT_MS + FAB_CREATION_ENTER_MS + 40;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const FAB_AI_DEFAULT_ORIGIN: FabAiOverlayOrigin = {
   top: 160,
   left: 124,
@@ -968,6 +1000,22 @@ const HABIT_WINDOW_EDGE_ADVANCED_OPTIONS = [
   { value: "BACK", label: "Back" },
 ] as const;
 
+const FOCUS_POMO_COMPLETE_DRAWER_SURFACE_CLASS =
+  "shimmer-border-complete relative isolate z-0 overflow-visible border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
+
+const createDefaultOverlayDynamicExpandedConstraints =
+  (): OverlayDynamicExpandedConstraintState => ({
+    instanceTypes: false,
+    skills: false,
+    monuments: false,
+  });
+
+const OVERLAY_DYNAMIC_BLOCK_TYPE_OPTIONS: OverlayConstraintChipOption[] = [
+  { id: "FOCUS", label: "Focus" },
+  { id: "BREAK", label: "Break" },
+  { id: "PRACTICE", label: "Practice" },
+];
+
 const LIMIT_MODAL_FEATURES = [
   "More room for goals, projects, tasks, and habits.",
   "Bigger roadmaps for bigger life systems.",
@@ -1074,10 +1122,79 @@ const getHabitRoutineIcon = (
 ) =>
   routine?.icon?.trim() || FAB_DEFAULT_ROUTINE_EMOJI;
 
+const getOverlayOptionIcon = (source: unknown) => {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+  const record = source as Record<string, unknown>;
+  const icon = typeof record.icon === "string" ? record.icon.trim() : "";
+  if (icon) {
+    return icon;
+  }
+  const emoji = typeof record.emoji === "string" ? record.emoji.trim() : "";
+  return emoji || null;
+};
+
 const normalizeTagName = (value: string) =>
   collapseWhitespace(value).toLowerCase();
 
 const sanitizeTagDisplayName = (value: string) => collapseWhitespace(value);
+
+const getLocalCalendarDayIndex = (date: Date) =>
+  Math.floor(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / MS_PER_DAY,
+  );
+
+const getDynamicOverlaySchedulerWriteThroughDays = (
+  overlayEndTime: Date,
+  localNow: Date,
+) => {
+  const requiredDays =
+    getLocalCalendarDayIndex(overlayEndTime) -
+    getLocalCalendarDayIndex(localNow) +
+    1;
+  return Math.min(MAX_SCHEDULER_WRITE_DAYS, Math.max(1, requiredDays));
+};
+
+const DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS = 25000;
+const SCHEDULE_SCHEDULER_RUNNING_EVENT =
+  "schedule:scheduler-running-changed";
+
+const dispatchScheduleSchedulerRunningChange = (running: boolean) => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(SCHEDULE_SCHEDULER_RUNNING_EVENT, {
+      detail: { running },
+    }),
+  );
+};
+
+const readSchedulerRunErrorMessage = async (response: Response) => {
+  const responseLabel = `Scheduler run failed (${response.status}${
+    response.statusText ? ` ${response.statusText}` : ""
+  })`;
+  const text = await response.text().catch(() => "");
+  if (text.trim().length > 0) {
+    try {
+      const payload = JSON.parse(text) as unknown;
+      if (payload && typeof payload === "object") {
+        const record = payload as Record<string, unknown>;
+        const message =
+          typeof record.error === "string"
+            ? record.error
+            : typeof record.message === "string"
+              ? record.message
+              : null;
+        if (message && message.trim().length > 0) {
+          return `${responseLabel}: ${message.trim()}`;
+        }
+      }
+    } catch {
+      return `${responseLabel}: ${text.trim()}`;
+    }
+  }
+  return responseLabel;
+};
 
 const AUTO_SCOPE_CREATION_KEYWORDS = ["goal", "project", "task"];
 const AUTO_SCOPE_SCHEDULE_KEYWORDS = [
@@ -2693,12 +2810,43 @@ export function Fab({
     ),
   );
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayConfigExpanded, setOverlayConfigExpanded] = useState(false);
   const [overlayPickerOpen, setOverlayPickerOpen] = useState(false);
   const [overlayPickerSelected, setOverlayPickerSelected] =
     useState<FabSearchResult | null>(null);
   const [overlayPlacedItems, setOverlayPlacedItems] = useState<
     OverlayPlacement[]
   >([]);
+  const [overlayBlockMode, setOverlayBlockMode] =
+    useState<OverlayBlockMode>("MANUAL");
+  const overlayTimelineVisible = overlayBlockMode !== "DYNAMIC";
+  const [overlayDynamicBlockType, setOverlayDynamicBlockType] =
+    useState<OverlayDynamicBlockType>("FOCUS");
+  const [overlayDynamicLocationContextId, setOverlayDynamicLocationContextId] =
+    useState("");
+  const [overlayDynamicEnergy, setOverlayDynamicEnergy] = useState("HIGH");
+  const [
+    overlayDynamicAllowAllInstanceTypes,
+    setOverlayDynamicAllowAllInstanceTypes,
+  ] = useState(true);
+  const [
+    overlayDynamicAllowedInstanceTypes,
+    setOverlayDynamicAllowedInstanceTypes,
+  ] = useState<string[]>([]);
+  const [
+    overlayDynamicExpandedConstraints,
+    setOverlayDynamicExpandedConstraints,
+  ] = useState<OverlayDynamicExpandedConstraintState>(() =>
+    createDefaultOverlayDynamicExpandedConstraints(),
+  );
+  const [overlayDynamicAllowAllSkills, setOverlayDynamicAllowAllSkills] =
+    useState(true);
+  const [overlayDynamicAllowedSkillIds, setOverlayDynamicAllowedSkillIds] =
+    useState<string[]>([]);
+  const [overlayDynamicAllowAllMonuments, setOverlayDynamicAllowAllMonuments] =
+    useState(true);
+  const [overlayDynamicAllowedMonumentIds, setOverlayDynamicAllowedMonumentIds] =
+    useState<string[]>([]);
   const [isSavingLiveOverlay, setIsSavingLiveOverlay] = useState(false);
   const [overlaySaveError, setOverlaySaveError] = useState<string | null>(null);
   const overlayTimelineRef = useRef<HTMLDivElement | null>(null);
@@ -2937,6 +3085,21 @@ export function Fab({
       };
       overlayDragMetaRef.current = null;
       stopOverlayTimelineResize();
+    } else {
+      setOverlayConfigExpanded(false);
+      setOverlayBlockMode("MANUAL");
+      setOverlayDynamicBlockType("FOCUS");
+      setOverlayDynamicLocationContextId("");
+      setOverlayDynamicEnergy("HIGH");
+      setOverlayDynamicAllowAllInstanceTypes(true);
+      setOverlayDynamicAllowedInstanceTypes([]);
+      setOverlayDynamicExpandedConstraints(
+        createDefaultOverlayDynamicExpandedConstraints(),
+      );
+      setOverlayDynamicAllowAllSkills(true);
+      setOverlayDynamicAllowedSkillIds([]);
+      setOverlayDynamicAllowAllMonuments(true);
+      setOverlayDynamicAllowedMonumentIds([]);
     }
   }, [overlayOpen, setOverlayDragModeWithRef, stopOverlayTimelineResize]);
 
@@ -2952,6 +3115,19 @@ export function Fab({
     setOverlayPlacedItems([]);
     setOverlayPickerSelected(null);
     setOverlayPickerOpen(false);
+    setOverlayBlockMode("MANUAL");
+    setOverlayDynamicBlockType("FOCUS");
+    setOverlayDynamicLocationContextId("");
+    setOverlayDynamicEnergy("HIGH");
+    setOverlayDynamicAllowAllInstanceTypes(true);
+    setOverlayDynamicAllowedInstanceTypes([]);
+    setOverlayDynamicExpandedConstraints(
+      createDefaultOverlayDynamicExpandedConstraints(),
+    );
+    setOverlayDynamicAllowAllSkills(true);
+    setOverlayDynamicAllowedSkillIds([]);
+    setOverlayDynamicAllowAllMonuments(true);
+    setOverlayDynamicAllowedMonumentIds([]);
   }, []);
 
   useEffect(() => {
@@ -2959,6 +3135,12 @@ export function Fab({
       setOverlaySaveError(null);
     }
   }, [overlayOpen]);
+
+  useEffect(() => {
+    if (overlaySaveError) {
+      setOverlayConfigExpanded(true);
+    }
+  }, [overlaySaveError]);
   const isPointerOverTrashZone = useCallback(
     (point: { x: number; y: number } | null) => {
       if (!point) return false;
@@ -4028,6 +4210,9 @@ export function Fab({
   const [habitFixedEndTime, setHabitFixedEndTime] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
   const [habitCircleId, setHabitCircleId] = useState<string | "">("");
+  const [habitLastCompletedAt, setHabitLastCompletedAt] = useState<
+    string | null
+  >(null);
   const [habitRoutines, setHabitRoutines] = useState<FabHabitRoutineOption[]>(
     [],
   );
@@ -4150,6 +4335,7 @@ export function Fab({
     setHabitFixedEndTime("");
     setHabitRoutineId("");
     setHabitCircleId("");
+    setHabitLastCompletedAt(null);
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
@@ -4251,6 +4437,12 @@ export function Fab({
             ? draft.fixedEndLocal
             : null,
         ),
+      );
+      setHabitLastCompletedAt(
+        typeof draft?.lastCompletedAt === "string" &&
+          draft.lastCompletedAt.trim().length > 0
+          ? draft.lastCompletedAt
+          : null,
       );
     },
     [defaultHabitRecurrence, defaultHabitType],
@@ -5304,6 +5496,12 @@ export function Fab({
               typeof habitRowRecord.fixed_end_local === "string"
                 ? habitRowRecord.fixed_end_local
                 : null,
+            lastCompletedAt:
+              typeof habitRowRecord.last_completed_at === "string"
+                ? habitRowRecord.last_completed_at
+                : typeof habitRowRecord.completed_at === "string"
+                  ? habitRowRecord.completed_at
+                  : null,
           });
           setSelectedTagIds(
             !tagError && Array.isArray(tagRows)
@@ -5875,6 +6073,12 @@ export function Fab({
   const overlayNexusDropRef = useRef<HTMLButtonElement | null>(null);
   const isDraggingOverlay = Boolean(activeOverlayDragId);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const activeSearchKeyRef = useRef<string | null>(null);
+  const searchCacheRef = useRef<FabSearchCacheEntry | null>(null);
+  const buildSearchCacheKey = useCallback(
+    () => JSON.stringify([searchQuery.trim(), overlaySortMode]),
+    [overlaySortMode, searchQuery],
+  );
   const overlayPickerResults = useMemo(() => {
     const matchesMonument = overlayFilterMonumentId.trim().length > 0;
     const matchesSkill = overlayFilterSkillId.trim().length > 0;
@@ -5952,17 +6156,23 @@ export function Fab({
       return Number.isFinite(numeric) ? numeric : null;
     };
 
-    const compareByName = (a: FabSearchResult, b: FabSearchResult) =>
-      (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase());
+    const compareByNameTypeId = (a: FabSearchResult, b: FabSearchResult) => {
+      const nameCompare = (a.name ?? "").localeCompare(b.name ?? "");
+      if (nameCompare !== 0) return nameCompare;
+      if (a.type !== b.type) {
+        return a.type.localeCompare(b.type);
+      }
+      return a.id.localeCompare(b.id);
+    };
     const compareResults = (a: FabSearchResult, b: FabSearchResult) => {
       switch (overlaySortMode) {
         case "recent": {
-          return getUpdatedTimestamp(b) - getUpdatedTimestamp(a);
+          const diff = getUpdatedTimestamp(b) - getUpdatedTimestamp(a);
+          if (diff !== 0) return diff;
+          return compareByNameTypeId(a, b);
         }
         case "alphabetical": {
-          return (a.name ?? "")
-            .toLowerCase()
-            .localeCompare((b.name ?? "").toLowerCase());
+          return compareByNameTypeId(a, b);
         }
         case "priority": {
           const priorityA = getPriorityIndex(a);
@@ -5970,16 +6180,21 @@ export function Fab({
           if (priorityA !== priorityB) {
             return priorityB - priorityA;
           }
-          return 0;
+          if (a.type !== b.type) {
+            return a.type.localeCompare(b.type);
+          }
+          return compareByNameTypeId(a, b);
         }
         case "global_rank": {
           const rankA = parseGlobalRank(a.global_rank ?? null);
           const rankB = parseGlobalRank(b.global_rank ?? null);
           if (rankA !== null && rankB !== null) {
-            return rankA - rankB;
+            const diff = rankA - rankB;
+            if (diff !== 0) return diff;
+            return compareByNameTypeId(a, b);
           }
           if (rankA === null && rankB === null) {
-            return 0;
+            return compareByNameTypeId(a, b);
           }
           return rankA === null ? 1 : -1;
         }
@@ -5994,7 +6209,7 @@ export function Fab({
               return a.nextScheduledAt < b.nextScheduledAt ? -1 : 1;
             }
           }
-          return compareByName(a, b);
+          return compareByNameTypeId(a, b);
         }
         default:
           return 0;
@@ -6087,6 +6302,70 @@ export function Fab({
       ),
     [locationContextOptions],
   );
+  const overlayLocationContextOptions = useMemo<LocationContextOption[]>(() => {
+    if (
+      locationContextsResult &&
+      typeof locationContextsResult === "object" &&
+      "options" in locationContextsResult &&
+      Array.isArray(locationContextsResult.options)
+    ) {
+      return locationContextsResult.options;
+    }
+    return [];
+  }, [locationContextsResult]);
+  const overlayDynamicLocationOptions = useMemo<
+    OverlayConstraintChipOption[]
+  >(
+    () =>
+      overlayLocationContextOptions
+        .filter(
+          (context): context is LocationContextOption =>
+            Boolean(context) &&
+            typeof context.id === "string" &&
+            context.id.trim().length > 0 &&
+            typeof context.value === "string" &&
+            context.value.trim().length > 0 &&
+            context.value !== "ANY" &&
+            typeof context.label === "string" &&
+            context.label.trim().length > 0,
+        )
+        .map((context) => ({
+          id: context.id,
+          value: context.value,
+          label: context.label,
+          icon: getOverlayOptionIcon(context),
+        })),
+    [overlayLocationContextOptions],
+  );
+  const overlayDynamicSkillOptions = useMemo<OverlayConstraintChipOption[]>(
+    () =>
+      skills.map((skill) => ({
+        id: skill.id,
+        label: skill.name || "Untitled skill",
+        icon: getOverlayOptionIcon(skill),
+      })),
+    [skills],
+  );
+  const overlayDynamicMonumentOptions = useMemo<OverlayConstraintChipOption[]>(
+    () =>
+      monuments.map((monument) => ({
+        id: monument.id,
+        label: monument.title || "Untitled monument",
+        icon: getOverlayOptionIcon(monument),
+      })),
+    [monuments],
+  );
+  const overlayDynamicInstanceTypeOptions =
+    useMemo<OverlayConstraintChipOption[]>(
+      () => [
+        { id: "PROJECT", label: "Project" },
+        ...HABIT_TYPE_OPTIONS.map((option) => ({
+          id: option.value,
+          label: option.label,
+        })),
+      ],
+      [],
+    );
   const goToBilling = useCallback(() => {
     setActiveLimitCode(null);
     router.push("/settings/billing");
@@ -6931,6 +7210,7 @@ export function Fab({
       append: boolean;
       signal?: AbortSignal;
     }) => {
+      const searchKey = buildSearchCacheKey();
       const response = await fetch(buildSearchUrl(cursor), { signal });
       if (!response.ok) {
         throw new Error(`Request failed: ${response.status}`);
@@ -6954,15 +7234,23 @@ export function Fab({
             }
           : null;
       if (!signal?.aborted) {
-        setSearchResults((prev) =>
-          append
-            ? [...prev, ...(payload.results ?? [])]
-            : (payload.results ?? []),
-        );
+        const receivedResults = payload.results ?? [];
+        setSearchResults((prev) => {
+          const nextResults = append
+            ? [...prev, ...receivedResults]
+            : receivedResults;
+          activeSearchKeyRef.current = searchKey;
+          searchCacheRef.current = {
+            key: searchKey,
+            results: nextResults,
+            cursor: nextCursor,
+          };
+          return nextResults;
+        });
         setSearchCursor(nextCursor);
       }
     },
-    [buildSearchUrl],
+    [buildSearchCacheKey, buildSearchUrl],
   );
 
   // Scheduler runs should come from explicit scheduler flows, not generic object saves.
@@ -6989,6 +7277,78 @@ export function Fab({
     }
   }, []);
 
+  const runDynamicOverlayScheduler = useCallback(
+    async (dynamicOverlayEndTime: Date) => {
+      const localNow = new Date();
+      const timeZone =
+        typeof Intl !== "undefined"
+          ? (Intl.DateTimeFormat().resolvedOptions().timeZone ?? null)
+          : null;
+      const writeThroughDays = getDynamicOverlaySchedulerWriteThroughDays(
+        dynamicOverlayEndTime,
+        localNow,
+      );
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(
+        () => controller.abort(),
+        DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS,
+      );
+      const payload = {
+        localTimeIso: localNow.toISOString(),
+        timeZone,
+        utcOffsetMinutes: -localNow.getTimezoneOffset(),
+        mode: { type: "REGULAR" },
+        writeThroughDays,
+      };
+
+      try {
+        dispatchScheduleSchedulerRunningChange(true);
+        console.info("Running dynamic overlay scheduler", payload);
+        const response = await fetch("/api/scheduler/run", {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        console.info("Dynamic overlay scheduler response", {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+        });
+
+        if (!response.ok) {
+          throw new Error(await readSchedulerRunErrorMessage(response));
+        }
+
+        return writeThroughDays;
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "name" in error &&
+          error.name === "AbortError"
+        ) {
+          console.error("Dynamic overlay scheduler timed out", {
+            timeoutMs: DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS,
+          });
+          throw new Error(
+            `Scheduler request timed out after ${Math.round(
+              DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS / 1000,
+            )} seconds.`,
+          );
+        }
+        console.error("Dynamic overlay scheduler request failed", error);
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
+        dispatchScheduleSchedulerRunningChange(false);
+      }
+    },
+    [],
+  );
+
   const resetSearchState = useCallback(() => {
     setSearchQuery("");
     setSearchResults([]);
@@ -6996,6 +7356,8 @@ export function Fab({
     setSearchError(null);
     setIsSearching(false);
     setIsLoadingMore(false);
+    activeSearchKeyRef.current = null;
+    searchCacheRef.current = null;
     if (searchAbortRef.current) {
       searchAbortRef.current.abort();
       searchAbortRef.current = null;
@@ -7075,6 +7437,7 @@ export function Fab({
     setHabitFixedEndTime("");
     setHabitRoutineId("");
     setHabitCircleId("");
+    setHabitLastCompletedAt(null);
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
@@ -7232,6 +7595,11 @@ export function Fab({
     overlayPickerSelected,
   );
   const handleAddFromNexusClick = () => {
+    setSearchQuery("");
+    setOverlayFilterMonumentId("");
+    setOverlayFilterSkillId("");
+    setOverlayFilterEventType("ALL");
+    setOverlaySortMode("scheduled");
     setOverlayPickerOpen(true);
     setOverlayPickerSelected(null);
     setSearchError(null);
@@ -7357,21 +7725,91 @@ export function Fab({
         2,
         "0",
       )}-${String(overlayStartTime.getDate()).padStart(2, "0")}`;
+      const dynamicLocationContextId =
+        overlayDynamicLocationContextId.trim().length > 0 &&
+        overlayDynamicLocationContextId !== "__overlay_dynamic_all__"
+          ? overlayDynamicLocationContextId
+          : null;
       const { data: overlayRow, error: overlayError } = await supabase
         .from("overlay_windows")
-        .insert({
-          user_id: user.id,
-          schedule_date: scheduleDate,
-          start_utc: overlayStartTime.toISOString(),
-          end_utc: overlayEndTime.toISOString(),
-          label: null,
-        })
+        .insert(
+          overlayBlockMode === "DYNAMIC"
+            ? {
+                user_id: user.id,
+                schedule_date: scheduleDate,
+                start_utc: overlayStartTime.toISOString(),
+                end_utc: overlayEndTime.toISOString(),
+                label: null,
+                mode: "DYNAMIC",
+                block_type: overlayDynamicBlockType,
+                energy: overlayDynamicEnergy as OverlayDynamicEnergy,
+                location_context_id: dynamicLocationContextId,
+                allow_all_instance_types:
+                  overlayDynamicAllowAllInstanceTypes,
+                allow_all_skills: overlayDynamicAllowAllSkills,
+                allow_all_monuments: overlayDynamicAllowAllMonuments,
+              }
+            : {
+                user_id: user.id,
+                schedule_date: scheduleDate,
+                start_utc: overlayStartTime.toISOString(),
+                end_utc: overlayEndTime.toISOString(),
+                label: null,
+                mode: "MANUAL",
+              },
+        )
         .select("id")
         .single();
       if (overlayError) throw overlayError;
       const overlayWindowId = overlayRow?.id;
       if (!overlayWindowId) throw new Error("Overlay window id missing.");
-      if (overlayPlacedItems.length > 0) {
+      if (overlayBlockMode === "DYNAMIC") {
+        if (
+          !overlayDynamicAllowAllInstanceTypes &&
+          overlayDynamicAllowedInstanceTypes.length > 0
+        ) {
+          const { error: instanceTypesError } = await supabase
+            .from("overlay_window_allowed_instance_types")
+            .insert(
+              overlayDynamicAllowedInstanceTypes.map((instanceType) => ({
+                overlay_window_id: overlayWindowId,
+                user_id: user.id,
+                instance_type: instanceType as OverlayAllowedInstanceType,
+              })),
+            );
+          if (instanceTypesError) throw instanceTypesError;
+        }
+        if (
+          !overlayDynamicAllowAllSkills &&
+          overlayDynamicAllowedSkillIds.length > 0
+        ) {
+          const { error: skillsError } = await supabase
+            .from("overlay_window_allowed_skills")
+            .insert(
+              overlayDynamicAllowedSkillIds.map((skillId) => ({
+                overlay_window_id: overlayWindowId,
+                user_id: user.id,
+                skill_id: skillId,
+              })),
+            );
+          if (skillsError) throw skillsError;
+        }
+        if (
+          !overlayDynamicAllowAllMonuments &&
+          overlayDynamicAllowedMonumentIds.length > 0
+        ) {
+          const { error: monumentsError } = await supabase
+            .from("overlay_window_allowed_monuments")
+            .insert(
+              overlayDynamicAllowedMonumentIds.map((monumentId) => ({
+                overlay_window_id: overlayWindowId,
+                user_id: user.id,
+                monument_id: monumentId,
+              })),
+          );
+          if (monumentsError) throw monumentsError;
+        }
+      } else if (overlayPlacedItems.length > 0) {
         const savedItems: {
           placement: OverlayPlacement;
           scheduleInstanceId: string;
@@ -7424,15 +7862,48 @@ export function Fab({
               event_name: placement.name,
               schedule_instance_id: scheduleInstanceId,
             })),
-          );
+        );
         if (itemsError) throw itemsError;
       }
+      const shouldRunDynamicScheduler = overlayBlockMode === "DYNAMIC";
+      const dynamicSchedulerEndTime = overlayEndTime;
       resetOverlayDraft();
       setOverlayOpen(false);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("schedule:overlay-windows-updated"),
         );
+      }
+      if (shouldRunDynamicScheduler) {
+        setIsSavingLiveOverlay(false);
+        router.refresh();
+        const startDynamicScheduler = () => {
+          void runDynamicOverlayScheduler(dynamicSchedulerEndTime)
+            .then(() => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                  new CustomEvent("schedule:overlay-windows-updated"),
+                );
+              }
+              router.refresh();
+            })
+            .catch((schedulerError) => {
+              const message =
+                schedulerError instanceof Error
+                  ? schedulerError.message
+                  : "Scheduler run failed.";
+              console.error(
+                "Dynamic overlay saved, but scheduler run failed",
+                schedulerError,
+              );
+              toast.warning("Overlay saved, scheduling failed", message);
+            });
+        };
+        if (typeof window !== "undefined") {
+          window.setTimeout(startDynamicScheduler, 0);
+        } else {
+          startDynamicScheduler();
+        }
       }
     } catch (error) {
       const supabaseErrorMessage = (() => {
@@ -7464,10 +7935,23 @@ export function Fab({
     }
   }, [
     isSavingLiveOverlay,
+    overlayBlockMode,
+    overlayDynamicAllowAllInstanceTypes,
+    overlayDynamicAllowAllMonuments,
+    overlayDynamicAllowAllSkills,
+    overlayDynamicAllowedInstanceTypes,
+    overlayDynamicAllowedMonumentIds,
+    overlayDynamicAllowedSkillIds,
+    overlayDynamicBlockType,
+    overlayDynamicEnergy,
+    overlayDynamicLocationContextId,
     overlayEndTime,
     overlayPlacedItems,
     overlayStartTime,
     resetOverlayDraft,
+    router,
+    runDynamicOverlayScheduler,
+    toast,
   ]);
   const handleOverlayDragStart = useCallback(
     (placement: OverlayPlacement, event: PointerEvent, info: PanInfo) => {
@@ -7646,6 +8130,266 @@ export function Fab({
       Math.max(MIN_OVERLAY_DURATION_MS, desiredDurationMs),
     );
     setOverlayEndTime(new Date(overlayStartTime.getTime() + clampedDurationMs));
+  };
+
+  const toggleOverlayDynamicConstraintGroup = (
+    group: OverlayDynamicConstraintGroup,
+  ) => {
+    setOverlayDynamicExpandedConstraints((current) => ({
+      ...current,
+      [group]: !current[group],
+    }));
+  };
+
+  const formatOverlayConstraintSummary = (
+    values: string[],
+    options: OverlayConstraintChipOption[],
+    allowAll = false,
+  ) => {
+    if (allowAll || values.length === 0) return "ALL";
+    const selectedLabels = values
+      .map((value) => options.find((option) => option.id === value)?.label)
+      .filter((label): label is string => Boolean(label));
+    if (selectedLabels.length === 0) return `${values.length} selected`;
+    const visibleLabels = selectedLabels.slice(0, 2).join(", ");
+    return selectedLabels.length > 2
+      ? `${visibleLabels} +${selectedLabels.length - 2}`
+      : visibleLabels;
+  };
+
+  const overlayDynamicControlPillClassName =
+    "inline-flex h-6 max-w-[11rem] shrink-0 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[9px] font-semibold tracking-[0.08em] text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-black/40 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35";
+  const overlayDynamicOptionPillBaseClassName =
+    "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs";
+  const overlayDynamicOptionPillSelectedClassName =
+    "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]";
+  const overlayDynamicOptionPillUnselectedClassName =
+    "border-black/60 bg-black/30 text-zinc-400 hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200";
+  const overlayDynamicOptionIconClassName =
+    "inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]";
+
+  const renderOverlayDynamicSelect = ({
+    label,
+    value,
+    onChange,
+    options,
+    loading = false,
+    emptyLabel,
+    allLabel,
+    placeholder,
+  }: {
+    label: string;
+    value: string;
+    onChange: (next: string) => void;
+    options: OverlayConstraintChipOption[];
+    loading?: boolean;
+    emptyLabel: string;
+    allLabel?: string;
+    placeholder?: string;
+  }) => {
+    const allValue = "__overlay_dynamic_all__";
+    const selectedOption = value
+      ? options.find(
+          (option) => option.id === value || option.value === value,
+        )
+      : null;
+    const selectedLabel = value
+      ? (selectedOption?.label ?? placeholder)
+      : options.length === 0 && loading
+        ? "Loading..."
+        : options.length === 0
+          ? emptyLabel
+          : (allLabel ?? placeholder);
+    const isEmptyDisplay = !value && options.length === 0;
+    const selectValue = allLabel && value === "" ? allValue : value;
+    const contentClassName =
+      "max-h-56 border border-white/10 bg-[#0f111a]/95 p-1.5 text-white shadow-xl backdrop-blur";
+    const itemClassName = (selected: boolean) =>
+      fabCreationSelectItemClass(
+        selected,
+        "rounded-md px-2.5 py-2 text-xs hover:bg-white/[0.08]",
+      );
+
+    return (
+      <Select
+        value={selectValue}
+        onValueChange={(nextValue) =>
+          onChange(allLabel && nextValue === allValue ? "" : nextValue)
+        }
+        minContentWidth={180}
+        contentWrapperClassName="rounded-lg border-white/10 bg-zinc-950/95 shadow-2xl shadow-black/45"
+        triggerClassName="h-12 rounded-md border border-black/70 bg-zinc-950/45 px-2.5 py-1.5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_6px_14px_rgba(0,0,0,0.24)] hover:border-zinc-600/80 hover:bg-white/[0.06] focus:border-zinc-500 focus:ring-2 focus:ring-white/20"
+        trigger={
+          <span className="grid min-w-0 gap-1 leading-none">
+            <span className="truncate text-[8px] font-bold uppercase tracking-[0.22em] text-white/45">
+              {label}
+            </span>
+            <span
+              className={cn(
+                "truncate text-[11px] font-semibold",
+                isEmptyDisplay ? "text-zinc-400" : "text-zinc-100",
+              )}
+            >
+              {selectedLabel}
+            </span>
+          </span>
+        }
+      >
+        <SelectContent className={contentClassName}>
+          {allLabel ? (
+            <SelectItem
+              value={allValue}
+              label={allLabel}
+              className={itemClassName(value === "")}
+            >
+              {allLabel}
+            </SelectItem>
+          ) : null}
+          {options.map((option) => (
+            <SelectItem
+              key={option.id}
+              value={option.id}
+              label={option.label}
+              className={itemClassName(
+                value === option.id || value === option.value,
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {option.icon ? (
+                  <span className={overlayDynamicOptionIconClassName}>
+                    {option.icon}
+                  </span>
+                ) : null}
+                <span className="truncate">{option.label}</span>
+              </span>
+            </SelectItem>
+          ))}
+          {options.length === 0 ? (
+            <SelectItem
+              value="__empty__"
+              disabled
+              className="rounded-md px-2.5 py-2 text-xs text-white/35"
+            >
+              {loading ? "Loading..." : emptyLabel}
+            </SelectItem>
+          ) : null}
+        </SelectContent>
+      </Select>
+    );
+  };
+
+  const renderOverlayConstraintChips = ({
+    group,
+    label,
+    allowAll,
+    onAllowAllChange,
+    values,
+    setValues,
+    options,
+    loading = false,
+    emptyLabel,
+  }: {
+    group: OverlayDynamicConstraintGroup;
+    label: string;
+    allowAll: boolean;
+    onAllowAllChange: (next: boolean) => void;
+    values: string[];
+    setValues: React.Dispatch<React.SetStateAction<string[]>>;
+    options: OverlayConstraintChipOption[];
+    loading?: boolean;
+    emptyLabel: string;
+  }) => {
+    const expanded = overlayDynamicExpandedConstraints[group];
+    const summary = formatOverlayConstraintSummary(values, options, allowAll);
+    const controlLabel = expanded ? "Choose" : summary;
+
+    return (
+      <div className="grid gap-1">
+        <div className="flex min-h-7 w-full items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+            {label}
+          </span>
+          <button
+            type="button"
+            className={overlayDynamicControlPillClassName}
+            aria-expanded={expanded}
+            onClick={() => toggleOverlayDynamicConstraintGroup(group)}
+          >
+            <span className="truncate">{controlLabel}</span>
+          </button>
+        </div>
+        <AnimatePresence initial={false}>
+          {expanded ? (
+            <motion.div
+              key={`${group}-options`}
+              initial={{ height: 0, opacity: 0, y: -4 }}
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -4 }}
+              transition={{
+                duration: prefersReducedMotion ? 0.08 : 0.16,
+                ease: "easeOut",
+              }}
+              className="overflow-hidden"
+            >
+              <div className="flex flex-wrap gap-1.5 pt-1 sm:gap-2">
+                <button
+                  type="button"
+                  className={cn(
+                    overlayDynamicOptionPillBaseClassName,
+                    allowAll
+                      ? overlayDynamicOptionPillSelectedClassName
+                      : overlayDynamicOptionPillUnselectedClassName,
+                  )}
+                  onClick={() => {
+                    onAllowAllChange(true);
+                    setValues([]);
+                  }}
+                >
+                  ALL
+                </button>
+                {options.map((option) => {
+                  const selected = !allowAll && values.includes(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={selected}
+                      className={cn(
+                        overlayDynamicOptionPillBaseClassName,
+                        selected
+                          ? overlayDynamicOptionPillSelectedClassName
+                          : overlayDynamicOptionPillUnselectedClassName,
+                      )}
+                      onClick={() => {
+                        const nextValues = selected
+                          ? values.filter((value) => value !== option.id)
+                          : [...values, option.id];
+                        setValues(nextValues);
+                        onAllowAllChange(nextValues.length === 0);
+                      }}
+                    >
+                      {option.icon ? (
+                        <span className={overlayDynamicOptionIconClassName}>
+                          {option.icon}
+                        </span>
+                      ) : null}
+                      <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                        {option.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {options.length === 0 ? (
+                <div className="pt-1 text-[10px] text-white/35">
+                  {loading ? "Loading..." : emptyLabel}
+                </div>
+              ) : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    );
   };
 
   const menuVariants = {
@@ -9716,7 +10460,7 @@ export function Fab({
               )}
 
               {selected === "PROJECT" && activeCreationMode === "main" && (
-                <>
+                <div className="grid gap-4">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 md:gap-4">
                     <div className="grid gap-2">
                       <Label className="sr-only">Goal</Label>
@@ -10067,7 +10811,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -10117,7 +10861,7 @@ export function Fab({
                           "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
                         )}
-                        contentWrapperClassName="rounded-sm border-black bg-zinc-950 shadow-xl shadow-black/50"
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
                         placeholder="Stage"
                       >
                         <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
@@ -10135,6 +10879,8 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:gap-4">
                     <div className="grid min-w-0 items-end gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         DURATION
@@ -10157,6 +10903,128 @@ export function Fab({
                           </span>
                         </button>
                       </div>
+                    </div>
+                    <div className="grid min-w-0 gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        SKILL
+                      </Label>
+                      <Select
+                        value={projectSkillIds[0] ?? ""}
+                        onOpenChange={handleSkillDropdownOpenChange}
+                        onValueChange={(value) => {
+                          setProjectSkillIds(value ? [value] : []);
+                          const skill = findSkillById(value);
+                          setSkillSearch(skill?.name ?? "");
+                          setShowSkillFilters(false);
+                        }}
+                        placeholder="Link a skill"
+                        triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        contentWrapperClassName={cn(
+                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
+                          "w-full max-h-[150px] overflow-y-auto overscroll-contain",
+                        )}
+                        maxHeight={150}
+                        openOnTriggerFocus
+                        trigger={
+                          <SkillTrigger
+                            selectedId={projectSkillIds[0] ?? null}
+                            onClearSelection={() => {
+                              setProjectSkillIds([]);
+                              setSkillSearch("");
+                            }}
+                          />
+                        }
+                      >
+                        <SelectContent
+                          className={cn(
+                            FAB_CREATION_SELECT_CONTENT_CLASS,
+                            "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
+                          )}
+                        >
+                          {showSkillFilters ? (
+                            <div
+                              ref={skillFilterMenuRef}
+                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            >
+                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                <span className="text-sm font-semibold">
+                                  Filter Skills
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSkillFilters(false)}
+                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Filter
+                                    </div>
+                                    <div className="space-y-2">
+                                      <select
+                                        value={skillFilterMonumentId}
+                                        onChange={(e) =>
+                                          setSkillFilterMonumentId(e.target.value)
+                                        }
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {skillFilterMonumentId
+                                            ? "Monument (clear)"
+                                            : "Monument (any)"}
+                                        </option>
+                                        {monuments.map((m) => (
+                                          <option key={m.id} value={m.id}>
+                                            {(m.emoji ?? "✨") +
+                                              " " +
+                                              (m.title ?? "Monument")}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Quick actions
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillSearch("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Reset search
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillFilterMonumentId("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Clear filters
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {skillsLoading ? (
+                            <div className="px-3 py-2 text-sm text-white/70" role="status">
+                              Loading skills…
+                            </div>
+                          ) : filteredSkills.length > 0 ? (
+                            renderGroupedSkillItems()
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-white/70">
+                              No skills found
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   {showDurationPicker && durationPosition
@@ -10199,128 +11067,6 @@ export function Fab({
                       )
                     : null}
                   <div className="grid gap-2">
-                    <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                      SKILL
-                    </Label>
-                    <Select
-                      value={projectSkillIds[0] ?? ""}
-                      onOpenChange={handleSkillDropdownOpenChange}
-                      onValueChange={(value) => {
-                        setProjectSkillIds(value ? [value] : []);
-                        const skill = findSkillById(value);
-                        setSkillSearch(skill?.name ?? "");
-                        setShowSkillFilters(false);
-                      }}
-                      placeholder="Link a skill"
-                      triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                      contentWrapperClassName={cn(
-                        FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS,
-                        "w-full max-h-[150px] overflow-y-auto overscroll-contain",
-                      )}
-                      maxHeight={150}
-                      openOnTriggerFocus
-                      trigger={
-                        <SkillTrigger
-                          selectedId={projectSkillIds[0] ?? null}
-                          onClearSelection={() => {
-                            setProjectSkillIds([]);
-                            setSkillSearch("");
-                          }}
-                        />
-                      }
-                    >
-                      <SelectContent
-                        className={cn(
-                          FAB_CREATION_SELECT_CONTENT_CLASS,
-                          "relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain",
-                        )}
-                      >
-                        {showSkillFilters ? (
-                          <div
-                            ref={skillFilterMenuRef}
-                            className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
-                          >
-                            <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
-                              <span className="text-sm font-semibold">
-                                Filter Skills
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setShowSkillFilters(false)}
-                                className="text-xs text-white/80 underline-offset-4 hover:underline"
-                              >
-                                Close
-                              </button>
-                            </div>
-                            <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
-                              <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-3">
-                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                    Filter
-                                  </div>
-                                  <div className="space-y-2">
-                                    <select
-                                      value={skillFilterMonumentId}
-                                      onChange={(e) =>
-                                        setSkillFilterMonumentId(e.target.value)
-                                      }
-                                      className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                    >
-                                      <option value="">
-                                        {skillFilterMonumentId
-                                          ? "Monument (clear)"
-                                          : "Monument (any)"}
-                                      </option>
-                                      {monuments.map((m) => (
-                                        <option key={m.id} value={m.id}>
-                                          {(m.emoji ?? "✨") +
-                                            " " +
-                                            (m.title ?? "Monument")}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                                <div className="space-y-3">
-                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                    Quick actions
-                                  </div>
-                                  <div className="grid grid-cols-1 gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setSkillSearch("")}
-                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                    >
-                                      Reset search
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSkillFilterMonumentId("")}
-                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                    >
-                                      Clear filters
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                        {skillsLoading ? (
-                          <div className="px-3 py-2 text-sm text-white/70" role="status">
-                            Loading skills…
-                          </div>
-                        ) : filteredSkills.length > 0 ? (
-                          renderGroupedSkillItems()
-                        ) : (
-                          <div className="px-3 py-2 text-sm text-white/70">
-                            No skills found
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
                     <Label htmlFor="main-project-why" className="text-zinc-500">
                       WHY (optional)
                     </Label>
@@ -10332,7 +11078,7 @@ export function Fab({
                       className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                     />
                   </div>
-                </>
+                </div>
               )}
 
               {selected === "TASK" && activeCreationMode === "main" && (
@@ -14311,15 +15057,32 @@ export function Fab({
     }
     if (typeof window === "undefined") return;
 
+    const searchKey = buildSearchCacheKey();
+    const cached = searchCacheRef.current;
+    if (cached?.key === searchKey && cached.results.length > 0) {
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
+      activeSearchKeyRef.current = searchKey;
+      setSearchResults(cached.results);
+      setSearchCursor(cached.cursor);
+      setSearchError(null);
+      setIsSearching(false);
+      setIsLoadingMore(false);
+      return;
+    }
+
     const controller = new AbortController();
     searchAbortRef.current?.abort();
     searchAbortRef.current = controller;
+    activeSearchKeyRef.current = searchKey;
 
     setIsSearching(true);
     setIsLoadingMore(false);
     setSearchError(null);
-    setSearchResults([]);
-    setSearchCursor(null);
+    if (searchCacheRef.current?.key !== searchKey) {
+      setSearchResults([]);
+      setSearchCursor(null);
+    }
 
     const timer = window.setTimeout(async () => {
       try {
@@ -14346,6 +15109,7 @@ export function Fab({
     };
   }, [
     activeFabPage,
+    buildSearchCacheKey,
     isOpen,
     overlayPickerOpen,
     pages,
@@ -14452,8 +15216,8 @@ export function Fab({
         }
       }
 
-      setSearchResults((prev) =>
-        prev.map((item) =>
+      setSearchResults((prev) => {
+        const nextResults = prev.map((item) =>
           item.id === rescheduleTarget.id && item.type === rescheduleTarget.type
             ? {
                 ...item,
@@ -14462,8 +15226,16 @@ export function Fab({
                 durationMinutes: nextDuration,
               }
             : item,
-        ),
-      );
+        );
+        const searchKey = activeSearchKeyRef.current;
+        if (searchKey && searchCacheRef.current?.key === searchKey) {
+          searchCacheRef.current = {
+            ...searchCacheRef.current,
+            results: nextResults,
+          };
+        }
+        return nextResults;
+      });
       void notifySchedulerOfChange();
       setIsSavingReschedule(false);
       setRescheduleTarget(null);
@@ -16346,11 +17118,19 @@ export function Fab({
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error ?? "Unable to delete this event");
       }
-      setSearchResults((prev) =>
-        prev.filter(
+      setSearchResults((prev) => {
+        const nextResults = prev.filter(
           (item) => !(item.id === target.id && item.type === target.type),
-        ),
-      );
+        );
+        const searchKey = activeSearchKeyRef.current;
+        if (searchKey && searchCacheRef.current?.key === searchKey) {
+          searchCacheRef.current = {
+            ...searchCacheRef.current,
+            results: nextResults,
+          };
+        }
+        return nextResults;
+      });
       setRescheduleTarget(null);
       setRescheduleDate("");
       setRescheduleTime("");
@@ -16518,6 +17298,18 @@ export function Fab({
   const isProjectCreationExpanded = expanded && selected === "PROJECT";
   const isTaskCreationExpanded = expanded && selected === "TASK";
   const isHabitCreationExpanded = expanded && selected === "HABIT";
+  const isCompletedProjectFabDrawer =
+    shouldUseCenteredEditModal &&
+    editTarget?.entityType === "PROJECT" &&
+    selected === "PROJECT" &&
+    projectStage === "RELEASE";
+  const isCompletedHabitFabDrawer =
+    shouldUseCenteredEditModal &&
+    editTarget?.entityType === "HABIT" &&
+    selected === "HABIT" &&
+    Boolean(habitLastCompletedAt);
+  const isCompletedFabDrawer =
+    isCompletedProjectFabDrawer || isCompletedHabitFabDrawer;
   const isContentSizedCreationExpanded =
     isGoalCreationExpanded ||
     isProjectCreationExpanded ||
@@ -17231,6 +18023,8 @@ export function Fab({
                               ? "w-[calc(100vw-1.5rem)] max-w-[29rem]"
                               : "w-[92vw] max-w-[920px]"
                       : "min-w-[200px]",
+                    isCompletedFabDrawer &&
+                      FOCUS_POMO_COMPLETE_DRAWER_SURFACE_CLASS,
                   )}
                   layout={
                     !expanded &&
@@ -17250,10 +18044,17 @@ export function Fab({
                   }}
                   onPointerDownCapture={handleExpandedPointerDownCapture}
                   style={{
-                    boxShadow: MENU_BOX_SHADOW,
-                    borderColor: isBlendingGradient
-                      ? blendedBorderColor
-                      : staticBorderColor,
+                    boxShadow: isCompletedFabDrawer
+                      ? "0 22px 38px rgba(0,0,0,0.34),0 9px 18px rgba(3,83,45,0.22),inset 0 1px 0 rgba(255,255,255,0.045),inset 0 -2px 8px rgba(0,0,0,0.11),inset 0 0 0 1px rgba(0,0,0,0.08)"
+                      : MENU_BOX_SHADOW,
+                    borderColor: isCompletedFabDrawer
+                      ? "transparent"
+                      : isBlendingGradient
+                        ? blendedBorderColor
+                        : staticBorderColor,
+                    backgroundImage: isCompletedFabDrawer
+                      ? "linear-gradient(155deg,rgba(34,197,94,0.94) 0%,rgba(22,163,74,0.97) 48%,rgba(21,128,61,0.98) 100%)"
+                      : undefined,
                     transition: panelSizeTransition,
                     transformOrigin:
                       shouldUseCenteredEditModal || shouldUseDirectCreationModal
@@ -17331,6 +18132,12 @@ export function Fab({
                   }
                   onWheel={handleMenuWheel}
                 >
+                  {isCompletedFabDrawer ? (
+                    <span
+                      className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   <div
                     data-fab-scroll-body={
                       shouldUseCenteredEditModal ||
@@ -17691,159 +18498,264 @@ export function Fab({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
-              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(10,10,12,0.94))] p-6 text-white shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]"
+              className="relative w-full max-w-[520px] overflow-visible"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-white/70">
-                    OVERLAY
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    aria-label="Close overlay draft"
-                    variant="ghost"
-                    size="iconSquare"
-                    haptic={false}
-                    className="h-11 w-11 shrink-0 transform-none touch-manipulation bg-transparent p-0 text-white transition-none hover:scale-100 hover:bg-transparent active:translate-y-0 focus-visible:ring-2 focus-visible:ring-red-400/65 focus-visible:ring-offset-0"
-                    onClick={() => setOverlayOpen(false)}
-                  >
-                    <span
-                      className="btn-3d btn-3d--red flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-gradient-to-b from-red-500 to-red-700 text-white shadow-[0_6px_14px_rgba(0,0,0,0.28),0_2px_6px_rgba(0,0,0,0.22)]"
-                      aria-hidden="true"
-                    >
-                      <X className="size-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
-                    </span>
-                  </Button>
-                  <Button
-                    type="button"
-                    aria-label="Save overlay"
-                    variant="ghost"
-                    size="iconSquare"
-                    onClick={handleLiveOverlaySave}
-                    disabled={!overlayIntervalValid || isSavingLiveOverlay}
-                    className={cn(
-                      "h-11 w-11 shrink-0 transform-none touch-manipulation bg-transparent p-0 text-white transition-none hover:scale-100 hover:bg-transparent active:translate-y-0 focus-visible:ring-2 focus-visible:ring-emerald-400/65 focus-visible:ring-offset-0",
-                      (!overlayIntervalValid || isSavingLiveOverlay) &&
-                        "opacity-50",
-                    )}
-                  >
-                    <span
-                      className="btn-3d btn-3d--emerald flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-[0_6px_14px_rgba(0,0,0,0.28),0_2px_6px_rgba(0,0,0,0.22)]"
-                      aria-hidden="true"
-                    >
-                      <Check className="size-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
-                    </span>
-                  </Button>
-                </div>
-              </div>
+              <div className="relative max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(10,10,12,0.94))] p-6 text-white shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 py-0.5 text-left text-white transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                aria-expanded={overlayConfigExpanded}
+                onClick={() =>
+                  setOverlayConfigExpanded((expanded) => !expanded)
+                }
+              >
+                <span className="text-[11px] font-semibold tracking-[0.18em] text-white/75">
+                  Overlay Block
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 shrink-0 text-white/65 transition-transform duration-200",
+                    overlayConfigExpanded && "rotate-180",
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
 
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="grid min-w-0 gap-1.5">
-                  <label
-                    htmlFor={startTimeInputId}
-                    className="text-[9px] font-semibold uppercase tracking-[0.4em] text-white/70"
-                  >
-                    Start
-                  </label>
-                  <input
-                    id={startTimeInputId}
-                    type="time"
-                    aria-label="Set overlay start time"
-                    className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
-                    value={overlayStartInputValue}
-                    onChange={handleStartTimeInputChange}
-                    onFocus={() => setStartInputFocused(true)}
-                    onBlur={() => setStartInputFocused(false)}
-                    style={
-                      startInputFocused ? { borderColor: "#020617" } : undefined
-                    }
-                  />
-                </div>
-                <div className="grid min-w-0 gap-1.5">
-                  <label
-                    htmlFor={endTimeInputId}
-                    className="text-[9px] font-semibold uppercase tracking-[0.4em] text-white/70"
-                  >
-                    End
-                  </label>
-                  <input
-                    id={endTimeInputId}
-                    type="time"
-                    aria-label="Set overlay end time"
-                    className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
-                    value={overlayEndInputValue}
-                    onChange={handleEndTimeInputChange}
-                    onFocus={() => setEndInputFocused(true)}
-                    onBlur={() => setEndInputFocused(false)}
-                    style={
-                      endInputFocused ? { borderColor: "#020617" } : undefined
-                    }
-                  />
-                </div>
-              </div>
-              <div className="mt-1 text-[9px] uppercase tracking-[0.4em] text-white/40">
-                {overlayDurationLabel} window
-              </div>
-
-              {overlaySaveError ? (
-                <p className="mt-3 text-xs text-rose-400">{overlaySaveError}</p>
-              ) : null}
-
-              {overlayPickerSelected && !overlayPickerOpen ? (
-                <div className="mt-3 flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/70">
-                  <span className="truncate">
-                    Placing {overlayPickerSelected.name}
-                  </span>
-                  <button
-                    type="button"
-                    className="ml-auto rounded-full border border-white/20 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40"
-                    onClick={handlePlacementCancel}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : null}
-
-              {overlayPickerOpen ? (
-                <div className="mt-4 relative">
-                  <div className="relative h-[360px] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.9),rgba(10,10,12,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                    <FabNexus
-                      query={searchQuery}
-                      onQueryChange={setSearchQuery}
-                      results={overlayPickerResults}
-                      isSearching={isSearching}
-                      isLoadingMore={isLoadingMore}
-                      error={searchError}
-                      hasMore={Boolean(searchCursor)}
-                      onLoadMore={handleLoadMoreResults}
-                      onSelectResult={handleOverlayPickerResult}
-                      inputRef={nexusInputRef}
-                      filterMonumentId={overlayFilterMonumentId}
-                      onFilterMonumentChange={setOverlayFilterMonumentId}
-                      filterSkillId={overlayFilterSkillId}
-                      onFilterSkillChange={setOverlayFilterSkillId}
-                      filterEventType={overlayFilterEventType}
-                      onFilterEventTypeChange={setOverlayFilterEventType}
-                      sortMode={overlaySortMode}
-                      onSortModeChange={setOverlaySortMode}
-                      availableMonuments={monuments}
-                      availableSkills={skills}
-                      showToolbar
-                    />
-                    <button
-                      type="button"
-                      aria-label="Close Nexus"
-                      className="absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] text-white shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                      onClick={handleOverlayPickerClose}
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
+              {overlayConfigExpanded ? (
+                <>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="grid min-w-0 gap-1.5">
+                      <label
+                        htmlFor={startTimeInputId}
+                        className="text-[9px] font-semibold uppercase tracking-[0.4em] text-white/70"
+                      >
+                        Start
+                      </label>
+                      <input
+                        id={startTimeInputId}
+                        type="time"
+                        aria-label="Set overlay start time"
+                        className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                        value={overlayStartInputValue}
+                        onChange={handleStartTimeInputChange}
+                        onFocus={() => setStartInputFocused(true)}
+                        onBlur={() => setStartInputFocused(false)}
+                        style={
+                          startInputFocused
+                            ? { borderColor: "#020617" }
+                            : undefined
+                        }
+                      />
+                    </div>
+                    <div className="grid min-w-0 gap-1.5">
+                      <label
+                        htmlFor={endTimeInputId}
+                        className="text-[9px] font-semibold uppercase tracking-[0.4em] text-white/70"
+                      >
+                        End
+                      </label>
+                      <input
+                        id={endTimeInputId}
+                        type="time"
+                        aria-label="Set overlay end time"
+                        className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                        value={overlayEndInputValue}
+                        onChange={handleEndTimeInputChange}
+                        onFocus={() => setEndInputFocused(true)}
+                        onBlur={() => setEndInputFocused(false)}
+                        style={
+                          endInputFocused
+                            ? { borderColor: "#020617" }
+                            : undefined
+                        }
+                      />
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="mt-4 relative">
+                  <div className="mt-1 text-[9px] uppercase tracking-[0.4em] text-white/40">
+                    {overlayDurationLabel} window
+                  </div>
+
+                  <div className="mt-2 flex w-full items-end justify-between gap-2">
+                    <div className="grid gap-1">
+                      <div className="text-[9px] font-bold uppercase tracking-[0.28em] text-zinc-400">
+                        {overlayBlockMode}
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Switch overlay mode to ${
+                          overlayBlockMode === "DYNAMIC"
+                            ? "Manual"
+                            : "Dynamic"
+                        }`}
+                        role="switch"
+                        aria-checked={overlayBlockMode === "DYNAMIC"}
+                        className={cn(
+                          "relative h-5 w-9 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                          overlayBlockMode === "DYNAMIC"
+                            ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                            : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                        )}
+                        onClick={() => {
+                          const nextMode =
+                            overlayBlockMode === "DYNAMIC"
+                              ? "MANUAL"
+                              : "DYNAMIC";
+                          setOverlayBlockMode(nextMode);
+                          if (nextMode === "MANUAL") {
+                            setOverlayDynamicExpandedConstraints(
+                              createDefaultOverlayDynamicExpandedConstraints(),
+                            );
+                          }
+                        }}
+                      >
+                        <span
+                          className={cn(
+                            "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                            overlayBlockMode === "DYNAMIC"
+                              ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                              : "border-zinc-400/20 bg-zinc-500",
+                          )}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </div>
+                    {overlayBlockMode === "DYNAMIC" ? (
+                      <EnergyCycleButton
+                        value={overlayDynamicEnergy}
+                        onChange={setOverlayDynamicEnergy}
+                        ariaLabel="Overlay dynamic energy"
+                        size="sm"
+                        className="h-6 w-6 rounded-[4px] border-black/60 bg-black/40 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_6px_14px_rgba(0,0,0,0.28)] hover:border-black/40 hover:bg-white/[0.08]"
+                      />
+                    ) : null}
+                  </div>
+
+                  {overlayBlockMode === "DYNAMIC" ? (
+                    <div className="mt-3 grid gap-2 border-t border-white/[0.06] pt-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        {renderOverlayDynamicSelect({
+                          label: "BLOCK TYPE",
+                          value: overlayDynamicBlockType,
+                          onChange: (value) =>
+                            setOverlayDynamicBlockType(
+                              value as OverlayDynamicBlockType,
+                            ),
+                          options: OVERLAY_DYNAMIC_BLOCK_TYPE_OPTIONS,
+                          emptyLabel: "No block types available",
+                          placeholder: "Select type",
+                        })}
+                        {renderOverlayDynamicSelect({
+                          label: "LOCATION CONTEXT",
+                          value: overlayDynamicLocationContextId,
+                          onChange: setOverlayDynamicLocationContextId,
+                          options: overlayDynamicLocationOptions,
+                          loading: locationContextsLoading,
+                          emptyLabel: "No location contexts available",
+                          allLabel: "Anywhere",
+                          placeholder: "Anywhere",
+                        })}
+                      </div>
+
+                      {renderOverlayConstraintChips({
+                        group: "instanceTypes",
+                        label: "INSTANCE TYPES",
+                        allowAll: overlayDynamicAllowAllInstanceTypes,
+                        onAllowAllChange:
+                          setOverlayDynamicAllowAllInstanceTypes,
+                        values: overlayDynamicAllowedInstanceTypes,
+                        setValues: setOverlayDynamicAllowedInstanceTypes,
+                        options: overlayDynamicInstanceTypeOptions,
+                        emptyLabel: "No instance types available",
+                      })}
+
+                      {renderOverlayConstraintChips({
+                        group: "skills",
+                        label: "SKILLS",
+                        allowAll: overlayDynamicAllowAllSkills,
+                        onAllowAllChange: setOverlayDynamicAllowAllSkills,
+                        values: overlayDynamicAllowedSkillIds,
+                        setValues: setOverlayDynamicAllowedSkillIds,
+                        options: overlayDynamicSkillOptions,
+                        loading: skillsLoading,
+                        emptyLabel: "No skills available",
+                      })}
+
+                      {renderOverlayConstraintChips({
+                        group: "monuments",
+                        label: "MONUMENTS",
+                        allowAll: overlayDynamicAllowAllMonuments,
+                        onAllowAllChange: setOverlayDynamicAllowAllMonuments,
+                        values: overlayDynamicAllowedMonumentIds,
+                        setValues: setOverlayDynamicAllowedMonumentIds,
+                        options: overlayDynamicMonumentOptions,
+                        loading: monumentsLoading,
+                        emptyLabel: "No monuments available",
+                      })}
+                    </div>
+                  ) : null}
+
+                  {overlaySaveError ? (
+                    <p className="mt-3 text-xs text-rose-400">
+                      {overlaySaveError}
+                    </p>
+                  ) : null}
+
+                  {overlayPickerSelected && !overlayPickerOpen ? (
+                    <div className="mt-3 flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/70">
+                      <span className="truncate">
+                        Placing {overlayPickerSelected.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="ml-auto rounded-full border border-white/20 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40"
+                        onClick={handlePlacementCancel}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+
+              {overlayTimelineVisible ? (
+                overlayPickerOpen ? (
+                  <div className="mt-4 relative">
+                    <div className="relative h-[360px] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.9),rgba(10,10,12,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                      <FabNexus
+                        query={searchQuery}
+                        onQueryChange={setSearchQuery}
+                        results={overlayPickerResults}
+                        isSearching={isSearching}
+                        isLoadingMore={isLoadingMore}
+                        error={searchError}
+                        hasMore={Boolean(searchCursor)}
+                        onLoadMore={handleLoadMoreResults}
+                        onSelectResult={handleOverlayPickerResult}
+                        inputRef={nexusInputRef}
+                        filterMonumentId={overlayFilterMonumentId}
+                        onFilterMonumentChange={setOverlayFilterMonumentId}
+                        filterSkillId={overlayFilterSkillId}
+                        onFilterSkillChange={setOverlayFilterSkillId}
+                        filterEventType={overlayFilterEventType}
+                        onFilterEventTypeChange={setOverlayFilterEventType}
+                        sortMode={overlaySortMode}
+                        onSortModeChange={setOverlaySortMode}
+                        availableMonuments={monuments}
+                        availableSkills={skills}
+                        showToolbar
+                      />
+                      <button
+                        type="button"
+                        aria-label="Close Nexus"
+                        className="absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] text-white shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                        onClick={handleOverlayPickerClose}
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 relative">
                   <div
                     ref={overlayTimelineRef}
                     className={cn(
@@ -18056,8 +18968,48 @@ export function Fab({
                       );
                     })()}
                   </div>
-                </div>
-              )}
+                  </div>
+                )
+              ) : null}
+              </div>
+              <div className="pointer-events-auto -mt-px flex justify-end gap-2 pr-3">
+                <Button
+                  type="button"
+                  aria-label="Close overlay draft"
+                  variant="ghost"
+                  size="iconSquare"
+                  haptic={false}
+                  className="h-11 w-11 shrink-0 transform-none touch-manipulation bg-transparent p-0 text-white transition-none hover:scale-100 hover:bg-transparent active:translate-y-0 focus-visible:ring-2 focus-visible:ring-red-400/65 focus-visible:ring-offset-0"
+                  onClick={() => setOverlayOpen(false)}
+                >
+                  <span
+                    className="btn-3d btn-3d--red flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-gradient-to-b from-red-500 to-red-700 text-white shadow-[0_6px_14px_rgba(0,0,0,0.28),0_2px_6px_rgba(0,0,0,0.22)]"
+                    aria-hidden="true"
+                  >
+                    <X className="size-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
+                  </span>
+                </Button>
+                <Button
+                  type="button"
+                  aria-label="Save overlay"
+                  variant="ghost"
+                  size="iconSquare"
+                  onClick={handleLiveOverlaySave}
+                  disabled={!overlayIntervalValid || isSavingLiveOverlay}
+                  className={cn(
+                    "h-11 w-11 shrink-0 transform-none touch-manipulation bg-transparent p-0 text-white transition-none hover:scale-100 hover:bg-transparent active:translate-y-0 focus-visible:ring-2 focus-visible:ring-emerald-400/65 focus-visible:ring-offset-0",
+                    (!overlayIntervalValid || isSavingLiveOverlay) &&
+                      "opacity-50",
+                  )}
+                >
+                  <span
+                    className="btn-3d btn-3d--emerald flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-[0_6px_14px_rgba(0,0,0,0.28),0_2px_6px_rgba(0,0,0,0.22)]"
+                    aria-hidden="true"
+                  >
+                    <Check className="size-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
+                  </span>
+                </Button>
+              </div>
             </motion.div>
           </div>,
           document.body,
@@ -19833,7 +20785,7 @@ function FabNexus({
               const cardClassName = cn(
                 "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
-                  ? "border-white/20 bg-white/5 text-white/90 shadow-[0_22px_42px_rgba(0,0,0,0.45)]"
+                  ? "shimmer-border-complete isolate z-0 overflow-visible border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40"
                   : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
                 isDisabled && "cursor-not-allowed",
               );
@@ -19985,7 +20937,13 @@ function FabNexus({
                   aria-disabled={isDisabled}
                   className={cardClassName}
                 >
-                  <div className="flex w-full flex-col gap-1 min-w-0">
+                  {isCompletedProject ? (
+                    <span
+                      className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <div className="relative z-10 flex w-full flex-col gap-1 min-w-0">
                     <div className="flex w-full items-start justify-between gap-3">
                       <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
                         <span

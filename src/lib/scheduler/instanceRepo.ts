@@ -37,6 +37,30 @@ export type ScheduleInstanceStatus =
 
 type Client = SupabaseClient<Database>;
 
+const SCHEDULER_INSTANCE_WRITE_PROJECTION = [
+  "id",
+  "updated_at",
+  "user_id",
+  "source_type",
+  "source_id",
+  "window_id",
+  "day_type_time_block_id",
+  "time_block_id",
+  "start_utc",
+  "end_utc",
+  "duration_min",
+  "status",
+  "weight_snapshot",
+  "energy_resolved",
+  "canceled_reason",
+  "completed_at",
+  "locked",
+  "event_name",
+  "practice_context_monument_id",
+  "overlay_window_id",
+  "metadata",
+].join(", ");
+
 export function computeDurationMin(start: Date, end: Date): number {
   const ms = end.getTime() - start.getTime();
   if (!Number.isFinite(ms) || ms <= 0) return 0;
@@ -177,7 +201,7 @@ export async function createInstance(
       practice_context_monument_id: input.practiceContextId ?? null,
       metadata: input.metadata ?? null,
     })
-    .select("*")
+    .select(SCHEDULER_INSTANCE_WRITE_PROJECTION)
     .single();
   if (error) {
     const payload = {
@@ -269,7 +293,7 @@ export async function rescheduleInstance(
     .from("schedule_instances")
     .update(payload)
     .eq("id", id)
-    .select("*")
+    .select(SCHEDULER_INSTANCE_WRITE_PROJECTION)
     .single();
 }
 

@@ -25,6 +25,7 @@ export interface Project {
   durationMinutes?: number | null;
   skillIds?: string[];
   weight?: number;
+  globalRank?: number | null;
   isNew?: boolean;
 }
 

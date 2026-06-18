@@ -347,6 +347,7 @@ export interface Database {
           duration_min: number | null;
           effective_duration_min: number | null;
           completed_at: string | null;
+          global_rank: number | null;
         };
         Insert: {
           id?: string;
@@ -358,6 +359,7 @@ export interface Database {
           duration_min?: number | null;
           effective_duration_min?: number | null;
           completed_at?: string | null;
+          global_rank?: number | null;
         };
         Update: {
           id?: string;
@@ -369,6 +371,7 @@ export interface Database {
           duration_min?: number | null;
           effective_duration_min?: number | null;
           completed_at?: string | null;
+          global_rank?: number | null;
         };
       };
       tasks: {
@@ -1256,6 +1259,211 @@ export interface Database {
           energy?: string;
           window_kind?: string;
           location_context_id?: string | null;
+        };
+      };
+      overlay_windows: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          schedule_date: string;
+          start_utc: string;
+          end_utc: string;
+          label: string | null;
+          mode: "MANUAL" | "DYNAMIC";
+          block_type: "FOCUS" | "BREAK" | "PRACTICE" | null;
+          energy: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME" | null;
+          location_context_id: string | null;
+          allow_all_instance_types: boolean;
+          allow_all_skills: boolean;
+          allow_all_monuments: boolean;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          schedule_date: string;
+          start_utc: string;
+          end_utc: string;
+          label?: string | null;
+          mode?: "MANUAL" | "DYNAMIC";
+          block_type?: "FOCUS" | "BREAK" | "PRACTICE" | null;
+          energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME" | null;
+          location_context_id?: string | null;
+          allow_all_instance_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_monuments?: boolean;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          schedule_date?: string;
+          start_utc?: string;
+          end_utc?: string;
+          label?: string | null;
+          mode?: "MANUAL" | "DYNAMIC";
+          block_type?: "FOCUS" | "BREAK" | "PRACTICE" | null;
+          energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME" | null;
+          location_context_id?: string | null;
+          allow_all_instance_types?: boolean;
+          allow_all_skills?: boolean;
+          allow_all_monuments?: boolean;
+        };
+      };
+      overlay_window_items: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          overlay_window_id: string;
+          user_id: string;
+          source_type: Database["public"]["Enums"]["schedule_instance_source_type"];
+          source_id: string;
+          start_utc: string;
+          end_utc: string;
+          locked: boolean;
+          event_name: string | null;
+          schedule_instance_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id: string;
+          user_id: string;
+          source_type: Database["public"]["Enums"]["schedule_instance_source_type"];
+          source_id: string;
+          start_utc: string;
+          end_utc: string;
+          locked?: boolean;
+          event_name?: string | null;
+          schedule_instance_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id?: string;
+          user_id?: string;
+          source_type?: Database["public"]["Enums"]["schedule_instance_source_type"];
+          source_id?: string;
+          start_utc?: string;
+          end_utc?: string;
+          locked?: boolean;
+          event_name?: string | null;
+          schedule_instance_id?: string | null;
+        };
+      };
+      overlay_window_allowed_instance_types: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          overlay_window_id: string;
+          user_id: string;
+          instance_type:
+            | "PROJECT"
+            | "TASK"
+            | "HABIT"
+            | "CHORE"
+            | "ASYNC"
+            | "SYNC"
+            | "TEMP"
+            | "MEMO"
+            | "RELAXER"
+            | "PRACTICE";
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id: string;
+          user_id: string;
+          instance_type:
+            | "PROJECT"
+            | "TASK"
+            | "HABIT"
+            | "CHORE"
+            | "ASYNC"
+            | "SYNC"
+            | "TEMP"
+            | "MEMO"
+            | "RELAXER"
+            | "PRACTICE";
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id?: string;
+          user_id?: string;
+          instance_type?:
+            | "PROJECT"
+            | "TASK"
+            | "HABIT"
+            | "CHORE"
+            | "ASYNC"
+            | "SYNC"
+            | "TEMP"
+            | "MEMO"
+            | "RELAXER"
+            | "PRACTICE";
+        };
+      };
+      overlay_window_allowed_skills: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          overlay_window_id: string;
+          user_id: string;
+          skill_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id: string;
+          user_id: string;
+          skill_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id?: string;
+          user_id?: string;
+          skill_id?: string;
+        };
+      };
+      overlay_window_allowed_monuments: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          overlay_window_id: string;
+          user_id: string;
+          monument_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id: string;
+          user_id: string;
+          monument_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          overlay_window_id?: string;
+          user_id?: string;
+          monument_id?: string;
         };
       };
       daily_schedule_analytics_observed_instances: {

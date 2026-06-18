@@ -24,6 +24,12 @@ import { overlapsHalfOpen } from "./intervals";
 import { fetchWindowsForDate, type WindowLite } from "./repo";
 import { log } from "@/lib/utils/logGate";
 import { getAvailabilityWindowKey } from "./windowKey";
+import {
+  elapsedMs,
+  recordSchedulerDbWrite,
+  schedulerNowMs,
+  type SchedulerTiming,
+} from "./timing";
 
 type Client = SupabaseClient<Database>;
 
@@ -364,6 +370,8 @@ type PlaceParams = {
     availableStartLocal?: Date;
     key?: string;
     fromPrevDay?: boolean;
+    isOverlayCandidate?: boolean;
+    overlayWindowId?: string | null;
     dayTypeTimeBlockId?: string | null;
     timeBlockId?: string | null;
     start_local?: string | null;
@@ -387,6 +395,7 @@ type PlaceParams = {
   blockerCache?: BlockerCache;
   debugEnabled?: boolean;
   debugOnFailure?: (info: PlacementDebugTrace) => void;
+  timing?: SchedulerTiming | null;
 };
 
 type PlaceWindow = PlaceParams["windows"][number];
@@ -743,6 +752,13 @@ export async function findEarliestHighSlot(
 export async function placeItemInWindows(
   params: PlaceParams
 ): Promise<PlacementResult> {
+  const timing = params.timing ?? null;
+  const startedAt = schedulerNowMs();
+  let outcome: "success" | "noFit" | "error" = "error";
+  if (timing) {
+    timing.schedule.placeItem.calls += 1;
+  }
+  try {
   const {
     userId,
     item,
@@ -979,7 +995,11 @@ export async function placeItemInWindows(
   let dayBlockingInstances: ScheduleInstance[];
   try {
     dayBlockingInstances = await loadDayBlockingInstances(cache, cacheKey);
+    if (timing) {
+      timing.schedule.placeItem.blockersScanned += dayBlockingInstances.length;
+    }
   } catch (error) {
+    outcome = "error";
     return { error: error as Error };
   }
 
@@ -1369,6 +1389,7 @@ export async function placeItemInWindows(
       notBeforeApplied: notBeforeMs !== null,
       failureStage,
     });
+    outcome = "noFit";
     return {
       error: "NO_FIT",
       maxGapMs: computedMaxGapMs,
@@ -1402,6 +1423,7 @@ export async function placeItemInWindows(
       failureReason: "invalid_start_date",
       debugEnabled: params.debugEnabled,
     });
+    outcome = "noFit";
     return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
   }
   let endUtc = safeDate(addMin(best.start, item.duration_min));
@@ -1430,6 +1452,7 @@ export async function placeItemInWindows(
       failureReason: "invalid_end_date",
       debugEnabled: params.debugEnabled,
     });
+    outcome = "noFit";
     return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
   }
   let durationMin = item.duration_min;
@@ -1455,6 +1478,7 @@ export async function placeItemInWindows(
     if (endUtc.getTime() > maxEndMs) {
       endUtc = safeDate(new Date(maxEndMs));
       if (!endUtc) {
+        outcome = "noFit";
         return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
       }
       const durationMs = endUtc.getTime() - startUtc.getTime();
@@ -1484,6 +1508,7 @@ export async function placeItemInWindows(
           failureReason: "day_boundary_clamp_exceeded",
           debugEnabled: params.debugEnabled,
         });
+        outcome = "noFit";
         return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
       }
       durationMin = Math.max(1, Math.round(durationMs / 60000));
@@ -1516,6 +1541,7 @@ export async function placeItemInWindows(
       );
     });
     if (hasOverlap) {
+      outcome = "noFit";
       return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
     }
   }
@@ -1528,6 +1554,17 @@ export async function placeItemInWindows(
   } {
     // Try to find the WindowLite object at common locations
     const w = winLike.window ?? winLike.baseWindow ?? winLike;
+
+    if (
+      w.isOverlayCandidate === true ||
+      (typeof w.id === "string" && w.id.startsWith("overlay:"))
+    ) {
+      return {
+        legacyWindowId: null,
+        dayTypeTimeBlockId: null,
+        timeBlockId: null,
+      };
+    }
 
     // Read the dayTypeTimeBlockId (try both camelCase and snake_case)
     const dttbId = w.dayTypeTimeBlockId ?? w.day_type_time_block_id ?? null;
@@ -1577,7 +1614,8 @@ export async function placeItemInWindows(
     });
   }
 
-  return await persistPlacement(
+  const persistStartedAt = schedulerNowMs();
+  const persisted = await persistPlacement(
     {
       userId,
       item,
@@ -1593,6 +1631,34 @@ export async function placeItemInWindows(
     },
     client
   );
+  if (timing) {
+    timing.schedule.placeItem.persistWriteMs += elapsedMs(persistStartedAt);
+    if (persisted.error) {
+      outcome = "error";
+    } else {
+      outcome = "success";
+      recordSchedulerDbWrite(
+        timing,
+        reuseInstanceId ? "updates" : "inserts",
+        1
+      );
+    }
+  } else {
+    outcome = persisted.error ? "error" : "success";
+  }
+  return persisted;
+  } finally {
+    if (timing) {
+      timing.schedule.placeItem.totalMs += elapsedMs(startedAt);
+      if (outcome === "success") {
+        timing.schedule.placeItem.success += 1;
+      } else if (outcome === "noFit") {
+        timing.schedule.placeItem.noFit += 1;
+      } else {
+        timing.schedule.placeItem.errors += 1;
+      }
+    }
+  }
 }
 
 function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
