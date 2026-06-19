@@ -62,7 +62,9 @@ export type CampaignGoalPriorityUpdate = {
 };
 
 export type GlobalPriorityGoalLongPressEditHandler = (
-  goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
+  goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name"> & {
+    status?: string | null;
+  },
   element: HTMLElement
 ) => void;
 
@@ -677,6 +679,7 @@ export function GlobalPriorityRoadmap({
         entityType: "GOAL",
         entityId: goal.id,
         title: goal.name,
+        status: goal.status ?? null,
         originRect: getPriorityRowFabOriginRect(element),
       });
     },

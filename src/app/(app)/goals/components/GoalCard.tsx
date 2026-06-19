@@ -124,6 +124,33 @@ function isProjectComplete(project: Project) {
   );
 }
 
+function getProjectCompletedTimestamp(project: Project) {
+  const projectWithCompletion = project as Project & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+
+  return (
+    projectWithCompletion.completedAt ?? projectWithCompletion.completed_at ?? null
+  );
+}
+
+function areMemoizedProjectsEqual(previous: Project[], next: Project[]) {
+  if (previous.length !== next.length) return false;
+
+  return previous.every((project, index) => {
+    const nextProject = next[index];
+    return (
+      project.id === nextProject.id &&
+      project.status === nextProject.status &&
+      project.stage === nextProject.stage &&
+      project.progress === nextProject.progress &&
+      getProjectCompletedTimestamp(project) ===
+        getProjectCompletedTimestamp(nextProject)
+    );
+  });
+}
+
 const shellSpringTransition = {
   type: "spring",
   stiffness: 580,
@@ -267,6 +294,10 @@ function GoalCardImpl({
             entityType: "PROJECT",
             entityId: project.id,
             title: project.name,
+            status: project.status,
+            stage: project.stage ?? null,
+            progress: project.progress,
+            completedAt: getProjectCompletedTimestamp(project),
             originRect: origin
               ? {
                   top: origin.y,
@@ -1528,7 +1559,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     a.active === b.active &&
     a.status === b.status &&
     (a.weight ?? 0) === (b.weight ?? 0) &&
-    a.projects.length === b.projects.length &&
+    areMemoizedProjectsEqual(a.projects, b.projects) &&
     prev.showWeight === next.showWeight &&
     prev.showCreatedAt === next.showCreatedAt &&
     prev.showEmojiPrefix === next.showEmojiPrefix &&

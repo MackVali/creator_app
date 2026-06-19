@@ -2829,6 +2829,38 @@ function getFocusPomoQueueEditTarget(
     itemKind === "habit" ? item.id : null,
   ]);
   const originRect = getFocusQueueFabOriginRect(originElement);
+  const taskStage = readFirstScopeString([
+    record.stage,
+    record.status,
+    isRecordType(source, "task") ? source?.stage : null,
+    isRecordType(raw, "task") ? raw?.stage : null,
+  ]);
+  const taskCompletedAt = readFirstScopeString([
+    record.completedAt,
+    record.completed_at,
+    isRecordType(source, "task") ? source?.completedAt : null,
+    isRecordType(source, "task") ? source?.completed_at : null,
+    isRecordType(raw, "task") ? raw?.completedAt : null,
+    isRecordType(raw, "task") ? raw?.completed_at : null,
+  ]);
+  const projectStage = readFirstScopeString([
+    record.stage,
+    isRecordType(source, "project") ? source?.stage : null,
+    isRecordType(raw, "project") ? raw?.stage : null,
+  ]);
+  const projectStatus = readFirstScopeString([
+    record.status,
+    isRecordType(source, "project") ? source?.status : null,
+    isRecordType(raw, "project") ? raw?.status : null,
+  ]);
+  const projectCompletedAt = readFirstScopeString([
+    record.completedAt,
+    record.completed_at,
+    isRecordType(source, "project") ? source?.completedAt : null,
+    isRecordType(source, "project") ? source?.completed_at : null,
+    isRecordType(raw, "project") ? raw?.completedAt : null,
+    isRecordType(raw, "project") ? raw?.completed_at : null,
+  ]);
 
   if (itemKind === "task" && taskSourceId) {
     return {
@@ -2836,6 +2868,8 @@ function getFocusPomoQueueEditTarget(
       entityId: taskSourceId,
       title: item.title,
       originRect,
+      stage: taskStage,
+      completedAt: taskCompletedAt,
     };
   }
 
@@ -2845,6 +2879,9 @@ function getFocusPomoQueueEditTarget(
       entityId: projectSourceId,
       title: item.title,
       originRect,
+      stage: projectStage,
+      status: projectStatus,
+      completedAt: projectCompletedAt,
     };
   }
 

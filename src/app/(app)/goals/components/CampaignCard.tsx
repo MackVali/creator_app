@@ -243,6 +243,17 @@ function isCampaignDrawerGoalCompleted(goal: Goal): boolean {
   return normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
 }
 
+function getProjectCompletedTimestamp(project: Project) {
+  const projectWithCompletion = project as Project & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+
+  return (
+    projectWithCompletion.completedAt ?? projectWithCompletion.completed_at ?? null
+  );
+}
+
 function getFinitePriorityRank(goal: Goal): number | null {
   return typeof goal.priorityRank === "number" &&
     Number.isFinite(goal.priorityRank)
@@ -802,6 +813,10 @@ function DraggableGoalCard({
                                   entityType: "PROJECT",
                                   entityId: project.id,
                                   title: project.name,
+                                  status: project.status,
+                                  stage: project.stage ?? null,
+                                  progress: project.progress,
+                                  completedAt: getProjectCompletedTimestamp(project),
                                   originRect: origin
                                     ? {
                                         top: origin.y,

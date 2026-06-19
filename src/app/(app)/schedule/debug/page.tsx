@@ -48,6 +48,9 @@ type ScheduleDebugResponse = {
   error?: string;
 };
 
+const DEBUG_WRITE_THROUGH_DAYS = 14;
+const NORMAL_SCHEDULER_MODE = { type: "REGULAR" } as const;
+
 export default function ScheduleDebugPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [debugSummary, setDebugSummary] = useState<unknown | null>(null);
@@ -64,17 +67,34 @@ export default function ScheduleDebugPage() {
     setError(null);
     setPlacementTrace(null);
     try {
+      const localNow = new Date();
+      const timeZone =
+        typeof Intl !== "undefined"
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+          : null;
+      const utcOffsetMinutes = -localNow.getTimezoneOffset();
       const response = await fetch(
         "/api/scheduler/run?writeThroughDays=14&debug=1",
         {
           method: "POST",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            localTimeIso: localNow.toISOString(),
+            timeZone,
+            utcOffsetMinutes,
+            mode: NORMAL_SCHEDULER_MODE,
+            writeThroughDays: DEBUG_WRITE_THROUGH_DAYS,
+          }),
         }
       );
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(payload.error ?? "Scheduler debug run failed");
+        const payload = (await response.json().catch(() => ({}))) as
+          | ScheduleDebugResponse
+          | Record<string, unknown>;
+        throw new Error(formatSchedulerDebugError(payload));
       }
       const payload = (await response.json()) as ScheduleDebugResponse;
       const meta =
@@ -742,7 +762,11 @@ function isPlacementTruthTrace(value: unknown): value is PlacementTruthTrace {
 
 function isDebugMetaPayload(
   value: unknown
-): value is { placementTrace?: PlacementTruthTrace | null; display?: SchedulerDebugDisplay | null; fatal?: unknown } {
+): value is {
+  placementTrace?: PlacementTruthTrace | null;
+  display?: SchedulerDebugDisplay | null;
+  fatal?: unknown;
+} {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -750,4 +774,69 @@ function isDebugMetaPayload(
       "display" in (value as Record<string, unknown>) ||
       "fatal" in (value as Record<string, unknown>))
   );
+}
+
+function formatSchedulerDebugError(
+  payload: ScheduleDebugResponse | Record<string, unknown>
+) {
+  const base =
+    typeof payload.error === "string" && payload.error.trim()
+      ? payload.error.trim()
+      : "Scheduler debug run failed";
+  const fatal =
+    isDebugMetaPayload(payload.debug) && payload.debug.fatal
+      ? formatUnknownDiagnostic(payload.debug.fatal)
+      : null;
+  const scheduleError = formatScheduleError(payload);
+  const details = [scheduleError, fatal]
+    .filter((detail): detail is string => Boolean(detail))
+    .filter((detail) => detail !== base);
+
+  return details.length > 0 ? `${base}: ${details.join(" | ")}` : base;
+}
+
+function formatScheduleError(payload: Record<string, unknown>) {
+  const schedule = payload.schedule;
+  if (!schedule || typeof schedule !== "object") return null;
+  const error = (schedule as { error?: unknown }).error;
+  return formatUnknownDiagnostic(error);
+}
+
+function formatUnknownDiagnostic(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? truncateDiagnostic(trimmed) : null;
+  }
+  if (typeof value !== "object") {
+    return truncateDiagnostic(String(value));
+  }
+
+  const record = value as Record<string, unknown>;
+  const parts: string[] = [];
+  const errorMessage =
+    typeof record.errorMessage === "string" ? record.errorMessage.trim() : "";
+  const message = typeof record.message === "string" ? record.message.trim() : "";
+  const status =
+    typeof record.status === "number" && Number.isFinite(record.status)
+      ? record.status
+      : null;
+  const rayId = typeof record.rayId === "string" ? record.rayId.trim() : "";
+
+  if (errorMessage || message) parts.push(errorMessage || message);
+  if (status != null) parts.push(`status ${status}`);
+  if (rayId) parts.push(`ray ${rayId}`);
+
+  if (parts.length > 0) return truncateDiagnostic(parts.join(" / "));
+
+  try {
+    const json = JSON.stringify(value);
+    return json && json !== "{}" ? truncateDiagnostic(json) : null;
+  } catch {
+    return null;
+  }
+}
+
+function truncateDiagnostic(value: string, limit = 500) {
+  return value.length <= limit ? value : `${value.slice(0, limit)}...`;
 }

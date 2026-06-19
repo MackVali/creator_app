@@ -223,6 +223,7 @@ export function ProjectRow({
   const lastTapTimeRef = useRef(0);
   const tapSequenceRef = useRef(0);
   const lastTaskTapRef = useRef<{ taskId: string; time: number } | null>(null);
+  const lastActiveProgressRef = useRef(project.progress);
 
   useEffect(() => {
     setLocalStatus(project.status);
@@ -236,6 +237,12 @@ export function ProjectRow({
       }
     }
   }, [project.stage]);
+
+  useEffect(() => {
+    if (project.status !== "Done" && project.stage !== "RELEASE") {
+      lastActiveProgressRef.current = project.progress;
+    }
+  }, [project.progress, project.stage, project.status]);
 
   useEffect(
     () => () => {
@@ -437,6 +444,7 @@ export function ProjectRow({
     const fallbackStage = localStage && localStage !== "RELEASE" ? localStage : lastActiveStage;
     const nextStage = shouldComplete ? "RELEASE" : fallbackStage || "BUILD";
     const completedAt = shouldComplete ? new Date().toISOString() : null;
+    const nextProgress = shouldComplete ? 100 : lastActiveProgressRef.current;
 
     setCompletionPending(true);
     const { error } = await supabase
@@ -452,13 +460,24 @@ export function ProjectRow({
     const nextStatus = projectStageToStatus(nextStage);
     if (shouldComplete && localStage && localStage !== "RELEASE") {
       setLastActiveStage(localStage);
+      lastActiveProgressRef.current = project.progress;
     } else if (!shouldComplete && nextStage && nextStage !== "RELEASE") {
       setLastActiveStage(nextStage);
     }
 
     setLocalStatus(nextStatus);
     setLocalStage(nextStage);
-    onUpdated?.(project.id, { status: nextStatus, stage: nextStage });
+    const completionUpdates: Partial<Project> & {
+      completedAt?: string | null;
+      completed_at?: string | null;
+    } = {
+      status: nextStatus,
+      stage: nextStage,
+      progress: nextProgress,
+      completedAt,
+      completed_at: completedAt,
+    };
+    onUpdated?.(project.id, completionUpdates);
     if (shouldComplete) {
       void recordProjectCompletion(
         {
@@ -485,11 +504,21 @@ export function ProjectRow({
     localStatus,
     onUpdated,
     project.id,
+    project.progress,
     project.skillIds,
     project.tasks,
   ]);
 
-  const isCompleted = localStatus === "Done";
+  const projectWithCompletion = project as Project & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+  const isCompleted =
+    localStatus === "Done" ||
+    localStage === "RELEASE" ||
+    Number(project.progress ?? 0) >= 100 ||
+    Boolean(projectWithCompletion.completedAt) ||
+    Boolean(projectWithCompletion.completed_at);
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -611,30 +640,41 @@ export function ProjectRow({
   const projectStatusLabel = isCompleted ? "Done" : localStatus;
   const projectEnergyLabel =
     project.energyCode?.toString().trim() || project.energy;
-  const primaryTextClass =
-    isCompactNested ? "text-white/84" : isCompleted ? "text-emerald-50" : "text-white";
+  const primaryTextClass = isCompleted
+    ? "text-emerald-50"
+    : isCompactNested
+      ? "text-white/84"
+      : "text-white";
   const chevronColorClass = isCompactNested
-    ? "text-white/45"
+    ? isCompleted
+      ? "text-emerald-100/70"
+      : "text-white/45"
     : isCompleted
       ? "text-emerald-100/70"
       : "text-white/60";
   const overlayGlowClass = isCompleted
     ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
     : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
-  const cardSurfaceClass = isCompactNested
-    ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
-    : isCompleted
-      ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+  const cardSurfaceClass = isCompleted
+    ? isCompactNested
+      ? "border-emerald-400/42 bg-[linear-gradient(135deg,rgba(30,204,163,0.72)_0%,rgba(16,185,129,0.58)_48%,rgba(4,120,87,0.68)_100%)] ring-1 ring-emerald-300/36 shadow-[0_14px_26px_rgba(2,32,24,0.32),inset_0_1px_0_rgba(255,255,255,0.1)] hover:border-emerald-300/55 hover:bg-emerald-500/[0.08]"
+      : "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+    : isCompactNested
+      ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
-  const metaPillClass = isCompactNested
-    ? "border-white/8 bg-white/[0.03] text-white/42"
-    : isCompleted
-      ? "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+  const metaPillClass = isCompleted
+    ? isCompactNested
+      ? "border-emerald-50/20 bg-emerald-950/18 text-emerald-50/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+      : "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+    : isCompactNested
+      ? "border-white/8 bg-white/[0.03] text-white/42"
       : "border-white/8 bg-white/[0.03] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
-  const identityClass = isCompactNested
-    ? "rounded-lg border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
-    : isCompleted
-      ? "rounded-md border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:rounded-lg"
+  const identityClass = isCompleted
+    ? isCompactNested
+      ? "rounded-lg border-emerald-50/24 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+      : "rounded-md border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:rounded-lg"
+    : isCompactNested
+      ? "rounded-lg border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
       : "rounded-md border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] sm:rounded-lg";
   const {
     tertiaryTextClass,
@@ -698,7 +738,7 @@ export function ProjectRow({
                 <span
                   className={`text-[12px] font-medium sm:text-[13px] ${
                     isCompactNested ? "min-w-0 flex-1 truncate" : "line-clamp-2 sm:truncate"
-                  } ${isCompactNested ? "leading-tight text-white/84" : "leading-snug"}`}
+                  } ${isCompactNested ? `leading-tight ${primaryTextClass}` : "leading-snug"}`}
                 >
                   {project.name}
                 </span>

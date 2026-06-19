@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Grid2x2, Grid3x3, LayoutGrid, List } from "lucide-react";
+import { Calendar, Grid2x2, Grid3x3, LayoutGrid, List, Pin } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -196,6 +196,7 @@ type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
 type MatrixCardDensity = "large" | "small" | "row";
 type MatrixView = "monuments" | "skills" | "blocks" | "types";
+type MatrixScope = "scheduled" | "pinned";
 type MatrixTypeGroupKey = "chore" | "habit" | "project" | "sync";
 type MatrixReorderHoldScope = "scheduled" | "due";
 type MatrixHabitDueStatus = {
@@ -210,6 +211,7 @@ type MatrixCollapsedGroupPreferences = Partial<Record<MatrixView, string[]>>;
 type MatrixPreferences = {
   view?: MatrixView;
   panel?: MatrixPanel;
+  scope?: MatrixScope;
   cardDensityByGroup?: MatrixCardDensityPreferenceMap;
   collapsedGroupKeysByView?: MatrixCollapsedGroupPreferences;
 };
@@ -343,6 +345,10 @@ function isMatrixPanel(value: unknown): value is MatrixPanel {
   return value === "scheduled" || value === "unscheduled";
 }
 
+function isMatrixScope(value: unknown): value is MatrixScope {
+  return value === "scheduled" || value === "pinned";
+}
+
 function isMatrixCardDensity(value: unknown): value is MatrixCardDensity {
   return value === "large" || value === "small" || value === "row";
 }
@@ -404,6 +410,10 @@ function readMatrixPreferences(): MatrixPreferences {
 
   if (isMatrixPanel(storedPreferences.panel)) {
     preferences.panel = storedPreferences.panel;
+  }
+
+  if (isMatrixScope(storedPreferences.scope)) {
+    preferences.scope = storedPreferences.scope;
   }
 
   const cardDensityByGroup = sanitizeMatrixCardDensityPreferences(
@@ -2434,6 +2444,7 @@ function ScheduledEventCard({
           entityId: projectId,
           instanceId: event.instance.id,
           title: event.title,
+          status: event.instance.status ?? null,
           originRect: getMatrixFabOriginRect(element),
         });
         return;
@@ -2455,6 +2466,7 @@ function ScheduledEventCard({
     [
       event.habit?.id,
       event.instance.id,
+      event.instance.status,
       event.instance.source_id,
       event.instance.source_type,
       event.routine,
@@ -2972,11 +2984,13 @@ function EmptyPanel({ label }: { label: string }) {
 
 function MatrixViewPill({
   label,
+  icon,
   selected = false,
   disabled = false,
   onClick,
 }: {
   label?: string;
+  icon?: ReactNode;
   selected?: boolean;
   disabled?: boolean;
   onClick?: () => void;
@@ -2988,7 +3002,7 @@ function MatrixViewPill({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 min-w-16 items-center justify-center rounded-full border px-3 text-[10px] font-semibold leading-none text-zinc-500 backdrop-blur-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        "inline-flex h-7 min-w-16 items-center justify-center gap-1.5 rounded-full border px-3 text-[10px] font-semibold leading-none text-zinc-500 backdrop-blur-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
         selected
           ? "border-zinc-500/35 bg-zinc-300/[0.085] text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.065)]"
           : "border-zinc-700/40 bg-zinc-900/35 text-zinc-600",
@@ -2997,6 +3011,14 @@ function MatrixViewPill({
           : "hover:border-zinc-500/35 hover:bg-zinc-800/40 hover:text-zinc-400"
       )}
     >
+      {icon ? (
+        <span
+          aria-hidden="true"
+          className="flex h-3 w-3 shrink-0 items-center justify-center"
+        >
+          {icon}
+        </span>
+      ) : null}
       {label ?? <span aria-hidden="true">&nbsp;</span>}
     </button>
   );
@@ -3004,10 +3026,14 @@ function MatrixViewPill({
 
 function MatrixSettingsTray({
   activeView,
+  activeScope,
   onViewChange,
+  onScopeChange,
 }: {
   activeView: MatrixView;
+  activeScope: MatrixScope;
   onViewChange(view: MatrixView): void;
+  onScopeChange(scope: MatrixScope): void;
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-700/35 bg-zinc-950/55 px-3.5 py-3 shadow-[0_18px_48px_-34px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.045)] backdrop-blur-xl">
@@ -3042,11 +3068,22 @@ function MatrixSettingsTray({
 
         <section className="space-y-2">
           <h2 className="text-[10px] font-bold uppercase leading-none tracking-[0.18em] text-zinc-600">
-            Adjust
+            SCOPE
           </h2>
-          <p className="text-[11px] font-medium text-zinc-600">
-            No content yet
-          </p>
+          <div className="flex flex-wrap gap-2">
+            <MatrixViewPill
+              icon={<Calendar className="h-3 w-3" />}
+              label="Scheduled"
+              selected={activeScope === "scheduled"}
+              onClick={() => onScopeChange("scheduled")}
+            />
+            <MatrixViewPill
+              icon={<Pin className="h-3 w-3" />}
+              label="Pinned"
+              selected={activeScope === "pinned"}
+              onClick={() => onScopeChange("pinned")}
+            />
+          </div>
         </section>
       </div>
     </div>
@@ -3257,6 +3294,7 @@ function MatrixRevealGroupSection({
 function MatrixGridCarousel({
   groups,
   matrixView,
+  matrixScope,
   onCompleteScheduledEvent,
   onCompleteDueHabit,
   completingDueHabitIds,
@@ -3265,6 +3303,7 @@ function MatrixGridCarousel({
 }: {
   groups: MatrixMonumentGroup[];
   matrixView: MatrixView;
+  matrixScope: MatrixScope;
   onCompleteScheduledEvent(
     instanceId: string,
     nextStatus: ScheduleInstance["status"]
@@ -3316,19 +3355,21 @@ function MatrixGridCarousel({
   } | null>(null);
   const activeScheduledGroups = useMemo(
     () =>
-      groups
-        .map((group) => ({
-          group,
-          items:
-            matrixView === "types"
-              ? group.scheduledItems
-              : sortMatrixScheduledItems(
-                  group.scheduledItems,
-                  heldScheduledCompletionItemIds
-                ),
-        }))
-        .filter(({ items }) => items.length > 0),
-    [groups, heldScheduledCompletionItemIds, matrixView]
+      matrixScope === "pinned"
+        ? []
+        : groups
+            .map((group) => ({
+              group,
+              items:
+                matrixView === "types"
+                  ? group.scheduledItems
+                  : sortMatrixScheduledItems(
+                      group.scheduledItems,
+                      heldScheduledCompletionItemIds
+                    ),
+            }))
+            .filter(({ items }) => items.length > 0),
+    [groups, heldScheduledCompletionItemIds, matrixScope, matrixView]
   );
   const activeUnscheduledDueHabitGroups = useMemo(
     () =>
@@ -3348,10 +3389,16 @@ function MatrixGridCarousel({
   );
   const availableMatrixPanels = useMemo<MatrixPanel[]>(() => {
     const panels: MatrixPanel[] = [];
-    if (activeScheduledGroups.length > 0) panels.push("scheduled");
+    if (activeScheduledGroups.length > 0 || matrixScope === "pinned") {
+      panels.push("scheduled");
+    }
     if (activeUnscheduledDueHabitGroups.length > 0) panels.push("unscheduled");
     return panels;
-  }, [activeScheduledGroups.length, activeUnscheduledDueHabitGroups.length]);
+  }, [
+    activeScheduledGroups.length,
+    activeUnscheduledDueHabitGroups.length,
+    matrixScope,
+  ]);
   const canSwitchMatrixPanels = availableMatrixPanels.length > 1;
   const activeMatrixPanelIndex = Math.max(
     0,
@@ -3371,7 +3418,10 @@ function MatrixGridCarousel({
     availableMatrixPanels[activeMatrixPanelIndex] ??
     availableMatrixPanels[0] ??
     matrixPanel;
-  const activeMatrixPanelLabel = MATRIX_PANEL_LABELS[activeMatrixPanel];
+  const activeMatrixPanelLabel =
+    activeMatrixPanel === "scheduled" && matrixScope === "pinned"
+      ? "Pinned"
+      : MATRIX_PANEL_LABELS[activeMatrixPanel];
   const activeMatrixRevealGroupCount =
     activeMatrixPanel === "unscheduled"
       ? activeUnscheduledDueHabitGroups.length
@@ -3951,60 +4001,65 @@ function MatrixGridCarousel({
                     ref={scheduledPanelRef}
                     className="space-y-2 px-0.5 py-0.5"
                   >
-                    {activeScheduledGroups.map(({ group, items }, index) => (
-                      <MatrixRevealGroupSection
-                        key={group.key}
-                        index={index}
-                        collapsed={collapsedMatrixGroupKeys.has(group.key)}
-                        onToggle={() => handleMatrixGroupToggle(group.key)}
-                        label={
-                          <MatrixGroupLabel
-                            group={group}
-                            matrixView={matrixView}
-                            rightControls={
-                              panel === activeMatrixPanel && index === 0
-                                ? matrixGridHeaderControls
-                                : undefined
-                            }
-                          />
-                        }
-                      >
-                        <div
-                          className={cn(
-                            matrixLibraryGridClass,
-                            isSmallCardDensity
-                              ? "matrix-event-grid--small-cards"
-                              : null
-                          )}
+                    {matrixScope === "pinned" &&
+                    activeScheduledGroups.length === 0 ? (
+                      <EmptyPanel label="No pinned Events yet." />
+                    ) : (
+                      activeScheduledGroups.map(({ group, items }, index) => (
+                        <MatrixRevealGroupSection
+                          key={group.key}
+                          index={index}
+                          collapsed={collapsedMatrixGroupKeys.has(group.key)}
+                          onToggle={() => handleMatrixGroupToggle(group.key)}
+                          label={
+                            <MatrixGroupLabel
+                              group={group}
+                              matrixView={matrixView}
+                              rightControls={
+                                panel === activeMatrixPanel && index === 0
+                                  ? matrixGridHeaderControls
+                                  : undefined
+                              }
+                            />
+                          }
                         >
-                          {items.map((event) => (
-                            <motion.div
-                              key={event.instance.id}
-                              layout="position"
-                              transition={MATRIX_REORDER_LAYOUT_TRANSITION}
-                              className="h-full min-w-0"
-                            >
-                              <ScheduledEventCard
-                                event={event}
-                                density={cardDensity}
-                                onComplete={onCompleteScheduledEvent}
-                                open={
-                                  Boolean(event.goal?.id) &&
-                                  openGoalId === event.goal?.id
-                                }
-                                onOpenChange={(nextOpen) =>
-                                  setOpenGoalId(
-                                    nextOpen && event.goal?.id
-                                      ? event.goal.id
-                                      : null
-                                  )
-                                }
-                              />
-                            </motion.div>
-                          ))}
-                        </div>
-                      </MatrixRevealGroupSection>
-                    ))}
+                          <div
+                            className={cn(
+                              matrixLibraryGridClass,
+                              isSmallCardDensity
+                                ? "matrix-event-grid--small-cards"
+                                : null
+                            )}
+                          >
+                            {items.map((event) => (
+                              <motion.div
+                                key={event.instance.id}
+                                layout="position"
+                                transition={MATRIX_REORDER_LAYOUT_TRANSITION}
+                                className="h-full min-w-0"
+                              >
+                                <ScheduledEventCard
+                                  event={event}
+                                  density={cardDensity}
+                                  onComplete={onCompleteScheduledEvent}
+                                  open={
+                                    Boolean(event.goal?.id) &&
+                                    openGoalId === event.goal?.id
+                                  }
+                                  onOpenChange={(nextOpen) =>
+                                    setOpenGoalId(
+                                      nextOpen && event.goal?.id
+                                        ? event.goal.id
+                                        : null
+                                    )
+                                  }
+                                />
+                              </motion.div>
+                            ))}
+                          </div>
+                        </MatrixRevealGroupSection>
+                      ))
+                    )}
                   </div>
                 ) : (
                   <div
@@ -4083,7 +4138,9 @@ function MatrixGridCarousel({
               type="button"
               aria-label={
                 panel === "scheduled"
-                  ? "Show scheduled Events"
+                  ? matrixScope === "pinned"
+                    ? "Show pinned Events"
+                    : "Show scheduled Events"
                   : "Show unscheduled due habits"
               }
               aria-current={isActive ? "true" : undefined}
@@ -4120,6 +4177,7 @@ function MatrixContent() {
   );
   const [state, setState] = useState<MatrixState>(initialState);
   const [matrixView, setMatrixView] = useState<MatrixView>("monuments");
+  const [matrixScope, setMatrixScope] = useState<MatrixScope>("scheduled");
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isMatrixTrayOpen, setIsMatrixTrayOpen] = useState(false);
   const [matrixTrayHeight, setMatrixTrayHeight] = useState(0);
@@ -4149,9 +4207,12 @@ function MatrixContent() {
   const bypassMemoCaptureRef = useRef(false);
 
   useEffect(() => {
-    const storedView = readMatrixPreferences().view;
+    const { view: storedView, scope: storedScope } = readMatrixPreferences();
     if (storedView) {
       setMatrixView(storedView);
+    }
+    if (storedScope) {
+      setMatrixScope(storedScope);
     }
   }, []);
 
@@ -4160,6 +4221,14 @@ function MatrixContent() {
     writeMatrixPreferences((currentPreferences) => ({
       ...currentPreferences,
       view,
+    }));
+  }, []);
+
+  const handleMatrixScopeChange = useCallback((scope: MatrixScope) => {
+    setMatrixScope(scope);
+    writeMatrixPreferences((currentPreferences) => ({
+      ...currentPreferences,
+      scope,
     }));
   }, []);
 
@@ -5199,6 +5268,8 @@ function MatrixContent() {
         : matrixView === "skills"
         ? matrixSkillGroups
         : matrixMonumentGroups;
+  const shouldShowMatrixCarousel =
+    activeMatrixGroups.length > 0 || matrixScope === "pinned";
 
   const handleMemoCompletionSubmitted = useCallback(async () => {
     if (!memoCompletionState) return;
@@ -5318,7 +5389,9 @@ function MatrixContent() {
               <div ref={matrixTrayRef} className="pb-1">
                 <MatrixSettingsTray
                   activeView={matrixView}
+                  activeScope={matrixScope}
                   onViewChange={handleMatrixViewChange}
+                  onScopeChange={handleMatrixScopeChange}
                 />
               </div>
             </motion.div>
@@ -5334,10 +5407,11 @@ function MatrixContent() {
         <section className="px-0.5 py-0.5">
           {state.loading ? (
             <MatrixLoadingRows />
-          ) : activeMatrixGroups.length ? (
+          ) : shouldShowMatrixCarousel ? (
             <MatrixGridCarousel
               groups={activeMatrixGroups}
               matrixView={matrixView}
+              matrixScope={matrixScope}
               onCompleteScheduledEvent={handleCompleteScheduledEvent}
               onCompleteDueHabit={handleCompleteDueHabit}
               completingDueHabitIds={completingDueHabitIds}
