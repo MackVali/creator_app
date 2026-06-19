@@ -10811,7 +10811,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                  <div className="grid grid-cols-3 gap-2 md:gap-3">
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -10879,8 +10879,6 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:gap-4">
                     <div className="grid min-w-0 items-end gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         DURATION
@@ -10904,6 +10902,7 @@ export function Fab({
                         </button>
                       </div>
                     </div>
+                  </div>
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         SKILL
@@ -11026,7 +11025,6 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
                   {showDurationPicker && durationPosition
                     ? createPortal(
                         <div
