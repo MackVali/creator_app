@@ -54,8 +54,8 @@ export async function POST(request: NextRequest) {
     mode,
     writeThroughDays,
   } = await readRunRequestContext(request);
-  const enableParity =
-    requestUrl.searchParams.get("parity") === "1" || includeDebugSummary;
+  // Debug diagnostics should not imply the legacy parity path.
+  const enableParity = requestUrl.searchParams.get("parity") === "1";
   const writeThroughDaysOverride = parseWriteThroughDaysQueryParam(
     requestUrl.searchParams.get("writeThroughDays")
   );

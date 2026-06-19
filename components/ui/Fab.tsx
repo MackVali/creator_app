@@ -116,6 +116,7 @@ import {
   LimitReachedError,
   getLimitCodeFromError,
 } from "@/lib/goals/persistGoalUpdate";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
 
@@ -248,6 +249,8 @@ type FabGoalEditRow = {
   energy: string | null;
   priority_code?: string | null;
   energy_code?: string | null;
+  active?: boolean | null;
+  status?: string | null;
   why?: string | null;
   monument_id?: string | null;
   circle_id?: string | null;
@@ -301,6 +304,7 @@ type FabTaskEditRow = {
   priority: string | null;
   energy: string | null;
   stage: string | null;
+  completed_at?: string | null;
   duration_min: number | null;
   skill_id: string | null;
   why: string | null;
@@ -350,6 +354,13 @@ export type FabEditTarget = {
   layoutId?: string | null;
   originRect?: FabEditOriginRect | null;
   habitSnapshot?: FabHabitEditSnapshot | null;
+  active?: boolean | null;
+  status?: string | null;
+  stage?: string | null;
+  progress?: number | null;
+  completed?: boolean | null;
+  completed_at?: string | null;
+  completedAt?: string | null;
 };
 type TagEntityType = CreationType;
 type CreationFormMode =
@@ -382,6 +393,48 @@ const MEMO_DATABASE_TARGET_OPTIONS: MemoDatabaseTargetOption[] =
     id: target.id,
     label: target.label,
   }));
+
+const hasFabCompletionTimestamp = (value?: string | null) =>
+  typeof value === "string" && value.trim().length > 0;
+
+const isFabCompletionStatus = (value?: string | null) => {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return normalized === "COMPLETED" || normalized === "DONE";
+};
+
+const getFabEditTargetCompletedHint = (target?: FabEditTarget | null) => {
+  if (!target) return false;
+  if (target.completed === true) return true;
+  if (
+    hasFabCompletionTimestamp(target.completed_at) ||
+    hasFabCompletionTimestamp(target.completedAt)
+  ) {
+    return true;
+  }
+
+  if (target.entityType === "GOAL") {
+    return normalizeGoalStatus(target.status, target.active) === "COMPLETED";
+  }
+
+  if (target.entityType === "PROJECT") {
+    return (
+      target.stage?.trim().toUpperCase() === "RELEASE" ||
+      isFabCompletionStatus(target.status) ||
+      (typeof target.progress === "number" &&
+        Number.isFinite(target.progress) &&
+        target.progress >= 100)
+    );
+  }
+
+  if (target.entityType === "TASK") {
+    return (
+      target.stage?.trim().toUpperCase() === "PERFECT" ||
+      isFabCompletionStatus(target.status)
+    );
+  }
+
+  return false;
+};
 
 type FabTag = {
   id: string;
@@ -872,7 +925,9 @@ const FAB_CREATION_SELECT_ITEM_SELECTED_CLASS =
   "bg-zinc-800 text-white shadow-none ring-1 ring-zinc-700/70";
 const FAB_NEXUS_EXPANDED_SIZE_CLASS =
   "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
-const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = "h-[360px]";
+const FAB_NEXUS_COMPACT_HEIGHT = 360;
+const FAB_NEXUS_COMPACT_SIZE_CLASS = "h-[360px]";
+const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = FAB_NEXUS_COMPACT_SIZE_CLASS;
 const fabCreationSelectItemClass = (
   isSelected: boolean,
   className?: string,
@@ -4071,6 +4126,8 @@ export function Fab({
   const [goalMonumentId, setGoalMonumentId] = useState<string | "">("");
   const [goalPriority, setGoalPriority] = useState("MEDIUM");
   const [goalEnergy, setGoalEnergy] = useState("MEDIUM");
+  const [goalActive, setGoalActive] = useState<boolean | null>(null);
+  const [goalStatus, setGoalStatus] = useState<string | null>(null);
   const [goalWhy, setGoalWhy] = useState("");
   const [goalDue, setGoalDue] = useState<string | null>(null);
   const [goalRelationType, setGoalRelationType] =
@@ -4134,6 +4191,7 @@ export function Fab({
   const [taskSkillId, setTaskSkillId] = useState<string | "">("");
   const [taskNotes, setTaskNotes] = useState("");
   const [taskDue, setTaskDue] = useState("");
+  const [taskCompletedAt, setTaskCompletedAt] = useState<string | null>(null);
   const [taskHasExactDate, setTaskHasExactDate] = useState(false);
   const [taskExactDate, setTaskExactDate] = useState("");
   const [taskExactFallbackDate, setTaskExactFallbackDate] = useState("");
@@ -4307,6 +4365,8 @@ export function Fab({
     setGoalCircleId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
+    setGoalActive(null);
+    setGoalStatus(null);
     setGoalWhy("");
     setGoalDue(null);
     setGoalCampaignId(null);
@@ -4482,6 +4542,7 @@ export function Fab({
     setTaskSkillId("");
     setTaskNotes("");
     setTaskDue("");
+    setTaskCompletedAt(null);
     setTaskHasExactDate(false);
     setTaskExactDate("");
     setTaskExactFallbackDate("");
@@ -4920,6 +4981,52 @@ export function Fab({
   ]);
 
   useLayoutEffect(() => {
+    if (!editTarget?.entityId) return;
+
+    if (editTarget.entityType === "GOAL") {
+      if (typeof editTarget.active === "boolean") {
+        setGoalActive(editTarget.active);
+      }
+      if (typeof editTarget.status === "string") {
+        setGoalStatus(editTarget.status);
+      }
+      return;
+    }
+
+    if (editTarget.entityType === "PROJECT") {
+      if (typeof editTarget.stage === "string") {
+        setProjectStage(editTarget.stage);
+      }
+      return;
+    }
+
+    if (editTarget.entityType === "TASK") {
+      if (
+        editTarget.stage === "PREPARE" ||
+        editTarget.stage === "PRODUCE" ||
+        editTarget.stage === "PERFECT"
+      ) {
+        setTaskStage(editTarget.stage);
+      }
+      setTaskCompletedAt(
+        hasFabCompletionTimestamp(editTarget.completed_at)
+          ? editTarget.completed_at
+          : hasFabCompletionTimestamp(editTarget.completedAt)
+            ? editTarget.completedAt
+            : null,
+      );
+    }
+  }, [
+    editTarget?.active,
+    editTarget?.completed_at,
+    editTarget?.completedAt,
+    editTarget?.entityId,
+    editTarget?.entityType,
+    editTarget?.stage,
+    editTarget?.status,
+  ]);
+
+  useLayoutEffect(() => {
     if (editTarget?.entityType !== "PROJECT") {
       return;
     }
@@ -5037,7 +5144,7 @@ export function Fab({
             supabase
               .from("goals")
               .select(
-                "id, name, priority, energy, priority_code, energy_code, why, monument_id, circle_id, roadmap_id, due_date",
+                "id, name, priority, energy, priority_code, energy_code, active, status, why, monument_id, circle_id, roadmap_id, due_date",
               )
               .eq("id", entityId)
               .single(),
@@ -5186,6 +5293,12 @@ export function Fab({
           setGoalName(goalRow?.name ?? "");
           setGoalPriority(normalizedPriority);
           setGoalEnergy(normalizedEnergy);
+          setGoalActive(
+            typeof goalRow?.active === "boolean" ? goalRow.active : null,
+          );
+          setGoalStatus(
+            typeof goalRow?.status === "string" ? goalRow.status : null,
+          );
           setGoalWhy(goalRow?.why ?? "");
           const hydratedMonumentId =
             goalRow?.monument_id ||
@@ -5521,7 +5634,7 @@ export function Fab({
         } else {
           hydrationBranch = "TASK";
           const taskEditHydrationSelect =
-            "id, name, project_id, priority, energy, stage, duration_min, skill_id, why";
+            "id, name, project_id, priority, energy, stage, completed_at, duration_min, skill_id, why";
           hydrationSelect = taskEditHydrationSelect;
           const [
             { data: taskRowData, error: taskError },
@@ -5582,6 +5695,11 @@ export function Fab({
           );
           setTaskSkillId(taskRow?.skill_id ?? "");
           setTaskNotes(taskRow?.why ?? "");
+          setTaskCompletedAt(
+            typeof taskRow?.completed_at === "string"
+              ? taskRow.completed_at
+              : null,
+          );
           const taskExactSchedule = getSplitExactScheduleInputValues(
             lockedScheduleRow?.start_utc,
             lockedScheduleRow?.end_utc,
@@ -6024,6 +6142,16 @@ export function Fab({
   const pages = FAB_PAGES;
   const pageCount = FAB_PAGES.length;
   const [activeFabPage, setActiveFabPage] = useState<number>(0);
+  const [normalNexusExpanded, setNormalNexusExpanded] = useState(false);
+  const activeFabPageType = pages[activeFabPage];
+  const isNormalFabNexusPage =
+    isOpen &&
+    activeFabPageType === "nexus" &&
+    !overlayPickerOpen &&
+    selected === null &&
+    !isDirectCreationOpen;
+  const isNormalFabNexusExpanded =
+    isNormalFabNexusPage && normalNexusExpanded && expanded;
   const [isDragging, setIsDragging] = useState(false);
   const [dragTargetPage, setDragTargetPage] = useState<number | null>(null);
   const [dragDirection, setDragDirection] = useState<1 | -1 | null>(null);
@@ -6040,6 +6168,14 @@ export function Fab({
     event: PointerEvent;
   } | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  useEffect(() => {
+    if (!normalNexusExpanded) return;
+    if (isOpen && activeFabPageType === "nexus") return;
+    setNormalNexusExpanded(false);
+    if (selected === null) {
+      setExpanded(false);
+    }
+  }, [activeFabPageType, isOpen, normalNexusExpanded, selected]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -6520,6 +6656,7 @@ export function Fab({
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
+      setNormalNexusExpanded(false);
       setExpanded(false);
       setSelected(null);
       setPendingCreationNameFocus(null);
@@ -6539,9 +6676,12 @@ export function Fab({
   const shouldUseAttachedFabControls =
     expanded && (isFabKeyboardActiveRaw || isFabKeyboardSettling);
   const shouldUseKeyboardConstrainedFabSizing =
-    expanded && (isKeyboardVisible || isFabKeyboardSettling);
+    expanded &&
+    selected !== null &&
+    (isKeyboardVisible || isFabKeyboardSettling);
   const shouldAttachCreationControls =
     expanded &&
+    selected !== null &&
     (shouldUseAttachedFabControls || (isMobileViewport && selected !== null));
   const shouldSuppressMobileFabChrome =
     expanded && isMobileViewport && selected !== null;
@@ -7396,6 +7536,8 @@ export function Fab({
     setGoalCircleId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
+    setGoalActive(null);
+    setGoalStatus(null);
     setGoalWhy("");
     setGoalDue(null);
     setGoalCampaignId(null);
@@ -7414,6 +7556,7 @@ export function Fab({
     setTaskSkillId("");
     setTaskNotes("");
     setTaskDue("");
+    setTaskCompletedAt(null);
     setTaskHasExactDate(false);
     setTaskExactDate("");
     setTaskExactFallbackDate("");
@@ -7587,6 +7730,10 @@ export function Fab({
   const { primary, secondary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
   const menuContainerHeight = primary.length * 56;
+  const compactFabPanelHeight =
+    activeFabPageType === "nexus"
+      ? FAB_NEXUS_COMPACT_HEIGHT
+      : menuContainerHeight;
   const shouldRenderTimelineOverlayButton =
     !expanded && isOpen && menuVariant === "timeline";
   const getOverlayPlacementDurationMinutes = useCallback(
@@ -12871,6 +13018,25 @@ export function Fab({
     </div>
   );
 
+  const handleNormalNexusExpandedChange = useCallback(
+    (nextExpanded: boolean) => {
+      setNormalNexusExpanded(nextExpanded);
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setSelected(null);
+      setIsDirectCreationOpen(false);
+      setIsOpen(true);
+      if (nextExpanded) {
+        setExpanded(true);
+        return;
+      }
+      resetFabViewportState();
+      setExpanded(false);
+    },
+    [resetFabViewportState],
+  );
+
   const renderNexusPage = () => (
     <FabNexus
       query={searchQuery}
@@ -12894,6 +13060,8 @@ export function Fab({
       onSortModeChange={setOverlaySortMode}
       availableMonuments={monuments}
       availableSkills={skills}
+      popupExpanded={normalNexusExpanded}
+      onPopupExpandedChange={handleNormalNexusExpandedChange}
       showToolbar
     />
   );
@@ -17245,6 +17413,7 @@ export function Fab({
     setPressedCreationType(null);
     setCreationSpawnOrigin(null);
     setCreationRevealGeometry(null);
+    setNormalNexusExpanded(false);
     setExpanded(false);
     setSelected(null);
   }, [
@@ -17335,23 +17504,44 @@ export function Fab({
   const isProjectCreationExpanded = expanded && selected === "PROJECT";
   const isTaskCreationExpanded = expanded && selected === "TASK";
   const isHabitCreationExpanded = expanded && selected === "HABIT";
+  const editTargetCompletedHint = editHydrating
+    ? getFabEditTargetCompletedHint(editTarget)
+    : false;
   const isCompletedProjectFabDrawer =
     shouldUseCenteredEditModal &&
     editTarget?.entityType === "PROJECT" &&
     selected === "PROJECT" &&
-    projectStage === "RELEASE";
+    (projectStage === "RELEASE" || editTargetCompletedHint);
+  const isCompletedGoalFabDrawer =
+    shouldUseCenteredEditModal &&
+    editTarget?.entityType === "GOAL" &&
+    selected === "GOAL" &&
+    (normalizeGoalStatus(goalStatus, goalActive) === "COMPLETED" ||
+      editTargetCompletedHint);
+  const isCompletedTaskFabDrawer =
+    shouldUseCenteredEditModal &&
+    editTarget?.entityType === "TASK" &&
+    selected === "TASK" &&
+    (Boolean(taskCompletedAt) ||
+      taskStage === "PERFECT" ||
+      editTargetCompletedHint);
   const isCompletedHabitFabDrawer =
     shouldUseCenteredEditModal &&
     editTarget?.entityType === "HABIT" &&
     selected === "HABIT" &&
     Boolean(habitLastCompletedAt);
   const isCompletedFabDrawer =
-    isCompletedProjectFabDrawer || isCompletedHabitFabDrawer;
+    isCompletedProjectFabDrawer ||
+    isCompletedGoalFabDrawer ||
+    isCompletedTaskFabDrawer ||
+    isCompletedHabitFabDrawer;
   const isContentSizedCreationExpanded =
     isGoalCreationExpanded ||
     isProjectCreationExpanded ||
     isTaskCreationExpanded ||
     isHabitCreationExpanded;
+  const shouldUseContentSizedFabStage =
+    isContentSizedCreationExpanded || isNormalFabNexusPage;
   const goalCreationMinHeight = 240;
   const goalCenteredEditMinHeight = 320;
   const projectCreationMinHeight = 280;
@@ -17800,6 +17990,7 @@ export function Fab({
   const shouldRenderFabPanel = isOpen || expanded || isDirectCreationOpen;
   const shouldRenderAttachedCreationControls =
     expanded &&
+    selected !== null &&
     (shouldUseCenteredEditModal ||
       shouldUseDirectCreationModal ||
       shouldAttachCreationControls);
@@ -18105,23 +18296,24 @@ export function Fab({
                       ? shouldUseCenteredCreationPanel
                         ? undefined
                         : panelMinHeightExpanded
-                      : menuContainerHeight,
+                      : compactFabPanelHeight,
                     maxHeight: expanded
                       ? shouldUseCenteredCreationPanel
                         ? centeredMobileCreationPanelMaxHeight
                         : panelMaxHeightExpanded
-                      : menuContainerHeight,
+                      : compactFabPanelHeight,
                     height: expanded
                       ? shouldUseCenteredCreationPanel
                         ? undefined
                         : panelHeightExpanded
-                      : menuContainerHeight,
+                      : compactFabPanelHeight,
                     minWidth: expanded ? undefined : (menuWidth ?? undefined),
                     width: expanded ? undefined : (menuWidth ?? undefined),
                     maxWidth: expanded ? undefined : (menuWidth ?? undefined),
                     touchAction: expanded ? "manipulation" : undefined,
                     overflowY:
                       expanded &&
+                      !isNormalFabNexusExpanded &&
                       !shouldUseCenteredEditModal &&
                       !shouldUseCenteredCreationPanel &&
                       !shouldAttachCreationControls
@@ -18198,7 +18390,7 @@ export function Fab({
                     <motion.div
                       className={cn(
                         "relative w-full",
-                        isContentSizedCreationExpanded ? "" : "h-full",
+                        shouldUseContentSizedFabStage ? "" : "h-full",
                       )}
                       style={{
                         backgroundImage: isBlendingGradient
@@ -18212,14 +18404,14 @@ export function Fab({
                         data-tour="fab-swipe"
                         className={cn(
                           "relative w-full rounded-[inherit]",
-                          isContentSizedCreationExpanded ? "" : "h-full",
+                          shouldUseContentSizedFabStage ? "" : "h-full",
                         )}
                         style={{ touchAction: "pan-y" }}
                       >
                         <motion.div
                           className={cn(
                             "flex",
-                            isContentSizedCreationExpanded
+                            shouldUseContentSizedFabStage
                               ? "relative w-full"
                               : "absolute inset-0",
                           )}
@@ -18253,7 +18445,7 @@ export function Fab({
                           <motion.div
                             className={cn(
                               "z-10 flex",
-                              isContentSizedCreationExpanded
+                              shouldUseContentSizedFabStage
                                 ? "relative w-full"
                                 : "absolute inset-0",
                             )}
@@ -18382,7 +18574,10 @@ export function Fab({
                   document.body,
                 )
               : null}
-            {expanded && !shouldHideOverhangButtons && !shouldUseCenteredEditModal
+            {expanded &&
+            selected &&
+            !shouldHideOverhangButtons &&
+            !shouldUseCenteredEditModal
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}
@@ -20555,6 +20750,8 @@ type FabNexusProps = {
   availableMonuments?: Monument[];
   availableSkills?: Skill[];
   showToolbar?: boolean;
+  popupExpanded?: boolean;
+  onPopupExpandedChange?: (expanded: boolean) => void;
   embeddedExpanded?: boolean;
   onEmbeddedExpandedChange?: (expanded: boolean) => void;
   inputRef?: RefObject<HTMLInputElement | null>;
@@ -20586,6 +20783,8 @@ function FabNexus({
   availableMonuments,
   availableSkills,
   showToolbar = false,
+  popupExpanded = false,
+  onPopupExpandedChange,
   embeddedExpanded = false,
   onEmbeddedExpandedChange,
   inputRef,
@@ -20700,7 +20899,9 @@ function FabNexus({
         "flex w-full flex-col overflow-hidden text-white",
         isEmbedded
           ? "h-full min-h-0"
-          : FAB_NEXUS_EXPANDED_SIZE_CLASS,
+          : popupExpanded
+            ? FAB_NEXUS_EXPANDED_SIZE_CLASS
+            : FAB_NEXUS_COMPACT_SIZE_CLASS,
       )}
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
@@ -20735,6 +20936,21 @@ function FabNexus({
                 <Expand className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
+          ) : showToolbar && onPopupExpandedChange ? (
+            <button
+              type="button"
+              aria-label={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
+              aria-expanded={popupExpanded}
+              title={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
+              onClick={() => onPopupExpandedChange(!popupExpanded)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+            >
+              {popupExpanded ? (
+                <Shrink className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Expand className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
           ) : showToolbar ? (
             <button
               type="button"
@@ -20748,7 +20964,7 @@ function FabNexus({
           ) : null}
         </div>
       </div>
-      {showToolbar && showControls ? (
+      {showToolbar && (showControls || (!isEmbedded && popupExpanded)) ? (
         <div className="shrink-0 px-4 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -20846,7 +21062,7 @@ function FabNexus({
           "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5 pt-3",
           isEmbedded
             ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
-            : "pb-4",
+            : "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]",
         )}
         data-fab-nexus-scroll="true"
         style={{ touchAction: "pan-y" }}

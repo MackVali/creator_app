@@ -4772,6 +4772,7 @@ export default function ScheduleTabContent({
       editingSnapshot?.source_type === "PROJECT" &&
       editingProjectId
     ) {
+      const project = projectMap[editingProjectId] ?? null;
       return {
         entityType: "PROJECT" as const,
         entityId: editingProjectId,
@@ -4779,6 +4780,7 @@ export default function ScheduleTabContent({
         title: editingEventTitle ?? null,
         layoutId: editingLayoutId,
         originRect,
+        stage: project?.stage ?? null,
       };
     }
 
@@ -4809,6 +4811,7 @@ export default function ScheduleTabContent({
     editingSnapshot?.originData,
     editingSnapshot?.habitSnapshot,
     habitMap,
+    projectMap,
   ]);
 
   const isProjectEditing =

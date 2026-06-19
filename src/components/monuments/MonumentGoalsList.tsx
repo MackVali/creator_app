@@ -3256,6 +3256,8 @@ export function MonumentGoalsList({
         entityType: "GOAL",
         entityId: goal.id,
         title: goal.title,
+        status: goal.status,
+        active: goal.active,
         originRect: getGoalEditOriginRect(goal.id),
       });
       closeGoalDetailAfterFabOpen();
@@ -3269,6 +3271,8 @@ export function MonumentGoalsList({
         entityType: "GOAL",
         entityId: goal.id,
         title: goal.title,
+        status: goal.status,
+        active: goal.active,
         originRect: getGoalEditOriginRect(goal.id),
       });
       closeGoalDetailAfterFabOpen();
@@ -3285,6 +3289,8 @@ export function MonumentGoalsList({
         entityType: "GOAL",
         entityId: goal.id,
         title: goal.title,
+        status: goal.status,
+        active: goal.active,
         originRect: rect
           ? {
               top: rect.top,
@@ -3313,6 +3319,7 @@ export function MonumentGoalsList({
           entityType: "GOAL",
           entityId: goal.id,
           title: goal.name,
+          status: goal.status ?? null,
           originRect: {
             top: rect.top,
             left: rect.left,
@@ -3743,6 +3750,8 @@ export function MonumentGoalsList({
         entityType: "TASK",
         entityId: task.id,
         title: task.name,
+        stage: task.stage,
+        completedAt: task.completedAt ?? null,
         originRect: origin
           ? {
               top: origin.y,

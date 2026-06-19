@@ -108,11 +108,12 @@ export default function BottomNav() {
               items={bottomNavItems}
               currentPath={currentBottomNavPath}
               shouldHandleActiveClick={(href) =>
-                href === "/dashboard" &&
-                (isCircleDetail ||
-                  isMonumentDetailOverlayOpen() ||
-                  isSkillDetailOverlayOpen() ||
-                  isCommandCircleDetailOverlayOpen())
+                (href === "/dashboard" &&
+                  (isCircleDetail ||
+                    isMonumentDetailOverlayOpen() ||
+                    isSkillDetailOverlayOpen() ||
+                    isCommandCircleDetailOverlayOpen())) ||
+                (href === "/schedule" && pathname.startsWith("/schedule/"))
               }
               onNavigate={(href) => {
                 const targetHref = href as MainTabRouteHref;

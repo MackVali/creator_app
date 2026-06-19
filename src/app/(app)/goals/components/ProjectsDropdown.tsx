@@ -5,10 +5,12 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type MouseEvent,
   type PointerEvent,
 } from "react";
 import { Plus } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   getProjectTasksListClasses,
   MAX_VISIBLE_PROJECT_TASKS,
@@ -42,6 +44,34 @@ interface ProjectsDropdownProps {
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
 
+const completedProjectsRevealMotion = {
+  hidden: {
+    opacity: 0,
+    height: 0,
+    y: -8,
+  },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: {
+      height: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
+      opacity: { duration: 0.32, ease: "easeOut", delay: 0.08 },
+      y: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
+    },
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    y: -6,
+    transition: {
+      height: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
+      opacity: { duration: 0.24, ease: "easeOut" },
+      y: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
+    },
+  },
+} as const;
+
 export function ProjectsDropdown({
   id,
   goalId,
@@ -55,10 +85,37 @@ export function ProjectsDropdown({
   addingProject = false,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
+  const prefersReducedMotion = useReducedMotion();
+  const [showCompletedProjects, setShowCompletedProjects] = useState(false);
   const selectedProject = useMemo(
     () => (projectTasksOnly ? projects[0] ?? null : null),
     [projectTasksOnly, projects]
   );
+  const [activeProjects, completedProjects] = useMemo(() => {
+    const active: Project[] = [];
+    const completed: Project[] = [];
+
+    for (const project of projects) {
+      if (isProjectCompleted(project)) {
+        completed.push(project);
+      } else {
+        active.push(project);
+      }
+    }
+
+    return [active, completed] as const;
+  }, [projects]);
+
+  useEffect(() => {
+    if (completedProjects.length === 0) {
+      setShowCompletedProjects(false);
+    }
+  }, [completedProjects.length]);
+
+  const completedProjectsRegionId = `${id}-completed-projects`;
+  const completedProjectsToggleLabel = `${
+    showCompletedProjects ? "Hide completed Projects" : "Show completed Projects"
+  } (${completedProjects.length})`;
 
   return (
     <div
@@ -92,7 +149,7 @@ export function ProjectsDropdown({
           )
         ) : projects.length > 0 ? (
           <div className="space-y-1 sm:space-y-1.5">
-            {projects.map((p, index) => (
+            {activeProjects.map((p, index) => (
               <ProjectRow
                 key={p.id}
                 project={p}
@@ -102,6 +159,47 @@ export function ProjectsDropdown({
                 onUpdated={onProjectUpdated}
               />
             ))}
+            {completedProjects.length > 0 ? (
+              <button
+                type="button"
+                aria-expanded={showCompletedProjects}
+                aria-controls={completedProjectsRegionId}
+                onClick={() =>
+                  setShowCompletedProjects((current) => !current)
+                }
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+              >
+                <span>{completedProjectsToggleLabel}</span>
+              </button>
+            ) : null}
+            <AnimatePresence initial={false}>
+              {showCompletedProjects ? (
+                <motion.div
+                  id={completedProjectsRegionId}
+                  className="flex flex-col gap-1 overflow-hidden sm:gap-1.5"
+                  initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+                  animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+                  exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                  variants={
+                    prefersReducedMotion ? undefined : completedProjectsRevealMotion
+                  }
+                  transition={
+                    prefersReducedMotion ? { duration: 0.12 } : undefined
+                  }
+                >
+                  {completedProjects.map((p, index) => (
+                    <ProjectRow
+                      key={p.id}
+                      project={p}
+                      projectOrder={activeProjects.length + index + 1}
+                      variant="compactNested"
+                      onLongPress={onProjectLongPress}
+                      onUpdated={onProjectUpdated}
+                    />
+                  ))}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
@@ -369,6 +467,21 @@ function isProjectCompleteForTaskRows(project: Project) {
     project.status === "Done" ||
     project.stage === "RELEASE" ||
     Number(project.progress ?? 0) >= 100
+  );
+}
+
+function isProjectCompleted(project: Project) {
+  const projectWithCompletion = project as Project & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+
+  return (
+    project.status === "Done" ||
+    project.stage === "RELEASE" ||
+    Number(project.progress ?? 0) >= 100 ||
+    Boolean(projectWithCompletion.completedAt) ||
+    Boolean(projectWithCompletion.completed_at)
   );
 }
 
