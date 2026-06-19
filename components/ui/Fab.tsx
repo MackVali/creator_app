@@ -11500,7 +11500,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-1.5 sm:gap-2 md:gap-3">
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -11547,7 +11547,7 @@ export function Fab({
                         value={projectStage}
                         onValueChange={setProjectStage}
                         triggerClassName={cn(
-                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
+                          "h-12 w-full min-w-0 max-w-full overflow-hidden px-2 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
                         )}
                         contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
@@ -11572,17 +11572,17 @@ export function Fab({
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         DURATION
                       </Label>
-                      <div className="relative">
+                      <div className="relative min-w-0 max-w-full">
                         <button
                           type="button"
                           {...projectDurationTapHandlers}
                           ref={durationTriggerRef}
-                          className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
+                          className="flex h-12 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white/[0.05] px-1.5 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
                           aria-haspopup="dialog"
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
                         >
-                          <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
+                          <span className="flex h-9 w-9 min-w-0 shrink-0 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
                             <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
                             <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
                               {normalizedProjectDuration || 30}m
@@ -18903,6 +18903,8 @@ export function Fab({
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
                         : isNormalFabNexusExpanded
                         ? "min-h-0 flex-1 basis-0 overflow-hidden"
+                        : !expanded && menuVariant === "timeline" && activeFabPageType === "nexus"
+                        ? "h-full min-h-0 overflow-hidden"
                         : shouldUseScrollableFabBody
                           ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
                           : shouldRenderAttachedCreationControls
