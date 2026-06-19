@@ -11,18 +11,21 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
+import { Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import type { Goal, Project } from "@/app/(app)/goals/types";
+import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
+import { LazyFab } from "@/components/ui/LazyFab";
+import type { FabEditTarget } from "@/components/ui/Fab";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { projectWeight, taskWeight, type TaskLite, type ProjectLite } from "@/lib/scheduler/weight";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
-import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { computeGoalWeight } from "@/lib/goals/weight";
@@ -98,11 +101,24 @@ function mapEnergy(energy: { name?: string | null } | string | null | undefined)
 }
 
 type ProjectSection = "active" | "completed";
+type ProjectOpenKey = `${ProjectSection}:${string}`;
 type ProjectPanelSwipeAxis = "horizontal" | "vertical" | null;
+type ProjectCardDensity = "large" | "small";
 type ProjectWithCompletion = Project & {
   completedAt?: string | null;
   completed_at?: string | null;
 };
+
+const PROJECT_CARD_DENSITY_STORAGE_KEY =
+  "creator.skillProjectLibrary.cardDensity";
+const PROJECT_SMALL_GRID_CLASS =
+  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+const PROJECT_GRID_CLASS =
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+
+function getProjectOpenKey(section: ProjectSection, goalId: string): ProjectOpenKey {
+  return `${section}:${goalId}`;
+}
 
 function isSkillProjectCompleted(project: Project): boolean {
   const projectWithCompletion = project as ProjectWithCompletion;
@@ -285,18 +301,23 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Goal[]>([]);
   const [projectSection, setProjectSection] = useState<ProjectSection>("active");
+  const [projectCardDensity, setProjectCardDensity] =
+    useState<ProjectCardDensity>("large");
+  const [projectCardDensityHydrated, setProjectCardDensityHydrated] =
+    useState(false);
   const [projectPanelHeight, setProjectPanelHeight] = useState<number | null>(null);
   const [projectPanelDragOffset, setProjectPanelDragOffset] = useState(0);
   const [projectPanelViewportWidth, setProjectPanelViewportWidth] = useState(0);
   const [projectPanelTransitionEnabled, setProjectPanelTransitionEnabled] =
     useState(false);
-  const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [openProjectKey, setOpenProjectKey] = useState<ProjectOpenKey | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [baseGoals, setBaseGoals] = useState<Goal[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; icon: string | null }[]>([]);
+  const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(null);
   const [taskFormOpenForGoalId, setTaskFormOpenForGoalId] = useState<string | null>(null);
   const [taskNameInput, setTaskNameInput] = useState("");
   const [taskSkillIdInput, setTaskSkillIdInput] = useState<string>("");
@@ -336,11 +357,47 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     -projectPanelViewportWidth,
     Math.min(0, projectPanelBaseTransform + projectPanelDragOffset)
   );
+  const projectGridClass =
+    projectCardDensity === "small" ? PROJECT_SMALL_GRID_CLASS : PROJECT_GRID_CLASS;
+  const isSmallProjectCardDensity = projectCardDensity === "small";
 
   useEffect(() => {
-    setOpenGoalId(null);
+    setOpenProjectKey(null);
     setProjectSection("active");
   }, [skillId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setProjectCardDensityHydrated(true);
+      return;
+    }
+
+    try {
+      const storedDensity = window.localStorage.getItem(
+        PROJECT_CARD_DENSITY_STORAGE_KEY
+      );
+      if (storedDensity === "small" || storedDensity === "large") {
+        setProjectCardDensity(storedDensity);
+      }
+    } catch {
+      // Ignore storage failures; the in-memory density still works.
+    } finally {
+      setProjectCardDensityHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!projectCardDensityHydrated || typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(
+        PROJECT_CARD_DENSITY_STORAGE_KEY,
+        projectCardDensity
+      );
+    } catch {
+      // Ignore storage failures; the density toggle should remain usable.
+    }
+  }, [projectCardDensity, projectCardDensityHydrated]);
 
   const getProjectPanelElement = useCallback((panel: ProjectSection) => {
     return panel === "completed"
@@ -371,6 +428,34 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       setProjectSection(panel);
     },
     [getProjectPanelHeight]
+  );
+
+  const handleProjectCardDensityToggle = useCallback(() => {
+    setProjectCardDensity((currentDensity) =>
+      currentDensity === "large" ? "small" : "large"
+    );
+  }, []);
+
+  const renderProjectCardDensityToggle = useCallback(
+    () => (
+      <button
+        type="button"
+        aria-label={
+          isSmallProjectCardDensity ? "Use large cards" : "Use small cards"
+        }
+        onClick={handleProjectCardDensityToggle}
+        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-white/[0.035] text-zinc-500 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-zinc-300 focus-visible:border-white/20 focus-visible:bg-white/[0.06] focus-visible:outline-none ${
+          isSmallProjectCardDensity ? "text-zinc-300" : ""
+        }`}
+      >
+        {isSmallProjectCardDensity ? (
+          <Grid2x2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+        ) : (
+          <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+        )}
+      </button>
+    ),
+    [handleProjectCardDensityToggle, isSmallProjectCardDensity]
   );
 
   const measureActiveProjectPanel = useCallback(() => {
@@ -425,7 +510,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
   useLayoutEffect(() => {
     measureActiveProjectPanel();
-  }, [measureActiveProjectPanel, openGoalId, projects]);
+  }, [measureActiveProjectPanel, openProjectKey, projectCardDensity, projects]);
 
   useEffect(() => {
     const activePanel = loading
@@ -727,6 +812,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
               name: task.name,
               stage: task.stage,
               skillId: task.skill_id ?? null,
+              skillIcon: resolveSkillEmoji(task.skill_id ?? null),
               priorityCode: task.priority ?? null,
               isNew: false,
             };
@@ -982,6 +1068,30 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     [baseGoals, fetchGoalForEditing]
   );
 
+  const handleProjectEditOpen = useCallback(
+    (
+      target: FabEditTarget,
+      _projectId: string,
+      _goalId: string,
+      origin: ProjectCardMorphOrigin | null
+    ) => {
+      setFabEditTarget({
+        ...target,
+        originRect:
+          target.originRect ??
+          (origin
+            ? {
+                top: origin.y,
+                left: origin.x,
+                width: origin.width,
+                height: origin.height,
+              }
+            : null),
+      });
+    },
+    []
+  );
+
   const handleTaskToggleCompletion = useCallback(
     async (
       goalId: string,
@@ -1063,104 +1173,6 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     [decorate]
   );
 
-  const handleProjectToggleCompletion = useCallback(
-    async (goalId: string, projectId: string) => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return;
-
-      const goalSnapshot = projects.find((goal) => goal.id === goalId);
-      const originalProject = goalSnapshot?.projects.find((project) => project.id === projectId);
-
-      const isCurrentlyCompleted = originalProject
-        ? isSkillProjectCompleted(originalProject)
-        : false;
-      const completedAt = isCurrentlyCompleted ? null : new Date().toISOString();
-
-      try {
-        const { error } = await supabase
-          .from("projects")
-          .update({ completed_at: completedAt })
-          .eq("id", projectId);
-
-        if (error) {
-          throw error;
-        }
-
-        setProjects((prev) =>
-          prev.map((goal) => {
-            if (goal.id !== goalId) return goal;
-
-            const updatedProjects = goal.projects.map((project) => {
-              if (project.id !== projectId) return project;
-
-              const schedulerTasks = project.tasks.map(toSchedulerTask);
-              const relatedTaskWeightSum = schedulerTasks.reduce(
-                (sum, task) => sum + taskWeight(task),
-                0
-              );
-              const projectWeightValue = projectWeight(
-                toSchedulerProject({
-                  id: project.id,
-                  priorityCode: project.priorityCode ?? undefined,
-                  stage: project.stage ?? undefined,
-                  dueDate: project.dueDate ?? null,
-                }),
-                relatedTaskWeightSum
-              );
-              const total = project.tasks.length;
-              const done = project.tasks.filter((task) => task.stage === "PERFECT").length;
-              const progress = completedAt
-                ? 100
-                : total
-                  ? Math.round((done / total) * 100)
-                  : 0;
-
-              return {
-                ...project,
-                completedAt,
-                completed_at: completedAt,
-                status: completedAt ? "Done" : "In-Progress",
-                progress,
-                weight: projectWeightValue,
-              };
-            });
-
-            const goalProgress =
-              updatedProjects.length > 0
-                ? Math.round(
-                    updatedProjects.reduce((sum, p) => sum + (p.progress ?? 0), 0) /
-                      updatedProjects.length
-                  )
-                : 0;
-            const goalCompleted = updatedProjects.every(isSkillProjectCompleted);
-
-            return decorate({
-              ...goal,
-              projects: updatedProjects,
-              progress: goalProgress,
-              status: goalCompleted ? "COMPLETED" : "ACTIVE",
-              active: !goalCompleted,
-            });
-          })
-        );
-
-        if (originalProject) {
-          void recordProjectCompletion(
-            {
-              projectId,
-              projectSkillIds: originalProject.skillIds,
-              taskSkillIds: (originalProject.tasks ?? []).map((task) => task.skillId),
-            },
-            completedAt ? "complete" : "undo"
-          );
-        }
-      } catch (err) {
-        console.error("Failed to toggle project completion", err);
-      }
-    },
-    [decorate, projects]
-  );
-
   const handleGoalUpdated = useCallback(
     async (updatedGoal: Goal, context: GoalUpdateContext) => {
       const supabase = getSupabaseBrowser();
@@ -1211,31 +1223,33 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
         );
         setEditingGoal(null);
         setDrawerOpen(false);
-        setOpenGoalId(null);
+        setOpenProjectKey(null);
       } catch (err) {
         console.error("Error deleting goal from skill view:", err);
       }
     },
-    [userId, setBaseGoals, setProjects, setEditingGoal, setDrawerOpen, setOpenGoalId, setUserId]
+    [userId, setBaseGoals, setProjects, setEditingGoal, setDrawerOpen, setUserId]
   );
 
   const handleGoalOpenChange = useCallback(
-    (goalId: string, isOpen: boolean) => {
+    (section: ProjectSection, goalId: string, isOpen: boolean) => {
+      const openKey = getProjectOpenKey(section, goalId);
       if (isOpen) {
-        setOpenGoalId(goalId);
+        setOpenProjectKey(openKey);
         return;
       }
-      setOpenGoalId((current) => (current === goalId ? null : current));
+      setOpenProjectKey((current) => (current === openKey ? null : current));
     },
     []
   );
 
   useEffect(() => {
-    if (!openGoalId) return;
-    if (!projects.some((goal) => goal.id === openGoalId)) {
-      setOpenGoalId(null);
+    if (!openProjectKey) return;
+    const [, goalId] = openProjectKey.split(":");
+    if (!goalId || !projects.some((goal) => goal.id === goalId)) {
+      setOpenProjectKey(null);
     }
-  }, [openGoalId, projects]);
+  }, [openProjectKey, projects]);
 
   const handleTaskCreate = useCallback((goalId: string) => {
     const targetGoal = projects.find((goal) => goal.id === goalId);
@@ -1316,11 +1330,15 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
         return;
       }
 
+      const newTaskSkillId = taskSkillIdInput || null;
       const newTask = {
         id: taskId,
         name: trimmedName,
         stage: taskStageInput,
-        skillId: taskSkillIdInput || null,
+        skillId: newTaskSkillId,
+        skillIcon:
+          skillOptions.find((skill) => skill.id === newTaskSkillId)?.icon ??
+          (newTaskSkillId === skillId ? icon ?? null : null),
         priorityCode: taskPriorityInput,
         isNew: false,
       };
@@ -1382,6 +1400,9 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     taskProjectIdInput,
     taskSkillIdInput,
     taskStageInput,
+    skillId,
+    skillOptions,
+    icon,
     userId,
   ]);
 
@@ -1411,11 +1432,11 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
   const filteredProjects = projectsBySection[projectSection];
 
   useEffect(() => {
-    if (!openGoalId) return;
-    if (!filteredProjects.some((goal) => goal.id === openGoalId)) {
-      setOpenGoalId(null);
+    if (!openProjectKey) return;
+    if (!filteredProjects.some((goal) => getProjectOpenKey(projectSection, goal.id) === openProjectKey)) {
+      setOpenProjectKey(null);
     }
-  }, [filteredProjects, openGoalId]);
+  }, [filteredProjects, openProjectKey, projectSection]);
 
   const renderProjectPanel = useCallback(
     (section: ProjectSection) => {
@@ -1444,7 +1465,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
 
 
       return (
-        <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className={projectGridClass}>
           {sectionProjects.map((goal) => (
             <div key={goal.id} className="skill-project-card-wrapper relative z-0 w-full isolate min-w-0">
               <GoalCard
@@ -1456,16 +1477,18 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
                 completionTheme="border"
                 projectDropdownMode="tasks-only"
                 onEdit={() => handleGoalEdit(goal)}
-                open={openGoalId === goal.id}
-                onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
+                open={openProjectKey === getProjectOpenKey(section, goal.id)}
+                onOpenChange={(isOpen) =>
+                  handleGoalOpenChange(section, goal.id, isOpen)
+                }
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(goal.id, projectId, updates)
                 }
+                onProjectEditOpen={(target, project, origin) =>
+                  handleProjectEditOpen(target, project.id, goal.id, origin)
+                }
                 onTaskToggleCompletion={handleTaskToggleCompletion}
                 onAddTask={handleTaskCreate}
-                onProjectHoldComplete={(goalId, projectId) =>
-                  handleProjectToggleCompletion(goalId, projectId)
-                }
                 onProjectDeleted={() => handleProjectDeleted(goal.id)}
               />
             </div>
@@ -1476,14 +1499,15 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     [
       projectsBySection,
       icon,
-      openGoalId,
+      projectGridClass,
+      openProjectKey,
       handleGoalEdit,
       handleGoalOpenChange,
       handleProjectUpdated,
+      handleProjectEditOpen,
       handleProjectDeleted,
       handleTaskCreate,
       handleTaskToggleCompletion,
-      handleProjectToggleCompletion,
     ]
   );
 
@@ -1496,20 +1520,27 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
               PROJECT LIBRARY
             </p>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
-          </span>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+              {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
+            </p>
+            {renderProjectCardDensityToggle()}
+          </div>
         </div>
         <div className="relative">
           {loading ? (
             <div
               ref={loadingProjectPanelRef}
-              className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+              className={projectGridClass}
             >
-              {Array.from({ length: 3 }).map((_, i) => (
+              {Array.from({ length: isSmallProjectCardDensity ? 8 : 3 }).map((_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-[100px] rounded-2xl bg-white/[0.06]"
+                  className={`bg-white/[0.06] ${
+                    isSmallProjectCardDensity
+                      ? "min-h-[70px] rounded-xl"
+                      : "h-[100px] rounded-2xl"
+                  }`}
                 />
               ))}
             </div>
@@ -1583,6 +1614,14 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
           })}
         </div>
       </section>
+      <LazyFab
+        editTarget={fabEditTarget}
+        onEditTargetChange={(target) => setFabEditTarget(target)}
+        onEditClose={() => setFabEditTarget(null)}
+        onEditSaved={loadProjects}
+        hideLauncher
+        portalToBody
+      />
       {taskFormOpenForGoalId ? (
         <div className="fixed inset-0 z-[85] flex items-center justify-center px-4 py-8">
           <button
@@ -1715,6 +1754,44 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       <style jsx global>{`
         .skill-projects-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
         .skill-projects-list .group:hover { transform: none !important; }
+        @media (max-width: 520px) {
+          .skill-projects-list .goal-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.4rem;
+            padding-left: 0;
+            padding-right: 0;
+          }
+          .skill-projects-list .goal-grid [data-variant="compact"] {
+            padding: 0.65rem 0.45rem;
+            border-radius: 1rem;
+            min-height: 108px;
+            aspect-ratio: auto;
+          }
+          .skill-projects-list .goal-grid [data-variant="compact"] button {
+            gap: 0.45rem;
+          }
+          .skill-projects-list
+            .goal-grid
+            [data-variant="compact"]
+            button
+            > div:first-of-type {
+            height: 1.85rem;
+            width: 1.85rem;
+            border-radius: 0.85rem;
+            font-size: 0.7rem;
+          }
+          .skill-projects-list .goal-grid [data-variant="compact"] h3 {
+            font-size: 0.5rem;
+            line-height: 1.15;
+            min-height: 0;
+            max-height: 3.45em;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        }
         @media (min-width: 640px) {
           .skill-projects-list .skill-project-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
         }
