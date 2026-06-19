@@ -13571,6 +13571,7 @@ export function Fab({
       onPopupExpandedChange={
         menuVariant === "default" ? handleNormalNexusExpandedChange : undefined
       }
+      useBlackSurface={isNormalFabNexusPage}
       markTimelineNexus={
         menuVariant === "timeline" && activeFabPageType === "nexus"
       }
@@ -18049,9 +18050,9 @@ export function Fab({
     isProjectCreationExpanded ||
     isTaskCreationExpanded ||
     isHabitCreationExpanded;
-  const shouldUseContentSizedFabStage =
-    isContentSizedCreationExpanded ||
-    (isNormalFabNexusPage && !isNormalFabNexusExpanded);
+  const shouldConstrainNormalFabNexusStage =
+    isNormalFabNexusPage && !isNormalFabNexusExpanded;
+  const shouldUseContentSizedFabStage = isContentSizedCreationExpanded;
   const goalCreationMinHeight = 240;
   const goalCenteredEditMinHeight = 320;
   const projectCreationMinHeight = 280;
@@ -18509,6 +18510,10 @@ export function Fab({
     (shouldUseCenteredEditModal ||
       shouldUseDirectCreationModal ||
       shouldAttachCreationControls);
+  const shouldUseCenteredFabScrollBody =
+    shouldUseCenteredEditModal || shouldUseCenteredCreationPanel;
+  const shouldUseCollapsedTimelineNexusBody =
+    !expanded && menuVariant === "timeline" && activeFabPageType === "nexus";
   const attachedCreationPanelBottom =
     expanded && isKeyboardVisible
       ? Math.round(stableSafeBottom + FAB_KEYBOARD_MODAL_GAP)
@@ -18743,6 +18748,7 @@ export function Fab({
                     expanded
                       ? "bg-[var(--surface-elevated)]"
                       : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
+                    isNormalFabNexusPage && "bg-black",
                     expanded &&
                       (shouldUseCenteredEditModal ||
                         shouldUseCenteredCreationPanel ||
@@ -18791,6 +18797,11 @@ export function Fab({
                         : staticBorderColor,
                     backgroundImage: isCompletedFabDrawer
                       ? "linear-gradient(155deg,rgba(34,197,94,0.94) 0%,rgba(22,163,74,0.97) 48%,rgba(21,128,61,0.98) 100%)"
+                      : isNormalFabNexusPage
+                        ? "none"
+                      : undefined,
+                    backgroundColor: isNormalFabNexusPage
+                      ? "rgba(0,0,0,0.98)"
                       : undefined,
                     transition: panelSizeTransition,
                     transformOrigin:
@@ -18878,27 +18889,38 @@ export function Fab({
                   ) : null}
                   <div
                     data-fab-scroll-body={
-                      shouldUseCenteredEditModal ||
-                      shouldUseCenteredCreationPanel ||
+                      shouldUseCenteredFabScrollBody ||
                       shouldUseScrollableFabBody ||
-                      isNormalFabNexusExpanded
+                      isNormalFabNexusExpanded ||
+                      shouldConstrainNormalFabNexusStage
                         ? ""
                         : undefined
                     }
                     className={cn(
-                      shouldUseCenteredEditModal
-                        ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
-                        : shouldUseCenteredCreationPanel
-                        ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
-                        : isNormalFabNexusExpanded
-                        ? "min-h-0 flex-1 basis-0 overflow-hidden"
-                        : !expanded && menuVariant === "timeline" && activeFabPageType === "nexus"
-                        ? "h-full min-h-0 overflow-hidden"
-                        : shouldUseScrollableFabBody
-                          ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
-                          : shouldRenderAttachedCreationControls
-                          ? "flex-none overflow-visible"
-                          : null,
+                      shouldUseCenteredFabScrollBody &&
+                        "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+                      !shouldUseCenteredFabScrollBody &&
+                        isNormalFabNexusExpanded &&
+                        "min-h-0 flex-1 basis-0 overflow-hidden",
+                      !shouldUseCenteredFabScrollBody &&
+                        shouldConstrainNormalFabNexusStage &&
+                        "h-full min-h-0 overflow-hidden",
+                      !shouldUseCenteredFabScrollBody &&
+                        shouldUseCollapsedTimelineNexusBody &&
+                        "h-full min-h-0 overflow-hidden",
+                      !shouldUseCenteredFabScrollBody &&
+                        !isNormalFabNexusExpanded &&
+                        !shouldConstrainNormalFabNexusStage &&
+                        !shouldUseCollapsedTimelineNexusBody &&
+                        shouldUseScrollableFabBody &&
+                        "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain",
+                      !shouldUseCenteredFabScrollBody &&
+                        !isNormalFabNexusExpanded &&
+                        !shouldConstrainNormalFabNexusStage &&
+                        !shouldUseCollapsedTimelineNexusBody &&
+                        !shouldUseScrollableFabBody &&
+                        shouldRenderAttachedCreationControls &&
+                        "flex-none overflow-visible",
                     )}
                   >
                     <motion.div
@@ -18908,8 +18930,15 @@ export function Fab({
                       )}
                       style={{
                         backgroundImage: isBlendingGradient
-                          ? blendedBackgroundImage
-                          : staticBackgroundImage,
+                          ? isNormalFabNexusPage
+                            ? "none"
+                            : blendedBackgroundImage
+                          : isNormalFabNexusPage
+                            ? "none"
+                            : staticBackgroundImage,
+                        backgroundColor: isNormalFabNexusPage
+                          ? "rgba(0,0,0,0.98)"
+                          : undefined,
                         borderRadius: "inherit",
                       }}
                     >
@@ -21276,6 +21305,7 @@ type FabNexusProps = {
   usePopupSizing?: boolean;
   popupExpanded?: boolean;
   onPopupExpandedChange?: (expanded: boolean) => void;
+  useBlackSurface?: boolean;
   markTimelineNexus?: boolean;
   embeddedExpanded?: boolean;
   onEmbeddedExpandedChange?: (expanded: boolean) => void;
@@ -21311,6 +21341,7 @@ function FabNexus({
   usePopupSizing = false,
   popupExpanded = false,
   onPopupExpandedChange,
+  useBlackSurface = false,
   markTimelineNexus = false,
   embeddedExpanded = false,
   onEmbeddedExpandedChange,
@@ -21425,7 +21456,11 @@ function FabNexus({
     <div
       data-fab-timeline-nexus={markTimelineNexus ? "true" : undefined}
       className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
-      style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
+      style={{
+        backgroundColor: useBlackSurface
+          ? "rgba(0,0,0,0.98)"
+          : "rgba(0,0,0,0.75)",
+      }}
     >
       <div className="shrink-0 px-4 pt-4">
         <div className="relative h-10">

@@ -65,6 +65,7 @@ import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 import {
   getDatabaseCreatedAtInitialFormValues,
+  isDefaultNutritionDatabaseDefinition,
   isLockedStarterDatabase,
   isLockedStarterDatabaseId,
   isDatabaseCreatedAtField,
@@ -212,6 +213,7 @@ const NOTE_DATABASE_FULL_TABLE_MIN_VISIBLE_ROWS = 40;
 const NOTE_DATABASE_FIELD_DRAG_ID_PREFIX = "database-field:";
 const NOTE_DATABASE_FIELD_LONG_PRESS_DELAY_MS = 425;
 const NOTE_DATABASE_FIELD_LONG_PRESS_TOLERANCE_PX = 8;
+const NUTRITION_MACRO_FIELD_KEYS = ["carbs", "protein", "fat"] as const;
 const NOTE_DATABASE_TITLE_FIELD_NAMES = new Set([
   "name",
   "title",
@@ -1448,6 +1450,21 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
   return field.name.trim() || (field.isTitle ? "Name" : "Untitled field");
 }
 
+type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
+
+function normalizeDatabaseFieldLookupKey(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function getNutritionMacroFieldKey(field: NoteDatabaseFieldDefinition): NutritionMacroFieldKey | null {
+  const normalizedName = normalizeDatabaseFieldLookupKey(getDatabaseFieldName(field));
+  const nameMatch = NUTRITION_MACRO_FIELD_KEYS.find((key) => normalizedName === key);
+  if (nameMatch) return nameMatch;
+
+  const idParts = field.id.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return NUTRITION_MACRO_FIELD_KEYS.find((key) => idParts.includes(key)) ?? null;
+}
+
 function getDatabaseEntryTitle(entry: NoteDatabaseEntry, definition: NoteDatabaseDefinition) {
   const titleField = getDatabaseTitleField(definition);
   if (!titleField) return "Untitled";
@@ -2514,9 +2531,109 @@ export function NoteDatabaseEntrySheet({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const databaseFields = getDatabaseFieldsWithTitleFirst(databaseDefinition);
   const databaseFormTitle = getDatabaseFormTitle(databaseDefinition.title);
+  const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
+  const nutritionMacroFields = isDefaultNutritionDatabase
+    ? NUTRITION_MACRO_FIELD_KEYS.map((macroKey) =>
+        databaseFields.find((field) => getNutritionMacroFieldKey(field) === macroKey),
+      ).filter((field): field is NoteDatabaseFieldDefinition => Boolean(field))
+    : [];
+  const shouldRenderNutritionMacroGrid =
+    isDefaultNutritionDatabase && nutritionMacroFields.length === NUTRITION_MACRO_FIELD_KEYS.length;
+  const nutritionMacroFieldIds = new Set(nutritionMacroFields.map((field) => field.id));
+  const firstNutritionMacroFieldIndex = shouldRenderNutritionMacroGrid
+    ? Math.min(...nutritionMacroFields.map((macroField) => databaseFields.indexOf(macroField)))
+    : -1;
 
   function updateEntryFormValue(fieldId: string, value: string) {
     setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
+  }
+
+  function renderDatabaseEntryField(
+    field: NoteDatabaseFieldDefinition,
+    options: { compact?: boolean } = {},
+  ) {
+    const fieldName = getDatabaseFieldName(field);
+    const fieldValue = entryFormValues[field.id] ?? "";
+    const isCreatedAtField = isDatabaseCreatedAtField(field);
+    const inputClassName = options.compact
+      ? "mt-1.5 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-2 py-2 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]"
+      : "mt-2 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]";
+
+    return (
+      <label key={field.id} className={options.compact ? "block min-w-0" : "block"}>
+        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
+          <span className="min-w-0 truncate">{field.isTitle ? "Title" : fieldName}</span>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {field.isTitle ? (
+              <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
+                {fieldName}
+              </span>
+            ) : null}
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
+              {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
+            </span>
+          </span>
+        </span>
+        {isCreatedAtField ? (
+          <input
+            readOnly
+            value={formatDatabaseEntryValue(fieldValue, field.type)}
+            className={`${inputClassName} cursor-default text-white/46`}
+            aria-label={`${fieldName} is set automatically`}
+          />
+        ) : field.type === "longText" ? (
+          <textarea
+            value={fieldValue}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            rows={4}
+            className={`${inputClassName} resize-none`}
+            placeholder={fieldName}
+          />
+        ) : field.type === "number" ? (
+          <input
+            type="number"
+            value={fieldValue}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            className={inputClassName}
+            placeholder={fieldName}
+          />
+        ) : field.type === "rating" ? (
+          <input
+            type="number"
+            min={1}
+            max={5}
+            step={1}
+            value={fieldValue}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            className={inputClassName}
+            placeholder="1-5"
+          />
+        ) : field.type === "date" ? (
+          <input
+            type="date"
+            value={fieldValue}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            className={inputClassName}
+          />
+        ) : field.type === "photo" ? (
+          <input
+            disabled
+            readOnly
+            value=""
+            className={`${inputClassName} cursor-not-allowed text-white/28`}
+            placeholder="Photo field coming later"
+          />
+        ) : (
+          <input
+            type="text"
+            value={fieldValue}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            className={inputClassName}
+            placeholder={field.type === "select" ? "Select value" : fieldName}
+          />
+        )}
+      </label>
+    );
   }
 
   async function saveDatabaseEntry() {
@@ -2588,91 +2705,23 @@ export function NoteDatabaseEntrySheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
           {databaseFields.length > 0 ? (
-            <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
-              {databaseFields.map((field) => {
-                const fieldName = getDatabaseFieldName(field);
-                const fieldValue = entryFormValues[field.id] ?? "";
-                const isCreatedAtField = isDatabaseCreatedAtField(field);
-                const inputClassName =
-                  "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
+            <div className="space-y-4">
+              {databaseFields.map((field, fieldIndex) => {
+                if (shouldRenderNutritionMacroGrid && nutritionMacroFieldIds.has(field.id)) {
+                  if (fieldIndex !== firstNutritionMacroFieldIndex) return null;
 
-                return (
-                  <label key={field.id} className="block px-4 py-3">
-                    <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
-                      <span className="min-w-0 truncate">
-                        {field.isTitle ? "Title" : fieldName}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        {field.isTitle ? (
-                          <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
-                            {fieldName}
-                          </span>
-                        ) : null}
-                        <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
-                          {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
-                        </span>
-                      </span>
-                    </span>
-                    {isCreatedAtField ? (
-                      <input
-                        readOnly
-                        value={formatDatabaseEntryValue(fieldValue, field.type)}
-                        className={`${inputClassName} cursor-default text-white/46`}
-                        aria-label={`${fieldName} is set automatically`}
-                      />
-                    ) : field.type === "longText" ? (
-                      <textarea
-                        value={fieldValue}
-                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
-                        rows={4}
-                        className={`${inputClassName} resize-none`}
-                        placeholder={fieldName}
-                      />
-                    ) : field.type === "number" ? (
-                      <input
-                        type="number"
-                        value={fieldValue}
-                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
-                        className={inputClassName}
-                        placeholder={fieldName}
-                      />
-                    ) : field.type === "rating" ? (
-                      <input
-                        type="number"
-                        min={1}
-                        max={5}
-                        step={1}
-                        value={fieldValue}
-                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
-                        className={inputClassName}
-                        placeholder="1-5"
-                      />
-                    ) : field.type === "date" ? (
-                      <input
-                        type="date"
-                        value={fieldValue}
-                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
-                        className={inputClassName}
-                      />
-                    ) : field.type === "photo" ? (
-                      <input
-                        disabled
-                        readOnly
-                        value=""
-                        className={`${inputClassName} cursor-not-allowed text-white/28`}
-                        placeholder="Photo field coming later"
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={fieldValue}
-                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
-                        className={inputClassName}
-                        placeholder={field.type === "select" ? "Select value" : fieldName}
-                      />
-                    )}
-                  </label>
-                );
+                  return (
+                    <div key="nutrition-macro-fields" className="grid grid-cols-3 gap-2">
+                      {nutritionMacroFields.map((macroField) => (
+                        <div key={macroField.id} className="min-w-0">
+                          {renderDatabaseEntryField(macroField, { compact: true })}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+
+                return renderDatabaseEntryField(field);
               })}
             </div>
           ) : (
