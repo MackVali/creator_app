@@ -4,6 +4,7 @@ import {
   useCallback,
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   type CSSProperties,
   type MouseEvent,
@@ -160,6 +161,27 @@ function getElementBorderRadius(element: HTMLElement) {
   return Number.isFinite(radius) ? radius : MONUMENT_CARD_BORDER_RADIUS;
 }
 
+function scrollMonumentDashboardPageToTop() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const scrollTarget =
+    document.scrollingElement instanceof HTMLElement
+      ? document.scrollingElement
+      : document.documentElement;
+
+  if (scrollTarget.scrollTop <= 0 && window.scrollY <= 0) {
+    return;
+  }
+
+  scrollTarget.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "auto",
+  });
+}
+
 export function MonumentGridWithSharedTransition({
   monuments,
   showNewCard = true,
@@ -298,15 +320,13 @@ export function MonumentGridWithSharedTransition({
     };
   }, [activeId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!activeId) return;
 
-    requestAnimationFrame(() => {
-      detailOverlayScrollRef.current?.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: "auto",
-      });
+    detailOverlayScrollRef.current?.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "auto",
     });
   }, [activeId]);
 
@@ -398,6 +418,8 @@ export function MonumentGridWithSharedTransition({
     if (sourceRect.width <= 0 || sourceRect.height <= 0) {
       return;
     }
+
+    scrollMonumentDashboardPageToTop();
 
     const nextViewport = getDashboardDetailViewport();
     const targetRect = getDashboardDetailPopupRect(nextViewport);

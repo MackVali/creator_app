@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -559,29 +560,26 @@ export function MonumentDetail({
     setGoalSection("active");
   }, [id, monument.title, monument.emoji]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     detailScrollRef.current = getScrollParent(detailSurfaceRef.current);
   }, []);
 
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      detailScrollRef.current =
-        detailScrollRef.current ?? getScrollParent(detailSurfaceRef.current);
+  useLayoutEffect(() => {
+    detailScrollRef.current = getScrollParent(detailSurfaceRef.current);
 
-      detailScrollRef.current?.scrollTo({
+    detailScrollRef.current?.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "auto",
+    });
+
+    if (!suppressWindowScrollReset) {
+      window.scrollTo({
         top: 0,
         left: 0,
         behavior: "auto",
       });
-
-      if (!suppressWindowScrollReset) {
-        window.scrollTo({
-          top: 0,
-          left: 0,
-          behavior: "auto",
-        });
-      }
-    });
+    }
   }, [id, suppressWindowScrollReset]);
 
   useEffect(() => {
