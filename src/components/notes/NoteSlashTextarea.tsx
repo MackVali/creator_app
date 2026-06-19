@@ -2498,11 +2498,225 @@ function findListSelectionForCaret(nextSegments: NoteSegment[], caretOffset: num
   return null;
 }
 
+export function NoteDatabaseEntrySheet({
+  databaseDefinition,
+  onClose,
+  onSaveEntry,
+}: {
+  databaseDefinition: NoteDatabaseDefinition;
+  onClose: () => void;
+  onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
+}) {
+  const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>(() =>
+    getDatabaseEntryInitialFormValues(databaseDefinition, new Date().toISOString()),
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const databaseFields = getDatabaseFieldsWithTitleFirst(databaseDefinition);
+  const databaseFormTitle = getDatabaseFormTitle(databaseDefinition.title);
+
+  function updateEntryFormValue(fieldId: string, value: string) {
+    setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
+  }
+
+  async function saveDatabaseEntry() {
+    if (isSubmitting) return;
+
+    const now = new Date().toISOString();
+    const values = databaseFields.reduce<Record<string, unknown>>(
+      (nextValues, field) => {
+        const rawValue = entryFormValues[field.id] ?? "";
+        const value = getDatabaseEntryFieldValue(field, rawValue);
+
+        if (isUsefulDatabaseEntryValue(value)) {
+          nextValues[field.id] = value;
+        }
+
+        return nextValues;
+      },
+      {},
+    );
+    const nextEntry: NoteDatabaseEntry = {
+      id: buildClientDatabaseEntryId(),
+      createdAt: now,
+      updatedAt: now,
+      values,
+    };
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSaveEntry(nextEntry);
+      onClose();
+    } catch (error) {
+      console.error("Failed to save database entry", { error, databaseId: databaseDefinition.id });
+      setSubmitError("Unable to save entry right now.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="note-database-entry-form-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
+        <div className="relative border-b border-white/[0.04] px-4 py-4">
+          <h2
+            id="note-database-entry-form-title"
+            className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
+          >
+            {databaseFormTitle}
+          </h2>
+          <button
+            type="button"
+            aria-label="Close entry form"
+            onClick={onClose}
+            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+          {databaseFields.length > 0 ? (
+            <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
+              {databaseFields.map((field) => {
+                const fieldName = getDatabaseFieldName(field);
+                const fieldValue = entryFormValues[field.id] ?? "";
+                const isCreatedAtField = isDatabaseCreatedAtField(field);
+                const inputClassName =
+                  "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
+
+                return (
+                  <label key={field.id} className="block px-4 py-3">
+                    <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
+                      <span className="min-w-0 truncate">
+                        {field.isTitle ? "Title" : fieldName}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {field.isTitle ? (
+                          <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
+                            {fieldName}
+                          </span>
+                        ) : null}
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
+                          {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
+                        </span>
+                      </span>
+                    </span>
+                    {isCreatedAtField ? (
+                      <input
+                        readOnly
+                        value={formatDatabaseEntryValue(fieldValue, field.type)}
+                        className={`${inputClassName} cursor-default text-white/46`}
+                        aria-label={`${fieldName} is set automatically`}
+                      />
+                    ) : field.type === "longText" ? (
+                      <textarea
+                        value={fieldValue}
+                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                        rows={4}
+                        className={`${inputClassName} resize-none`}
+                        placeholder={fieldName}
+                      />
+                    ) : field.type === "number" ? (
+                      <input
+                        type="number"
+                        value={fieldValue}
+                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                        className={inputClassName}
+                        placeholder={fieldName}
+                      />
+                    ) : field.type === "rating" ? (
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        step={1}
+                        value={fieldValue}
+                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                        className={inputClassName}
+                        placeholder="1-5"
+                      />
+                    ) : field.type === "date" ? (
+                      <input
+                        type="date"
+                        value={fieldValue}
+                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                        className={inputClassName}
+                      />
+                    ) : field.type === "photo" ? (
+                      <input
+                        disabled
+                        readOnly
+                        value=""
+                        className={`${inputClassName} cursor-not-allowed text-white/28`}
+                        placeholder="Photo field coming later"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={fieldValue}
+                        onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                        className={inputClassName}
+                        placeholder={field.type === "select" ? "Select value" : fieldName}
+                      />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
+              Add fields in the builder before creating entries.
+            </div>
+          )}
+        </div>
+
+        {submitError ? (
+          <p className="border-t border-white/[0.04] px-4 pt-3 text-center text-xs font-medium text-red-200/78">
+            {submitError}
+          </p>
+        ) : null}
+
+        <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:text-white/28"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={databaseFields.length === 0 || isSubmitting}
+            onClick={saveDatabaseEntry}
+            className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+          >
+            {isSubmitting ? "Saving..." : "Save entry"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function NoteDatabaseFocusedView({
   autosaveLabel = "Autosaved",
   databaseDefinitions,
   databaseEntries,
   databaseId,
+  openEntrySheetKey,
   noteContent,
   noteTitle,
   onBack,
@@ -2514,6 +2728,7 @@ export function NoteDatabaseFocusedView({
   databaseDefinitions?: NoteDatabaseDefinitions | null;
   databaseEntries?: NoteDatabaseEntries | null;
   databaseId: string;
+  openEntrySheetKey?: string | null;
   noteContent: string;
   noteTitle?: string;
   onBack: () => void;
@@ -2523,9 +2738,10 @@ export function NoteDatabaseFocusedView({
 }) {
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
+  const [entrySheetKey, setEntrySheetKey] = useState(0);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [draftField, setDraftField] = useState<NoteDatabaseFieldDefinition | null>(null);
-  const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>({});
+  const lastOpenEntrySheetKeyRef = useRef<string | null>(null);
   const segments = useMemo(() => parseNoteSegments(noteContent), [noteContent]);
   const databaseSegment = useMemo(
     () =>
@@ -2551,7 +2767,6 @@ export function NoteDatabaseFocusedView({
   const titleField = databaseDefinition ? getDatabaseTitleField(databaseDefinition) : null;
   const entries = databaseEntries?.[databaseId] ?? [];
   const displayTitle = getDatabaseDisplayTitle(databaseDefinition?.title ?? databaseSegment?.title);
-  const databaseFormTitle = getDatabaseFormTitle(databaseDefinition?.title ?? databaseSegment?.title);
   const parentNoteTitle = noteTitle?.trim() || "Note";
   const isStarterDatabaseSchemaLocked = isLockedStarterDatabase(databaseDefinition);
   const editingField =
@@ -2586,6 +2801,20 @@ export function NoteDatabaseFocusedView({
     setEditingFieldId(null);
     setDraftField(null);
   }, [isStarterDatabaseSchemaLocked]);
+
+  useEffect(() => {
+    if (
+      !openEntrySheetKey ||
+      lastOpenEntrySheetKeyRef.current === openEntrySheetKey ||
+      !databaseDefinition
+    ) {
+      return;
+    }
+
+    lastOpenEntrySheetKeyRef.current = openEntrySheetKey;
+    setEntrySheetKey((currentKey) => currentKey + 1);
+    setIsEntrySheetOpen(true);
+  }, [databaseDefinition, openEntrySheetKey]);
 
   function updateDatabaseDefinition(
     getNextDefinition: (currentDefinition: NoteDatabaseDefinition) => NoteDatabaseDefinition,
@@ -2771,53 +3000,23 @@ export function NoteDatabaseFocusedView({
   }
 
   function openDatabaseEntrySheet() {
-    setEntryFormValues(
-      databaseDefinition
-        ? getDatabaseEntryInitialFormValues(databaseDefinition, new Date().toISOString())
-        : {},
-    );
+    setEntrySheetKey((currentKey) => currentKey + 1);
     setIsEntrySheetOpen(true);
   }
 
   function closeDatabaseEntrySheet() {
     setIsEntrySheetOpen(false);
-    setEntryFormValues({});
   }
 
-  function updateEntryFormValue(fieldId: string, value: string) {
-    setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
-  }
-
-  function saveDatabaseEntry() {
+  function saveDatabaseEntry(nextEntry: NoteDatabaseEntry) {
     if (!databaseDefinition) return;
 
-    const now = new Date().toISOString();
-    const values = databaseFields.reduce<Record<string, unknown>>(
-      (nextValues, field) => {
-        const rawValue = entryFormValues[field.id] ?? "";
-        const value = getDatabaseEntryFieldValue(field, rawValue);
-
-        if (isUsefulDatabaseEntryValue(value)) {
-          nextValues[field.id] = value;
-        }
-
-        return nextValues;
-      },
-      {},
-    );
-    const nextEntry: NoteDatabaseEntry = {
-      id: buildClientDatabaseEntryId(),
-      createdAt: now,
-      updatedAt: now,
-      values,
-    };
     const currentEntries = databaseEntries ?? {};
 
     onDatabaseEntriesChange?.({
       ...currentEntries,
       [databaseDefinition.id]: [...(currentEntries[databaseDefinition.id] ?? []), nextEntry],
     });
-    closeDatabaseEntrySheet();
   }
 
   if (!databaseSegment || !databaseDefinition || !activeDatabaseView) {
@@ -3010,160 +3209,12 @@ export function NoteDatabaseFocusedView({
       ) : null}
 
       {isEntrySheetOpen ? (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="note-database-entry-form-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeDatabaseEntrySheet();
-            }
-          }}
-        >
-          <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
-            <div className="relative border-b border-white/[0.04] px-4 py-4">
-              <h2
-                id="note-database-entry-form-title"
-                className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
-              >
-                {databaseFormTitle}
-              </h2>
-              <button
-                type="button"
-                aria-label="Close entry form"
-                onClick={closeDatabaseEntrySheet}
-                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
-              {databaseFields.length > 0 ? (
-                <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
-                  {databaseFields.map((field) => {
-                    const fieldName = getDatabaseFieldName(field);
-                    const fieldValue = entryFormValues[field.id] ?? "";
-                    const isCreatedAtField = isDatabaseCreatedAtField(field);
-                    const inputClassName =
-                      "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
-
-                    return (
-                      <label key={field.id} className="block px-4 py-3">
-                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
-                          <span className="min-w-0 truncate">
-                            {field.isTitle ? "Title" : fieldName}
-                          </span>
-                          <span className="flex shrink-0 items-center gap-1.5">
-                            {field.isTitle ? (
-                              <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
-                                {fieldName}
-                              </span>
-                            ) : null}
-                            <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
-                              {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
-                            </span>
-                          </span>
-                        </span>
-                        {isCreatedAtField ? (
-                          <input
-                            readOnly
-                            value={formatDatabaseEntryValue(fieldValue, field.type)}
-                            className={`${inputClassName} cursor-default text-white/46`}
-                            aria-label={`${fieldName} is set automatically`}
-                          />
-                        ) : field.type === "longText" ? (
-                          <textarea
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            rows={4}
-                            className={`${inputClassName} resize-none`}
-                            placeholder={fieldName}
-                          />
-                        ) : field.type === "number" ? (
-                          <input
-                            type="number"
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                            placeholder={fieldName}
-                          />
-                        ) : field.type === "rating" ? (
-                          <input
-                            type="number"
-                            min={1}
-                            max={5}
-                            step={1}
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                            placeholder="1-5"
-                          />
-                        ) : field.type === "date" ? (
-                          <input
-                            type="date"
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                          />
-                        ) : field.type === "photo" ? (
-                          <input
-                            disabled
-                            readOnly
-                            value=""
-                            className={`${inputClassName} cursor-not-allowed text-white/28`}
-                            placeholder="Photo field coming later"
-                          />
-                        ) : (
-                          <input
-                            type="text"
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                            placeholder={field.type === "select" ? "Select value" : fieldName}
-                          />
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
-                  Add fields in the builder before creating entries.
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
-              <button
-                type="button"
-                onClick={closeDatabaseEntrySheet}
-                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={databaseFields.length === 0}
-                onClick={saveDatabaseEntry}
-                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
-              >
-                Save entry
-              </button>
-            </div>
-          </div>
-        </div>
+        <NoteDatabaseEntrySheet
+          key={entrySheetKey}
+          databaseDefinition={databaseDefinition}
+          onClose={closeDatabaseEntrySheet}
+          onSaveEntry={saveDatabaseEntry}
+        />
       ) : null}
 
       {isBuilderOpen && !isStarterDatabaseSchemaLocked ? (

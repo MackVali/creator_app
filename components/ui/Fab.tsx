@@ -4478,9 +4478,6 @@ export function Fab({
   const [habitFixedEndTime, setHabitFixedEndTime] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
   const [habitCircleId, setHabitCircleId] = useState<string | "">("");
-  const [habitLastCompletedAt, setHabitLastCompletedAt] = useState<
-    string | null
-  >(null);
   const [habitRoutines, setHabitRoutines] = useState<FabHabitRoutineOption[]>(
     [],
   );
@@ -4610,7 +4607,6 @@ export function Fab({
     setHabitFixedEndTime("");
     setHabitRoutineId("");
     setHabitCircleId("");
-    setHabitLastCompletedAt(null);
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
@@ -4712,12 +4708,6 @@ export function Fab({
             ? draft.fixedEndLocal
             : null,
         ),
-      );
-      setHabitLastCompletedAt(
-        typeof draft?.lastCompletedAt === "string" &&
-          draft.lastCompletedAt.trim().length > 0
-          ? draft.lastCompletedAt
-          : null,
       );
     },
     [defaultHabitRecurrence, defaultHabitType],
@@ -7806,7 +7796,6 @@ export function Fab({
     setHabitFixedEndTime("");
     setHabitRoutineId("");
     setHabitCircleId("");
-    setHabitLastCompletedAt(null);
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
@@ -13582,6 +13571,9 @@ export function Fab({
       onPopupExpandedChange={
         menuVariant === "default" ? handleNormalNexusExpandedChange : undefined
       }
+      markTimelineNexus={
+        menuVariant === "timeline" && activeFabPageType === "nexus"
+      }
       showToolbar
     />
   );
@@ -18024,6 +18016,8 @@ export function Fab({
   const isProjectCreationExpanded = expanded && selected === "PROJECT";
   const isTaskCreationExpanded = expanded && selected === "TASK";
   const isHabitCreationExpanded = expanded && selected === "HABIT";
+  const isHabitEditModal =
+    shouldUseCenteredEditModal && editTarget?.entityType === "HABIT";
   const editTargetCompletedHint = editHydrating
     ? getFabEditTargetCompletedHint(editTarget)
     : false;
@@ -18045,16 +18039,11 @@ export function Fab({
     (Boolean(taskCompletedAt) ||
       taskStage === "PERFECT" ||
       editTargetCompletedHint);
-  const isCompletedHabitFabDrawer =
-    shouldUseCenteredEditModal &&
-    editTarget?.entityType === "HABIT" &&
-    selected === "HABIT" &&
-    Boolean(habitLastCompletedAt);
   const isCompletedFabDrawer =
-    isCompletedProjectFabDrawer ||
-    isCompletedGoalFabDrawer ||
-    isCompletedTaskFabDrawer ||
-    isCompletedHabitFabDrawer;
+    !isHabitEditModal &&
+    (isCompletedProjectFabDrawer ||
+      isCompletedGoalFabDrawer ||
+      isCompletedTaskFabDrawer);
   const isContentSizedCreationExpanded =
     isGoalCreationExpanded ||
     isProjectCreationExpanded ||
@@ -21287,6 +21276,7 @@ type FabNexusProps = {
   usePopupSizing?: boolean;
   popupExpanded?: boolean;
   onPopupExpandedChange?: (expanded: boolean) => void;
+  markTimelineNexus?: boolean;
   embeddedExpanded?: boolean;
   onEmbeddedExpandedChange?: (expanded: boolean) => void;
   inputRef?: RefObject<HTMLInputElement | null>;
@@ -21321,6 +21311,7 @@ function FabNexus({
   usePopupSizing = false,
   popupExpanded = false,
   onPopupExpandedChange,
+  markTimelineNexus = false,
   embeddedExpanded = false,
   onEmbeddedExpandedChange,
   inputRef,
@@ -21432,6 +21423,7 @@ function FabNexus({
 
   return (
     <div
+      data-fab-timeline-nexus={markTimelineNexus ? "true" : undefined}
       className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >

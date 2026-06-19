@@ -220,16 +220,43 @@ const TIMELINE_COMPACT_CARD_SHADOW =
 const TIMELINE_RESTING_CARD_SHADOW =
   "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const FOCUS_POMO_COMPLETE_BACKGROUND =
-  "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)";
+  "linear-gradient(155deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 48%, rgb(21, 128, 61) 100%)";
 const FOCUS_POMO_COMPLETE_SHADOW =
   "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -2px 8px rgba(0, 0, 0, 0.11), inset 0 0 0 1px rgba(0, 0, 0, 0.08)";
 const FOCUS_POMO_COMPLETE_OUTLINE = "1px solid rgba(22, 101, 52, 0.42)";
 const FOCUS_POMO_COMPLETE_EFFECT_CLASSES =
   "shimmer-border-complete focus-pomo-start-glint z-0 [&>.absolute]:!absolute";
+const TIMELINE_DARK_EVENT_BACKGROUND =
+  "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgb(8, 8, 10) 0%, rgb(22, 22, 26) 42%, rgb(88, 90, 104) 100%)";
+const TIMELINE_NEUTRAL_EVENT_BACKGROUND =
+  "linear-gradient(135deg, rgb(46, 46, 52) 0%, rgb(58, 58, 66) 45%, rgb(82, 82, 92) 100%)";
+const TIMELINE_SHINY_TASK_BACKGROUND =
+  "linear-gradient(135deg, rgb(52, 52, 60) 0%, rgb(82, 84, 94) 40%, rgb(158, 162, 174) 100%)";
+const TIMELINE_FALLBACK_TASK_BACKGROUND =
+  "linear-gradient(135deg, rgb(44, 44, 52) 0%, rgb(68, 70, 80) 38%, rgb(120, 126, 138) 100%)";
+const TIMELINE_CHORE_EVENT_BACKGROUND =
+  "radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.34), transparent 58%), linear-gradient(135deg, rgb(127, 29, 29) 0%, rgb(185, 28, 28) 48%, rgb(239, 68, 68) 100%)";
+const TIMELINE_RELAXER_EVENT_BACKGROUND =
+  "radial-gradient(circle at 8% -18%, rgba(6, 95, 70, 0.34), transparent 60%), linear-gradient(138deg, rgb(3, 24, 18) 0%, rgb(5, 68, 51) 48%, rgb(6, 95, 70) 100%)";
+const TIMELINE_SYNC_EVENT_BACKGROUND =
+  "radial-gradient(circle at 12% -20%, rgba(226, 232, 240, 0.34), transparent 58%), linear-gradient(135deg, rgb(82, 82, 91) 0%, rgb(113, 113, 122) 48%, rgb(161, 161, 170) 100%)";
+const TIMELINE_PRACTICE_EVENT_BACKGROUND =
+  "radial-gradient(circle at 6% -14%, rgba(79, 70, 229, 0.22), transparent 60%), linear-gradient(142deg, rgb(8, 9, 20) 0%, rgb(24, 27, 51) 46%, rgb(50, 55, 92) 100%)";
 const SCHEDULE_SCHEDULER_RUNNING_EVENT =
   "schedule:scheduler-running-changed";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
+
+function getTimelineHabitEventBackground(normalizedHabitType: string) {
+  if (normalizedHabitType === "CHORE") return TIMELINE_CHORE_EVENT_BACKGROUND;
+  if (normalizedHabitType === "RELAXER")
+    return TIMELINE_RELAXER_EVENT_BACKGROUND;
+  if (normalizedHabitType === "PRACTICE")
+    return TIMELINE_PRACTICE_EVENT_BACKGROUND;
+  if (normalizedHabitType === "SYNC" || normalizedHabitType === "MEMO")
+    return TIMELINE_SYNC_EVENT_BACKGROUND;
+  return TIMELINE_DARK_EVENT_BACKGROUND;
+}
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   "--timeline-label-column": TIMELINE_LABEL_COLUMN_FALLBACK,
@@ -2014,6 +2041,7 @@ function applyTimelineLayoutStyle(
     baseStyle.left = TIMELINE_LEFT_OFFSET;
     baseStyle.width = TIMELINE_PAIR_WIDTH;
     baseStyle.right = undefined;
+    baseStyle.clipPath = "inset(-80px 0 -80px -80px)";
   } else if (mode === "paired-right") {
     const laneLayout = options?.laneLayout;
     const laneCount = Math.max(1, laneLayout?.laneCount ?? 1);
@@ -3947,8 +3975,19 @@ export default function ScheduleTabContent({
     const recompute = () => {
       if (!zoomLayoutSyncReadyRef.current) return;
       if (pinchActiveRef.current) return;
+      const visualViewport = window.visualViewport;
+      const activeElement = document.activeElement;
+      const isTimelineNexusFocused =
+        activeElement instanceof Element &&
+        Boolean(
+          activeElement.closest('[data-fab-timeline-nexus="true"]'),
+        );
+      const isKeyboardLikeViewportShrink =
+        typeof visualViewport?.height === "number" &&
+        window.innerHeight - visualViewport.height >= 80;
+      if (isTimelineNexusFocused && isKeyboardLikeViewportShrink) return;
       const viewportHeight =
-        window.visualViewport?.height ?? window.innerHeight;
+        visualViewport?.height ?? window.innerHeight;
       const density = determineDensity(viewportHeight);
       applyDensity(density);
     };
@@ -8162,10 +8201,14 @@ export default function ScheduleTabContent({
               const habitCornerClass = getTimelineCardCornerClass(layoutMode);
               const useCompactShadow =
                 habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX;
+              const isSyncLikeHabitCard =
+                normalizedHabitType === "SYNC" || normalizedHabitType === "MEMO";
               const isCompletedHabitCard = isHabitCompleted;
-              const habitCardShadowBase = useCompactShadow
-                ? HABIT_COMPACT_SHADOW
-                : cardShadow;
+              const habitCardShadowBase = isSyncLikeHabitCard
+                ? cardShadow
+                : useCompactShadow
+                  ? HABIT_COMPACT_SHADOW
+                  : cardShadow;
               const habitCardShadow = isCompletedHabitCard
                 ? FOCUS_POMO_COMPLETE_SHADOW
                 : habitCardShadowBase;
@@ -8192,9 +8235,7 @@ export default function ScheduleTabContent({
                 background:
                   isHabitCompleted
                     ? FOCUS_POMO_COMPLETE_BACKGROUND
-                    : normalizedHabitType === "HABIT"
-                    ? "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)"
-                    : undefined,
+                    : getTimelineHabitEventBackground(normalizedHabitType),
               };
               const hasHabitInstance = Boolean(placement.habitId);
               const habitBounceActive =
@@ -8361,9 +8402,13 @@ export default function ScheduleTabContent({
                 return null;
               }
 
+              const habitLayerZIndex =
+                isSyncLikeHabitCard && layoutMode === "paired-right"
+                  ? stackingZIndex + 1
+                  : stackingZIndex;
               const layeredCardStyle = {
                 ...cardStyle,
-                zIndex: stackingZIndex,
+                zIndex: habitLayerZIndex,
               };
 
               return (
@@ -8409,7 +8454,7 @@ export default function ScheduleTabContent({
                         ? "habit-card--completed"
                         : "habit-card--scheduled",
                       disableHabitInteractions
-                        ? "pointer-events-none cursor-default opacity-90"
+                        ? "pointer-events-none cursor-default"
                         : "cursor-pointer"
                     )}
                     role="button"
@@ -8659,7 +8704,7 @@ export default function ScheduleTabContent({
                 };
                 const projectBackground = isCompleted
                   ? FOCUS_POMO_COMPLETE_BACKGROUND
-                  : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
+                  : TIMELINE_DARK_EVENT_BACKGROUND;
                 const resolvedProjectShadow = isCompleted
                   ? FOCUS_POMO_COMPLETE_SHADOW
                   : sharedCardShadow;
@@ -9052,10 +9097,10 @@ export default function ScheduleTabContent({
                                 const baseTaskClasses =
                                   "absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2 select-none";
                                 const shinyTaskClasses =
-                                  "bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
-                                const completedTaskClasses = `${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 backdrop-blur`;
+                                  "text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
+                                const completedTaskClasses = `${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 backdrop-blur`;
                                 const fallbackTaskClasses =
-                                  "bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]";
+                                  "text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]";
                                 const isFallbackCard = kind === "fallback";
                                 const fallbackStage = task.stage
                                   ? task.stage.toString().toUpperCase()
@@ -9111,6 +9156,11 @@ export default function ScheduleTabContent({
                                   top: `${topPercent}%`,
                                   height: `${heightPercent}%`,
                                   ...sharedCardStyle,
+                                  background: isCompleted
+                                    ? FOCUS_POMO_COMPLETE_BACKGROUND
+                                    : isFallbackCard
+                                      ? TIMELINE_FALLBACK_TASK_BACKGROUND
+                                      : TIMELINE_SHINY_TASK_BACKGROUND,
                                   ...(isCompleted
                                     ? {
                                         boxShadow: FOCUS_POMO_COMPLETE_SHADOW,
@@ -9408,6 +9458,9 @@ export default function ScheduleTabContent({
                         ? FOCUS_POMO_COMPLETE_OUTLINE
                         : "1px solid var(--event-border)",
                       outlineOffset: "-1px",
+                      background: isCompleted
+                        ? FOCUS_POMO_COMPLETE_BACKGROUND
+                        : TIMELINE_NEUTRAL_EVENT_BACKGROUND,
                     },
                     layoutMode,
                     { animate: !prefersReducedMotion }
@@ -9422,8 +9475,8 @@ export default function ScheduleTabContent({
                     : "text-sm font-medium leading-tight truncate";
                   const standaloneBaseClass =
                     "absolute flex items-center justify-between px-3 py-2";
-                  const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)] bg-[linear-gradient(135deg,_rgba(46,46,52,0.94)_0%,_rgba(58,58,66,0.92)_45%,_rgba(82,82,92,0.88)_100%)]`;
-                  const standaloneCompletedClass = `${standaloneBaseClass} ${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45`;
+                  const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)]`;
+                  const standaloneCompletedClass = `${standaloneBaseClass} ${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45`;
                   const standaloneCornerClass =
                     getTimelineCardCornerClass(layoutMode);
                   const standaloneClassName = [

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   NoteDatabaseFocusedView,
   removeNoteDatabaseSegment,
@@ -44,9 +44,11 @@ function getNoteTitle(note: Note | null) {
 export default function SkillNoteDatabasePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const skillId = params.id as string;
   const noteId = params.noteId as string;
   const databaseId = params.databaseId as string;
+  const addEntryRequestKey = searchParams.get("addEntry");
   const [note, setNote] = useState<Note | null>(null);
   const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -220,6 +222,7 @@ export default function SkillNoteDatabasePage() {
             databaseDefinitions={getMetadataDatabases(noteMetadata)}
             databaseEntries={getMetadataDatabaseEntries(noteMetadata)}
             databaseId={databaseId}
+            openEntrySheetKey={addEntryRequestKey}
             noteContent={note?.content ?? ""}
             noteTitle={getNoteTitle(note)}
             onBack={handleBack}
