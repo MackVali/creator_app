@@ -114,6 +114,12 @@ import {
 } from "./timing";
 
 type Client = SupabaseClient<Database>;
+type ScheduleInstanceInsert =
+  Database["public"]["Tables"]["schedule_instances"]["Insert"];
+type ScheduleInstanceUpdate =
+  Database["public"]["Tables"]["schedule_instances"]["Update"];
+
+const SCHEDULER_DIRECT_WRITE_BATCH_SIZE = 500;
 
 type CompatibleWindowRecord = {
   id: string;
@@ -1979,6 +1985,93 @@ const chunkIds = (ids: string[], size: number) => {
   return chunks;
 };
 
+type PendingScheduleInstanceInsert = {
+  row: ScheduleInstanceInsert;
+  onError?: (error: PostgrestError) => void;
+};
+
+function createScheduleInstanceInsertBatcher(
+  supabase: Client,
+  timing?: SchedulerTiming | null
+) {
+  const pending: PendingScheduleInstanceInsert[] = [];
+
+  return {
+    get size() {
+      return pending.length;
+    },
+    enqueue(
+      row: ScheduleInstanceInsert,
+      onError?: (error: PostgrestError) => void
+    ) {
+      pending.push({ row, onError });
+    },
+    async flush() {
+      if (pending.length === 0) return;
+      const entries = pending.splice(0, pending.length);
+      for (
+        let index = 0;
+        index < entries.length;
+        index += SCHEDULER_DIRECT_WRITE_BATCH_SIZE
+      ) {
+        const batch = entries.slice(
+          index,
+          index + SCHEDULER_DIRECT_WRITE_BATCH_SIZE
+        );
+        const { error } = await supabase
+          .from("schedule_instances")
+          .insert(batch.map((entry) => entry.row));
+        if (error) {
+          for (const entry of batch) {
+            entry.onError?.(error);
+          }
+          continue;
+        }
+        recordSchedulerDbWrite(timing, "inserts", batch.length);
+      }
+    },
+  };
+}
+
+async function insertScheduleInstanceRows(
+  supabase: Client,
+  rows: ScheduleInstanceInsert[],
+  timing?: SchedulerTiming | null
+) {
+  if (rows.length === 0) return null;
+  for (
+    let index = 0;
+    index < rows.length;
+    index += SCHEDULER_DIRECT_WRITE_BATCH_SIZE
+  ) {
+    const batch = rows.slice(index, index + SCHEDULER_DIRECT_WRITE_BATCH_SIZE);
+    const { error } = await supabase.from("schedule_instances").insert(batch);
+    if (error) return error;
+    recordSchedulerDbWrite(timing, "inserts", batch.length);
+  }
+  return null;
+}
+
+async function cancelScheduleInstancesById(
+  supabase: Client,
+  ids: string[],
+  timing?: SchedulerTiming | null
+) {
+  if (ids.length === 0) return null;
+  const payload = {
+    status: "canceled",
+  } satisfies ScheduleInstanceUpdate;
+  for (const batch of chunkIds(ids, SCHEDULER_DIRECT_WRITE_BATCH_SIZE)) {
+    const { error } = await supabase
+      .from("schedule_instances")
+      .update(payload)
+      .in("id", batch);
+    if (error) return error;
+    recordSchedulerDbWrite(timing, "cancels", batch.length);
+  }
+  return null;
+}
+
 async function invalidateInstancesAsMissed(
   supabase: Client,
   ids: string[],
@@ -2294,6 +2387,8 @@ async function normalizeProjectInstances(
   const startedAt = schedulerNowMs();
   let insertedMissed = 0;
   let canceledDuplicates = 0;
+  const missedProjectRows: ScheduleInstanceInsert[] = [];
+  const duplicateCancelIds: string[] = [];
   try {
   // Load ALL existing PROJECT schedule_instances for user (no filters)
   const { data: allProjectInstances, error } = await supabase
@@ -2346,47 +2441,52 @@ async function normalizeProjectInstances(
 
     if (instances.length === 0) {
       // Create exactly one missed instance
-      const { error: insertError } = await supabase
-        .from("schedule_instances")
-        .insert({
-          user_id: userId,
-          source_type: "PROJECT",
-          source_id: projectId,
-          status: "missed",
-          start_utc: null,
-          end_utc: null,
-          duration_min: resolveProjectDurationMin(project),
-          window_id: null,
-          energy_resolved: project.energy ?? "NO",
-          locked: false,
-          weight_snapshot: project.weight ?? 0,
-        });
-      if (insertError) {
-        throw new Error(
-          `Failed to create missed instance for project ${projectId}: ${insertError.message}`
-        );
-      }
+      missedProjectRows.push({
+        user_id: userId,
+        source_type: "PROJECT",
+        source_id: projectId,
+        status: "missed",
+        start_utc: null,
+        end_utc: null,
+        duration_min: resolveProjectDurationMin(project),
+        window_id: null,
+        energy_resolved: project.energy ?? "NO",
+        locked: false,
+        weight_snapshot: project.weight ?? 0,
+      });
       insertedMissed += 1;
-      recordSchedulerDbWrite(timing, "inserts", 1);
     } else if (instances.length > 1) {
       // Select canonical and mark extras as canceled
       const canonical = selectCanonical(instances);
       const extras = instances.filter((inst) => inst.id !== canonical.id);
       for (const extra of extras) {
-        const { error: updateError } = await supabase
-          .from("schedule_instances")
-          .update({ status: "canceled" })
-          .eq("id", extra.id);
-        if (updateError) {
-          throw new Error(
-            `Failed to cancel duplicate instance ${extra.id}: ${updateError.message}`
-          );
+        if (extra.id) {
+          duplicateCancelIds.push(extra.id);
         }
         canceledDuplicates += 1;
-        recordSchedulerDbWrite(timing, "cancels", 1);
       }
     }
     // If exactly one, leave it as is
+  }
+  const insertError = await insertScheduleInstanceRows(
+    supabase,
+    missedProjectRows,
+    timing
+  );
+  if (insertError) {
+    throw new Error(
+      `Failed to create missed project instances: ${insertError.message}`
+    );
+  }
+  const cancelError = await cancelScheduleInstancesById(
+    supabase,
+    duplicateCancelIds,
+    timing
+  );
+  if (cancelError) {
+    throw new Error(
+      `Failed to cancel duplicate project instances: ${cancelError.message}`
+    );
   }
   } finally {
     if (timing) {
@@ -4126,6 +4226,10 @@ export async function scheduleBacklog(
     return dayResult;
   };
 
+  const safeMissedInsertBatch = createScheduleInstanceInsertBatcher(
+    supabase,
+    timing
+  );
   const missedHabitIds = new Set<string>();
   for (const inst of dedupe.allInstances) {
     if (!inst || inst.source_type !== "HABIT") continue;
@@ -4146,30 +4250,32 @@ export async function scheduleBacklog(
       Number.isFinite(rawDuration) && rawDuration > 0
         ? Math.round(rawDuration)
         : DEFAULT_HABIT_DURATION_MIN;
-    const { error } = await supabase.from("schedule_instances").insert({
-      user_id: userId,
-      source_type: "HABIT",
-      source_id: habit.id,
-      status: "missed",
-      missed_reason: reason,
-      start_utc: missedStart.toISOString(),
-      end_utc: missedEnd.toISOString(),
-      duration_min: durationMin,
-      window_id: null,
-      energy_resolved: energyResolved,
-      weight_snapshot: 0,
-      locked: false,
-      event_name: habit.name ?? null,
-      practice_context_monument_id: habit.practiceContextId ?? null,
-    });
+    safeMissedInsertBatch.enqueue(
+      {
+        user_id: userId,
+        source_type: "HABIT",
+        source_id: habit.id,
+        status: "missed",
+        missed_reason: reason,
+        start_utc: missedStart.toISOString(),
+        end_utc: missedEnd.toISOString(),
+        duration_min: durationMin,
+        window_id: null,
+        energy_resolved: energyResolved,
+        weight_snapshot: 0,
+        locked: false,
+        event_name: habit.name ?? null,
+        practice_context_monument_id: habit.practiceContextId ?? null,
+      },
+      (error) => {
+        result.failures.push({
+          itemId: habit.id,
+          reason: "error",
+          detail: error,
+        });
+      }
+    );
     missedHabitIds.add(habit.id);
-    if (error) {
-      result.failures.push({
-        itemId: habit.id,
-        reason: "error",
-        detail: error,
-      });
-    }
   };
 
   /**
@@ -4806,6 +4912,7 @@ export async function scheduleBacklog(
   const initialHabitPassStartedAt = schedulerNowMs();
   nonDailyReplacementInstanceIds =
     await scheduleNonDailyHabitsAcrossHorizon(nonDailyHabits);
+  await safeMissedInsertBatch.flush();
   const scheduleSyncHabitsAcrossHorizon = async () => {
     logSchedulerDebug("[SCHEDULER_ORDER] SYNC_PAIRING_POST_PASS_START");
 
@@ -5904,9 +6011,8 @@ export async function scheduleBacklog(
 
       if (!item.instanceId) {
         // Create missed instance with reason
-        const { error: createError } = await supabase
-          .from("schedule_instances")
-          .insert({
+        safeMissedInsertBatch.enqueue(
+          {
             user_id: userId,
             source_type: "PROJECT",
             source_id: item.id,
@@ -5919,12 +6025,11 @@ export async function scheduleBacklog(
             energy_resolved: item.energy,
             locked: false,
             weight_snapshot: item.weight,
-          });
-        if (createError) {
-          log("error", "Failed to create missed instance:", createError);
-        } else {
-          recordSchedulerDbWrite(timing, "inserts", 1);
-        }
+          },
+          (error) => {
+            log("error", "Failed to create missed instance:", error);
+          }
+        );
       } else {
         // Update existing instance with detailed reason
         const { error: updateError } = await supabase
@@ -6048,6 +6153,7 @@ export async function scheduleBacklog(
       projectPassState.queue.length - scheduledProjectIds.size
     );
   }
+  await safeMissedInsertBatch.flush();
   // ==========================================
 
   const postProjectHabitPassStartedAt = schedulerNowMs();
@@ -6501,6 +6607,7 @@ export async function scheduleBacklog(
     }
   }
 
+  await safeMissedInsertBatch.flush();
   const finalInvariantStartedAt = schedulerNowMs();
   const finalRangeResponse = await fetchInstancesForRange(
     userId,

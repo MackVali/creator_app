@@ -256,6 +256,34 @@ function GoalCardImpl({
     setOpen(!open);
   }, [open, setOpen]);
 
+  const handleProjectLongPress = useCallback(
+    (project: Project, origin: ProjectCardMorphOrigin | null) => {
+      if (onProjectEditOpen) {
+        onProjectEditOpen(
+          {
+            entityType: "PROJECT",
+            entityId: project.id,
+            title: project.name,
+            originRect: origin
+              ? {
+                  top: origin.y,
+                  left: origin.x,
+                  width: origin.width,
+                  height: origin.height,
+                }
+              : null,
+          },
+          project,
+          origin
+        );
+        return;
+      }
+      setEditingProjectOrigin(origin ?? null);
+      setEditingProject(project);
+    },
+    [onProjectEditOpen]
+  );
+
   useEffect(() => {
     if (!open || isDrawerCompactDefault) {
       return;
@@ -312,17 +340,27 @@ function GoalCardImpl({
     };
   }, [goal.projects, isDrawerCompactDefault, open, projectDropdownMode]);
 
-  const handleShellClick = useCallback(() => {
-    if (onCardClick) {
-      onCardClick();
-      return;
-    }
-    toggle();
-  }, [onCardClick, toggle]);
+  const isTasksOnlyCompactShell =
+    variant === "compact" && projectDropdownMode === "tasks-only";
+  const compactShellClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const compactShellClickCountRef = useRef(0);
+  const suppressCompactShellClickRef = useRef(false);
   const projectLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
   const projectLongPressTriggeredRef = useRef(false);
+  const clearCompactShellClickTimer = useCallback(() => {
+    if (compactShellClickTimerRef.current) {
+      clearTimeout(compactShellClickTimerRef.current);
+      compactShellClickTimerRef.current = null;
+    }
+  }, []);
+  const cancelCompactShellClick = useCallback(() => {
+    clearCompactShellClickTimer();
+    compactShellClickCountRef.current = 0;
+  }, [clearCompactShellClickTimer]);
   const cancelProjectLongPress = useCallback(() => {
     if (projectLongPressTimerRef.current) {
       clearTimeout(projectLongPressTimerRef.current);
@@ -335,31 +373,93 @@ function GoalCardImpl({
     if (!project) return;
     onProjectHoldComplete(goal.id, project.id, project.stage ?? "BUILD");
   }, [goal, onProjectHoldComplete]);
+  const openFirstProjectEditor = useCallback(() => {
+    const project = goal.projects[0];
+    if (!project) return;
+    handleProjectLongPress(project, null);
+  }, [goal.projects, handleProjectLongPress]);
+  const handleTasksOnlyCompactShellClick = useCallback(() => {
+    if (suppressCompactShellClickRef.current) {
+      suppressCompactShellClickRef.current = false;
+      return;
+    }
+
+    compactShellClickCountRef.current += 1;
+
+    if (compactShellClickCountRef.current === 1) {
+      compactShellClickTimerRef.current = setTimeout(() => {
+        compactShellClickTimerRef.current = null;
+        compactShellClickCountRef.current = 0;
+        toggle();
+      }, 240);
+      return;
+    }
+
+    cancelCompactShellClick();
+    triggerProjectHold();
+  }, [cancelCompactShellClick, toggle, triggerProjectHold]);
+  const handleShellClick = useCallback(() => {
+    if (isTasksOnlyCompactShell) {
+      handleTasksOnlyCompactShellClick();
+      return;
+    }
+    if (onCardClick) {
+      onCardClick();
+      return;
+    }
+    toggle();
+  }, [
+    handleTasksOnlyCompactShellClick,
+    isTasksOnlyCompactShell,
+    onCardClick,
+    toggle,
+  ]);
   const startProjectLongPress = useCallback(() => {
-    if (!onProjectHoldComplete) return;
+    if (!onProjectHoldComplete && !isTasksOnlyCompactShell) return;
     cancelProjectLongPress();
+    if (isTasksOnlyCompactShell) {
+      clearCompactShellClickTimer();
+    }
     projectLongPressTriggeredRef.current = false;
     projectLongPressTimerRef.current = setTimeout(() => {
       projectLongPressTimerRef.current = null;
       projectLongPressTriggeredRef.current = true;
+      if (isTasksOnlyCompactShell) {
+        cancelCompactShellClick();
+        openFirstProjectEditor();
+        return;
+      }
       triggerProjectHold();
     }, 650);
-  }, [cancelProjectLongPress, onProjectHoldComplete, triggerProjectHold]);
+  }, [
+    cancelCompactShellClick,
+    cancelProjectLongPress,
+    clearCompactShellClickTimer,
+    isTasksOnlyCompactShell,
+    onProjectHoldComplete,
+    openFirstProjectEditor,
+    triggerProjectHold,
+  ]);
   const handleProjectPointerUp = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       cancelProjectLongPress();
       if (projectLongPressTriggeredRef.current) {
         projectLongPressTriggeredRef.current = false;
+        if (isTasksOnlyCompactShell) {
+          suppressCompactShellClickRef.current = true;
+        }
         event.preventDefault();
         event.stopPropagation();
       }
     },
-    [cancelProjectLongPress]
+    [cancelProjectLongPress, isTasksOnlyCompactShell]
   );
   const handleProjectPointerCancel = useCallback(() => {
     cancelProjectLongPress();
     projectLongPressTriggeredRef.current = false;
   }, [cancelProjectLongPress]);
+
+  useEffect(() => cancelCompactShellClick, [cancelCompactShellClick]);
 
   const handleAddProject = useCallback(async (originRect?: DOMRect) => {
     if (addingProject) return;
@@ -374,34 +474,6 @@ function GoalCardImpl({
       setAddingProject(false);
     }
   }, [addingProject, fabCreation, goal.id, onAddTask, projectDropdownMode]);
-
-  const handleProjectLongPress = useCallback(
-    (project: Project, origin: ProjectCardMorphOrigin | null) => {
-      if (onProjectEditOpen) {
-        onProjectEditOpen(
-          {
-            entityType: "PROJECT",
-            entityId: project.id,
-            title: project.name,
-            originRect: origin
-              ? {
-                  top: origin.y,
-                  left: origin.x,
-                  width: origin.width,
-                  height: origin.height,
-                }
-              : null,
-          },
-          project,
-          origin
-        );
-        return;
-      }
-      setEditingProjectOrigin(origin ?? null);
-      setEditingProject(project);
-    },
-    [onProjectEditOpen]
-  );
 
   const closeProjectEditor = useCallback(() => {
     setEditingProject(null);
