@@ -41,6 +41,7 @@ import {
   sortHabitRoadmapItems,
   sortGlobalPriorityItems,
   type UserPriorityFilterOptionData,
+  type UserPrioritySkillCategoryData,
 } from "./utils";
 import {
   GlobalPriorityRoadmap,
@@ -65,6 +66,7 @@ interface PriorityEditorClientProps {
   initialHabitItems: RoadmapHabitItem[];
   initialMonumentOptions: UserPriorityFilterOptionData[];
   initialSkillOptions: UserPriorityFilterOptionData[];
+  initialSkillCategories: UserPrioritySkillCategoryData[];
   initialError?: string | null;
 }
 
@@ -84,6 +86,8 @@ type PriorityFilterOption = {
   id: string;
   name: string;
   icon: string | null;
+  categoryId?: string | null;
+  sortOrder?: number | null;
 };
 
 type PriorityRoadmapType = "goals" | "habits";
@@ -122,6 +126,7 @@ export default function PriorityEditorClient({
   initialHabitItems,
   initialMonumentOptions,
   initialSkillOptions,
+  initialSkillCategories,
   initialError = null,
 }: PriorityEditorClientProps) {
   const router = useRouter();
@@ -164,9 +169,15 @@ export default function PriorityEditorClient({
         buildAvailablePriorityFilterOptions(
           filterSourceItems,
           initialMonumentOptions,
-          initialSkillOptions
+          initialSkillOptions,
+          initialSkillCategories
         ),
-      [filterSourceItems, initialMonumentOptions, initialSkillOptions]
+      [
+        filterSourceItems,
+        initialMonumentOptions,
+        initialSkillOptions,
+        initialSkillCategories,
+      ]
     );
   const selectedMonumentFilters = useMemo(
     () =>
@@ -762,7 +773,9 @@ function readRecord(value: unknown): Record<string, unknown> | null {
 function createPriorityFilterOption(
   id?: string | null,
   name?: string | null,
-  icon?: string | null
+  icon?: string | null,
+  categoryId?: string | null,
+  sortOrder?: number | null
 ): PriorityFilterOption | null {
   const optionId = buildFilterOptionId(id, name);
   const optionName = (name ?? "").trim() || (id ?? "").trim();
@@ -772,6 +785,8 @@ function createPriorityFilterOption(
     id: optionId,
     name: optionName,
     icon: icon?.trim() || null,
+    categoryId: categoryId ?? null,
+    sortOrder: sortOrder ?? null,
   };
 }
 
@@ -790,6 +805,8 @@ function mergePriorityFilterOption(
         ? existing.name
         : option.name,
     icon: existing?.icon ?? option.icon,
+    categoryId: existing?.categoryId ?? option.categoryId ?? null,
+    sortOrder: existing?.sortOrder ?? option.sortOrder ?? null,
   });
 }
 
@@ -879,10 +896,85 @@ function sortPriorityFilterOptions(options: PriorityFilterOption[]) {
   );
 }
 
+function comparePriorityFilterOptionNames(
+  a: PriorityFilterOption,
+  b: PriorityFilterOption
+) {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function hasPriorityFilterSortOrder(option: PriorityFilterOption) {
+  return (
+    typeof option.sortOrder === "number" && Number.isFinite(option.sortOrder)
+  );
+}
+
+function hasSkillCategorySortOrder(category: UserPrioritySkillCategoryData) {
+  return (
+    typeof category.sortOrder === "number" && Number.isFinite(category.sortOrder)
+  );
+}
+
+function sortPrioritySkillFilterOptions(
+  options: PriorityFilterOption[],
+  categories: UserPrioritySkillCategoryData[]
+) {
+  const categoryOrder = new Map<string, number>();
+  [...categories]
+    .sort((a, b) => {
+      const aHasOrder = hasSkillCategorySortOrder(a);
+      const bHasOrder = hasSkillCategorySortOrder(b);
+
+      if (aHasOrder && bHasOrder && a.sortOrder !== b.sortOrder) {
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      }
+      if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    })
+    .forEach((category, index) => {
+      categoryOrder.set(category.id, index);
+    });
+
+  const originalIndex = new Map<string, number>();
+  options.forEach((option, index) => {
+    originalIndex.set(option.id, index);
+  });
+
+  return [...options].sort((a, b) => {
+    const aCategoryOrder =
+      a.categoryId != null ? categoryOrder.get(a.categoryId) : undefined;
+    const bCategoryOrder =
+      b.categoryId != null ? categoryOrder.get(b.categoryId) : undefined;
+    const aUncategorized = aCategoryOrder == null;
+    const bUncategorized = bCategoryOrder == null;
+
+    if (aUncategorized !== bUncategorized) return aUncategorized ? 1 : -1;
+    if (!aUncategorized && aCategoryOrder !== bCategoryOrder) {
+      return (aCategoryOrder ?? 0) - (bCategoryOrder ?? 0);
+    }
+
+    const aHasOrder = hasPriorityFilterSortOrder(a);
+    const bHasOrder = hasPriorityFilterSortOrder(b);
+    if (aHasOrder && bHasOrder && a.sortOrder !== b.sortOrder) {
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    }
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+    if (!aHasOrder && !bHasOrder) {
+      const nameComparison = comparePriorityFilterOptionNames(a, b);
+      if (nameComparison !== 0) return nameComparison;
+    }
+
+    return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+  });
+}
+
 function buildAvailablePriorityFilterOptions(
   items: (GlobalPriorityRoadmapItem | RoadmapHabitItem)[],
   baseMonumentOptions: PriorityFilterOption[] = [],
-  baseSkillOptions: PriorityFilterOption[] = []
+  baseSkillOptions: PriorityFilterOption[] = [],
+  skillCategories: UserPrioritySkillCategoryData[] = []
 ): { monuments: PriorityFilterOption[]; skills: PriorityFilterOption[] } {
   const monuments = new Map<string, PriorityFilterOption>();
   const skills = new Map<string, PriorityFilterOption>();
@@ -896,7 +988,13 @@ function buildAvailablePriorityFilterOptions(
   baseSkillOptions.forEach((option) =>
     mergePriorityFilterOption(
       skills,
-      createPriorityFilterOption(option.id, option.name, option.icon)
+      createPriorityFilterOption(
+        option.id,
+        option.name,
+        option.icon,
+        option.categoryId,
+        option.sortOrder
+      )
     )
   );
 
@@ -916,7 +1014,10 @@ function buildAvailablePriorityFilterOptions(
 
   return {
     monuments: sortPriorityFilterOptions(Array.from(monuments.values())),
-    skills: sortPriorityFilterOptions(Array.from(skills.values())),
+    skills: sortPrioritySkillFilterOptions(
+      Array.from(skills.values()),
+      skillCategories
+    ),
   };
 }
 

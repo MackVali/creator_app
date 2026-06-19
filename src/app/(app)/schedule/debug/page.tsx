@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import type { PlacementTruthTrace } from "@/lib/scheduler/placementTrace";
+import type {
+  BlockGateSample,
+  BlockOccupancyEntry,
+  ClosestCandidateTrace,
+  NoSlotDetail,
+  PlacementTraceItem,
+  PlacementTruthTrace,
+} from "@/lib/scheduler/placementTrace";
 import type { SchedulerDebugDisplay } from "@/lib/scheduler/debugDisplay";
 
 type FailureSummary = {
@@ -13,6 +20,7 @@ type FailureSummary = {
 type BottleneckAggregate = {
   reason: string;
   blockLabel: string;
+  blockSecondary?: string;
   largestFreeSegmentMin?: number | null;
   requiredDurationMin?: number | null;
   firstCollisionLabel?: string;
@@ -24,8 +32,38 @@ type AffectedProjectInfo = {
   projectLabel: string;
   reason: string;
   blockLabel?: string;
+  blockSecondary?: string;
   requiredDurationMin?: number | null;
   bestGapMin?: number | null;
+  firstCollisionLabel?: string;
+};
+
+type TimeBlockReference = {
+  blockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  timeBlockId?: string | null;
+  windowId?: string | null;
+  dateIso?: string | null;
+  start?: string | null;
+  end?: string | null;
+};
+
+type TimeBlockDisplayLabel = {
+  label: string;
+  secondary?: string;
+};
+
+type DisplayOccupancyEntry = BlockOccupancyEntry & {
+  duplicateCount: number;
+};
+
+type DisplayOccupancyLedger = {
+  blockId: string;
+  blockLabel: string;
+  blockSecondary?: string;
+  originalCount: number;
+  hiddenCount: number;
+  entries: DisplayOccupancyEntry[];
 };
 
 type DebugPayload =
@@ -50,6 +88,9 @@ type ScheduleDebugResponse = {
 
 const DEBUG_WRITE_THROUGH_DAYS = 14;
 const NORMAL_SCHEDULER_MODE = { type: "REGULAR" } as const;
+const MAX_FAILURE_EXAMPLES_PER_REASON = 5;
+const MAX_OCCUPANCY_BLOCKS = 8;
+const MAX_OCCUPANTS_PER_BLOCK = 8;
 
 export default function ScheduleDebugPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -136,8 +177,19 @@ export default function ScheduleDebugPage() {
     [debugDisplay]
   );
 
-  const formatBlockLabel = useCallback(
-    (id?: string | null) => formatBlockDisplay(id, debugDisplay),
+  const formatFailureItemLabel = useCallback(
+    (id?: string | null) => formatAnyItemLabel(id, debugDisplay),
+    [debugDisplay]
+  );
+
+  const formatOccupantLabel = useCallback(
+    (id?: string | null, type?: "PROJECT" | "HABIT" | null) =>
+      formatTypedItemLabel(id, type, debugDisplay),
+    [debugDisplay]
+  );
+
+  const formatTimeBlockRef = useCallback(
+    (ref?: TimeBlockReference | null) => resolveTimeBlockDisplay(ref, debugDisplay),
     [debugDisplay]
   );
 
@@ -148,7 +200,7 @@ export default function ScheduleDebugPage() {
       groups[bucket] = groups[bucket] ?? [];
       groups[bucket].push(failure);
     }
-    return Object.entries(groups);
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
   }, [failures]);
 
   const unplacedProjects = useMemo(
@@ -157,7 +209,10 @@ export default function ScheduleDebugPage() {
     [placementTrace]
   );
 
-  const occupancyLedger = placementTrace?.projectPass.occupancyLedger ?? [];
+  const occupancyLedger = useMemo(
+    () => placementTrace?.projectPass.occupancyLedger ?? [],
+    [placementTrace]
+  );
 
   const placementCounts = placementTrace?.projectPass;
 
@@ -167,9 +222,8 @@ export default function ScheduleDebugPage() {
       const reason = item.topReasons?.[0]?.code ?? "unknown";
       const candidate = item.closestCandidates?.[0];
       const noSlot = item.passedGatesButNoSlot ?? item.noSlotDetails?.[0];
-      const blockId =
-        noSlot?.blockId ?? candidate?.blockId ?? undefined;
-      const blockLabel = blockId ? formatBlockLabel(blockId) : "unknown";
+      const blockRef = getTraceBlockReference(item, noSlot ?? candidate);
+      const blockDisplay = formatTimeBlockRef(blockRef);
       const existing = map.get(reason);
       const largestFreeSegmentMin =
         noSlot?.largestFreeSegmentMin ??
@@ -180,11 +234,15 @@ export default function ScheduleDebugPage() {
         candidate?.requiredDurationMin ??
         existing?.requiredDurationMin;
       const firstCollisionLabel = noSlot?.firstCollision?.itemId
-        ? formatProjectLabel(noSlot.firstCollision.itemId)
+        ? formatOccupantLabel(
+            noSlot.firstCollision.itemId,
+            noSlot.firstCollision.type
+          )
         : existing?.firstCollisionLabel;
       map.set(reason, {
         reason,
-        blockLabel,
+        blockLabel: existing?.blockLabel ?? blockDisplay.label,
+        blockSecondary: existing?.blockSecondary ?? blockDisplay.secondary,
         largestFreeSegmentMin,
         requiredDurationMin,
         firstCollisionLabel,
@@ -192,7 +250,7 @@ export default function ScheduleDebugPage() {
       });
     }
     return Array.from(map.values()).sort((a, b) => b.count - a.count);
-  }, [unplacedProjects, formatBlockLabel, formatProjectLabel]);
+  }, [unplacedProjects, formatTimeBlockRef, formatOccupantLabel]);
 
   const affectedProjects = useMemo(() => {
     const projects = unplacedProjects
@@ -203,21 +261,51 @@ export default function ScheduleDebugPage() {
           candidate?.largestFreeSegmentMin ?? noSlot?.largestFreeSegmentMin ?? null;
         const requiredDurationMin =
           candidate?.requiredDurationMin ?? noSlot?.requiredDurationMin ?? null;
-        const blockLabel = formatBlockLabel(
-          candidate?.blockId ?? noSlot?.blockId
+        const blockDisplay = formatTimeBlockRef(
+          getTraceBlockReference(item, noSlot ?? candidate)
         );
         return {
           itemId: item.itemId,
           projectLabel: formatProjectLabel(item.itemId),
           reason: item.topReasons?.[0]?.code ?? "unspecified",
-          blockLabel,
+          blockLabel: blockDisplay.label,
+          blockSecondary: blockDisplay.secondary,
           requiredDurationMin,
           bestGapMin,
+          firstCollisionLabel: noSlot?.firstCollision
+            ? formatOccupantLabel(
+                noSlot.firstCollision.itemId,
+                noSlot.firstCollision.type
+              )
+            : undefined,
         } as AffectedProjectInfo;
       })
       .sort((a, b) => (b.requiredDurationMin ?? 0) - (a.requiredDurationMin ?? 0));
     return projects.slice(0, 4);
-  }, [unplacedProjects, formatProjectLabel, formatBlockLabel]);
+  }, [unplacedProjects, formatProjectLabel, formatTimeBlockRef, formatOccupantLabel]);
+
+  const occupancyDisplay = useMemo(() => {
+    return occupancyLedger
+      .slice(0, MAX_OCCUPANCY_BLOCKS)
+      .map((ledger): DisplayOccupancyLedger => {
+        const entries = dedupeOccupancyEntries(ledger.entries ?? []);
+        const visibleEntries = entries.slice(0, MAX_OCCUPANTS_PER_BLOCK);
+        const blockDisplay = formatTimeBlockRef({ blockId: ledger.blockId });
+        return {
+          blockId: ledger.blockId,
+          blockLabel: blockDisplay.label,
+          blockSecondary: blockDisplay.secondary,
+          originalCount: ledger.entries?.length ?? 0,
+          hiddenCount: Math.max(0, entries.length - visibleEntries.length),
+          entries: visibleEntries,
+        };
+      });
+  }, [occupancyLedger, formatTimeBlockRef]);
+
+  const hiddenOccupancyBlockCount = Math.max(
+    0,
+    occupancyLedger.length - occupancyDisplay.length
+  );
 
   const topFailureGroup = groupedFailures[0];
   const topFailureReason = topFailureGroup?.[0] ?? null;
@@ -346,7 +434,7 @@ export default function ScheduleDebugPage() {
         <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
           <ConsolePanel>
             <SectionHeader
-              title="Latest Run Summary"
+              title="Project Queue Summary"
               meta={
                 placementTrace
                   ? `Base date ${placementTrace.baseDateIso}`
@@ -355,15 +443,15 @@ export default function ScheduleDebugPage() {
             />
             <div className="mt-3 grid grid-cols-3 gap-2">
               <MetricTile
-                label="Evaluated"
+                label="Projects Evaluated"
                 value={formatCount(placementCounts?.queuedCount)}
               />
               <MetricTile
-                label="Scheduled"
+                label="Projects Scheduled"
                 value={formatCount(placementCounts?.placedCount)}
               />
               <MetricTile
-                label="Unscheduled"
+                label="Projects Unscheduled"
                 value={formatCount(placementCounts?.unplacedCount)}
               />
             </div>
@@ -371,6 +459,13 @@ export default function ScheduleDebugPage() {
               <p className="text-sm leading-6 text-zinc-300">
                 {placementTrace ? summarySentence : "Run diagnostics to generate the latest scheduler summary."}
               </p>
+              {placementCounts && failures.length > 0 ? (
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  Project queue counts measure queued Projects minus placed
+                  Projects. Scheduler Failure Results are the global failed
+                  placement results and can include Project and Habit Events.
+                </p>
+              ) : null}
               <div className="mt-3 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
                 <div>
                   <span className="text-zinc-600">Top failure reason</span>
@@ -386,6 +481,11 @@ export default function ScheduleDebugPage() {
                   <p className="mt-1 font-mono text-zinc-200">
                     {topBottleneck?.blockLabel ?? "n/a"}
                   </p>
+                  {topBottleneck?.blockSecondary ? (
+                    <p className="mt-0.5 font-mono text-[10px] text-zinc-600">
+                      {topBottleneck.blockSecondary}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -413,7 +513,7 @@ export default function ScheduleDebugPage() {
         <div className="grid gap-3 xl:grid-cols-2">
           <ConsolePanel>
             <SectionHeader
-              title="Top Bottlenecks"
+              title="Grouped Failed Project Explanations"
               meta={
                 topBottlenecks.length
                   ? `${topBottlenecks.length} reason${topBottlenecks.length === 1 ? "" : "s"}`
@@ -421,7 +521,7 @@ export default function ScheduleDebugPage() {
               }
             />
             {topBottlenecks.length === 0 ? (
-              <EmptyPanel copy="Bottlenecks will appear after the debug trace captures Unscheduled Projects." />
+              <EmptyPanel copy="Failed Project explanations will appear after the debug trace captures Unscheduled Projects." />
             ) : (
               <div className="mt-3 space-y-2">
                 {topBottlenecks.map((bottleneck) => (
@@ -435,11 +535,16 @@ export default function ScheduleDebugPage() {
                           {bottleneck.reason}
                         </p>
                         <p className="mt-1 text-xs text-zinc-500">
-                          Time Block: {bottleneck.blockLabel}
+                          Closest Time Block: {bottleneck.blockLabel}
                         </p>
+                        {bottleneck.blockSecondary ? (
+                          <p className="mt-0.5 font-mono text-[10px] text-zinc-600">
+                            {bottleneck.blockSecondary}
+                          </p>
+                        ) : null}
                       </div>
                       <span className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-500">
-                        {bottleneck.count} Event{bottleneck.count === 1 ? "" : "s"}
+                        {bottleneck.count} Project{bottleneck.count === 1 ? "" : "s"}
                       </span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -462,7 +567,7 @@ export default function ScheduleDebugPage() {
                     </div>
                     {bottleneck.firstCollisionLabel ? (
                       <p className="mt-2 text-[11px] text-zinc-600">
-                        First collision with {bottleneck.firstCollisionLabel}
+                        First collision Event: {bottleneck.firstCollisionLabel}
                       </p>
                     ) : null}
                   </article>
@@ -506,6 +611,16 @@ export default function ScheduleDebugPage() {
                     <p className="mt-2 text-xs text-zinc-500">
                       Preferred Time Block: {project.blockLabel}
                     </p>
+                    {project.blockSecondary ? (
+                      <p className="mt-0.5 font-mono text-[10px] text-zinc-600">
+                        {project.blockSecondary}
+                      </p>
+                    ) : null}
+                    {project.firstCollisionLabel ? (
+                      <p className="mt-2 text-[11px] text-zinc-600">
+                        First collision Event: {project.firstCollisionLabel}
+                      </p>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -515,14 +630,24 @@ export default function ScheduleDebugPage() {
 
         <ConsolePanel>
           <SectionHeader
-            title="Unscheduled Results"
+            title="Scheduler Failure Results"
             meta={`${failures.length} Event${failures.length === 1 ? "" : "s"}`}
           />
+          {placementCounts && failures.length > 0 ? (
+            <p className="mt-3 rounded-xl border border-black/50 bg-black/25 px-3 py-2 text-xs leading-5 text-zinc-500">
+              These are global failed placement results. They are separate from
+              the Project queue Unscheduled count above and can include Project
+              and Habit Events.
+            </p>
+          ) : null}
           {failures.length === 0 ? (
             <EmptyPanel copy="No Unscheduled failures have been reported yet." />
           ) : (
             <div className="mt-3 grid gap-2 lg:grid-cols-2">
-              {groupedFailures.map(([reason, entries]) => (
+              {groupedFailures.map(([reason, entries]) => {
+                const visibleEntries = entries.slice(0, MAX_FAILURE_EXAMPLES_PER_REASON);
+                const hiddenCount = Math.max(0, entries.length - visibleEntries.length);
+                return (
                 <div
                   key={reason}
                   className="rounded-[16px] border border-black/60 bg-white/[0.026] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
@@ -536,13 +661,13 @@ export default function ScheduleDebugPage() {
                     </span>
                   </div>
                   <ul className="mt-3 space-y-2 text-sm">
-                    {entries.map((failure, index) => (
+                    {visibleEntries.map((failure, index) => (
                       <li
                         key={`${reason}-${failure.itemId}-${index}`}
                         className="rounded-xl border border-black/50 bg-black/25 px-3 py-2"
                       >
                         <p className="break-words font-mono text-xs uppercase text-zinc-100">
-                          {formatProjectLabel(failure.itemId)}
+                          {formatFailureItemLabel(failure.itemId)}
                         </p>
                         {failure.detail ? (
                           <p className="mt-1 text-xs leading-5 text-zinc-500">
@@ -552,43 +677,66 @@ export default function ScheduleDebugPage() {
                       </li>
                     ))}
                   </ul>
+                  {hiddenCount > 0 ? (
+                    <p className="mt-3 text-[11px] text-zinc-600">
+                      Showing first {visibleEntries.length} of {entries.length} examples.
+                    </p>
+                  ) : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </ConsolePanel>
 
         <ConsolePanel>
-          <SectionHeader
-            title="Time Block Occupancy"
-            meta={
-              occupancyLedger.length
-                ? `${occupancyLedger.length} Time Block${occupancyLedger.length === 1 ? "" : "s"}`
-                : "Awaiting data"
-            }
-          />
           {occupancyLedger.length === 0 ? (
-            <EmptyPanel copy="Occupancy rows will appear after the scheduler records Time Block usage." />
+            <>
+              <SectionHeader title="Time Block Occupancy" meta="Awaiting data" />
+              <EmptyPanel copy="Occupancy rows will appear after the scheduler records Time Block usage." />
+            </>
           ) : (
-            <div className="mt-3 space-y-2">
-              {occupancyLedger.map((ledger) => {
-                const ledgerEntries = ledger.entries ?? [];
-                return (
+            <details>
+              <summary className="cursor-pointer list-none">
+                <SectionHeader
+                  title="Time Block Occupancy"
+                  meta={`${occupancyLedger.length} Time Block${occupancyLedger.length === 1 ? "" : "s"}`}
+                />
+              </summary>
+              <div className="mt-3 space-y-2">
+                {(hiddenOccupancyBlockCount > 0 ||
+                  occupancyDisplay.some((ledger) => ledger.hiddenCount > 0)) ? (
+                  <p className="rounded-xl border border-black/50 bg-black/25 px-3 py-2 text-xs leading-5 text-zinc-500">
+                    Showing first {occupancyDisplay.length} Time Block
+                    {occupancyDisplay.length === 1 ? "" : "s"}
+                    {hiddenOccupancyBlockCount > 0
+                      ? `; ${hiddenOccupancyBlockCount} more hidden`
+                      : ""}
+                    . Occupants are capped at {MAX_OCCUPANTS_PER_BLOCK} per Time
+                    Block and identical display rows are collapsed.
+                  </p>
+                ) : null}
+                {occupancyDisplay.map((ledger) => (
                   <div
                     key={ledger.blockId}
                     className="rounded-[16px] border border-black/60 bg-white/[0.026] p-3 text-[0.75rem] text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
                   >
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                       <p className="break-words text-xs font-semibold text-zinc-200">
-                        {formatBlockLabel(ledger.blockId)}
+                        {ledger.blockLabel}
                       </p>
                       <span className="text-[10px] font-semibold uppercase text-zinc-600">
-                        {ledgerEntries.length} occupant
-                        {ledgerEntries.length === 1 ? "" : "s"}
+                        {ledger.originalCount} occupant
+                        {ledger.originalCount === 1 ? "" : "s"}
                       </span>
                     </div>
+                    {ledger.blockSecondary ? (
+                      <p className="mt-0.5 font-mono text-[10px] text-zinc-600">
+                        {ledger.blockSecondary}
+                      </p>
+                    ) : null}
                     <ul className="mt-2 divide-y divide-black/45 overflow-hidden rounded-xl border border-black/50 bg-black/25">
-                      {ledgerEntries.map((entry) => (
+                      {ledger.entries.map((entry) => (
                         <li
                           key={`${ledger.blockId}-${entry.orderIndex}-${entry.itemId}`}
                           className="grid gap-2 px-3 py-2 sm:grid-cols-[3rem_1fr_auto] sm:items-center"
@@ -597,8 +745,13 @@ export default function ScheduleDebugPage() {
                             #{entry.orderIndex}
                           </span>
                           <span className="min-w-0 break-words text-xs text-zinc-200">
-                            {formatProjectLabel(entry.itemId)}{" "}
+                            {formatOccupantLabel(entry.itemId, entry.type)}{" "}
                             <span className="text-zinc-600">({entry.type})</span>
+                            {entry.duplicateCount > 1 ? (
+                              <span className="ml-1 text-zinc-600">
+                                x{entry.duplicateCount}
+                              </span>
+                            ) : null}
                           </span>
                           <span className="font-mono text-[10px] uppercase text-zinc-500">
                             {entry.start} - {entry.end} / {entry.pass}
@@ -606,10 +759,16 @@ export default function ScheduleDebugPage() {
                         </li>
                       ))}
                     </ul>
+                    {ledger.hiddenCount > 0 ? (
+                      <p className="mt-2 text-[11px] text-zinc-600">
+                        Showing first {ledger.entries.length} occupants;{" "}
+                        {ledger.hiddenCount} more hidden.
+                      </p>
+                    ) : null}
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </details>
           )}
         </ConsolePanel>
 
@@ -739,17 +898,178 @@ function formatLookupId(
   return id.slice(0, ID_TRUNCATE_LENGTH);
 }
 
-function formatBlockDisplay(
+function formatAnyItemLabel(
   id: string | null | undefined,
   display?: SchedulerDebugDisplay | null
 ): string {
   if (!id) return "unknown";
-  const label =
-    display?.dayTypeTimeBlocksById[id] ??
-    display?.timeBlocksById[id] ??
-    display?.windowsById[id];
-  if (label) return label;
-  return id.slice(0, ID_TRUNCATE_LENGTH);
+  return (
+    display?.projectsById[id] ??
+    display?.habitsById[id] ??
+    id.slice(0, ID_TRUNCATE_LENGTH)
+  );
+}
+
+function formatTypedItemLabel(
+  id: string | null | undefined,
+  type?: "PROJECT" | "HABIT" | null,
+  display?: SchedulerDebugDisplay | null
+): string {
+  if (!id) return "unknown";
+  if (type === "HABIT") return formatLookupId(id, display?.habitsById);
+  if (type === "PROJECT") return formatLookupId(id, display?.projectsById);
+  return formatAnyItemLabel(id, display);
+}
+
+function resolveTimeBlockDisplay(
+  ref: TimeBlockReference | null | undefined,
+  display?: SchedulerDebugDisplay | null
+): TimeBlockDisplayLabel {
+  const normalizedRef = ref ?? {};
+  const directLabel =
+    lookupTimeBlockLabel(
+      normalizedRef.dayTypeTimeBlockId,
+      display?.dayTypeTimeBlocksById
+    ) ??
+    lookupTimeBlockLabel(normalizedRef.timeBlockId, display?.timeBlocksById) ??
+    lookupTimeBlockLabel(normalizedRef.windowId, display?.windowsById);
+
+  if (directLabel) return { label: directLabel };
+
+  const fallbackBlockLabel =
+    lookupTimeBlockLabel(
+      normalizedRef.blockId,
+      display?.dayTypeTimeBlocksById
+    ) ??
+    lookupTimeBlockLabel(normalizedRef.blockId, display?.timeBlocksById) ??
+    lookupTimeBlockLabel(normalizedRef.blockId, display?.windowsById);
+
+  if (fallbackBlockLabel) return { label: fallbackBlockLabel };
+
+  const fallbackLabel = formatTimeBlockFallback(normalizedRef);
+  const rawId = firstPresentId(
+    normalizedRef.dayTypeTimeBlockId,
+    normalizedRef.timeBlockId,
+    normalizedRef.windowId,
+    normalizedRef.blockId
+  );
+  return {
+    label: fallbackLabel,
+    secondary: rawId ? `Ref ${rawId.slice(0, ID_TRUNCATE_LENGTH)}` : undefined,
+  };
+}
+
+function lookupTimeBlockLabel(
+  id: string | null | undefined,
+  lookup?: Record<string, string> | null
+): string | null {
+  if (!id) return null;
+  return lookup?.[id] ?? null;
+}
+
+function formatTimeBlockFallback(ref: TimeBlockReference): string {
+  const compactRange = formatCompactDateTimeRange(ref.start, ref.end);
+  if (compactRange) return compactRange;
+  const compactDate = formatCompactDate(ref.dateIso);
+  if (compactDate) return `Time Block on ${compactDate}`;
+  return "Unlabeled Time Block";
+}
+
+function formatCompactDateTimeRange(
+  start: string | null | undefined,
+  end: string | null | undefined
+): string | null {
+  if (!start || !end) return null;
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return null;
+  }
+  const date = startDate.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const startTime = startDate.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const endTime = endDate.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${date}, ${startTime}-${endTime}`;
+}
+
+function formatCompactDate(dateIso: string | null | undefined): string | null {
+  if (!dateIso) return null;
+  const date = new Date(dateIso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function firstPresentId(
+  ...ids: Array<string | null | undefined>
+): string | null {
+  for (const id of ids) {
+    if (id) return id;
+  }
+  return null;
+}
+
+function getTraceBlockReference(
+  item: PlacementTraceItem,
+  primary?: ClosestCandidateTrace | NoSlotDetail | null
+): TimeBlockReference | null {
+  if (!primary) return null;
+  const sample = findMatchingBlockGateSample(item.blockGateSamples, primary);
+  return {
+    blockId: primary.blockId ?? sample?.blockId ?? null,
+    dateIso: primary.dateIso ?? sample?.dateIso ?? null,
+    dayTypeTimeBlockId: sample?.dayTypeTimeBlockId ?? null,
+    timeBlockId: sample?.timeBlockId ?? null,
+    windowId: sample?.windowId ?? null,
+  };
+}
+
+function findMatchingBlockGateSample(
+  samples: BlockGateSample[] | undefined,
+  primary: ClosestCandidateTrace | NoSlotDetail
+): BlockGateSample | null {
+  if (!samples?.length) return null;
+  return (
+    samples.find(
+      (sample) =>
+        sample.blockId === primary.blockId && sample.dateIso === primary.dateIso
+    ) ??
+    samples.find((sample) => sample.blockId === primary.blockId) ??
+    null
+  );
+}
+
+function dedupeOccupancyEntries(
+  entries: BlockOccupancyEntry[]
+): DisplayOccupancyEntry[] {
+  const rows = new Map<string, DisplayOccupancyEntry>();
+  for (const entry of entries) {
+    const key = [
+      entry.itemId,
+      entry.type,
+      entry.start,
+      entry.end,
+      entry.pass,
+    ].join("|");
+    const existing = rows.get(key);
+    if (existing) {
+      existing.duplicateCount += 1;
+      existing.orderIndex = Math.min(existing.orderIndex, entry.orderIndex);
+      continue;
+    }
+    rows.set(key, { ...entry, duplicateCount: 1 });
+  }
+  return Array.from(rows.values()).sort((a, b) => a.orderIndex - b.orderIndex);
 }
 
 function isPlacementTruthTrace(value: unknown): value is PlacementTruthTrace {

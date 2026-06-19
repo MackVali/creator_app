@@ -36,6 +36,7 @@ import {
   FileText,
   ListChecks,
   Loader2,
+  Pin,
   Plus,
   Search,
   Settings2,
@@ -910,8 +911,15 @@ const FAB_ADVANCED_LABEL_CLASS =
   "text-[10px] font-semibold uppercase tracking-[0.24em] text-white/50";
 const FAB_ADVANCED_INPUT_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white placeholder:text-white/35 focus:border-blue-400/60 focus-visible:ring-0";
-const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
-  "h-10 rounded-sm border border-zinc-700/80 bg-zinc-950 px-3.5 text-xs text-zinc-100 shadow-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-600/30";
+const HABIT_ADVANCED_FIELD_LABEL_CLASS =
+  "text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50";
+const HABIT_ADVANCED_INPUT_CLASS =
+  "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-500/60 focus:bg-zinc-900/55 focus-visible:border-zinc-500/60 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
+const HABIT_ADVANCED_SELECT_TRIGGER_CLASS =
+  "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-left text-[11px] text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition-colors hover:border-white/16 hover:bg-zinc-900/55 focus:border-zinc-500/60 focus:bg-zinc-900/55 focus:ring-0 focus-visible:border-zinc-500/60 focus-visible:ring-0 data-[state=open]:border-zinc-500/60 data-[state=open]:bg-zinc-900/55 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
+const HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS =
+  "rounded-md border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/45";
+const HABIT_ADVANCED_SELECT_CONTENT_CLASS = "bg-zinc-950";
 const FAB_CREATION_CLOSED_FIELD_CLASS =
   "rounded-md border border-white/10 bg-white/[0.05] text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] focus:border-blue-400/60 focus:ring-0 focus-visible:ring-0";
 const FAB_CREATION_SELECT_TRIGGER_CLASS =
@@ -1195,10 +1203,75 @@ const getOverlayOptionIcon = (source: unknown) => {
   return emoji || null;
 };
 
+const hasOverlaySkillSortOrder = (skill: Skill) =>
+  typeof skill.sort_order === "number" && Number.isFinite(skill.sort_order);
+
+const hasOverlaySkillCategorySortOrder = (category: CatRow) =>
+  typeof category.sort_order === "number" &&
+  Number.isFinite(category.sort_order);
+
+const sortOverlayDynamicSkills = (skillList: Skill[], categories: CatRow[]) => {
+  const categoryOrder = new Map<string, number>();
+  [...categories]
+    .sort((a, b) => {
+      const aHasOrder = hasOverlaySkillCategorySortOrder(a);
+      const bHasOrder = hasOverlaySkillCategorySortOrder(b);
+
+      if (aHasOrder && bHasOrder && a.sort_order !== b.sort_order) {
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      }
+      if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    })
+    .forEach((category, index) => {
+      categoryOrder.set(category.id, index);
+    });
+
+  const originalIndex = new Map<string, number>();
+  skillList.forEach((skill, index) => {
+    originalIndex.set(skill.id, index);
+  });
+
+  return [...skillList].sort((a, b) => {
+    const aCategoryOrder =
+      a.cat_id != null ? categoryOrder.get(a.cat_id) : undefined;
+    const bCategoryOrder =
+      b.cat_id != null ? categoryOrder.get(b.cat_id) : undefined;
+    const aUncategorized = aCategoryOrder == null;
+    const bUncategorized = bCategoryOrder == null;
+
+    if (aUncategorized !== bUncategorized) return aUncategorized ? 1 : -1;
+    if (!aUncategorized && aCategoryOrder !== bCategoryOrder) {
+      return (aCategoryOrder ?? 0) - (bCategoryOrder ?? 0);
+    }
+
+    const aHasOrder = hasOverlaySkillSortOrder(a);
+    const bHasOrder = hasOverlaySkillSortOrder(b);
+    if (aHasOrder && bHasOrder && a.sort_order !== b.sort_order) {
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    }
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+    if (!aHasOrder && !bHasOrder) {
+      const nameComparison = (a.name ?? "").localeCompare(
+        b.name ?? "",
+        undefined,
+        { sensitivity: "base" },
+      );
+      if (nameComparison !== 0) return nameComparison;
+    }
+
+    return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+  });
+};
+
 const normalizeTagName = (value: string) =>
   collapseWhitespace(value).toLowerCase();
 
 const sanitizeTagDisplayName = (value: string) => collapseWhitespace(value);
+const PINNED_TAG_NAME = "Pinned";
+const PINNED_TAG_NORMALIZED_NAME = "pinned";
 
 const getLocalCalendarDayIndex = (date: Date) =>
   Math.floor(
@@ -1271,7 +1344,7 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   GOAL: [
     { id: "main", label: "Main", icon: CircleDot },
     { id: "projects", label: "Projects", icon: ListChecks },
-    { id: "tags", label: "Tags", icon: Tags },
+    { id: "tags", label: "Advanced", icon: Tags },
   ],
   PROJECT: [
     { id: "main", label: "Main", icon: CircleDot },
@@ -2843,6 +2916,7 @@ export function Fab({
   const [availableTags, setAvailableTags] = useState<FabTag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [tagInputValue, setTagInputValue] = useState("");
+  const [tagIconInputValue, setTagIconInputValue] = useState("");
   const [tagsLoading, setTagsLoading] = useState(false);
   const [isCreatingTag, setIsCreatingTag] = useState(false);
   const initialOverlayStart = useMemo(
@@ -3127,6 +3201,12 @@ export function Fab({
   useEffect(() => () => stopOverlayTimelineResize(), [
     stopOverlayTimelineResize,
   ]);
+  const stopOverlayBuilderEventPropagation = useCallback(
+    (event: React.SyntheticEvent<HTMLElement>) => {
+      event.stopPropagation();
+    },
+    [],
+  );
   useEffect(() => {
     setOverlayStartInputValue(formatTimeInputValue(overlayStartTime));
   }, [overlayStartTime]);
@@ -3422,8 +3502,11 @@ export function Fab({
   const tagsByNormalizedName = useMemo(() => {
     const map = new Map<string, FabTag>();
     availableTags.forEach((tag) => {
-      if (tag.normalized_name) {
-        map.set(tag.normalized_name, tag);
+      const normalizedName = normalizeTagName(
+        tag.normalized_name || tag.name,
+      );
+      if (normalizedName) {
+        map.set(normalizedName, tag);
       }
     });
     return map;
@@ -6146,6 +6229,7 @@ export function Fab({
   const activeFabPageType = pages[activeFabPage];
   const isNormalFabNexusPage =
     isOpen &&
+    menuVariant === "default" &&
     activeFabPageType === "nexus" &&
     !overlayPickerOpen &&
     selected === null &&
@@ -6170,12 +6254,12 @@ export function Fab({
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   useEffect(() => {
     if (!normalNexusExpanded) return;
-    if (isOpen && activeFabPageType === "nexus") return;
+    if (isNormalFabNexusPage) return;
     setNormalNexusExpanded(false);
     if (selected === null) {
       setExpanded(false);
     }
-  }, [activeFabPageType, isOpen, normalNexusExpanded, selected]);
+  }, [isNormalFabNexusPage, normalNexusExpanded, selected]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -6484,12 +6568,12 @@ export function Fab({
   );
   const overlayDynamicSkillOptions = useMemo<OverlayConstraintChipOption[]>(
     () =>
-      skills.map((skill) => ({
+      sortOverlayDynamicSkills(skills, skillCategories).map((skill) => ({
         id: skill.id,
         label: skill.name || "Untitled skill",
         icon: getOverlayOptionIcon(skill),
       })),
-    [skills],
+    [skillCategories, skills],
   );
   const overlayDynamicMonumentOptions = useMemo<OverlayConstraintChipOption[]>(
     () =>
@@ -7731,7 +7815,7 @@ export function Fab({
     menuConfigs[menuVariant];
   const menuContainerHeight = primary.length * 56;
   const compactFabPanelHeight =
-    activeFabPageType === "nexus"
+    menuVariant === "default" && activeFabPageType === "nexus"
       ? FAB_NEXUS_COMPACT_HEIGHT
       : menuContainerHeight;
   const shouldRenderTimelineOverlayButton =
@@ -8639,85 +8723,132 @@ export function Fab({
     );
   }, []);
 
+  const createOrSelectTag = useCallback(
+    async ({
+      name,
+      toggleExisting = false,
+      clearTagInput = false,
+      clearTagIconInput = false,
+    }: {
+      name: string;
+      toggleExisting?: boolean;
+      clearTagInput?: boolean;
+      clearTagIconInput?: boolean;
+    }) => {
+      const normalizedName = normalizeTagName(name);
+      if (!normalizedName || isCreatingTag) return null;
+
+      const clearInputs = () => {
+        if (clearTagInput) {
+          setTagInputValue("");
+        }
+        if (clearTagIconInput) {
+          setTagIconInputValue("");
+        }
+      };
+
+      const existingTag = tagsByNormalizedName.get(normalizedName);
+      if (existingTag) {
+        setSelectedTagIds((current) => {
+          if (toggleExisting) {
+            return current.includes(existingTag.id)
+              ? current.filter((value) => value !== existingTag.id)
+              : [...current, existingTag.id];
+          }
+          return current.includes(existingTag.id)
+            ? current
+            : [...current, existingTag.id];
+        });
+        clearInputs();
+        return existingTag;
+      }
+
+      const displayName = sanitizeTagDisplayName(name);
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        toast.error("Unable to add tag", "Supabase client not available.");
+        return null;
+      }
+
+      setIsCreatingTag(true);
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) {
+          throw new Error("You need to be signed in to add tags.");
+        }
+
+        let resolvedTag: FabTag | null = null;
+        const tagTableClient = supabase as unknown as FabTagTableClient;
+        const { data, error } = await tagTableClient
+          .from("tags")
+          .insert({
+            user_id: user.id,
+            name: displayName,
+            normalized_name: normalizedName,
+          })
+          .select("id, user_id, name, normalized_name, color")
+          .single();
+
+        if (error) {
+          const { data: existingData, error: existingError } =
+            await tagTableClient
+              .from("tags")
+              .select("id, user_id, name, normalized_name, color")
+              .eq("user_id", user.id)
+              .eq("normalized_name", normalizedName)
+              .maybeSingle();
+          if (existingError) throw existingError;
+          if (!existingData) throw error;
+          resolvedTag = existingData as FabTag;
+        } else {
+          resolvedTag = data as FabTag;
+        }
+
+        if (!resolvedTag?.id) {
+          throw new Error("Tag could not be created.");
+        }
+
+        const tag = resolvedTag;
+        setAvailableTags((current) => {
+          const next = current.some((currentTag) => currentTag.id === tag.id)
+            ? current
+            : [...current, tag];
+          return [...next].sort((a, b) => a.name.localeCompare(b.name));
+        });
+        setSelectedTagIds((current) =>
+          current.includes(tag.id) ? current : [...current, tag.id],
+        );
+        clearInputs();
+        return tag;
+      } catch (error) {
+        console.error("Failed to create tag", error);
+        toast.error("Unable to add tag", "Try again in a moment.");
+        return null;
+      } finally {
+        setIsCreatingTag(false);
+      }
+    },
+    [isCreatingTag, tagsByNormalizedName, toast],
+  );
+
   const handleCreateOrSelectTag = useCallback(async () => {
-    const normalizedName = normalizeTagName(tagInputValue);
-    if (!normalizedName || isCreatingTag) return;
+    await createOrSelectTag({
+      name: tagInputValue,
+      clearTagInput: true,
+      clearTagIconInput: true,
+    });
+  }, [createOrSelectTag, tagInputValue]);
 
-    const existingTag = tagsByNormalizedName.get(normalizedName);
-    if (existingTag) {
-      setSelectedTagIds((current) =>
-        current.includes(existingTag.id) ? current : [...current, existingTag.id],
-      );
-      setTagInputValue("");
-      return;
-    }
-
-    const displayName = sanitizeTagDisplayName(tagInputValue);
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      toast.error("Unable to add tag", "Supabase client not available.");
-      return;
-    }
-
-    setIsCreatingTag(true);
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) {
-        throw new Error("You need to be signed in to add tags.");
-      }
-
-      let resolvedTag: FabTag | null = null;
-      const tagTableClient = supabase as unknown as FabTagTableClient;
-      const { data, error } = await tagTableClient
-        .from("tags")
-        .insert({
-          user_id: user.id,
-          name: displayName,
-          normalized_name: normalizedName,
-        })
-        .select("id, user_id, name, normalized_name, color")
-        .single();
-
-      if (error) {
-        const { data: existingData, error: existingError } =
-          await tagTableClient
-            .from("tags")
-            .select("id, user_id, name, normalized_name, color")
-            .eq("user_id", user.id)
-            .eq("normalized_name", normalizedName)
-            .maybeSingle();
-        if (existingError) throw existingError;
-        if (!existingData) throw error;
-        resolvedTag = existingData as FabTag;
-      } else {
-        resolvedTag = data as FabTag;
-      }
-
-      if (!resolvedTag?.id) {
-        throw new Error("Tag could not be created.");
-      }
-
-      setAvailableTags((current) => {
-        const next = current.some((tag) => tag.id === resolvedTag?.id)
-          ? current
-          : [...current, resolvedTag as FabTag];
-        return [...next].sort((a, b) => a.name.localeCompare(b.name));
-      });
-      setSelectedTagIds((current) =>
-        current.includes(resolvedTag.id) ? current : [...current, resolvedTag.id],
-      );
-      setTagInputValue("");
-    } catch (error) {
-      console.error("Failed to create tag", error);
-      toast.error("Unable to add tag", "Try again in a moment.");
-    } finally {
-      setIsCreatingTag(false);
-    }
-  }, [isCreatingTag, tagInputValue, tagsByNormalizedName, toast]);
+  const handleTogglePinnedTag = useCallback(async () => {
+    await createOrSelectTag({
+      name: PINNED_TAG_NAME,
+      toggleExisting: true,
+    });
+  }, [createOrSelectTag]);
 
   const attachSelectedTagsToEntity = useCallback(
     async ({
@@ -8786,58 +8917,122 @@ export function Fab({
     footer,
     density = "default",
     fillExpanded = true,
+    surface = "card",
+    flatFooter = false,
   }: {
     label: string;
     footer?: React.ReactNode;
     density?: "default" | "compact";
     fillExpanded?: boolean;
-  }) => (
-    <div
-      className={cn(
-        "grid rounded-2xl border border-white/10 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
-        density === "compact" ? "gap-3 px-4 py-3.5" : "gap-4 px-4 py-4",
-        expanded &&
-          fillExpanded &&
-          "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
-      )}
-      style={fillExpanded ? secondaryCreationPanelStyle : undefined}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold leading-none text-white">
-          {label}
-        </h3>
-        {selectedTagIds.length > 0 ? (
-          <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
-            {selectedTagIds.length} selected
-          </span>
-        ) : null}
-      </div>
-
+    surface?: "card" | "flat";
+    flatFooter?: boolean;
+  }) => {
+    const isFlatSurface = surface === "flat";
+    const pinnedTag = tagsByNormalizedName.get(PINNED_TAG_NORMALIZED_NAME);
+    const isPinnedSelected = pinnedTag
+      ? selectedTagIds.includes(pinnedTag.id)
+      : false;
+    const tagInputControls = (
       <div
         className={cn(
-          "grid min-h-0 content-start",
-          density === "compact" ? "gap-2.5" : "gap-3",
-          density === "compact"
-            ? footer
-              ? "grid-rows-[auto_auto_auto]"
-              : "grid-rows-[auto_auto]"
-            : footer
-              ? "grid-rows-[minmax(0,1fr)_auto_auto]"
-              : "grid-rows-[minmax(0,1fr)_auto]",
+          "flex items-center gap-2",
+          density === "compact" && "self-start",
         )}
       >
-        <div
+        {isFlatSurface ? (
+          <input
+            type="text"
+            value={tagIconInputValue}
+            onChange={(event) => setTagIconInputValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleCreateOrSelectTag();
+              }
+            }}
+            placeholder="✦"
+            aria-label="Tag icon"
+            title="Tag icon"
+            className="h-9 w-10 shrink-0 rounded-md border border-white/10 bg-white/[0.05] px-1 text-center text-[13px] font-medium text-white/82 caret-white outline-none placeholder:text-white/35 selection:bg-zinc-500/40 selection:text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition-colors focus:border-zinc-500/60 focus:bg-zinc-900/55 focus:ring-0 focus-visible:border-zinc-500/60 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+        ) : null}
+        <Input
+          value={tagInputValue}
+          onChange={(event) => setTagInputValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void handleCreateOrSelectTag();
+            }
+          }}
+          placeholder="New tag"
           className={cn(
-            "min-h-0",
-            density === "compact" && "self-start",
+            "min-w-0 flex-1 border-white/10 bg-black/30 text-white placeholder:text-white/35",
+            isFlatSurface &&
+              "rounded-md border-white/10 bg-white/[0.05] caret-white placeholder:text-white/35 selection:bg-zinc-500/40 selection:text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] focus:border-zinc-500/60 focus:bg-zinc-900/55 focus:ring-0 focus-visible:border-zinc-500/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none",
             density === "compact"
+              ? "h-9 px-3 text-[13px]"
+              : "h-10 px-3.5 text-sm",
+          )}
+        />
+        <button
+          type="button"
+          onClick={() => void handleCreateOrSelectTag()}
+          disabled={!normalizeTagName(tagInputValue) || isCreatingTag}
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/10 font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+            density === "compact" ? "h-9 px-3.5 text-[13px]" : "h-10 px-4 text-sm",
+          )}
+        >
+          {isCreatingTag ? "Adding…" : "Add"}
+        </button>
+      </div>
+    );
+
+    const pinPill = isFlatSurface ? (
+      <button
+        type="button"
+        aria-label={
+          isPinnedSelected ? "Remove Pinned tag" : "Select Pinned tag"
+        }
+        aria-pressed={isPinnedSelected}
+        title={isPinnedSelected ? "Remove Pinned tag" : "Select Pinned tag"}
+        onClick={() => void handleTogglePinnedTag()}
+        disabled={isCreatingTag}
+        className={cn(
+          "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-45",
+          isPinnedSelected
+            ? "border-white/20 bg-white/[0.09] text-white"
+            : "border-white/[0.08] bg-black/25 text-white/46 hover:border-white/16 hover:bg-white/[0.045] hover:text-white/82",
+        )}
+      >
+        <Pin className="h-3 w-3" aria-hidden="true" />
+      </button>
+    ) : null;
+
+    const tagPillList = (
+      <div
+        className={cn(
+          "min-h-0",
+          density === "compact" && !isFlatSurface && "self-start",
+          isFlatSurface
+            ? "max-h-[142px] overflow-y-auto overscroll-contain pr-1"
+            : density === "compact"
               ? "max-h-[168px] overflow-y-auto overscroll-contain pr-1"
               : availableTags.length > 10
                 ? "overflow-y-auto overscroll-contain pr-1"
                 : null,
-          )}
-        >
-          {tagsLoading ? (
+        )}
+      >
+        {tagsLoading ? (
+          isFlatSurface ? (
+            <div className="flex flex-wrap content-start gap-1.5">
+              {pinPill}
+              <span className="inline-flex h-7 items-center rounded-full border border-white/[0.08] bg-black/25 px-2.5 text-[11px] font-medium leading-none text-white/45">
+                Loading tags…
+              </span>
+            </div>
+          ) : (
             <div
               className={cn(
                 "grid place-items-center",
@@ -8846,84 +9041,138 @@ export function Fab({
             >
               <p className="text-sm text-white/55">Loading tags…</p>
             </div>
-          ) : availableTags.length > 0 ? (
-            <div
-              className={cn(
-                "flex flex-wrap content-start",
-                density === "compact" ? "gap-2" : "gap-2.5",
-              )}
-            >
-              {availableTags.map((tag) => {
-                const isSelected = selectedTagIds.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleSelectedTagId(tag.id)}
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-full border transition-colors",
-                      density === "compact"
-                        ? "min-h-8 px-3 py-1 text-[13px]"
-                        : "min-h-10 px-3.5 py-1.5 text-sm",
-                      isSelected
-                        ? "border-white/35 bg-white/16 text-white"
-                        : "border-white/10 bg-black/25 text-white/72 hover:border-white/20 hover:text-white",
-                    )}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 rounded-full bg-white/40"
-                      style={tag.color ? { backgroundColor: tag.color } : undefined}
-                    />
-                    <span className="truncate">{tag.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-
-        <div className={cn("flex items-center gap-2", density === "compact" && "self-start")}>
-          <Input
-            value={tagInputValue}
-            onChange={(event) => setTagInputValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void handleCreateOrSelectTag();
-              }
-            }}
-            placeholder="New tag"
-            className={cn(
-              "border-white/10 bg-black/30 text-white placeholder:text-white/35",
-              density === "compact" ? "h-9 px-3 text-[13px]" : "h-10 px-3.5 text-sm",
-            )}
-          />
-          <button
-            type="button"
-            onClick={() => void handleCreateOrSelectTag()}
-            disabled={!normalizeTagName(tagInputValue) || isCreatingTag}
-            className={cn(
-              "inline-flex shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/10 font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45",
-              density === "compact" ? "h-9 px-3.5 text-[13px]" : "h-10 px-4 text-sm",
-            )}
-          >
-            {isCreatingTag ? "Adding…" : "Add"}
-          </button>
-        </div>
-
-        {footer ? (
+          )
+        ) : availableTags.length > 0 || isFlatSurface ? (
           <div
             className={cn(
-              "grid rounded-xl border border-white/8 bg-black/20",
-              density === "compact" ? "gap-2.5 px-3 py-2.5" : "gap-3 px-3.5 py-3",
+              "flex flex-wrap content-start",
+              isFlatSurface
+                ? "gap-1.5"
+                : density === "compact"
+                  ? "gap-2"
+                  : "gap-2.5",
             )}
           >
-            {footer}
+            {pinPill}
+            {availableTags.map((tag) => {
+              const isSelected = selectedTagIds.includes(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => toggleSelectedTagId(tag.id)}
+                  className={cn(
+                    isFlatSurface
+                      ? "inline-flex max-w-full items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/18"
+                      : "inline-flex items-center gap-2 rounded-full border transition-colors",
+                    isFlatSurface
+                      ? "h-7 gap-1.5 px-2.5 text-[11px] font-medium leading-none"
+                      : density === "compact"
+                        ? "min-h-8 px-3 py-1 text-[13px]"
+                        : "min-h-10 px-3.5 py-1.5 text-sm",
+                    isFlatSurface
+                      ? isSelected
+                        ? "border-white/20 bg-white/[0.09] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                        : "border-white/[0.08] bg-black/25 text-white/58 hover:border-white/16 hover:bg-white/[0.045] hover:text-white/82"
+                      : isSelected
+                        ? "border-white/35 bg-white/16 text-white"
+                        : "border-white/10 bg-black/25 text-white/72 hover:border-white/20 hover:text-white",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "rounded-full bg-white/40",
+                      isFlatSurface ? "h-1 w-1" : "h-1.5 w-1.5",
+                    )}
+                    style={tag.color ? { backgroundColor: tag.color } : undefined}
+                  />
+                  <span
+                    className={cn("truncate", isFlatSurface && "max-w-[9rem]")}
+                  >
+                    {tag.name}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         ) : null}
       </div>
-    </div>
-  );
+    );
+
+    return (
+      <div
+        className={cn(
+          "grid",
+          surface === "card" &&
+            "rounded-2xl border border-white/10 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+          density === "compact" ? "gap-3 py-3.5" : "gap-4 py-4",
+          surface === "card" ? "px-4" : "px-0",
+          expanded &&
+            fillExpanded &&
+            "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
+        )}
+        style={fillExpanded ? secondaryCreationPanelStyle : undefined}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold leading-none text-white">
+            {label}
+          </h3>
+          {selectedTagIds.length > 0 ? (
+            <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+              {selectedTagIds.length} selected
+            </span>
+          ) : null}
+        </div>
+
+        <div
+          className={cn(
+            "grid min-h-0 content-start",
+            density === "compact" ? "gap-2.5" : "gap-3",
+            isFlatSurface
+              ? footer
+                ? "grid-rows-[auto_minmax(0,1fr)_auto]"
+                : "grid-rows-[auto_minmax(0,1fr)]"
+              : density === "compact"
+                ? footer
+                  ? "grid-rows-[auto_auto_auto]"
+                  : "grid-rows-[auto_auto]"
+                : footer
+                  ? "grid-rows-[minmax(0,1fr)_auto_auto]"
+                  : "grid-rows-[minmax(0,1fr)_auto]",
+          )}
+        >
+          {isFlatSurface ? (
+            <>
+              {tagInputControls}
+              {tagPillList}
+            </>
+          ) : (
+            <>
+              {tagPillList}
+              {tagInputControls}
+            </>
+          )}
+
+          {footer ? (
+            <div
+              className={cn(
+                "grid",
+                flatFooter
+                  ? "gap-2.5 border-t border-white/[0.06] pt-3"
+                  : "rounded-xl border border-white/8 bg-black/20",
+                !flatFooter &&
+                  (density === "compact"
+                    ? "gap-2.5 px-3 py-2.5"
+                    : "gap-3 px-3.5 py-3"),
+              )}
+            >
+              {footer}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
 
   const renderFlatAdvancedPanel = ({
     dueDateId,
@@ -8941,6 +9190,8 @@ export function Fab({
     exactEndTimeValue,
     onExactEndTimeChange,
     tagLabel,
+    tagSurface = "card",
+    flatDateSections = false,
   }: {
     dueDateId: string;
     dueDateValue: string;
@@ -8957,6 +9208,8 @@ export function Fab({
     exactEndTimeValue: string;
     onExactEndTimeChange: (value: string) => void;
     tagLabel: string;
+    tagSurface?: "card" | "flat";
+    flatDateSections?: boolean;
   }) => {
     const toggleExactDate = () => {
       const nextValue = !hasExactDate;
@@ -8965,6 +9218,22 @@ export function Fab({
         onExactDateChange("");
       }
     };
+    const exactScheduleSectionClass = flatDateSections
+      ? "grid gap-2.5 px-0 pt-1"
+      : "grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5";
+    const dueDateSectionClass = flatDateSections
+      ? "grid gap-2.5 border-t border-white/[0.06] px-0 pt-3"
+      : "grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5";
+    const exactScheduleToggleClass =
+      "flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left text-xs text-white transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25";
+    const exactScheduleInputClass = flatDateSections
+      ? "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30"
+      : FAB_ADVANCED_INPUT_CLASS;
+    const exactScheduleFieldLabelClass = flatDateSections
+      ? "text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50"
+      : FAB_ADVANCED_LABEL_CLASS;
+    const exactScheduleCompactToggleClass =
+      "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-white/10 transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20";
 
     return (
       <div
@@ -8975,89 +9244,176 @@ export function Fab({
           label: tagLabel,
           density: "compact",
           fillExpanded: false,
+          surface: tagSurface,
         })}
 
-        <section className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5">
+        <section className={exactScheduleSectionClass}>
           <p className={FAB_ADVANCED_LABEL_CLASS}>Exact schedule</p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={hasExactDate}
-            aria-label="Use exact date"
-            onClick={toggleExactDate}
-            className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left text-xs text-white transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-          >
-            <span>Use exact date</span>
-            <span
-              aria-hidden="true"
-              className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-white/10 transition-colors",
-                hasExactDate
-                  ? "border-white/25 bg-white/70"
-                  : "bg-white/10",
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-block h-[18px] w-[18px] rounded-full shadow transition-transform",
-                  hasExactDate
-                    ? "translate-x-[21px] bg-neutral-950"
-                    : "translate-x-1 bg-white",
-                )}
-              />
-            </span>
-          </button>
-          {hasExactDate ? (
-            <div className="grid gap-1.5">
-              <Label htmlFor={exactDateId} className={FAB_ADVANCED_LABEL_CLASS}>
-                Date
-              </Label>
-              <Input
-                id={exactDateId}
-                type="date"
-                value={exactDateValue}
-                onChange={(event) => onExactDateChange(event.target.value)}
-                className={FAB_ADVANCED_INPUT_CLASS}
-              />
+          {flatDateSections ? (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="grid min-w-0 gap-1.5">
+                <Label
+                  htmlFor={exactStartTimeId}
+                  className={exactScheduleFieldLabelClass}
+                >
+                  Start
+                </Label>
+                <Input
+                  id={exactStartTimeId}
+                  type="time"
+                  value={exactStartTimeValue}
+                  onChange={(event) =>
+                    onExactStartTimeChange(event.target.value)
+                  }
+                  className={exactScheduleInputClass}
+                />
+              </div>
+              <div className="grid min-w-0 gap-1.5">
+                <Label
+                  htmlFor={exactEndTimeId}
+                  className={exactScheduleFieldLabelClass}
+                >
+                  End
+                </Label>
+                <Input
+                  id={exactEndTimeId}
+                  type="time"
+                  value={exactEndTimeValue}
+                  onChange={(event) => onExactEndTimeChange(event.target.value)}
+                  className={exactScheduleInputClass}
+                />
+              </div>
+              <div className="grid min-w-0 gap-1.5">
+                <div className="flex min-w-0 items-center justify-between gap-1.5">
+                  <Label
+                    htmlFor={exactDateId}
+                    className={exactScheduleFieldLabelClass}
+                  >
+                    Date
+                  </Label>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={hasExactDate}
+                    aria-label="Use exact date"
+                    title="Use exact date"
+                    onClick={toggleExactDate}
+                    className={cn(
+                      exactScheduleCompactToggleClass,
+                      hasExactDate
+                        ? "border-white/25 bg-white/70"
+                        : "bg-white/10",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "inline-block h-3 w-3 rounded-full shadow transition-transform",
+                        hasExactDate
+                          ? "translate-x-[13px] bg-neutral-950"
+                          : "translate-x-0.5 bg-white",
+                      )}
+                    />
+                  </button>
+                </div>
+                <Input
+                  id={exactDateId}
+                  type="date"
+                  value={hasExactDate ? exactDateValue : ""}
+                  onChange={(event) => onExactDateChange(event.target.value)}
+                  disabled={!hasExactDate}
+                  className={exactScheduleInputClass}
+                />
+              </div>
             </div>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="grid gap-1.5">
-              <Label
-                htmlFor={exactStartTimeId}
-                className={FAB_ADVANCED_LABEL_CLASS}
+          ) : (
+            <>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={hasExactDate}
+                aria-label="Use exact date"
+                onClick={toggleExactDate}
+                className={exactScheduleToggleClass}
               >
-                Start time
-              </Label>
-              <Input
-                id={exactStartTimeId}
-                type="time"
-                value={exactStartTimeValue}
-                onChange={(event) =>
-                  onExactStartTimeChange(event.target.value)
-                }
-                className={FAB_ADVANCED_INPUT_CLASS}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label
-                htmlFor={exactEndTimeId}
-                className={FAB_ADVANCED_LABEL_CLASS}
-              >
-                End time
-              </Label>
-              <Input
-                id={exactEndTimeId}
-                type="time"
-                value={exactEndTimeValue}
-                onChange={(event) => onExactEndTimeChange(event.target.value)}
-                className={FAB_ADVANCED_INPUT_CLASS}
-              />
-            </div>
-          </div>
+                <span>Use exact date</span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-white/10 transition-colors",
+                    hasExactDate
+                      ? "border-white/25 bg-white/70"
+                      : "bg-white/10",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-[18px] w-[18px] rounded-full shadow transition-transform",
+                      hasExactDate
+                        ? "translate-x-[21px] bg-neutral-950"
+                        : "translate-x-1 bg-white",
+                    )}
+                  />
+                </span>
+              </button>
+              {hasExactDate ? (
+                <div className="grid gap-1.5">
+                  <Label
+                    htmlFor={exactDateId}
+                    className={FAB_ADVANCED_LABEL_CLASS}
+                  >
+                    Date
+                  </Label>
+                  <Input
+                    id={exactDateId}
+                    type="date"
+                    value={exactDateValue}
+                    onChange={(event) => onExactDateChange(event.target.value)}
+                    className={exactScheduleInputClass}
+                  />
+                </div>
+              ) : null}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-1.5">
+                  <Label
+                    htmlFor={exactStartTimeId}
+                    className={FAB_ADVANCED_LABEL_CLASS}
+                  >
+                    Start time
+                  </Label>
+                  <Input
+                    id={exactStartTimeId}
+                    type="time"
+                    value={exactStartTimeValue}
+                    onChange={(event) =>
+                      onExactStartTimeChange(event.target.value)
+                    }
+                    className={exactScheduleInputClass}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label
+                    htmlFor={exactEndTimeId}
+                    className={FAB_ADVANCED_LABEL_CLASS}
+                  >
+                    End time
+                  </Label>
+                  <Input
+                    id={exactEndTimeId}
+                    type="time"
+                    value={exactEndTimeValue}
+                    onChange={(event) =>
+                      onExactEndTimeChange(event.target.value)
+                    }
+                    className={exactScheduleInputClass}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </section>
 
-        <section className="grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5">
+        <section className={dueDateSectionClass}>
           <div className="grid gap-1">
             <Label htmlFor={dueDateId} className={FAB_ADVANCED_LABEL_CLASS}>
               Due date
@@ -9071,7 +9427,7 @@ export function Fab({
             type="date"
             value={dueDateValue}
             onChange={(event) => onDueDateChange(event.target.value)}
-            className={FAB_ADVANCED_INPUT_CLASS}
+            className={exactScheduleInputClass}
           />
         </section>
       </div>
@@ -12374,6 +12730,7 @@ export function Fab({
                 renderTagPickerPanel({
                   label: "Goal Tags",
                   density: "compact",
+                  surface: "flat",
                 })}
 
               {selected === "PROJECT" &&
@@ -12397,6 +12754,8 @@ export function Fab({
                   exactEndTimeValue: projectExactEndTime,
                   onExactEndTimeChange: setProjectExactEndTime,
                   tagLabel: "Project Tags",
+                  tagSurface: "flat",
+                  flatDateSections: true,
                 })}
 
               {selected === "TASK" && activeCreationMode === "advanced" &&
@@ -12416,6 +12775,8 @@ export function Fab({
                   exactEndTimeValue: taskExactEndTime,
                   onExactEndTimeChange: setTaskExactEndTime,
                   tagLabel: "Task Tags",
+                  tagSurface: "flat",
+                  flatDateSections: true,
                 })}
 
               {selected === "HABIT" && activeCreationMode === "memoForms" && (
@@ -12773,12 +13134,14 @@ export function Fab({
                   footer: (
                     <>
                       <div className="grid gap-2">
-                        <p className={FAB_ADVANCED_LABEL_CLASS}>Exact time</p>
+                        <p className={HABIT_ADVANCED_FIELD_LABEL_CLASS}>
+                          Exact time
+                        </p>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="grid gap-1.5">
                             <Label
                               htmlFor="habit-advanced-fixed-start-time"
-                              className={FAB_ADVANCED_LABEL_CLASS}
+                              className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
                             >
                               Start time
                             </Label>
@@ -12789,13 +13152,13 @@ export function Fab({
                               onChange={(event) =>
                                 setHabitFixedStartTime(event.target.value)
                               }
-                              className={FAB_ADVANCED_INPUT_CLASS}
+                              className={HABIT_ADVANCED_INPUT_CLASS}
                             />
                           </div>
                           <div className="grid gap-1.5">
                             <Label
                               htmlFor="habit-advanced-fixed-end-time"
-                              className={FAB_ADVANCED_LABEL_CLASS}
+                              className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
                             >
                               End time
                             </Label>
@@ -12806,7 +13169,7 @@ export function Fab({
                               onChange={(event) =>
                                 setHabitFixedEndTime(event.target.value)
                               }
-                              className={FAB_ADVANCED_INPUT_CLASS}
+                              className={HABIT_ADVANCED_INPUT_CLASS}
                             />
                           </div>
                         </div>
@@ -12814,7 +13177,7 @@ export function Fab({
                       <div className="grid gap-1.5">
                         <Label
                           htmlFor="habit-advanced-location-context"
-                          className={FAB_ADVANCED_LABEL_CLASS}
+                          className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
                         >
                           Location
                         </Label>
@@ -12840,15 +13203,15 @@ export function Fab({
                             locationContextsLoading ||
                             validLocationContexts.length === 0
                           }
-                          contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                          contentWrapperClassName={HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS}
                         >
                           <SelectTrigger
                             id="habit-advanced-location-context"
-                            className={FAB_ADVANCED_SELECT_TRIGGER_CLASS}
+                            className={HABIT_ADVANCED_SELECT_TRIGGER_CLASS}
                           >
                             <SelectValue placeholder="Anywhere" />
                           </SelectTrigger>
-                          <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                          <SelectContent className={HABIT_ADVANCED_SELECT_CONTENT_CLASS}>
                             {locationContextsLoading ? (
                               <SelectItem
                                 value="__loading__"
@@ -12900,22 +13263,22 @@ export function Fab({
                         <div className="grid gap-1.5">
                           <Label
                             htmlFor="habit-advanced-daylight"
-                            className={FAB_ADVANCED_LABEL_CLASS}
+                            className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
                           >
                             Daylight
                           </Label>
                           <Select
                             value={habitDaylightPreference}
                             onValueChange={setHabitDaylightPreference}
-                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                            contentWrapperClassName={HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS}
                           >
                             <SelectTrigger
                               id="habit-advanced-daylight"
-                              className={FAB_ADVANCED_SELECT_TRIGGER_CLASS}
+                              className={HABIT_ADVANCED_SELECT_TRIGGER_CLASS}
                             >
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                            <SelectContent className={HABIT_ADVANCED_SELECT_CONTENT_CLASS}>
                               {HABIT_DAYLIGHT_ADVANCED_OPTIONS.map((option) => (
                                 <SelectItem
                                   key={option.value}
@@ -12924,8 +13287,8 @@ export function Fab({
                                     habitDaylightPreference === option.value,
                                   )}
                                 >
-                              {option.label}
-                            </SelectItem>
+                                  {option.label}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -12933,22 +13296,22 @@ export function Fab({
                         <div className="grid gap-1.5">
                           <Label
                             htmlFor="habit-advanced-window-edge"
-                            className={FAB_ADVANCED_LABEL_CLASS}
+                            className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
                           >
                             Window edge
                           </Label>
                           <Select
                             value={habitWindowEdgePreference}
                             onValueChange={setHabitWindowEdgePreference}
-                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                            contentWrapperClassName={HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS}
                           >
                             <SelectTrigger
                               id="habit-advanced-window-edge"
-                              className={FAB_ADVANCED_SELECT_TRIGGER_CLASS}
+                              className={HABIT_ADVANCED_SELECT_TRIGGER_CLASS}
                             >
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                            <SelectContent className={HABIT_ADVANCED_SELECT_CONTENT_CLASS}>
                               {HABIT_WINDOW_EDGE_ADVANCED_OPTIONS.map(
                                 (option) => (
                                   <SelectItem
@@ -12959,7 +13322,7 @@ export function Fab({
                                         option.value,
                                     )}
                                   >
-                            {option.label}
+                                    {option.label}
                                   </SelectItem>
                                 ),
                               )}
@@ -12970,7 +13333,7 @@ export function Fab({
                       <div className="grid gap-1.5">
                         <Label
                           htmlFor="habit-advanced-next-due-override"
-                          className={FAB_ADVANCED_LABEL_CLASS}
+                          className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
                         >
                           Next due
                         </Label>
@@ -12981,11 +13344,13 @@ export function Fab({
                           onChange={(event) =>
                             setHabitNextDueOverride(event.target.value)
                           }
-                          className={FAB_ADVANCED_INPUT_CLASS}
+                          className={HABIT_ADVANCED_INPUT_CLASS}
                         />
                       </div>
                     </>
                   ),
+                  surface: "flat",
+                  flatFooter: true,
                 })}
             </div>
 
@@ -13060,8 +13425,11 @@ export function Fab({
       onSortModeChange={setOverlaySortMode}
       availableMonuments={monuments}
       availableSkills={skills}
-      popupExpanded={normalNexusExpanded}
-      onPopupExpandedChange={handleNormalNexusExpandedChange}
+      usePopupSizing={menuVariant === "default"}
+      popupExpanded={menuVariant === "default" ? normalNexusExpanded : false}
+      onPopupExpandedChange={
+        menuVariant === "default" ? handleNormalNexusExpandedChange : undefined
+      }
       showToolbar
     />
   );
@@ -17541,7 +17909,8 @@ export function Fab({
     isTaskCreationExpanded ||
     isHabitCreationExpanded;
   const shouldUseContentSizedFabStage =
-    isContentSizedCreationExpanded || isNormalFabNexusPage;
+    isContentSizedCreationExpanded ||
+    (isNormalFabNexusPage && !isNormalFabNexusExpanded);
   const goalCreationMinHeight = 240;
   const goalCenteredEditMinHeight = 320;
   const projectCreationMinHeight = 280;
@@ -17760,7 +18129,12 @@ export function Fab({
     currentMobileFabPanelHeightExpanded ?? minHeightExpanded;
   const panelMaxHeightExpanded =
     currentMobileFabPanelHeightExpanded ?? maxHeightExpanded;
-  const panelHeightExpanded = currentMobileFabPanelHeightExpanded;
+  const normalFabNexusPanelHeightExpanded =
+    isNormalFabNexusExpanded && panelMinHeightExpanded !== undefined
+      ? panelMinHeightExpanded
+      : undefined;
+  const panelHeightExpanded =
+    normalFabNexusPanelHeightExpanded ?? currentMobileFabPanelHeightExpanded;
   const panelSizeTransition = "border-color 0.1s linear, transform 0.2s ease";
   const shouldUseCenteredMobileCreationPanel =
     expanded &&
@@ -18238,7 +18612,8 @@ export function Fab({
                     expanded &&
                       (shouldUseCenteredEditModal ||
                         shouldUseCenteredCreationPanel ||
-                        shouldAttachCreationControls) &&
+                        shouldAttachCreationControls ||
+                        isNormalFabNexusExpanded) &&
                       "flex flex-col overflow-hidden",
                     expanded
                       ? isGoalCreationExpanded
@@ -18371,7 +18746,8 @@ export function Fab({
                     data-fab-scroll-body={
                       shouldUseCenteredEditModal ||
                       shouldUseCenteredCreationPanel ||
-                      shouldUseScrollableFabBody
+                      shouldUseScrollableFabBody ||
+                      isNormalFabNexusExpanded
                         ? ""
                         : undefined
                     }
@@ -18380,6 +18756,8 @@ export function Fab({
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
                         : shouldUseCenteredCreationPanel
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                        : isNormalFabNexusExpanded
+                        ? "min-h-0 flex-1 basis-0 overflow-hidden"
                         : shouldUseScrollableFabBody
                           ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
                           : shouldRenderAttachedCreationControls
@@ -18720,7 +19098,10 @@ export function Fab({
       />
       {overlayOpen &&
         createPortal(
-          <div className="fixed inset-0 z-[2147483662] flex items-center justify-center px-4 py-6 overflow-y-auto">
+          <div
+            className="fixed inset-0 z-[2147483662] flex items-center justify-center px-4 py-6 overflow-y-auto"
+            style={{ touchAction: "manipulation" }}
+          >
             <div
               className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
               onClick={() => setOverlayOpen(false)}
@@ -18731,8 +19112,21 @@ export function Fab({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
               className="relative w-full max-w-[520px] overflow-visible"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Overlay Builder"
+              onPointerDown={stopOverlayBuilderEventPropagation}
+              onPointerUp={stopOverlayBuilderEventPropagation}
+              onMouseDown={stopOverlayBuilderEventPropagation}
+              onTouchStart={stopOverlayBuilderEventPropagation}
+              onTouchEnd={stopOverlayBuilderEventPropagation}
+              onClick={stopOverlayBuilderEventPropagation}
+              style={{ touchAction: "manipulation" }}
             >
-              <div className="relative max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(10,10,12,0.94))] p-6 text-white shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]">
+              <div
+                className="relative max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(10,10,12,0.94))] p-6 text-white shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]"
+                style={{ touchAction: "manipulation" }}
+              >
               <button
                 type="button"
                 className="flex w-full items-center justify-between gap-3 py-0.5 text-left text-white transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
@@ -20750,6 +21144,7 @@ type FabNexusProps = {
   availableMonuments?: Monument[];
   availableSkills?: Skill[];
   showToolbar?: boolean;
+  usePopupSizing?: boolean;
   popupExpanded?: boolean;
   onPopupExpandedChange?: (expanded: boolean) => void;
   embeddedExpanded?: boolean;
@@ -20783,6 +21178,7 @@ function FabNexus({
   availableMonuments,
   availableSkills,
   showToolbar = false,
+  usePopupSizing = false,
   popupExpanded = false,
   onPopupExpandedChange,
   embeddedExpanded = false,
@@ -20804,6 +21200,7 @@ function FabNexus({
   const RESULT_CARD_PAGE_SWIPE_DOMINANCE = 1.25;
   const RESULT_CARD_VERTICAL_SCROLL_DOMINANCE = 1.15;
   const isEmbedded = variant === "embedded";
+  const shouldUsePopupSizing = !isEmbedded && usePopupSizing;
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -20899,9 +21296,9 @@ function FabNexus({
         "flex w-full flex-col overflow-hidden text-white",
         isEmbedded
           ? "h-full min-h-0"
-          : popupExpanded
-            ? FAB_NEXUS_EXPANDED_SIZE_CLASS
-            : FAB_NEXUS_COMPACT_SIZE_CLASS,
+          : shouldUsePopupSizing && !popupExpanded
+            ? FAB_NEXUS_COMPACT_SIZE_CLASS
+            : "h-full min-h-0",
       )}
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
@@ -20936,7 +21333,7 @@ function FabNexus({
                 <Expand className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
-          ) : showToolbar && onPopupExpandedChange ? (
+          ) : showToolbar && shouldUsePopupSizing && onPopupExpandedChange ? (
             <button
               type="button"
               aria-label={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
@@ -21062,7 +21459,9 @@ function FabNexus({
           "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5 pt-3",
           isEmbedded
             ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
-            : "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]",
+            : shouldUsePopupSizing
+              ? "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
+              : "pb-3",
         )}
         data-fab-nexus-scroll="true"
         style={{ touchAction: "pan-y" }}

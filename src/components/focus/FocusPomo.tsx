@@ -47,11 +47,13 @@ import {
 import { HABIT_TYPE_OPTIONS as APP_HABIT_TYPE_OPTIONS } from "@/components/habits/habit-form-fields";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
+import { getCatsForUser } from "@/lib/data/cats";
 import {
   listRoadmapsWithItems,
   type RoadmapWithItems,
 } from "@/lib/queries/roadmaps";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import type { CatRow } from "@/lib/types/cat";
 import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
@@ -109,6 +111,9 @@ type ScopeOption = {
   name: string;
   icon?: string | null;
   monumentId?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  sortOrder?: number | null;
 };
 
 type ConstraintOption = ScopeOption & {
@@ -168,7 +173,6 @@ const FOCUS_POMO_QUEUE_NUMBER_BADGE_CLASS =
   "flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-zinc-950/55 text-[11px] font-semibold text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] sm:size-8 sm:rounded-lg sm:text-xs";
 const FOCUS_POMO_QUEUE_ICON_BADGE_CLASS =
   "flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-zinc-950/50 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:size-8 sm:rounded-lg sm:text-base";
-
 const INVALID_HABIT_TYPE_KEYS = new Set(["routine", "routines"]);
 const LOCKED_OFF_HABIT_TYPE_KEYS = new Set([
   "temp",
@@ -636,7 +640,10 @@ function makeScopeOption(
   id: string | null,
   name: string | null,
   icon?: string | null,
-  monumentId?: string | null
+  monumentId?: string | null,
+  categoryId?: string | null,
+  categoryName?: string | null,
+  sortOrder?: number | null
 ): ScopeOption | null {
   const optionName = name ?? id;
   if (!optionName) return null;
@@ -646,6 +653,9 @@ function makeScopeOption(
     name: optionName,
     icon: icon ?? null,
     monumentId: monumentId ?? null,
+    categoryId: categoryId ?? null,
+    categoryName: categoryName ?? null,
+    sortOrder: sortOrder ?? null,
   };
 }
 
@@ -659,12 +669,18 @@ function mergeScopeOption(
   if (existingById) {
     if (
       (!existingById.icon && option.icon) ||
-      (!existingById.monumentId && option.monumentId)
+      (!existingById.monumentId && option.monumentId) ||
+      (!existingById.categoryId && option.categoryId) ||
+      (!existingById.categoryName && option.categoryName) ||
+      (existingById.sortOrder == null && option.sortOrder != null)
     ) {
       options.set(option.id, {
         ...existingById,
         icon: existingById.icon ?? option.icon,
         monumentId: existingById.monumentId ?? option.monumentId ?? null,
+        categoryId: existingById.categoryId ?? option.categoryId ?? null,
+        categoryName: existingById.categoryName ?? option.categoryName ?? null,
+        sortOrder: existingById.sortOrder ?? option.sortOrder ?? null,
       });
     }
     return;
@@ -680,12 +696,18 @@ function mergeScopeOption(
   if (existingByName) {
     if (
       (!existingByName.icon && option.icon) ||
-      (!existingByName.monumentId && option.monumentId)
+      (!existingByName.monumentId && option.monumentId) ||
+      (!existingByName.categoryId && option.categoryId) ||
+      (!existingByName.categoryName && option.categoryName) ||
+      (existingByName.sortOrder == null && option.sortOrder != null)
     ) {
       options.set(existingByName.id, {
         ...existingByName,
         icon: existingByName.icon ?? option.icon,
         monumentId: existingByName.monumentId ?? option.monumentId ?? null,
+        categoryId: existingByName.categoryId ?? option.categoryId ?? null,
+        categoryName: existingByName.categoryName ?? option.categoryName ?? null,
+        sortOrder: existingByName.sortOrder ?? option.sortOrder ?? null,
       });
     }
     return;
@@ -1481,6 +1503,73 @@ function sortScopeOptions(options: ScopeOption[]): ScopeOption[] {
   );
 }
 
+function compareScopeOptionNames(a: ScopeOption, b: ScopeOption): number {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function hasScopeSortOrder(option: ScopeOption): boolean {
+  return (
+    typeof option.sortOrder === "number" && Number.isFinite(option.sortOrder)
+  );
+}
+
+function sortSkillScopeOptions(
+  options: ScopeOption[],
+  categories: CatRow[]
+): ScopeOption[] {
+  const categoryOrder = new Map<string, number>();
+  [...categories]
+    .sort((a, b) => {
+      const aHasOrder =
+        typeof a.sort_order === "number" && Number.isFinite(a.sort_order);
+      const bHasOrder =
+        typeof b.sort_order === "number" && Number.isFinite(b.sort_order);
+
+      if (aHasOrder && bHasOrder && a.sort_order !== b.sort_order) {
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      }
+      if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    })
+    .forEach((category, index) => {
+      categoryOrder.set(category.id, index);
+    });
+
+  const originalIndex = new Map<string, number>();
+  options.forEach((option, index) => {
+    originalIndex.set(option.id, index);
+  });
+
+  return [...options].sort((a, b) => {
+    const aCategoryOrder =
+      a.categoryId != null ? categoryOrder.get(a.categoryId) : undefined;
+    const bCategoryOrder =
+      b.categoryId != null ? categoryOrder.get(b.categoryId) : undefined;
+    const aUncategorized = aCategoryOrder == null;
+    const bUncategorized = bCategoryOrder == null;
+
+    if (aUncategorized !== bUncategorized) return aUncategorized ? 1 : -1;
+    if (!aUncategorized && aCategoryOrder !== bCategoryOrder) {
+      return (aCategoryOrder ?? 0) - (bCategoryOrder ?? 0);
+    }
+
+    const aHasOrder = hasScopeSortOrder(a);
+    const bHasOrder = hasScopeSortOrder(b);
+    if (aHasOrder && bHasOrder && a.sortOrder !== b.sortOrder) {
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    }
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+    if (!aHasOrder && !bHasOrder) {
+      const nameComparison = compareScopeOptionNames(a, b);
+      if (nameComparison !== 0) return nameComparison;
+    }
+
+    return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+  });
+}
+
 function buildScopeOptions(
   items: FocusPomoQueueItem[],
   source: FocusPomoSource | null | undefined,
@@ -1522,7 +1611,8 @@ function withSourceScopeOption(
   options.forEach((option) => mergeScopeOption(mergedOptions, option));
   mergeScopeOption(mergedOptions, sourceOption);
 
-  return sortScopeOptions(Array.from(mergedOptions.values()));
+  const mergedValues = Array.from(mergedOptions.values());
+  return kind === "skill" ? mergedValues : sortScopeOptions(mergedValues);
 }
 
 function deriveConstraintOptions(
@@ -2954,9 +3044,7 @@ function SortableFocusQueueItem({
   onSelect,
   onLongPressEdit,
 }: SortableFocusQueueItemProps) {
-  const longPressTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(
-    null
-  );
+  const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{
     x: number;
     y: number;
@@ -3421,6 +3509,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     monuments: ScopeOption[];
     skills: ScopeOption[];
   }>({ monuments: [], skills: [] });
+  const [availableSkillCategories, setAvailableSkillCategories] = useState<
+    CatRow[]
+  >([]);
   const [availableConstraintOptions, setAvailableConstraintOptions] =
     useState<AvailableConstraintOptions>({
       tags: [],
@@ -3541,6 +3632,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   useEffect(() => {
     if (!open) {
       setAvailableScopeOptions({ monuments: [], skills: [] });
+      setAvailableSkillCategories([]);
       setAvailableConstraintOptions({
         tags: [],
         goals: [],
@@ -3559,6 +3651,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       const supabase = getSupabaseBrowser();
       if (!supabase) {
         setAvailableScopeOptions({ monuments: [], skills: [] });
+        setAvailableSkillCategories([]);
         setAvailableConstraintOptions({
           tags: [],
           goals: [],
@@ -3583,6 +3676,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           console.error("Failed to load FocusPomo scope user", userError);
         }
         setAvailableScopeOptions({ monuments: [], skills: [] });
+        setAvailableSkillCategories([]);
         setAvailableConstraintOptions({
           tags: [],
           goals: [],
@@ -3598,6 +3692,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       const [
         monumentsResult,
         skillsResult,
+        categoriesResult,
         goalsResult,
         roadmapsResult,
         tagsResult,
@@ -3608,6 +3703,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       ] = await Promise.allSettled([
         getMonumentsForUser(user.id),
         getSkillsForUser(user.id),
+        getCatsForUser(user.id),
         getGoalsForUser(user.id),
         listRoadmapsWithItems(user.id),
         fetchUserTagOptions(supabase, user.id),
@@ -3629,6 +3725,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         console.error(
           "Failed to load FocusPomo skill scope options",
           skillsResult.reason
+        );
+      }
+      if (categoriesResult.status === "rejected") {
+        console.error(
+          "Failed to load FocusPomo skill categories",
+          categoriesResult.reason
         );
       }
       if (goalsResult.status === "rejected") {
@@ -3687,20 +3789,24 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
             : [],
         skills:
           skillsResult.status === "fulfilled"
-            ? sortScopeOptions(
-                skillsResult.value
-                  .map((skill) =>
-                    makeScopeOption(
-                      skill.id,
-                      skill.name,
-                      skill.icon ?? null,
-                      skill.monument_id ?? null
-                    )
+            ? skillsResult.value
+                .map((skill) =>
+                  makeScopeOption(
+                    skill.id,
+                    skill.name,
+                    skill.icon ?? null,
+                    skill.monument_id ?? null,
+                    skill.cat_id ?? null,
+                    null,
+                    skill.sort_order ?? null
                   )
-                  .filter((option): option is ScopeOption => Boolean(option))
-              )
+                )
+                .filter((option): option is ScopeOption => Boolean(option))
             : [],
       });
+      setAvailableSkillCategories(
+        categoriesResult.status === "fulfilled" ? categoriesResult.value : []
+      );
       setAvailableConstraintOptions({
         tags: tagsResult.status === "fulfilled" ? tagsResult.value : [],
         goals:
@@ -4048,6 +4154,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     availableScopeOptions.skills.length > 0
       ? withSourceScopeOption(availableScopeOptions.skills, displaySource, "skill")
       : queueDerivedScopeOptions.skills;
+  const sortedSkillOptions = sortSkillScopeOptions(
+    skillOptions,
+    availableSkillCategories
+  );
   const queueDerivedConstraintOptions = deriveConstraintOptions([
     ...queue,
     ...scopeQueue,
@@ -5176,7 +5286,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </p>
                             {skillOptions.length > 0 ? (
                               <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
-                                {skillOptions.map((option) => {
+                                {sortedSkillOptions.map((option) => {
                                   const selected =
                                     draftSelectedSkillIds.includes(option.id);
 

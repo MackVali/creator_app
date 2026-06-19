@@ -18,6 +18,7 @@ import {
   type RoadmapPriorityCampaign,
   type RoadmapPriorityGoal,
   type UserPriorityFilterOptionData,
+  type UserPrioritySkillCategoryData,
 } from "./utils";
 
 export const runtime = "nodejs";
@@ -74,6 +75,14 @@ type SkillMetadataRow = {
   name?: string | null;
   icon?: string | null;
   monument_id?: string | null;
+  cat_id?: string | null;
+  sort_order?: number | string | null;
+  created_at?: string | null;
+};
+
+type SkillCategoryRow = {
+  id?: string | null;
+  name?: string | null;
   sort_order?: number | string | null;
   created_at?: string | null;
 };
@@ -150,6 +159,14 @@ function createUserPriorityFilterOption(
   };
 }
 
+function parseSortOrder(value?: number | string | null): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function createMonumentFilterOption(
   monument: MonumentRow
 ): UserPriorityFilterOptionData | null {
@@ -163,11 +180,31 @@ function createMonumentFilterOption(
 function createSkillFilterOption(
   skill: SkillMetadataRow
 ): UserPriorityFilterOptionData | null {
-  return createUserPriorityFilterOption(
+  const option = createUserPriorityFilterOption(
     skill.id ?? null,
     skill.name ?? null,
     skill.icon ?? null
   );
+  if (!option) return null;
+
+  return {
+    ...option,
+    categoryId: skill.cat_id ?? null,
+    sortOrder: parseSortOrder(skill.sort_order),
+  };
+}
+
+function createSkillCategoryOption(
+  category: SkillCategoryRow
+): UserPrioritySkillCategoryData | null {
+  const categoryId = (category.id ?? "").trim();
+  if (!categoryId) return null;
+
+  return {
+    id: categoryId,
+    name: (category.name ?? "").trim() || categoryId,
+    sortOrder: parseSortOrder(category.sort_order),
+  };
 }
 
 function normalizeMetadataKey(value?: string | null) {
@@ -690,13 +727,27 @@ export default async function PriorityEditorPage() {
 
   const { data: allSkillData, error: allSkillError } = await supabase
     .from("skills")
-    .select("id,name,icon,monument_id,sort_order,created_at")
+    .select("id,name,icon,monument_id,cat_id,sort_order,created_at")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
 
   if (allSkillError) {
     console.error("Failed to load Skill options for priority editor", allSkillError);
+  }
+
+  const { data: skillCategoryData, error: skillCategoryError } = await supabase
+    .from("cats")
+    .select("id,name,sort_order,created_at")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (skillCategoryError) {
+    console.error(
+      "Failed to load Skill categories for priority editor",
+      skillCategoryError
+    );
   }
 
   const { data: goalData, error: goalError } = await supabase
@@ -785,7 +836,7 @@ export default async function PriorityEditorPage() {
   } else if (skillIds.length > 0) {
     const { data: skillData, error: skillError } = await supabase
       .from("skills")
-      .select("id,name,icon,monument_id")
+      .select("id,name,icon,monument_id,cat_id,sort_order")
       .eq("user_id", userId)
       .in("id", skillIds);
 
@@ -884,6 +935,9 @@ export default async function PriorityEditorPage() {
   const skillFilterOptions = allSkills
     .map(createSkillFilterOption)
     .filter((option): option is UserPriorityFilterOptionData => Boolean(option));
+  const skillCategoryOptions = ((skillCategoryData ?? []) as SkillCategoryRow[])
+    .map(createSkillCategoryOption)
+    .filter((option): option is UserPrioritySkillCategoryData => Boolean(option));
 
   return (
     <ProtectedRoute>
@@ -893,6 +947,7 @@ export default async function PriorityEditorPage() {
         initialHabitItems={habitItems}
         initialMonumentOptions={monumentFilterOptions}
         initialSkillOptions={skillFilterOptions}
+        initialSkillCategories={skillCategoryOptions}
         initialError={fetchErrorMessages.length ? fetchErrorMessages.join(" ") : null}
       />
     </ProtectedRoute>
