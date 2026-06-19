@@ -912,11 +912,11 @@ const FAB_ADVANCED_LABEL_CLASS =
 const FAB_ADVANCED_INPUT_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white placeholder:text-white/35 focus:border-blue-400/60 focus-visible:ring-0";
 const HABIT_ADVANCED_FIELD_LABEL_CLASS =
-  "text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50";
+  "min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50";
 const HABIT_ADVANCED_INPUT_CLASS =
-  "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-500/60 focus:bg-zinc-900/55 focus-visible:border-zinc-500/60 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
+  "h-10 w-full min-w-0 max-w-full rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-500/60 focus:bg-zinc-900/55 focus-visible:border-zinc-500/60 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
 const HABIT_ADVANCED_SELECT_TRIGGER_CLASS =
-  "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-left text-[11px] text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition-colors hover:border-white/16 hover:bg-zinc-900/55 focus:border-zinc-500/60 focus:bg-zinc-900/55 focus:ring-0 focus-visible:border-zinc-500/60 focus-visible:ring-0 data-[state=open]:border-zinc-500/60 data-[state=open]:bg-zinc-900/55 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
+  "h-10 w-full min-w-0 max-w-full rounded-md border border-white/10 bg-white/[0.05] px-2.5 text-left text-[11px] text-white shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition-colors hover:border-white/16 hover:bg-zinc-900/55 focus:border-zinc-500/60 focus:bg-zinc-900/55 focus:ring-0 focus-visible:border-zinc-500/60 focus-visible:ring-0 data-[state=open]:border-zinc-500/60 data-[state=open]:bg-zinc-900/55 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30";
 const HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS =
   "rounded-md border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/45";
 const HABIT_ADVANCED_SELECT_CONTENT_CLASS = "bg-zinc-950";
@@ -933,9 +933,7 @@ const FAB_CREATION_SELECT_ITEM_SELECTED_CLASS =
   "bg-zinc-800 text-white shadow-none ring-1 ring-zinc-700/70";
 const FAB_NEXUS_EXPANDED_SIZE_CLASS =
   "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
-const FAB_NEXUS_COMPACT_HEIGHT = 360;
-const FAB_NEXUS_COMPACT_SIZE_CLASS = "h-[360px]";
-const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = FAB_NEXUS_COMPACT_SIZE_CLASS;
+const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = "h-[360px]";
 const fabCreationSelectItemClass = (
   isSelected: boolean,
   className?: string,
@@ -1602,6 +1600,8 @@ const parseExactSchedule = (
     error: null,
   };
 };
+
+const PROJECT_EXACT_DATE_DEFAULT_ON = true;
 
 const normalizeLocalTimeForDb = (value: string) => {
   const trimmed = value.trim();
@@ -4193,7 +4193,9 @@ export function Fab({
     creationRequest?.type === "PROJECT" ? (creationRequest.goalId ?? null) : null,
   );
   const [projectDue, setProjectDue] = useState("");
-  const [projectHasExactDate, setProjectHasExactDate] = useState(false);
+  const [projectHasExactDate, setProjectHasExactDate] = useState(
+    PROJECT_EXACT_DATE_DEFAULT_ON,
+  );
   const [projectExactDate, setProjectExactDate] = useState("");
   const [projectExactFallbackDate, setProjectExactFallbackDate] = useState("");
   const [projectExactStartTime, setProjectExactStartTime] = useState("");
@@ -4421,25 +4423,30 @@ export function Fab({
   const [draftTaskSkillId, setDraftTaskSkillId] = useState<string | "">("");
   const [draftTaskNotes, setDraftTaskNotes] = useState("");
   const [draftTaskDue, setDraftTaskDue] = useState("");
-  const resetProjectFormDraft = useCallback(() => {
-    setProjectName("");
-    setProjectStage("RESEARCH");
-    setProjectDuration("");
-    setProjectPriority("MEDIUM");
-    setProjectEnergy("MEDIUM");
-    setProjectWhy("");
-    setProjectSkillIds([]);
-    setSkillSearch("");
-    setProjectGoalId(null);
-    setProjectDue("");
-    setProjectHasExactDate(false);
-    setProjectExactDate("");
-    setProjectExactFallbackDate("");
-    setProjectExactStartTime("");
-    setProjectExactEndTime("");
-    setShowDurationPicker(false);
-    setDurationPosition(null);
-  }, []);
+  const resetProjectFormDraft = useCallback(
+    (options?: { exactDateDefault?: boolean }) => {
+      const exactDateDefault =
+        options?.exactDateDefault ?? PROJECT_EXACT_DATE_DEFAULT_ON;
+      setProjectName("");
+      setProjectStage("RESEARCH");
+      setProjectDuration("");
+      setProjectPriority("MEDIUM");
+      setProjectEnergy("MEDIUM");
+      setProjectWhy("");
+      setProjectSkillIds([]);
+      setSkillSearch("");
+      setProjectGoalId(null);
+      setProjectDue("");
+      setProjectHasExactDate(exactDateDefault);
+      setProjectExactDate("");
+      setProjectExactFallbackDate("");
+      setProjectExactStartTime("");
+      setProjectExactEndTime("");
+      setShowDurationPicker(false);
+      setDurationPosition(null);
+    },
+    [],
+  );
   const resetGoalFormDraft = useCallback(() => {
     setGoalName("");
     setGoalMonumentId("");
@@ -4753,7 +4760,9 @@ export function Fab({
       setProjectDraftTasks([]);
       resetNestedTaskDraftForm();
       resetNestedProjectDraftForm();
-      resetProjectFormDraft();
+      resetProjectFormDraft({
+        exactDateDefault: project.mode === "create",
+      });
       setNestedDraftPanel(null);
       setIsGoalPickerOpen(false);
       setShowGoalFilters(false);
@@ -5043,7 +5052,7 @@ export function Fab({
     if (entityType === "GOAL") {
       resetGoalFormDraft();
     } else if (entityType === "PROJECT") {
-      resetProjectFormDraft();
+      resetProjectFormDraft({ exactDateDefault: false });
     } else if (entityType === "HABIT") {
       resetHabitFormDraft();
     } else if (entityType === "TASK") {
@@ -6984,6 +6993,13 @@ export function Fab({
       setTagInputValue("");
       setIsCreatingTag(false);
       setProjectDue("");
+      if (!editTarget) {
+        setProjectHasExactDate(PROJECT_EXACT_DATE_DEFAULT_ON);
+        setProjectExactDate("");
+        setProjectExactFallbackDate("");
+        setProjectExactStartTime("");
+        setProjectExactEndTime("");
+      }
       setTaskDue("");
       setHabitLocationContextId("");
       setHabitDaylightPreference("ALL_DAY");
@@ -6996,7 +7012,7 @@ export function Fab({
       setTagsLoading(false);
     }
     previousSelectedRef.current = selected;
-  }, [expanded, resetNestedDraftState, selected]);
+  }, [editTarget, expanded, resetNestedDraftState, selected]);
 
   useEffect(() => {
     if (!expanded || !selected) return;
@@ -7607,7 +7623,7 @@ export function Fab({
     setProjectSkillIds([]);
     setProjectGoalId(null);
     setProjectDue("");
-    setProjectHasExactDate(false);
+    setProjectHasExactDate(PROJECT_EXACT_DATE_DEFAULT_ON);
     setProjectExactDate("");
     setProjectExactFallbackDate("");
     setProjectExactStartTime("");
@@ -7814,10 +7830,7 @@ export function Fab({
   const { primary, secondary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
   const menuContainerHeight = primary.length * 56;
-  const compactFabPanelHeight =
-    menuVariant === "default" && activeFabPageType === "nexus"
-      ? FAB_NEXUS_COMPACT_HEIGHT
-      : menuContainerHeight;
+  const compactFabPanelHeight = menuContainerHeight;
   const shouldRenderTimelineOverlayButton =
     !expanded && isOpen && menuVariant === "timeline";
   const getOverlayPlacementDurationMinutes = useCallback(
@@ -9192,6 +9205,7 @@ export function Fab({
     tagLabel,
     tagSurface = "card",
     flatDateSections = false,
+    tightenExactScheduleColumns = false,
   }: {
     dueDateId: string;
     dueDateValue: string;
@@ -9210,6 +9224,7 @@ export function Fab({
     tagLabel: string;
     tagSurface?: "card" | "flat";
     flatDateSections?: boolean;
+    tightenExactScheduleColumns?: boolean;
   }) => {
     const toggleExactDate = () => {
       const nextValue = !hasExactDate;
@@ -9227,13 +9242,23 @@ export function Fab({
     const exactScheduleToggleClass =
       "flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left text-xs text-white transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25";
     const exactScheduleInputClass = flatDateSections
-      ? "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30"
+      ? tightenExactScheduleColumns
+        ? "h-10 w-full min-w-0 max-w-full rounded-md border border-white/10 bg-white/[0.05] px-1.5 text-[10px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30 sm:px-2 sm:text-[11px]"
+        : "h-10 min-w-0 rounded-md border border-white/10 bg-white/[0.05] px-2 text-[11px] text-white placeholder:text-white/35 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 disabled:cursor-not-allowed disabled:border-white/[0.07] disabled:bg-white/[0.025] disabled:text-white/30"
       : FAB_ADVANCED_INPUT_CLASS;
     const exactScheduleFieldLabelClass = flatDateSections
-      ? "text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50"
+      ? tightenExactScheduleColumns
+        ? "min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-white/50"
+        : "text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50"
       : FAB_ADVANCED_LABEL_CLASS;
     const exactScheduleCompactToggleClass =
       "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-white/10 transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20";
+    const exactScheduleGridClass = tightenExactScheduleColumns
+      ? "grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-1.5 sm:gap-2"
+      : "grid grid-cols-3 gap-2";
+    const exactScheduleDateLabelRowClass = tightenExactScheduleColumns
+      ? "flex min-w-0 items-center justify-between gap-1 overflow-hidden"
+      : "flex min-w-0 items-center justify-between gap-1.5";
 
     return (
       <div
@@ -9250,7 +9275,7 @@ export function Fab({
         <section className={exactScheduleSectionClass}>
           <p className={FAB_ADVANCED_LABEL_CLASS}>Exact schedule</p>
           {flatDateSections ? (
-            <div className="grid grid-cols-3 gap-2">
+            <div className={exactScheduleGridClass}>
               <div className="grid min-w-0 gap-1.5">
                 <Label
                   htmlFor={exactStartTimeId}
@@ -9284,7 +9309,7 @@ export function Fab({
                 />
               </div>
               <div className="grid min-w-0 gap-1.5">
-                <div className="flex min-w-0 items-center justify-between gap-1.5">
+                <div className={exactScheduleDateLabelRowClass}>
                   <Label
                     htmlFor={exactDateId}
                     className={exactScheduleFieldLabelClass}
@@ -12756,6 +12781,7 @@ export function Fab({
                   tagLabel: "Project Tags",
                   tagSurface: "flat",
                   flatDateSections: true,
+                  tightenExactScheduleColumns: true,
                 })}
 
               {selected === "TASK" && activeCreationMode === "advanced" &&
@@ -12777,6 +12803,7 @@ export function Fab({
                   tagLabel: "Task Tags",
                   tagSurface: "flat",
                   flatDateSections: true,
+                  tightenExactScheduleColumns: true,
                 })}
 
               {selected === "HABIT" && activeCreationMode === "memoForms" && (
@@ -13133,12 +13160,12 @@ export function Fab({
                   label: "Habit Advanced",
                   footer: (
                     <>
-                      <div className="grid gap-2">
+                      <div className="grid min-w-0 gap-2">
                         <p className={HABIT_ADVANCED_FIELD_LABEL_CLASS}>
                           Exact time
                         </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="grid gap-1.5">
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-1.5 sm:gap-2">
+                          <div className="grid min-w-0 gap-1.5">
                             <Label
                               htmlFor="habit-advanced-fixed-start-time"
                               className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
@@ -13155,7 +13182,7 @@ export function Fab({
                               className={HABIT_ADVANCED_INPUT_CLASS}
                             />
                           </div>
-                          <div className="grid gap-1.5">
+                          <div className="grid min-w-0 gap-1.5">
                             <Label
                               htmlFor="habit-advanced-fixed-end-time"
                               className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
@@ -13174,7 +13201,7 @@ export function Fab({
                           </div>
                         </div>
                       </div>
-                      <div className="grid gap-1.5">
+                      <div className="grid min-w-0 gap-1.5">
                         <Label
                           htmlFor="habit-advanced-location-context"
                           className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
@@ -13259,8 +13286,8 @@ export function Fab({
                           </p>
                         ) : null}
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="grid gap-1.5">
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-1.5 sm:gap-2">
+                        <div className="grid min-w-0 gap-1.5">
                           <Label
                             htmlFor="habit-advanced-daylight"
                             className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
@@ -13293,7 +13320,7 @@ export function Fab({
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="grid gap-1.5">
+                        <div className="grid min-w-0 gap-1.5">
                           <Label
                             htmlFor="habit-advanced-window-edge"
                             className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
@@ -13330,7 +13357,7 @@ export function Fab({
                           </Select>
                         </div>
                       </div>
-                      <div className="grid gap-1.5">
+                      <div className="grid min-w-0 gap-1.5">
                         <Label
                           htmlFor="habit-advanced-next-due-override"
                           className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
@@ -21292,14 +21319,7 @@ function FabNexus({
 
   return (
     <div
-      className={cn(
-        "flex w-full flex-col overflow-hidden text-white",
-        isEmbedded
-          ? "h-full min-h-0"
-          : shouldUsePopupSizing && !popupExpanded
-            ? FAB_NEXUS_COMPACT_SIZE_CLASS
-            : "h-full min-h-0",
-      )}
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
       <div className="shrink-0 px-4 pt-4">
