@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import dynamic from "next/dynamic";
@@ -527,6 +528,14 @@ function GoalCardImpl({
     goalLongPressElementRef.current = null;
     handleProjectPointerCancel();
   }, [cancelGoalLongPress, handleProjectPointerCancel]);
+  const handleShellContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (!onGoalLongPressEdit) return;
+
+      event.preventDefault();
+    },
+    [onGoalLongPressEdit]
+  );
 
   useEffect(() => cancelCompactShellClick, [cancelCompactShellClick]);
   useEffect(
@@ -716,6 +725,9 @@ function GoalCardImpl({
   if (variant === "compact") {
     const containerBase =
       "group relative h-full rounded-2xl p-3 sm:p-4 text-white goal-card";
+    const longPressEditClass = onGoalLongPressEdit
+      ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
+      : "";
     const containerClass = [
       containerBase,
       completedClass,
@@ -726,9 +738,14 @@ function GoalCardImpl({
     ]
       .filter(Boolean)
       .join(" ");
-    const compactPressClass = isTasksOnlyCompactShell
-      ? "select-none touch-manipulation [-webkit-touch-callout:none] [-webkit-user-select:none]"
-      : "";
+    const compactPressClass = [
+      isTasksOnlyCompactShell
+        ? "select-none touch-manipulation [-webkit-touch-callout:none] [-webkit-user-select:none]"
+        : "",
+      longPressEditClass,
+    ]
+      .filter(Boolean)
+      .join(" ");
     const displayEmoji =
       typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
       (goal.emoji ?? goal.monumentEmoji)?.trim().length
@@ -756,6 +773,7 @@ function GoalCardImpl({
                 onPointerUp={handleShellPointerUp}
                 onPointerCancel={handleShellPointerCancel}
                 onPointerLeave={handleShellPointerCancel}
+                onContextMenu={handleShellContextMenu}
                 className={`flex w-full items-center justify-between text-left text-sm select-none ${compactPressClass}`}
                 {...shellMotionProps}
               >
@@ -838,6 +856,7 @@ function GoalCardImpl({
               onPointerUp={handleShellPointerUp}
               onPointerCancel={handleShellPointerCancel}
               onPointerLeave={handleShellPointerCancel}
+              onContextMenu={handleShellContextMenu}
               className={`flex flex-1 flex-col items-center gap-1 min-w-0 text-center ${compactPressClass}`}
               {...shellMotionProps}
             >
@@ -915,6 +934,9 @@ function GoalCardImpl({
   ]
     .filter(Boolean)
     .join(" ");
+  const defaultLongPressEditClass = onGoalLongPressEdit
+    ? "select-none touch-manipulation [user-select:none] [-webkit-touch-callout:none] [-webkit-user-select:none]"
+    : "";
   const shellStateClass = open
     ? isCompleted && !isBorderOnlyCompleted
       ? isDrawerCompactDefault
@@ -961,9 +983,10 @@ function GoalCardImpl({
               onPointerUp={handleShellPointerUp}
               onPointerCancel={handleShellPointerCancel}
               onPointerLeave={handleShellPointerCancel}
+              onContextMenu={handleShellContextMenu}
               className={`relative flex flex-1 flex-col text-left overflow-hidden ${
                 isDrawerCompactDefault ? "gap-0.5" : "gap-1 sm:gap-1.5"
-              }`}
+              } ${defaultLongPressEditClass}`}
               {...shellMotionProps}
             >
               <div

@@ -31,6 +31,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Expand,
   Filter,
   FileText,
   ListChecks,
@@ -38,6 +39,7 @@ import {
   Plus,
   Search,
   Settings2,
+  Shrink,
   Brain,
   Tags,
   Trash2,
@@ -868,6 +870,9 @@ const FAB_CREATION_SELECT_ITEM_BASE_CLASS =
   "rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-white";
 const FAB_CREATION_SELECT_ITEM_SELECTED_CLASS =
   "bg-zinc-800 text-white shadow-none ring-1 ring-zinc-700/70";
+const FAB_NEXUS_EXPANDED_SIZE_CLASS =
+  "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
+const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = "h-[360px]";
 const fabCreationSelectItemClass = (
   isSelected: boolean,
   className?: string,
@@ -2812,6 +2817,7 @@ export function Fab({
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayConfigExpanded, setOverlayConfigExpanded] = useState(false);
   const [overlayPickerOpen, setOverlayPickerOpen] = useState(false);
+  const [overlayPickerExpanded, setOverlayPickerExpanded] = useState(false);
   const [overlayPickerSelected, setOverlayPickerSelected] =
     useState<FabSearchResult | null>(null);
   const [overlayPlacedItems, setOverlayPlacedItems] = useState<
@@ -3077,6 +3083,7 @@ export function Fab({
       setOverlayRemovalCandidateId(null);
       setActiveOverlayDragId(null);
       setOverlayDragCandidate(null);
+      setOverlayPickerExpanded(false);
       setOverlayDragModeWithRef(null);
       overlayDragIntentRef.current = {
         axis: null,
@@ -3115,6 +3122,7 @@ export function Fab({
     setOverlayPlacedItems([]);
     setOverlayPickerSelected(null);
     setOverlayPickerOpen(false);
+    setOverlayPickerExpanded(false);
     setOverlayBlockMode("MANUAL");
     setOverlayDynamicBlockType("FOCUS");
     setOverlayDynamicLocationContextId("");
@@ -6070,6 +6078,7 @@ export function Fab({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const overlayButtonRef = useRef<HTMLButtonElement | null>(null);
+  const overlayPickerNexusShellRef = useRef<HTMLDivElement | null>(null);
   const overlayNexusDropRef = useRef<HTMLButtonElement | null>(null);
   const isDraggingOverlay = Boolean(activeOverlayDragId);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -7601,6 +7610,7 @@ export function Fab({
     setOverlayFilterEventType("ALL");
     setOverlaySortMode("scheduled");
     setOverlayPickerOpen(true);
+    setOverlayPickerExpanded(false);
     setOverlayPickerSelected(null);
     setSearchError(null);
   };
@@ -7644,10 +7654,38 @@ export function Fab({
     });
     setOverlayPickerSelected(null);
     setOverlayPickerOpen(false);
+    setOverlayPickerExpanded(false);
+  };
+
+  const handleOverlayPickerExpandedChange = (nextExpanded: boolean) => {
+    const scrollBody = overlayPickerNexusShellRef.current?.querySelector(
+      '[data-fab-nexus-scroll="true"]',
+    );
+    const shouldPinToBottom =
+      scrollBody instanceof HTMLElement &&
+      scrollBody.scrollHeight - scrollBody.scrollTop - scrollBody.clientHeight <
+        24;
+
+    setOverlayPickerExpanded(nextExpanded);
+
+    if (shouldPinToBottom && typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const nextScrollBody =
+            overlayPickerNexusShellRef.current?.querySelector(
+              '[data-fab-nexus-scroll="true"]',
+            );
+          if (nextScrollBody instanceof HTMLElement) {
+            nextScrollBody.scrollTop = nextScrollBody.scrollHeight;
+          }
+        });
+      });
+    }
   };
 
   const handleOverlayPickerClose = () => {
     setOverlayPickerOpen(false);
+    setOverlayPickerExpanded(false);
   };
 
   const handlePlacementCancel = () => {
@@ -13720,6 +13758,7 @@ export function Fab({
     setAiOpen(false);
     setOverlayOpen(false);
     setOverlayPickerOpen(false);
+    setOverlayPickerExpanded(false);
     setRescheduleTarget(null);
   };
 
@@ -18718,8 +18757,17 @@ export function Fab({
               {overlayTimelineVisible ? (
                 overlayPickerOpen ? (
                   <div className="mt-4 relative">
-                    <div className="relative h-[360px] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.9),rgba(10,10,12,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                    <div
+                      ref={overlayPickerNexusShellRef}
+                      className={cn(
+                        "relative flex min-h-0 w-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.9),rgba(10,10,12,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[height,min-height] duration-200 ease-out",
+                        overlayPickerExpanded
+                          ? FAB_NEXUS_EXPANDED_SIZE_CLASS
+                          : FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS,
+                      )}
+                    >
                       <FabNexus
+                        variant="embedded"
                         query={searchQuery}
                         onQueryChange={setSearchQuery}
                         results={overlayPickerResults}
@@ -18740,6 +18788,10 @@ export function Fab({
                         onSortModeChange={setOverlaySortMode}
                         availableMonuments={monuments}
                         availableSkills={skills}
+                        embeddedExpanded={overlayPickerExpanded}
+                        onEmbeddedExpandedChange={
+                          handleOverlayPickerExpandedChange
+                        }
                         showToolbar
                       />
                       <button
@@ -20482,6 +20534,7 @@ function DayTypeProposalForm({
 }
 
 type FabNexusProps = {
+  variant?: "default" | "embedded";
   query: string;
   onQueryChange: (value: string) => void;
   results: FabSearchResult[];
@@ -20502,6 +20555,8 @@ type FabNexusProps = {
   availableMonuments?: Monument[];
   availableSkills?: Skill[];
   showToolbar?: boolean;
+  embeddedExpanded?: boolean;
+  onEmbeddedExpandedChange?: (expanded: boolean) => void;
   inputRef?: RefObject<HTMLInputElement | null>;
   onManualPlaceResult?: (
     result: FabSearchResult,
@@ -20510,6 +20565,7 @@ type FabNexusProps = {
 };
 
 function FabNexus({
+  variant = "default",
   query,
   onQueryChange,
   results,
@@ -20530,6 +20586,8 @@ function FabNexus({
   availableMonuments,
   availableSkills,
   showToolbar = false,
+  embeddedExpanded = false,
+  onEmbeddedExpandedChange,
   inputRef,
   onManualPlaceResult,
 }: FabNexusProps) {
@@ -20546,6 +20604,7 @@ function FabNexus({
   const RESULT_CARD_DRAG_THRESHOLD_PX = 12;
   const RESULT_CARD_PAGE_SWIPE_DOMINANCE = 1.25;
   const RESULT_CARD_VERTICAL_SCROLL_DOMINANCE = 1.15;
+  const isEmbedded = variant === "embedded";
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -20637,7 +20696,12 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-[min(78vh,640px)] min-h-[min(420px,78vh)] w-full flex-col overflow-hidden text-white"
+      className={cn(
+        "flex w-full flex-col overflow-hidden text-white",
+        isEmbedded
+          ? "h-full min-h-0"
+          : FAB_NEXUS_EXPANDED_SIZE_CLASS,
+      )}
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
       <div className="shrink-0 px-4 pt-4">
@@ -20653,7 +20717,25 @@ function FabNexus({
             className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
             aria-label="Search NEXUS"
           />
-          {showToolbar && (
+          {showToolbar && isEmbedded ? (
+            <button
+              type="button"
+              aria-label={
+                embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"
+              }
+              aria-expanded={embeddedExpanded}
+              onClick={() =>
+                onEmbeddedExpandedChange?.(!embeddedExpanded)
+              }
+              className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+            >
+              {embeddedExpanded ? (
+                <Shrink className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Expand className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          ) : showToolbar ? (
             <button
               type="button"
               aria-label="Toggle Nexus filters"
@@ -20663,7 +20745,7 @@ function FabNexus({
             >
               <Filter className="h-4 w-4" />
             </button>
-          )}
+          ) : null}
         </div>
       </div>
       {showToolbar && showControls ? (
@@ -20760,7 +20842,12 @@ function FabNexus({
         </div>
       ) : null}
       <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pr-5 pt-3"
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5 pt-3",
+          isEmbedded
+            ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
+            : "pb-4",
+        )}
         data-fab-nexus-scroll="true"
         style={{ touchAction: "pan-y" }}
         onScroll={handleScroll}

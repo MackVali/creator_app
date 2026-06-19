@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -438,18 +439,25 @@ const getCommunitySkillAliasSearchText = (skill: CommunitySkill) =>
     .join(" ")
     .toLowerCase();
 
-function scrollDashboardToTopSmooth() {
-  if (typeof window === "undefined") {
+function scrollSkillDashboardPageToTop() {
+  if (typeof document === "undefined") {
     return;
   }
 
-  const scrollTarget = document.scrollingElement ?? document.documentElement;
+  const scrollTarget =
+    document.scrollingElement instanceof HTMLElement
+      ? document.scrollingElement
+      : document.documentElement;
 
   if (scrollTarget.scrollTop <= 0 && window.scrollY <= 0) {
     return;
   }
 
-  scrollTarget.scrollTo({ top: 0, behavior: "smooth" });
+  scrollTarget.scrollTo({
+    top: 0,
+    left: 0,
+    behavior: "auto",
+  });
 }
 
 const compareBySortOrderThenName = <T extends { sort_order: number | null; name: string }>(
@@ -721,7 +729,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
   }, []);
 
   const openSkillDetail = useCallback((skill: Skill) => {
-    scrollDashboardToTopSmooth();
+    scrollSkillDashboardPageToTop();
     const nextViewport = getDashboardDetailViewport();
     setDetailOverlayTop(Math.round(nextViewport.top));
     if (nextViewport.height > 0) {
@@ -778,15 +786,13 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     };
   }, [activeSkillId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!activeSkillId) return;
 
-    requestAnimationFrame(() => {
-      activeSkillScrollRef.current?.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: "auto",
-      });
+    activeSkillScrollRef.current?.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: "auto",
     });
   }, [activeSkillId]);
 

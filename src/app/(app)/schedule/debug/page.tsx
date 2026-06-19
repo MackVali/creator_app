@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { PlacementTruthTrace } from "@/lib/scheduler/placementTrace";
 import type { SchedulerDebugDisplay } from "@/lib/scheduler/debugDisplay";
 
@@ -213,229 +213,321 @@ export default function ScheduleDebugPage() {
       : "very limited free time";
     const reqDesc = topBottleneck.requiredDurationMin
       ? `${topBottleneck.requiredDurationMin}m required`
-      : "more time than slots provide";
-    return `Most unplaced projects failed because the best matching windows only had ${gapDesc}, while those projects required ${reqDesc}.`;
+      : "more time than available Time Blocks provide";
+    return `Most Unscheduled Projects failed because the best matching Time Blocks only had ${gapDesc}, while those Projects required ${reqDesc}.`;
   }, [topBottleneck]);
 
   return (
-    <main className="min-h-screen w-full px-4 pb-8 pt-32 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-4xl space-y-6">
-        <header className="space-y-2">
-          <p className="text-sm uppercase tracking-wide text-[var(--text-muted)]">
-            Schedule Debug
-          </p>
-          <h1 className="text-2xl font-semibold text-white">
-            Run Scheduler Diagnostics
-          </h1>
-          <p className="text-sm text-white/70">
-            Run a manual scheduler pass with debug output and inspect the summary
-            plus any failures that prevented unscheduled items from being placed.
-          </p>
-        </header>
-        <section className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={handleRunDebug}
-            disabled={isRunning}
-            className="inline-flex items-center justify-center rounded-full bg-white/5 px-5 py-2 text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-white/5"
-          >
-            {isRunning ? "Running debug…" : "Run Debug"}
-          </button>
-          {error && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-              {error}
-            </div>
-          )}
-        </section>
-        <section className="space-y-3 rounded-2xl border border-white/5 bg-white/5 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Plain English Summary</h2>
-              <p className="text-xs text-white/60">
-                {placementTrace
-                  ? `Run ${placementTrace.runId} · ${placementTrace.tz}`
-                  : "Run the scheduler debug pass for a fresh snapshot."}
+    <main className="min-h-screen bg-[#050507] text-white">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-28 sm:px-6 sm:pb-12 lg:px-8">
+        <header className="flex flex-col gap-3 px-1 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <p className="text-[10px] font-semibold uppercase text-white/35">
+              Schedule Diagnostics
+            </p>
+            <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-3xl">
+              Scheduler Debug Console
+            </h1>
+            <p className="max-w-2xl text-sm leading-6 text-zinc-400">
+              Run a real scheduler pass and inspect how Events move from
+              evaluation into Scheduled or Unscheduled outcomes.
+            </p>
+          </div>
+          {placementTrace ? (
+            <div className="rounded-xl border border-black/60 bg-black/30 px-3 py-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:text-right">
+              <p className="font-mono text-[10px] uppercase text-zinc-600">
+                Latest run
+              </p>
+              <p className="mt-1 break-all font-mono text-xs text-zinc-300">
+                {placementTrace.runId}
+              </p>
+              <p className="mt-0.5 text-[11px] text-zinc-500">
+                {placementTrace.tz} / {placementTrace.baseDateIso}
               </p>
             </div>
-            {placementTrace && (
-              <div className="text-right text-xs text-white/60">
-                <p>Base date: {placementTrace.baseDateIso}</p>
+          ) : null}
+        </header>
+
+        <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+          <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px]">
+            <div className="flex flex-col gap-4 border-b border-black/45 bg-black/25 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase text-zinc-600">
+                  Diagnostics action
+                </p>
+                <h2 className="mt-1 text-sm font-semibold text-white">
+                  Run the real scheduler with debug output
+                </h2>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-500">
+                  This POSTs to the scheduler route and can update the active
+                  scheduling snapshot for the next 14 days.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRunDebug}
+                disabled={isRunning}
+                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.075] px-5 text-xs font-semibold uppercase text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-12px_18px_rgba(0,0,0,0.24)] transition hover:bg-white/[0.11] focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white/[0.075]"
+              >
+                {isRunning ? "Running Diagnostics" : "Run Debug"}
+              </button>
+            </div>
+
+            {error ? (
+              <div className="border-b border-red-500/20 bg-red-500/[0.055] px-4 py-3 text-sm text-red-100">
+                <p className="text-[10px] font-semibold uppercase text-red-200/60">
+                  Scheduler error
+                </p>
+                <p className="mt-1">{error}</p>
+              </div>
+            ) : null}
+
+            {isRunning ? (
+              <div className="border-b border-black/45 bg-black/20 px-4 py-3">
+                <div className="h-1 overflow-hidden rounded-full bg-white/[0.045]">
+                  <div className="h-full w-1/3 animate-pulse rounded-full bg-white/30" />
+                </div>
+                <p className="mt-2 text-xs text-zinc-500">
+                  Diagnostics are running. Existing summary data will refresh
+                  when the scheduler responds.
+                </p>
+              </div>
+            ) : null}
+
+            {!placementTrace && !debugSummary && failures.length === 0 && !error ? (
+              <div className="grid gap-3 p-4 lg:grid-cols-[1.35fr_1fr]">
+                <div className="rounded-[16px] border border-black/60 bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  <p className="text-sm font-semibold text-white">
+                    No diagnostic run loaded
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-500">
+                    Start a run to populate placement counters, bottlenecks,
+                    Unscheduled results, Time Block occupancy, and the raw
+                    internal trace.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 lg:grid-cols-2">
+                  {["Scheduled", "Completed", "Missed", "Unscheduled"].map(
+                    (status) => (
+                      <div
+                        key={status}
+                        className="rounded-xl border border-black/60 bg-white/[0.026] px-3 py-2 text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                      >
+                        {status}
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+          <ConsolePanel>
+            <SectionHeader
+              title="Latest Run Summary"
+              meta={
+                placementTrace
+                  ? `Base date ${placementTrace.baseDateIso}`
+                  : "Awaiting data"
+              }
+            />
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <MetricTile
+                label="Evaluated"
+                value={formatCount(placementCounts?.queuedCount)}
+              />
+              <MetricTile
+                label="Scheduled"
+                value={formatCount(placementCounts?.placedCount)}
+              />
+              <MetricTile
+                label="Unscheduled"
+                value={formatCount(placementCounts?.unplacedCount)}
+              />
+            </div>
+            <div className="mt-3 rounded-[16px] border border-black/60 bg-black/25 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+              <p className="text-sm leading-6 text-zinc-300">
+                {placementTrace ? summarySentence : "Run diagnostics to generate the latest scheduler summary."}
+              </p>
+              <div className="mt-3 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
+                <div>
+                  <span className="text-zinc-600">Top failure reason</span>
+                  <p className="mt-1 font-mono text-zinc-200">
+                    {topFailureReason ?? "n/a"}
+                    {topFailureCount > 0
+                      ? ` (${topFailureCount} Event${topFailureCount === 1 ? "" : "s"})`
+                      : ""}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-zinc-600">Most constrained Time Block</span>
+                  <p className="mt-1 font-mono text-zinc-200">
+                    {topBottleneck?.blockLabel ?? "n/a"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </ConsolePanel>
+
+          <ConsolePanel>
+            <SectionHeader
+              title="Placement Counters"
+              meta={placementTrace ? "By reason" : "Awaiting data"}
+            />
+            {placementTrace ? (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {Object.entries(placementTrace.projectPass.waterfall).map(
+                  ([reason, count]) => (
+                    <MetricTile key={reason} label={reason} value={count} compact />
+                  )
+                )}
+              </div>
+            ) : (
+              <EmptyPanel copy="Placement counters appear after a diagnostic run." />
+            )}
+          </ConsolePanel>
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-2">
+          <ConsolePanel>
+            <SectionHeader
+              title="Top Bottlenecks"
+              meta={
+                topBottlenecks.length
+                  ? `${topBottlenecks.length} reason${topBottlenecks.length === 1 ? "" : "s"}`
+                  : "Awaiting data"
+              }
+            />
+            {topBottlenecks.length === 0 ? (
+              <EmptyPanel copy="Bottlenecks will appear after the debug trace captures Unscheduled Projects." />
+            ) : (
+              <div className="mt-3 space-y-2">
+                {topBottlenecks.map((bottleneck) => (
+                  <article
+                    key={`${bottleneck.reason}-${bottleneck.blockLabel}`}
+                    className="rounded-[16px] border border-black/60 bg-white/[0.026] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words font-mono text-xs font-semibold text-zinc-100">
+                          {bottleneck.reason}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Time Block: {bottleneck.blockLabel}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-500">
+                        {bottleneck.count} Event{bottleneck.count === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <InlineStat
+                        label="Largest gap"
+                        value={
+                          bottleneck.largestFreeSegmentMin != null
+                            ? `${bottleneck.largestFreeSegmentMin}m`
+                            : "n/a"
+                        }
+                      />
+                      <InlineStat
+                        label="Required"
+                        value={
+                          bottleneck.requiredDurationMin != null
+                            ? `${bottleneck.requiredDurationMin}m`
+                            : "n/a"
+                        }
+                      />
+                    </div>
+                    {bottleneck.firstCollisionLabel ? (
+                      <p className="mt-2 text-[11px] text-zinc-600">
+                        First collision with {bottleneck.firstCollisionLabel}
+                      </p>
+                    ) : null}
+                  </article>
+                ))}
               </div>
             )}
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-white">
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
-              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">Queued</p>
-              <p className="text-2xl font-semibold text-white">
-                {formatCount(placementCounts?.queuedCount)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
-              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">Placed</p>
-              <p className="text-2xl font-semibold text-white">
-                {formatCount(placementCounts?.placedCount)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
-              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">Unplaced</p>
-              <p className="text-2xl font-semibold text-white">
-                {formatCount(placementCounts?.unplacedCount)}
-              </p>
-            </div>
-          </div>
-          <p className="text-sm text-white/70">{summarySentence}</p>
-          <div className="flex flex-col gap-1 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              Top failure reason:{" "}
-              <span className="font-semibold text-white">
-                {topFailureReason ?? "n/a"}
-              </span>
-              {topFailureCount > 0 && (
-                <> ({topFailureCount} item{topFailureCount === 1 ? "" : "s"})</>
-              )}
-            </span>
-            <span>
-              Top blocking block/window:{" "}
-              <span className="font-semibold text-white">
-                {topBottleneck?.blockLabel ?? "n/a"}
-              </span>
-            </span>
-          </div>
-        </section>
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Top Bottlenecks</h2>
-            <span className="text-xs text-white/60">
-              {topBottlenecks.length
-                ? `${topBottlenecks.length} reason${topBottlenecks.length === 1 ? "" : "s"}`
-                : "Awaiting data"}
-            </span>
-          </div>
-          {topBottlenecks.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-              Bottlenecks will appear here after running the debug trace.
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {topBottlenecks.map((bottleneck) => (
-                <article
-                  key={`${bottleneck.reason}-${bottleneck.blockLabel}`}
-                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-white">{bottleneck.reason}</p>
-                    <span className="text-[0.65rem] uppercase text-white/60">
-                      {bottleneck.count} item{bottleneck.count === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-white/60">
-                    Block/window: {bottleneck.blockLabel}
-                  </p>
-                  <div className="mt-3 space-y-2 text-xs text-white/70">
-                    <div className="flex items-center justify-between">
-                      <span>Largest gap</span>
-                      <span>
-                        {bottleneck.largestFreeSegmentMin != null
-                          ? `${bottleneck.largestFreeSegmentMin}m`
-                          : "n/a"}
+          </ConsolePanel>
+
+          <ConsolePanel>
+            <SectionHeader
+              title="Most Affected Projects"
+              meta={`Showing ${affectedProjects.length}`}
+            />
+            {affectedProjects.length === 0 ? (
+              <EmptyPanel copy="No Unscheduled Projects have been captured yet." />
+            ) : (
+              <div className="mt-3 space-y-2">
+                {affectedProjects.map((project) => (
+                  <article
+                    key={project.itemId}
+                    className="rounded-[16px] border border-black/60 bg-white/[0.026] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 break-words text-sm font-semibold text-white">
+                        {project.projectLabel}
+                      </p>
+                      <span className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2 py-1 font-mono text-[10px] uppercase text-zinc-500">
+                        {project.reason}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Required duration</span>
-                      <span>
-                        {bottleneck.requiredDurationMin != null
-                          ? `${bottleneck.requiredDurationMin}m`
-                          : "n/a"}
-                      </span>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <InlineStat
+                        label="Required"
+                        value={`${project.requiredDurationMin ?? "—"}m`}
+                      />
+                      <InlineStat
+                        label="Best gap"
+                        value={`${project.bestGapMin ?? "—"}m`}
+                      />
                     </div>
-                  </div>
-                  {bottleneck.firstCollisionLabel && (
-                    <p className="mt-2 text-[0.65rem] text-white/50">
-                      First collision with {bottleneck.firstCollisionLabel}
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Preferred Time Block: {project.blockLabel}
                     </p>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Most Affected Projects</h2>
-            <span className="text-xs text-white/60">
-              Showing {affectedProjects.length} project
-              {affectedProjects.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          {affectedProjects.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-              No unplaced projects were captured.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {affectedProjects.map((project) => (
-                <article
-                  key={project.itemId}
-                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold text-white">{project.projectLabel}</p>
-                    <span className="text-[0.65rem] uppercase text-white/60">
-                      {project.reason}
-                    </span>
-                  </div>
-                  <div className="mt-2 space-y-1 text-xs text-white/70">
-                    <p>
-                      Required:{" "}
-                      <span className="font-semibold text-white">
-                        {project.requiredDurationMin ?? "—"}m
-                      </span>{" "}
-                      · Gap:{" "}
-                      <span className="font-semibold text-white">
-                        {project.bestGapMin ?? "—"}m
-                      </span>
-                    </p>
-                    <p>Preferred block/window: {project.blockLabel}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Unscheduled Failures</h2>
-            <span className="text-xs text-white/60">
-              {failures.length} item{failures.length === 1 ? "" : "s"}
-            </span>
-          </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </ConsolePanel>
+        </div>
+
+        <ConsolePanel>
+          <SectionHeader
+            title="Unscheduled Results"
+            meta={`${failures.length} Event${failures.length === 1 ? "" : "s"}`}
+          />
           {failures.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-              No failures reported yet.
-            </div>
+            <EmptyPanel copy="No Unscheduled failures have been reported yet." />
           ) : (
-            <div className="space-y-3">
+            <div className="mt-3 grid gap-2 lg:grid-cols-2">
               {groupedFailures.map(([reason, entries]) => (
                 <div
                   key={reason}
-                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                  className="rounded-[16px] border border-black/60 bg-white/[0.026] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
                 >
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                    {reason}
-                  </p>
-                  <ul className="mt-3 space-y-1 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="break-words font-mono text-xs font-semibold text-zinc-200">
+                      {reason}
+                    </p>
+                    <span className="shrink-0 text-[10px] font-semibold uppercase text-zinc-600">
+                      {entries.length}
+                    </span>
+                  </div>
+                  <ul className="mt-3 space-y-2 text-sm">
                     {entries.map((failure, index) => (
                       <li
                         key={`${reason}-${failure.itemId}-${index}`}
-                        className="text-white/90"
+                        className="rounded-xl border border-black/50 bg-black/25 px-3 py-2"
                       >
-                        <span className="font-mono text-xs uppercase tracking-wide text-white">
+                        <p className="break-words font-mono text-xs uppercase text-zinc-100">
                           {formatProjectLabel(failure.itemId)}
-                        </span>
+                        </p>
                         {failure.detail ? (
-                          <span className="ml-2 text-xs text-white/60">
-                            — {failure.detail}
-                          </span>
+                          <p className="mt-1 text-xs leading-5 text-zinc-500">
+                            {failure.detail}
+                          </p>
                         ) : null}
                       </li>
                     ))}
@@ -444,115 +536,174 @@ export default function ScheduleDebugPage() {
               ))}
             </div>
           )}
-        </section>
-        <section className="space-y-3">
-          <details className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
-            <summary className="cursor-pointer text-sm font-semibold text-white">
+        </ConsolePanel>
+
+        <ConsolePanel>
+          <SectionHeader
+            title="Time Block Occupancy"
+            meta={
+              occupancyLedger.length
+                ? `${occupancyLedger.length} Time Block${occupancyLedger.length === 1 ? "" : "s"}`
+                : "Awaiting data"
+            }
+          />
+          {occupancyLedger.length === 0 ? (
+            <EmptyPanel copy="Occupancy rows will appear after the scheduler records Time Block usage." />
+          ) : (
+            <div className="mt-3 space-y-2">
+              {occupancyLedger.map((ledger) => {
+                const ledgerEntries = ledger.entries ?? [];
+                return (
+                  <div
+                    key={ledger.blockId}
+                    className="rounded-[16px] border border-black/60 bg-white/[0.026] p-3 text-[0.75rem] text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  >
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="break-words text-xs font-semibold text-zinc-200">
+                        {formatBlockLabel(ledger.blockId)}
+                      </p>
+                      <span className="text-[10px] font-semibold uppercase text-zinc-600">
+                        {ledgerEntries.length} occupant
+                        {ledgerEntries.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <ul className="mt-2 divide-y divide-black/45 overflow-hidden rounded-xl border border-black/50 bg-black/25">
+                      {ledgerEntries.map((entry) => (
+                        <li
+                          key={`${ledger.blockId}-${entry.orderIndex}-${entry.itemId}`}
+                          className="grid gap-2 px-3 py-2 sm:grid-cols-[3rem_1fr_auto] sm:items-center"
+                        >
+                          <span className="font-mono text-[10px] text-zinc-600">
+                            #{entry.orderIndex}
+                          </span>
+                          <span className="min-w-0 break-words text-xs text-zinc-200">
+                            {formatProjectLabel(entry.itemId)}{" "}
+                            <span className="text-zinc-600">({entry.type})</span>
+                          </span>
+                          <span className="font-mono text-[10px] uppercase text-zinc-500">
+                            {entry.start} - {entry.end} / {entry.pass}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ConsolePanel>
+
+        <section className="space-y-2">
+          <p className="px-1 text-[10px] font-semibold uppercase text-white/35">
+            Raw / Internal Details
+          </p>
+          <details className="overflow-hidden rounded-[18px] border border-black/70 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <summary className="cursor-pointer border-b border-black/45 bg-black/25 px-4 py-3 text-sm font-semibold text-white">
               Raw debug summary
             </summary>
-            <div className="mt-3">
-              <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[0.65rem] text-white">
+            <div className="p-3">
+              <pre className="max-h-[28rem] overflow-auto rounded-xl border border-black/60 bg-black/40 p-3 text-[0.65rem] text-zinc-300">
                 {debugSummary
                   ? JSON.stringify(debugSummary, null, 2)
                   : "Run the debug pass to view the raw summary."}
               </pre>
             </div>
           </details>
-          <details className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
-            <summary className="cursor-pointer text-sm font-semibold text-white">
+          <details className="overflow-hidden rounded-[18px] border border-black/70 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <summary className="cursor-pointer border-b border-black/45 bg-black/25 px-4 py-3 text-sm font-semibold text-white">
               Full placement trace
             </summary>
             {placementTrace ? (
-              <div className="mt-3 space-y-3">
-                <div className="text-xs text-white/60">
+              <div className="space-y-3 p-3">
+                <div className="rounded-xl border border-black/60 bg-black/25 p-3 text-xs text-zinc-500">
                   <p>Run {placementTrace.runId}</p>
                   <p>{placementTrace.tz}</p>
                   <p>Base date: {placementTrace.baseDateIso}</p>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
-                    Waterfall counters
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-[0.65rem] text-white/70">
-                    {Object.entries(placementTrace.projectPass.waterfall).map(
-                      ([reason, count]) => (
-                        <div
-                          key={reason}
-                          className="rounded-lg border border-white/10 bg-black/30 p-2"
-                        >
-                          <p className="text-[0.6rem] uppercase tracking-wide text-white/60">
-                            {reason}
-                          </p>
-                          <p className="text-sm font-semibold text-white">{count}</p>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-                <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[0.65rem] text-white">
+                <pre className="max-h-[34rem] overflow-auto rounded-xl border border-black/60 bg-black/40 p-3 text-[0.65rem] text-zinc-300">
                   {JSON.stringify(placementTrace, null, 2)}
                 </pre>
               </div>
             ) : (
-              <p className="mt-3 text-sm text-white/60">
+              <p className="p-4 text-sm text-zinc-500">
                 Run the debug pass to capture the full placement trace.
               </p>
             )}
           </details>
-          <details className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
-            <summary className="cursor-pointer text-sm font-semibold text-white">
-              Block occupancy ledger
-            </summary>
-            <div className="mt-3 space-y-3">
-              {occupancyLedger.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/70">
-                  No occupancy ledger entries recorded yet.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {occupancyLedger.map((ledger) => {
-                    const ledgerEntries = ledger.entries ?? [];
-                    return (
-                      <div
-                        key={ledger.blockId}
-                        className="rounded-2xl border border-white/10 bg-black/25 p-3 text-[0.75rem] text-white/70"
-                      >
-                        <p className="text-[0.65rem] text-white/60">
-                          Block {formatBlockLabel(ledger.blockId)} ·{" "}
-                          {ledgerEntries.length} occupant
-                          {ledgerEntries.length === 1 ? "" : "s"}
-                        </p>
-                        <ul className="mt-2 space-y-1">
-                          {ledgerEntries.map((entry) => (
-                            <li
-                              key={`${ledger.blockId}-${entry.orderIndex}-${entry.itemId}`}
-                              className="flex items-center justify-between"
-                            >
-                              <span className="font-mono text-[0.65rem] text-white/50">
-                                #{entry.orderIndex}
-                              </span>
-                              <span className="text-white/80">
-                                {formatProjectLabel(entry.itemId)} ({entry.type}){" "}
-                                <span className="text-[0.65rem] text-white/50">
-                                  {entry.start} → {entry.end}
-                                </span>
-                              </span>
-                              <span className="text-[0.6rem] uppercase text-white/50">
-                                {entry.pass}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </details>
         </section>
       </div>
     </main>
+  );
+}
+
+function ConsolePanel({ children }: { children: ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.065),rgba(113,113,122,0.08)_30%,rgba(24,24,27,0.30)_62%,rgba(255,255,255,0.03))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_rgba(0,0,0,0.30)]">
+      <div className="h-full rounded-[19px] border border-black/60 bg-zinc-950/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_30px_rgba(0,0,0,0.30)]">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SectionHeader({ title, meta }: { title: string; meta?: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-black/45 pb-3">
+      <h2 className="text-sm font-semibold text-white">{title}</h2>
+      {meta ? (
+        <span className="shrink-0 text-right text-[10px] font-semibold uppercase text-zinc-600">
+          {meta}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string;
+  value: number | string;
+  compact?: boolean;
+}) {
+  return (
+    <div className="min-w-0 rounded-[14px] border border-black/60 bg-black/25 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      <p className="truncate text-[10px] font-semibold uppercase text-zinc-600">
+        {label}
+      </p>
+      <p
+        className={
+          compact
+            ? "mt-1 font-mono text-lg font-semibold text-white"
+            : "mt-1 font-mono text-2xl font-semibold text-white"
+        }
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function InlineStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-black/50 bg-black/25 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase text-zinc-600">
+        {label}
+      </p>
+      <p className="mt-1 font-mono text-xs font-semibold text-zinc-200">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function EmptyPanel({ copy }: { copy: string }) {
+  return (
+    <div className="mt-3 rounded-[16px] border border-black/60 bg-black/25 p-4 text-sm leading-6 text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      {copy}
+    </div>
   );
 }
 
