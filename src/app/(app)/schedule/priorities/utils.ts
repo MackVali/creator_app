@@ -74,6 +74,14 @@ export type UserPriorityFilterOptionData = {
   id: string;
   name: string;
   icon: string | null;
+  categoryId?: string | null;
+  sortOrder?: number | null;
+};
+
+export type UserPrioritySkillCategoryData = {
+  id: string;
+  name: string;
+  sortOrder?: number | null;
 };
 
 export type GlobalPriorityRoadmapItem = {
