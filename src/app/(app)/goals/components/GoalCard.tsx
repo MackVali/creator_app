@@ -8,7 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import dynamic from "next/dynamic";
 import { ChevronDown, MoreVertical, Sparkles } from "lucide-react";
@@ -75,6 +75,7 @@ interface GoalCardProps {
   onDelete?(): void;
   onBoost?(): void;
   onCardClick?(): void;
+  onGoalLongPressEdit?: (goal: Goal, element: HTMLElement | null) => void;
   showWeight?: boolean;
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
@@ -204,6 +205,7 @@ function GoalCardImpl({
   onDelete,
   onBoost,
   onCardClick,
+  onGoalLongPressEdit,
   showWeight = true,
   showCreatedAt = true,
   showEmojiPrefix = false,
@@ -351,6 +353,11 @@ function GoalCardImpl({
     null
   );
   const projectLongPressTriggeredRef = useRef(false);
+  const goalLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const goalLongPressTriggeredRef = useRef(false);
+  const goalLongPressElementRef = useRef<HTMLElement | null>(null);
   const clearCompactShellClickTimer = useCallback(() => {
     if (compactShellClickTimerRef.current) {
       clearTimeout(compactShellClickTimerRef.current);
@@ -365,6 +372,12 @@ function GoalCardImpl({
     if (projectLongPressTimerRef.current) {
       clearTimeout(projectLongPressTimerRef.current);
       projectLongPressTimerRef.current = null;
+    }
+  }, []);
+  const cancelGoalLongPress = useCallback(() => {
+    if (goalLongPressTimerRef.current) {
+      clearTimeout(goalLongPressTimerRef.current);
+      goalLongPressTimerRef.current = null;
     }
   }, []);
   const triggerProjectHold = useCallback(() => {
@@ -399,6 +412,11 @@ function GoalCardImpl({
     triggerProjectHold();
   }, [cancelCompactShellClick, toggle, triggerProjectHold]);
   const handleShellClick = useCallback(() => {
+    if (goalLongPressTriggeredRef.current) {
+      goalLongPressTriggeredRef.current = false;
+      return;
+    }
+
     if (isTasksOnlyCompactShell) {
       handleTasksOnlyCompactShellClick();
       return;
@@ -441,7 +459,7 @@ function GoalCardImpl({
     triggerProjectHold,
   ]);
   const handleProjectPointerUp = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
       cancelProjectLongPress();
       if (projectLongPressTriggeredRef.current) {
         projectLongPressTriggeredRef.current = false;
@@ -459,7 +477,64 @@ function GoalCardImpl({
     projectLongPressTriggeredRef.current = false;
   }, [cancelProjectLongPress]);
 
+  const startGoalLongPress = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!onGoalLongPressEdit) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+
+      cancelGoalLongPress();
+      goalLongPressTriggeredRef.current = false;
+      goalLongPressElementRef.current = event.currentTarget;
+      goalLongPressTimerRef.current = setTimeout(() => {
+        goalLongPressTimerRef.current = null;
+        goalLongPressTriggeredRef.current = true;
+        onGoalLongPressEdit(goal, goalLongPressElementRef.current);
+      }, 520);
+    },
+    [cancelGoalLongPress, goal, onGoalLongPressEdit]
+  );
+
+  const handleShellPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (onGoalLongPressEdit) {
+        startGoalLongPress(event);
+        return;
+      }
+      startProjectLongPress();
+    },
+    [onGoalLongPressEdit, startGoalLongPress, startProjectLongPress]
+  );
+
+  const handleShellPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      cancelGoalLongPress();
+      if (goalLongPressTriggeredRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        setTimeout(() => {
+          goalLongPressTriggeredRef.current = false;
+        }, 0);
+        return;
+      }
+      handleProjectPointerUp(event);
+    },
+    [cancelGoalLongPress, handleProjectPointerUp]
+  );
+
+  const handleShellPointerCancel = useCallback(() => {
+    cancelGoalLongPress();
+    goalLongPressTriggeredRef.current = false;
+    goalLongPressElementRef.current = null;
+    handleProjectPointerCancel();
+  }, [cancelGoalLongPress, handleProjectPointerCancel]);
+
   useEffect(() => cancelCompactShellClick, [cancelCompactShellClick]);
+  useEffect(
+    () => () => {
+      cancelGoalLongPress();
+    },
+    [cancelGoalLongPress]
+  );
 
   const handleAddProject = useCallback(async (originRect?: DOMRect) => {
     if (addingProject) return;
@@ -644,10 +719,16 @@ function GoalCardImpl({
     const containerClass = [
       containerBase,
       completedClass,
+      isTasksOnlyCompactShell
+        ? "select-none touch-manipulation [-webkit-touch-callout:none] [-webkit-user-select:none]"
+        : "",
       showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]",
     ]
       .filter(Boolean)
       .join(" ");
+    const compactPressClass = isTasksOnlyCompactShell
+      ? "select-none touch-manipulation [-webkit-touch-callout:none] [-webkit-user-select:none]"
+      : "";
     const displayEmoji =
       typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
       (goal.emoji ?? goal.monumentEmoji)?.trim().length
@@ -671,11 +752,11 @@ function GoalCardImpl({
                 onClick={handleShellClick}
                 aria-expanded={onCardClick ? undefined : open}
                 aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
-                onPointerDown={startProjectLongPress}
-                onPointerUp={handleProjectPointerUp}
-                onPointerCancel={handleProjectPointerCancel}
-                onPointerLeave={handleProjectPointerCancel}
-                className="flex w-full items-center justify-between text-left text-sm select-none"
+                onPointerDown={handleShellPointerDown}
+                onPointerUp={handleShellPointerUp}
+                onPointerCancel={handleShellPointerCancel}
+                onPointerLeave={handleShellPointerCancel}
+                className={`flex w-full items-center justify-between text-left text-sm select-none ${compactPressClass}`}
                 {...shellMotionProps}
               >
                 <div className="flex items-center gap-2">
@@ -753,11 +834,11 @@ function GoalCardImpl({
               onClick={handleShellClick}
               aria-expanded={onCardClick ? undefined : open}
               aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
-              onPointerDown={startProjectLongPress}
-              onPointerUp={handleProjectPointerUp}
-              onPointerCancel={handleProjectPointerCancel}
-              onPointerLeave={handleProjectPointerCancel}
-              className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
+              onPointerDown={handleShellPointerDown}
+              onPointerUp={handleShellPointerUp}
+              onPointerCancel={handleShellPointerCancel}
+              onPointerLeave={handleShellPointerCancel}
+              className={`flex flex-1 flex-col items-center gap-1 min-w-0 text-center ${compactPressClass}`}
               {...shellMotionProps}
             >
               <div
@@ -876,10 +957,10 @@ function GoalCardImpl({
               onClick={handleShellClick}
               aria-expanded={onCardClick ? undefined : open}
               aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
-              onPointerDown={startProjectLongPress}
-              onPointerUp={handleProjectPointerUp}
-              onPointerCancel={handleProjectPointerCancel}
-              onPointerLeave={handleProjectPointerCancel}
+              onPointerDown={handleShellPointerDown}
+              onPointerUp={handleShellPointerUp}
+              onPointerCancel={handleShellPointerCancel}
+              onPointerLeave={handleShellPointerCancel}
               className={`relative flex flex-1 flex-col text-left overflow-hidden ${
                 isDrawerCompactDefault ? "gap-0.5" : "gap-1 sm:gap-1.5"
               }`}
@@ -1431,6 +1512,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.hideEnergyPill === next.hideEnergyPill &&
     prev.variant === next.variant &&
     prev.open === next.open &&
+    prev.onGoalLongPressEdit === next.onGoalLongPressEdit &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
     prev.completionTheme === next.completionTheme
   );

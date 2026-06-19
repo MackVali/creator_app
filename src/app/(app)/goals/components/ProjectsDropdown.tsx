@@ -1,9 +1,23 @@
 "use client";
 
-import { useCallback, useMemo, useRef, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import { Plus } from "lucide-react";
-import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
-import type { Project } from "../types";
+import {
+  getProjectTasksListClasses,
+  MAX_VISIBLE_PROJECT_TASKS,
+  ProjectRow,
+  ProjectTasksList,
+  useProjectRowTaskInteractions,
+  type ProjectCardMorphOrigin,
+} from "./ProjectRow";
+import type { Project, Task } from "../types";
 import { Progress } from "@/components/ui/Progress";
 
 interface ProjectsDropdownProps {
@@ -46,16 +60,6 @@ export function ProjectsDropdown({
     [projectTasksOnly, projects]
   );
 
-  const taskEntries = useMemo(() => {
-    if (!projectTasksOnly) {
-      return [] as TaskEntry[];
-    }
-    if (!selectedProject) {
-      return [] as TaskEntry[];
-    }
-    return selectedProject.tasks.map((task) => ({ project: selectedProject, task }));
-  }, [projectTasksOnly, selectedProject]);
-
   return (
     <div
       id={id}
@@ -74,19 +78,13 @@ export function ProjectsDropdown({
             barClass="bg-gradient-to-r from-fuchsia-500 via-sky-400 to-lime-300 animate-pulse"
           />
         ) : projectTasksOnly ? (
-          taskEntries.length > 0 ? (
-            <div className="space-y-3">
-              {taskEntries.map(({ project, task }) => (
-                <TaskRow
-                  key={`${project.id}-${task.id}`}
-                  project={project}
-                  goalId={goalId ?? ""}
-                  task={task}
-                  onTaskToggleCompletion={onTaskToggleCompletion}
-                  onProjectLongPress={onProjectLongPress}
-                />
-              ))}
-            </div>
+          selectedProject && selectedProject.tasks.length > 0 ? (
+            <ProjectTasksOnlyRows
+              project={selectedProject}
+              goalId={goalId ?? ""}
+              onTaskToggleCompletion={onTaskToggleCompletion}
+              onProjectLongPress={onProjectLongPress}
+            />
           ) : (
             <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
               No tasks available for these projects yet.
@@ -143,121 +141,238 @@ export function ProjectsDropdown({
   );
 }
 
-type TaskEntry = {
-  project: Project;
-  task: TaskLite;
-};
-
-type TaskLite = {
-  id: string;
-  name: string;
-  stage: string;
-};
-
-interface TaskRowProps {
+interface ProjectTasksOnlyRowsProps {
   goalId: string;
   project: Project;
-  task: TaskLite;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
     taskId: string,
     currentStage: string
   ) => void;
-  onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
+  onProjectLongPress?: (
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
 }
 
-function TaskRow({
+function ProjectTasksOnlyRows({
   goalId,
   project,
-  task,
   onTaskToggleCompletion,
   onProjectLongPress,
-}: TaskRowProps) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressTriggeredRef = useRef(false);
-  const originRef = useRef<HTMLButtonElement | null>(null);
-  const lastTapTimeRef = useRef(0);
+}: ProjectTasksOnlyRowsProps) {
+  const taskInteractionContext = useProjectRowTaskInteractions();
+  const resolvedGoalId = goalId || taskInteractionContext.goalId || "";
+  const onTaskEditOpen = taskInteractionContext.onTaskEditOpen;
+  const resolvedTaskToggleCompletion =
+    onTaskToggleCompletion ?? taskInteractionContext.onTaskToggleCompletion;
+  const taskSingleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const taskLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const taskLongPressTriggeredRef = useRef(false);
+  const taskOriginRef = useRef<HTMLButtonElement | null>(null);
+  const lastTaskTapRef = useRef<{ taskId: string; time: number } | null>(null);
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+  useEffect(
+    () => () => {
+      if (taskSingleTapTimeoutRef.current) {
+        clearTimeout(taskSingleTapTimeoutRef.current);
+      }
+      if (taskLongPressTimerRef.current) {
+        clearTimeout(taskLongPressTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const [visibleTasks, hiddenCount] = useMemo(() => {
+    const slice = project.tasks.slice(0, MAX_VISIBLE_PROJECT_TASKS);
+    return [slice, project.tasks.length - slice.length] as const;
+  }, [project.tasks]);
+
+  const {
+    tertiaryTextClass,
+    completedTaskRowClass,
+    incompleteTaskRowClass,
+    completedTaskMarkerClass,
+    incompleteTaskMarkerClass,
+  } = getProjectTasksListClasses(isProjectCompleteForTaskRows(project));
+
+  const cancelTaskSingleTap = useCallback(() => {
+    if (taskSingleTapTimeoutRef.current) {
+      clearTimeout(taskSingleTapTimeoutRef.current);
+      taskSingleTapTimeoutRef.current = null;
     }
   }, []);
 
-  const triggerLongPress = useCallback(() => {
-    longPressTriggeredRef.current = true;
-    const element = originRef.current;
-    const origin = buildOrigin(element, project);
-    onProjectLongPress?.(project, origin);
-    originRef.current = null;
-  }, [onProjectLongPress, project]);
+  const cancelTaskLongPress = useCallback(() => {
+    if (taskLongPressTimerRef.current) {
+      clearTimeout(taskLongPressTimerRef.current);
+      taskLongPressTimerRef.current = null;
+    }
+  }, []);
 
-  const handlePointerDown = useCallback(
-    (event: PointerEvent<HTMLButtonElement>) => {
-      originRef.current = event.currentTarget;
-      clearTimer();
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        triggerLongPress();
-      }, LONG_PRESS_MS);
+  const openTaskEditor = useCallback(
+    (task: Task, element: HTMLElement | null) => {
+      onTaskEditOpen?.(task, project, buildTaskOrigin(element, project));
     },
-    [clearTimer, triggerLongPress]
+    [onTaskEditOpen, project]
   );
 
-  const handlePointerUp = useCallback(
+  const openProjectEditor = useCallback(() => {
+    taskLongPressTriggeredRef.current = true;
+    const origin = buildTaskOrigin(taskOriginRef.current, project);
+    onProjectLongPress?.(project, origin);
+    taskOriginRef.current = null;
+  }, [onProjectLongPress, project]);
+
+  const handleTaskPointerDown = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
-      clearTimer();
-      if (longPressTriggeredRef.current) {
-        longPressTriggeredRef.current = false;
+      event.stopPropagation();
+      cancelTaskSingleTap();
+      if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      const now = Date.now();
-      if (now - lastTapTimeRef.current <= DOUBLE_TAP_MS) {
-        lastTapTimeRef.current = 0;
+      taskOriginRef.current = event.currentTarget;
+      taskLongPressTriggeredRef.current = false;
+      cancelTaskLongPress();
+      if (onProjectLongPress) {
+        taskLongPressTimerRef.current = setTimeout(() => {
+          taskLongPressTimerRef.current = null;
+          openProjectEditor();
+        }, LONG_PRESS_MS);
+      }
+    },
+    [
+      cancelTaskLongPress,
+      cancelTaskSingleTap,
+      onProjectLongPress,
+      openProjectEditor,
+    ]
+  );
+
+  const handleTaskPointerUp = useCallback(
+    (event: PointerEvent<HTMLButtonElement>, task: Task) => {
+      event.stopPropagation();
+      cancelTaskLongPress();
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      if (taskLongPressTriggeredRef.current) {
+        taskLongPressTriggeredRef.current = false;
+        taskOriginRef.current = null;
         event.preventDefault();
-        if (onTaskToggleCompletion && goalId && project.id && task.id) {
-          onTaskToggleCompletion(goalId, project.id, task.id, task.stage);
+        return;
+      }
+
+      const now = Date.now();
+      const lastTaskTap = lastTaskTapRef.current;
+      if (
+        lastTaskTap?.taskId === task.id &&
+        now - lastTaskTap.time <= DOUBLE_TAP_MS
+      ) {
+        lastTaskTapRef.current = null;
+        cancelTaskSingleTap();
+        event.preventDefault();
+        if (
+          resolvedTaskToggleCompletion &&
+          resolvedGoalId &&
+          project.id &&
+          task.id
+        ) {
+          resolvedTaskToggleCompletion(
+            resolvedGoalId,
+            project.id,
+            task.id,
+            task.stage
+          );
         }
         return;
       }
-      lastTapTimeRef.current = now;
+
+      lastTaskTapRef.current = { taskId: task.id, time: now };
+      cancelTaskSingleTap();
+      const element = event.currentTarget;
+      taskOriginRef.current = null;
+      taskSingleTapTimeoutRef.current = setTimeout(() => {
+        if (lastTaskTapRef.current?.taskId !== task.id) {
+          taskSingleTapTimeoutRef.current = null;
+          return;
+        }
+        lastTaskTapRef.current = null;
+        openTaskEditor(task, element);
+        taskSingleTapTimeoutRef.current = null;
+      }, DOUBLE_TAP_MS);
     },
-    [clearTimer, goalId, onTaskToggleCompletion, project.id, task.id, task.stage]
+    [
+      cancelTaskLongPress,
+      cancelTaskSingleTap,
+      openTaskEditor,
+      project.id,
+      resolvedGoalId,
+      resolvedTaskToggleCompletion,
+    ]
   );
 
-  const handlePointerCancel = useCallback(() => {
-    clearTimer();
-    longPressTriggeredRef.current = false;
-  }, [clearTimer]);
+  const handleTaskPointerCancel = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      cancelTaskLongPress();
+      taskLongPressTriggeredRef.current = false;
+      taskOriginRef.current = null;
+    },
+    [cancelTaskLongPress]
+  );
 
-  const completed = task.stage === "PERFECT";
+  const handleTaskClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, task: Task) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.detail === 0) {
+        cancelTaskSingleTap();
+        lastTaskTapRef.current = null;
+        openTaskEditor(task, event.currentTarget);
+      }
+    },
+    [cancelTaskSingleTap, openTaskEditor]
+  );
 
   return (
-    <button
-      type="button"
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
-      onPointerLeave={handlePointerCancel}
-      className={`flex w-full flex-col gap-2 rounded-[26px] border px-5 py-4 text-left transition-transform duration-200 ${
-        completed
-          ? "border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur hover:-translate-y-1 hover:shadow-[0_35px_50px_rgba(4,47,39,0.65)]"
-          : "border-white/10 bg-gradient-to-br from-white/[0.08] to-black/20 text-white shadow-[0_25px_40px_rgba(0,0,0,0.55),inset_0_-2px_1px_rgba(255,255,255,0.1)] hover:-translate-y-1 hover:shadow-[0_35px_50px_rgba(0,0,0,0.65),inset_0_-2px_2px_rgba(255,255,255,0.2)]"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold leading-tight">{task.name}</span>
-        <span className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-          {task.stage}
-        </span>
-      </div>
-    </button>
+    <div className="relative">
+      <ProjectTasksList
+        visibleTasks={visibleTasks}
+        hiddenCount={hiddenCount}
+        tertiaryTextClass={tertiaryTextClass}
+        completedTaskRowClass={completedTaskRowClass}
+        incompleteTaskRowClass={incompleteTaskRowClass}
+        completedTaskMarkerClass={completedTaskMarkerClass}
+        incompleteTaskMarkerClass={incompleteTaskMarkerClass}
+        isTaskCompleted={(task) =>
+          Boolean(task.completedAt) || task.stage === "PERFECT"
+        }
+        onTaskPointerDown={handleTaskPointerDown}
+        onTaskPointerUp={handleTaskPointerUp}
+        onTaskPointerCancel={handleTaskPointerCancel}
+        onTaskPointerLeave={handleTaskPointerCancel}
+        onTaskClick={handleTaskClick}
+      />
+    </div>
   );
 }
 
-function buildOrigin(
+function isProjectCompleteForTaskRows(project: Project) {
+  return (
+    project.status === "Done" ||
+    project.stage === "RELEASE" ||
+    Number(project.progress ?? 0) >= 100
+  );
+}
+
+function buildTaskOrigin(
   element: HTMLElement | null,
   project: Project
 ): ProjectCardMorphOrigin | null {
@@ -280,7 +395,10 @@ function buildOrigin(
     computed.backgroundColor.toLowerCase() !== "transparent"
       ? computed.backgroundColor
       : undefined;
-  const boxShadow = computed.boxShadow && computed.boxShadow !== "none" ? computed.boxShadow : undefined;
+  const boxShadow =
+    computed.boxShadow && computed.boxShadow !== "none"
+      ? computed.boxShadow
+      : undefined;
 
   return {
     x: rect.left,

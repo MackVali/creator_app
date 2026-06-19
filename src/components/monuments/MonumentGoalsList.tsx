@@ -3276,6 +3276,33 @@ export function MonumentGoalsList({
     [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
+  const handleGoalLongPressEdit = useCallback(
+    (goal: Goal, element: HTMLElement | null) => {
+      const rect = element?.getBoundingClientRect();
+      const styles = element ? window.getComputedStyle(element) : null;
+
+      setFabEditTarget({
+        entityType: "GOAL",
+        entityId: goal.id,
+        title: goal.title,
+        originRect: rect
+          ? {
+              top: rect.top,
+              left: rect.left,
+              width: rect.width,
+              height: rect.height,
+              borderRadius: styles?.borderRadius,
+              backgroundColor: styles?.backgroundColor,
+              backgroundImage: styles?.backgroundImage,
+              boxShadow: styles?.boxShadow,
+            }
+          : getGoalEditOriginRect(goal.id),
+      });
+      closeGoalDetailAfterFabOpen();
+    },
+    [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
+  );
+
   const handleMonumentPriorityGoalLongPressEdit =
     useCallback<GlobalPriorityGoalLongPressEditHandler>(
       (goal, element) => {
@@ -4288,6 +4315,7 @@ export function MonumentGoalsList({
             suppressReadyToast
             hideGoalEditAction
             onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+            onGoalLongPressEdit={handleGoalLongPressEdit}
             onProjectUpdated={(projectId, updates) =>
               handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
             }
@@ -4469,6 +4497,7 @@ export function MonumentGoalsList({
                 completionTheme="border"
                 suppressReadyToast
                 onEdit={() => handleGoalEdit(openRoadmapGoalForSection)}
+                onGoalLongPressEdit={handleGoalLongPressEdit}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(
                     openRoadmapGoalForSection.id,
@@ -4531,6 +4560,7 @@ export function MonumentGoalsList({
                 completionTheme="border"
                 suppressReadyToast
                 onEdit={() => handleGoalEdit(goal)}
+                onGoalLongPressEdit={handleGoalLongPressEdit}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(goal.id, projectId, updates)
                 }
@@ -4680,6 +4710,7 @@ export function MonumentGoalsList({
     openGoalId,
     renderGoalCardDensityToggle,
     handleGoalEdit,
+    handleGoalLongPressEdit,
     handleManualGoalComplete,
     handleGoalOpenChange,
     handleCampaignAddGoal,

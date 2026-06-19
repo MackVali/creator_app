@@ -52,7 +52,7 @@ interface ProjectRowProps {
   ) => void;
 }
 
-const MAX_VISIBLE_TASKS = 12;
+export const MAX_VISIBLE_PROJECT_TASKS = 12;
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
 const SINGLE_TAP_DELAY_MS = 160;
@@ -89,6 +89,27 @@ const ProjectRowTaskInteractionsContext =
 
 export const ProjectRowTaskInteractionsProvider =
   ProjectRowTaskInteractionsContext.Provider;
+
+export function useProjectRowTaskInteractions() {
+  return useContext(ProjectRowTaskInteractionsContext);
+}
+
+export function getProjectTasksListClasses(isCompleted: boolean) {
+  return {
+    tertiaryTextClass: isCompleted ? "text-emerald-100/65" : "text-white/50",
+    tasksPanelClass: isCompleted
+      ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"
+      : "border-white/10 bg-[#030407] ring-white/10 text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-12px_18px_rgba(0,0,0,0.18)]",
+    completedTaskRowClass:
+      "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)]",
+    incompleteTaskRowClass:
+      "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.34)_24%,rgba(24,24,24,0.92)_100%)] text-white/78 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03)]",
+    completedTaskMarkerClass:
+      "isolate overflow-visible border-slate-200/18 bg-[linear-gradient(180deg,rgba(148,163,184,0.28)_0%,rgba(71,85,105,0.32)_42%,rgba(30,41,59,0.46)_100%)] text-slate-50/92 shadow-[0_8px_16px_rgba(2,6,23,0.22),inset_0_1px_0_rgba(255,255,255,0.16),inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm",
+    incompleteTaskMarkerClass:
+      "isolate overflow-visible border-slate-200/16 bg-[linear-gradient(180deg,rgba(148,163,184,0.24)_0%,rgba(71,85,105,0.28)_45%,rgba(30,41,59,0.42)_100%)] text-slate-100/88 shadow-[0_8px_16px_rgba(2,6,23,0.2),inset_0_1px_0_rgba(255,255,255,0.14),inset_0_0_0_1px_rgba(255,255,255,0.035)] backdrop-blur-sm",
+  };
+}
 
 const energyCodeToFlameLevel = (value?: string | null): FlameLevel => {
   switch (value?.toUpperCase()) {
@@ -232,7 +253,7 @@ export function ProjectRow({
   );
 
   const [visibleTasks, hiddenCount] = useMemo(() => {
-    const slice = project.tasks.slice(0, MAX_VISIBLE_TASKS);
+    const slice = project.tasks.slice(0, MAX_VISIBLE_PROJECT_TASKS);
     return [slice, project.tasks.length - slice.length] as const;
   }, [project.tasks]);
 
@@ -592,7 +613,6 @@ export function ProjectRow({
     project.energyCode?.toString().trim() || project.energy;
   const primaryTextClass =
     isCompactNested ? "text-white/84" : isCompleted ? "text-emerald-50" : "text-white";
-  const tertiaryTextClass = isCompleted ? "text-emerald-100/65" : "text-white/50";
   const chevronColorClass = isCompactNested
     ? "text-white/45"
     : isCompleted
@@ -606,9 +626,6 @@ export function ProjectRow({
     : isCompleted
       ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
-  const tasksPanelClass = isCompleted
-    ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"
-    : "border-white/10 bg-[#030407] ring-white/10 text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-12px_18px_rgba(0,0,0,0.18)]";
   const metaPillClass = isCompactNested
     ? "border-white/8 bg-white/[0.03] text-white/42"
     : isCompleted
@@ -619,14 +636,14 @@ export function ProjectRow({
     : isCompleted
       ? "rounded-md border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:rounded-lg"
       : "rounded-md border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] sm:rounded-lg";
-  const completedTaskRowClass =
-    "border-emerald-300/60 bg-[linear-gradient(135deg,rgba(6,78,59,0.96)_0%,rgba(4,120,87,0.9)_48%,rgba(16,185,129,0.84)_100%)] text-emerald-50 ring-1 ring-emerald-200/30 shadow-[0_12px_26px_-16px_rgba(16,185,129,0.72),0_0_22px_rgba(16,185,129,0.14),inset_2px_0_0_rgba(209,250,229,0.24),inset_0_1px_0_rgba(255,255,255,0.14)]";
-  const incompleteTaskRowClass =
-    "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.34)_24%,rgba(24,24,24,0.92)_100%)] text-white/78 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03)]";
-  const completedTaskMarkerClass =
-    "border-emerald-50/40 bg-emerald-100/22 text-white shadow-[0_0_12px_rgba(16,185,129,0.28)]";
-  const incompleteTaskMarkerClass =
-    "border-white/10 bg-white/[0.05] text-white/50";
+  const {
+    tertiaryTextClass,
+    tasksPanelClass,
+    completedTaskRowClass,
+    incompleteTaskRowClass,
+    completedTaskMarkerClass,
+    incompleteTaskMarkerClass,
+  } = getProjectTasksListClasses(isCompleted);
 
   return (
     <>
@@ -754,6 +771,7 @@ export function ProjectRow({
                   incompleteTaskRowClass={incompleteTaskRowClass}
                   completedTaskMarkerClass={completedTaskMarkerClass}
                   incompleteTaskMarkerClass={incompleteTaskMarkerClass}
+                  isTaskCompleted={isTaskComplete}
                   onTaskPointerDown={handleTaskPointerDown}
                   onTaskPointerUp={handleTaskPointerUp}
                   onTaskPointerCancel={handleTaskPointerCancel}
@@ -779,6 +797,7 @@ export function ProjectRow({
                 incompleteTaskRowClass={incompleteTaskRowClass}
                 completedTaskMarkerClass={completedTaskMarkerClass}
                 incompleteTaskMarkerClass={incompleteTaskMarkerClass}
+                isTaskCompleted={isTaskComplete}
                 onTaskPointerDown={handleTaskPointerDown}
                 onTaskPointerUp={handleTaskPointerUp}
                 onTaskPointerCancel={handleTaskPointerCancel}
@@ -808,7 +827,11 @@ export function ProjectRow({
   );
 }
 
-interface ProjectTasksListProps {
+function isTaskComplete(task: Task) {
+  return Boolean(task.completedAt) || task.stage === "PERFECT";
+}
+
+export interface ProjectTasksListProps {
   visibleTasks: Task[];
   hiddenCount: number;
   tertiaryTextClass: string;
@@ -816,19 +839,21 @@ interface ProjectTasksListProps {
   incompleteTaskRowClass: string;
   completedTaskMarkerClass: string;
   incompleteTaskMarkerClass: string;
+  isTaskCompleted?: (task: Task) => boolean;
   onTaskPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onTaskPointerUp: (
     event: React.PointerEvent<HTMLButtonElement>,
     task: Task
   ) => void;
   onTaskPointerCancel: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onTaskPointerLeave?: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onTaskClick: (
     event: React.MouseEvent<HTMLButtonElement>,
     task: Task
   ) => void;
 }
 
-function ProjectTasksList({
+export function ProjectTasksList({
   visibleTasks,
   hiddenCount,
   tertiaryTextClass,
@@ -836,9 +861,11 @@ function ProjectTasksList({
   incompleteTaskRowClass,
   completedTaskMarkerClass,
   incompleteTaskMarkerClass,
+  isTaskCompleted,
   onTaskPointerDown,
   onTaskPointerUp,
   onTaskPointerCancel,
+  onTaskPointerLeave,
   onTaskClick,
 }: ProjectTasksListProps) {
   return (
@@ -846,39 +873,50 @@ function ProjectTasksList({
       <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
       <div className="relative space-y-1.5" role="list">
         {visibleTasks.map((task) => {
-          const taskCompleted = Boolean(task.completedAt);
+          const taskCompleted = isTaskCompleted
+            ? isTaskCompleted(task)
+            : Boolean(task.completedAt);
+          const taskSkillIcon =
+            typeof task.skillIcon === "string" && task.skillIcon.trim().length > 0
+              ? task.skillIcon.trim()
+              : null;
           return (
             <button
               type="button"
               key={task.id}
-              className={`flex w-full min-w-0 items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs leading-4 ${
+              className={`flex w-full min-w-0 items-center gap-1.5 rounded-lg border px-1.5 py-1.5 text-left leading-4 transition sm:gap-2 sm:px-2.5 sm:py-2 ${
                 taskCompleted ? completedTaskRowClass : incompleteTaskRowClass
               }`}
               role="listitem"
               onPointerDown={onTaskPointerDown}
               onPointerUp={(event) => onTaskPointerUp(event, task)}
               onPointerCancel={onTaskPointerCancel}
+              onPointerLeave={onTaskPointerLeave}
               onClick={(event) => onTaskClick(event, task)}
             >
               <span
-                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none ${
+                className={`flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-md border text-[9px] font-semibold leading-none transition sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px] ${
                   taskCompleted
                     ? completedTaskMarkerClass
                     : incompleteTaskMarkerClass
                 }`}
                 aria-hidden="true"
               >
-                {task.skillIcon ?? (
+                {taskSkillIcon ?? (
                   <span className="h-1.5 w-1.5 rounded-full bg-current" />
                 )}
               </span>
-              <span className="min-w-0 flex-1 break-words pr-1">
+              <span
+                className={`min-w-0 flex-1 truncate font-medium ${
+                  taskCompleted ? "text-emerald-50/92" : "text-white/82"
+                } text-[11px] sm:text-[12px]`}
+              >
                 {task.name}
               </span>
               <FlameEmber
                 level={energyCodeToFlameLevel(task.energyCode)}
                 size="sm"
-                className="shrink-0"
+                className="shrink-0 self-center"
               />
             </button>
           );

@@ -20608,7 +20608,7 @@ function FabNexus({
   const getStatusText = (result: FabSearchResult): React.ReactNode => {
     if (result.type === "PROJECT" && result.isCompleted) {
       const completedLabel = formatDateTime(result.completedAt);
-      return completedLabel ? `Completed ${completedLabel}` : "Completed";
+      return completedLabel ?? "Completed";
     }
     if (result.nextScheduledAt) {
       const dateLabel = formatDatePart(result.nextScheduledAt);
@@ -20616,13 +20616,13 @@ function FabNexus({
       if (dateLabel && timeLabel) {
         return (
           <>
-            <span>Scheduled {dateLabel}</span>
+            <span>{dateLabel}</span>
             <span>at {timeLabel}</span>
           </>
         );
       }
       if (dateLabel) {
-        return <>Scheduled {dateLabel}</>;
+        return <>{dateLabel}</>;
       }
       return "Scheduled";
     }
@@ -20952,18 +20952,18 @@ function FabNexus({
                         >
                           {result.name}
                         </span>
-                        {result.type === "PROJECT" &&
-                          result.global_rank !== null &&
-                          result.global_rank !== undefined && (
-                            <span className="text-gray-600 font-bold text-xs leading-none">
-                              #{result.global_rank}
-                            </span>
-                          )}
                       </div>
-                      <div className="flex items-start justify-end flex-shrink-0">
+                      <div className="flex flex-shrink-0 flex-col items-end justify-start gap-1 text-right">
                         <span className={metaLabelClass}>
                           {result.type === "PROJECT" ? "Project" : "Habit"}
                         </span>
+                        {result.type === "PROJECT" &&
+                          result.global_rank !== null &&
+                          result.global_rank !== undefined && (
+                            <span className="text-xs font-bold leading-none text-gray-600">
+                              #{result.global_rank}
+                            </span>
+                          )}
                       </div>
                     </div>
                     <div className="flex w-full">
