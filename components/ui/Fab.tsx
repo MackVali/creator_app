@@ -931,6 +931,75 @@ const FAB_CREATION_SELECT_ITEM_BASE_CLASS =
   "rounded-sm text-zinc-100 hover:bg-zinc-800 hover:text-white";
 const FAB_CREATION_SELECT_ITEM_SELECTED_CLASS =
   "bg-zinc-800 text-white shadow-none ring-1 ring-zinc-700/70";
+
+function formatCompactNativeDateTimeValue(
+  type: "date" | "time",
+  value: string,
+  placeholder: string,
+) {
+  if (!value) {
+    return placeholder;
+  }
+
+  if (type === "time") {
+    return value.slice(0, 5) || placeholder;
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return match ? `${match[2]}/${match[3]}` : value;
+}
+
+function CompactNativeDateTimeField({
+  id,
+  type,
+  value,
+  onChange,
+  className,
+  placeholder,
+  disabled = false,
+}: {
+  id: string;
+  type: "date" | "time";
+  value: string;
+  onChange: React.ChangeEventHandler<HTMLInputElement>;
+  className: string;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const displayValue = formatCompactNativeDateTimeValue(
+    type,
+    value,
+    placeholder,
+  );
+
+  return (
+    <div className="relative min-w-0 w-full">
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={cn(
+          "peer absolute inset-0 z-10 h-full w-full min-w-0 max-w-full appearance-none opacity-0 focus:outline-none",
+          disabled ? "pointer-events-none cursor-not-allowed" : "cursor-pointer",
+        )}
+      />
+      <div
+        aria-hidden="true"
+        className={cn(
+          className,
+          "relative z-0 flex w-full min-w-0 items-center overflow-hidden leading-none peer-focus-visible:border-zinc-400/50",
+          disabled &&
+            "cursor-not-allowed border-white/[0.07] bg-white/[0.025] text-white/30",
+        )}
+      >
+        <span className="block min-w-0 truncate">{displayValue}</span>
+      </div>
+    </div>
+  );
+}
+
 const FAB_NEXUS_EXPANDED_SIZE_CLASS =
   "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
 const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = "h-[360px]";
@@ -2501,7 +2570,7 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
   );
 
   const onClick = React.useCallback(
-    (e: React.MouseEvent) => {
+    () => {
       if (opts?.disabled) return;
       // Ignore synthetic click that follows our pointerup (iOS)
       if (sawPointerUpRef.current) {
@@ -2513,6 +2582,54 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
   );
 
   return { onPointerUp, onClick };
+}
+
+function FabCreationModeButton({
+  mode,
+  isActive,
+  onSelect,
+}: {
+  mode: CreationModeOption;
+  isActive: boolean;
+  onSelect: (mode: CreationFormMode) => void;
+}) {
+  const Icon = mode.icon;
+  const tapHandlers = useTapHandler(() => onSelect(mode.id));
+
+  return (
+    <button
+      type="button"
+      data-fab-swipe-ignore="true"
+      onPointerDown={(event) => {
+        if (event.pointerType !== "mouse") {
+          event.preventDefault();
+        }
+        event.stopPropagation();
+      }}
+      onPointerUp={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        tapHandlers.onPointerUp(event);
+      }}
+      onPointerCancel={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        tapHandlers.onClick(event);
+      }}
+      className={cn(
+        "flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
+        isActive
+          ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
+          : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
+      )}
+      aria-pressed={isActive}
+      aria-label={mode.label}
+      title={mode.label}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
 }
 
 const isTourActive = () =>
@@ -9283,7 +9400,7 @@ export function Fab({
                 >
                   Start
                 </Label>
-                <Input
+                <CompactNativeDateTimeField
                   id={exactStartTimeId}
                   type="time"
                   value={exactStartTimeValue}
@@ -9291,6 +9408,7 @@ export function Fab({
                     onExactStartTimeChange(event.target.value)
                   }
                   className={exactScheduleInputClass}
+                  placeholder="--:--"
                 />
               </div>
               <div className="grid min-w-0 gap-1.5">
@@ -9300,12 +9418,13 @@ export function Fab({
                 >
                   End
                 </Label>
-                <Input
+                <CompactNativeDateTimeField
                   id={exactEndTimeId}
                   type="time"
                   value={exactEndTimeValue}
                   onChange={(event) => onExactEndTimeChange(event.target.value)}
                   className={exactScheduleInputClass}
+                  placeholder="--:--"
                 />
               </div>
               <div className="grid min-w-0 gap-1.5">
@@ -9341,13 +9460,14 @@ export function Fab({
                     />
                   </button>
                 </div>
-                <Input
+                <CompactNativeDateTimeField
                   id={exactDateId}
                   type="date"
                   value={hasExactDate ? exactDateValue : ""}
                   onChange={(event) => onExactDateChange(event.target.value)}
                   disabled={!hasExactDate}
                   className={exactScheduleInputClass}
+                  placeholder={hasExactDate ? "Date" : "—"}
                 />
               </div>
             </div>
@@ -9389,12 +9509,13 @@ export function Fab({
                   >
                     Date
                   </Label>
-                  <Input
+                  <CompactNativeDateTimeField
                     id={exactDateId}
                     type="date"
                     value={exactDateValue}
                     onChange={(event) => onExactDateChange(event.target.value)}
                     className={exactScheduleInputClass}
+                    placeholder="Date"
                   />
                 </div>
               ) : null}
@@ -9406,7 +9527,7 @@ export function Fab({
                   >
                     Start time
                   </Label>
-                  <Input
+                  <CompactNativeDateTimeField
                     id={exactStartTimeId}
                     type="time"
                     value={exactStartTimeValue}
@@ -9414,6 +9535,7 @@ export function Fab({
                       onExactStartTimeChange(event.target.value)
                     }
                     className={exactScheduleInputClass}
+                    placeholder="--:--"
                   />
                 </div>
                 <div className="grid gap-1.5">
@@ -9423,7 +9545,7 @@ export function Fab({
                   >
                     End time
                   </Label>
-                  <Input
+                  <CompactNativeDateTimeField
                     id={exactEndTimeId}
                     type="time"
                     value={exactEndTimeValue}
@@ -9431,6 +9553,7 @@ export function Fab({
                       onExactEndTimeChange(event.target.value)
                     }
                     className={exactScheduleInputClass}
+                    placeholder="--:--"
                   />
                 </div>
               </div>
@@ -13172,7 +13295,7 @@ export function Fab({
                             >
                               Start time
                             </Label>
-                            <Input
+                            <CompactNativeDateTimeField
                               id="habit-advanced-fixed-start-time"
                               type="time"
                               value={habitFixedStartTime}
@@ -13180,6 +13303,7 @@ export function Fab({
                                 setHabitFixedStartTime(event.target.value)
                               }
                               className={HABIT_ADVANCED_INPUT_CLASS}
+                              placeholder="--:--"
                             />
                           </div>
                           <div className="grid min-w-0 gap-1.5">
@@ -13189,7 +13313,7 @@ export function Fab({
                             >
                               End time
                             </Label>
-                            <Input
+                            <CompactNativeDateTimeField
                               id="habit-advanced-fixed-end-time"
                               type="time"
                               value={habitFixedEndTime}
@@ -13197,6 +13321,7 @@ export function Fab({
                                 setHabitFixedEndTime(event.target.value)
                               }
                               className={HABIT_ADVANCED_INPUT_CLASS}
+                              placeholder="--:--"
                             />
                           </div>
                         </div>
@@ -18409,30 +18534,23 @@ export function Fab({
     <div
       ref={attachedCreationControlsRef}
       data-fab-keyboard-controls
+      data-fab-overlay
+      data-fab-swipe-ignore="true"
       className="relative z-10 mt-auto flex flex-[0_0_auto] flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5"
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
     >
       <div className="flex items-center gap-2">
         {selected && activeCreationModes.length > 1
           ? activeCreationModes.map((mode) => {
               const isActive = activeCreationMode === mode.id;
-              const Icon = mode.icon;
               return (
-                <button
+                <FabCreationModeButton
                   key={mode.id}
-                  type="button"
-                  onClick={() => setActiveCreationMode(mode.id)}
-                  className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
-                    isActive
-                      ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
-                      : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
-                  )}
-                  aria-pressed={isActive}
-                  aria-label={mode.label}
-                  title={mode.label}
-                >
-                  <Icon className="h-4 w-4" />
-                </button>
+                  mode={mode}
+                  isActive={isActive}
+                  onSelect={setActiveCreationMode}
+                />
               );
             })
           : null}
@@ -18929,6 +19047,8 @@ export function Fab({
             creationModeOverhangPos
               ? createPortal(
                   <motion.div
+                    data-fab-overlay
+                    data-fab-swipe-ignore="true"
                     initial={{ opacity: 0, scale: 0.94, y: 4 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.96, y: 3 }}
@@ -18950,28 +19070,19 @@ export function Fab({
                           ? `translateY(${-keyboardLift}px)`
                           : undefined,
                     }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onTouchStart={(event) => event.stopPropagation()}
                   >
                     <div className="flex items-center gap-1.5">
                       {activeCreationModes.map((mode) => {
                         const isActive = activeCreationMode === mode.id;
-                        const Icon = mode.icon;
                         return (
-                          <button
+                          <FabCreationModeButton
                             key={mode.id}
-                            type="button"
-                            onClick={() => setActiveCreationMode(mode.id)}
-                            className={cn(
-                              "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
-                              isActive
-                                ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
-                                : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
-                            )}
-                            aria-pressed={isActive}
-                            aria-label={mode.label}
-                            title={mode.label}
-                          >
-                            <Icon className="h-4 w-4" />
-                          </button>
+                            mode={mode}
+                            isActive={isActive}
+                            onSelect={setActiveCreationMode}
+                          />
                         );
                       })}
                     </div>
