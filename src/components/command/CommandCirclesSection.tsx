@@ -221,6 +221,13 @@ type OwnerSkillOption = {
   id: string;
   name: string;
   icon?: string | null;
+  cat_id?: string | null;
+  sort_order?: number | null;
+  category?: {
+    id: string;
+    name: string;
+    sort_order?: number | null;
+  } | null;
 };
 
 type OwnerLocationContextOption = {
@@ -233,6 +240,13 @@ type ConstraintOption = {
   id: string;
   label: string;
   icon?: string | null;
+  sortOrder?: number | null;
+  categoryId?: string | null;
+  category?: {
+    id: string;
+    name: string;
+    sortOrder?: number | null;
+  } | null;
 };
 
 type CommandOfferTerms = {
@@ -330,6 +344,16 @@ const offerTypeOptions = [
 ] as const;
 
 type OfferWeekdayValue = (typeof offerWeekdays)[number]["value"];
+
+const commandAccessDayPillOrder: OfferWeekdayValue[] = [
+  "SUN",
+  "MON",
+  "TUE",
+  "WED",
+  "THU",
+  "FRI",
+  "SAT",
+];
 
 function formatMemberCount(count: number) {
   return `${count} ${count === 1 ? "member" : "members"}`;
@@ -519,33 +543,19 @@ function getWeekdayValue(date: Date): OfferWeekdayValue {
   );
 }
 
-function formatCommandAccessDays(daysOfWeek: string[] | null) {
+function getCommandAccessDayLabels(daysOfWeek: string[] | null) {
   if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
-    return "Days not set";
+    return [];
   }
 
   const selectedDays = new Set(
     daysOfWeek.map((day) => day.trim().toUpperCase()).filter(Boolean),
   );
+  const displayDays = commandAccessDayPillOrder.filter((day) =>
+    selectedDays.has(day),
+  );
 
-  if (selectedDays.size === offerWeekdays.length) {
-    return "Every day";
-  }
-
-  const weekdaysOnly = offerWeekdays
-    .filter((day) => day.value !== "SAT" && day.value !== "SUN")
-    .every((day) => selectedDays.has(day.value));
-  const weekendSelected = selectedDays.has("SAT") || selectedDays.has("SUN");
-
-  if (selectedDays.size === 5 && weekdaysOnly && !weekendSelected) {
-    return "Weekdays";
-  }
-
-  const labels = offerWeekdays
-    .filter((weekday) => selectedDays.has(weekday.value))
-    .map((weekday) => weekday.label);
-
-  return labels.length > 0 ? labels.join(", ") : "Days not set";
+  return displayDays.map((day) => day.charAt(0) + day.slice(1).toLowerCase());
 }
 
 function formatCommandAccessDate(value: string | null) {
@@ -1376,6 +1386,106 @@ function getConstraintLabel(
   return optionById.get(id)?.label ?? shortenUserId(id);
 }
 
+function hasConstraintSortOrder(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function compareConstraintOrderThenName(
+  leftOrder: number | null | undefined,
+  leftName: string,
+  rightOrder: number | null | undefined,
+  rightName: string,
+) {
+  const leftHasOrder = hasConstraintSortOrder(leftOrder);
+  const rightHasOrder = hasConstraintSortOrder(rightOrder);
+
+  if (leftHasOrder && rightHasOrder && leftOrder !== rightOrder) {
+    return (leftOrder ?? 0) - (rightOrder ?? 0);
+  }
+  if (leftHasOrder !== rightHasOrder) {
+    return leftHasOrder ? -1 : 1;
+  }
+
+  return leftName.localeCompare(rightName, undefined, {
+    sensitivity: "base",
+  });
+}
+
+function getSortedSkillConstraintOptions(options: ConstraintOption[]) {
+  const originalIndex = new Map<string, number>();
+  options.forEach((option, index) => {
+    originalIndex.set(option.id, index);
+  });
+
+  const categoryById = new Map<
+    string,
+    { id: string; name: string; sortOrder: number | null }
+  >();
+
+  for (const option of options) {
+    const categoryId = option.category?.id ?? option.categoryId ?? null;
+    const categoryName = option.category?.name?.trim();
+
+    if (categoryId && categoryName) {
+      categoryById.set(categoryId, {
+        id: categoryId,
+        name: categoryName,
+        sortOrder: option.category?.sortOrder ?? null,
+      });
+    }
+  }
+
+  const sortedCategories = Array.from(categoryById.values()).sort(
+    (left, right) => {
+      const orderComparison = compareConstraintOrderThenName(
+        left.sortOrder,
+        left.name,
+        right.sortOrder,
+        right.name,
+      );
+
+      return orderComparison !== 0
+        ? orderComparison
+        : left.id.localeCompare(right.id);
+    },
+  );
+  const categoryRank = new Map<string, number>();
+  sortedCategories.forEach((category, index) => {
+    categoryRank.set(category.id, index);
+  });
+
+  const sortedOptions = [...options].sort((left, right) => {
+    const leftCategoryId = left.category?.id ?? left.categoryId ?? null;
+    const rightCategoryId = right.category?.id ?? right.categoryId ?? null;
+    const leftCategoryRank =
+      leftCategoryId != null ? categoryRank.get(leftCategoryId) : undefined;
+    const rightCategoryRank =
+      rightCategoryId != null ? categoryRank.get(rightCategoryId) : undefined;
+    const leftUncategorized = leftCategoryRank == null;
+    const rightUncategorized = rightCategoryRank == null;
+
+    if (leftUncategorized !== rightUncategorized) {
+      return leftUncategorized ? 1 : -1;
+    }
+    if (!leftUncategorized && leftCategoryRank !== rightCategoryRank) {
+      return (leftCategoryRank ?? 0) - (rightCategoryRank ?? 0);
+    }
+
+    const skillComparison = compareConstraintOrderThenName(
+      left.sortOrder,
+      left.label,
+      right.sortOrder,
+      right.label,
+    );
+
+    return skillComparison !== 0
+      ? skillComparison
+      : (originalIndex.get(left.id) ?? 0) - (originalIndex.get(right.id) ?? 0);
+  });
+
+  return sortedOptions;
+}
+
 function ConstraintPillList({
   selectedIds,
   optionById,
@@ -1441,7 +1551,6 @@ function WorkProfileConstraintMultiSelect({
   label,
   options,
   selectedIds,
-  emptyLabel,
   noOptionsLabel,
   canEdit,
   isSaving,
@@ -1451,72 +1560,66 @@ function WorkProfileConstraintMultiSelect({
   label: string;
   options: ConstraintOption[];
   selectedIds: string[];
-  emptyLabel: string;
   noOptionsLabel: string;
   canEdit: boolean;
   isSaving: boolean;
   onChange: (nextIds: string[]) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const optionById = useMemo(
-    () => new Map(options.map((option) => [option.id, option])),
-    [options],
-  );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const canOpen = canEdit && !isSaving && options.length > 0;
   const canReset = canEdit && !isSaving && selectedIds.length > 0;
+  const canToggle = canEdit && !isSaving;
+  const renderOptionButton = (option: ConstraintOption) => {
+    const isSelected = selectedSet.has(option.id);
 
-  useEffect(() => {
-    if (!canOpen) {
-      setIsOpen(false);
-    }
-  }, [canOpen]);
+    return (
+      <button
+        key={option.id}
+        type="button"
+        onClick={() => {
+          if (!canToggle) {
+            return;
+          }
+
+          const nextIds = isSelected
+            ? selectedIds.filter((id) => id !== option.id)
+            : [...selectedIds, option.id];
+
+          onChange(nextIds);
+        }}
+        disabled={!canToggle}
+        className={cn(
+          "inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed",
+          isSelected
+            ? "border-emerald-300/28 bg-emerald-300/[0.13] text-emerald-50/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+            : "border-white/[0.08] bg-black/42 text-white/45 enabled:hover:border-white/[0.16] enabled:hover:bg-white/[0.055] enabled:hover:text-white/68",
+          !canToggle && "opacity-55",
+        )}
+        aria-pressed={isSelected}
+      >
+        {option.icon ? (
+          <span className="shrink-0 text-xs leading-none" aria-hidden="true">
+            {option.icon}
+          </span>
+        ) : null}
+        <span className="min-w-0 truncate">{option.label}</span>
+      </button>
+    );
+  };
 
   return (
-    <div className="relative min-w-0">
+    <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <WorkProfileRowLabel Icon={Icon} label={label} />
-          <ConstraintPillList
-            selectedIds={selectedIds}
-            optionById={optionById}
-            emptyLabel={emptyLabel}
-          />
-          {isSaving ? (
-            <p className="mt-1 text-xs font-medium text-white/38">Saving...</p>
-          ) : null}
         </div>
-        {canEdit ? (
+        {canReset ? (
           <div className="flex shrink-0 items-center gap-1.5">
-            {canReset ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOpen(false);
-                  onChange([]);
-                }}
-                className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/55 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
-              >
-                Reset
-              </button>
-            ) : null}
             <button
               type="button"
-              onClick={() => {
-                if (canOpen) {
-                  setIsOpen((current) => !current);
-                }
-              }}
-              disabled={!canOpen}
-              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/55 transition enabled:hover:border-white/20 enabled:hover:bg-white/[0.08] enabled:hover:text-white disabled:cursor-default disabled:opacity-40"
-              aria-label={`Edit ${label}`}
-              aria-haspopup="listbox"
-              aria-expanded={isOpen}
+              onClick={() => onChange([])}
+              className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/55 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
             >
-              <ChevronDown
-                className={cn("h-4 w-4 transition", isOpen && "rotate-180")}
-                aria-hidden="true"
-              />
+              Reset
             </button>
           </div>
         ) : null}
@@ -1526,53 +1629,18 @@ function WorkProfileConstraintMultiSelect({
         <p className="mt-2 text-xs font-medium text-white/38">
           {noOptionsLabel}
         </p>
-      ) : null}
-
-      {isOpen && canOpen ? (
+      ) : (
         <div
-          className="absolute left-0 top-full z-30 mt-2 max-h-56 w-full min-w-56 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl shadow-black/50 ring-1 ring-white/5"
-          role="listbox"
+          className="mt-2 flex min-w-0 flex-wrap gap-1.5"
+          role="group"
           aria-label={label}
         >
-          {options.map((option) => {
-            const isSelected = selectedSet.has(option.id);
-
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => {
-                  const nextIds = isSelected
-                    ? selectedIds.filter((id) => id !== option.id)
-                    : [...selectedIds, option.id];
-
-                  onChange(nextIds);
-                }}
-                className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-white/75 transition hover:bg-white/[0.07]"
-                role="option"
-                aria-selected={isSelected}
-              >
-                <span
-                  className={cn(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                    isSelected
-                      ? "border-emerald-300/60 bg-emerald-300/20 text-emerald-100"
-                      : "border-white/15 bg-white/[0.03] text-transparent",
-                  )}
-                  aria-hidden="true"
-                >
-                  <Check className="h-3 w-3" />
-                </span>
-                {option.icon ? (
-                  <span className="shrink-0 text-sm" aria-hidden="true">
-                    {option.icon}
-                  </span>
-                ) : null}
-                <span className="truncate">{option.label}</span>
-              </button>
-            );
-          })}
+          {options.map(renderOptionButton)}
         </div>
+      )}
+
+      {isSaving ? (
+        <p className="mt-1 text-xs font-medium text-white/38">Saving...</p>
       ) : null}
     </div>
   );
@@ -1608,6 +1676,31 @@ function WorkProfileConstraintReadOnly({
   );
 }
 
+function CommandAccessDayPills({ daysOfWeek }: { daysOfWeek: string[] | null }) {
+  const dayLabels = getCommandAccessDayLabels(daysOfWeek);
+
+  if (dayLabels.length === 0) {
+    return (
+      <p className="text-sm font-medium leading-5 text-white/50">
+        Days not set
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5" aria-label="Available days">
+      {dayLabels.map((label) => (
+        <span
+          key={label}
+          className="rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold leading-4 text-white/42 ring-1 ring-white/[0.06]"
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function CommandAccessAvailabilityRow({
   commandAccess,
   pendingOffers,
@@ -1626,9 +1719,7 @@ function CommandAccessAvailabilityRow({
 
   return (
     <div className="min-w-0">
-      <WorkProfileRowLabel Icon={CalendarDays} label="Availability" />
-
-      <div className="mt-2 grid gap-2">
+      <div className="grid gap-2">
         {commandAccess.isLoading ? (
           <p className="text-sm font-medium leading-5 text-white/58">
             Loading command access...
@@ -1654,14 +1745,14 @@ function CommandAccessAvailabilityRow({
                       className="w-full border-t border-white/[0.06] pt-2 first:border-t-0 first:pt-0"
                     >
                       {isFixed ? (
-                        <div className="grid gap-1.5 sm:grid-cols-[minmax(0,0.8fr)_minmax(11rem,1fr)_auto] sm:items-center sm:gap-3">
-                          <p className="min-w-0 text-sm font-medium leading-5 text-white/64">
-                            {formatCommandAccessDays(rule.days_of_week)}
-                          </p>
-                          <p className="text-lg font-semibold leading-6 text-white sm:text-center">
+                        <div className="grid gap-1.5">
+                          <CommandAccessDayPills
+                            daysOfWeek={rule.days_of_week}
+                          />
+                          <p className="text-lg font-semibold leading-6 text-white">
                             {formatCommandAccessTimeRange(rule)}
                           </p>
-                          <p className="text-[11px] font-medium leading-4 text-white/42 sm:text-right">
+                          <p className="text-[11px] font-medium leading-4 text-white/42">
                             {formatCommandAccessDateRange(
                               rule.starts_on,
                               rule.ends_on,
@@ -2714,7 +2805,6 @@ function CircleMemberFloatingDetail({
                   label="Skill Constraints"
                   options={skillOptions}
                   selectedIds={member.skillConstraintIds}
-                  emptyLabel="No skills granted"
                   noOptionsLabel="No owner skills yet"
                   canEdit={!isConstraintSaving}
                   isSaving={constraintActionId === skillActionId}
@@ -2727,7 +2817,6 @@ function CircleMemberFloatingDetail({
                   label="Location Contexts"
                   options={locationContextOptions}
                   selectedIds={member.locationContextIds}
-                  emptyLabel="No locations granted"
                   noOptionsLabel="No locations yet"
                   canEdit={!isConstraintSaving}
                   isSaving={constraintActionId === locationActionId}
@@ -4426,14 +4515,32 @@ function CircleCommandDetail({
       : detailMembers
           .filter((member) => member.status === "ACTIVE")
           .map(normalizeFullMember);
-  const skillConstraintOptions = useMemo(
+  const skillConstraintOptions = useMemo(() => {
+    const options = ownerSkills.map((skill) => ({
+      id: skill.id,
+      label: skill.name,
+      icon: skill.icon ?? null,
+      sortOrder: skill.sort_order ?? null,
+      categoryId: skill.cat_id ?? null,
+      category: skill.category
+        ? {
+            id: skill.category.id,
+            name: skill.category.name,
+            sortOrder: skill.category.sort_order ?? null,
+          }
+        : null,
+    }));
+
+    return getSortedSkillConstraintOptions(options);
+  }, [ownerSkills]);
+  const skillConstraintLabelOptions = useMemo(
     () =>
-      ownerSkills.map((skill) => ({
-        id: skill.id,
-        label: skill.name,
-        icon: skill.icon ?? null,
+      skillConstraintOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+        icon: option.icon ?? null,
       })),
-    [ownerSkills],
+    [skillConstraintOptions],
   );
   const locationContextOptions = useMemo(
     () =>
@@ -4501,7 +4608,7 @@ function CircleCommandDetail({
                   member={selectedMember}
                   canMakeOffer={canMakeOffer}
                   canEditWorkProfile={canEditWorkProfile}
-                  skillOptions={skillConstraintOptions}
+                  skillOptions={skillConstraintLabelOptions}
                   locationContextOptions={locationContextOptions}
                   roleActionId={memberRoleActionId}
                   constraintActionId={memberConstraintActionId}

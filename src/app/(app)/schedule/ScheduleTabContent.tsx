@@ -227,7 +227,7 @@ const FOCUS_POMO_COMPLETE_OUTLINE = "1px solid rgba(22, 101, 52, 0.42)";
 const FOCUS_POMO_COMPLETE_EFFECT_CLASSES =
   "shimmer-border-complete focus-pomo-start-glint z-0 [&>.absolute]:!absolute";
 const TIMELINE_DARK_EVENT_BACKGROUND =
-  "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgb(8, 8, 10) 0%, rgb(22, 22, 26) 42%, rgb(88, 90, 104) 100%)";
+  "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgb(8, 8, 10) 0%, rgb(22, 22, 26) 42%, rgb(34, 35, 42) 100%)";
 const TIMELINE_NEUTRAL_EVENT_BACKGROUND =
   "linear-gradient(135deg, rgb(46, 46, 52) 0%, rgb(58, 58, 66) 45%, rgb(82, 82, 92) 100%)";
 const TIMELINE_SHINY_TASK_BACKGROUND =
@@ -235,13 +235,13 @@ const TIMELINE_SHINY_TASK_BACKGROUND =
 const TIMELINE_FALLBACK_TASK_BACKGROUND =
   "linear-gradient(135deg, rgb(44, 44, 52) 0%, rgb(68, 70, 80) 38%, rgb(120, 126, 138) 100%)";
 const TIMELINE_CHORE_EVENT_BACKGROUND =
-  "radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.34), transparent 58%), linear-gradient(135deg, rgb(127, 29, 29) 0%, rgb(185, 28, 28) 48%, rgb(239, 68, 68) 100%)";
+  "radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.34), transparent 58%), linear-gradient(135deg, rgb(127, 29, 29) 0%, rgb(185, 28, 28) 48%, rgb(168, 34, 43) 100%)";
 const TIMELINE_RELAXER_EVENT_BACKGROUND =
-  "radial-gradient(circle at 8% -18%, rgba(6, 95, 70, 0.34), transparent 60%), linear-gradient(138deg, rgb(3, 24, 18) 0%, rgb(5, 68, 51) 48%, rgb(6, 95, 70) 100%)";
+  "radial-gradient(circle at 8% -18%, rgba(6, 95, 70, 0.34), transparent 60%), linear-gradient(138deg, rgb(3, 24, 18) 0%, rgb(5, 68, 51) 48%, rgb(6, 78, 59) 100%)";
 const TIMELINE_SYNC_EVENT_BACKGROUND =
-  "radial-gradient(circle at 12% -20%, rgba(226, 232, 240, 0.34), transparent 58%), linear-gradient(135deg, rgb(82, 82, 91) 0%, rgb(113, 113, 122) 48%, rgb(161, 161, 170) 100%)";
+  "radial-gradient(circle at 12% -20%, rgba(226, 232, 240, 0.34), transparent 58%), linear-gradient(135deg, rgb(82, 82, 91) 0%, rgb(113, 113, 122) 48%, rgb(124, 126, 136) 100%)";
 const TIMELINE_PRACTICE_EVENT_BACKGROUND =
-  "radial-gradient(circle at 6% -14%, rgba(79, 70, 229, 0.22), transparent 60%), linear-gradient(142deg, rgb(8, 9, 20) 0%, rgb(24, 27, 51) 46%, rgb(50, 55, 92) 100%)";
+  "radial-gradient(circle at 6% -14%, rgba(79, 70, 229, 0.22), transparent 60%), linear-gradient(142deg, rgb(8, 9, 20) 0%, rgb(24, 27, 51) 46%, rgb(34, 38, 70) 100%)";
 const SCHEDULE_SCHEDULER_RUNNING_EVENT =
   "schedule:scheduler-running-changed";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
