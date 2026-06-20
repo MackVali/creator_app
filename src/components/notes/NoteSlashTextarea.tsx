@@ -53,6 +53,7 @@ import {
   Utensils,
   type LucideIcon,
 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   type CSSProperties,
   Fragment,
@@ -233,8 +234,18 @@ const NOTE_DATABASE_FULL_TABLE_MIN_VISIBLE_ROWS = 40;
 const NOTE_DATABASE_FIELD_DRAG_ID_PREFIX = "database-field:";
 const NOTE_DATABASE_FIELD_LONG_PRESS_DELAY_MS = 425;
 const NOTE_DATABASE_FIELD_LONG_PRESS_TOLERANCE_PX = 8;
+const DEFAULT_DAILY_NUTRITION_GOALS = {
+  calories: 2000,
+  carbs: 250,
+  protein: 150,
+  fat: 70,
+} as const;
 const NUTRITION_MACRO_FIELD_KEYS = ["carbs", "protein", "fat"] as const;
 const NUTRITION_FOOD_FIELD_LOOKUP_KEYS = new Set(["food", "foodname", "name"]);
+const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
+  duration: 0.22,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
 const NUTRITION_FOOD_ACTION_TABS = [
   { id: "search", label: "Search", icon: Search },
   { id: "scan", label: "Scan", icon: ScanLine },
@@ -1487,6 +1498,7 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 }
 
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
+type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
 type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
 type NutritionFoodSearchResponse = {
   foods?: FoodSearchResult[];
@@ -1500,13 +1512,21 @@ function normalizeDatabaseFieldLookupKey(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function getNutritionMacroFieldKey(field: NoteDatabaseFieldDefinition): NutritionMacroFieldKey | null {
+function getNutritionDailyMetricFieldKey(
+  field: NoteDatabaseFieldDefinition,
+): NutritionDailyMetricKey | null {
   const normalizedName = normalizeDatabaseFieldLookupKey(getDatabaseFieldName(field));
-  const nameMatch = NUTRITION_MACRO_FIELD_KEYS.find((key) => normalizedName === key);
+  const metricKeys = Object.keys(DEFAULT_DAILY_NUTRITION_GOALS) as NutritionDailyMetricKey[];
+  const nameMatch = metricKeys.find((key) => normalizedName === key);
   if (nameMatch) return nameMatch;
 
   const idParts = field.id.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  return NUTRITION_MACRO_FIELD_KEYS.find((key) => idParts.includes(key)) ?? null;
+  return metricKeys.find((key) => idParts.includes(key)) ?? null;
+}
+
+function getNutritionMacroFieldKey(field: NoteDatabaseFieldDefinition): NutritionMacroFieldKey | null {
+  const metricKey = getNutritionDailyMetricFieldKey(field);
+  return metricKey && metricKey !== "calories" ? metricKey : null;
 }
 
 function isDefaultNutritionFoodField(field: NoteDatabaseFieldDefinition) {
@@ -1523,6 +1543,51 @@ function isDefaultNutritionFoodField(field: NoteDatabaseFieldDefinition) {
 function formatFoodNutritionNumber(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
   return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function parseNutritionProgressNumber(value: unknown) {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value.trim())
+        : null;
+
+  if (numericValue === null || !Number.isFinite(numericValue) || numericValue < 0) {
+    return 0;
+  }
+
+  return numericValue;
+}
+
+function parseNutritionProgressDate(value: unknown) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    const parsedDate = new Date(value);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  }
+
+  if (typeof value !== "string") return null;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)
+    ? new Date(`${trimmedValue}T00:00:00`)
+    : new Date(trimmedValue);
+
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function isDateOnLocalDay(value: unknown, dayStart: Date, nextDayStart: Date) {
+  const parsedDate = parseNutritionProgressDate(value);
+  if (!parsedDate) return false;
+
+  return parsedDate >= dayStart && parsedDate < nextDayStart;
 }
 
 function getFoodSearchResultMeta(food: FoodSearchResult) {
@@ -2619,10 +2684,12 @@ function findListSelectionForCaret(nextSegments: NoteSegment[], caretOffset: num
 
 export function NoteDatabaseEntrySheet({
   databaseDefinition,
+  entries,
   onClose,
   onSaveEntry,
 }: {
   databaseDefinition: NoteDatabaseDefinition;
+  entries: NoteDatabaseEntry[];
   onClose: () => void;
   onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
 }) {
@@ -2670,6 +2737,10 @@ export function NoteDatabaseEntrySheet({
   const nutritionFoodActionTabRefs = useRef<
     Partial<Record<NutritionFoodActionTabId, HTMLButtonElement | null>>
   >({});
+  const shouldReduceNutritionBrowseMotion = useReducedMotion();
+  const nutritionBrowseAccordionTransition = shouldReduceNutritionBrowseMotion
+    ? { duration: 0 }
+    : NUTRITION_BROWSE_ACCORDION_TRANSITION;
   const databaseFields = getDatabaseFieldsWithTitleFirst(databaseDefinition);
   const editableDatabaseFields = databaseFields.filter((field) => !isDatabaseCreatedAtField(field));
   const createdAtFields = databaseFields.filter(isDatabaseCreatedAtField);
@@ -2694,6 +2765,15 @@ export function NoteDatabaseEntrySheet({
   const firstNutritionMacroFieldIndex = shouldRenderNutritionMacroGrid
     ? Math.min(...nutritionMacroFields.map((macroField) => editableDatabaseFields.indexOf(macroField)))
     : -1;
+  const nutritionCaloriesField = isDefaultNutritionDatabase
+    ? editableDatabaseFields.find(
+        (field) => getNutritionDailyMetricFieldKey(field) === "calories",
+      ) ?? null
+    : null;
+  const shouldRenderNutritionDailyProgress =
+    isDefaultNutritionDatabase &&
+    Boolean(nutritionCaloriesField) &&
+    nutritionMacroFields.length === NUTRITION_MACRO_FIELD_KEYS.length;
   const nutritionFoodField = isDefaultNutritionDatabase
     ? editableDatabaseFields.find(isDefaultNutritionFoodField) ?? null
     : null;
@@ -2703,6 +2783,57 @@ export function NoteDatabaseEntrySheet({
   const normalizedNutritionFoodSearchValue = normalizeFoodSearchText(
     nutritionFoodSearchValue,
   );
+  const nutritionDailyProgress = (() => {
+    const emptyTotals = {
+      calories: 0,
+      carbs: 0,
+      protein: 0,
+      fat: 0,
+    } satisfies Record<NutritionDailyMetricKey, number>;
+
+    if (!shouldRenderNutritionDailyProgress) return emptyTotals;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+    const dateField = createdAtFields[0] ?? databaseFields.find((field) => field.type === "date");
+    const nutritionDailyMetricFields = [nutritionCaloriesField, ...nutritionMacroFields].filter(
+      (field): field is NoteDatabaseFieldDefinition => Boolean(field),
+    );
+    const metricFieldEntries = nutritionDailyMetricFields
+      .map((field) => [getNutritionDailyMetricFieldKey(field), field] as const)
+      .filter(
+        (entry): entry is readonly [NutritionDailyMetricKey, NoteDatabaseFieldDefinition] =>
+          Boolean(entry[0]),
+      );
+
+    const safeEntries = Array.isArray(entries) ? entries : [];
+    const totals = safeEntries.reduce<Record<NutritionDailyMetricKey, number>>(
+      (nextTotals, entry) => {
+        const entryDateValue = dateField
+          ? entry.values[dateField.id] ?? entry.createdAt
+          : entry.createdAt;
+
+        if (!isDateOnLocalDay(entryDateValue, todayStart, tomorrowStart)) {
+          return nextTotals;
+        }
+
+        for (const [metricKey, field] of metricFieldEntries) {
+          nextTotals[metricKey] += parseNutritionProgressNumber(entry.values[field.id]);
+        }
+
+        return nextTotals;
+      },
+      { ...emptyTotals },
+    );
+
+    for (const [metricKey, field] of metricFieldEntries) {
+      totals[metricKey] += parseNutritionProgressNumber(entryFormValues[field.id]);
+    }
+
+    return totals;
+  })();
 
   function updateEntryFormValue(fieldId: string, value: string) {
     setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
@@ -3074,6 +3205,96 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderNutritionProgressBar({
+    label,
+    value,
+    target,
+    unit = "",
+    size,
+  }: {
+    label: string;
+    value: number;
+    target: number;
+    unit?: string;
+    size: "large" | "small";
+  }) {
+    const clampedPercent = target > 0
+      ? Math.min(100, Math.max(0, (value / target) * 100))
+      : 0;
+    const formattedValue = formatFoodNutritionNumber(value) ?? "0";
+    const formattedTarget = formatFoodNutritionNumber(target) ?? String(target);
+    const progressValue = `${formattedValue}${unit} / ${formattedTarget}${unit}`;
+    const barHeightClassName = size === "large" ? "h-2.5" : "h-1.5";
+    const labelClassName =
+      size === "large"
+        ? "text-sm font-semibold text-white/82"
+        : "text-[11px] font-semibold text-white/64";
+    const valueClassName =
+      size === "large"
+        ? "text-xs font-semibold text-white/52"
+        : "text-[10px] font-semibold text-white/42";
+
+    return (
+      <div>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <span className={labelClassName}>{label}</span>
+          <span className={`${valueClassName} shrink-0 tabular-nums`}>
+            {progressValue}
+          </span>
+        </div>
+        <div
+          className={`mt-1.5 overflow-hidden rounded-full bg-white/[0.075] ${barHeightClassName}`}
+          role="meter"
+          aria-label={`${label} daily intake`}
+          aria-valuemin={0}
+          aria-valuemax={target}
+          aria-valuenow={Math.min(value, target)}
+        >
+          <div
+            className="h-full rounded-full bg-white/72"
+            style={{ width: `${clampedPercent}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  function renderNutritionDailyProgress() {
+    if (!shouldRenderNutritionDailyProgress) return null;
+
+    return (
+      <div className="space-y-2.5 px-1 pb-2.5">
+        {renderNutritionProgressBar({
+          label: "Calories",
+          value: nutritionDailyProgress.calories,
+          target: DEFAULT_DAILY_NUTRITION_GOALS.calories,
+          size: "large",
+        })}
+        <div className="grid grid-cols-3 gap-1.5">
+          {NUTRITION_MACRO_FIELD_KEYS.map((macroKey) => (
+            <div
+              key={macroKey}
+              className="min-w-0 rounded-lg bg-white/[0.035] px-2 py-2"
+            >
+              {renderNutritionProgressBar({
+                label:
+                  macroKey === "carbs"
+                    ? "Carbs"
+                    : macroKey === "protein"
+                      ? "Protein"
+                      : "Fat",
+                value: nutritionDailyProgress[macroKey],
+                target: DEFAULT_DAILY_NUTRITION_GOALS[macroKey],
+                unit: "g",
+                size: "small",
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function renderNutritionFoodResultList({
     foods,
     isLoading,
@@ -3161,10 +3382,10 @@ export function NoteDatabaseEntrySheet({
                     setOpenNutritionBrowseAisle(null);
                     setSelectedNutritionBrowseFood(null);
                   }}
-                  className={`flex h-11 w-full items-center gap-3 px-3 text-left outline-none transition ${
+                  className={`flex h-11 w-full items-center gap-3 border-t px-3 text-left outline-none transition ${
                     selectedNutritionBrowseFood || !isFirstDepartment
-                      ? "border-t border-white/[0.055]"
-                      : ""
+                      ? "border-white/[0.055]"
+                      : "border-transparent"
                   } ${
                     isDepartmentOpen
                       ? "bg-white/[0.035] text-white/90"
@@ -3185,98 +3406,118 @@ export function NoteDatabaseEntrySheet({
                   </span>
                 </button>
 
-                {isDepartmentOpen
-                  ? department.aisles.map((aisle) => {
-                      const isAisleOpen = openNutritionBrowseAisle === aisle;
+                <AnimatePresence initial={false}>
+                  {isDepartmentOpen ? (
+                    <motion.div
+                      key={`${department.label}-aisles`}
+                      initial={{ height: 0, opacity: 0, y: -2 }}
+                      animate={{ height: "auto", opacity: 1, y: 0 }}
+                      exit={{ height: 0, opacity: 0, y: -2 }}
+                      transition={nutritionBrowseAccordionTransition}
+                      className="overflow-hidden"
+                    >
+                      {department.aisles.map((aisle) => {
+                        const isAisleOpen = openNutritionBrowseAisle === aisle;
 
-                      return (
-                        <Fragment key={aisle}>
-                          <button
-                            type="button"
-                            aria-expanded={isAisleOpen}
-                            onClick={() => {
-                              setOpenNutritionBrowseDepartment(department.label);
-                              setOpenNutritionBrowseAisle((currentAisle) =>
-                                currentAisle === aisle ? null : aisle,
-                              );
-                              setSelectedNutritionBrowseFood(null);
-                            }}
-                            className={`flex h-10 w-full items-center gap-2.5 border-t border-white/[0.045] py-0 pl-7 pr-3 text-left outline-none transition ${
-                              isAisleOpen
-                                ? "bg-white/[0.026] text-white/76"
-                                : "text-white/44 hover:bg-white/[0.022] hover:text-white/66"
-                            } focus-visible:bg-white/[0.055]`}
-                          >
-                            <ChevronRight
-                              className={`h-3.5 w-3.5 shrink-0 stroke-[1.65] transition ${
-                                isAisleOpen ? "rotate-90 text-white/50" : "text-white/26"
-                              }`}
-                              aria-hidden="true"
-                            />
-                            <span className="min-w-0 flex-1 truncate text-xs font-semibold">
-                              {aisle}
-                            </span>
-                          </button>
+                        return (
+                          <Fragment key={aisle}>
+                            <button
+                              type="button"
+                              aria-expanded={isAisleOpen}
+                              onClick={() => {
+                                setOpenNutritionBrowseDepartment(department.label);
+                                setOpenNutritionBrowseAisle((currentAisle) =>
+                                  currentAisle === aisle ? null : aisle,
+                                );
+                                setSelectedNutritionBrowseFood(null);
+                              }}
+                              className={`flex h-10 w-full items-center gap-2.5 border-t border-white/[0.045] py-0 pl-7 pr-3 text-left outline-none transition ${
+                                isAisleOpen
+                                  ? "bg-white/[0.026] text-white/76"
+                                  : "text-white/44 hover:bg-white/[0.022] hover:text-white/66"
+                              } focus-visible:bg-white/[0.055]`}
+                            >
+                              <ChevronRight
+                                className={`h-3.5 w-3.5 shrink-0 stroke-[1.65] transition ${
+                                  isAisleOpen ? "rotate-90 text-white/50" : "text-white/26"
+                                }`}
+                                aria-hidden="true"
+                              />
+                              <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+                                {aisle}
+                              </span>
+                            </button>
 
-                          {isAisleOpen ? (
-                            <>
-                              {isNutritionFoodBrowseLoading ? (
-                                <p className="border-t border-white/[0.045] px-12 py-2.5 text-xs font-medium text-white/40">
-                                  Loading foods...
-                                </p>
-                              ) : nutritionFoodBrowseError ? (
-                                <p className="border-t border-white/[0.045] px-12 py-2.5 text-xs font-medium text-red-200/72">
-                                  {nutritionFoodBrowseError}
-                                </p>
-                              ) : nutritionFoodBrowseResults.length > 0 ? (
-                                nutritionFoodBrowseResults.map((food) => {
-                                  const isSelected =
-                                    selectedNutritionBrowseFood?.id === food.id;
-                                  const nutritionPreview =
-                                    getFoodBrowseNutritionPreview(food);
+                            <AnimatePresence initial={false}>
+                              {isAisleOpen ? (
+                                <motion.div
+                                  key={`${department.label}-${aisle}-foods`}
+                                  initial={{ height: 0, opacity: 0, y: -2 }}
+                                  animate={{ height: "auto", opacity: 1, y: 0 }}
+                                  exit={{ height: 0, opacity: 0, y: -2 }}
+                                  transition={nutritionBrowseAccordionTransition}
+                                  className="overflow-hidden"
+                                >
+                                  {isNutritionFoodBrowseLoading ? (
+                                    <p className="border-t border-white/[0.045] px-12 py-2.5 text-xs font-medium text-white/40">
+                                      Loading foods...
+                                    </p>
+                                  ) : nutritionFoodBrowseError ? (
+                                    <p className="border-t border-white/[0.045] px-12 py-2.5 text-xs font-medium text-red-200/72">
+                                      {nutritionFoodBrowseError}
+                                    </p>
+                                  ) : nutritionFoodBrowseResults.length > 0 ? (
+                                    nutritionFoodBrowseResults.map((food) => {
+                                      const isSelected =
+                                        selectedNutritionBrowseFood?.id === food.id;
+                                      const nutritionPreview =
+                                        getFoodBrowseNutritionPreview(food);
 
-                                  return (
-                                    <button
-                                      key={food.id}
-                                      type="button"
-                                      onClick={() => selectNutritionFood(food)}
-                                      className={`flex w-full items-center gap-3 border-t border-white/[0.04] py-2.5 pl-12 pr-3 text-left outline-none transition ${
-                                        isSelected
-                                          ? "bg-white/[0.045]"
-                                          : "hover:bg-white/[0.022]"
-                                      } focus-visible:bg-white/[0.055]`}
-                                    >
-                                      <span className="min-w-0 flex-1">
-                                        <span className="flex min-w-0 items-center gap-1.5">
-                                          {isSelected ? (
-                                            <Check
-                                              className="h-3.5 w-3.5 shrink-0 text-white/68"
-                                              aria-hidden="true"
-                                            />
-                                          ) : null}
-                                          <span className="block truncate text-sm font-semibold text-white/84">
-                                            {food.name}
+                                      return (
+                                        <button
+                                          key={food.id}
+                                          type="button"
+                                          onClick={() => selectNutritionFood(food)}
+                                          className={`flex w-full items-center gap-3 border-t border-white/[0.04] py-2.5 pl-12 pr-3 text-left outline-none transition ${
+                                            isSelected
+                                              ? "bg-white/[0.045]"
+                                              : "hover:bg-white/[0.022]"
+                                          } focus-visible:bg-white/[0.055]`}
+                                        >
+                                          <span className="min-w-0 flex-1">
+                                            <span className="flex min-w-0 items-center gap-1.5">
+                                              {isSelected ? (
+                                                <Check
+                                                  className="h-3.5 w-3.5 shrink-0 text-white/68"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : null}
+                                              <span className="block truncate text-sm font-semibold text-white/84">
+                                                {food.name}
+                                              </span>
+                                            </span>
+                                            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                                              {nutritionPreview ||
+                                                "Nutrition details unavailable"}
+                                            </span>
                                           </span>
-                                        </span>
-                                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                                          {nutritionPreview ||
-                                            "Nutrition details unavailable"}
-                                        </span>
-                                      </span>
-                                    </button>
-                                  );
-                                })
-                              ) : (
-                                <p className="border-t border-white/[0.045] px-12 py-2.5 text-xs font-medium text-white/34">
-                                  No foods here yet.
-                                </p>
-                              )}
-                            </>
-                          ) : null}
-                        </Fragment>
-                      );
-                    })
-                  : null}
+                                        </button>
+                                      );
+                                    })
+                                  ) : (
+                                    <p className="border-t border-white/[0.045] px-12 py-2.5 text-xs font-medium text-white/34">
+                                      No foods here yet.
+                                    </p>
+                                  )}
+                                </motion.div>
+                              ) : null}
+                            </AnimatePresence>
+                          </Fragment>
+                        );
+                      })}
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </Fragment>
             );
           })}
@@ -3291,6 +3532,7 @@ export function NoteDatabaseEntrySheet({
 
     return (
       <div key={field.id} className="block">
+        {renderNutritionDailyProgress()}
         {renderNutritionFoodActionTabs()}
 
         {selectedNutritionFoodAction === "custom" ? (
@@ -3460,7 +3702,11 @@ export function NoteDatabaseEntrySheet({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-4 [-webkit-overflow-scrolling:touch]">
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 ${
+            isDefaultNutritionDatabase ? "pt-2" : "pt-4"
+          } [-webkit-overflow-scrolling:touch]`}
+        >
           {databaseFields.length > 0 ? (
             <div className="space-y-4">
               {editableDatabaseFields.map((field, fieldIndex) => {
@@ -4031,6 +4277,7 @@ export function NoteDatabaseFocusedView({
         <NoteDatabaseEntrySheet
           key={entrySheetKey}
           databaseDefinition={databaseDefinition}
+          entries={entries}
           onClose={closeDatabaseEntrySheet}
           onSaveEntry={saveDatabaseEntry}
         />

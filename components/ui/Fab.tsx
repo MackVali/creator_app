@@ -548,6 +548,25 @@ type FabSearchResult = {
   isCompleted: boolean;
   global_rank?: number | null;
   habitType?: string | null;
+  habit_type?: string | null;
+  scheduleHabitType?: string | null;
+  schedule_habit_type?: string | null;
+  scheduleInstanceHabitType?: string | null;
+  schedule_instance_habit_type?: string | null;
+  scheduleInstanceSourceHabitType?: string | null;
+  schedule_instance_source_habit_type?: string | null;
+  instanceHabitType?: string | null;
+  instance_habit_type?: string | null;
+  sourceHabitType?: string | null;
+  source_habit_type?: string | null;
+  sourceType?: string | null;
+  source_type?: string | null;
+  scheduleInstanceType?: string | null;
+  schedule_instance_type?: string | null;
+  scheduleInstanceSourceType?: string | null;
+  schedule_instance_source_type?: string | null;
+  instanceType?: string | null;
+  instance_type?: string | null;
   goalId?: string | null;
   goalName?: string | null;
   energy?: string | null;
@@ -2687,6 +2706,264 @@ const getOverlayPlacementTheme = (
 type OverlayPlacementTheme = {
   background: string;
   borderColor: string;
+};
+
+type NexusScheduleTheme = OverlayPlacementTheme & {
+  className?: string;
+  boxShadow: string;
+  outline: string;
+  outlineOffset: string;
+};
+
+const NEXUS_TIMELINE_RESTING_CARD_SHADOW =
+  "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+const NEXUS_TIMELINE_DARK_EVENT_BACKGROUND =
+  "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgb(8, 8, 10) 0%, rgb(22, 22, 26) 42%, rgb(34, 35, 42) 100%)";
+const NEXUS_TIMELINE_NEUTRAL_EVENT_BACKGROUND =
+  "linear-gradient(135deg, rgb(46, 46, 52) 0%, rgb(58, 58, 66) 45%, rgb(82, 82, 92) 100%)";
+const NEXUS_TIMELINE_CHORE_EVENT_BACKGROUND =
+  "radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.34), transparent 58%), linear-gradient(135deg, rgb(127, 29, 29) 0%, rgb(185, 28, 28) 48%, rgb(168, 34, 43) 100%)";
+const NEXUS_TIMELINE_RELAXER_EVENT_BACKGROUND =
+  "radial-gradient(circle at 8% -18%, rgba(6, 95, 70, 0.34), transparent 60%), linear-gradient(138deg, rgb(3, 24, 18) 0%, rgb(5, 68, 51) 48%, rgb(6, 78, 59) 100%)";
+const NEXUS_TIMELINE_SYNC_EVENT_BACKGROUND =
+  "radial-gradient(circle at 12% -20%, rgba(226, 232, 240, 0.34), transparent 58%), linear-gradient(135deg, rgb(82, 82, 91) 0%, rgb(113, 113, 122) 48%, rgb(124, 126, 136) 100%)";
+const NEXUS_TIMELINE_PRACTICE_EVENT_BACKGROUND =
+  "radial-gradient(circle at 6% -14%, rgba(79, 70, 229, 0.22), transparent 60%), linear-gradient(142deg, rgb(8, 9, 20) 0%, rgb(24, 27, 51) 46%, rgb(34, 38, 70) 100%)";
+const NEXUS_TIMELINE_DEFAULT_OUTLINE = "1px solid rgba(10, 10, 12, 0.85)";
+const NEXUS_TIMELINE_DEFAULT_BORDER_COLOR = "rgba(0, 0, 0, 0.7)";
+const NEXUS_TIMELINE_SYNC_BORDER_COLOR = "rgba(253, 230, 138, 0.45)";
+const NEXUS_TIMELINE_CHORE_BORDER_COLOR = "rgba(254, 205, 211, 0.45)";
+const NEXUS_TIMELINE_RELAXER_BORDER_COLOR = "rgba(167, 243, 208, 0.6)";
+const NEXUS_TIMELINE_PRACTICE_BORDER_COLOR = "rgba(100, 116, 139, 0.5)";
+const NEXUS_TIMELINE_SCHEDULED_SHADOW =
+  "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+const NEXUS_TIMELINE_CHORE_SHADOW =
+  "0 18px 36px rgba(56, 16, 24, 0.38), 0 8px 18px rgba(76, 20, 32, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+const NEXUS_TIMELINE_RELAXER_SHADOW =
+  "0 20px 40px rgba(3, 47, 39, 0.52), 0 10px 22px rgba(2, 119, 84, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+const NEXUS_TIMELINE_SYNC_SHADOW =
+  "0 18px 36px rgba(58, 44, 14, 0.32), 0 8px 18px rgba(82, 62, 18, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+const NEXUS_TIMELINE_PRACTICE_SHADOW =
+  "0 30px 60px rgba(2, 2, 6, 0.72), 0 12px 28px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+
+const getNexusTimelineHabitEventBackground = (
+  normalizedHabitType: string,
+): string => {
+  if (normalizedHabitType === "CHORE") {
+    return NEXUS_TIMELINE_CHORE_EVENT_BACKGROUND;
+  }
+  if (normalizedHabitType === "RELAXER") {
+    return NEXUS_TIMELINE_RELAXER_EVENT_BACKGROUND;
+  }
+  if (normalizedHabitType === "PRACTICE") {
+    return NEXUS_TIMELINE_PRACTICE_EVENT_BACKGROUND;
+  }
+  if (normalizedHabitType === "SYNC" || normalizedHabitType === "MEMO") {
+    return NEXUS_TIMELINE_SYNC_EVENT_BACKGROUND;
+  }
+  return NEXUS_TIMELINE_DARK_EVENT_BACKGROUND;
+};
+
+const getNexusTimelineHabitTypeClass = (
+  normalizedHabitType: string,
+): string => {
+  if (normalizedHabitType === "MEMO") return "habit-card--type-memo";
+  if (normalizedHabitType === "CHORE") return "habit-card--type-chore";
+  if (normalizedHabitType === "RELAXER") return "habit-card--type-relaxer";
+  if (normalizedHabitType === "PRACTICE") return "habit-card--type-practice";
+  if (normalizedHabitType === "SYNC") return "habit-card--type-sync";
+  return "habit-card--type-default";
+};
+
+const getNexusTimelineHabitTheme = (
+  normalizedHabitType: string,
+): NexusScheduleTheme => {
+  let borderColor = NEXUS_TIMELINE_DEFAULT_BORDER_COLOR;
+  let boxShadow = NEXUS_TIMELINE_SCHEDULED_SHADOW;
+  let outline = NEXUS_TIMELINE_DEFAULT_OUTLINE;
+
+  if (normalizedHabitType === "CHORE") {
+    borderColor = NEXUS_TIMELINE_CHORE_BORDER_COLOR;
+    boxShadow = NEXUS_TIMELINE_CHORE_SHADOW;
+    outline = "1px solid rgba(0, 0, 0, 0.85)";
+  } else if (normalizedHabitType === "RELAXER") {
+    borderColor = NEXUS_TIMELINE_RELAXER_BORDER_COLOR;
+    boxShadow = NEXUS_TIMELINE_RELAXER_SHADOW;
+    outline = "1px solid rgba(52, 211, 153, 0.55)";
+  } else if (normalizedHabitType === "PRACTICE") {
+    borderColor = NEXUS_TIMELINE_PRACTICE_BORDER_COLOR;
+    boxShadow = NEXUS_TIMELINE_PRACTICE_SHADOW;
+    outline = "1px solid rgba(8, 8, 12, 0.92)";
+  } else if (normalizedHabitType === "SYNC" || normalizedHabitType === "MEMO") {
+    borderColor = NEXUS_TIMELINE_SYNC_BORDER_COLOR;
+    boxShadow = NEXUS_TIMELINE_SYNC_SHADOW;
+    outline = "1px solid rgba(0, 0, 0, 0.85)";
+  }
+
+  return {
+    background: getNexusTimelineHabitEventBackground(normalizedHabitType),
+    borderColor,
+    boxShadow,
+    outline,
+    outlineOffset: "-1px",
+    // Mirrors ScheduleTabContent habit cards; MEMO intentionally remains its own type class.
+    className: cn(
+      "habit-card habit-card--scheduled",
+      getNexusTimelineHabitTypeClass(normalizedHabitType),
+    ),
+  };
+};
+
+const NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS = [
+  "sourceType",
+  "source_type",
+  "scheduleInstanceSourceType",
+  "schedule_instance_source_type",
+  "scheduleInstanceType",
+  "schedule_instance_type",
+  "instanceType",
+  "instance_type",
+  "type",
+] as const;
+
+const NEXUS_HABIT_TYPE_FIELDS = [
+  "habitType",
+  "habit_type",
+  "scheduleHabitType",
+  "schedule_habit_type",
+  "scheduleInstanceHabitType",
+  "schedule_instance_habit_type",
+  "scheduleInstanceSourceHabitType",
+  "schedule_instance_source_habit_type",
+  "instanceHabitType",
+  "instance_habit_type",
+  "sourceHabitType",
+  "source_habit_type",
+] as const;
+
+const normalizeNexusHabitTypeKey = (value?: string | null): string => {
+  const normalized = normalizeHabitType(value?.trim() || null);
+  return normalized === "ASYNC" ? "SYNC" : normalized;
+};
+
+const NEXUS_HABIT_SUBTYPE_KEYS = new Set([
+  "PRACTICE",
+  "SYNC",
+  "RELAXER",
+  "CHORE",
+  "MEMO",
+]);
+
+const getNexusRecordStringField = (
+  source: unknown,
+  field: string,
+): string | null => {
+  if (!source || typeof source !== "object") return null;
+  const value = (source as Record<string, unknown>)[field];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+};
+
+const getNexusResultScheduleSourceType = (
+  result: FabSearchResult,
+): "PROJECT" | "TASK" | "HABIT" | null => {
+  for (const field of NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS) {
+    const normalized = getNexusRecordStringField(result, field)
+      ?.trim()
+      .toUpperCase();
+    if (
+      normalized === "PROJECT" ||
+      normalized === "TASK" ||
+      normalized === "HABIT"
+    ) {
+      return normalized;
+    }
+    if (
+      normalized &&
+      HABIT_TYPE_BACKGROUND_MAP[normalizeNexusHabitTypeKey(normalized)]
+    ) {
+      return "HABIT";
+    }
+  }
+
+  for (const field of NEXUS_HABIT_TYPE_FIELDS) {
+    const habitType = getNexusRecordStringField(result, field);
+    if (habitType) return "HABIT";
+  }
+
+  return null;
+};
+
+const getNexusResultHabitTypeKey = (result: FabSearchResult): string => {
+  for (const field of NEXUS_HABIT_TYPE_FIELDS) {
+    const habitType = getNexusRecordStringField(result, field);
+    if (habitType) return normalizeNexusHabitTypeKey(habitType);
+  }
+
+  for (const field of NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS) {
+    const rawType = getNexusRecordStringField(result, field);
+    if (!rawType) continue;
+    const normalized = normalizeNexusHabitTypeKey(rawType);
+    if (HABIT_TYPE_BACKGROUND_MAP[normalized]) return normalized;
+  }
+
+  return "HABIT";
+};
+
+const getNexusResultHabitSubtypeKey = (
+  result: FabSearchResult,
+): string | null => {
+  for (const field of NEXUS_HABIT_TYPE_FIELDS) {
+    const habitType = getNexusRecordStringField(result, field);
+    if (!habitType) continue;
+    const normalized = normalizeNexusHabitTypeKey(habitType);
+    if (NEXUS_HABIT_SUBTYPE_KEYS.has(normalized)) return normalized;
+  }
+
+  for (const field of NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS) {
+    const rawType = getNexusRecordStringField(result, field);
+    if (!rawType) continue;
+    const normalized = normalizeNexusHabitTypeKey(rawType);
+    if (NEXUS_HABIT_SUBTYPE_KEYS.has(normalized)) return normalized;
+  }
+
+  return null;
+};
+
+const getNexusResultScheduleTheme = (
+  result: FabSearchResult,
+): NexusScheduleTheme | null => {
+  const habitSubtypeKey = getNexusResultHabitSubtypeKey(result);
+  if (habitSubtypeKey) {
+    return getNexusTimelineHabitTheme(habitSubtypeKey);
+  }
+
+  const sourceType = getNexusResultScheduleSourceType(result);
+  if (sourceType === "PROJECT") {
+    return {
+      background: NEXUS_TIMELINE_DARK_EVENT_BACKGROUND,
+      borderColor: NEXUS_TIMELINE_DEFAULT_BORDER_COLOR,
+      boxShadow: NEXUS_TIMELINE_RESTING_CARD_SHADOW,
+      outline: NEXUS_TIMELINE_DEFAULT_OUTLINE,
+      outlineOffset: "-1px",
+    };
+  }
+  if (sourceType === "TASK") {
+    return {
+      background: NEXUS_TIMELINE_NEUTRAL_EVENT_BACKGROUND,
+      borderColor: "rgba(255, 255, 255, 0.08)",
+      boxShadow: NEXUS_TIMELINE_RESTING_CARD_SHADOW,
+      outline: "1px solid var(--event-border)",
+      outlineOffset: "-1px",
+    };
+  }
+  if (sourceType === "HABIT") {
+    const habitTypeKey = getNexusResultHabitTypeKey(result);
+    return getNexusTimelineHabitTheme(habitTypeKey);
+  }
+
+  return null;
 };
 
 const humanizeFieldLabel = (key: string) =>
@@ -19788,6 +20065,7 @@ export function Fab({
                         onSortModeChange={setOverlaySortMode}
                         availableMonuments={monuments}
                         availableSkills={skills}
+                        availableSkillCategories={skillCategories}
                         embeddedExpanded={overlayPickerExpanded}
                         onEmbeddedExpandedChange={
                           handleOverlayPickerExpandedChange
@@ -21607,10 +21885,12 @@ function FabNexus({
 }: FabNexusProps) {
   const [showControls, setShowControls] = useState(false);
   const [popupAdjustOpen, setPopupAdjustOpen] = useState(false);
+  const [embeddedAdjustOpen, setEmbeddedAdjustOpen] = useState(false);
   const [popupMonumentPillsOpen, setPopupMonumentPillsOpen] = useState(false);
   const [popupSkillPillsOpen, setPopupSkillPillsOpen] = useState(false);
   const [popupInstanceTypePillsOpen, setPopupInstanceTypePillsOpen] =
     useState(false);
+  const embeddedAdjustControlsId = useId();
   const popupMonumentPillsId = useId();
   const popupSkillPillsId = useId();
   const popupInstanceTypePillsId = useId();
@@ -21656,8 +21936,12 @@ function FabNexus({
   const sortValue = sortMode ?? "scheduled";
   const eventTypeValue = filterEventType ?? "ALL";
   const showPopupFilterPills = shouldUsePopupSizing && popupExpanded;
+  const showEmbeddedFilterPills = isEmbedded && embeddedAdjustOpen;
+  const showFilterPillControls =
+    showPopupFilterPills || showEmbeddedFilterPills;
   const shouldShowPopupAdjustments =
     showToolbar && shouldUsePopupSizing && popupExpanded;
+  const shouldShowEmbeddedAdjustments = showToolbar && isEmbedded;
   const hasActiveFilter =
     query.trim().length > 0 ||
     Boolean(filterMonumentId) ||
@@ -21787,12 +22071,26 @@ function FabNexus({
   }, [popupExpanded, shouldUsePopupSizing]);
 
   useEffect(() => {
-    if (!shouldShowPopupAdjustments || !popupAdjustOpen) {
+    if (!shouldShowEmbeddedAdjustments) {
+      setEmbeddedAdjustOpen(false);
+    }
+  }, [shouldShowEmbeddedAdjustments]);
+
+  useEffect(() => {
+    if (
+      (!shouldShowPopupAdjustments || !popupAdjustOpen) &&
+      (!shouldShowEmbeddedAdjustments || !embeddedAdjustOpen)
+    ) {
       setPopupMonumentPillsOpen(false);
       setPopupSkillPillsOpen(false);
       setPopupInstanceTypePillsOpen(false);
     }
-  }, [popupAdjustOpen, shouldShowPopupAdjustments]);
+  }, [
+    embeddedAdjustOpen,
+    popupAdjustOpen,
+    shouldShowEmbeddedAdjustments,
+    shouldShowPopupAdjustments,
+  ]);
 
   const renderFilterPillGroup = ({
     label,
@@ -21891,12 +22189,12 @@ function FabNexus({
   const renderToolbarControls = () => (
     <div
       className={cn(
-        showPopupFilterPills
+        showFilterPillControls
           ? "grid gap-2"
           : "flex flex-wrap items-center gap-2",
       )}
     >
-      {showPopupFilterPills ? (
+      {showFilterPillControls ? (
         <>
           {renderFilterPillGroup({
             label: "INSTANCE TYPES",
@@ -21988,10 +22286,12 @@ function FabNexus({
       )}
       <div
         className={cn(
-          showPopupFilterPills ? "flex flex-wrap items-center gap-2" : "contents",
+          showFilterPillControls
+            ? "flex flex-wrap items-center gap-2"
+            : "contents",
         )}
       >
-        {!showPopupFilterPills ? (
+        {!showFilterPillControls ? (
           <Select
             value={eventTypeValue}
             onValueChange={(value) =>
@@ -22127,6 +22427,7 @@ function FabNexus({
             placeholder="search NEXUS"
             className={cn(
               "h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none",
+              showToolbar && isEmbedded && "pr-[5.75rem]",
               showToolbar &&
                 shouldUsePopupSizing &&
                 popupExpanded &&
@@ -22135,23 +22436,41 @@ function FabNexus({
             aria-label="Search NEXUS"
           />
           {showToolbar && isEmbedded ? (
-            <button
-              type="button"
-              aria-label={
-                embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"
-              }
-              aria-expanded={embeddedExpanded}
-              onClick={() =>
-                onEmbeddedExpandedChange?.(!embeddedExpanded)
-              }
-              className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
-            >
-              {embeddedExpanded ? (
-                <Shrink className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Expand className="h-4 w-4" aria-hidden="true" />
-              )}
-            </button>
+            <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+              <button
+                type="button"
+                aria-label="Toggle Nexus filters"
+                aria-expanded={embeddedAdjustOpen}
+                aria-controls={embeddedAdjustControlsId}
+                title="Toggle Nexus filters"
+                onClick={() => setEmbeddedAdjustOpen((prev) => !prev)}
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60",
+                  (embeddedAdjustOpen || hasActiveFilter) &&
+                    "border-white/25 bg-white/10 text-white",
+                )}
+              >
+                <Filter className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label={
+                  embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"
+                }
+                aria-expanded={embeddedExpanded}
+                title={embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"}
+                onClick={() =>
+                  onEmbeddedExpandedChange?.(!embeddedExpanded)
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+              >
+                {embeddedExpanded ? (
+                  <Shrink className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Expand className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           ) : showToolbar && shouldUsePopupSizing && onPopupExpandedChange ? (
             <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
               {popupExpanded ? (
@@ -22223,6 +22542,31 @@ function FabNexus({
             ) : null}
           </AnimatePresence>
         </div>
+      ) : shouldShowEmbeddedAdjustments ? (
+        <div
+          className={cn(
+            "shrink-0 px-4",
+            embeddedAdjustOpen
+              ? "max-h-[min(16rem,36vh)] overflow-y-auto overscroll-contain pt-1"
+              : "pt-0",
+          )}
+        >
+          <AnimatePresence initial={false}>
+            {embeddedAdjustOpen ? (
+              <motion.div
+                id={embeddedAdjustControlsId}
+                key={embeddedAdjustControlsId}
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="pt-1">{renderToolbarControls()}</div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
       ) : showToolbar && showControls ? (
         <div className="shrink-0 px-4 pt-3">
           {renderToolbarControls()}
@@ -22231,7 +22575,10 @@ function FabNexus({
       <div
         className={cn(
           "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5",
-          shouldShowPopupAdjustments && popupAdjustOpen ? "pt-1.5" : "pt-3",
+          (shouldShowPopupAdjustments && popupAdjustOpen) ||
+            (shouldShowEmbeddedAdjustments && embeddedAdjustOpen)
+            ? "pt-1.5"
+            : "pt-3",
           isEmbedded
             ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
             : shouldUsePopupSizing
@@ -22259,11 +22606,28 @@ function FabNexus({
               const statusText = getStatusText(result);
               const skillIcon = getNexusResultSkillIcon(result);
               const typeLabel = getNexusResultTypeLabel(result);
+              const nexusScheduleTheme = isCompletedProject
+                ? null
+                : getNexusResultScheduleTheme(result);
+              const cardStyle = nexusScheduleTheme
+                ? {
+                    background: nexusScheduleTheme.background,
+                    borderColor: nexusScheduleTheme.borderColor,
+                    boxShadow: nexusScheduleTheme.boxShadow,
+                    outline: nexusScheduleTheme.outline,
+                    outlineOffset: nexusScheduleTheme.outlineOffset,
+                  }
+                : undefined;
               const cardClassName = cn(
                 "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
                   ? "shimmer-border-complete isolate z-0 overflow-hidden border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40"
-                  : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
+                  : nexusScheduleTheme
+                    ? cn(
+                        "text-white backdrop-blur hover:brightness-[1.08]",
+                        nexusScheduleTheme.className,
+                      )
+                    : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
                 isDisabled && "cursor-not-allowed",
               );
               const nameTextClass = "text-white";
@@ -22413,6 +22777,7 @@ function FabNexus({
                   disabled={isDisabled}
                   aria-disabled={isDisabled}
                   className={cardClassName}
+                  style={cardStyle}
                 >
                   {isCompletedProject ? (
                     <span

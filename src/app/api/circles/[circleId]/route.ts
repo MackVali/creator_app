@@ -75,6 +75,27 @@ type OwnerSkillRow = {
   id: string;
   name: string | null;
   icon: string | null;
+  cat_id: string | null;
+  sort_order: number | null;
+};
+
+type OwnerSkillCategoryRow = {
+  id: string;
+  name: string | null;
+  sort_order: number | null;
+};
+
+type OwnerSkillResponseRow = {
+  id: string;
+  name: string;
+  icon: string | null;
+  cat_id: string | null;
+  sort_order: number | null;
+  category: {
+    id: string;
+    name: string;
+    sort_order: number | null;
+  } | null;
 };
 
 type OwnerLocationContextRow = {
@@ -188,21 +209,64 @@ export async function GET(_request: Request, context: CircleDetailParams) {
     }
   }
 
-  let ownerSkills: OwnerSkillRow[] = [];
+  let ownerSkills: OwnerSkillResponseRow[] = [];
   const { data: skillOptions, error: skillOptionsError } = await supabase
     .from("skills")
-    .select("id, name, icon")
+    .select("id, name, icon, cat_id, sort_order")
     .eq("user_id", circle.owner_user_id)
+    .order("sort_order", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true })
     .returns<OwnerSkillRow[]>();
 
   if (skillOptionsError) {
     console.error("Failed to load circle owner skills", skillOptionsError);
   } else {
+    const categoryIds = Array.from(
+      new Set(
+        (skillOptions ?? [])
+          .map((skill) => skill.cat_id)
+          .filter((categoryId): categoryId is string => Boolean(categoryId))
+      )
+    );
+    const categoryById = new Map<string, OwnerSkillCategoryRow>();
+
+    if (categoryIds.length > 0) {
+      const { data: skillCategories, error: skillCategoriesError } =
+        await supabase
+          .from("cats")
+          .select("id, name, sort_order")
+          .eq("user_id", circle.owner_user_id)
+          .in("id", categoryIds)
+          .returns<OwnerSkillCategoryRow[]>();
+
+      if (skillCategoriesError) {
+        console.error(
+          "Failed to load circle owner skill categories",
+          skillCategoriesError
+        );
+      } else {
+        for (const category of skillCategories ?? []) {
+          categoryById.set(category.id, category);
+        }
+      }
+    }
+
     ownerSkills = (skillOptions ?? []).map((skill) => ({
       id: skill.id,
       name: skill.name?.trim() || "Untitled skill",
       icon: skill.icon ?? null,
+      cat_id: skill.cat_id ?? null,
+      sort_order: skill.sort_order ?? null,
+      category:
+        skill.cat_id && categoryById.has(skill.cat_id)
+          ? {
+              id: skill.cat_id,
+              name:
+                categoryById.get(skill.cat_id)?.name?.trim() ||
+                "Untitled category",
+              sort_order: categoryById.get(skill.cat_id)?.sort_order ?? null,
+            }
+          : null,
     }));
   }
 

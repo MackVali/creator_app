@@ -341,6 +341,30 @@ function extractFoodMetadataStrings(value: Json | undefined): string[] {
   return [];
 }
 
+function collectStructuredFoodBrowsePlacements(
+  value: Json | undefined,
+): FoodBrowsePlacement[] {
+  if (!Array.isArray(value)) return [];
+
+  const placements = new Map<string, FoodBrowsePlacement>();
+
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+
+    const record = item as Record<string, Json | undefined>;
+    if (typeof record.department !== "string" || typeof record.aisle !== "string") {
+      continue;
+    }
+
+    addFoodBrowsePlacement(
+      placements,
+      getFoodBrowsePlacement(record.department, record.aisle),
+    );
+  }
+
+  return [...placements.values()];
+}
+
 function collectFoodMetadataPlacements(
   metadata: Json | null | undefined,
 ): FoodBrowsePlacement[] {
@@ -348,6 +372,11 @@ function collectFoodMetadataPlacements(
 
   const record = metadata as Record<string, Json | undefined>;
   const placements = new Map<string, FoodBrowsePlacement>();
+
+  for (const placement of collectStructuredFoodBrowsePlacements(record.browse)) {
+    addFoodBrowsePlacement(placements, placement);
+  }
+
   const departmentValues = [
     record.department,
     record.browse_department,
