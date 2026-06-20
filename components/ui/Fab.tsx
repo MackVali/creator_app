@@ -554,6 +554,16 @@ type FabSearchResult = {
   skillId?: string | null;
   skill_id?: string | null;
   skillIds?: string[] | null;
+  skillIcon?: string | null;
+  skill_icon?: string | null;
+  skillEmoji?: string | null;
+  skill_emoji?: string | null;
+  primarySkillIcon?: string | null;
+  primary_skill_icon?: string | null;
+  skillName?: string | null;
+  skill_name?: string | null;
+  primarySkillName?: string | null;
+  primary_skill_name?: string | null;
   monumentId?: string | null;
   monument_id?: string | null;
   priority?: string | null;
@@ -596,7 +606,7 @@ const NEXUS_INSTANCE_TYPE_FILTER_OPTIONS: Array<{
   { id: "TASK", label: "Tasks" },
   ...HABIT_TYPE_OPTIONS.map((option) => ({
     id: option.value as NexusResultInstanceTypeFilter,
-    label: `${option.label}s`,
+    label: option.value === "HABIT" ? "Habits" : option.label,
   })),
 ];
 const EMBEDDED_NEXUS_EVENT_TYPE_FILTER_OPTIONS: Array<{
@@ -1219,6 +1229,16 @@ const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
         '[data-state="open"][role="dialog"]',
       ].join(","),
     ),
+  );
+};
+
+const isFabPopupNexusPortalTarget = (target: EventTarget | null): boolean => {
+  if (typeof Element === "undefined" || !(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest("[data-select-scroll-root], [data-select-scroll-content]"),
   );
 };
 
@@ -6576,6 +6596,7 @@ export function Fab({
   const menuRef = useRef<HTMLDivElement>(null);
   const fabRootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const popupFabNexusContentRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const overlayButtonRef = useRef<HTMLButtonElement | null>(null);
   const overlayPickerNexusShellRef = useRef<HTMLDivElement | null>(null);
@@ -13708,6 +13729,35 @@ export function Fab({
     [resetFabViewportState],
   );
 
+  useEffect(() => {
+    if (!isPopupFabNexusExpanded || overlayOpen || overlayPickerOpen) return;
+
+    const handlePopupNexusPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      const content = popupFabNexusContentRef.current;
+      if (!target || !content) return;
+
+      if (target instanceof Node && content.contains(target)) {
+        return;
+      }
+      if (isFabPopupNexusPortalTarget(target)) {
+        return;
+      }
+
+      closeExpandedPanel({ notifyEditClose: false });
+    };
+
+    document.addEventListener("pointerdown", handlePopupNexusPointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePopupNexusPointerDown);
+    };
+  }, [
+    closeExpandedPanel,
+    isPopupFabNexusExpanded,
+    overlayOpen,
+    overlayPickerOpen,
+  ]);
+
   const renderNexusPage = () => (
     <FabNexus
       query={searchQuery}
@@ -13739,6 +13789,9 @@ export function Fab({
       }
       useBlackSurface={isPopupFabNexusPage}
       markTimelineNexus={isTimelineFabNexusPage}
+      popupContentRef={
+        isPopupFabNexusExpanded ? popupFabNexusContentRef : undefined
+      }
       showToolbar
     />
   );
@@ -21508,6 +21561,7 @@ type FabNexusProps = {
   onPopupExpandedChange?: (expanded: boolean) => void;
   useBlackSurface?: boolean;
   markTimelineNexus?: boolean;
+  popupContentRef?: RefObject<HTMLDivElement | null>;
   embeddedExpanded?: boolean;
   onEmbeddedExpandedChange?: (expanded: boolean) => void;
   inputRef?: RefObject<HTMLInputElement | null>;
@@ -21545,6 +21599,7 @@ function FabNexus({
   onPopupExpandedChange,
   useBlackSurface = false,
   markTimelineNexus = false,
+  popupContentRef,
   embeddedExpanded = false,
   onEmbeddedExpandedChange,
   inputRef,
@@ -21585,14 +21640,14 @@ function FabNexus({
   };
 
   const toolbarMonuments = availableMonuments ?? [];
-  const toolbarSkills = availableSkills ?? [];
+  const toolbarSkills = useMemo(() => availableSkills ?? [], [availableSkills]);
   const popupToolbarSkills = useMemo(
     () =>
       sortPopupNexusSkillsByCategory(
-        availableSkills ?? [],
+        toolbarSkills,
         availableSkillCategories ?? [],
       ),
-    [availableSkillCategories, availableSkills],
+    [availableSkillCategories, toolbarSkills],
   );
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
@@ -21610,6 +21665,7 @@ function FabNexus({
     eventTypeValue !== "ALL";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
+  const toolbarSortSelectClass = cn(toolbarSelectClass, "rounded-md");
   const toolbarContentClass = "bg-black/90 text-white";
   const toolbarPillBaseClass =
     "inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35";
@@ -21622,6 +21678,107 @@ function FabNexus({
   const eventTypeFilterOptions = isEmbedded
     ? EMBEDDED_NEXUS_EVENT_TYPE_FILTER_OPTIONS
     : NEXUS_INSTANCE_TYPE_FILTER_OPTIONS;
+  const nexusSkillsById = useMemo(() => {
+    const map = new Map<string, Skill>();
+    for (const skill of toolbarSkills) {
+      map.set(skill.id, skill);
+    }
+    return map;
+  }, [toolbarSkills]);
+  const nexusSkillsByName = useMemo(() => {
+    const map = new Map<string, Skill>();
+    for (const skill of toolbarSkills) {
+      const name = skill.name?.trim().toLowerCase();
+      if (name && !map.has(name)) {
+        map.set(name, skill);
+      }
+    }
+    return map;
+  }, [toolbarSkills]);
+  const getNexusStringField = (
+    source: unknown,
+    field: string,
+  ): string | null => {
+    if (!source || typeof source !== "object") return null;
+    const value = (source as Record<string, unknown>)[field];
+    return typeof value === "string" && value.trim().length > 0
+      ? value.trim()
+      : null;
+  };
+  const getNexusResultDirectSkillIcon = (
+    result: FabSearchResult,
+  ): string | null => {
+    const fields = [
+      "skillIcon",
+      "skill_icon",
+      "skillEmoji",
+      "skill_emoji",
+      "primarySkillIcon",
+      "primary_skill_icon",
+    ];
+    for (const field of fields) {
+      const value = getNexusStringField(result, field);
+      if (value) return value;
+    }
+    const nestedSkill = (result as Record<string, unknown>).skill;
+    return (
+      getNexusStringField(nestedSkill, "icon") ??
+      getNexusStringField(nestedSkill, "emoji")
+    );
+  };
+  const getNexusResultSkill = (result: FabSearchResult): Skill | null => {
+    const skillIds = [
+      result.skillId,
+      result.skill_id,
+      ...(Array.isArray(result.skillIds) ? result.skillIds : []),
+    ];
+    for (const skillId of skillIds) {
+      const normalizedSkillId =
+        typeof skillId === "string" ? skillId.trim() : "";
+      if (!normalizedSkillId) continue;
+      const skill = nexusSkillsById.get(normalizedSkillId);
+      if (skill) return skill;
+    }
+
+    const nameFields = [
+      "skillName",
+      "skill_name",
+      "primarySkillName",
+      "primary_skill_name",
+    ];
+    for (const field of nameFields) {
+      const name = getNexusStringField(result, field)?.toLowerCase();
+      if (!name) continue;
+      const skill = nexusSkillsByName.get(name);
+      if (skill) return skill;
+    }
+    const nestedSkill = (result as Record<string, unknown>).skill;
+    const nestedName = getNexusStringField(nestedSkill, "name")?.toLowerCase();
+    return nestedName ? (nexusSkillsByName.get(nestedName) ?? null) : null;
+  };
+  const getNexusResultSkillIcon = (
+    result: FabSearchResult,
+  ): { icon: string | null; label: string } => {
+    const directIcon = getNexusResultDirectSkillIcon(result);
+    const skill = getNexusResultSkill(result);
+    return {
+      icon: directIcon ?? skill?.icon?.trim() ?? null,
+      label: skill?.name ?? "Skill",
+    };
+  };
+  const getNexusResultTypeLabel = (result: FabSearchResult): string => {
+    const resultType = String(result.type ?? "").toUpperCase();
+    if (resultType === "PROJECT") return "Project";
+    if (resultType === "TASK") return "Task";
+    if (resultType === "HABIT") {
+      const habitType = normalizeHabitType(result.habitType);
+      return (
+        HABIT_TYPE_OPTIONS.find((option) => option.value === habitType)
+          ?.label ?? "Habit"
+      );
+    }
+    return resultType ? resultType : "Event";
+  };
 
   useEffect(() => {
     if (!shouldUsePopupSizing || !popupExpanded) {
@@ -21742,7 +21899,20 @@ function FabNexus({
       {showPopupFilterPills ? (
         <>
           {renderFilterPillGroup({
-            label: "Monuments",
+            label: "INSTANCE TYPES",
+            allLabel: "All",
+            value: eventTypeValue === "ALL" ? "" : eventTypeValue,
+            onChange: (next) =>
+              handleEventTypeChange(
+                (next === "" ? "ALL" : next) as OverlayEventTypeFilter,
+              ),
+            open: popupInstanceTypePillsOpen,
+            onOpenChange: setPopupInstanceTypePillsOpen,
+            controlsId: popupInstanceTypePillsId,
+            options: NEXUS_INSTANCE_TYPE_FILTER_OPTIONS,
+          })}
+          {renderFilterPillGroup({
+            label: "MONUMENTS",
             allLabel: "All",
             value: filterMonumentId ?? "",
             onChange: handleMonumentChange,
@@ -21756,7 +21926,7 @@ function FabNexus({
             })),
           })}
           {renderFilterPillGroup({
-            label: "Skills",
+            label: "SKILLS",
             allLabel: "All",
             value: filterSkillId ?? "",
             onChange: handleSkillChange,
@@ -21768,19 +21938,6 @@ function FabNexus({
               label: skill.name || "Skill",
               icon: skill.icon ?? "🛠️",
             })),
-          })}
-          {renderFilterPillGroup({
-            label: "INSTANCE TYPES",
-            allLabel: "All",
-            value: eventTypeValue === "ALL" ? "" : eventTypeValue,
-            onChange: (next) =>
-              handleEventTypeChange(
-                (next === "" ? "ALL" : next) as OverlayEventTypeFilter,
-              ),
-            open: popupInstanceTypePillsOpen,
-            onOpenChange: setPopupInstanceTypePillsOpen,
-            controlsId: popupInstanceTypePillsId,
-            options: NEXUS_INSTANCE_TYPE_FILTER_OPTIONS,
           })}
         </>
       ) : (
@@ -21863,7 +22020,7 @@ function FabNexus({
         >
           <SelectTrigger
             aria-label="Sort overlay results"
-            className={toolbarSelectClass}
+            className={toolbarSortSelectClass}
           >
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
@@ -21946,6 +22103,10 @@ function FabNexus({
 
   return (
     <div
+      ref={popupContentRef}
+      data-fab-popup-nexus-content={
+        shouldUsePopupSizing && popupExpanded ? "true" : undefined
+      }
       data-fab-timeline-nexus={markTimelineNexus ? "true" : undefined}
       className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
       style={{
@@ -22040,10 +22201,10 @@ function FabNexus({
       {shouldShowPopupAdjustments ? (
         <div
           className={cn(
-            "px-4 pt-2",
+            "shrink-0 px-4",
             popupAdjustOpen
-              ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
-              : "shrink-0",
+              ? "max-h-[38vh] overflow-y-auto overscroll-contain pt-1"
+              : "pt-0",
           )}
         >
           <AnimatePresence initial={false}>
@@ -22057,7 +22218,7 @@ function FabNexus({
                 transition={{ duration: 0.18, ease: "easeOut" }}
                 className="overflow-hidden"
               >
-                <div className="pt-3">{renderToolbarControls()}</div>
+                <div className="pt-1">{renderToolbarControls()}</div>
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -22069,7 +22230,8 @@ function FabNexus({
       ) : null}
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5 pt-3",
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5",
+          shouldShowPopupAdjustments && popupAdjustOpen ? "pt-1.5" : "pt-3",
           isEmbedded
             ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
             : shouldUsePopupSizing
@@ -22095,10 +22257,12 @@ function FabNexus({
                 result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
               const statusText = getStatusText(result);
+              const skillIcon = getNexusResultSkillIcon(result);
+              const typeLabel = getNexusResultTypeLabel(result);
               const cardClassName = cn(
                 "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
-                  ? "shimmer-border-complete isolate z-0 overflow-visible border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40"
+                  ? "shimmer-border-complete isolate z-0 overflow-hidden border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40"
                   : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
                 isDisabled && "cursor-not-allowed",
               );
@@ -22259,19 +22423,35 @@ function FabNexus({
                   <div className="relative z-10 flex w-full flex-col gap-1 min-w-0">
                     <div className="flex w-full items-start justify-between gap-3">
                       <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
-                        <span
-                          className={cn(
-                            "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
-                            nameTextClass,
-                          )}
-                        >
-                          {result.name}
-                        </span>
+                        <div className="flex min-w-0 items-start gap-2">
+                          <span
+                            className="mt-[1px] inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-[11px] leading-none text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                            aria-hidden="true"
+                            title={skillIcon.label}
+                          >
+                            {skillIcon.icon ? (
+                              <span className="block max-w-full truncate">
+                                {skillIcon.icon}
+                              </span>
+                            ) : (
+                              <CircleDot
+                                className="h-3 w-3 text-white/65"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                          <span
+                            className={cn(
+                              "block min-w-0 flex-1 line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
+                              nameTextClass,
+                            )}
+                          >
+                            {result.name}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex flex-shrink-0 flex-col items-end justify-start gap-1 text-right">
-                        <span className={metaLabelClass}>
-                          {result.type === "PROJECT" ? "Project" : "Habit"}
-                        </span>
+                        <span className={metaLabelClass}>{typeLabel}</span>
                         {result.type === "PROJECT" &&
                           result.global_rank !== null &&
                           result.global_rank !== undefined && (

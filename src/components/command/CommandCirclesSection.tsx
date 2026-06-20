@@ -165,6 +165,7 @@ export type CommandCirclesSectionHandle = {
 };
 
 type CircleDetailView = "goals" | "roadmap";
+type CircleMemberRole = "MEMBER" | "OPERATOR" | "MANAGER" | "VIEWER";
 type MemberConstraintField = "skill_constraint_ids" | "location_context_ids";
 type OfferMode = "FIXED" | "FLEXIBLE";
 type CircleHabitCardDensity = "large" | "small";
@@ -209,6 +210,12 @@ const CIRCLE_HABIT_COMPLETED_SHIMMER_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(45deg,rgba(2,44,34,0.42),rgba(5,150,105,0.50),rgba(52,211,153,0.58),rgba(16,185,129,0.48),rgba(2,44,34,0.42))] bg-[length:400%_400%] p-[3px] opacity-85 animate-[steel-shimmer_3s_ease-in-out_infinite] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
 const CIRCLE_HABIT_COMPLETED_FACET_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(135deg,rgba(2,44,34,0.95),transparent_18%)_top_left/42%_42%_no-repeat,linear-gradient(225deg,rgba(6,95,70,0.86),transparent_18%)_top_right/42%_42%_no-repeat,linear-gradient(45deg,rgba(3,67,54,0.90),transparent_18%)_bottom_left/42%_42%_no-repeat,linear-gradient(315deg,rgba(20,184,166,0.28),transparent_18%)_bottom_right/42%_42%_no-repeat] p-[2px] shadow-[inset_0_0_0_1px_rgba(5,150,105,0.36),inset_0_0_0_2px_rgba(2,44,34,0.50)] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
+const memberRoleOptions: CircleMemberRole[] = [
+  "MEMBER",
+  "OPERATOR",
+  "MANAGER",
+  "VIEWER",
+];
 
 type OwnerSkillOption = {
   id: string;
@@ -1276,19 +1283,6 @@ const CircleCard = forwardRef<
   );
 });
 
-function PlaceholderAction({ children }: { children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      disabled
-      className="inline-flex min-h-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] px-3 text-[11px] font-semibold text-white/45 opacity-70"
-      title="Coming next"
-    >
-      {children}
-    </button>
-  );
-}
-
 function MemberDetailEmptyRow({
   Icon,
   text,
@@ -1375,34 +1369,14 @@ function MemberDetailAccordionSection({
   );
 }
 
-function getConstraintSummary(
-  selectedIds: string[],
-  optionById: Map<string, ConstraintOption>,
-  emptyLabel: string,
-) {
-  if (selectedIds.length === 0) {
-    return emptyLabel;
-  }
-
-  const labels = selectedIds.map(
-    (id) => optionById.get(id)?.label ?? shortenUserId(id),
-  );
-  const visibleLabels = labels.slice(0, 2).join(", ");
-  const hiddenCount = labels.length - 2;
-
-  return hiddenCount > 0
-    ? `${visibleLabels}, +${hiddenCount} more`
-    : visibleLabels;
-}
-
-function getConstraintOptionLabel(
+function getConstraintLabel(
   id: string,
   optionById: Map<string, ConstraintOption>,
 ) {
   return optionById.get(id)?.label ?? shortenUserId(id);
 }
 
-function ConstraintSelectionPreview({
+function ConstraintPillList({
   selectedIds,
   optionById,
   emptyLabel,
@@ -1413,41 +1387,51 @@ function ConstraintSelectionPreview({
 }) {
   if (selectedIds.length === 0) {
     return (
-      <span className="inline-flex min-h-7 max-w-full items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/58">
+      <p className="mt-1 text-sm font-medium leading-5 text-white/52">
         {emptyLabel}
-      </span>
+      </p>
     );
   }
 
-  const visibleIds = selectedIds.slice(0, 2);
-  const hiddenCount = selectedIds.length - visibleIds.length;
-
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5">
-      {visibleIds.map((id) => {
+    <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+      {selectedIds.map((id) => {
         const option = optionById.get(id);
 
         return (
           <span
             key={id}
-            className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/62"
+            className="inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.055] px-2.5 py-1 text-[11px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
           >
             {option?.icon ? (
-              <span className="shrink-0 text-xs" aria-hidden="true">
+              <span
+                className="shrink-0 text-xs leading-none"
+                aria-hidden="true"
+              >
                 {option.icon}
               </span>
             ) : null}
-            <span className="truncate">
-              {getConstraintOptionLabel(id, optionById)}
+            <span className="min-w-0 truncate">
+              {getConstraintLabel(id, optionById)}
             </span>
           </span>
         );
       })}
-      {hiddenCount > 0 ? (
-        <span className="inline-flex min-h-7 items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/50">
-          +{hiddenCount} more
-        </span>
-      ) : null}
+    </div>
+  );
+}
+
+function WorkProfileRowLabel({
+  Icon,
+  label,
+}: {
+  Icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/45">
+      <Icon className="h-3.5 w-3.5 text-white/32" aria-hidden="true" />
+      <h6>{label}</h6>
     </div>
   );
 }
@@ -1479,7 +1463,6 @@ function WorkProfileConstraintMultiSelect({
     [options],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const summary = getConstraintSummary(selectedIds, optionById, emptyLabel);
   const canOpen = canEdit && !isSaving && options.length > 0;
   const canReset = canEdit && !isSaving && selectedIds.length > 0;
 
@@ -1490,20 +1473,18 @@ function WorkProfileConstraintMultiSelect({
   }, [canOpen]);
 
   return (
-    <div className="relative min-w-0 rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="relative min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-white/48 ring-1 ring-white/10">
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h6 className="text-xs font-semibold uppercase tracking-[0.14em] text-white/55">
-              {label}
-            </h6>
-            <p className="mt-1 truncate text-xs font-semibold text-white/75">
-              {isSaving ? "Saving..." : summary}
-            </p>
-          </div>
+        <div className="min-w-0">
+          <WorkProfileRowLabel Icon={Icon} label={label} />
+          <ConstraintPillList
+            selectedIds={selectedIds}
+            optionById={optionById}
+            emptyLabel={emptyLabel}
+          />
+          {isSaving ? (
+            <p className="mt-1 text-xs font-medium text-white/38">Saving...</p>
+          ) : null}
         </div>
         {canEdit ? (
           <div className="flex shrink-0 items-center gap-1.5">
@@ -1539,14 +1520,6 @@ function WorkProfileConstraintMultiSelect({
             </button>
           </div>
         ) : null}
-      </div>
-
-      <div className="mt-3">
-        <ConstraintSelectionPreview
-          selectedIds={selectedIds}
-          optionById={optionById}
-          emptyLabel={emptyLabel}
-        />
       </div>
 
       {options.length === 0 ? (
@@ -1624,24 +1597,13 @@ function WorkProfileConstraintReadOnly({
   );
 
   return (
-    <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-3">
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-white/48 ring-1 ring-white/10">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <div className="min-w-0">
-          <h6 className="text-xs font-semibold uppercase tracking-[0.14em] text-white/55">
-            {label}
-          </h6>
-          <div className="mt-3">
-            <ConstraintSelectionPreview
-              selectedIds={selectedIds}
-              optionById={optionById}
-              emptyLabel={emptyLabel}
-            />
-          </div>
-        </div>
-      </div>
+    <div className="min-w-0">
+      <WorkProfileRowLabel Icon={Icon} label={label} />
+      <ConstraintPillList
+        selectedIds={selectedIds}
+        optionById={optionById}
+        emptyLabel={emptyLabel}
+      />
     </div>
   );
 }
@@ -1663,24 +1625,17 @@ function CommandAccessAvailabilityRow({
   const hasPendingOffers = pendingOffers.offers.length > 0;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-      <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.04] text-white/48 ring-1 ring-white/10">
-          <CalendarDays className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <h6 className="text-xs font-semibold uppercase tracking-[0.14em] text-white/55">
-          Availability
-        </h6>
-      </div>
+    <div className="min-w-0">
+      <WorkProfileRowLabel Icon={CalendarDays} label="Availability" />
 
-      <div className="mt-3 grid gap-2">
+      <div className="mt-2 grid gap-2">
         {commandAccess.isLoading ? (
-          <p className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm font-semibold text-white/70">
+          <p className="text-sm font-medium leading-5 text-white/58">
             Loading command access...
           </p>
         ) : commandAccess.error ? (
-          <div className="rounded-xl border border-amber-300/15 bg-amber-400/10 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-            <p className="text-sm font-semibold text-amber-50/88">
+          <div>
+            <p className="text-sm font-semibold text-amber-50/82">
               Unable to load command access.
             </p>
             <p className="mt-1 text-xs leading-5 text-amber-100/65">
@@ -1696,7 +1651,7 @@ function CommandAccessAvailabilityRow({
                   return (
                     <article
                       key={rule.id}
-                      className="w-full rounded-xl border border-white/[0.10] bg-gradient-to-br from-zinc-900/95 via-zinc-950 to-black px-3.5 py-3 shadow-[0_10px_20px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06)]"
+                      className="w-full border-t border-white/[0.06] pt-2 first:border-t-0 first:pt-0"
                     >
                       {isFixed ? (
                         <div className="grid gap-1.5 sm:grid-cols-[minmax(0,0.8fr)_minmax(11rem,1fr)_auto] sm:items-center sm:gap-3">
@@ -1727,7 +1682,7 @@ function CommandAccessAvailabilityRow({
               ? pendingOffers.offers.map((offer) => (
                   <article
                     key={offer.id}
-                    className="w-full rounded-xl border border-dashed border-white/[0.14] bg-white/[0.025] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    className="w-full border-t border-white/[0.06] pt-2 first:border-t-0 first:pt-0"
                   >
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,0.8fr)_minmax(11rem,1fr)_auto] sm:items-center sm:gap-3">
                       <div className="min-w-0">
@@ -1767,7 +1722,7 @@ function CommandAccessAvailabilityRow({
 
             {!hasRules && !hasPendingOffers && !pendingOffers.isLoading ? (
               <>
-                <p className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm font-semibold text-white/78">
+                <p className="text-sm font-medium leading-5 text-white/68">
                   No accepted command access yet.
                 </p>
                 <p className="text-xs leading-5 text-white/48">
@@ -1789,7 +1744,7 @@ function CommandAccessAvailabilityRow({
             ) : null}
 
             {cancelOfferError ? (
-              <p className="rounded-lg border border-amber-300/15 bg-amber-400/10 px-2.5 py-2 text-xs leading-5 text-amber-50/75">
+              <p className="text-xs leading-5 text-amber-50/75">
                 {cancelOfferError}
               </p>
             ) : null}
@@ -2379,23 +2334,25 @@ function MakeOfferModal({
 function CircleMemberFloatingDetail({
   circle,
   member,
-  isOwner,
   canMakeOffer,
   canEditWorkProfile,
   skillOptions,
   locationContextOptions,
+  roleActionId,
   constraintActionId,
+  onRoleChange,
   onConstraintChange,
   onClose,
 }: {
   circle: CommandCircle;
   member: CircleMemberDisplay;
-  isOwner: boolean;
   canMakeOffer: boolean;
   canEditWorkProfile: boolean;
   skillOptions: ConstraintOption[];
   locationContextOptions: ConstraintOption[];
+  roleActionId: string | null;
   constraintActionId: string | null;
+  onRoleChange: (member: CircleMemberDisplay, nextRole: CircleMemberRole) => void;
   onConstraintChange: (
     member: CircleMemberDisplay,
     field: MemberConstraintField,
@@ -2403,11 +2360,15 @@ function CircleMemberFloatingDetail({
   ) => void;
   onClose: () => void;
 }) {
-  const statusLabel = formatMemberStatus(member.status);
   const skillActionId = `${member.id}:skill_constraint_ids`;
   const locationActionId = `${member.id}:location_context_ids`;
+  const isRoleSaving = roleActionId === member.id;
   const isConstraintSaving = constraintActionId !== null;
+  const memberRole = member.role.trim().toUpperCase();
+  const canEditRoleAccess =
+    canEditWorkProfile && !member.isPreview && memberRole !== "OWNER";
   const [isOfferOpen, setIsOfferOpen] = useState(false);
+  const [isRoleAccessEditing, setIsRoleAccessEditing] = useState(false);
   const [offerSuccess, setOfferSuccess] = useState<string | null>(null);
   const [commandAccess, setCommandAccess] = useState<CommandAccessState>({
     rules: [],
@@ -2491,6 +2452,7 @@ function CircleMemberFloatingDetail({
 
   useEffect(() => {
     setIsOfferOpen(false);
+    setIsRoleAccessEditing(false);
     setOfferSuccess(null);
     setCancellingOfferId(null);
     setCancelOfferError(null);
@@ -2541,6 +2503,12 @@ function CircleMemberFloatingDetail({
     },
     [cancellingOfferId, circle.id, member.id, member.isPreview],
   );
+
+  useEffect(() => {
+    if (!canEditRoleAccess) {
+      setIsRoleAccessEditing(false);
+    }
+  }, [canEditRoleAccess]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2632,7 +2600,11 @@ function CircleMemberFloatingDetail({
       role="dialog"
       aria-modal="true"
       aria-labelledby={`circle-member-profile-${member.id}`}
-      className="relative z-10 flex h-full min-h-0 max-h-none w-[calc(100%-1.5rem)] max-w-2xl flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#08090c]/95 shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl"
+      className="relative z-10 flex h-auto min-h-0 w-[calc(100%-1.5rem)] max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#08090c]/95 shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl"
+      style={{
+        maxHeight:
+          "calc(100dvh - 1.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))",
+      }}
       initial={{ opacity: 0, y: 22, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.97 }}
@@ -2654,7 +2626,6 @@ function CircleMemberFloatingDetail({
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-semibold text-white/58">
                 {member.role.toUpperCase()}
               </span>
-              <span>{statusLabel}</span>
             </div>
           </div>
         </div>
@@ -2681,7 +2652,7 @@ function CircleMemberFloatingDetail({
         </button>
       </div>
 
-      <div className="grid gap-3 overflow-y-auto p-4 sm:p-5">
+      <div className="grid min-h-0 gap-3 overflow-y-auto overscroll-contain p-4 [-webkit-overflow-scrolling:touch] sm:p-5">
         {offerSuccess ? (
           <div className="rounded-2xl border border-emerald-200/15 bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-50/85">
             {offerSuccess}
@@ -2694,37 +2665,58 @@ function CircleMemberFloatingDetail({
           Icon={ShieldCheck}
           defaultOpen
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs leading-5 text-white/50">
-                Current role:{" "}
-                <span className="font-semibold text-white/75">
-                  {member.role.toUpperCase()}
-                </span>
-              </p>
-            </div>
-            {isOwner ? (
-              <PlaceholderAction>Change Role</PlaceholderAction>
-            ) : null}
-          </div>
-        </MemberDetailAccordionSection>
-
-        <MemberDetailAccordionSection
-          id={`member-${member.id}-work-profile`}
-          title="Work Profile"
-          Icon={BriefcaseBusiness}
-        >
           <div className="grid gap-2.5">
-            {canEditWorkProfile ? (
+            <div className="min-w-0">
+              <WorkProfileRowLabel Icon={ShieldCheck} label="Role" />
+              {isRoleAccessEditing && canEditRoleAccess ? (
+                <select
+                  aria-label="Member role"
+                  value={
+                    memberRoleOptions.includes(memberRole as CircleMemberRole)
+                      ? memberRole
+                      : "MEMBER"
+                  }
+                  onChange={(event) =>
+                    onRoleChange(
+                      member,
+                      event.target.value as CircleMemberRole,
+                    )
+                  }
+                  disabled={isRoleSaving}
+                  className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-white/[0.06] px-3 text-sm font-semibold text-white outline-none transition focus:border-white/30 focus:ring-2 focus:ring-white/15 disabled:cursor-not-allowed disabled:opacity-55 sm:max-w-56"
+                >
+                  {memberRoleOptions.map((roleOption) => (
+                    <option
+                      key={roleOption}
+                      value={roleOption}
+                      className="bg-zinc-950 text-white"
+                    >
+                      {roleOption}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="mt-1 text-sm font-medium leading-5 text-white/68">
+                  <span className="font-semibold text-white/75">
+                    {memberRole}
+                  </span>
+                </p>
+              )}
+              {isRoleSaving ? (
+                <p className="mt-1 text-xs font-medium text-white/38">Saving...</p>
+              ) : null}
+            </div>
+
+            {isRoleAccessEditing && canEditRoleAccess ? (
               <>
                 <WorkProfileConstraintMultiSelect
                   Icon={Target}
-                  label="Skill constraints"
+                  label="Skill Constraints"
                   options={skillOptions}
                   selectedIds={member.skillConstraintIds}
-                  emptyLabel="All skills"
+                  emptyLabel="No skills granted"
                   noOptionsLabel="No owner skills yet"
-                  canEdit={!member.isPreview && !isConstraintSaving}
+                  canEdit={!isConstraintSaving}
                   isSaving={constraintActionId === skillActionId}
                   onChange={(nextIds) =>
                     onConstraintChange(member, "skill_constraint_ids", nextIds)
@@ -2732,12 +2724,12 @@ function CircleMemberFloatingDetail({
                 />
                 <WorkProfileConstraintMultiSelect
                   Icon={MapPin}
-                  label="Location contexts"
+                  label="Location Contexts"
                   options={locationContextOptions}
                   selectedIds={member.locationContextIds}
                   emptyLabel="No locations granted"
                   noOptionsLabel="No locations yet"
-                  canEdit={!member.isPreview && !isConstraintSaving}
+                  canEdit={!isConstraintSaving}
                   isSaving={constraintActionId === locationActionId}
                   onChange={(nextIds) =>
                     onConstraintChange(member, "location_context_ids", nextIds)
@@ -2748,20 +2740,54 @@ function CircleMemberFloatingDetail({
               <>
                 <WorkProfileConstraintReadOnly
                   Icon={Target}
-                  label="Skill constraints"
+                  label="Skill Constraints"
                   options={skillOptions}
                   selectedIds={member.skillConstraintIds}
-                  emptyLabel="All skills"
+                  emptyLabel="No skills granted"
                 />
                 <WorkProfileConstraintReadOnly
                   Icon={MapPin}
-                  label="Location contexts"
+                  label="Location Contexts"
                   options={locationContextOptions}
                   selectedIds={member.locationContextIds}
                   emptyLabel="No locations granted"
                 />
               </>
             )}
+            {canEditRoleAccess ? (
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIsRoleAccessEditing((current) => !current)
+                  }
+                  disabled={isRoleSaving || isConstraintSaving}
+                  aria-pressed={isRoleAccessEditing}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-white/12 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-white/24 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isRoleAccessEditing ? "Done" : "Change role"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </MemberDetailAccordionSection>
+
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-work-profile`}
+          title="Work Profile"
+          Icon={BriefcaseBusiness}
+        >
+          <p className="text-sm font-medium leading-5 text-white/58">
+            No work profile details yet.
+          </p>
+        </MemberDetailAccordionSection>
+
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-availability`}
+          title="Availability"
+          Icon={CalendarDays}
+        >
+          <div className="grid gap-2.5">
             <CommandAccessAvailabilityRow
               commandAccess={commandAccess}
               pendingOffers={pendingOffers}
@@ -2783,19 +2809,6 @@ function CircleMemberFloatingDetail({
             <MemberDetailEmptyRow
               Icon={BriefcaseBusiness}
               text="No assigned Circle work yet."
-            />
-          </div>
-        </MemberDetailAccordionSection>
-
-        <MemberDetailAccordionSection
-          id={`member-${member.id}-scheduled-events`}
-          title="Scheduled Circle Events"
-          Icon={CalendarDays}
-        >
-          <div>
-            <MemberDetailEmptyRow
-              Icon={CalendarDays}
-              text="No Circle events scheduled yet."
             />
           </div>
         </MemberDetailAccordionSection>
@@ -4111,6 +4124,9 @@ function CircleCommandDetail({
   const [memberConstraintActionId, setMemberConstraintActionId] = useState<
     string | null
   >(null);
+  const [memberRoleActionId, setMemberRoleActionId] = useState<string | null>(
+    null,
+  );
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [inlineEditOpen, setInlineEditOpen] = useState(false);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
@@ -4123,6 +4139,7 @@ function CircleCommandDetail({
     setInlineEditOpen(false);
     setFabEditTarget(null);
     setMemberConstraintActionId(null);
+    setMemberRoleActionId(null);
   }, [circle.id]);
 
   const loadCircleDetail = useCallback(
@@ -4239,6 +4256,87 @@ function CircleCommandDetail({
       }
     },
     [loadCircleDetail],
+  );
+
+  const handleMemberRoleChange = useCallback(
+    async (member: CircleMemberDisplay, nextRole: CircleMemberRole) => {
+      if (
+        member.isPreview ||
+        memberRoleActionId ||
+        member.role.trim().toUpperCase() === nextRole
+      ) {
+        return;
+      }
+
+      const previousMembers = detailMembers;
+
+      try {
+        setMemberRoleActionId(member.id);
+        setMembersError(null);
+        setDetailMembers((currentMembers) =>
+          (currentMembers ?? []).map((currentMember) =>
+            currentMember.id === member.id
+              ? { ...currentMember, role: nextRole }
+              : currentMember,
+          ),
+        );
+
+        const response = await fetch(
+          `/api/circles/${encodeURIComponent(
+            circle.id,
+          )}/members/${encodeURIComponent(member.id)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ role: nextRole }),
+          },
+        );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(data?.error ?? "Unable to update member role.");
+        }
+
+        const data = (await response.json()) as {
+          member?: CircleMember;
+        };
+
+        if (data.member) {
+          setDetailMembers((currentMembers) =>
+            (currentMembers ?? []).map((currentMember) =>
+              currentMember.id === member.id
+                ? {
+                    ...currentMember,
+                    role: data.member?.role ?? currentMember.role,
+                    skill_constraint_ids: normalizeStringArray(
+                      data.member?.skill_constraint_ids,
+                    ),
+                    location_context_ids: normalizeStringArray(
+                      data.member?.location_context_ids,
+                    ),
+                    updated_at:
+                      data.member?.updated_at ?? currentMember.updated_at,
+                  }
+                : currentMember,
+            ),
+          );
+        }
+      } catch (updateError) {
+        setDetailMembers(previousMembers);
+        setMembersError(
+          updateError instanceof Error
+            ? updateError.message
+            : "Unable to update member role.",
+        );
+      } finally {
+        setMemberRoleActionId(null);
+      }
+    },
+    [circle.id, detailMembers, memberRoleActionId],
   );
 
   const handleMemberConstraintChange = useCallback(
@@ -4379,6 +4477,44 @@ function CircleCommandDetail({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [selectedMemberId]);
+
+  const memberProfileOverlay =
+    typeof document !== "undefined"
+      ? createPortal(
+          <AnimatePresence>
+            {selectedMember ? (
+              <motion.div
+                className="fixed inset-0 z-[90] flex items-center justify-center overflow-hidden bg-black/60 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] backdrop-blur-md sm:px-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                <button
+                  type="button"
+                  aria-label="Close member profile"
+                  onClick={() => setSelectedMemberId(null)}
+                  className="absolute inset-0 cursor-default bg-black/62 backdrop-blur-[2px]"
+                />
+                <CircleMemberFloatingDetail
+                  circle={circle}
+                  member={selectedMember}
+                  canMakeOffer={canMakeOffer}
+                  canEditWorkProfile={canEditWorkProfile}
+                  skillOptions={skillConstraintOptions}
+                  locationContextOptions={locationContextOptions}
+                  roleActionId={memberRoleActionId}
+                  constraintActionId={memberConstraintActionId}
+                  onRoleChange={handleMemberRoleChange}
+                  onConstraintChange={handleMemberConstraintChange}
+                  onClose={() => setSelectedMemberId(null)}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="relative min-h-full w-full overflow-visible">
@@ -4530,36 +4666,7 @@ function CircleCommandDetail({
         hideLauncher
         portalToBody
       />
-      <AnimatePresence>
-        {selectedMember ? (
-          <motion.div
-            className="absolute inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-          >
-            <button
-              type="button"
-              aria-label="Close member profile"
-              onClick={() => setSelectedMemberId(null)}
-              className="absolute inset-0 cursor-default bg-black/62 backdrop-blur-[2px]"
-            />
-            <CircleMemberFloatingDetail
-              circle={circle}
-              member={selectedMember}
-              isOwner={isOwner}
-              canMakeOffer={canMakeOffer}
-              canEditWorkProfile={canEditWorkProfile}
-              skillOptions={skillConstraintOptions}
-              locationContextOptions={locationContextOptions}
-              constraintActionId={memberConstraintActionId}
-              onConstraintChange={handleMemberConstraintChange}
-              onClose={() => setSelectedMemberId(null)}
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      {memberProfileOverlay}
     </div>
   );
 }

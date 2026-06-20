@@ -230,7 +230,7 @@ export default function UpdatePasswordForm() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setPassword(e.target.value)
             }
-            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
             autoComplete="new-password"
             required
           />
@@ -247,7 +247,7 @@ export default function UpdatePasswordForm() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setConfirmPassword(e.target.value)
             }
-            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-800/80 px-5 py-4 text-zinc-100 placeholder-zinc-500 transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300/15"
             autoComplete="new-password"
             required
           />

@@ -63,7 +63,7 @@ export default function AuthForm() {
   const labelClassName =
     "mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300";
   const inputClassName =
-    "h-12 w-full rounded-xl border border-zinc-600 bg-zinc-800/80 px-4 text-sm text-zinc-100 placeholder-zinc-500 shadow-[inset_0_1px_1px_rgba(255,255,255,0.035)] outline-none transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:ring-2 focus:ring-zinc-300/15 disabled:cursor-not-allowed disabled:bg-zinc-700/40 disabled:text-zinc-500";
+    "h-12 w-full rounded-xl border border-zinc-700 bg-zinc-800/80 px-4 text-sm text-zinc-100 placeholder-zinc-500 shadow-[inset_0_1px_1px_rgba(255,255,255,0.035)] outline-none transition-all duration-200 focus:border-zinc-400 focus:bg-zinc-800 focus:ring-2 focus:ring-zinc-300/15 disabled:cursor-not-allowed disabled:bg-zinc-700/40 disabled:text-zinc-500";
   const statusClassName =
     "mb-5 rounded-xl border px-4 py-3 text-sm leading-relaxed";
   const submitClassName =

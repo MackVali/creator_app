@@ -5,15 +5,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
 
-const circleColumns = "id, owner_user_id";
+const circleColumns = "id, owner_user_id, status";
 
 const memberColumns =
   "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
+const allowedRoles = new Set(["MEMBER", "OPERATOR", "MANAGER", "VIEWER"]);
+const allowedMemberManagerRoles = new Set(["OWNER", "MANAGER"]);
 
 type CircleRow = {
   id: string;
   owner_user_id: string;
+  status: string;
 };
+
+type CircleMemberRole = "MEMBER" | "OPERATOR" | "MANAGER" | "VIEWER";
 
 type CircleMemberRow = {
   id: string;
@@ -30,11 +35,17 @@ type CircleMemberRow = {
 
 type UpdateCircleMemberBody = {
   action?: unknown;
+  role?: unknown;
   skill_constraint_ids?: unknown;
   location_context_ids?: unknown;
 };
 
 type CircleMemberAction = "remove" | "cancel_invite";
+
+type RequesterMemberRow = {
+  id: string;
+  role: string;
+};
 
 type ConstraintValidationResult =
   | {
@@ -72,6 +83,16 @@ function normalizeAction(value: unknown): CircleMemberAction | null {
 
   return normalized === "remove" || normalized === "cancel_invite"
     ? normalized
+    : null;
+}
+
+function normalizeRole(value: unknown): CircleMemberRole | null {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim().toUpperCase();
+
+  return allowedRoles.has(normalized)
+    ? (normalized as CircleMemberRole)
     : null;
 }
 
@@ -165,18 +186,13 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!userHasAppManagerAccess(user)) {
-    return NextResponse.json(
-      { error: "Circle not found or access denied." },
-      { status: 404 }
-    );
-  }
-
   const body = (await request.json().catch(
     () => ({})
   )) as UpdateCircleMemberBody;
   const action = normalizeAction(body.action);
   const hasAction = hasOwn(body, "action");
+  const hasRole = hasOwn(body, "role");
+  const role = hasRole ? normalizeRole(body.role) : null;
   const hasSkillConstraints = hasOwn(body, "skill_constraint_ids");
   const hasLocationContexts = hasOwn(body, "location_context_ids");
 
@@ -184,7 +200,11 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
-  if (!action && !hasSkillConstraints && !hasLocationContexts) {
+  if (hasRole && !role) {
+    return NextResponse.json({ error: "Invalid role." }, { status: 400 });
+  }
+
+  if (!action && !hasRole && !hasSkillConstraints && !hasLocationContexts) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
@@ -192,7 +212,7 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     .from("circles")
     .select(circleColumns)
     .eq("id", circleId)
-    .eq("owner_user_id", user.id)
+    .eq("status", "ACTIVE")
     .limit(1)
     .maybeSingle<CircleRow>();
 
@@ -208,6 +228,44 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     return NextResponse.json(
       { error: "Circle not found or access denied." },
       { status: 404 }
+    );
+  }
+
+  const requesterIsOwner = circle.owner_user_id === user.id;
+  let requesterCanManageMembers =
+    requesterIsOwner || userHasAppManagerAccess(user);
+
+  if (!requesterCanManageMembers) {
+    const { data: requesterMember, error: requesterMemberError } =
+      await supabase
+        .from("circle_members")
+        .select("id, role")
+        .eq("circle_id", circleId)
+        .eq("user_id", user.id)
+        .eq("status", "ACTIVE")
+        .limit(1)
+        .maybeSingle<RequesterMemberRow>();
+
+    if (requesterMemberError) {
+      console.error(
+        "Failed to verify circle member update requester membership",
+        requesterMemberError
+      );
+      return NextResponse.json(
+        { error: "Unable to verify circle access." },
+        { status: 500 }
+      );
+    }
+
+    requesterCanManageMembers =
+      !!requesterMember &&
+      allowedMemberManagerRoles.has(requesterMember.role.trim().toUpperCase());
+  }
+
+  if (!requesterCanManageMembers) {
+    return NextResponse.json(
+      { error: "Not authorized to update members for this Circle." },
+      { status: 403 }
     );
   }
 
@@ -234,9 +292,11 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     );
   }
 
-  if (action && member.role === "OWNER") {
+  const targetMemberRole = member.role.trim().toUpperCase();
+
+  if ((action || hasRole) && targetMemberRole === "OWNER") {
     return NextResponse.json(
-      { error: "Circle owner cannot be removed." },
+      { error: "Circle owner role cannot be changed or removed." },
       { status: 400 }
     );
   }
@@ -265,11 +325,16 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
 
     const updateValues: {
       updated_at: string;
+      role?: CircleMemberRole;
       skill_constraint_ids?: string[];
       location_context_ids?: string[];
     } = {
       updated_at: new Date().toISOString(),
     };
+
+    if (role) {
+      updateValues.role = role;
+    }
 
     if (hasSkillConstraints) {
       const validation = normalizeUuidArray(
