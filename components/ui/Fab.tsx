@@ -6350,8 +6350,17 @@ export function Fab({
     !overlayPickerOpen &&
     selected === null &&
     !isDirectCreationOpen;
-  const isNormalFabNexusExpanded =
-    isNormalFabNexusPage && normalNexusExpanded && expanded;
+  const isTimelineFabNexusPage =
+    isOpen &&
+    menuVariant === "timeline" &&
+    activeFabPageType === "nexus" &&
+    !overlayPickerOpen &&
+    selected === null &&
+    !isDirectCreationOpen;
+  const isPopupFabNexusPage =
+    isNormalFabNexusPage || isTimelineFabNexusPage;
+  const isPopupFabNexusExpanded =
+    isPopupFabNexusPage && normalNexusExpanded && expanded;
   const [isDragging, setIsDragging] = useState(false);
   const [dragTargetPage, setDragTargetPage] = useState<number | null>(null);
   const [dragDirection, setDragDirection] = useState<1 | -1 | null>(null);
@@ -6370,12 +6379,12 @@ export function Fab({
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   useEffect(() => {
     if (!normalNexusExpanded) return;
-    if (isNormalFabNexusPage) return;
+    if (isPopupFabNexusPage) return;
     setNormalNexusExpanded(false);
     if (selected === null) {
       setExpanded(false);
     }
-  }, [isNormalFabNexusPage, normalNexusExpanded, selected]);
+  }, [isPopupFabNexusPage, normalNexusExpanded, selected]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -13566,15 +13575,13 @@ export function Fab({
       onSortModeChange={setOverlaySortMode}
       availableMonuments={monuments}
       availableSkills={skills}
-      usePopupSizing={menuVariant === "default"}
-      popupExpanded={menuVariant === "default" ? normalNexusExpanded : false}
+      usePopupSizing={isPopupFabNexusPage}
+      popupExpanded={isPopupFabNexusPage ? normalNexusExpanded : false}
       onPopupExpandedChange={
-        menuVariant === "default" ? handleNormalNexusExpandedChange : undefined
+        isPopupFabNexusPage ? handleNormalNexusExpandedChange : undefined
       }
-      useBlackSurface={isNormalFabNexusPage}
-      markTimelineNexus={
-        menuVariant === "timeline" && activeFabPageType === "nexus"
-      }
+      useBlackSurface={isPopupFabNexusPage}
+      markTimelineNexus={isTimelineFabNexusPage}
       showToolbar
     />
   );
@@ -18051,7 +18058,7 @@ export function Fab({
     isTaskCreationExpanded ||
     isHabitCreationExpanded;
   const shouldConstrainNormalFabNexusStage =
-    isNormalFabNexusPage && !isNormalFabNexusExpanded;
+    isNormalFabNexusPage && !isPopupFabNexusExpanded;
   const shouldUseContentSizedFabStage = isContentSizedCreationExpanded;
   const goalCreationMinHeight = 240;
   const goalCenteredEditMinHeight = 320;
@@ -18271,12 +18278,12 @@ export function Fab({
     currentMobileFabPanelHeightExpanded ?? minHeightExpanded;
   const panelMaxHeightExpanded =
     currentMobileFabPanelHeightExpanded ?? maxHeightExpanded;
-  const normalFabNexusPanelHeightExpanded =
-    isNormalFabNexusExpanded && panelMinHeightExpanded !== undefined
+  const popupFabNexusPanelHeightExpanded =
+    isPopupFabNexusExpanded && panelMinHeightExpanded !== undefined
       ? panelMinHeightExpanded
       : undefined;
   const panelHeightExpanded =
-    normalFabNexusPanelHeightExpanded ?? currentMobileFabPanelHeightExpanded;
+    popupFabNexusPanelHeightExpanded ?? currentMobileFabPanelHeightExpanded;
   const panelSizeTransition = "border-color 0.1s linear, transform 0.2s ease";
   const shouldUseCenteredMobileCreationPanel =
     expanded &&
@@ -18748,12 +18755,12 @@ export function Fab({
                     expanded
                       ? "bg-[var(--surface-elevated)]"
                       : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
-                    isNormalFabNexusPage && "bg-black",
+                    isPopupFabNexusPage && "bg-black",
                     expanded &&
                       (shouldUseCenteredEditModal ||
                         shouldUseCenteredCreationPanel ||
                         shouldAttachCreationControls ||
-                        isNormalFabNexusExpanded) &&
+                        isPopupFabNexusExpanded) &&
                       "flex flex-col overflow-hidden",
                     expanded
                       ? isGoalCreationExpanded
@@ -18797,10 +18804,10 @@ export function Fab({
                         : staticBorderColor,
                     backgroundImage: isCompletedFabDrawer
                       ? "linear-gradient(155deg,rgba(34,197,94,0.94) 0%,rgba(22,163,74,0.97) 48%,rgba(21,128,61,0.98) 100%)"
-                      : isNormalFabNexusPage
+                      : isPopupFabNexusPage
                         ? "none"
                       : undefined,
-                    backgroundColor: isNormalFabNexusPage
+                    backgroundColor: isPopupFabNexusPage
                       ? "rgba(0,0,0,0.98)"
                       : undefined,
                     transition: panelSizeTransition,
@@ -18833,7 +18840,7 @@ export function Fab({
                     touchAction: expanded ? "manipulation" : undefined,
                     overflowY:
                       expanded &&
-                      !isNormalFabNexusExpanded &&
+                      !isPopupFabNexusExpanded &&
                       !shouldUseCenteredEditModal &&
                       !shouldUseCenteredCreationPanel &&
                       !shouldAttachCreationControls
@@ -18891,7 +18898,7 @@ export function Fab({
                     data-fab-scroll-body={
                       shouldUseCenteredFabScrollBody ||
                       shouldUseScrollableFabBody ||
-                      isNormalFabNexusExpanded ||
+                      isPopupFabNexusExpanded ||
                       shouldConstrainNormalFabNexusStage
                         ? ""
                         : undefined
@@ -18900,7 +18907,7 @@ export function Fab({
                       shouldUseCenteredFabScrollBody &&
                         "min-h-0 flex-1 overflow-y-auto overscroll-contain",
                       !shouldUseCenteredFabScrollBody &&
-                        isNormalFabNexusExpanded &&
+                        isPopupFabNexusExpanded &&
                         "min-h-0 flex-1 basis-0 overflow-hidden",
                       !shouldUseCenteredFabScrollBody &&
                         shouldConstrainNormalFabNexusStage &&
@@ -18909,13 +18916,13 @@ export function Fab({
                         shouldUseCollapsedTimelineNexusBody &&
                         "h-full min-h-0 overflow-hidden",
                       !shouldUseCenteredFabScrollBody &&
-                        !isNormalFabNexusExpanded &&
+                        !isPopupFabNexusExpanded &&
                         !shouldConstrainNormalFabNexusStage &&
                         !shouldUseCollapsedTimelineNexusBody &&
                         shouldUseScrollableFabBody &&
                         "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain",
                       !shouldUseCenteredFabScrollBody &&
-                        !isNormalFabNexusExpanded &&
+                        !isPopupFabNexusExpanded &&
                         !shouldConstrainNormalFabNexusStage &&
                         !shouldUseCollapsedTimelineNexusBody &&
                         !shouldUseScrollableFabBody &&
@@ -18930,13 +18937,13 @@ export function Fab({
                       )}
                       style={{
                         backgroundImage: isBlendingGradient
-                          ? isNormalFabNexusPage
+                          ? isPopupFabNexusPage
                             ? "none"
                             : blendedBackgroundImage
-                          : isNormalFabNexusPage
+                          : isPopupFabNexusPage
                             ? "none"
                             : staticBackgroundImage,
-                        backgroundColor: isNormalFabNexusPage
+                        backgroundColor: isPopupFabNexusPage
                           ? "rgba(0,0,0,0.98)"
                           : undefined,
                         borderRadius: "inherit",

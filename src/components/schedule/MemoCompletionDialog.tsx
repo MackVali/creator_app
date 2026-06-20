@@ -40,6 +40,22 @@ type MemoCompletionDialogProps = {
   onCompleted: () => void | Promise<void>;
 };
 
+function formatDatabaseCreatedAtMetadata(openedAt: string) {
+  const parsedDate = new Date(openedAt);
+  if (Number.isNaN(parsedDate.getTime())) return "";
+
+  const datePart = parsedDate.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+  });
+  const timePart = parsedDate.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return `${datePart} at ${timePart}`;
+}
+
 const LEGACY_FORM_TEMPLATE_TARGETS: Record<string, string | null> = {
   "water-log": "hydration",
   "food-log": "nutrition",
@@ -128,11 +144,14 @@ export function MemoCompletionDialog({
     [plan.formTargetId],
   );
   const formFields = formTarget?.database.fields ?? [];
+  const editableFormFields = formFields.filter((field) => !isDatabaseCreatedAtField(field));
+  const createdAtFormFields = formFields.filter(isDatabaseCreatedAtField);
+  const createdAtMetadataTime = createdAtFormFields.length > 0
+    ? formatDatabaseCreatedAtMetadata(formValues[createdAtFormFields[0].id] ?? "")
+    : "";
   const skillIcon = context?.skillIcon?.trim() || null;
-  const hasSubmittableFormValue = formFields.some(
-    (field) =>
-      !isDatabaseCreatedAtField(field) &&
-      formValues[field.id]?.trim().length > 0,
+  const hasSubmittableFormValue = editableFormFields.some(
+    (field) => formValues[field.id]?.trim().length > 0,
   );
   const canSubmitNote =
     !saving && Boolean(noteSkillId) && noteContent.trim().length > 0;
@@ -333,7 +352,7 @@ export function MemoCompletionDialog({
             </Dialog.Close>
           </div>
 
-          <div className="max-h-[calc(100dvh-150px)] overflow-y-auto px-4 py-3">
+          <div className="max-h-[calc(100dvh-150px)] overflow-y-auto px-4 pb-2 pt-3">
             <div className="mb-3 flex items-center gap-1.5">
               {(["form", "note"] as MemoCompletionStep[]).map((step) => {
                 const enabled = requiredSteps.includes(step);
@@ -373,64 +392,63 @@ export function MemoCompletionDialog({
             </div>
 
             {activeStep === "form" ? (
-              <div className="rounded-[14px] border border-white/10 bg-white/[0.035] p-3">
+              <div className="rounded-[14px] border border-white/10 bg-white/[0.035] px-3 pb-2 pt-3">
                 <div className="min-w-0">
                   <h3 className="text-sm font-semibold text-white">
                     {plan.formLabel}
                   </h3>
                   {formTarget ? (
-                    <div className="mt-3 grid gap-2.5">
-                      {formFields.map((field) => {
-                        const value = formValues[field.id] ?? "";
-                        const isCreatedAtField = isDatabaseCreatedAtField(field);
-                        const commonClassName =
-                          "w-full rounded-lg border border-white/10 bg-black/35 px-2.5 py-1.5 text-xs text-white outline-none transition placeholder:text-white/24 focus:border-white/35";
-                        const handleChange = (
-                          event:
-                            | ChangeEvent<HTMLInputElement>
-                            | ChangeEvent<HTMLTextAreaElement>,
-                        ) => {
-                          setFormValues((current) => ({
-                            ...current,
-                            [field.id]: event.target.value,
-                          }));
-                        };
+                    <div className="mt-3">
+                      <div className="grid gap-2.5">
+                        {editableFormFields.map((field) => {
+                          const value = formValues[field.id] ?? "";
+                          const commonClassName =
+                            "w-full rounded-lg border border-white/10 bg-black/35 px-2.5 py-1.5 text-xs text-white outline-none transition placeholder:text-white/24 focus:border-white/35";
+                          const handleChange = (
+                            event:
+                              | ChangeEvent<HTMLInputElement>
+                              | ChangeEvent<HTMLTextAreaElement>,
+                          ) => {
+                            setFormValues((current) => ({
+                              ...current,
+                              [field.id]: event.target.value,
+                            }));
+                          };
 
-                        return (
-                          <label key={field.id} className="grid gap-1">
-                            <span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-white/42">
-                              {field.name}
-                            </span>
-                            {isCreatedAtField ? (
-                              <input
-                                readOnly
-                                value={value ? new Date(value).toLocaleString() : ""}
-                                className={cn(commonClassName, "cursor-default text-white/45")}
-                                aria-label={`${field.name} is set automatically`}
-                              />
-                            ) : field.type === "longText" ? (
-                              <textarea
-                                value={value}
-                                onChange={handleChange}
-                                placeholder={`Add ${field.name.toLowerCase()}`}
-                                className={cn(commonClassName, "min-h-[68px] resize-none")}
-                                disabled={saving}
-                              />
-                            ) : (
-                              <input
-                                type={field.type === "number" ? "number" : "text"}
-                                value={value}
-                                onChange={handleChange}
-                                placeholder={`Add ${field.name.toLowerCase()}`}
-                                className={commonClassName}
-                                disabled={saving}
-                              />
-                            )}
-                          </label>
-                        );
-                      })}
+                          return (
+                            <label key={field.id} className="grid gap-1">
+                              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-white/42">
+                                {field.name}
+                              </span>
+                              {field.type === "longText" ? (
+                                <textarea
+                                  value={value}
+                                  onChange={handleChange}
+                                  placeholder={`Add ${field.name.toLowerCase()}`}
+                                  className={cn(commonClassName, "min-h-[68px] resize-none")}
+                                  disabled={saving}
+                                />
+                              ) : (
+                                <input
+                                  type={field.type === "number" ? "number" : "text"}
+                                  value={value}
+                                  onChange={handleChange}
+                                  placeholder={`Add ${field.name.toLowerCase()}`}
+                                  className={commonClassName}
+                                  disabled={saving}
+                                />
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {createdAtMetadataTime ? (
+                        <p className="mt-1 px-0.5 text-center text-[10px] font-medium leading-none text-white/36">
+                          {createdAtMetadataTime}
+                        </p>
+                      ) : null}
                       {!context?.skillId ? (
-                        <p className="text-xs leading-5 text-red-300/85">
+                        <p className="mt-2 text-xs leading-5 text-red-300/85">
                           Link this MEMO habit to a skill to save database entries.
                         </p>
                       ) : null}

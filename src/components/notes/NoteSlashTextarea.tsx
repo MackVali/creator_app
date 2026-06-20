@@ -23,9 +23,11 @@ import {
   Calendar,
   Check,
   CheckSquare,
+  ChefHat,
   ChevronLeft,
   ChevronRight,
   Clock,
+  BookOpen,
   Eye,
   EyeOff,
   FileText,
@@ -36,8 +38,11 @@ import {
   List,
   ListChecks,
   Minus,
+  PencilLine,
   Pin,
   Plus,
+  ScanLine,
+  Search,
   Settings2,
   Star,
   X,
@@ -45,6 +50,7 @@ import {
   Tags,
   Trash2,
   Type,
+  Utensils,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -214,6 +220,21 @@ const NOTE_DATABASE_FIELD_DRAG_ID_PREFIX = "database-field:";
 const NOTE_DATABASE_FIELD_LONG_PRESS_DELAY_MS = 425;
 const NOTE_DATABASE_FIELD_LONG_PRESS_TOLERANCE_PX = 8;
 const NUTRITION_MACRO_FIELD_KEYS = ["carbs", "protein", "fat"] as const;
+const NUTRITION_FOOD_FIELD_LOOKUP_KEYS = new Set(["food", "foodname", "name"]);
+const NUTRITION_FOOD_ACTION_TABS = [
+  { id: "search", label: "Search", icon: Search },
+  { id: "scan", label: "Scan", icon: ScanLine },
+  { id: "favs", label: "Favs", icon: Star },
+  { id: "custom", label: "Custom", icon: PencilLine },
+  { id: "meals", label: "Meals", icon: Utensils },
+  { id: "recipes", label: "Recipes", icon: BookOpen },
+  { id: "recent", label: "Recent", icon: Clock },
+  { id: "chef", label: "Chef", icon: ChefHat },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}>;
 const NOTE_DATABASE_TITLE_FIELD_NAMES = new Set([
   "name",
   "title",
@@ -1451,6 +1472,7 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 }
 
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
+type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
 
 function normalizeDatabaseFieldLookupKey(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -1463,6 +1485,17 @@ function getNutritionMacroFieldKey(field: NoteDatabaseFieldDefinition): Nutritio
 
   const idParts = field.id.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   return NUTRITION_MACRO_FIELD_KEYS.find((key) => idParts.includes(key)) ?? null;
+}
+
+function isDefaultNutritionFoodField(field: NoteDatabaseFieldDefinition) {
+  const normalizedName = normalizeDatabaseFieldLookupKey(getDatabaseFieldName(field));
+  if (NUTRITION_FOOD_FIELD_LOOKUP_KEYS.has(normalizedName)) return true;
+
+  const normalizedId = normalizeDatabaseFieldLookupKey(field.id);
+  if (NUTRITION_FOOD_FIELD_LOOKUP_KEYS.has(normalizedId)) return true;
+
+  const idParts = field.id.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return idParts.some((idPart) => NUTRITION_FOOD_FIELD_LOOKUP_KEYS.has(idPart));
 }
 
 function getDatabaseEntryTitle(entry: NoteDatabaseEntry, definition: NoteDatabaseDefinition) {
@@ -1519,6 +1552,22 @@ function getDatabaseEntryInitialFormValues(
   openedAt: string,
 ) {
   return getDatabaseCreatedAtInitialFormValues(definition, openedAt);
+}
+
+function formatDatabaseCreatedAtMetadata(openedAt: string) {
+  const parsedDate = new Date(openedAt);
+  if (Number.isNaN(parsedDate.getTime())) return "";
+
+  const datePart = parsedDate.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+  });
+  const timePart = parsedDate.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return `${datePart} at ${timePart}`;
 }
 
 function SortableDatabaseFieldHeader({
@@ -2524,28 +2573,61 @@ export function NoteDatabaseEntrySheet({
   onClose: () => void;
   onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
 }) {
+  const [openedAt] = useState(() => new Date().toISOString());
   const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>(() =>
-    getDatabaseEntryInitialFormValues(databaseDefinition, new Date().toISOString()),
+    getDatabaseEntryInitialFormValues(databaseDefinition, openedAt),
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [selectedNutritionFoodAction, setSelectedNutritionFoodAction] =
+    useState<NutritionFoodActionTabId>("search");
+  const nutritionFoodActionTabRefs = useRef<
+    Partial<Record<NutritionFoodActionTabId, HTMLButtonElement | null>>
+  >({});
   const databaseFields = getDatabaseFieldsWithTitleFirst(databaseDefinition);
+  const editableDatabaseFields = databaseFields.filter((field) => !isDatabaseCreatedAtField(field));
+  const createdAtFields = databaseFields.filter(isDatabaseCreatedAtField);
+  const createdAtMetadataTime = createdAtFields.length > 0
+    ? formatDatabaseCreatedAtMetadata(entryFormValues[createdAtFields[0].id] ?? openedAt)
+    : "";
   const databaseFormTitle = getDatabaseFormTitle(databaseDefinition.title);
   const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
   const nutritionMacroFields = isDefaultNutritionDatabase
     ? NUTRITION_MACRO_FIELD_KEYS.map((macroKey) =>
-        databaseFields.find((field) => getNutritionMacroFieldKey(field) === macroKey),
+        editableDatabaseFields.find((field) => getNutritionMacroFieldKey(field) === macroKey),
       ).filter((field): field is NoteDatabaseFieldDefinition => Boolean(field))
     : [];
   const shouldRenderNutritionMacroGrid =
     isDefaultNutritionDatabase && nutritionMacroFields.length === NUTRITION_MACRO_FIELD_KEYS.length;
   const nutritionMacroFieldIds = new Set(nutritionMacroFields.map((field) => field.id));
   const firstNutritionMacroFieldIndex = shouldRenderNutritionMacroGrid
-    ? Math.min(...nutritionMacroFields.map((macroField) => databaseFields.indexOf(macroField)))
+    ? Math.min(...nutritionMacroFields.map((macroField) => editableDatabaseFields.indexOf(macroField)))
     : -1;
+  const nutritionFoodField = isDefaultNutritionDatabase
+    ? editableDatabaseFields.find(isDefaultNutritionFoodField) ?? null
+    : null;
 
   function updateEntryFormValue(fieldId: string, value: string) {
     setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
+  }
+
+  function selectNutritionFoodAction(tabId: NutritionFoodActionTabId) {
+    setSelectedNutritionFoodAction(tabId);
+    nutritionFoodActionTabRefs.current[tabId]?.scrollIntoView({
+      inline: "center",
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }
+
+  function selectNutritionFoodActionByOffset(offset: -1 | 1) {
+    const currentIndex = NUTRITION_FOOD_ACTION_TABS.findIndex(
+      (tab) => tab.id === selectedNutritionFoodAction,
+    );
+    const nextIndex =
+      (currentIndex + offset + NUTRITION_FOOD_ACTION_TABS.length) %
+      NUTRITION_FOOD_ACTION_TABS.length;
+    selectNutritionFoodAction(NUTRITION_FOOD_ACTION_TABS[nextIndex].id);
   }
 
   function renderDatabaseEntryField(
@@ -2554,7 +2636,10 @@ export function NoteDatabaseEntrySheet({
   ) {
     const fieldName = getDatabaseFieldName(field);
     const fieldValue = entryFormValues[field.id] ?? "";
-    const isCreatedAtField = isDatabaseCreatedAtField(field);
+    const nutritionMacroFieldKey =
+      isDefaultNutritionDatabase && field.type === "number" ? getNutritionMacroFieldKey(field) : null;
+    const fieldTypeDisplayLabel = nutritionMacroFieldKey ? "GRAMS" : NOTE_DATABASE_FIELD_TYPE_LABELS[field.type];
+    const numberFieldPlaceholder = nutritionMacroFieldKey ? "0g" : fieldName;
     const inputClassName = options.compact
       ? "mt-1.5 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-2 py-2 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]"
       : "mt-2 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]";
@@ -2570,18 +2655,11 @@ export function NoteDatabaseEntrySheet({
               </span>
             ) : null}
             <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
-              {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
+              {fieldTypeDisplayLabel}
             </span>
           </span>
         </span>
-        {isCreatedAtField ? (
-          <input
-            readOnly
-            value={formatDatabaseEntryValue(fieldValue, field.type)}
-            className={`${inputClassName} cursor-default text-white/46`}
-            aria-label={`${fieldName} is set automatically`}
-          />
-        ) : field.type === "longText" ? (
+        {field.type === "longText" ? (
           <textarea
             value={fieldValue}
             onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
@@ -2595,7 +2673,7 @@ export function NoteDatabaseEntrySheet({
             value={fieldValue}
             onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
             className={inputClassName}
-            placeholder={fieldName}
+            placeholder={numberFieldPlaceholder}
           />
         ) : field.type === "rating" ? (
           <input
@@ -2633,6 +2711,82 @@ export function NoteDatabaseEntrySheet({
           />
         )}
       </label>
+    );
+  }
+
+  function renderNutritionFoodSearchField(field: NoteDatabaseFieldDefinition) {
+    const fieldValue = entryFormValues[field.id] ?? "";
+
+    return (
+      <div key={field.id} className="block">
+        <div className="relative -mx-1">
+          <button
+            type="button"
+            aria-label="Previous Nutrition tab"
+            onClick={(event) => {
+              event.preventDefault();
+              selectNutritionFoodActionByOffset(-1);
+            }}
+            className="absolute left-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
+          </button>
+          <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-max items-center gap-1.5 pb-1">
+              {NUTRITION_FOOD_ACTION_TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isSelected = selectedNutritionFoodAction === tab.id;
+
+                return (
+                  <button
+                    key={tab.id}
+                    ref={(node) => {
+                      nutritionFoodActionTabRefs.current[tab.id] = node;
+                    }}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => selectNutritionFoodAction(tab.id)}
+                    className={`flex h-11 w-[50px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-none outline-none transition ${
+                      isSelected
+                        ? "text-white/88"
+                        : "text-white/42 hover:text-white/68"
+                    } focus-visible:text-white/80 focus-visible:ring-1 focus-visible:ring-white/16`}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Next Nutrition tab"
+            onClick={(event) => {
+              event.preventDefault();
+              selectNutritionFoodActionByOffset(1);
+            }}
+            className="absolute right-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
+          >
+            <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="relative mt-2">
+          <Search
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/36"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={fieldValue}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            className="h-12 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
+            placeholder="Search foods..."
+            aria-label="Food"
+          />
+        </div>
+      </div>
     );
   }
 
@@ -2703,10 +2857,14 @@ export function NoteDatabaseEntrySheet({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-4 [-webkit-overflow-scrolling:touch]">
           {databaseFields.length > 0 ? (
             <div className="space-y-4">
-              {databaseFields.map((field, fieldIndex) => {
+              {editableDatabaseFields.map((field, fieldIndex) => {
+                if (nutritionFoodField?.id === field.id) {
+                  return renderNutritionFoodSearchField(field);
+                }
+
                 if (shouldRenderNutritionMacroGrid && nutritionMacroFieldIds.has(field.id)) {
                   if (fieldIndex !== firstNutritionMacroFieldIndex) return null;
 
@@ -2723,6 +2881,11 @@ export function NoteDatabaseEntrySheet({
 
                 return renderDatabaseEntryField(field);
               })}
+              {createdAtMetadataTime ? (
+                <p className="!mt-1 px-1 text-center text-[10px] font-medium leading-none text-white/36">
+                  {createdAtMetadataTime}
+                </p>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
@@ -3568,6 +3731,15 @@ function NoteSlashTextarea({
   const activeEntryDatabaseFields = activeEntryDatabaseDefinition
     ? getDatabaseFieldsWithTitleFirst(activeEntryDatabaseDefinition)
     : [];
+  const activeEntryEditableDatabaseFields = activeEntryDatabaseFields.filter(
+    (field) => !isDatabaseCreatedAtField(field),
+  );
+  const activeEntryCreatedAtFields = activeEntryDatabaseFields.filter(isDatabaseCreatedAtField);
+  const activeEntryCreatedAtMetadataTime = activeEntryCreatedAtFields.length > 0
+    ? formatDatabaseCreatedAtMetadata(
+        entryFormValues[activeEntryCreatedAtFields[0].id] ?? "",
+      )
+    : "";
   const activeDatabaseFields = activeDatabaseDefinition
     ? getDatabaseFieldsWithTitleFirst(activeDatabaseDefinition)
     : [];
@@ -5189,104 +5361,105 @@ function NoteSlashTextarea({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [-webkit-overflow-scrolling:touch]">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-4 [-webkit-overflow-scrolling:touch]">
               {activeEntryDatabaseFields.length > 0 ? (
-                <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
-                  {activeEntryDatabaseFields.map((field) => {
-                    const fieldName = getDatabaseFieldName(field);
-                    const fieldValue = entryFormValues[field.id] ?? "";
-                    const isCreatedAtField = isDatabaseCreatedAtField(field);
-                    const inputClassName =
-                      "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
+                <div className="space-y-3">
+                  {activeEntryEditableDatabaseFields.length > 0 ? (
+                    <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
+                      {activeEntryEditableDatabaseFields.map((field) => {
+                        const fieldName = getDatabaseFieldName(field);
+                        const fieldValue = entryFormValues[field.id] ?? "";
+                        const inputClassName =
+                          "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
 
-                    return (
-                      <label key={field.id} className="block px-4 py-3">
-                        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
-                          <span className="min-w-0 truncate">
-                            {field.isTitle ? "Title" : fieldName}
-                          </span>
-                          <span className="flex shrink-0 items-center gap-1.5">
-                            {field.isTitle ? (
-                              <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
-                                {fieldName}
+                        return (
+                          <label key={field.id} className="block px-4 py-3">
+                            <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
+                              <span className="min-w-0 truncate">
+                                {field.isTitle ? "Title" : fieldName}
                               </span>
-                            ) : null}
-                            <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
-                              {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
+                              <span className="flex shrink-0 items-center gap-1.5">
+                                {field.isTitle ? (
+                                  <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
+                                    {fieldName}
+                                  </span>
+                                ) : null}
+                                <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
+                                  {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
+                                </span>
+                              </span>
                             </span>
-                          </span>
-                        </span>
-                        {isCreatedAtField ? (
-                          <input
-                            readOnly
-                            value={formatDatabaseEntryValue(fieldValue, field.type)}
-                            className={`${inputClassName} cursor-default text-white/46`}
-                            aria-label={`${fieldName} is set automatically`}
-                          />
-                        ) : field.type === "longText" ? (
-                          <textarea
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            rows={4}
-                            className={`${inputClassName} resize-none`}
-                            placeholder={fieldName}
-                          />
-                        ) : field.type === "number" ? (
-                          <input
-                            type="number"
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                            placeholder={fieldName}
-                          />
-                        ) : field.type === "rating" ? (
-                          <input
-                            type="number"
-                            min={1}
-                            max={5}
-                            step={1}
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                            placeholder="1-5"
-                          />
-                        ) : field.type === "date" ? (
-                          <input
-                            type="date"
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                          />
-                        ) : field.type === "photo" ? (
-                          <input
-                            disabled
-                            readOnly
-                            value=""
-                            className={`${inputClassName} cursor-not-allowed text-white/28`}
-                            placeholder="Photo field coming later"
-                          />
-                        ) : (
-                          <input
-                            type="text"
-                            value={fieldValue}
-                            onChange={(event) =>
-                              updateEntryFormValue(field.id, event.target.value)
-                            }
-                            className={inputClassName}
-                            placeholder={field.type === "select" ? "Select value" : fieldName}
-                          />
-                        )}
-                      </label>
-                    );
-                  })}
+                            {field.type === "longText" ? (
+                              <textarea
+                                value={fieldValue}
+                                onChange={(event) =>
+                                  updateEntryFormValue(field.id, event.target.value)
+                                }
+                                rows={4}
+                                className={`${inputClassName} resize-none`}
+                                placeholder={fieldName}
+                              />
+                            ) : field.type === "number" ? (
+                              <input
+                                type="number"
+                                value={fieldValue}
+                                onChange={(event) =>
+                                  updateEntryFormValue(field.id, event.target.value)
+                                }
+                                className={inputClassName}
+                                placeholder={fieldName}
+                              />
+                            ) : field.type === "rating" ? (
+                              <input
+                                type="number"
+                                min={1}
+                                max={5}
+                                step={1}
+                                value={fieldValue}
+                                onChange={(event) =>
+                                  updateEntryFormValue(field.id, event.target.value)
+                                }
+                                className={inputClassName}
+                                placeholder="1-5"
+                              />
+                            ) : field.type === "date" ? (
+                              <input
+                                type="date"
+                                value={fieldValue}
+                                onChange={(event) =>
+                                  updateEntryFormValue(field.id, event.target.value)
+                                }
+                                className={inputClassName}
+                              />
+                            ) : field.type === "photo" ? (
+                              <input
+                                disabled
+                                readOnly
+                                value=""
+                                className={`${inputClassName} cursor-not-allowed text-white/28`}
+                                placeholder="Photo field coming later"
+                              />
+                            ) : (
+                              <input
+                                type="text"
+                                value={fieldValue}
+                                onChange={(event) =>
+                                  updateEntryFormValue(field.id, event.target.value)
+                                }
+                                className={inputClassName}
+                                placeholder={field.type === "select" ? "Select value" : fieldName}
+                              />
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {activeEntryCreatedAtMetadataTime ? (
+                    <p className="!mt-1 px-1 text-center text-[10px] font-medium leading-none text-white/36">
+                      {activeEntryCreatedAtMetadataTime}
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">

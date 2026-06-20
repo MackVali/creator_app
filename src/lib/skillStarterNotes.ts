@@ -332,9 +332,15 @@ export function getNutritionCreatedAtInitialFormValues(
 }
 
 export function isDatabaseCreatedAtField(
-  field: Pick<NoteDatabaseFieldDefinition, "type">,
+  field: Pick<NoteDatabaseFieldDefinition, "id" | "name" | "type">,
 ) {
-  return field.type === "createdAt";
+  if (field.type === "createdAt") return true;
+
+  const normalizedName = field.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (normalizedName === "createdat") return true;
+
+  const normalizedId = field.id.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return normalizedId === "createdat";
 }
 
 export function getDatabaseCreatedAtInitialFormValues(
