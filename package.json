@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",
+    "@capacitor/barcode-scanner": "^3.0.2",
     "@capacitor/camera": "^8.2.0",
     "@capacitor/core": "^8.0.2",
     "@capacitor/haptics": "^8.0.2",

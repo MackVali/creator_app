@@ -109,6 +109,7 @@ export type RoadmapHabitItem = {
   name: string;
   habitType: HabitBucketId;
   rawHabitType?: string | null;
+  circleId?: string | null;
   globalOrder?: number;
   skillId?: string | null;
   skillName?: string | null;

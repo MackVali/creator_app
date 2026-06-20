@@ -15,6 +15,10 @@ function resolveAdminCredentials() {
 }
 
 export function createAdminClient() {
+  if (typeof window !== "undefined") {
+    throw new Error("Supabase admin client is server-only.");
+  }
+
   const { url, serviceKey } = resolveAdminCredentials();
 
   if (!url || !serviceKey) {

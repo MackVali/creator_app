@@ -32,7 +32,7 @@
 		<false/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>CREATOR needs camera access so you can take a new profile photo.</string>
+	<string>CREATOR needs camera access so you can scan nutrition barcodes and take a new profile photo.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>CREATOR uses contacts to help you find friends and invite collaborators.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
