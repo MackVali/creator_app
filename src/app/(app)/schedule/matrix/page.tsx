@@ -215,6 +215,18 @@ type MatrixPreferences = {
   cardDensityByGroup?: MatrixCardDensityPreferenceMap;
   collapsedGroupKeysByView?: MatrixCollapsedGroupPreferences;
 };
+type MatrixTag = {
+  id: string;
+  name: string;
+  color: string | null;
+  createdAt: string | null;
+};
+type MatrixTagLookupRow = {
+  id: string | null;
+  name: string | null;
+  color?: string | null;
+  created_at?: string | null;
+};
 
 const MATRIX_PANEL_LABELS: Record<MatrixPanel, string> = {
   scheduled: "Active",
@@ -224,6 +236,7 @@ const MATRIX_PANEL_LABELS: Record<MatrixPanel, string> = {
 type MatrixState = {
   loading: boolean;
   error: string | null;
+  matrixTags: MatrixTag[];
   eventGroups: MonumentGroup<MatrixEvent>[];
   unscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   skillEventGroups: MonumentGroup<MatrixEvent>[];
@@ -238,6 +251,7 @@ type MatrixState = {
 const initialState: MatrixState = {
   loading: true,
   error: null,
+  matrixTags: [],
   eventGroups: [],
   unscheduledDueHabitGroups: [],
   skillEventGroups: [],
@@ -453,6 +467,37 @@ function readMatrixLegacyCardDensityPreferences() {
   return sanitizeMatrixCardDensityPreferences(
     readMatrixJsonObject(MATRIX_CARD_DENSITY_STORAGE_KEY)
   );
+}
+
+async function loadMatrixTags(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  userId: string
+): Promise<MatrixTag[]> {
+  const tagsTableName = "tags" as keyof Database["public"]["Tables"];
+
+  const { data: tagData, error: tagError } = await supabase
+    .from(tagsTableName)
+    .select("id, name, color, created_at")
+    .eq("user_id", userId)
+    .order("name", { ascending: true });
+
+  if (tagError) throw tagError;
+
+  return ((tagData ?? []) as MatrixTagLookupRow[])
+    .map((tag) => {
+      const id = tag.id?.trim();
+      const name = tag.name?.trim();
+      if (!id || !name) return null;
+
+      return {
+        id,
+        name,
+        color: tag.color ?? null,
+        createdAt: tag.created_at ?? null,
+      };
+    })
+    .filter((tag): tag is MatrixTag => Boolean(tag))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function readMatrixCardDensityPreference(preferenceKey: string) {
@@ -2987,12 +3032,14 @@ function MatrixViewPill({
   icon,
   selected = false,
   disabled = false,
+  className,
   onClick,
 }: {
   label?: string;
   icon?: ReactNode;
   selected?: boolean;
   disabled?: boolean;
+  className?: string;
   onClick?: () => void;
 }) {
   return (
@@ -3008,7 +3055,8 @@ function MatrixViewPill({
           : "border-zinc-700/40 bg-zinc-900/35 text-zinc-600",
         disabled
           ? "cursor-default opacity-70"
-          : "hover:border-zinc-500/35 hover:bg-zinc-800/40 hover:text-zinc-400"
+          : "hover:border-zinc-500/35 hover:bg-zinc-800/40 hover:text-zinc-400",
+        className
       )}
     >
       {icon ? (
@@ -3019,7 +3067,11 @@ function MatrixViewPill({
           {icon}
         </span>
       ) : null}
-      {label ?? <span aria-hidden="true">&nbsp;</span>}
+      {label ? (
+        <span className="truncate">{label}</span>
+      ) : (
+        <span aria-hidden="true">&nbsp;</span>
+      )}
     </button>
   );
 }
@@ -3027,11 +3079,13 @@ function MatrixViewPill({
 function MatrixSettingsTray({
   activeView,
   activeScope,
+  matrixTags,
   onViewChange,
   onScopeChange,
 }: {
   activeView: MatrixView;
   activeScope: MatrixScope;
+  matrixTags: MatrixTag[];
   onViewChange(view: MatrixView): void;
   onScopeChange(scope: MatrixScope): void;
 }) {
@@ -3083,6 +3137,24 @@ function MatrixSettingsTray({
               selected={activeScope === "pinned"}
               onClick={() => onScopeChange("pinned")}
             />
+            {matrixTags.map((tag) => (
+              <MatrixViewPill
+                key={tag.id}
+                icon={
+                  <span
+                    aria-hidden="true"
+                    className="h-2 w-2 rounded-full border border-white/10"
+                    style={{
+                      backgroundColor:
+                        tag.color ?? "rgba(113, 113, 122, 0.55)",
+                    }}
+                  />
+                }
+                label={tag.name}
+                disabled
+                className="!min-w-0 max-w-[9rem] px-2.5"
+              />
+            ))}
           </div>
         </section>
       </div>
@@ -4915,6 +4987,7 @@ function MatrixContent() {
           timeBlockResult,
           dayTypeTimeBlockByIdResult,
           dayTypeTimeBlockByBlockResult,
+          matrixTags,
           monuments,
         ] =
           await Promise.all([
@@ -4964,6 +5037,7 @@ function MatrixContent() {
                   .eq("user_id", userId)
                   .in("time_block_id", timeBlockIds)
               : Promise.resolve({ data: [], error: null }),
+            loadMatrixTags(supabase, userId),
             monumentsPromise,
           ]);
 
@@ -5164,6 +5238,7 @@ function MatrixContent() {
           setState({
             loading: false,
             error: null,
+            matrixTags,
             eventGroups: groupByMonument({ items: events, monuments }),
             unscheduledDueHabitGroups: groupByMonument({
               items: unscheduledDueItems,
@@ -5390,6 +5465,7 @@ function MatrixContent() {
                 <MatrixSettingsTray
                   activeView={matrixView}
                   activeScope={matrixScope}
+                  matrixTags={state.matrixTags}
                   onViewChange={handleMatrixViewChange}
                   onScopeChange={handleMatrixScopeChange}
                 />
