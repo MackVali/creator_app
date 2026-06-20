@@ -76,7 +76,7 @@ export function memberWorkProfileAllowsWork(
   const workLocationContextId = getWorkLocationContextId(work);
 
   const skillAllowed =
-    skillConstraints.length === 0 ||
+    skillConstraints.length > 0 &&
     workSkillIds.some((id) => skillConstraints.includes(id));
 
   const locationAllowed =

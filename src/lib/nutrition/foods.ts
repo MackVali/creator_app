@@ -12,6 +12,7 @@ export type FoodSearchResult = {
   id: string;
   name: string;
   brand_name: string | null;
+  source?: string | null;
   serving_size: number | null;
   serving_unit: string | null;
   serving_grams: number | null;
@@ -19,6 +20,93 @@ export type FoodSearchResult = {
   carbs_g: number | null;
   protein_g: number | null;
   fat_g: number | null;
+  browse_department?: string | null;
+  browse_aisle?: string | null;
+};
+
+export const FOOD_BROWSE_DEPARTMENTS = [
+  {
+    label: "Everyday",
+    aisles: [
+      "Breakfast basics",
+      "Cheap bulk foods",
+      "High protein regulars",
+      "Quick snacks",
+    ],
+  },
+  { label: "Produce", aisles: ["Fruit", "Vegetables", "Herbs"] },
+  {
+    label: "Meat & Seafood",
+    aisles: ["Chicken", "Beef", "Pork", "Turkey", "Fish", "Seafood"],
+  },
+  {
+    label: "Dairy & Eggs",
+    aisles: ["Eggs", "Milk", "Yogurt", "Cheese", "Butter / Cream"],
+  },
+  {
+    label: "Pantry",
+    aisles: [
+      "Rice & grains",
+      "Pasta",
+      "Bread & tortillas",
+      "Beans & legumes",
+      "Canned foods",
+      "Nut butters",
+      "Oils",
+      "Baking",
+    ],
+  },
+  {
+    label: "Frozen",
+    aisles: [
+      "Frozen meals",
+      "Frozen protein",
+      "Frozen vegetables",
+      "Frozen fruit",
+      "Frozen snacks",
+    ],
+  },
+  {
+    label: "Snacks",
+    aisles: ["Nuts & trail mix", "Crackers", "Chips", "Bars", "Sweet snacks"],
+  },
+  {
+    label: "Drinks",
+    aisles: [
+      "Water",
+      "Juice",
+      "Coffee / tea",
+      "Soda",
+      "Sports / energy drinks",
+      "Protein drinks",
+    ],
+  },
+  {
+    label: "Condiments & Sauces",
+    aisles: ["Sauces", "Dressings", "Spreads", "Seasonings", "Sweeteners"],
+  },
+  {
+    label: "Prepared",
+    aisles: ["Ready meals", "Restaurant / fast food", "Meal kits"],
+  },
+] as const;
+
+export type FoodBrowseDepartmentLabel = (typeof FOOD_BROWSE_DEPARTMENTS)[number]["label"];
+export type FoodBrowseAisleLabel =
+  (typeof FOOD_BROWSE_DEPARTMENTS)[number]["aisles"][number];
+
+export type FoodBrowsePlacement = {
+  department: FoodBrowseDepartmentLabel;
+  aisle: FoodBrowseAisleLabel;
+};
+
+export type FoodBrowsePlacementInput = {
+  name?: string | null;
+  normalized_name?: string | null;
+  brand_name?: string | null;
+  normalized_brand_name?: string | null;
+  source?: string | null;
+  metadata?: Json | null;
 };
 
 export type FoodBarcodeLookupResult = {
@@ -56,6 +144,62 @@ const FOOD_BRAND_MAX_LENGTH = 120;
 const SERVING_UNIT_MAX_LENGTH = 24;
 const MAX_SERVING_SIZE = 10000;
 const MAX_SERVING_GRAMS = 5000;
+const FOOD_BROWSE_DEPARTMENT_LOOKUP = new Map<string, FoodBrowseDepartmentLabel>();
+const FOOD_BROWSE_AISLE_LOOKUP = new Map<string, FoodBrowseAisleLabel>();
+const FOOD_BROWSE_PLACEMENT_LOOKUP = new Map<string, FoodBrowsePlacement>();
+
+for (const department of FOOD_BROWSE_DEPARTMENTS) {
+  const normalizedDepartment = normalizeFoodSearchText(department.label);
+  FOOD_BROWSE_DEPARTMENT_LOOKUP.set(normalizedDepartment, department.label);
+  FOOD_BROWSE_DEPARTMENT_LOOKUP.set(
+    normalizedDepartment.replace(/\s+/g, ""),
+    department.label,
+  );
+
+  for (const aisle of department.aisles) {
+    const normalizedAisle = normalizeFoodSearchText(aisle);
+    FOOD_BROWSE_AISLE_LOOKUP.set(normalizedAisle, aisle);
+    FOOD_BROWSE_AISLE_LOOKUP.set(normalizedAisle.replace(/\s+/g, ""), aisle);
+    FOOD_BROWSE_PLACEMENT_LOOKUP.set(`${normalizedDepartment}:${normalizedAisle}`, {
+      department: department.label,
+      aisle,
+    });
+  }
+}
+
+const FOOD_BROWSE_KNOWN_NAME_PLACEMENTS: Record<
+  string,
+  FoodBrowsePlacement[]
+> = {
+  banana: [
+    { department: "Everyday", aisle: "Breakfast basics" },
+    { department: "Produce", aisle: "Fruit" },
+    { department: "Everyday", aisle: "Quick snacks" },
+  ],
+  egg: [
+    { department: "Everyday", aisle: "Breakfast basics" },
+    { department: "Everyday", aisle: "High protein regulars" },
+    { department: "Dairy & Eggs", aisle: "Eggs" },
+  ],
+  "chicken breast": [
+    { department: "Everyday", aisle: "High protein regulars" },
+    { department: "Meat & Seafood", aisle: "Chicken" },
+  ],
+  "white rice": [
+    { department: "Everyday", aisle: "Cheap bulk foods" },
+    { department: "Pantry", aisle: "Rice & grains" },
+  ],
+  oats: [
+    { department: "Everyday", aisle: "Breakfast basics" },
+    { department: "Everyday", aisle: "Cheap bulk foods" },
+    { department: "Pantry", aisle: "Rice & grains" },
+  ],
+  "peanut butter": [
+    { department: "Everyday", aisle: "Quick snacks" },
+    { department: "Pantry", aisle: "Nut butters" },
+    { department: "Snacks", aisle: "Nuts & trail mix" },
+  ],
+};
 
 const NUTRITION_LIMITS = {
   serving: {
@@ -129,6 +273,142 @@ export function normalizeFoodSearchText(value: string | null | undefined) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function normalizeFoodBrowseDepartment(
+  value: string | null | undefined,
+): FoodBrowseDepartmentLabel | null {
+  const normalized = normalizeFoodSearchText(value);
+  if (!normalized) return null;
+
+  const compacted = normalized.replace(/\s+/g, "");
+  return (
+    FOOD_BROWSE_DEPARTMENT_LOOKUP.get(normalized) ??
+    FOOD_BROWSE_DEPARTMENT_LOOKUP.get(compacted) ??
+    null
+  );
+}
+
+export function normalizeFoodBrowseAisle(
+  value: string | null | undefined,
+): FoodBrowseAisleLabel | null {
+  const normalized = normalizeFoodSearchText(value);
+  if (!normalized) return null;
+
+  const compacted = normalized.replace(/\s+/g, "");
+  return (
+    FOOD_BROWSE_AISLE_LOOKUP.get(normalized) ??
+    FOOD_BROWSE_AISLE_LOOKUP.get(compacted) ??
+    null
+  );
+}
+
+function getFoodBrowsePlacement(
+  department: string | null | undefined,
+  aisle: string | null | undefined,
+): FoodBrowsePlacement | null {
+  const normalizedDepartment = normalizeFoodSearchText(department);
+  const normalizedAisle = normalizeFoodSearchText(aisle);
+  if (!normalizedDepartment || !normalizedAisle) return null;
+
+  return (
+    FOOD_BROWSE_PLACEMENT_LOOKUP.get(
+      `${normalizedDepartment}:${normalizedAisle}`,
+    ) ?? null
+  );
+}
+
+function addFoodBrowsePlacement(
+  placements: Map<string, FoodBrowsePlacement>,
+  placement: FoodBrowsePlacement | null,
+) {
+  if (!placement) return;
+
+  placements.set(
+    `${normalizeFoodSearchText(placement.department)}:${normalizeFoodSearchText(
+      placement.aisle,
+    )}`,
+    placement,
+  );
+}
+
+function extractFoodMetadataStrings(value: Json | undefined): string[] {
+  if (typeof value === "string") return value.split(/[,|]+/);
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  return [];
+}
+
+function collectFoodMetadataPlacements(
+  metadata: Json | null | undefined,
+): FoodBrowsePlacement[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+
+  const record = metadata as Record<string, Json | undefined>;
+  const placements = new Map<string, FoodBrowsePlacement>();
+  const departmentValues = [
+    record.department,
+    record.browse_department,
+    record.grocery_department,
+  ].flatMap(extractFoodMetadataStrings);
+  const aisleValues = [
+    record.aisle,
+    record.browse_aisle,
+    record.grocery_aisle,
+  ].flatMap(extractFoodMetadataStrings);
+
+  for (const departmentValue of departmentValues) {
+    for (const aisleValue of aisleValues) {
+      addFoodBrowsePlacement(
+        placements,
+        getFoodBrowsePlacement(departmentValue, aisleValue),
+      );
+    }
+  }
+
+  const placementFields = [
+    record.category,
+    record.categories,
+    record.browse_category,
+    record.browse_categories,
+    record.browse_placement,
+    record.browse_placements,
+    record.food_category,
+    record.food_categories,
+  ];
+
+  for (const placementValue of placementFields.flatMap(extractFoodMetadataStrings)) {
+    const parts = placementValue
+      .split(/\s*(?:\/|>|-)\s*/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length < 2) continue;
+
+    addFoodBrowsePlacement(
+      placements,
+      getFoodBrowsePlacement(parts[0], parts.slice(1).join(" / ")),
+    );
+  }
+
+  return [...placements.values()];
+}
+
+export function getFoodBrowsePlacements(
+  food: FoodBrowsePlacementInput,
+): FoodBrowsePlacement[] {
+  const placements = new Map<string, FoodBrowsePlacement>();
+
+  for (const placement of collectFoodMetadataPlacements(food.metadata)) {
+    addFoodBrowsePlacement(placements, placement);
+  }
+  const normalizedName = normalizeFoodSearchText(food.normalized_name || food.name);
+  for (const placement of FOOD_BROWSE_KNOWN_NAME_PLACEMENTS[normalizedName] ?? []) {
+    addFoodBrowsePlacement(placements, placement);
+  }
+
+  return [...placements.values()];
 }
 
 export function normalizeFoodBarcode(value: string | null | undefined) {

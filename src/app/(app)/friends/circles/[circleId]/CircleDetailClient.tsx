@@ -921,8 +921,7 @@ export default function CircleDetailClient({
                   Work Profile
                 </p>
                 <p className="mt-1 text-xs leading-5 text-white/48">
-                  Empty skills allow all owner skills. Empty locations grant no
-                  location access.
+                  Empty skills and locations grant no access.
                 </p>
               </div>
               {!viewerCanManageMembers ? (
@@ -936,7 +935,7 @@ export default function CircleDetailClient({
                 label="Skill constraints"
                 options={skillConstraintOptions}
                 selectedIds={normalizeStringArray(member.skill_constraint_ids)}
-                emptyLabel="All skills"
+                emptyLabel="No skills granted"
                 noOptionsLabel="No owner skills yet"
                 canEdit={viewerCanManageMembers && !isConstraintSaving}
                 isSaving={memberConstraintActionId === skillActionId}

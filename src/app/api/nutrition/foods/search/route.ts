@@ -1,23 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
+  getFoodBrowsePlacements,
+  normalizeFoodBrowseAisle,
+  normalizeFoodBrowseDepartment,
   normalizeFoodSearchText,
+  type FoodBrowsePlacement,
   type FoodSearchResult,
 } from "@/lib/nutrition/foods";
+import type { Json } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
 const DEFAULT_LIMIT = 8;
-const MAX_LIMIT = 20;
+const DEFAULT_BROWSE_LIMIT = 25;
+const MAX_LIMIT = 50;
+const MAX_SEARCH_FETCH_LIMIT = 80;
+const MAX_BROWSE_FETCH_LIMIT = 300;
 
 type FoodSearchRow = FoodSearchResult & {
   normalized_name: string;
   normalized_brand_name: string | null;
+  source?: string | null;
+  metadata?: Json | null;
 };
 
-function parseLimit(value: string | null) {
+function parseLimit(value: string | null, fallback = DEFAULT_LIMIT) {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
+  if (!Number.isFinite(parsed)) return fallback;
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed)));
 }
 
@@ -27,11 +37,15 @@ function toNullableNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function mapFoodRow(row: FoodSearchRow): FoodSearchResult {
+function mapFoodRow(
+  row: FoodSearchRow,
+  browsePlacement?: FoodBrowsePlacement,
+): FoodSearchResult {
   return {
     id: row.id,
     name: row.name,
     brand_name: row.brand_name,
+    source: row.source ?? null,
     serving_size: toNullableNumber(row.serving_size),
     serving_unit: row.serving_unit,
     serving_grams: toNullableNumber(row.serving_grams),
@@ -39,6 +53,8 @@ function mapFoodRow(row: FoodSearchRow): FoodSearchResult {
     carbs_g: toNullableNumber(row.carbs_g),
     protein_g: toNullableNumber(row.protein_g),
     fat_g: toNullableNumber(row.fat_g),
+    browse_department: browsePlacement?.department ?? null,
+    browse_aisle: browsePlacement?.aisle ?? null,
   };
 }
 
@@ -74,14 +90,56 @@ export async function GET(request: NextRequest) {
   }
 
   const searchParams = request.nextUrl.searchParams;
+  const mode = searchParams.get("mode");
   const normalizedQuery = normalizeFoodSearchText(searchParams.get("q"));
-  const limit = parseLimit(searchParams.get("limit"));
+  const limit = parseLimit(
+    searchParams.get("limit"),
+    mode === "browse" ? DEFAULT_BROWSE_LIMIT : DEFAULT_LIMIT,
+  );
+
+  if (mode === "browse") {
+    const department =
+      normalizeFoodBrowseDepartment(searchParams.get("department")) ?? "Everyday";
+    const aisle =
+      normalizeFoodBrowseAisle(searchParams.get("aisle")) ?? "Breakfast basics";
+    const fetchLimit = Math.min(MAX_BROWSE_FETCH_LIMIT, limit * 12);
+    const { data, error } = await supabase
+      .from("foods")
+      .select(
+        "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,normalized_name,normalized_brand_name,source,metadata",
+      )
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(fetchLimit);
+
+    if (error) {
+      console.error("Failed to browse nutrition foods", { error });
+      return NextResponse.json({ error: "Unable to browse foods" }, { status: 500 });
+    }
+
+    const foods = ((data ?? []) as FoodSearchRow[])
+      .map((row) => ({
+        row,
+        placement: getFoodBrowsePlacements(row).find(
+          (placement) =>
+            placement.department === department && placement.aisle === aisle,
+        ),
+      }))
+      .filter(
+        (match): match is { row: FoodSearchRow; placement: FoodBrowsePlacement } =>
+          Boolean(match.placement),
+      )
+      .slice(0, limit)
+      .map(({ row, placement }) => mapFoodRow(row, placement));
+
+    return NextResponse.json({ foods });
+  }
 
   if (normalizedQuery.length < 2) {
     return NextResponse.json({ foods: [] satisfies FoodSearchResult[] });
   }
 
-  const fetchLimit = Math.min(MAX_LIMIT * 4, limit * 4);
+  const fetchLimit = Math.min(MAX_SEARCH_FETCH_LIMIT, limit * 4);
   const pattern = `%${normalizedQuery.split(" ").filter(Boolean).join("%")}%`;
   const { data, error } = await supabase
     .from("foods")
