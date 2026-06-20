@@ -9,6 +9,38 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      api_rate_limits: {
+        Row: {
+          id: string;
+          user_id: string;
+          action: string;
+          window_start: string;
+          window_seconds: number;
+          request_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          action: string;
+          window_start: string;
+          window_seconds: number;
+          request_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          action?: string;
+          window_start?: string;
+          window_seconds?: number;
+          request_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       goals: {
         Row: {
           id: string;
@@ -565,6 +597,83 @@ export interface Database {
           is_popular?: boolean;
           is_active?: boolean;
           feature_key?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      foods: {
+        Row: {
+          id: string;
+          name: string;
+          normalized_name: string;
+          brand_name: string | null;
+          normalized_brand_name: string | null;
+          barcode: string | null;
+          normalized_barcode: string | null;
+          serving_size: number | null;
+          serving_unit: string | null;
+          serving_grams: number | null;
+          calories: number | null;
+          carbs_g: number | null;
+          protein_g: number | null;
+          fat_g: number | null;
+          source: string;
+          external_source: string | null;
+          external_id: string | null;
+          dedupe_key: string | null;
+          created_by_user_id: string | null;
+          is_active: boolean;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          normalized_name: string;
+          brand_name?: string | null;
+          normalized_brand_name?: string | null;
+          barcode?: string | null;
+          normalized_barcode?: string | null;
+          serving_size?: number | null;
+          serving_unit?: string | null;
+          serving_grams?: number | null;
+          calories?: number | null;
+          carbs_g?: number | null;
+          protein_g?: number | null;
+          fat_g?: number | null;
+          source?: string;
+          external_source?: string | null;
+          external_id?: string | null;
+          dedupe_key?: string | null;
+          created_by_user_id?: string | null;
+          is_active?: boolean;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          normalized_name?: string;
+          brand_name?: string | null;
+          normalized_brand_name?: string | null;
+          barcode?: string | null;
+          normalized_barcode?: string | null;
+          serving_size?: number | null;
+          serving_unit?: string | null;
+          serving_grams?: number | null;
+          calories?: number | null;
+          carbs_g?: number | null;
+          protein_g?: number | null;
+          fat_g?: number | null;
+          source?: string;
+          external_source?: string | null;
+          external_id?: string | null;
+          dedupe_key?: string | null;
+          created_by_user_id?: string | null;
+          is_active?: boolean;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
@@ -1925,6 +2034,20 @@ export interface Database {
     };
     Views: Record<string, unknown>;
     Functions: {
+      check_api_rate_limit: {
+        Args: {
+          p_user_id: string;
+          p_action: string;
+          p_window_seconds: number;
+          p_max_requests: number;
+        };
+        Returns: {
+          allowed: boolean;
+          remaining: number;
+          reset_at: string;
+          request_count: number;
+        }[];
+      };
       get_profile_user_id: {
         Args: {
           p_username: string;

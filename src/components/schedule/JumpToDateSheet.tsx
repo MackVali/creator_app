@@ -9,7 +9,7 @@ import {
   useRef,
   type CSSProperties,
 } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -149,6 +149,34 @@ const HABIT_TYPE_OPTIONS = [
   { label: "Sync", value: "SYNC" },
   { label: "Memo", value: "MEMO" },
 ];
+
+const constraintControlPillClassName =
+  "inline-flex h-6 max-w-[11rem] shrink-0 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[9px] font-semibold tracking-[0.08em] text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition";
+const constraintOptionPillBaseClassName =
+  "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs";
+const constraintOptionPillSelectedClassName =
+  "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]";
+const constraintOptionPillUnselectedClassName =
+  "border-black/60 bg-black/30 text-zinc-400 hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200";
+const constraintOptionIconClassName =
+  "inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]";
+
+function formatConstraintSummary(
+  values: Set<string>,
+  options: Array<{ value: string; label: string }>,
+  allowAll: boolean
+) {
+  if (allowAll) return "Allow ALL";
+  if (values.size === 0) return "None";
+  const selectedLabels = Array.from(values)
+    .map((value) => options.find((option) => option.value === value)?.label)
+    .filter((label): label is string => Boolean(label));
+  if (selectedLabels.length === 0) return `${values.size} selected`;
+  const visibleLabels = selectedLabels.slice(0, 2).join(", ");
+  return selectedLabels.length > 2
+    ? `${visibleLabels} +${selectedLabels.length - 2}`
+    : visibleLabels;
+}
 
 const JUMP_TO_DATE_MIN_YEAR = 2025;
 const JUMP_TO_DATE_FUTURE_YEARS = 10;
@@ -1459,6 +1487,206 @@ export function JumpToDateSheet({
     paintTimeBlocks,
   ]);
 
+  const selectedPaintTimeBlock = useMemo(() => {
+    if (!highlightedBlockId) return null;
+    return (
+      paintTimeBlocks.find((block) => block.id === highlightedBlockId) ?? null
+    );
+  }, [highlightedBlockId, paintTimeBlocks]);
+
+  const selectedPaintTimeBlockDetails = useMemo(() => {
+    if (!selectedPaintTimeBlock) return null;
+    const constraintDayTypeId = paintDayType?.id ?? activeDayTypeId;
+    const constraintKey = constraintDayTypeId
+      ? `${constraintDayTypeId}:${selectedPaintTimeBlock.id}`
+      : null;
+    const allowAllHabits = constraintKey
+      ? blockAllowAllHabitTypes.get(constraintKey) ?? true
+      : true;
+    const allowAllSkills = constraintKey
+      ? blockAllowAllSkills.get(constraintKey) ?? true
+      : true;
+    const allowAllMonuments = constraintKey
+      ? blockAllowAllMonuments.get(constraintKey) ?? true
+      : true;
+    const allowedHabitTypes = constraintKey
+      ? blockAllowedHabitTypes.get(constraintKey)
+      : undefined;
+    const allowedSkillIds = constraintKey
+      ? blockAllowedSkillIds.get(constraintKey)
+      : undefined;
+    const allowedMonumentIds = constraintKey
+      ? blockAllowedMonumentIds.get(constraintKey)
+      : undefined;
+    const hasConstraints =
+      !allowAllHabits ||
+      !allowAllSkills ||
+      !allowAllMonuments ||
+      Boolean(allowedHabitTypes?.size) ||
+      Boolean(allowedSkillIds?.size) ||
+      Boolean(allowedMonumentIds?.size);
+    return {
+      blockType: selectedPaintTimeBlock.blockType ?? "FOCUS",
+      energy: selectedPaintTimeBlock.energy ?? "NO",
+      locationLabel:
+        selectedPaintTimeBlock.location?.label ??
+        selectedPaintTimeBlock.location?.value ??
+        "Anywhere",
+      hasConstraints,
+    };
+  }, [
+    activeDayTypeId,
+    blockAllowAllHabitTypes,
+    blockAllowAllMonuments,
+    blockAllowAllSkills,
+    blockAllowedHabitTypes,
+    blockAllowedMonumentIds,
+    blockAllowedSkillIds,
+    paintDayType?.id,
+    selectedPaintTimeBlock,
+  ]);
+
+  const selectedPaintConstraintDayTypeId = paintDayType?.id ?? activeDayTypeId;
+  const selectedPaintConstraintKey =
+    selectedPaintConstraintDayTypeId && selectedPaintTimeBlock
+      ? `${selectedPaintConstraintDayTypeId}:${selectedPaintTimeBlock.id}`
+      : null;
+  const selectedAllowAllHabitTypes = selectedPaintConstraintKey
+    ? blockAllowAllHabitTypes.get(selectedPaintConstraintKey) ?? true
+    : true;
+  const selectedAllowAllSkills = selectedPaintConstraintKey
+    ? blockAllowAllSkills.get(selectedPaintConstraintKey) ?? true
+    : true;
+  const selectedAllowAllMonuments = selectedPaintConstraintKey
+    ? blockAllowAllMonuments.get(selectedPaintConstraintKey) ?? true
+    : true;
+  const selectedAllowedHabitTypes = selectedPaintConstraintKey
+    ? blockAllowedHabitTypes.get(selectedPaintConstraintKey) ?? new Set<string>()
+    : new Set<string>();
+  const selectedAllowedSkillIds = selectedPaintConstraintKey
+    ? blockAllowedSkillIds.get(selectedPaintConstraintKey) ?? new Set<string>()
+    : new Set<string>();
+  const selectedAllowedMonumentIds = selectedPaintConstraintKey
+    ? blockAllowedMonumentIds.get(selectedPaintConstraintKey) ??
+      new Set<string>()
+    : new Set<string>();
+  const selectedConstraintEnergy = selectedPaintConstraintKey
+    ? blockEnergy.get(selectedPaintConstraintKey) ?? "NO"
+    : "NO";
+  const selectedConstraintBlockType = selectedPaintConstraintKey
+    ? blockTypeMap.get(selectedPaintConstraintKey) ?? "FOCUS"
+    : "FOCUS";
+
+  const skillConstraintOptions = useMemo(
+    () =>
+      skills.map((skill) => ({
+        value: skill.id,
+        label: skill.name || "Untitled skill",
+      })),
+    [skills]
+  );
+  const monumentConstraintOptions = useMemo(
+    () =>
+      monuments.map((monument) => ({
+        value: monument.id,
+        label: monument.title || "Untitled monument",
+      })),
+    [monuments]
+  );
+  const sortedConstraintSkills = useMemo(
+    () =>
+      [...skills].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "")
+      ),
+    [skills]
+  );
+  const sortedConstraintMonuments = useMemo(
+    () =>
+      [...monuments].sort((a, b) =>
+        (a.title ?? "").localeCompare(b.title ?? "")
+      ),
+    [monuments]
+  );
+
+  const ensurePaintBlockConstraintState = useCallback(
+    (blockId: string, dayTypeId: string) => {
+      const constraintKey = `${dayTypeId}:${blockId}`;
+      setBlockAllowAllHabitTypes((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, true);
+        return next;
+      });
+      setBlockAllowAllSkills((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, true);
+        return next;
+      });
+      setBlockAllowAllMonuments((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, true);
+        return next;
+      });
+      setBlockAllowedHabitTypes((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, new Set());
+        return next;
+      });
+      setBlockAllowedSkillIds((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, new Set());
+        return next;
+      });
+      setBlockAllowedMonumentIds((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, new Set());
+        return next;
+      });
+      setBlockEnergy((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, "NO");
+        return next;
+      });
+      setBlockTypeMap((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, "FOCUS");
+        return next;
+      });
+      setBlockLocation((prev) => {
+        if (prev.has(constraintKey)) return prev;
+        const next = new Map(prev);
+        next.set(constraintKey, null);
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleOpenSelectedPaintTimeBlockConstraints = useCallback(() => {
+    if (!selectedPaintTimeBlock) return;
+    const dayTypeId = selectedPaintConstraintDayTypeId;
+    setPendingBlockFocus(null);
+    setOpenPaintPicker(null);
+    setShowTimeBlocks(true);
+    setHighlightedBlockId(selectedPaintTimeBlock.id);
+    if (dayTypeId) {
+      setSelectedDayTypeId(dayTypeId);
+      ensurePaintBlockConstraintState(selectedPaintTimeBlock.id, dayTypeId);
+    }
+    setIsConstraintsMenuOpen(true);
+  }, [
+    ensurePaintBlockConstraintState,
+    selectedPaintConstraintDayTypeId,
+    selectedPaintTimeBlock,
+  ]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -1508,9 +1736,12 @@ export function JumpToDateSheet({
   }, [
     isLoadingTimeBlocks,
     isPaintMode,
+    highlightedBlockId,
+    isConstraintsMenuOpen,
     paintSelectionLabel,
     paintPreviewBlocks.length,
     saveError,
+    selectedPaintTimeBlock,
     showTimeBlocks,
     timeBlockError,
   ]);
@@ -2646,6 +2877,772 @@ export function JumpToDateSheet({
                                   selectedId={highlightedBlockId}
                                   onSelect={setHighlightedBlockId}
                                 />
+                                {selectedPaintTimeBlock ? (
+                                  <Fragment>
+                                    <button
+                                      type="button"
+                                      aria-expanded={isConstraintsMenuOpen}
+                                      onClick={
+                                        handleOpenSelectedPaintTimeBlockConstraints
+                                      }
+                                      className="flex w-full items-center gap-3 rounded-2xl border border-black/85 bg-[#18191d] px-3 py-2.5 text-left shadow-[0_12px_28px_rgba(0,0,0,0.34)] transition hover:border-black hover:bg-[#13151c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/45"
+                                    >
+                                      <div className="min-w-0 flex-1 space-y-1">
+                                        <div className="truncate text-[13px] font-semibold text-white/90 sm:text-sm">
+                                          {selectedPaintTimeBlock.label ??
+                                            "TIME BLOCK"}
+                                        </div>
+                                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                          <span className="shrink-0 text-[10px] uppercase tracking-[0.18em] text-white/50 sm:text-xs">
+                                            {selectedPaintTimeBlock.start_local}{" "}
+                                            → {selectedPaintTimeBlock.end_local}
+                                          </span>
+                                          <span className="flex min-w-0 items-center gap-1 text-[10px] uppercase tracking-[0.14em] text-white/45 sm:text-[11px]">
+                                            <MapPin className="h-3 w-3 shrink-0 text-white/55" />
+                                            <span className="truncate">
+                                              {
+                                                selectedPaintTimeBlockDetails
+                                                  ?.locationLabel
+                                              }
+                                            </span>
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="flex shrink-0 flex-col items-end gap-1">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="rounded-md bg-black/25 px-1.5 py-1 text-[9px] font-semibold uppercase tracking-[0.13em] text-white/55">
+                                            {
+                                              selectedPaintTimeBlockDetails
+                                                ?.blockType
+                                            }
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                                            <FlameEmber
+                                              level={
+                                                selectedPaintTimeBlockDetails
+                                                  ?.energy ?? "NO"
+                                              }
+                                              size="sm"
+                                            />
+                                            <span>
+                                              {
+                                                selectedPaintTimeBlockDetails
+                                                  ?.energy
+                                              }
+                                            </span>
+                                          </span>
+                                        </div>
+                                        {selectedPaintTimeBlockDetails?.hasConstraints ? (
+                                          <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.13em] text-white/48">
+                                            Constraints
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    </button>
+                                    <AnimatePresence initial={false}>
+                                      {isConstraintsMenuOpen &&
+                                      selectedPaintConstraintKey ? (
+                                        <motion.div
+                                          key={`jump-constraints-${selectedPaintTimeBlock.id}`}
+                                          initial={{
+                                            height: 0,
+                                            marginTop: -8,
+                                            opacity: 0,
+                                            y: -8,
+                                          }}
+                                          animate={{
+                                            height: "auto",
+                                            marginTop: 0,
+                                            opacity: 1,
+                                            y: 0,
+                                          }}
+                                          exit={{
+                                            height: 0,
+                                            marginTop: -8,
+                                            opacity: 0,
+                                            y: -8,
+                                          }}
+                                          transition={{
+                                            duration: 0.28,
+                                            ease: [0.22, 1, 0.36, 1],
+                                          }}
+                                          className="overflow-hidden"
+                                          onClick={(event) =>
+                                            event.stopPropagation()
+                                          }
+                                        >
+                                          <div className="rounded-2xl border border-black/60 bg-[#0d0f14] px-3 py-3 text-sm text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.34)] sm:px-4">
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0 flex-1 space-y-3">
+                                                <div className="text-[11px] uppercase tracking-[0.16em] text-white/55">
+                                                  Constraints
+                                                </div>
+                                                <div className="grid gap-2 sm:grid-cols-2">
+                                                  <div className="space-y-1.5">
+                                                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                                                      Block type
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                      {BLOCK_TYPES.map(
+                                                        (type) => {
+                                                          const selected =
+                                                            selectedConstraintBlockType ===
+                                                            type;
+                                                          return (
+                                                            <button
+                                                              key={type}
+                                                              type="button"
+                                                              aria-pressed={
+                                                                selected
+                                                              }
+                                                              onClick={() => {
+                                                                setBlockTypeMap(
+                                                                  (prev) => {
+                                                                    const next =
+                                                                      new Map(
+                                                                        prev
+                                                                      );
+                                                                    next.set(
+                                                                      selectedPaintConstraintKey,
+                                                                      type
+                                                                    );
+                                                                    return next;
+                                                                  }
+                                                                );
+                                                                void saveBlockSettings(
+                                                                  selectedPaintTimeBlock.id,
+                                                                  {
+                                                                    blockType:
+                                                                      type,
+                                                                  }
+                                                                );
+                                                              }}
+                                                              className={cn(
+                                                                constraintOptionPillBaseClassName,
+                                                                selected
+                                                                  ? constraintOptionPillSelectedClassName
+                                                                  : constraintOptionPillUnselectedClassName
+                                                              )}
+                                                            >
+                                                              {type}
+                                                            </button>
+                                                          );
+                                                        }
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                  <div className="space-y-1.5">
+                                                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                                                      Energy
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                      {FLAME_LEVELS.map(
+                                                        (level) => {
+                                                          const selected =
+                                                            selectedConstraintEnergy ===
+                                                            level;
+                                                          return (
+                                                            <button
+                                                              key={level}
+                                                              type="button"
+                                                              aria-pressed={
+                                                                selected
+                                                              }
+                                                              onClick={() => {
+                                                                setBlockEnergy(
+                                                                  (prev) => {
+                                                                    const next =
+                                                                      new Map(
+                                                                        prev
+                                                                      );
+                                                                    next.set(
+                                                                      selectedPaintConstraintKey,
+                                                                      level
+                                                                    );
+                                                                    return next;
+                                                                  }
+                                                                );
+                                                                void saveBlockSettings(
+                                                                  selectedPaintTimeBlock.id,
+                                                                  {
+                                                                    energy:
+                                                                      level,
+                                                                  }
+                                                                );
+                                                              }}
+                                                              className={cn(
+                                                                "inline-flex h-8 w-8 items-center justify-center rounded-full border transition focus:outline-none focus:ring-2 focus:ring-white/35",
+                                                                selected
+                                                                  ? "border-black/50 bg-white/10 text-white"
+                                                                  : "border-black/60 bg-black/30 text-zinc-400 hover:bg-white/[0.06]"
+                                                              )}
+                                                              aria-label={`Set energy ${level}`}
+                                                            >
+                                                              <FlameEmber
+                                                                level={level}
+                                                                size="sm"
+                                                              />
+                                                            </button>
+                                                          );
+                                                        }
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                <div className="grid gap-3 md:grid-cols-2">
+                                                  <details className="group grid gap-1">
+                                                    <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                                      <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                                                        Instance Types
+                                                      </span>
+                                                      <span
+                                                        className={
+                                                          constraintControlPillClassName
+                                                        }
+                                                      >
+                                                        <span className="truncate group-open:hidden">
+                                                          {formatConstraintSummary(
+                                                            selectedAllowedHabitTypes,
+                                                            HABIT_TYPE_OPTIONS,
+                                                            selectedAllowAllHabitTypes
+                                                          )}
+                                                        </span>
+                                                        <span className="hidden truncate group-open:inline">
+                                                          Choose
+                                                        </span>
+                                                      </span>
+                                                    </summary>
+                                                    <div className="flex flex-wrap gap-1.5 pt-1 sm:gap-2">
+                                                      <button
+                                                        type="button"
+                                                        className={cn(
+                                                          constraintOptionPillBaseClassName,
+                                                          selectedAllowAllHabitTypes
+                                                            ? constraintOptionPillSelectedClassName
+                                                            : constraintOptionPillUnselectedClassName
+                                                        )}
+                                                        onClick={() => {
+                                                          const empty =
+                                                            new Set<string>();
+                                                          setBlockAllowAllHabitTypes(
+                                                            (prev) => {
+                                                              const next =
+                                                                new Map(prev);
+                                                              next.set(
+                                                                selectedPaintConstraintKey,
+                                                                true
+                                                              );
+                                                              return next;
+                                                            }
+                                                          );
+                                                          setBlockAllowedHabitTypes(
+                                                            (prev) => {
+                                                              const next =
+                                                                new Map(prev);
+                                                              next.set(
+                                                                selectedPaintConstraintKey,
+                                                                empty
+                                                              );
+                                                              return next;
+                                                            }
+                                                          );
+                                                          void saveBlockSettings(
+                                                            selectedPaintTimeBlock.id,
+                                                            {
+                                                              allowAllHabitTypes:
+                                                                true,
+                                                              allowedHabitTypes:
+                                                                empty,
+                                                            }
+                                                          );
+                                                        }}
+                                                      >
+                                                        Allow ALL
+                                                      </button>
+                                                      {HABIT_TYPE_OPTIONS.map(
+                                                        (option) => {
+                                                          const selected =
+                                                            !selectedAllowAllHabitTypes &&
+                                                            selectedAllowedHabitTypes.has(
+                                                              option.value
+                                                            );
+                                                          return (
+                                                            <button
+                                                              key={
+                                                                option.value
+                                                              }
+                                                              type="button"
+                                                              aria-pressed={
+                                                                selected
+                                                              }
+                                                              onClick={() => {
+                                                                const nextAllowed =
+                                                                  new Set(
+                                                                    selectedAllowedHabitTypes
+                                                                  );
+                                                                if (
+                                                                  nextAllowed.has(
+                                                                    option.value
+                                                                  )
+                                                                ) {
+                                                                  nextAllowed.delete(
+                                                                    option.value
+                                                                  );
+                                                                } else {
+                                                                  nextAllowed.add(
+                                                                    option.value
+                                                                  );
+                                                                }
+                                                                setBlockAllowAllHabitTypes(
+                                                                  (prev) => {
+                                                                    const next =
+                                                                      new Map(
+                                                                        prev
+                                                                      );
+                                                                    next.set(
+                                                                      selectedPaintConstraintKey,
+                                                                      false
+                                                                    );
+                                                                    return next;
+                                                                  }
+                                                                );
+                                                                setBlockAllowedHabitTypes(
+                                                                  (prev) => {
+                                                                    const next =
+                                                                      new Map(
+                                                                        prev
+                                                                      );
+                                                                    next.set(
+                                                                      selectedPaintConstraintKey,
+                                                                      nextAllowed
+                                                                    );
+                                                                    return next;
+                                                                  }
+                                                                );
+                                                                void saveBlockSettings(
+                                                                  selectedPaintTimeBlock.id,
+                                                                  {
+                                                                    allowAllHabitTypes:
+                                                                      false,
+                                                                    allowedHabitTypes:
+                                                                      nextAllowed,
+                                                                  }
+                                                                );
+                                                              }}
+                                                              className={cn(
+                                                                constraintOptionPillBaseClassName,
+                                                                selected
+                                                                  ? constraintOptionPillSelectedClassName
+                                                                  : constraintOptionPillUnselectedClassName
+                                                              )}
+                                                            >
+                                                              <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                                                {option.label}
+                                                              </span>
+                                                            </button>
+                                                          );
+                                                        }
+                                                      )}
+                                                    </div>
+                                                    {!selectedAllowAllHabitTypes &&
+                                                    selectedAllowedHabitTypes.size ===
+                                                      0 ? (
+                                                      <div className="pt-1 text-[10px] text-white/35">
+                                                        No instance types
+                                                        allowed.
+                                                      </div>
+                                                    ) : null}
+                                                  </details>
+
+                                                  <details className="group grid gap-1">
+                                                    <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                                      <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                                                        Skills
+                                                      </span>
+                                                      <span
+                                                        className={
+                                                          constraintControlPillClassName
+                                                        }
+                                                      >
+                                                        <span className="truncate group-open:hidden">
+                                                          {formatConstraintSummary(
+                                                            selectedAllowedSkillIds,
+                                                            skillConstraintOptions,
+                                                            selectedAllowAllSkills
+                                                          )}
+                                                        </span>
+                                                        <span className="hidden truncate group-open:inline">
+                                                          Choose
+                                                        </span>
+                                                      </span>
+                                                    </summary>
+                                                    <div className="max-h-48 overflow-y-auto pr-1 pt-1">
+                                                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                                                        <button
+                                                          type="button"
+                                                          className={cn(
+                                                            constraintOptionPillBaseClassName,
+                                                            selectedAllowAllSkills
+                                                              ? constraintOptionPillSelectedClassName
+                                                              : constraintOptionPillUnselectedClassName
+                                                          )}
+                                                          onClick={() => {
+                                                            const empty =
+                                                              new Set<string>();
+                                                            setBlockAllowAllSkills(
+                                                              (prev) => {
+                                                                const next =
+                                                                  new Map(prev);
+                                                                next.set(
+                                                                  selectedPaintConstraintKey,
+                                                                  true
+                                                                );
+                                                                return next;
+                                                              }
+                                                            );
+                                                            setBlockAllowedSkillIds(
+                                                              (prev) => {
+                                                                const next =
+                                                                  new Map(prev);
+                                                                next.set(
+                                                                  selectedPaintConstraintKey,
+                                                                  empty
+                                                                );
+                                                                return next;
+                                                              }
+                                                            );
+                                                            void saveBlockSettings(
+                                                              selectedPaintTimeBlock.id,
+                                                              {
+                                                                allowAllSkills:
+                                                                  true,
+                                                                allowedSkillIds:
+                                                                  empty,
+                                                              }
+                                                            );
+                                                          }}
+                                                        >
+                                                          Allow ALL
+                                                        </button>
+                                                        {skillsLoading ? (
+                                                          <p className="w-full text-[10px] text-white/35">
+                                                            Loading skills...
+                                                          </p>
+                                                        ) : sortedConstraintSkills.length ===
+                                                          0 ? (
+                                                          <p className="w-full text-[10px] text-white/35">
+                                                            No skills found.
+                                                          </p>
+                                                        ) : (
+                                                          sortedConstraintSkills.map(
+                                                            (skill) => {
+                                                              const selected =
+                                                                !selectedAllowAllSkills &&
+                                                                selectedAllowedSkillIds.has(
+                                                                  skill.id
+                                                                );
+                                                              return (
+                                                                <button
+                                                                  key={
+                                                                    skill.id
+                                                                  }
+                                                                  type="button"
+                                                                  aria-pressed={
+                                                                    selected
+                                                                  }
+                                                                  onClick={() => {
+                                                                    const nextAllowed =
+                                                                      new Set(
+                                                                        selectedAllowedSkillIds
+                                                                      );
+                                                                    if (
+                                                                      nextAllowed.has(
+                                                                        skill.id
+                                                                      )
+                                                                    ) {
+                                                                      nextAllowed.delete(
+                                                                        skill.id
+                                                                      );
+                                                                    } else {
+                                                                      nextAllowed.add(
+                                                                        skill.id
+                                                                      );
+                                                                    }
+                                                                    setBlockAllowAllSkills(
+                                                                      (
+                                                                        prev
+                                                                      ) => {
+                                                                        const next =
+                                                                          new Map(
+                                                                            prev
+                                                                          );
+                                                                        next.set(
+                                                                          selectedPaintConstraintKey,
+                                                                          false
+                                                                        );
+                                                                        return next;
+                                                                      }
+                                                                    );
+                                                                    setBlockAllowedSkillIds(
+                                                                      (
+                                                                        prev
+                                                                      ) => {
+                                                                        const next =
+                                                                          new Map(
+                                                                            prev
+                                                                          );
+                                                                        next.set(
+                                                                          selectedPaintConstraintKey,
+                                                                          nextAllowed
+                                                                        );
+                                                                        return next;
+                                                                      }
+                                                                    );
+                                                                    void saveBlockSettings(
+                                                                      selectedPaintTimeBlock.id,
+                                                                      {
+                                                                        allowAllSkills:
+                                                                          false,
+                                                                        allowedSkillIds:
+                                                                          nextAllowed,
+                                                                      }
+                                                                    );
+                                                                  }}
+                                                                  className={cn(
+                                                                    constraintOptionPillBaseClassName,
+                                                                    selected
+                                                                      ? constraintOptionPillSelectedClassName
+                                                                      : constraintOptionPillUnselectedClassName
+                                                                  )}
+                                                                >
+                                                                  <span
+                                                                    className={
+                                                                      constraintOptionIconClassName
+                                                                    }
+                                                                  >
+                                                                    {(skill.icon ??
+                                                                      "*"
+                                                                    ).trim() ||
+                                                                      "*"}
+                                                                  </span>
+                                                                  <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                                                    {
+                                                                      skill.name
+                                                                    }
+                                                                  </span>
+                                                                </button>
+                                                              );
+                                                            }
+                                                          )
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                    {!selectedAllowAllSkills &&
+                                                    selectedAllowedSkillIds.size ===
+                                                      0 ? (
+                                                      <div className="text-[10px] text-white/35">
+                                                        No skills allowed.
+                                                      </div>
+                                                    ) : null}
+                                                  </details>
+                                                </div>
+
+                                                <details className="group grid gap-1">
+                                                  <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                                    <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                                                      Monuments
+                                                    </span>
+                                                    <span
+                                                      className={
+                                                        constraintControlPillClassName
+                                                      }
+                                                    >
+                                                      <span className="truncate group-open:hidden">
+                                                        {formatConstraintSummary(
+                                                          selectedAllowedMonumentIds,
+                                                          monumentConstraintOptions,
+                                                          selectedAllowAllMonuments
+                                                        )}
+                                                      </span>
+                                                      <span className="hidden truncate group-open:inline">
+                                                        Choose
+                                                      </span>
+                                                    </span>
+                                                  </summary>
+                                                  <div className="max-h-40 overflow-y-auto pr-1 pt-1">
+                                                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                                                      <button
+                                                        type="button"
+                                                        className={cn(
+                                                          constraintOptionPillBaseClassName,
+                                                          selectedAllowAllMonuments
+                                                            ? constraintOptionPillSelectedClassName
+                                                            : constraintOptionPillUnselectedClassName
+                                                        )}
+                                                        onClick={() => {
+                                                          const empty =
+                                                            new Set<string>();
+                                                          setBlockAllowAllMonuments(
+                                                            (prev) => {
+                                                              const next =
+                                                                new Map(prev);
+                                                              next.set(
+                                                                selectedPaintConstraintKey,
+                                                                true
+                                                              );
+                                                              return next;
+                                                            }
+                                                          );
+                                                          setBlockAllowedMonumentIds(
+                                                            (prev) => {
+                                                              const next =
+                                                                new Map(prev);
+                                                              next.set(
+                                                                selectedPaintConstraintKey,
+                                                                empty
+                                                              );
+                                                              return next;
+                                                            }
+                                                          );
+                                                          void saveBlockSettings(
+                                                            selectedPaintTimeBlock.id,
+                                                            {
+                                                              allowAllMonuments:
+                                                                true,
+                                                              allowedMonumentIds:
+                                                                empty,
+                                                            }
+                                                          );
+                                                        }}
+                                                      >
+                                                        Allow ALL
+                                                      </button>
+                                                      {monumentsLoading ? (
+                                                        <p className="w-full text-[10px] text-white/35">
+                                                          Loading monuments...
+                                                        </p>
+                                                      ) : sortedConstraintMonuments.length ===
+                                                        0 ? (
+                                                        <p className="w-full text-[10px] text-white/35">
+                                                          No monuments found.
+                                                        </p>
+                                                      ) : (
+                                                        sortedConstraintMonuments.map(
+                                                          (monument) => {
+                                                            const selected =
+                                                              !selectedAllowAllMonuments &&
+                                                              selectedAllowedMonumentIds.has(
+                                                                monument.id
+                                                              );
+                                                            return (
+                                                              <button
+                                                                key={
+                                                                  monument.id
+                                                                }
+                                                                type="button"
+                                                                aria-pressed={
+                                                                  selected
+                                                                }
+                                                                onClick={() => {
+                                                                  const nextAllowed =
+                                                                    new Set(
+                                                                      selectedAllowedMonumentIds
+                                                                    );
+                                                                  if (
+                                                                    nextAllowed.has(
+                                                                      monument.id
+                                                                    )
+                                                                  ) {
+                                                                    nextAllowed.delete(
+                                                                      monument.id
+                                                                    );
+                                                                  } else {
+                                                                    nextAllowed.add(
+                                                                      monument.id
+                                                                    );
+                                                                  }
+                                                                  setBlockAllowAllMonuments(
+                                                                    (prev) => {
+                                                                      const next =
+                                                                        new Map(
+                                                                          prev
+                                                                        );
+                                                                      next.set(
+                                                                        selectedPaintConstraintKey,
+                                                                        false
+                                                                      );
+                                                                      return next;
+                                                                    }
+                                                                  );
+                                                                  setBlockAllowedMonumentIds(
+                                                                    (prev) => {
+                                                                      const next =
+                                                                        new Map(
+                                                                          prev
+                                                                        );
+                                                                      next.set(
+                                                                        selectedPaintConstraintKey,
+                                                                        nextAllowed
+                                                                      );
+                                                                      return next;
+                                                                    }
+                                                                  );
+                                                                  void saveBlockSettings(
+                                                                    selectedPaintTimeBlock.id,
+                                                                    {
+                                                                      allowAllMonuments:
+                                                                        false,
+                                                                      allowedMonumentIds:
+                                                                        nextAllowed,
+                                                                    }
+                                                                  );
+                                                                }}
+                                                                className={cn(
+                                                                  constraintOptionPillBaseClassName,
+                                                                  selected
+                                                                    ? constraintOptionPillSelectedClassName
+                                                                    : constraintOptionPillUnselectedClassName
+                                                                )}
+                                                              >
+                                                                <span
+                                                                  className={
+                                                                    constraintOptionIconClassName
+                                                                  }
+                                                                >
+                                                                  {(monument.emoji ??
+                                                                    "*"
+                                                                  ).trim() ||
+                                                                    "*"}
+                                                                </span>
+                                                                <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                                                  {
+                                                                    monument.title
+                                                                  }
+                                                                </span>
+                                                              </button>
+                                                            );
+                                                          }
+                                                        )
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                  {!selectedAllowAllMonuments &&
+                                                  selectedAllowedMonumentIds.size ===
+                                                    0 ? (
+                                                    <div className="text-[10px] text-white/35">
+                                                      No monuments allowed.
+                                                    </div>
+                                                  ) : null}
+                                                </details>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </motion.div>
+                                      ) : null}
+                                    </AnimatePresence>
+                                  </Fragment>
+                                ) : null}
                               </div>
                             )}
                           </motion.div>

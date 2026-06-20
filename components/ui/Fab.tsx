@@ -575,7 +575,12 @@ type OverlaySortMode =
   | "priority"
   | "global_rank"
   | "scheduled";
-type OverlayEventTypeFilter = "ALL" | "PROJECT" | "HABIT";
+type ScheduleSourceInstanceType =
+  Database["public"]["Enums"]["schedule_instance_source_type"];
+type NexusResultInstanceTypeFilter =
+  | ScheduleSourceInstanceType
+  | Exclude<OverlayAllowedInstanceType, "ASYNC" | "TEMP">;
+type OverlayEventTypeFilter = "ALL" | NexusResultInstanceTypeFilter;
 const OVERLAY_SORT_OPTIONS: { value: OverlaySortMode; label: string }[] = [
   { value: "recent", label: "Recently updated" },
   { value: "alphabetical", label: "Alphabetical" },
@@ -583,6 +588,40 @@ const OVERLAY_SORT_OPTIONS: { value: OverlaySortMode; label: string }[] = [
   { value: "global_rank", label: "Global rank" },
   { value: "scheduled", label: "Scheduled order" },
 ];
+const NEXUS_INSTANCE_TYPE_FILTER_OPTIONS: Array<{
+  id: NexusResultInstanceTypeFilter;
+  label: string;
+}> = [
+  { id: "PROJECT", label: "Projects" },
+  { id: "TASK", label: "Tasks" },
+  ...HABIT_TYPE_OPTIONS.map((option) => ({
+    id: option.value as NexusResultInstanceTypeFilter,
+    label: `${option.label}s`,
+  })),
+];
+const EMBEDDED_NEXUS_EVENT_TYPE_FILTER_OPTIONS: Array<{
+  id: Extract<NexusResultInstanceTypeFilter, "PROJECT" | "HABIT">;
+  label: string;
+}> = [
+  { id: "PROJECT", label: "Projects" },
+  { id: "HABIT", label: "Habits" },
+];
+
+function matchesNexusInstanceTypeFilter(
+  result: FabSearchResult,
+  filter: OverlayEventTypeFilter,
+): boolean {
+  if (filter === "ALL") return true;
+  if (filter === "PROJECT" || filter === "TASK") {
+    return result.type === filter;
+  }
+  if (filter === "HABIT") {
+    return result.type === "HABIT";
+  }
+  return (
+    result.type === "HABIT" && normalizeHabitType(result.habitType) === filter
+  );
+}
 
 type FabSearchCursor = {
   startUtc: string;
@@ -1003,6 +1042,65 @@ function CompactNativeDateTimeField({
 const FAB_NEXUS_EXPANDED_SIZE_CLASS =
   "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
 const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = "h-[360px]";
+
+type FabCarouselChevronButtonProps = {
+  direction: "previous" | "next";
+  disabled: boolean;
+  onClick: () => void;
+};
+
+function FabCarouselChevronButton({
+  direction,
+  disabled,
+  onClick,
+}: FabCarouselChevronButtonProps) {
+  const isPrevious = direction === "previous";
+
+  return (
+    <button
+      type="button"
+      data-fab-swipe-ignore="true"
+      aria-label={isPrevious ? "Previous FAB page" : "Next FAB page"}
+      disabled={disabled}
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!disabled) {
+          onClick();
+        }
+      }}
+      className={cn(
+        "pointer-events-auto absolute top-1/2 z-30 flex h-10 w-1.5 -translate-y-1/2 items-center justify-center bg-transparent text-zinc-700/70 transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-700/25",
+        isPrevious ? "left-0 border-l border-white/[0.035]" : "right-0 border-r border-white/[0.035]",
+        disabled
+          ? "pointer-events-none opacity-15"
+          : "hover:text-white/45 active:text-white/60",
+      )}
+    >
+      <span className="relative block h-10 w-4" aria-hidden="true">
+        <span
+          className={cn(
+            "absolute top-1/2 h-[1px] w-4 bg-current",
+            isPrevious
+              ? "left-0 origin-left -rotate-[28deg]"
+              : "right-0 origin-right rotate-[28deg]",
+          )}
+        />
+        <span
+          className={cn(
+            "absolute top-1/2 h-[1px] w-4 bg-current",
+            isPrevious
+              ? "left-0 origin-left rotate-[28deg]"
+              : "right-0 origin-right -rotate-[28deg]",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
 const fabCreationSelectItemClass = (
   isSelected: boolean,
   className?: string,
@@ -1328,6 +1426,63 @@ const sortOverlayDynamicSkills = (skillList: Skill[], categories: CatRow[]) => {
       );
       if (nameComparison !== 0) return nameComparison;
     }
+
+    return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+  });
+};
+
+const sortPopupNexusSkillsByCategory = (
+  skillList: Skill[],
+  categories: CatRow[],
+) => {
+  const categoryOrder = new Map<string, number>();
+  [...categories]
+    .sort((a, b) => {
+      const aHasOrder = hasOverlaySkillCategorySortOrder(a);
+      const bHasOrder = hasOverlaySkillCategorySortOrder(b);
+
+      if (aHasOrder && bHasOrder && a.sort_order !== b.sort_order) {
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      }
+      if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    })
+    .forEach((category, index) => {
+      categoryOrder.set(category.id, index);
+    });
+
+  const originalIndex = new Map<string, number>();
+  skillList.forEach((skill, index) => {
+    originalIndex.set(skill.id, index);
+  });
+
+  return [...skillList].sort((a, b) => {
+    const aCategoryOrder =
+      a.cat_id != null ? categoryOrder.get(a.cat_id) : undefined;
+    const bCategoryOrder =
+      b.cat_id != null ? categoryOrder.get(b.cat_id) : undefined;
+    const aUncategorized = aCategoryOrder == null;
+    const bUncategorized = bCategoryOrder == null;
+
+    if (aUncategorized !== bUncategorized) return aUncategorized ? 1 : -1;
+    if (!aUncategorized && aCategoryOrder !== bCategoryOrder) {
+      return (aCategoryOrder ?? 0) - (bCategoryOrder ?? 0);
+    }
+
+    const aHasOrder = hasOverlaySkillSortOrder(a);
+    const bHasOrder = hasOverlaySkillSortOrder(b);
+    if (aHasOrder && bHasOrder && a.sort_order !== b.sort_order) {
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    }
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
+    const nameComparison = (a.name ?? "").localeCompare(
+      b.name ?? "",
+      undefined,
+      { sensitivity: "base" },
+    );
+    if (nameComparison !== 0) return nameComparison;
 
     return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
   });
@@ -6583,7 +6738,8 @@ export function Fab({
     }
     if (matchesEventType) {
       filtered = filtered.filter(
-        (result) => result.type === overlayFilterEventType,
+        (result) =>
+          matchesNexusInstanceTypeFilter(result, overlayFilterEventType),
       );
     }
 
@@ -13575,6 +13731,7 @@ export function Fab({
       onSortModeChange={setOverlaySortMode}
       availableMonuments={monuments}
       availableSkills={skills}
+      availableSkillCategories={skillCategories}
       usePopupSizing={isPopupFabNexusPage}
       popupExpanded={isPopupFabNexusPage ? normalNexusExpanded : false}
       onPopupExpandedChange={
@@ -15454,6 +15611,21 @@ export function Fab({
       stageWidth,
     ],
   );
+
+  const hasPreviousFabPage = activeFabPage > 0;
+  const hasNextFabPage = activeFabPage < pageCount - 1;
+
+  const handlePreviousFabPage = useCallback(() => {
+    const previousPage =
+      activeFabPage <= 0 ? FAB_PAGES.length - 1 : activeFabPage - 1;
+    animateToPage(previousPage);
+  }, [activeFabPage, animateToPage]);
+
+  const handleNextFabPage = useCallback(() => {
+    const nextPage =
+      activeFabPage >= FAB_PAGES.length - 1 ? 0 : activeFabPage + 1;
+    animateToPage(nextPage);
+  }, [activeFabPage, animateToPage]);
 
   const handlePageDragStart = useCallback(() => {
     if (!isOpen) {
@@ -18511,6 +18683,13 @@ export function Fab({
       }
     : null;
   const shouldRenderFabPanel = isOpen || expanded || isDirectCreationOpen;
+  const shouldRenderFabCarouselChevrons =
+    isOpen &&
+    !expanded &&
+    selected === null &&
+    !isDirectCreationOpen &&
+    !overlayPickerOpen &&
+    pageCount > 1;
   const shouldRenderAttachedCreationControls =
     expanded &&
     selected !== null &&
@@ -18751,7 +18930,7 @@ export function Fab({
                       : undefined
                   }
                   className={cn(
-                    "border rounded-lg shadow-2xl",
+                    "relative border rounded-lg shadow-2xl",
                     expanded
                       ? "bg-[var(--surface-elevated)]"
                       : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
@@ -19033,6 +19212,20 @@ export function Fab({
                       </div>
                     </motion.div>
                   </div>
+                  {shouldRenderFabCarouselChevrons ? (
+                    <>
+                      <FabCarouselChevronButton
+                        direction="previous"
+                        disabled={false}
+                        onClick={handlePreviousFabPage}
+                      />
+                      <FabCarouselChevronButton
+                        direction="next"
+                        disabled={false}
+                        onClick={handleNextFabPage}
+                      />
+                    </>
+                  ) : null}
                   {shouldRenderAttachedCreationControls ? (
                     renderAttachedCreationControls()
                   ) : null}
@@ -21308,6 +21501,7 @@ type FabNexusProps = {
   onSortModeChange?: (value: OverlaySortMode) => void;
   availableMonuments?: Monument[];
   availableSkills?: Skill[];
+  availableSkillCategories?: CatRow[];
   showToolbar?: boolean;
   usePopupSizing?: boolean;
   popupExpanded?: boolean;
@@ -21344,6 +21538,7 @@ function FabNexus({
   onSortModeChange,
   availableMonuments,
   availableSkills,
+  availableSkillCategories,
   showToolbar = false,
   usePopupSizing = false,
   popupExpanded = false,
@@ -21356,6 +21551,14 @@ function FabNexus({
   onManualPlaceResult,
 }: FabNexusProps) {
   const [showControls, setShowControls] = useState(false);
+  const [popupAdjustOpen, setPopupAdjustOpen] = useState(false);
+  const [popupMonumentPillsOpen, setPopupMonumentPillsOpen] = useState(false);
+  const [popupSkillPillsOpen, setPopupSkillPillsOpen] = useState(false);
+  const [popupInstanceTypePillsOpen, setPopupInstanceTypePillsOpen] =
+    useState(false);
+  const popupMonumentPillsId = useId();
+  const popupSkillPillsId = useId();
+  const popupInstanceTypePillsId = useId();
   const dragStateRef = useRef<{
     id: string;
     pointerId: number | null;
@@ -21383,12 +21586,23 @@ function FabNexus({
 
   const toolbarMonuments = availableMonuments ?? [];
   const toolbarSkills = availableSkills ?? [];
+  const popupToolbarSkills = useMemo(
+    () =>
+      sortPopupNexusSkillsByCategory(
+        availableSkills ?? [],
+        availableSkillCategories ?? [],
+      ),
+    [availableSkillCategories, availableSkills],
+  );
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
   const handleEventTypeChange = onFilterEventTypeChange ?? (() => {});
   const handleSortChange = onSortModeChange ?? (() => {});
   const sortValue = sortMode ?? "scheduled";
   const eventTypeValue = filterEventType ?? "ALL";
+  const showPopupFilterPills = shouldUsePopupSizing && popupExpanded;
+  const shouldShowPopupAdjustments =
+    showToolbar && shouldUsePopupSizing && popupExpanded;
   const hasActiveFilter =
     query.trim().length > 0 ||
     Boolean(filterMonumentId) ||
@@ -21397,6 +21611,277 @@ function FabNexus({
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarContentClass = "bg-black/90 text-white";
+  const toolbarPillBaseClass =
+    "inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35";
+  const toolbarPillSelectedClass =
+    "border-white/20 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]";
+  const toolbarPillUnselectedClass =
+    "border-white/10 bg-black/30 text-zinc-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200";
+  const toolbarPillIconClass =
+    "inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200";
+  const eventTypeFilterOptions = isEmbedded
+    ? EMBEDDED_NEXUS_EVENT_TYPE_FILTER_OPTIONS
+    : NEXUS_INSTANCE_TYPE_FILTER_OPTIONS;
+
+  useEffect(() => {
+    if (!shouldUsePopupSizing || !popupExpanded) {
+      setPopupAdjustOpen(false);
+    }
+  }, [popupExpanded, shouldUsePopupSizing]);
+
+  useEffect(() => {
+    if (!shouldShowPopupAdjustments || !popupAdjustOpen) {
+      setPopupMonumentPillsOpen(false);
+      setPopupSkillPillsOpen(false);
+      setPopupInstanceTypePillsOpen(false);
+    }
+  }, [popupAdjustOpen, shouldShowPopupAdjustments]);
+
+  const renderFilterPillGroup = ({
+    label,
+    allLabel,
+    value,
+    onChange,
+    options,
+    open,
+    onOpenChange,
+    controlsId,
+  }: {
+    label: string;
+    allLabel: string;
+    value: string;
+    onChange: (next: string) => void;
+    open: boolean;
+    onOpenChange: (next: boolean) => void;
+    controlsId: string;
+    options: Array<{
+      id: string;
+      label: string;
+      icon?: string | null;
+    }>;
+  }) => (
+    <div className="grid min-w-0 gap-1">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="px-0.5 text-[9px] font-semibold uppercase tracking-[0.24em] text-white/40">
+          {label}
+        </span>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={controlsId}
+          className="shrink-0 px-0.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/45 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50"
+          onClick={() => onOpenChange(!open)}
+        >
+          {open ? "CLOSE" : "ALL"}
+        </button>
+      </div>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            id={controlsId}
+            key={controlsId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <button
+                type="button"
+                aria-pressed={value === ""}
+                className={cn(
+                  toolbarPillBaseClass,
+                  value === ""
+                    ? toolbarPillSelectedClass
+                    : toolbarPillUnselectedClass,
+                )}
+                onClick={() => onChange("")}
+              >
+                {allLabel}
+              </button>
+              {options.map((option) => {
+                const selected = value === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    className={cn(
+                      toolbarPillBaseClass,
+                      selected
+                        ? toolbarPillSelectedClass
+                        : toolbarPillUnselectedClass,
+                    )}
+                    onClick={() => onChange(option.id)}
+                  >
+                    {option.icon ? (
+                      <span className={toolbarPillIconClass}>
+                        {option.icon}
+                      </span>
+                    ) : null}
+                    <span className="truncate">{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+
+  const renderToolbarControls = () => (
+    <div
+      className={cn(
+        showPopupFilterPills
+          ? "grid gap-2"
+          : "flex flex-wrap items-center gap-2",
+      )}
+    >
+      {showPopupFilterPills ? (
+        <>
+          {renderFilterPillGroup({
+            label: "Monuments",
+            allLabel: "All",
+            value: filterMonumentId ?? "",
+            onChange: handleMonumentChange,
+            open: popupMonumentPillsOpen,
+            onOpenChange: setPopupMonumentPillsOpen,
+            controlsId: popupMonumentPillsId,
+            options: toolbarMonuments.map((monument) => ({
+              id: monument.id,
+              label: monument.title ?? "Monument",
+              icon: monument.emoji ?? "✨",
+            })),
+          })}
+          {renderFilterPillGroup({
+            label: "Skills",
+            allLabel: "All",
+            value: filterSkillId ?? "",
+            onChange: handleSkillChange,
+            open: popupSkillPillsOpen,
+            onOpenChange: setPopupSkillPillsOpen,
+            controlsId: popupSkillPillsId,
+            options: popupToolbarSkills.map((skill) => ({
+              id: skill.id,
+              label: skill.name || "Skill",
+              icon: skill.icon ?? "🛠️",
+            })),
+          })}
+          {renderFilterPillGroup({
+            label: "INSTANCE TYPES",
+            allLabel: "All",
+            value: eventTypeValue === "ALL" ? "" : eventTypeValue,
+            onChange: (next) =>
+              handleEventTypeChange(
+                (next === "" ? "ALL" : next) as OverlayEventTypeFilter,
+              ),
+            open: popupInstanceTypePillsOpen,
+            onOpenChange: setPopupInstanceTypePillsOpen,
+            controlsId: popupInstanceTypePillsId,
+            options: NEXUS_INSTANCE_TYPE_FILTER_OPTIONS,
+          })}
+        </>
+      ) : (
+        <>
+          <Select
+            value={filterMonumentId ?? ""}
+            onValueChange={handleMonumentChange}
+          >
+            <SelectTrigger
+              aria-label="Filter by monument"
+              className={toolbarSelectClass}
+            >
+              <SelectValue placeholder="Monument" />
+            </SelectTrigger>
+            <SelectContent className={toolbarContentClass}>
+              <SelectItem value="">All monuments</SelectItem>
+              {toolbarMonuments.map((monument) => (
+                <SelectItem key={monument.id} value={monument.id}>
+                  <span className="text-sm">
+                    {(monument.emoji ?? "✨") +
+                      " " +
+                      (monument.title ?? "Monument")}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterSkillId ?? ""} onValueChange={handleSkillChange}>
+            <SelectTrigger
+              aria-label="Filter by skill"
+              className={toolbarSelectClass}
+            >
+              <SelectValue placeholder="Skill" />
+            </SelectTrigger>
+            <SelectContent className={toolbarContentClass}>
+              <SelectItem value="">All skills</SelectItem>
+              {toolbarSkills.map((skill) => (
+                <SelectItem key={skill.id} value={skill.id}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{skill.icon ?? "🛠️"}</span>
+                    <span>{skill.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
+      )}
+      <div
+        className={cn(
+          showPopupFilterPills ? "flex flex-wrap items-center gap-2" : "contents",
+        )}
+      >
+        {!showPopupFilterPills ? (
+          <Select
+            value={eventTypeValue}
+            onValueChange={(value) =>
+              handleEventTypeChange(value as OverlayEventTypeFilter)
+            }
+          >
+            <SelectTrigger
+              aria-label="Filter by event type"
+              className={toolbarSelectClass}
+            >
+              <SelectValue placeholder="Event type" />
+            </SelectTrigger>
+            <SelectContent className={toolbarContentClass}>
+              <SelectItem value="ALL">All events</SelectItem>
+              {eventTypeFilterOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+        <Select
+          value={sortValue}
+          onValueChange={(value) => handleSortChange(value as OverlaySortMode)}
+        >
+          <SelectTrigger
+            aria-label="Sort overlay results"
+            className={toolbarSelectClass}
+          >
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent className={toolbarContentClass}>
+            {OVERLAY_SORT_OPTIONS.map((option) => (
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                className="text-[10px] uppercase text-white/60"
+              >
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
 
   const formatDateTime = (
     value: string | null,
@@ -21479,7 +21964,13 @@ function FabNexus({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="search NEXUS"
-            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            className={cn(
+              "h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none",
+              showToolbar &&
+                shouldUsePopupSizing &&
+                popupExpanded &&
+                "pr-[5.75rem]",
+            )}
             aria-label="Search NEXUS"
           />
           {showToolbar && isEmbedded ? (
@@ -21501,20 +21992,38 @@ function FabNexus({
               )}
             </button>
           ) : showToolbar && shouldUsePopupSizing && onPopupExpandedChange ? (
-            <button
-              type="button"
-              aria-label={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
-              aria-expanded={popupExpanded}
-              title={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
-              onClick={() => onPopupExpandedChange(!popupExpanded)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
-            >
+            <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
               {popupExpanded ? (
-                <Shrink className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Expand className="h-4 w-4" aria-hidden="true" />
-              )}
-            </button>
+                <button
+                  type="button"
+                  aria-label="Toggle Nexus adjustments"
+                  aria-expanded={popupAdjustOpen}
+                  aria-controls="fab-nexus-adjust-controls"
+                  title="Toggle Nexus adjustments"
+                  onClick={() => setPopupAdjustOpen((prev) => !prev)}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60",
+                    popupAdjustOpen && "border-white/25 bg-white/10 text-white",
+                  )}
+                >
+                  <Filter className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                aria-label={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
+                aria-expanded={popupExpanded}
+                title={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
+                onClick={() => onPopupExpandedChange(!popupExpanded)}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+              >
+                {popupExpanded ? (
+                  <Shrink className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Expand className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           ) : showToolbar ? (
             <button
               type="button"
@@ -21528,97 +22037,34 @@ function FabNexus({
           ) : null}
         </div>
       </div>
-      {showToolbar && (showControls || (!isEmbedded && popupExpanded)) ? (
+      {shouldShowPopupAdjustments ? (
+        <div
+          className={cn(
+            "px-4 pt-2",
+            popupAdjustOpen
+              ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              : "shrink-0",
+          )}
+        >
+          <AnimatePresence initial={false}>
+            {popupAdjustOpen ? (
+              <motion.div
+                id="fab-nexus-adjust-controls"
+                key="fab-nexus-adjust-controls"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="pt-3">{renderToolbarControls()}</div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : showToolbar && showControls ? (
         <div className="shrink-0 px-4 pt-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={filterMonumentId ?? ""}
-              onValueChange={handleMonumentChange}
-            >
-              <SelectTrigger
-                aria-label="Filter by monument"
-                className={toolbarSelectClass}
-              >
-                <SelectValue placeholder="Monument" />
-              </SelectTrigger>
-              <SelectContent className={toolbarContentClass}>
-                <SelectItem value="">All monuments</SelectItem>
-                {toolbarMonuments.map((monument) => (
-                  <SelectItem key={monument.id} value={monument.id}>
-                    <span className="text-sm">
-                      {(monument.emoji ?? "✨") +
-                        " " +
-                        (monument.title ?? "Monument")}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={filterSkillId ?? ""}
-              onValueChange={handleSkillChange}
-            >
-              <SelectTrigger
-                aria-label="Filter by skill"
-                className={toolbarSelectClass}
-              >
-                <SelectValue placeholder="Skill" />
-              </SelectTrigger>
-              <SelectContent className={toolbarContentClass}>
-                <SelectItem value="">All skills</SelectItem>
-                {toolbarSkills.map((skill) => (
-                  <SelectItem key={skill.id} value={skill.id}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{skill.icon ?? "🛠️"}</span>
-                      <span>{skill.name}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={eventTypeValue}
-              onValueChange={(value) =>
-                handleEventTypeChange(value as OverlayEventTypeFilter)
-              }
-            >
-              <SelectTrigger
-                aria-label="Filter by event type"
-                className={toolbarSelectClass}
-              >
-                <SelectValue placeholder="Event type" />
-              </SelectTrigger>
-              <SelectContent className={toolbarContentClass}>
-                <SelectItem value="ALL">All events</SelectItem>
-                <SelectItem value="PROJECT">Projects</SelectItem>
-                <SelectItem value="HABIT">Habits</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={sortValue}
-              onValueChange={(value) =>
-                handleSortChange(value as OverlaySortMode)
-              }
-            >
-              <SelectTrigger
-                aria-label="Sort overlay results"
-                className={toolbarSelectClass}
-              >
-                <SelectValue placeholder="Sort" />
-              </SelectTrigger>
-              <SelectContent className={toolbarContentClass}>
-                {OVERLAY_SORT_OPTIONS.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value}
-                    className="text-[10px] uppercase text-white/60"
-                            >
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-          </div>
+          {renderToolbarControls()}
         </div>
       ) : null}
       <div
@@ -21634,17 +22080,17 @@ function FabNexus({
         style={{ touchAction: "pan-y" }}
         onScroll={handleScroll}
       >
-        {isSearching && !hasResults ? (
-          <div className="flex h-32 items-center justify-center text-white/60">
-            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-          </div>
-        ) : error && !hasResults ? (
-          <div className="rounded-xl border border-red-500/20 bg-red-900/40 px-4 py-4 text-center text-sm text-red-100">
-            {error}
-          </div>
-        ) : hasResults ? (
-          <div className="flex flex-col">
-            {results.map((result) => {
+          {isSearching && !hasResults ? (
+            <div className="flex h-32 items-center justify-center text-white/60">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+            </div>
+          ) : error && !hasResults ? (
+            <div className="rounded-xl border border-red-500/20 bg-red-900/40 px-4 py-4 text-center text-sm text-red-100">
+              {error}
+            </div>
+          ) : hasResults ? (
+            <div className="flex flex-col">
+              {results.map((result) => {
               const isCompletedProject =
                 result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
@@ -21841,20 +22287,20 @@ function FabNexus({
                   </div>
                 </button>
               );
-            })}
-            {isLoadingMore ? (
-              <div className="flex items-center justify-center py-3 text-white/60">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
-            {hasActiveFilter
-              ? "No projects or habits match this search."
-              : "Start typing to search every project and habit."}
-          </div>
-        )}
+              })}
+              {isLoadingMore ? (
+                <div className="flex items-center justify-center py-3 text-white/60">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
+              {hasActiveFilter
+                ? "No projects or habits match this search."
+                : "Start typing to search every project and habit."}
+            </div>
+          )}
       </div>
     </div>
   );

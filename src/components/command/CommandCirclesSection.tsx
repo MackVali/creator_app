@@ -1315,6 +1315,66 @@ function MemberDetailEmptyRow({
   );
 }
 
+function MemberDetailAccordionSection({
+  id,
+  title,
+  Icon,
+  defaultOpen = false,
+  children,
+}: {
+  id: string;
+  title: string;
+  Icon: LucideIcon;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const contentId = `${id}-content`;
+
+  return (
+    <section className="border-t border-white/[0.07] first:border-t-0">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 py-3 text-left text-white/52 transition hover:text-white/78 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+      >
+        <span className="flex min-w-0 items-center gap-2.5">
+          <Icon className="h-4 w-4 shrink-0 text-white/42" aria-hidden="true" />
+          <span className="truncate text-sm font-semibold text-white/58">
+            {title}
+          </span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-white/38 transition-transform",
+            isOpen ? "rotate-180" : "",
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {isOpen ? (
+          <motion.div
+            id={contentId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{
+              height: { duration: 0.26, ease: "easeInOut" },
+              opacity: { duration: 0.18, ease: "easeInOut" },
+            }}
+            className="overflow-hidden"
+          >
+            <div className="pb-4 pt-0.5">{children}</div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </section>
+  );
+}
+
 function getConstraintSummary(
   selectedIds: string[],
   optionById: Map<string, ConstraintOption>,
@@ -2628,19 +2688,15 @@ function CircleMemberFloatingDetail({
           </div>
         ) : null}
 
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-role-access`}
+          title="Role & Access"
+          Icon={ShieldCheck}
+          defaultOpen
+        >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <ShieldCheck
-                  className="h-4 w-4 text-white/55"
-                  aria-hidden="true"
-                />
-                <h5 className="text-sm font-semibold text-white">
-                  Role & Access
-                </h5>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-white/50">
+              <p className="text-xs leading-5 text-white/50">
                 Current role:{" "}
                 <span className="font-semibold text-white/75">
                   {member.role.toUpperCase()}
@@ -2651,17 +2707,14 @@ function CircleMemberFloatingDetail({
               <PlaceholderAction>Change Role</PlaceholderAction>
             ) : null}
           </div>
-        </section>
+        </MemberDetailAccordionSection>
 
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
-          <div className="flex items-center gap-2">
-            <BriefcaseBusiness
-              className="h-4 w-4 text-white/55"
-              aria-hidden="true"
-            />
-            <h5 className="text-sm font-semibold text-white">Work Profile</h5>
-          </div>
-          <div className="mt-3 grid gap-2.5">
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-work-profile`}
+          title="Work Profile"
+          Icon={BriefcaseBusiness}
+        >
+          <div className="grid gap-2.5">
             {canEditWorkProfile ? (
               <>
                 <WorkProfileConstraintMultiSelect
@@ -2719,53 +2772,46 @@ function CircleMemberFloatingDetail({
               }
             />
           </div>
-        </section>
+        </MemberDetailAccordionSection>
 
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
-          <div className="flex items-center gap-2">
-            <LockKeyhole className="h-4 w-4 text-white/55" aria-hidden="true" />
-            <h5 className="text-sm font-semibold text-white">
-              Assigned Circle Work
-            </h5>
-          </div>
-          <div className="mt-3">
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-assigned-work`}
+          title="Assigned Circle Work"
+          Icon={LockKeyhole}
+        >
+          <div>
             <MemberDetailEmptyRow
               Icon={BriefcaseBusiness}
               text="No assigned Circle work yet."
             />
           </div>
-        </section>
+        </MemberDetailAccordionSection>
 
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
-          <div className="flex items-center gap-2">
-            <CalendarDays
-              className="h-4 w-4 text-white/55"
-              aria-hidden="true"
-            />
-            <h5 className="text-sm font-semibold text-white">
-              Scheduled Circle Events
-            </h5>
-          </div>
-          <div className="mt-3">
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-scheduled-events`}
+          title="Scheduled Circle Events"
+          Icon={CalendarDays}
+        >
+          <div>
             <MemberDetailEmptyRow
               Icon={CalendarDays}
               text="No Circle events scheduled yet."
             />
           </div>
-        </section>
+        </MemberDetailAccordionSection>
 
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-white/55" aria-hidden="true" />
-            <h5 className="text-sm font-semibold text-white">Performance</h5>
-          </div>
-          <div className="mt-3">
+        <MemberDetailAccordionSection
+          id={`member-${member.id}-performance`}
+          title="Performance"
+          Icon={BarChart3}
+        >
+          <div>
             <MemberDetailEmptyRow
               Icon={BarChart3}
               text="Completion stats will appear here once Circle work is scheduled."
             />
           </div>
-        </section>
+        </MemberDetailAccordionSection>
       </div>
       <AnimatePresence>
         {isOfferOpen ? (

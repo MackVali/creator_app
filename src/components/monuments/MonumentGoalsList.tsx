@@ -28,6 +28,7 @@ import { LazyFab } from "@/components/ui/LazyFab";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { useToastHelpers } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
 import {
   projectWeight,
   taskWeight,
@@ -54,14 +55,20 @@ import {
 import { computeGoalWeight } from "@/lib/goals/weight";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
+  HABIT_TYPE_LABELS,
+  HABIT_TYPE_ORDER,
   normalizeCampaignPriority,
+  normalizeHabitBucket,
   normalizePriority,
   parseGlobalRank,
   PRIORITY_LABELS,
   PRIORITY_ORDER,
+  sortHabitRoadmapItems,
   sortGlobalPriorityItems,
   type GlobalPriorityRoadmapItem,
+  type HabitBucketId,
   type PriorityBucketId,
+  type RoadmapHabitItem,
   type RoadmapPriorityGoal,
 } from "@/app/(app)/schedule/priorities/utils";
 import {
@@ -641,6 +648,39 @@ type MonumentPriorityCampaignGoalRow = {
   created_at?: string | null;
 };
 
+type CircleHabitSkillRow = {
+  id?: string | null;
+  name?: string | null;
+  icon?: string | null;
+  monument_id?: string | null;
+};
+
+type CircleHabitGoalRow = {
+  id?: string | null;
+  monument_id?: string | null;
+};
+
+type CircleHabitRoadmapRow = {
+  id: string;
+  name?: string | null;
+  habit_type?: string | null;
+  global_order?: number | string | null;
+  skill_id?: string | null;
+  goal_id?: string | null;
+  routine_id?: string | null;
+  routine_position?: number | string | null;
+  duration_minutes?: number | null;
+  energy?: string | null;
+  recurrence_mode?: string | null;
+  current_streak_days?: number | null;
+  last_completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  circle_id?: string | null;
+  skill?: CircleHabitSkillRow | CircleHabitSkillRow[] | null;
+  goal?: CircleHabitGoalRow | CircleHabitGoalRow[] | null;
+};
+
 type MonumentPrioritySupabaseClient = NonNullable<
   ReturnType<typeof getSupabaseBrowser>
 > & {
@@ -1083,7 +1123,7 @@ async function fetchMonumentPriorityRoadmapItems(
       })
       .filter(
         (goal): goal is RoadmapPriorityGoal =>
-          Boolean(goal) && normalizeGoalStatus(goal.status) !== "COMPLETED"
+          goal !== null && normalizeGoalStatus(goal.status) !== "COMPLETED"
       )
       .sort(compareMonumentPriorityCampaignGoals);
 
@@ -1128,6 +1168,209 @@ async function fetchMonumentPriorityRoadmapItems(
     ...mergeMonumentPriorityCampaignItems(campaignItems),
     ...standaloneGoalItems,
   ]);
+}
+
+function firstRelatedRow<T>(value?: T | T[] | null): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
+async function fetchCirclePriorityRoadmapItems(
+  userId: string,
+  circleId: string
+): Promise<GlobalPriorityRoadmapItem[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+
+  const [goalsResult, campaignsResult] = await Promise.all([
+    supabase
+      .from("goals")
+      .select(
+        "id,name,emoji,monument_id,circle_id,roadmap_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(emoji)"
+      )
+      .eq("user_id", userId)
+      .eq("circle_id", circleId),
+    supabase
+      .from("campaigns")
+      .select(
+        "id,name,description,emoji,priority_code,priority_order,scheduling_state,position,roadmap_id,primary_monument_id,primary_circle_id,created_at"
+      )
+      .eq("user_id", userId)
+      .eq("primary_circle_id", circleId)
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (goalsResult.error) {
+    console.error("Error fetching Circle priority goals:", goalsResult.error);
+    return [];
+  }
+  if (campaignsResult.error) {
+    console.error(
+      "Error fetching Circle priority campaigns:",
+      campaignsResult.error
+    );
+    return [];
+  }
+
+  const goalRows = ((goalsResult.data ?? []) as MonumentPriorityGoalRow[]).filter(
+    (goal) => normalizeGoalStatus(goal.status) !== "COMPLETED"
+  );
+  const campaignRows = (campaignsResult.data ?? []) as MonumentPriorityCampaignRow[];
+  const campaignIds = campaignRows.map((campaign) => campaign.id);
+  const campaignGoalRows =
+    campaignIds.length > 0
+      ? await supabase
+          .from("campaign_goals")
+          .select("campaign_id,goal_id,position,created_at")
+          .eq("user_id", userId)
+          .in("campaign_id", campaignIds)
+          .order("position", { ascending: true, nullsFirst: false })
+      : { data: [], error: null };
+
+  if (campaignGoalRows.error) {
+    console.error(
+      "Error fetching Circle priority campaign goals:",
+      campaignGoalRows.error
+    );
+    return [];
+  }
+
+  const goalsById = new Map(goalRows.map((goal) => [goal.id, goal]));
+  const campaignGoalIds = new Set(
+    ((campaignGoalRows.data ?? []) as MonumentPriorityCampaignGoalRow[]).map(
+      (campaignGoal) => campaignGoal.goal_id
+    )
+  );
+  const campaignGoalsByCampaignId = new Map<
+    string,
+    MonumentPriorityCampaignGoalRow[]
+  >();
+
+  for (const campaignGoal of
+    (campaignGoalRows.data ?? []) as MonumentPriorityCampaignGoalRow[]) {
+    const goals = campaignGoalsByCampaignId.get(campaignGoal.campaign_id) ?? [];
+    goals.push(campaignGoal);
+    campaignGoalsByCampaignId.set(campaignGoal.campaign_id, goals);
+  }
+
+  const campaignItems: GlobalPriorityRoadmapItem[] = [];
+  for (const campaign of campaignRows) {
+    const nestedGoals = (campaignGoalsByCampaignId.get(campaign.id) ?? [])
+      .map((campaignGoal) => {
+        const goal = goalsById.get(campaignGoal.goal_id);
+        if (!goal || goal.circle_id !== circleId) return null;
+        return normalizeMonumentPriorityGoal(goal, campaignGoal);
+      })
+      .filter(
+        (goal): goal is RoadmapPriorityGoal =>
+          goal !== null && normalizeGoalStatus(goal.status) !== "COMPLETED"
+      )
+      .sort(compareMonumentPriorityCampaignGoals);
+
+    if (nestedGoals.length === 0) continue;
+
+    campaignItems.push({
+      id: campaign.id,
+      type: "campaign",
+      sourceIds: [campaign.id],
+      name: (campaign.name ?? "").trim() || "Untitled Campaign",
+      emoji: campaign.emoji ?? null,
+      monumentId: campaign.primary_monument_id ?? null,
+      priority: normalizeCampaignPriority(campaign.priority_code),
+      priorityOrder: parseGlobalRank(campaign.priority_order),
+      position: parseGlobalRank(campaign.position),
+      createdAt: campaign.created_at ?? null,
+      goals: nestedGoals,
+    });
+  }
+
+  const standaloneGoalItems: GlobalPriorityRoadmapItem[] = goalRows
+    .filter((goal) => !campaignGoalIds.has(goal.id))
+    .map((goal) => {
+      const normalizedGoal = normalizeMonumentPriorityGoal(goal);
+
+      return {
+        id: goal.id,
+        type: "goal",
+        name: normalizedGoal.name,
+        emoji: normalizedGoal.emoji,
+        monumentId: normalizedGoal.monumentId,
+        monumentEmoji: normalizedGoal.monumentEmoji,
+        priority: normalizedGoal.priority,
+        priorityOrder: normalizedGoal.priorityOrder,
+        globalRank: normalizedGoal.globalRank,
+        priorityRank: normalizedGoal.priorityRank,
+        createdAt: normalizedGoal.createdAt,
+      };
+    });
+
+  return sortGlobalPriorityItems([
+    ...mergeMonumentPriorityCampaignItems(campaignItems),
+    ...standaloneGoalItems,
+  ]);
+}
+
+function normalizeCircleHabitRoadmapItem(
+  row: CircleHabitRoadmapRow
+): RoadmapHabitItem {
+  const skill = firstRelatedRow(row.skill);
+  const goal = firstRelatedRow(row.goal);
+
+  return {
+    id: row.id,
+    name: (row.name ?? "").trim() || "Untitled Habit",
+    habitType: normalizeHabitBucket(row.habit_type),
+    rawHabitType: row.habit_type ?? null,
+    circleId: row.circle_id ?? null,
+    globalOrder: parseGlobalRank(row.global_order),
+    skillId: row.skill_id ?? skill?.id ?? null,
+    skillName: skill?.name ?? null,
+    skillIcon: skill?.icon ?? null,
+    skillMonumentId: skill?.monument_id ?? null,
+    goalId: row.goal_id ?? goal?.id ?? null,
+    goalMonumentId: goal?.monument_id ?? null,
+    monumentId: skill?.monument_id ?? goal?.monument_id ?? null,
+    routineId: row.routine_id ?? null,
+    routinePosition: parseGlobalRank(row.routine_position),
+    durationMinutes: row.duration_minutes ?? null,
+    energy: row.energy ?? null,
+    recurrenceMode: row.recurrence_mode ?? null,
+    currentStreakDays: row.current_streak_days ?? null,
+    lastCompletedAt: row.last_completed_at ?? null,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+async function fetchCircleHabitRoadmapItems(
+  userId: string,
+  circleId: string
+): Promise<RoadmapHabitItem[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("habits")
+    .select(
+      `id,name,habit_type,global_order,skill_id,goal_id,routine_id,routine_position,duration_minutes,energy,recurrence_mode,current_streak_days,last_completed_at,created_at,updated_at,circle_id,
+      skill:skills(id,name,icon,monument_id),
+      goal:goals(id,monument_id)`
+    )
+    .eq("user_id", userId)
+    .eq("circle_id", circleId);
+
+  if (error) {
+    console.error("Error fetching Circle Habit roadmap items:", error);
+    return [];
+  }
+
+  return sortHabitRoadmapItems(
+    ((data ?? []) as CircleHabitRoadmapRow[]).map(normalizeCircleHabitRoadmapItem)
+  );
 }
 
 async function saveMonumentCampaignGoalPriorityOrder(
@@ -1694,6 +1937,166 @@ function MonumentPriorityRoadmapSkeletonRow({
   );
 }
 
+function getCircleRoadmapHabitFabOriginRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const styles = window.getComputedStyle(element);
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    borderRadius: styles.borderRadius,
+    backgroundColor: styles.backgroundColor,
+    backgroundImage: styles.backgroundImage,
+    boxShadow: styles.boxShadow,
+  };
+}
+
+function getCircleRoadmapHabitIdentity(habit: RoadmapHabitItem) {
+  return habit.skillIcon?.trim() || (habit.habitType === "CHORE" ? "◆" : "✦");
+}
+
+function getCircleRoadmapHabitRowClass(habitType?: string | null): string {
+  const normalized = (habitType ?? "").trim().toUpperCase();
+  if (normalized === "CHORE") {
+    return cn(
+      "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.30),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.70)_100%)]",
+      "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)]"
+    );
+  }
+  if (normalized === "SYNC" || normalized === "MEMO") {
+    return "border-black/70 bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.25),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.96)_0%,rgba(113,113,122,0.90)_48%,rgba(161,161,170,0.74)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.055)]";
+  }
+  if (normalized === "PRACTICE") {
+    return cn(
+      "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]",
+      "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)]"
+    );
+  }
+  return cn(
+    "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]",
+    "border-black/70 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.035)]"
+  );
+}
+
+function CircleHabitRoadmap({
+  items,
+  error,
+  onHabitEdit,
+}: {
+  items: RoadmapHabitItem[];
+  error: string | null;
+  onHabitEdit: (habit: RoadmapHabitItem, element: HTMLElement) => void;
+}) {
+  const itemsByType = useMemo(() => {
+    const grouped = new Map<HabitBucketId, RoadmapHabitItem[]>(
+      HABIT_TYPE_ORDER.map((habitType) => [habitType, []])
+    );
+
+    for (const item of sortHabitRoadmapItems(items)) {
+      grouped.get(item.habitType)?.push(item);
+    }
+
+    return grouped;
+  }, [items]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-5">
+        <h2 className="text-[11px] font-semibold uppercase text-white/35">
+          Circle Habit Roadmap
+        </h2>
+      </div>
+      <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+        <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
+          {error ? <p className="mb-2 px-1 text-xs text-red-200/85">{error}</p> : null}
+          {items.length === 0 ? (
+            <p className="rounded-[16px] border border-black/60 bg-black/25 px-3 py-3 text-xs font-medium text-zinc-500">
+              No Circle Habits yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {HABIT_TYPE_ORDER.map((habitType) => {
+                const bucketItems = itemsByType.get(habitType) ?? [];
+
+                return (
+                  <div key={habitType} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <p className="text-[10px] font-semibold uppercase leading-none tracking-normal text-zinc-600">
+                        {HABIT_TYPE_LABELS[habitType]}
+                      </p>
+                      <span className="text-[10px] font-semibold leading-none text-zinc-700">
+                        {bucketItems.length}
+                      </span>
+                    </div>
+                    <div className="min-h-8 overflow-hidden rounded-[16px] border border-black/60 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                      {bucketItems.length === 0 ? (
+                        <div className="min-h-8 px-2 py-2 text-[11px] font-medium text-zinc-800">
+                          Empty
+                        </div>
+                      ) : (
+                        bucketItems.map((habit) => {
+                          const isLightTypeRow =
+                            habit.habitType === "SYNC" ||
+                            habit.rawHabitType?.trim().toUpperCase() === "MEMO";
+
+                          return (
+                            <button
+                              key={habit.id}
+                              type="button"
+                              onClick={(event) =>
+                                onHabitEdit(habit, event.currentTarget)
+                              }
+                              className={cn(
+                                "flex min-h-10 w-full items-center gap-2 border-b border-black/40 px-2 py-1.5 text-left transition last:border-b-0 hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/15 sm:px-2.5",
+                                getCircleRoadmapHabitRowClass(
+                                  habit.rawHabitType ?? habit.habitType
+                                )
+                              )}
+                            >
+                              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                {getCircleRoadmapHabitIdentity(habit)}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold leading-tight text-white/90">
+                                  {habit.name}
+                                </span>
+                                <span className="mt-0.5 block truncate text-[10px] font-medium uppercase tracking-normal text-white/35">
+                                  {habit.recurrenceMode ?? "Unscheduled"}
+                                  {habit.currentStreakDays
+                                    ? ` / ${habit.currentStreakDays} day streak`
+                                    : ""}
+                                </span>
+                              </span>
+                              {habit.globalOrder ? (
+                                <span
+                                  className={cn(
+                                    "shrink-0 text-[11px] font-semibold leading-none",
+                                    isLightTypeRow
+                                      ? "text-zinc-100/72"
+                                      : "text-zinc-500"
+                                  )}
+                                >
+                                  #{habit.globalOrder}
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function MonumentGoalsList({
   monumentId,
   sourceType = "monument",
@@ -1757,6 +2160,8 @@ export function MonumentGoalsList({
             monumentPriorityRoadmapItems,
             resolvedSourceId
           )
+        : resolvedSourceType === "circle"
+          ? sortGlobalPriorityItems(monumentPriorityRoadmapItems)
         : [],
     [monumentPriorityRoadmapItems, resolvedSourceId, resolvedSourceType]
   );
@@ -1765,6 +2170,12 @@ export function MonumentGoalsList({
   const [isSavingMonumentPriorityOrder, setIsSavingMonumentPriorityOrder] =
     useState(false);
   const monumentPriorityRoadmapSensors = usePriorityRoadmapSensors();
+  const [circleHabitRoadmapItems, setCircleHabitRoadmapItems] = useState<
+    RoadmapHabitItem[]
+  >([]);
+  const [circleHabitRoadmapError, setCircleHabitRoadmapError] = useState<
+    string | null
+  >(null);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [restoreGoalDrawerId, setRestoreGoalDrawerId] = useState<string | null>(
     null
@@ -2067,6 +2478,7 @@ export function MonumentGoalsList({
     measureActiveGoalPanel,
     monumentRoadmapsWithItems,
     monumentPriorityRoadmapItems,
+    circleHabitRoadmapItems,
     monumentView,
     openGoalId,
     roadmapOpenGoal,
@@ -2125,6 +2537,7 @@ export function MonumentGoalsList({
     measureSelectedGoalsRoadmapPanel,
     monumentRoadmapsWithItems,
     monumentPriorityRoadmapItems,
+    circleHabitRoadmapItems,
     openGoalId,
     roadmapOpenGoal,
     goalsRoadmapViewportWidth,
@@ -2164,6 +2577,7 @@ export function MonumentGoalsList({
     goalsGridLoading,
     loading,
     measureSelectedGoalsRoadmapPanel,
+    circleHabitRoadmapItems,
     monumentView,
   ]);
 
@@ -2418,6 +2832,8 @@ export function MonumentGoalsList({
     setGoalCampaignCards([]);
     setMonumentPriorityRoadmapItems([]);
     setMonumentPriorityRoadmapError(null);
+    setCircleHabitRoadmapItems([]);
+    setCircleHabitRoadmapError(null);
   }, [resolvedSourceType, resolvedSourceId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -2684,6 +3100,8 @@ export function MonumentGoalsList({
       setMonumentRoadmapsWithItems([]);
       setMonumentPriorityRoadmapItems([]);
       setMonumentPriorityRoadmapError(null);
+      setCircleHabitRoadmapItems([]);
+      setCircleHabitRoadmapError(null);
       setGoalCampaignCards([]);
       return;
     }
@@ -2695,12 +3113,19 @@ export function MonumentGoalsList({
       setMonumentRoadmapsWithItems([]);
       setMonumentPriorityRoadmapItems([]);
       setMonumentPriorityRoadmapError(null);
+      setCircleHabitRoadmapItems([]);
+      setCircleHabitRoadmapError(null);
       setGoalCampaignCards([]);
       return;
     }
 
     setUserId(user.id);
-    const [trueRoadmaps, campaignCards, priorityRoadmapItems] = await Promise.all([
+    const [
+      trueRoadmaps,
+      campaignCards,
+      priorityRoadmapItems,
+      circleHabitItems,
+    ] = await Promise.all([
       resolvedSourceType === "circle"
         ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
         : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
@@ -2719,12 +3144,32 @@ export function MonumentGoalsList({
               return [] as GlobalPriorityRoadmapItem[];
             }
           )
-        : Promise.resolve([] as GlobalPriorityRoadmapItem[]),
+        : resolvedSourceType === "circle"
+          ? fetchCirclePriorityRoadmapItems(user.id, resolvedSourceId).catch(
+              (err) => {
+                console.error("Error refreshing Circle priority roadmap", err);
+                return [] as GlobalPriorityRoadmapItem[];
+              }
+            )
+          : Promise.resolve([] as GlobalPriorityRoadmapItem[]),
+      resolvedSourceType === "circle"
+        ? fetchCircleHabitRoadmapItems(user.id, resolvedSourceId).catch(
+            (err) => {
+              console.error("Error refreshing Circle Habit roadmap", err);
+              setCircleHabitRoadmapError("Unable to load Circle Habits.");
+              return [] as RoadmapHabitItem[];
+            }
+          )
+        : Promise.resolve([] as RoadmapHabitItem[]),
     ]);
     setMonumentRoadmapsWithItems(trueRoadmaps);
     setGoalCampaignCards(campaignCards);
     setMonumentPriorityRoadmapItems(priorityRoadmapItems);
     setMonumentPriorityRoadmapError(null);
+    setCircleHabitRoadmapItems(circleHabitItems);
+    if (resolvedSourceType !== "circle") {
+      setCircleHabitRoadmapError(null);
+    }
   }, [resolvedSourceId, resolvedSourceType]);
 
   const isGoalLinkedToCurrentSource = useCallback(
@@ -2914,6 +3359,8 @@ export function MonumentGoalsList({
         setMonumentRoadmapsWithItems([]);
         setMonumentPriorityRoadmapItems([]);
         setMonumentPriorityRoadmapError(null);
+        setCircleHabitRoadmapItems([]);
+        setCircleHabitRoadmapError(null);
         setGoalCampaignCards([]);
         setGoals([]);
         setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -2933,6 +3380,8 @@ export function MonumentGoalsList({
         setMonumentRoadmapsWithItems([]);
         setMonumentPriorityRoadmapItems([]);
         setMonumentPriorityRoadmapError(null);
+        setCircleHabitRoadmapItems([]);
+        setCircleHabitRoadmapError(null);
         setGoalCampaignCards([]);
         hydratedGoalIdsRef.current.clear();
       }
@@ -2945,6 +3394,8 @@ export function MonumentGoalsList({
           setGoalCampaignCards([]);
           setMonumentPriorityRoadmapItems([]);
           setMonumentPriorityRoadmapError(null);
+          setCircleHabitRoadmapItems([]);
+          setCircleHabitRoadmapError(null);
           loadedGoalsSourceKeyRef.current = goalsSourceKey;
           setGoalsDisplayReadyKey(goalsDisplayKey);
           setRoadmapsDisplayReadyKey(goalsDisplayKey);
@@ -2985,7 +3436,29 @@ export function MonumentGoalsList({
                   return [] as GlobalPriorityRoadmapItem[];
                 }
               )
-            : Promise.resolve([] as GlobalPriorityRoadmapItem[]);
+            : resolvedSourceType === "circle"
+              ? fetchCirclePriorityRoadmapItems(user.id, resolvedSourceId).catch(
+                  (err) => {
+                    console.error("Error loading Circle priority roadmap", err);
+                    return [] as GlobalPriorityRoadmapItem[];
+                  }
+                )
+              : Promise.resolve([] as GlobalPriorityRoadmapItem[]);
+        const circleHabitRoadmapItemsPromise =
+          resolvedSourceType === "circle"
+            ? fetchCircleHabitRoadmapItems(user.id, resolvedSourceId)
+                .then((items) => ({ items, error: null as unknown }))
+                .catch((err) => {
+                  console.error("Error loading Circle Habit roadmap", err);
+                  return {
+                    items: [] as RoadmapHabitItem[],
+                    error: err as unknown,
+                  };
+                })
+            : Promise.resolve({
+                items: [] as RoadmapHabitItem[],
+                error: null as unknown,
+              });
         const fullGoalsPromise = fetchGoalsFullRelationsForSource(
           resolvedSourceType,
           resolvedSourceId,
@@ -3004,6 +3477,7 @@ export function MonumentGoalsList({
           skills,
           campaignCards,
           priorityRoadmapItems,
+          circleHabitRoadmapItemsResult,
           fullGoalsResult,
         ] =
           await Promise.all([
@@ -3012,6 +3486,7 @@ export function MonumentGoalsList({
             skillsPromise,
             campaignCardsPromise,
             priorityRoadmapItemsPromise,
+            circleHabitRoadmapItemsPromise,
             fullGoalsResultPromise,
           ]);
         if (cancelled) return;
@@ -3024,6 +3499,12 @@ export function MonumentGoalsList({
         setGoalCampaignCards(campaignCards);
         setMonumentPriorityRoadmapItems(priorityRoadmapItems);
         setMonumentPriorityRoadmapError(null);
+        setCircleHabitRoadmapItems(circleHabitRoadmapItemsResult.items);
+        setCircleHabitRoadmapError(
+          circleHabitRoadmapItemsResult.error
+            ? "Unable to load Circle Habits."
+            : null
+        );
         setRoadmapsDisplayReadyKey(goalsDisplayKey);
 
         if (fullGoalsResult.error) {
@@ -3079,6 +3560,8 @@ export function MonumentGoalsList({
             setMonumentRoadmapsWithItems([]);
             setMonumentPriorityRoadmapItems([]);
             setMonumentPriorityRoadmapError(null);
+            setCircleHabitRoadmapItems([]);
+            setCircleHabitRoadmapError(null);
             setGoalCampaignCards([]);
           }
           setGoalsDisplayReadyKey(goalsDisplayKey);
@@ -3335,6 +3818,30 @@ export function MonumentGoalsList({
       },
       [closeGoalDetailAfterFabOpen]
     );
+
+  const handleCircleHabitRoadmapEdit = useCallback(
+    (habit: RoadmapHabitItem, element: HTMLElement) => {
+      setFabEditTarget({
+        entityType: "HABIT",
+        entityId: habit.id,
+        title: habit.name,
+        originRect: getCircleRoadmapHabitFabOriginRect(element),
+        habitSnapshot: {
+          name: habit.name,
+          habitType: habit.rawHabitType ?? habit.habitType,
+          recurrence: habit.recurrenceMode,
+          durationMinutes: habit.durationMinutes,
+          energy: habit.energy,
+          goalId: habit.goalId,
+          skillId: habit.skillId,
+          routineId: habit.routineId,
+          circleId: habit.circleId ?? null,
+          lastCompletedAt: habit.lastCompletedAt,
+        },
+      });
+    },
+    []
+  );
 
   const handleCampaignAddGoal = useCallback(
     (campaignId: string) => {
@@ -4363,15 +4870,31 @@ export function MonumentGoalsList({
         </div>
       ) : null;
     const roadmapContent =
-      resolvedSourceType === "monument" ? (
+      resolvedSourceType === "monument" || resolvedSourceType === "circle" ? (
         visibleMonumentPriorityRoadmapItems.length === 0 ? (
-          roadmapEmptyContent
+          resolvedSourceType === "circle" && circleHabitRoadmapItems.length > 0 ? (
+            <div
+              className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
+            >
+              <CircleHabitRoadmap
+                items={circleHabitRoadmapItems}
+                error={circleHabitRoadmapError}
+                onHabitEdit={handleCircleHabitRoadmapEdit}
+              />
+            </div>
+          ) : (
+            roadmapEmptyContent
+          )
         ) : (
           <div
             className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
           >
             <GlobalPriorityRoadmap
-              title="Monument Roadmap"
+              title={
+                resolvedSourceType === "circle"
+                  ? "Circle Goal Roadmap"
+                  : "Monument Roadmap"
+              }
               items={visibleMonumentPriorityRoadmapItems}
               error={monumentPriorityRoadmapError}
               isSaving={isSavingMonumentPriorityOrder}
@@ -4382,6 +4905,13 @@ export function MonumentGoalsList({
               onDragEnd={handleMonumentPriorityDragEnd}
               onCampaignGoalDragEnd={handleMonumentCampaignGoalDragEnd}
             />
+            {resolvedSourceType === "circle" ? (
+              <CircleHabitRoadmap
+                items={circleHabitRoadmapItems}
+                error={circleHabitRoadmapError}
+                onHabitEdit={handleCircleHabitRoadmapEdit}
+              />
+            ) : null}
             {openRoadmapGoalCard}
           </div>
         )
@@ -4694,6 +5224,8 @@ export function MonumentGoalsList({
     goalsGridLoading,
     goals,
     goalCampaignCards,
+    circleHabitRoadmapItems,
+    circleHabitRoadmapError,
     goalsRoadmapViewHeight,
     goalsRoadmapViewportWidth,
     goalsRoadmapTrackTransform,
@@ -4730,6 +5262,7 @@ export function MonumentGoalsList({
     handleMonumentPriorityGoalLongPressEdit,
     handleMonumentPriorityDragEnd,
     handleMonumentCampaignGoalDragEnd,
+    handleCircleHabitRoadmapEdit,
     handleProjectEditOpen,
     handleTaskEditOpen,
     handleTaskToggleCompletion,

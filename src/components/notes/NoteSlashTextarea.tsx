@@ -76,6 +76,17 @@ import {
   isLockedStarterDatabaseId,
   isDatabaseCreatedAtField,
 } from "@/lib/skillStarterNotes";
+import {
+  scanNutritionBarcode,
+  type NutritionBarcodeScannerResult,
+} from "@/lib/nutrition/barcodeScanner";
+import {
+  mapFoodToNutritionEntryValues,
+  normalizeFoodBarcode,
+  normalizeFoodSearchText,
+  type FoodBarcodeLookupResult,
+  type FoodSearchResult,
+} from "@/lib/nutrition/foods";
 
 type SlashCommandId =
   | "text"
@@ -1473,6 +1484,13 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
 type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
+type NutritionFoodSearchResponse = {
+  foods?: FoodSearchResult[];
+  error?: string;
+};
+type NutritionFoodBarcodeLookupResponse = FoodBarcodeLookupResult & {
+  error?: string;
+};
 
 function normalizeDatabaseFieldLookupKey(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -1496,6 +1514,26 @@ function isDefaultNutritionFoodField(field: NoteDatabaseFieldDefinition) {
 
   const idParts = field.id.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   return idParts.some((idPart) => NUTRITION_FOOD_FIELD_LOOKUP_KEYS.has(idPart));
+}
+
+function formatFoodNutritionNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function getFoodSearchResultMeta(food: FoodSearchResult) {
+  const calories = formatFoodNutritionNumber(food.calories);
+  const carbs = formatFoodNutritionNumber(food.carbs_g);
+  const protein = formatFoodNutritionNumber(food.protein_g);
+  const fat = formatFoodNutritionNumber(food.fat_g);
+  const nutritionParts = [
+    calories ? `${calories} cal` : null,
+    carbs ? `C ${carbs}g` : null,
+    protein ? `P ${protein}g` : null,
+    fat ? `F ${fat}g` : null,
+  ].filter(Boolean);
+
+  return nutritionParts.join(" • ");
 }
 
 function getDatabaseEntryTitle(entry: NoteDatabaseEntry, definition: NoteDatabaseDefinition) {
@@ -2581,6 +2619,24 @@ export function NoteDatabaseEntrySheet({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedNutritionFoodAction, setSelectedNutritionFoodAction] =
     useState<NutritionFoodActionTabId>("search");
+  const [nutritionFoodSearchResults, setNutritionFoodSearchResults] = useState<
+    FoodSearchResult[]
+  >([]);
+  const [isNutritionFoodSearchLoading, setIsNutritionFoodSearchLoading] = useState(false);
+  const [nutritionFoodSearchError, setNutritionFoodSearchError] = useState<string | null>(
+    null,
+  );
+  const [nutritionBarcodeValue, setNutritionBarcodeValue] = useState("");
+  const [isNutritionBarcodeScannerLoading, setIsNutritionBarcodeScannerLoading] =
+    useState(false);
+  const [isNutritionBarcodeLookupLoading, setIsNutritionBarcodeLookupLoading] =
+    useState(false);
+  const [nutritionBarcodeLookupStatus, setNutritionBarcodeLookupStatus] = useState<
+    string | null
+  >(null);
+  const [nutritionBarcodeLookupError, setNutritionBarcodeLookupError] = useState<
+    string | null
+  >(null);
   const nutritionFoodActionTabRefs = useRef<
     Partial<Record<NutritionFoodActionTabId, HTMLButtonElement | null>>
   >({});
@@ -2606,10 +2662,74 @@ export function NoteDatabaseEntrySheet({
   const nutritionFoodField = isDefaultNutritionDatabase
     ? editableDatabaseFields.find(isDefaultNutritionFoodField) ?? null
     : null;
+  const nutritionFoodSearchValue = nutritionFoodField
+    ? entryFormValues[nutritionFoodField.id] ?? ""
+    : "";
+  const normalizedNutritionFoodSearchValue = normalizeFoodSearchText(
+    nutritionFoodSearchValue,
+  );
 
   function updateEntryFormValue(fieldId: string, value: string) {
     setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
   }
+
+  useEffect(() => {
+    if (
+      !isDefaultNutritionDatabase ||
+      selectedNutritionFoodAction !== "search" ||
+      normalizedNutritionFoodSearchValue.length < 2
+    ) {
+      setNutritionFoodSearchResults([]);
+      setIsNutritionFoodSearchLoading(false);
+      setNutritionFoodSearchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const searchTimeout = window.setTimeout(() => {
+      setIsNutritionFoodSearchLoading(true);
+      setNutritionFoodSearchError(null);
+
+      const params = new URLSearchParams({
+        q: nutritionFoodSearchValue,
+        limit: "8",
+      });
+
+      fetch(`/api/nutrition/foods/search?${params.toString()}`, {
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const payload = (await response.json()) as NutritionFoodSearchResponse;
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Unable to search foods.");
+          }
+
+          setNutritionFoodSearchResults(payload.foods ?? []);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          console.error("Failed to search nutrition foods", { error });
+          setNutritionFoodSearchResults([]);
+          setNutritionFoodSearchError("Food search is unavailable right now.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsNutritionFoodSearchLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(searchTimeout);
+      controller.abort();
+    };
+  }, [
+    isDefaultNutritionDatabase,
+    normalizedNutritionFoodSearchValue,
+    nutritionFoodSearchValue,
+    selectedNutritionFoodAction,
+  ]);
 
   function selectNutritionFoodAction(tabId: NutritionFoodActionTabId) {
     setSelectedNutritionFoodAction(tabId);
@@ -2628,6 +2748,93 @@ export function NoteDatabaseEntrySheet({
       (currentIndex + offset + NUTRITION_FOOD_ACTION_TABS.length) %
       NUTRITION_FOOD_ACTION_TABS.length;
     selectNutritionFoodAction(NUTRITION_FOOD_ACTION_TABS[nextIndex].id);
+  }
+
+  function selectNutritionFood(food: FoodSearchResult) {
+    const mappedValues = mapFoodToNutritionEntryValues(food, databaseDefinition);
+    setEntryFormValues((current) => ({ ...current, ...mappedValues }));
+    setSubmitError(null);
+  }
+
+  async function lookupNutritionBarcode(barcodeValue = nutritionBarcodeValue) {
+    if (isNutritionBarcodeLookupLoading) return;
+
+    const normalizedBarcode = normalizeFoodBarcode(barcodeValue);
+    if (!normalizedBarcode) {
+      setNutritionBarcodeLookupStatus("Enter a barcode.");
+      setNutritionBarcodeLookupError(null);
+      return;
+    }
+
+    setIsNutritionBarcodeLookupLoading(true);
+    setNutritionBarcodeLookupStatus(null);
+    setNutritionBarcodeLookupError(null);
+
+    try {
+      const params = new URLSearchParams({ barcode: normalizedBarcode });
+      const response = await fetch(`/api/nutrition/foods/barcode?${params.toString()}`);
+      const payload = (await response.json()) as NutritionFoodBarcodeLookupResponse;
+
+      if (payload.status === "rate_limited") {
+        setNutritionBarcodeLookupStatus("Too many barcode lookups. Try again in a bit.");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to look up barcode.");
+      }
+
+      if (payload.food) {
+        selectNutritionFood(payload.food);
+        setNutritionBarcodeLookupStatus(
+          payload.status === "created"
+            ? "Added from Open Food Facts."
+            : "Found in foods catalog.",
+        );
+        return;
+      }
+
+      const messageByStatus: Record<FoodBarcodeLookupResult["status"], string> = {
+        found: "Found in foods catalog.",
+        created: "Added from Open Food Facts.",
+        not_found: "No food found for this barcode.",
+        invalid_barcode: "Enter a valid barcode.",
+        missing_nutrition: "Nutrition data is incomplete for this product.",
+        invalid_nutrition: "Nutrition data is incomplete for this product.",
+        external_error: "Barcode lookup is unavailable right now.",
+        rate_limited: "Too many barcode lookups. Try again in a bit.",
+      };
+      setNutritionBarcodeLookupStatus(messageByStatus[payload.status]);
+    } catch (error) {
+      console.error("Failed to look up nutrition barcode", { error });
+      setNutritionBarcodeLookupError("Barcode lookup is unavailable right now.");
+    } finally {
+      setIsNutritionBarcodeLookupLoading(false);
+    }
+  }
+
+  async function scanAndLookupNutritionBarcode() {
+    if (isNutritionBarcodeScannerLoading || isNutritionBarcodeLookupLoading) return;
+
+    setIsNutritionBarcodeScannerLoading(true);
+    setNutritionBarcodeLookupStatus(null);
+    setNutritionBarcodeLookupError(null);
+
+    try {
+      const result: NutritionBarcodeScannerResult = await scanNutritionBarcode();
+
+      if (result.status === "cancelled") return;
+
+      if (result.status !== "scanned") {
+        setNutritionBarcodeLookupStatus(result.message);
+        return;
+      }
+
+      setNutritionBarcodeValue(result.barcode);
+      await lookupNutritionBarcode(result.barcode);
+    } finally {
+      setIsNutritionBarcodeScannerLoading(false);
+    }
   }
 
   function renderDatabaseEntryField(
@@ -2714,78 +2921,200 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderNutritionFoodActionTabs() {
+    return (
+      <div className="relative -mx-1">
+        <button
+          type="button"
+          aria-label="Previous Nutrition tab"
+          onClick={(event) => {
+            event.preventDefault();
+            selectNutritionFoodActionByOffset(-1);
+          }}
+          className="absolute left-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
+        >
+          <ChevronLeft className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
+        </button>
+        <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max items-center gap-1.5 pb-1">
+            {NUTRITION_FOOD_ACTION_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isSelected = selectedNutritionFoodAction === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  ref={(node) => {
+                    nutritionFoodActionTabRefs.current[tab.id] = node;
+                  }}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => selectNutritionFoodAction(tab.id)}
+                  className={`flex h-11 w-[50px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-none outline-none transition ${
+                    isSelected
+                      ? "text-white/88"
+                      : "text-white/42 hover:text-white/68"
+                  } focus-visible:text-white/80 focus-visible:ring-1 focus-visible:ring-white/16`}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="Next Nutrition tab"
+          onClick={(event) => {
+            event.preventDefault();
+            selectNutritionFoodActionByOffset(1);
+          }}
+          className="absolute right-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
+        >
+          <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
+
   function renderNutritionFoodSearchField(field: NoteDatabaseFieldDefinition) {
     const fieldValue = entryFormValues[field.id] ?? "";
+    const normalizedBarcodeValue = normalizeFoodBarcode(nutritionBarcodeValue);
 
     return (
       <div key={field.id} className="block">
-        <div className="relative -mx-1">
-          <button
-            type="button"
-            aria-label="Previous Nutrition tab"
-            onClick={(event) => {
-              event.preventDefault();
-              selectNutritionFoodActionByOffset(-1);
-            }}
-            className="absolute left-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
-          >
-            <ChevronLeft className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
-          </button>
-          <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex min-w-max items-center gap-1.5 pb-1">
-              {NUTRITION_FOOD_ACTION_TABS.map((tab) => {
-                const Icon = tab.icon;
-                const isSelected = selectedNutritionFoodAction === tab.id;
+        {renderNutritionFoodActionTabs()}
 
-                return (
-                  <button
-                    key={tab.id}
-                    ref={(node) => {
-                      nutritionFoodActionTabRefs.current[tab.id] = node;
-                    }}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => selectNutritionFoodAction(tab.id)}
-                    className={`flex h-11 w-[50px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-none outline-none transition ${
-                      isSelected
-                        ? "text-white/88"
-                        : "text-white/42 hover:text-white/68"
-                    } focus-visible:text-white/80 focus-visible:ring-1 focus-visible:ring-white/16`}
-                  >
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {selectedNutritionFoodAction === "custom" ? (
+          <div className="mt-3">{renderDatabaseEntryField(field)}</div>
+        ) : selectedNutritionFoodAction === "scan" ? (
+          <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
+            <button
+              type="button"
+              onClick={() => void scanAndLookupNutritionBarcode()}
+              disabled={isNutritionBarcodeScannerLoading || isNutritionBarcodeLookupLoading}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.13] px-3 text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:ring-1 focus-visible:ring-white/16"
+            >
+              <ScanLine className="h-4 w-4" aria-hidden="true" />
+              {isNutritionBarcodeScannerLoading
+                ? isNutritionBarcodeLookupLoading
+                  ? "Looking up..."
+                  : "Scanning..."
+                : "Scan barcode"}
+            </button>
+
+            <label className="mt-3 block">
+              <span className="text-xs font-semibold text-white/46">Manual barcode</span>
+              <div className="relative mt-2">
+                <ScanLine
+                  className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/34"
+                  aria-hidden="true"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={nutritionBarcodeValue}
+                  onChange={(event) => {
+                    setNutritionBarcodeValue(event.target.value);
+                    setNutritionBarcodeLookupStatus(null);
+                    setNutritionBarcodeLookupError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void lookupNutritionBarcode();
+                    }
+                  }}
+                  className="h-11 w-full rounded-lg border border-white/[0.05] bg-white/[0.045] pl-10 pr-3 text-sm font-medium text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.08] hover:bg-white/[0.055] focus-visible:border-white/[0.14] focus-visible:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-white/10"
+                  placeholder="Enter barcode"
+                  aria-label="Barcode"
+                />
+              </div>
+            </label>
+            <button
+              type="button"
+              onClick={() => void lookupNutritionBarcode()}
+              disabled={isNutritionBarcodeLookupLoading || !normalizedBarcodeValue}
+              className="mt-2 inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.075] px-3 text-xs font-semibold text-white/78 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-white/14"
+            >
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+              {isNutritionBarcodeLookupLoading ? "Looking up..." : "Lookup barcode"}
+            </button>
+            {nutritionBarcodeLookupError ? (
+              <p className="mt-2 text-xs font-medium text-red-200/72">
+                {nutritionBarcodeLookupError}
+              </p>
+            ) : nutritionBarcodeLookupStatus ? (
+              <p className="mt-2 text-xs font-medium text-white/42">
+                {nutritionBarcodeLookupStatus}
+              </p>
+            ) : null}
           </div>
-          <button
-            type="button"
-            aria-label="Next Nutrition tab"
-            onClick={(event) => {
-              event.preventDefault();
-              selectNutritionFoodActionByOffset(1);
-            }}
-            className="absolute right-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
-          >
-            <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
-          </button>
-        </div>
+        ) : (
+          <>
+            <div className="relative mt-2">
+              <Search
+                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/36"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={fieldValue}
+                onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                className="h-12 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
+                placeholder="Search foods..."
+                aria-label="Food"
+              />
+            </div>
+            {selectedNutritionFoodAction === "search" &&
+            normalizedNutritionFoodSearchValue.length >= 2 ? (
+              <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+                {isNutritionFoodSearchLoading ? (
+                  <p className="px-3 py-2.5 text-xs font-medium text-white/42">Searching...</p>
+                ) : nutritionFoodSearchError ? (
+                  <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
+                    {nutritionFoodSearchError}
+                  </p>
+                ) : nutritionFoodSearchResults.length > 0 ? (
+                  <div className="divide-y divide-white/[0.045]">
+                    {nutritionFoodSearchResults.map((food) => {
+                      const meta = getFoodSearchResultMeta(food);
 
-        <div className="relative mt-2">
-          <Search
-            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/36"
-            aria-hidden="true"
-          />
-          <input
-            type="text"
-            value={fieldValue}
-            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
-            className="h-12 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
-            placeholder="Search foods..."
-            aria-label="Food"
-          />
-        </div>
+                      return (
+                        <button
+                          key={food.id}
+                          type="button"
+                          onClick={() => selectNutritionFood(food)}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-white/84">
+                              {food.name}
+                            </span>
+                            {food.brand_name ? (
+                              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                                {food.brand_name}
+                              </span>
+                            ) : null}
+                          </span>
+                          {meta ? (
+                            <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                              {meta}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="px-3 py-2.5 text-xs font-medium text-white/38">No foods found.</p>
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     );
   }

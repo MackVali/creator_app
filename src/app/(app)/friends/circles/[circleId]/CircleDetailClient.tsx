@@ -24,6 +24,15 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
+import { Card } from "@/components/ui/card";
+import {
+  segmentedToggleActiveClassName,
+  segmentedToggleButtonClassName,
+  segmentedToggleContainerClassName,
+  segmentedToggleInactiveClassName,
+} from "@/components/ui/segmented-toggle-styles";
+import { cn } from "@/lib/utils";
 
 type CircleDetailClientProps = {
   circleId: string;
@@ -33,6 +42,7 @@ type Circle = {
   id: string;
   owner_user_id: string;
   name: string;
+  icon_emoji?: string | null;
   circle_type: string;
   status: string;
   description: string | null;
@@ -78,6 +88,7 @@ type ConstraintOption = {
 };
 
 type InviteRole = "MEMBER" | "OPERATOR" | "MANAGER" | "VIEWER";
+type CircleView = "goals" | "roadmap";
 
 type InviteProfile = {
   user_id: string;
@@ -506,6 +517,7 @@ export default function CircleDetailClient({
   const [memberConstraintActionId, setMemberConstraintActionId] = useState<
     string | null
   >(null);
+  const [circleView, setCircleView] = useState<CircleView>("goals");
 
   const loadCircle = useCallback(
     async (signal?: AbortSignal) => {
@@ -581,6 +593,7 @@ export default function CircleDetailClient({
   useLayoutEffect(() => {
     detailScrollRef.current = getScrollParent(detailSurfaceRef.current);
     resetCircleDetailScrollPosition(detailScrollRef.current);
+    setCircleView("goals");
 
     const frameId = requestAnimationFrame(() => {
       const scrollContainer =
@@ -1088,6 +1101,61 @@ export default function CircleDetailClient({
       {memberActionError ? (
         <section className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm font-medium text-rose-100 shadow-xl shadow-rose-950/20">
           {memberActionError}
+        </section>
+      ) : null}
+
+      {circle && !error ? (
+        <section className="relative min-h-[260px] overflow-visible rounded-2xl border border-white/[0.085] bg-[radial-gradient(circle_at_15%_0%,rgba(255,255,255,0.07),transparent_34%),linear-gradient(145deg,rgba(30,30,32,0.72),rgba(8,8,9,0.92))] p-4 shadow-lg shadow-black/30 backdrop-blur-xl sm:p-5">
+          <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.04),_transparent_58%)]" />
+          <div className="relative z-10 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+                  Circle Roadmap
+                </p>
+                <h2 className="mt-1 truncate text-base font-semibold text-white">
+                  {circle.icon_emoji ? `${circle.icon_emoji} ` : ""}
+                  {circle.name}
+                </h2>
+              </div>
+              <div
+                className={segmentedToggleContainerClassName}
+                aria-label="Circle view"
+              >
+                {(
+                  [
+                    { value: "goals", label: "GOAL GRID" },
+                    { value: "roadmap", label: "ROADMAP" },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setCircleView(option.value)}
+                    className={cn(
+                      segmentedToggleButtonClassName,
+                      circleView === option.value
+                        ? segmentedToggleActiveClassName
+                        : segmentedToggleInactiveClassName
+                    )}
+                    aria-pressed={circleView === option.value}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <MonumentGoalsList
+              sourceType="circle"
+              circleId={circle.id}
+              monumentView={circleView}
+              roadmapEmptyState={
+                <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+                  No goals or habits linked to this Circle yet.
+                </Card>
+              }
+            />
+          </div>
         </section>
       ) : null}
 
