@@ -2553,8 +2553,6 @@ const resolveOverlayPlacementLayout = ({
 
 const OVERLAY_DRAG_AXIS_THRESHOLD_PX = 8;
 const OVERLAY_DRAG_HORIZONTAL_AXIS_SWITCH_RATIO = 1.35;
-const OVERLAY_DRAG_SNAP_HYSTERESIS_MINUTES =
-  OVERLAY_DRAG_SNAP_INTERVAL_MINUTES / 2;
 
 type OverlayDragMode = "reorder" | "remove" | null;
 
@@ -2572,8 +2570,17 @@ type OverlayDragIntent = {
 };
 
 type OverlayDragMeta = {
+  pointerId: number;
+  captureElement: HTMLElement | null;
+  startClientX: number;
+  startClientY: number;
   baseStartMinutes: number;
   durationMinutes: number;
+  grabOffsetY: number;
+  cardStartTopPx: number;
+  cardHeightPx: number;
+  currentStartMinutes: number;
+  hasMoved: boolean;
 };
 
 type OverlayTimelineResizeMeta = {
@@ -2583,28 +2590,6 @@ type OverlayTimelineResizeMeta = {
   baseDurationMinutes: number;
   minSnappedDurationMinutes: number;
   pxPerMin: number;
-};
-
-const applyOverlayDragHysteresis = (
-  rawMinutes: number,
-  lastSnap: number | null,
-) => {
-  const snapped = snapMinutesToFive(rawMinutes);
-  if (lastSnap === null) return snapped;
-  if (snapped === lastSnap) return lastSnap;
-
-  const direction = rawMinutes - lastSnap;
-  if (direction > 0) {
-    return rawMinutes >= lastSnap + OVERLAY_DRAG_SNAP_HYSTERESIS_MINUTES
-      ? snapped
-      : lastSnap;
-  }
-  if (direction < 0) {
-    return rawMinutes <= lastSnap - OVERLAY_DRAG_SNAP_HYSTERESIS_MINUTES
-      ? snapped
-      : lastSnap;
-  }
-  return lastSnap;
 };
 
 const normalizeOverlayPlacements = (
@@ -3568,9 +3553,11 @@ export function Fab({
     lastSnappedMinutes: null,
   });
   const overlayDragMetaRef = useRef<OverlayDragMeta | null>(null);
+  const overlayDragWindowCleanupRef = useRef<(() => void) | null>(null);
   const [overlayDragCandidate, setOverlayDragCandidate] =
     useState<OverlayDragCandidate | null>(null);
-  const lastResolvedOverlayLayoutRef = useRef<OverlayPlacement[] | null>(null);
+  const [overlayDragVisualStartMinutes, setOverlayDragVisualStartMinutes] =
+    useState<number | null>(null);
   const overlayTimelineResizeMetaRef =
     useRef<OverlayTimelineResizeMeta | null>(null);
   const overlayTimelineResizeCleanupRef = useRef<(() => void) | null>(null);
@@ -3616,27 +3603,6 @@ export function Fab({
     overlayStartTime,
     overlayWindowMinutes,
   ]);
-  useEffect(() => {
-    if (overlayDragCandidate) {
-      lastResolvedOverlayLayoutRef.current = renderOverlayPlacements;
-    } else {
-      lastResolvedOverlayLayoutRef.current = null;
-    }
-  }, [overlayDragCandidate, renderOverlayPlacements]);
-  const overlayDragCandidatePlacement = overlayDragCandidate
-    ? renderOverlayPlacements.find(
-        (placement) => placement.id === overlayDragCandidate.placementId,
-      )
-    : null;
-  const overlayDragCandidatePlacementStartMinutes =
-    overlayDragCandidatePlacement !== null
-      ? Math.max(
-          0,
-          (overlayDragCandidatePlacement.start.getTime() -
-            overlayStartTime.getTime()) /
-            60000,
-        )
-      : null;
   const setOverlayDragModeWithRef = useCallback(
     (mode: OverlayDragMode) => {
       overlayDragModeRef.current = mode;
@@ -3644,6 +3610,48 @@ export function Fab({
     },
     [setOverlayDragMode],
   );
+  const cleanupOverlayDragWindowFallback = useCallback(() => {
+    const cleanup = overlayDragWindowCleanupRef.current;
+    overlayDragWindowCleanupRef.current = null;
+    cleanup?.();
+  }, []);
+  const releaseOverlayDragPointerCapture = useCallback(
+    (element: HTMLElement | null, pointerId: number) => {
+      if (!element) return;
+
+      try {
+        if (element.hasPointerCapture(pointerId)) {
+          element.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Ignore release failures after canceled or transferred pointers.
+      }
+    },
+    [],
+  );
+  const clearOverlayCardDragState = useCallback(() => {
+    const meta = overlayDragMetaRef.current;
+    overlayDragMetaRef.current = null;
+    overlayDragIntentRef.current = {
+      axis: null,
+      startPoint: null,
+      lastSnappedMinutes: null,
+    };
+    setActiveOverlayDragId(null);
+    setOverlayRemovalCandidateId(null);
+    setOverlayDragCandidate(null);
+    setOverlayDragVisualStartMinutes(null);
+    setOverlayDragModeWithRef(null);
+    cleanupOverlayDragWindowFallback();
+
+    if (meta) {
+      releaseOverlayDragPointerCapture(meta.captureElement, meta.pointerId);
+    }
+  }, [
+    cleanupOverlayDragWindowFallback,
+    releaseOverlayDragPointerCapture,
+    setOverlayDragModeWithRef,
+  ]);
   const [startInputFocused, setStartInputFocused] = useState(false);
   const [endInputFocused, setEndInputFocused] = useState(false);
   const stopOverlayTimelineResize = useCallback(() => {
@@ -3784,17 +3792,8 @@ export function Fab({
   }, [overlayEndTime]);
   useEffect(() => {
     if (!overlayOpen) {
-      setOverlayRemovalCandidateId(null);
-      setActiveOverlayDragId(null);
-      setOverlayDragCandidate(null);
+      clearOverlayCardDragState();
       setOverlayPickerExpanded(false);
-      setOverlayDragModeWithRef(null);
-      overlayDragIntentRef.current = {
-        axis: null,
-        startPoint: null,
-        lastSnappedMinutes: null,
-      };
-      overlayDragMetaRef.current = null;
       stopOverlayTimelineResize();
     } else {
       setOverlayConfigExpanded(false);
@@ -3812,7 +3811,7 @@ export function Fab({
       setOverlayDynamicAllowAllMonuments(true);
       setOverlayDynamicAllowedMonumentIds([]);
     }
-  }, [overlayOpen, setOverlayDragModeWithRef, stopOverlayTimelineResize]);
+  }, [clearOverlayCardDragState, overlayOpen, stopOverlayTimelineResize]);
 
   const resetOverlayDraft = useCallback(() => {
     const nextStart = roundToNearestMinutes(new Date(), 5);
@@ -3858,32 +3857,35 @@ export function Fab({
       if (!point) return false;
       const rect = overlayNexusDropRef.current?.getBoundingClientRect();
       if (!rect) return false;
-      const scrollX = typeof window !== "undefined" ? window.scrollX : 0;
-      const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
-      const viewportPoint = {
-        x: point.x - scrollX,
-        y: point.y - scrollY,
-      };
       const margin = 12;
       return (
-        viewportPoint.x >= rect.left - margin &&
-        viewportPoint.x <= rect.right + margin &&
-        viewportPoint.y >= rect.top - margin &&
-        viewportPoint.y <= rect.bottom + margin
+        point.x >= rect.left - margin &&
+        point.x <= rect.right + margin &&
+        point.y >= rect.top - margin &&
+        point.y <= rect.bottom + margin
       );
     },
     [],
   );
-  const handleOverlayDrag = useCallback(
-    (placement: OverlayPlacement, info: PanInfo) => {
+  const getOverlayTimelineContentRect = useCallback(() => {
+    const timeline = overlayTimelineRef.current;
+    const timelineContent =
+      timeline?.querySelector<HTMLElement>(".timeline-content") ?? timeline;
+    return timelineContent?.getBoundingClientRect() ?? null;
+  }, []);
+  const updateOverlayDragFromClientPoint = useCallback(
+    (placement: OverlayPlacement, clientX: number, clientY: number) => {
       const intent = overlayDragIntentRef.current;
       const meta = overlayDragMetaRef.current;
       if (!intent.startPoint || !meta) return;
 
-      const deltaX = info.point.x - intent.startPoint.x;
-      const deltaY = info.point.y - intent.startPoint.y;
+      const deltaX = clientX - intent.startPoint.x;
+      const deltaY = clientY - intent.startPoint.y;
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
+      if (absX > 1 || absY > 1) {
+        meta.hasMoved = true;
+      }
 
       if (!intent.axis) {
         if (
@@ -3907,7 +3909,7 @@ export function Fab({
         }
       }
 
-      const overTrashZone = isPointerOverTrashZone(info.point);
+      const overTrashZone = isPointerOverTrashZone({ x: clientX, y: clientY });
       const nextMode: OverlayDragMode = overTrashZone ? "remove" : "reorder";
       if (nextMode !== overlayDragModeRef.current) {
         setOverlayRemovalCandidateId(
@@ -3915,26 +3917,35 @@ export function Fab({
         );
         setOverlayDragModeWithRef(nextMode);
       }
-      if (nextMode === "remove") {
-        return;
-      }
+      const timelineRect = getOverlayTimelineContentRect();
+      if (!timelineRect) return;
 
       const pxPerMin = Math.max(0.01, overlayTimelinePxPerMin);
-      const rawMinutes = meta.baseStartMinutes + info.offset.y / pxPerMin;
+      const maxDragTopPx = Math.max(
+        0,
+        overlayWindowMinutes * pxPerMin - meta.cardHeightPx,
+      );
+      const nextTopPx = Math.min(
+        Math.max(clientY - timelineRect.top - meta.grabOffsetY, 0),
+        maxDragTopPx,
+      );
+      const rawMinutes = nextTopPx / pxPerMin;
       const maxDragStart = Math.max(
         0,
         overlayWindowMinutes - meta.durationMinutes,
       );
       const boundedRawMinutes = Math.min(Math.max(rawMinutes, 0), maxDragStart);
-      const hysteresisMinutes = applyOverlayDragHysteresis(
-        boundedRawMinutes,
-        intent.lastSnappedMinutes,
-      );
+      meta.currentStartMinutes = boundedRawMinutes;
+      setOverlayDragVisualStartMinutes(boundedRawMinutes);
       const clampedMinutes = clampOverlayPlacementStart(
-        hysteresisMinutes,
+        boundedRawMinutes,
         meta.durationMinutes,
         overlayWindowMinutes,
       );
+      if (nextMode === "remove") {
+        return;
+      }
+
       const direction: OverlayLayoutDirection =
         clampedMinutes > meta.baseStartMinutes
           ? "forward"
@@ -3973,6 +3984,7 @@ export function Fab({
       overlayWindowMinutes,
       setOverlayDragModeWithRef,
       isPointerOverTrashZone,
+      getOverlayTimelineContentRect,
       overlayPlacedItems,
       overlayStartTime,
     ],
@@ -8804,11 +8816,91 @@ export function Fab({
     runDynamicOverlayScheduler,
     toast,
   ]);
-  const handleOverlayDragStart = useCallback(
-    (placement: OverlayPlacement, event: PointerEvent, info: PanInfo) => {
+  const finalizeOverlayCardDrag = useCallback(
+    (
+      placement: OverlayPlacement,
+      pointerId: number,
+      clientX: number,
+      clientY: number,
+    ) => {
+      const meta = overlayDragMetaRef.current;
+      if (!meta || meta.pointerId !== pointerId) {
+        return false;
+      }
+
+      const currentMode = overlayDragModeRef.current;
+      const overTrashZone = isPointerOverTrashZone({
+        x: clientX,
+        y: clientY,
+      });
+
+      clearOverlayCardDragState();
+
+      if (currentMode === "remove" && overTrashZone) {
+        setOverlayPlacedItems((previous) =>
+          removeOverlayPlacement(
+            previous,
+            placement.id,
+            overlayStartTime,
+            overlayEndTime,
+          ),
+        );
+        return true;
+      }
+      if (!meta.hasMoved) {
+        return true;
+      }
+
+      const durationMinutes = meta.durationMinutes;
+      const desiredStartMinutes = meta.currentStartMinutes;
+      const clampedMinutes = clampOverlayPlacementStart(
+        snapMinutesToFive(desiredStartMinutes),
+        durationMinutes,
+        overlayWindowMinutes,
+      );
+      const direction: OverlayLayoutDirection =
+        clampedMinutes > meta.baseStartMinutes
+          ? "forward"
+          : clampedMinutes < meta.baseStartMinutes
+            ? "backward"
+            : "none";
+      setOverlayPlacedItems((previous) => {
+        return resolveOverlayPlacementLayout({
+          placements: previous,
+          overlayStartTime,
+          overlayWindowMinutes,
+          movingPlacementId: placement.id,
+          durationMinutes,
+          targetStartMinutes: clampedMinutes,
+          rawTargetStartMinutes: desiredStartMinutes,
+          direction,
+        });
+      });
+      return true;
+    },
+    [
+      clearOverlayCardDragState,
+      isPointerOverTrashZone,
+      overlayEndTime,
+      overlayStartTime,
+      overlayWindowMinutes,
+    ],
+  );
+  const handleOverlayCardPointerDown = useCallback(
+    (placement: OverlayPlacement, event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      clearOverlayCardDragState();
+
+      const timelineRect = getOverlayTimelineContentRect();
+      if (!timelineRect) return;
+
       setActiveOverlayDragId(placement.id);
       setOverlayRemovalCandidateId(null);
       setOverlayDragModeWithRef("reorder");
+
       const startMinutes = overlayDateToMinutes(
         placement.start,
         overlayStartTime,
@@ -8822,107 +8914,105 @@ export function Fab({
         durationMinutes,
         overlayWindowMinutes,
       );
+      const cardRect = event.currentTarget.getBoundingClientRect();
+      const cardStartTopPx = cardRect.top - timelineRect.top;
+      const grabOffsetY = event.clientY - cardRect.top;
       overlayDragMetaRef.current = {
+        pointerId: event.pointerId,
+        captureElement: event.currentTarget,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
         baseStartMinutes: clampedStartMinutes,
         durationMinutes,
+        grabOffsetY,
+        cardStartTopPx,
+        cardHeightPx: cardRect.height,
+        currentStartMinutes: clampedStartMinutes,
+        hasMoved: false,
       };
       overlayDragIntentRef.current = {
         axis: null,
-        startPoint: { x: info.point.x, y: info.point.y },
+        startPoint: { x: event.clientX, y: event.clientY },
         lastSnappedMinutes: clampedStartMinutes,
       };
+      setOverlayDragVisualStartMinutes(clampedStartMinutes);
       setOverlayDragCandidate({
         placementId: placement.id,
         startMinutes: clampedStartMinutes,
         durationMinutes,
         baseStartMinutes: clampedStartMinutes,
       });
+
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can fail if the browser cancels this contact early.
+      }
+
+      const pointerId = event.pointerId;
+      const handleWindowPointerEnd = (pointerEvent: PointerEvent) => {
+        if (pointerEvent.pointerId !== pointerId) return;
+        pointerEvent.preventDefault();
+        finalizeOverlayCardDrag(
+          placement,
+          pointerId,
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+        );
+      };
+      const handleWindowBlur = () => {
+        if (overlayDragMetaRef.current?.pointerId !== pointerId) return;
+        clearOverlayCardDragState();
+      };
+
+      window.addEventListener("pointerup", handleWindowPointerEnd, {
+        passive: false,
+      });
+      window.addEventListener("pointercancel", handleWindowPointerEnd, {
+        passive: false,
+      });
+      window.addEventListener("blur", handleWindowBlur);
+      overlayDragWindowCleanupRef.current = () => {
+        window.removeEventListener("pointerup", handleWindowPointerEnd);
+        window.removeEventListener("pointercancel", handleWindowPointerEnd);
+        window.removeEventListener("blur", handleWindowBlur);
+      };
     },
     [
+      clearOverlayCardDragState,
+      finalizeOverlayCardDrag,
+      getOverlayTimelineContentRect,
       overlayStartTime,
       overlayWindowMinutes,
       setOverlayDragModeWithRef,
     ],
   );
 
-  const handleOverlayDragEnd = useCallback(
-    (placement: OverlayPlacement, info: PanInfo) => {
-      const intent = overlayDragIntentRef.current;
-      const currentMode = overlayDragModeRef.current;
-      const candidate = overlayDragCandidate;
-      const meta = overlayDragMetaRef.current;
-      const overTrashZone = isPointerOverTrashZone(info.point);
-      const previewResolvedLayout = lastResolvedOverlayLayoutRef.current;
+  const handleOverlayCardPointerMove = useCallback(
+    (placement: OverlayPlacement, event: React.PointerEvent<HTMLDivElement>) => {
+      if (overlayDragMetaRef.current?.pointerId !== event.pointerId) return;
 
-      setActiveOverlayDragId(null);
-      setOverlayRemovalCandidateId(null);
-      setOverlayDragCandidate(null);
-      setOverlayDragModeWithRef(null);
-      overlayDragIntentRef.current = {
-        axis: null,
-        startPoint: null,
-        lastSnappedMinutes: null,
-      };
-      overlayDragMetaRef.current = null;
-
-      if (currentMode === "remove" && overTrashZone) {
-        setOverlayPlacedItems((previous) =>
-          removeOverlayPlacement(
-            previous,
-            placement.id,
-            overlayStartTime,
-            overlayEndTime,
-          ),
-        );
-        setOverlayRemovalCandidateId(null);
-        return;
-      }
-
-      const durationMinutes =
-        meta?.durationMinutes ??
-        Math.max(
-          1,
-          (placement.end.getTime() - placement.start.getTime()) / 60000,
-        );
-      const desiredStartMinutes =
-        candidate?.startMinutes ??
-        overlayDateToMinutes(placement.start, overlayStartTime);
-      const clampedMinutes = clampOverlayPlacementStart(
-        desiredStartMinutes,
-        durationMinutes,
-        overlayWindowMinutes,
-      );
-      const direction: OverlayLayoutDirection =
-        clampedMinutes > (meta?.baseStartMinutes ?? desiredStartMinutes)
-          ? "forward"
-          : clampedMinutes < (meta?.baseStartMinutes ?? desiredStartMinutes)
-            ? "backward"
-            : "none";
-      setOverlayPlacedItems((previous) => {
-        const resolved =
-          previewResolvedLayout ??
-          resolveOverlayPlacementLayout({
-            placements: previous,
-            overlayStartTime,
-            overlayWindowMinutes,
-            movingPlacementId: placement.id,
-            durationMinutes,
-            targetStartMinutes: clampedMinutes,
-            rawTargetStartMinutes:
-              overlayDragCandidate?.startMinutes ?? desiredStartMinutes,
-            direction,
-          });
-        return resolved;
-      });
+      event.preventDefault();
+      event.stopPropagation();
+      updateOverlayDragFromClientPoint(placement, event.clientX, event.clientY);
     },
-    [
-      overlayEndTime,
-      overlayStartTime,
-      overlayWindowMinutes,
-      setOverlayDragModeWithRef,
-      overlayDragCandidate,
-      isPointerOverTrashZone,
-    ],
+    [updateOverlayDragFromClientPoint],
+  );
+
+  const handleOverlayCardPointerEnd = useCallback(
+    (placement: OverlayPlacement, event: React.PointerEvent<HTMLDivElement>) => {
+      if (overlayDragMetaRef.current?.pointerId !== event.pointerId) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      finalizeOverlayCardDrag(
+        placement,
+        event.pointerId,
+        event.clientX,
+        event.clientY,
+      );
+    },
+    [finalizeOverlayCardDrag],
   );
   const parseTimeValue = (value: string) => {
     const [hoursStr, minutesStr] = value.split(":");
@@ -19026,6 +19116,8 @@ export function Fab({
     (shouldUseCenteredEditModal ||
       shouldUseDirectCreationModal ||
       shouldAttachCreationControls);
+  const isOverlayBuilderNexusActive =
+    overlayPickerOpen && overlayTimelineVisible;
   const shouldUseCenteredFabScrollBody =
     shouldUseCenteredEditModal || shouldUseCenteredCreationPanel;
   const shouldUseCollapsedTimelineNexusBody =
@@ -19812,31 +19904,38 @@ export function Fab({
               style={{ touchAction: "manipulation" }}
             >
               <div
-                className="relative max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(10,10,12,0.94))] p-6 text-white shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]"
+                className={cn(
+                  "relative max-h-[calc(100vh-6.5rem)] text-white",
+                  isOverlayBuilderNexusActive
+                    ? "overflow-visible"
+                    : "overflow-y-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(10,10,12,0.94))] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]",
+                )}
                 style={{ touchAction: "manipulation" }}
               >
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 py-0.5 text-left text-white transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
-                aria-expanded={overlayConfigExpanded}
-                onClick={() =>
-                  setOverlayConfigExpanded((expanded) => !expanded)
-                }
-              >
-                <span className="text-[11px] font-semibold tracking-[0.18em] text-white/75">
-                  Overlay Block
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 shrink-0 text-white/65 transition-transform duration-200",
-                    overlayConfigExpanded && "rotate-180",
-                  )}
-                  aria-hidden="true"
-                />
-              </button>
+                {!isOverlayBuilderNexusActive ? (
+                  <>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 py-0.5 text-left text-white transition hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+                      aria-expanded={overlayConfigExpanded}
+                      onClick={() =>
+                        setOverlayConfigExpanded((expanded) => !expanded)
+                      }
+                    >
+                      <span className="text-[11px] font-semibold tracking-[0.18em] text-white/75">
+                        Overlay Block
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-white/65 transition-transform duration-200",
+                          overlayConfigExpanded && "rotate-180",
+                        )}
+                        aria-hidden="true"
+                      />
+                    </button>
 
-              {overlayConfigExpanded ? (
-                <>
+                    {overlayConfigExpanded ? (
+                      <>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <div className="grid min-w-0 gap-1.5">
                       <label
@@ -20028,16 +20127,26 @@ export function Fab({
                       </button>
                     </div>
                   ) : null}
-                </>
-              ) : null}
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
 
               {overlayTimelineVisible ? (
                 overlayPickerOpen ? (
-                  <div className="mt-4 relative">
+                  <div
+                    className={cn(
+                      "relative",
+                      !isOverlayBuilderNexusActive && "mt-4",
+                    )}
+                  >
                     <div
                       ref={overlayPickerNexusShellRef}
                       className={cn(
-                        "relative flex min-h-0 w-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.9),rgba(10,10,12,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[height,min-height] duration-200 ease-out",
+                        "relative flex min-h-0 w-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.9),rgba(10,10,12,0.92))] transition-[height,min-height] duration-200 ease-out",
+                        isOverlayBuilderNexusActive
+                          ? "shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.05)]"
+                          : "shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
                         overlayPickerExpanded
                           ? FAB_NEXUS_EXPANDED_SIZE_CLASS
                           : FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS,
@@ -20126,6 +20235,10 @@ export function Fab({
                         const isDragging = activeOverlayDragId === placement.id;
                         const isRemovalCandidate =
                           overlayRemovalCandidateId === placement.id;
+                        const visualStartMinutes =
+                          isDragging && overlayDragVisualStartMinutes !== null
+                            ? overlayDragVisualStartMinutes
+                            : normalizedStartMinutes;
                         const removalStyle = isRemovalCandidate
                           ? {
                               borderColor: "rgba(248, 113, 113, 0.9)",
@@ -20134,7 +20247,7 @@ export function Fab({
                             }
                           : {};
                         const staticCardStyle = {
-                          top: minutesToTimelineStyle(normalizedStartMinutes),
+                          top: minutesToTimelineStyle(visualStartMinutes),
                           height: minutesToTimelineStyle(durationMinutes),
                           left: "var(--timeline-card-left)",
                           right: "var(--timeline-card-right)",
@@ -20159,51 +20272,48 @@ export function Fab({
                             ? 10
                             : 2;
                         const transitionStyle = isDragging
-                          ? "top 0.15s ease, filter 0.2s ease, opacity 0.2s ease"
+                          ? "filter 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease"
                           : "top 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease, opacity 0.2s ease";
                         const activeStyle = staticCardStyle;
-                        const dragTransformStyle = isDragging
-                          ? { y: 0 }
-                          : undefined;
 
                         return (
                           <motion.div
                             key={placement.id}
-                            drag="y"
-                            dragDirectionLock
-                            dragElastic={0}
-                            dragMomentum={false}
-                            dragSnapToOrigin={false}
-                            dragPropagation={false}
-                            dragConstraints={overlayTimelineRef}
-                            onDragStart={(event, info) =>
-                              handleOverlayDragStart(placement, event, info)
+                            onPointerDown={(event) =>
+                              handleOverlayCardPointerDown(placement, event)
                             }
-                            onDrag={(event, info) =>
-                              handleOverlayDrag(placement, info)
+                            onPointerMove={(event) =>
+                              handleOverlayCardPointerMove(placement, event)
                             }
-                            onDragEnd={(event, info) =>
-                              handleOverlayDragEnd(placement, info)
+                            onPointerUp={(event) =>
+                              handleOverlayCardPointerEnd(placement, event)
                             }
-                            whileDrag={{ scale: 1.02 }}
-                            onPointerDown={(event) => {
+                            onPointerCancel={(event) =>
+                              handleOverlayCardPointerEnd(placement, event)
+                            }
+                            onLostPointerCapture={(event) =>
+                              handleOverlayCardPointerEnd(placement, event)
+                            }
+                            onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
                             }}
                             className={cn(
-                              "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto cursor-grab active:cursor-grabbing transition-all duration-200 ease-out",
+                              "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto cursor-grab active:cursor-grabbing",
+                              !isDragging && "transition-all duration-200 ease-out",
+                              isDragging && "cursor-grabbing",
                               isRemovalCandidate && "ring-2 ring-red-400/70",
                             )}
                             style={{
                               ...activeStyle,
-                              ...dragTransformStyle,
                               ...removalStyle,
                               zIndex: zValue,
                               boxShadow: baseShadow,
                               filter: filterValue,
                               opacity: opacityValue,
                               transition: transitionStyle,
-                              willChange: "transform, opacity, filter",
+                              touchAction: "none",
+                              willChange: "top, opacity, filter",
                             }}
                           >
                             {(() => {
