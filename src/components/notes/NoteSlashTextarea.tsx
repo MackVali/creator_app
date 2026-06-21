@@ -1552,6 +1552,12 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
 type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
 type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
+type NutritionFavoriteItemType = "food" | "recipe" | "meal_template";
+type NutritionFavoriteTarget = {
+  itemType: NutritionFavoriteItemType;
+  itemId: string;
+  label: string;
+};
 type NutritionServingUnit = string;
 type NutritionServingOption = {
   value: NutritionServingUnit;
@@ -1659,11 +1665,249 @@ type NutritionRecipesListResponse = {
   recipes?: NutritionSavedRecipe[];
   error?: string;
 };
+type NutritionFavoritesListResponse = {
+  favorites?: Array<{
+    itemType?: NutritionFavoriteItemType;
+    itemId?: string;
+  }>;
+  error?: string;
+};
+
+function getNutritionFavoriteKey(target: Pick<NutritionFavoriteTarget, "itemType" | "itemId">) {
+  return `${target.itemType}:${target.itemId}`;
+}
 
 function NutritionFoodIcon({ food }: { food: FoodSearchResult }) {
   const icon = getFoodIcon(food);
 
   return <NutritionFoodIconSlot icon={icon} fallbackInitial={food.name.charAt(0)} />;
+}
+
+const NUTRITION_FOOD_GROUP_FLUENT_ICON_BASE_PATH = "/food-icons/fluent";
+const NUTRITION_FOOD_GROUP_FLUENT_ICON_ASSETS = {
+  apple: "red-apple.png",
+  banana: "banana.png",
+  bread: "bread.png",
+  broccoli: "broccoli.png",
+  cheese: "cheese-wedge.png",
+  chicken: "poultry-leg.png",
+  egg: "egg.png",
+  fish: "fish.png",
+  meat: "cut-of-meat.png",
+  milk: "glass-of-milk.png",
+  peanuts: "peanuts.png",
+  rice: "cooked-rice.png",
+  shrimp: "shrimp.png",
+  spaghetti: "spaghetti.png",
+} as const;
+
+type NutritionFoodGroupFluentIconAsset =
+  keyof typeof NUTRITION_FOOD_GROUP_FLUENT_ICON_ASSETS;
+
+type NutritionFoodGroupIcon =
+  | {
+      type: "image";
+      src: string;
+      alt: string;
+      fallbackEmoji: string;
+    }
+  | {
+      type: "emoji";
+      emoji: string;
+      alt: string;
+    };
+
+type NutritionFoodGroupIconRule = {
+  keywords: readonly string[];
+  asset?: NutritionFoodGroupFluentIconAsset;
+  alt: string;
+  fallbackEmoji: string;
+};
+
+const NUTRITION_FOOD_GROUP_ICON_RULES: readonly NutritionFoodGroupIconRule[] = [
+  {
+    keywords: ["banana"],
+    asset: "banana",
+    alt: "Banana",
+    fallbackEmoji: "🍌",
+  },
+  {
+    keywords: ["apple", "fruit", "produce"],
+    asset: "apple",
+    alt: "Fruit",
+    fallbackEmoji: "🍎",
+  },
+  {
+    keywords: ["vegetable", "greens", "herb"],
+    asset: "broccoli",
+    alt: "Vegetables",
+    fallbackEmoji: "🥦",
+  },
+  {
+    keywords: ["chicken", "poultry", "turkey"],
+    asset: "chicken",
+    alt: "Poultry",
+    fallbackEmoji: "🍗",
+  },
+  {
+    keywords: ["meat", "beef", "pork", "protein"],
+    asset: "meat",
+    alt: "Meat",
+    fallbackEmoji: "🥩",
+  },
+  {
+    keywords: ["shrimp"],
+    asset: "shrimp",
+    alt: "Shrimp",
+    fallbackEmoji: "🦐",
+  },
+  {
+    keywords: ["seafood", "fish"],
+    asset: "fish",
+    alt: "Fish",
+    fallbackEmoji: "🐟",
+  },
+  {
+    keywords: ["milk", "cream"],
+    asset: "milk",
+    alt: "Milk",
+    fallbackEmoji: "🥛",
+  },
+  {
+    keywords: ["dairy", "cheese", "yogurt", "butter"],
+    asset: "cheese",
+    alt: "Dairy",
+    fallbackEmoji: "🧀",
+  },
+  {
+    keywords: ["egg", "breakfast"],
+    asset: "egg",
+    alt: "Eggs",
+    fallbackEmoji: "🍳",
+  },
+  {
+    keywords: ["rice"],
+    asset: "rice",
+    alt: "Rice",
+    fallbackEmoji: "🍚",
+  },
+  {
+    keywords: ["pasta"],
+    asset: "spaghetti",
+    alt: "Pasta",
+    fallbackEmoji: "🍝",
+  },
+  {
+    keywords: ["grain", "bread", "bakery", "cereal", "tortilla"],
+    asset: "bread",
+    alt: "Bread",
+    fallbackEmoji: "🍞",
+  },
+  {
+    keywords: ["nut", "peanut", "trail mix"],
+    asset: "peanuts",
+    alt: "Nuts",
+    fallbackEmoji: "🥜",
+  },
+  {
+    keywords: ["snack", "chips", "candy", "crackers", "bars"],
+    alt: "Snacks",
+    fallbackEmoji: "🍿",
+  },
+  {
+    keywords: ["drink", "beverage", "juice", "soda", "water", "coffee", "tea"],
+    alt: "Drinks",
+    fallbackEmoji: "🥤",
+  },
+  {
+    keywords: ["frozen"],
+    alt: "Frozen foods",
+    fallbackEmoji: "❄️",
+  },
+  {
+    keywords: ["pantry", "canned", "dry goods", "beans", "legumes"],
+    alt: "Pantry",
+    fallbackEmoji: "🥫",
+  },
+  {
+    keywords: ["sauce", "condiment", "dressing", "spread", "seasoning", "sweetener"],
+    alt: "Condiments",
+    fallbackEmoji: "🧂",
+  },
+  {
+    keywords: ["dessert", "sweets", "sweet", "baking"],
+    alt: "Desserts",
+    fallbackEmoji: "🍪",
+  },
+  {
+    keywords: ["prepared", "ready meal", "restaurant", "fast food", "meal kit"],
+    alt: "Prepared foods",
+    fallbackEmoji: "🍽️",
+  },
+];
+
+function getNutritionFoodGroupIcon(label: string): NutritionFoodGroupIcon {
+  const normalizedLabel = label.trim().toLowerCase();
+  const defaultIcon: NutritionFoodGroupIcon = {
+    type: "emoji",
+    emoji: "🍽️",
+    alt: "Food",
+  };
+  if (!normalizedLabel) return defaultIcon;
+
+  const matchedRule = NUTRITION_FOOD_GROUP_ICON_RULES.find((rule) =>
+    rule.keywords.some((keyword) => normalizedLabel.includes(keyword)),
+  );
+  if (!matchedRule) return defaultIcon;
+
+  if (!matchedRule.asset) {
+    return {
+      type: "emoji",
+      emoji: matchedRule.fallbackEmoji,
+      alt: matchedRule.alt,
+    };
+  }
+
+  return {
+    type: "image",
+    src: `${NUTRITION_FOOD_GROUP_FLUENT_ICON_BASE_PATH}/${
+      NUTRITION_FOOD_GROUP_FLUENT_ICON_ASSETS[matchedRule.asset]
+    }`,
+    alt: matchedRule.alt,
+    fallbackEmoji: matchedRule.fallbackEmoji,
+  };
+}
+
+function NutritionFoodGroupIconSlot({ label }: { label: string }) {
+  const icon = getNutritionFoodGroupIcon(label);
+  const imageSrc = icon.type === "image" ? icon.src : null;
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setHasImageError(false);
+  }, [imageSrc]);
+
+  return (
+    <span
+      className="flex h-5 w-5 shrink-0 items-center justify-center leading-none opacity-90"
+      aria-hidden="true"
+    >
+      {imageSrc && !hasImageError ? (
+        <Image
+          src={imageSrc}
+          alt={icon.alt}
+          width={22}
+          height={22}
+          className="h-5 w-5 object-contain"
+          onError={() => setHasImageError(true)}
+        />
+      ) : (
+        <span className="text-[15px] leading-none">
+          {icon.type === "image" ? icon.fallbackEmoji : icon.emoji}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function NutritionFoodIconSlot({
@@ -4235,8 +4479,17 @@ export function NoteDatabaseEntrySheet({
     useState<NutritionSelectedFoodItem | null>(null);
   const [selectedNutritionMeal, setSelectedNutritionMeal] =
     useState<NutritionSavedMeal | null>(null);
+  const [selectedNutritionMealSource, setSelectedNutritionMealSource] = useState<
+    "meal_template" | "logged_meal" | null
+  >(null);
   const [selectedNutritionRecipe, setSelectedNutritionRecipe] =
     useState<NutritionSelectedRecipeItem | null>(null);
+  const [nutritionFavoriteKeys, setNutritionFavoriteKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [pendingNutritionFavoriteKeys, setPendingNutritionFavoriteKeys] = useState<
+    Set<string>
+  >(() => new Set());
   const [nutritionDailySavedTotals, setNutritionDailySavedTotals] =
     useState<Record<NutritionDailyMetricKey, number>>({ ...EMPTY_NUTRITION_TOTALS });
   const [nutritionDailyTotalsError, setNutritionDailyTotalsError] = useState<string | null>(
@@ -4411,6 +4664,56 @@ export function NoteDatabaseEntrySheet({
     () => new Set(selectedNutritionFoods.map((item) => getNutritionFoodSelectionKey(item.food))),
     [selectedNutritionFoods],
   );
+  const selectedNutritionFavoriteTargets = useMemo<NutritionFavoriteTarget[]>(() => {
+    const targets: NutritionFavoriteTarget[] = [];
+    const selectedFoodItems =
+      selectedNutritionFoodAction === "scan"
+        ? selectedNutritionFood
+          ? [selectedNutritionFood]
+          : []
+        : selectedNutritionFoods;
+
+    selectedFoodItems.forEach((item) => {
+      targets.push({
+        itemType: "food",
+        itemId: item.food.id,
+        label: item.food.name,
+      });
+    });
+
+    if (selectedNutritionRecipe) {
+      targets.push({
+        itemType: "recipe",
+        itemId: selectedNutritionRecipe.recipe.id,
+        label: selectedNutritionRecipe.recipe.name,
+      });
+    }
+
+    if (selectedNutritionMeal && selectedNutritionMealSource === "meal_template") {
+      targets.push({
+        itemType: "meal_template",
+        itemId: selectedNutritionMeal.id,
+        label: getNutritionSavedMealDisplayName(selectedNutritionMeal),
+      });
+    }
+
+    return targets;
+  }, [
+    selectedNutritionFood,
+    selectedNutritionFoodAction,
+    selectedNutritionFoods,
+    selectedNutritionMeal,
+    selectedNutritionMealSource,
+    selectedNutritionRecipe,
+  ]);
+  const selectedNutritionFavoriteTargetKey = useMemo(
+    () =>
+      selectedNutritionFavoriteTargets
+        .map(getNutritionFavoriteKey)
+        .sort()
+        .join("|"),
+    [selectedNutritionFavoriteTargets],
+  );
   useEffect(() => {
     if (
       !isNutritionMealBuilderIconPickerOpen &&
@@ -4496,6 +4799,66 @@ export function NoteDatabaseEntrySheet({
   useEffect(() => {
     void refreshNutritionDailyTotals();
   }, [refreshNutritionDailyTotals]);
+
+  useEffect(() => {
+    if (!isDefaultNutritionDatabase || selectedNutritionFavoriteTargets.length === 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    const selectedTargets = selectedNutritionFavoriteTargets;
+    const selectedTargetKeys = new Set(selectedTargets.map(getNutritionFavoriteKey));
+
+    Array.from(new Set(selectedTargets.map((target) => target.itemId))).forEach((itemId) => {
+      params.append("itemId", itemId);
+    });
+
+    fetch(`/api/nutrition/favorites?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as NutritionFavoritesListResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to load favorites.");
+        }
+
+        const loadedKeys = new Set(
+          (payload.favorites ?? [])
+            .filter(
+              (favorite): favorite is {
+                itemType: NutritionFavoriteItemType;
+                itemId: string;
+              } => Boolean(favorite.itemType && favorite.itemId),
+            )
+            .map(getNutritionFavoriteKey),
+        );
+
+        setNutritionFavoriteKeys((currentKeys) => {
+          const nextKeys = new Set(currentKeys);
+          selectedTargetKeys.forEach((key) => nextKeys.delete(key));
+          loadedKeys.forEach((key) => {
+            if (selectedTargetKeys.has(key)) {
+              nextKeys.add(key);
+            }
+          });
+          return nextKeys;
+        });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load nutrition favorites", { error });
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    isDefaultNutritionDatabase,
+    selectedNutritionFavoriteTargetKey,
+    selectedNutritionFavoriteTargets,
+  ]);
 
   useLayoutEffect(() => {
     if (!shouldRenderNutritionDailyProgress) {
@@ -4921,6 +5284,7 @@ export function NoteDatabaseEntrySheet({
     setSelectedNutritionFoods(sanitizedFoods);
     setSelectedNutritionFood(null);
     setSelectedNutritionMeal(null);
+    setSelectedNutritionMealSource(null);
     setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
@@ -4942,6 +5306,7 @@ export function NoteDatabaseEntrySheet({
 
     if (selectedNutritionFood?.food.id === foodKey) {
       setSelectedNutritionFood(null);
+      setSelectedNutritionMealSource(null);
       setEntryFormValues((current) => ({
         ...current,
         ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
@@ -5014,16 +5379,21 @@ export function NoteDatabaseEntrySheet({
     setSelectedNutritionFoods([]);
     setSelectedNutritionFood(nextItem);
     setSelectedNutritionMeal(null);
+    setSelectedNutritionMealSource(null);
     setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
 
-  function selectNutritionSavedMeal(meal: NutritionSavedMeal) {
+  function selectNutritionSavedMeal(
+    meal: NutritionSavedMeal,
+    source: "meal_template" | "logged_meal",
+  ) {
     const mappedValues = mapNutritionSavedMealToEntryValues(meal, databaseDefinition);
     setSelectedNutritionFoods([]);
     setSelectedNutritionFood(null);
     setSelectedNutritionMeal(meal);
+    setSelectedNutritionMealSource(source);
     setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
@@ -5039,6 +5409,7 @@ export function NoteDatabaseEntrySheet({
     setSelectedNutritionFoods([]);
     setSelectedNutritionFood(null);
     setSelectedNutritionMeal(null);
+    setSelectedNutritionMealSource(null);
     setSelectedNutritionRecipe(nextItem);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
@@ -5684,6 +6055,96 @@ export function NoteDatabaseEntrySheet({
     });
   }
 
+  async function toggleNutritionFavorite(target: NutritionFavoriteTarget) {
+    const favoriteKey = getNutritionFavoriteKey(target);
+    const isFavorite = nutritionFavoriteKeys.has(favoriteKey);
+
+    setNutritionFavoriteKeys((currentKeys) => {
+      const nextKeys = new Set(currentKeys);
+      if (isFavorite) {
+        nextKeys.delete(favoriteKey);
+      } else {
+        nextKeys.add(favoriteKey);
+      }
+      return nextKeys;
+    });
+    setPendingNutritionFavoriteKeys((currentKeys) => {
+      const nextKeys = new Set(currentKeys);
+      nextKeys.add(favoriteKey);
+      return nextKeys;
+    });
+
+    try {
+      const response = await fetch("/api/nutrition/favorites", {
+        method: isFavorite ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemType: target.itemType,
+          itemId: target.itemId,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to update favorite.");
+      }
+    } catch (error) {
+      console.error("Failed to update nutrition favorite", { error });
+      setNutritionFavoriteKeys((currentKeys) => {
+        const nextKeys = new Set(currentKeys);
+        if (isFavorite) {
+          nextKeys.add(favoriteKey);
+        } else {
+          nextKeys.delete(favoriteKey);
+        }
+        return nextKeys;
+      });
+    } finally {
+      setPendingNutritionFavoriteKeys((currentKeys) => {
+        const nextKeys = new Set(currentKeys);
+        nextKeys.delete(favoriteKey);
+        return nextKeys;
+      });
+    }
+  }
+
+  function renderNutritionFavoriteButton(target: NutritionFavoriteTarget | null) {
+    if (!target) return null;
+
+    const favoriteKey = getNutritionFavoriteKey(target);
+    const isFavorite = nutritionFavoriteKeys.has(favoriteKey);
+    const isPending = pendingNutritionFavoriteKeys.has(favoriteKey);
+
+    return (
+      <button
+        type="button"
+        aria-label={
+          isFavorite
+            ? `Remove ${target.label} from favorites`
+            : `Add ${target.label} to favorites`
+        }
+        aria-pressed={isFavorite}
+        disabled={isPending}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void toggleNutritionFavorite(target);
+        }}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md outline-none transition ${
+          isFavorite
+            ? "text-[#f1d58a]/90 hover:bg-white/[0.065] hover:text-[#f6df9d]"
+            : "text-white/26 hover:bg-white/[0.055] hover:text-white/58"
+        } disabled:opacity-55 focus-visible:bg-white/[0.07] focus-visible:ring-1 focus-visible:ring-white/18`}
+      >
+        <Star
+          className="h-3.5 w-3.5 stroke-[1.65]"
+          fill={isFavorite ? "currentColor" : "none"}
+          aria-hidden="true"
+        />
+      </button>
+    );
+  }
+
   function renderNutritionFoodResultList({
     foods,
     isLoading,
@@ -5796,12 +6257,18 @@ export function NoteDatabaseEntrySheet({
             const meta = getNutritionSelectedFoodLineMeta(item);
             const quantityBadgeLabel = getNutritionSelectedFoodQuantityBadgeLabel(item);
             const shouldShowQuantityEditor = selectedNutritionFoodAction === "scan";
+            const favoriteTarget: NutritionFavoriteTarget = {
+              itemType: "food",
+              itemId: food.id,
+              label: food.name,
+            };
 
             return (
               <div
                 key={food.id}
                 className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2"
               >
+                {renderNutritionFavoriteButton(favoriteTarget)}
                 <NutritionFoodIcon food={food} />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-1.5">
@@ -5845,6 +6312,7 @@ export function NoteDatabaseEntrySheet({
 
   function clearSelectedNutritionMeal() {
     setSelectedNutritionMeal(null);
+    setSelectedNutritionMealSource(null);
     setEntryFormValues((current) => ({
       ...current,
       ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
@@ -5863,6 +6331,14 @@ export function NoteDatabaseEntrySheet({
 
   function renderSelectedNutritionMeal() {
     if (!selectedNutritionMeal) return null;
+    const favoriteTarget: NutritionFavoriteTarget | null =
+      selectedNutritionMealSource === "meal_template"
+        ? {
+            itemType: "meal_template",
+            itemId: selectedNutritionMeal.id,
+            label: getNutritionSavedMealDisplayName(selectedNutritionMeal),
+          }
+        : null;
 
     return (
       <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
@@ -5875,6 +6351,7 @@ export function NoteDatabaseEntrySheet({
           </span>
         </div>
         <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2">
+          {renderNutritionFavoriteButton(favoriteTarget)}
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <Utensils className="h-4 w-4" aria-hidden="true" />
           </span>
@@ -5903,6 +6380,11 @@ export function NoteDatabaseEntrySheet({
     if (!selectedNutritionRecipe) return null;
     const { recipe } = selectedNutritionRecipe;
     const lineMeta = getNutritionSelectedRecipeLineMeta(selectedNutritionRecipe);
+    const favoriteTarget: NutritionFavoriteTarget = {
+      itemType: "recipe",
+      itemId: recipe.id,
+      label: recipe.name,
+    };
 
     return (
       <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
@@ -5915,6 +6397,7 @@ export function NoteDatabaseEntrySheet({
           </span>
         </div>
         <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2">
+          {renderNutritionFavoriteButton(favoriteTarget)}
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <NutritionMealTemplateIcon
               icon={getNutritionSavedRecipeIcon(recipe)}
@@ -6458,7 +6941,7 @@ export function NoteDatabaseEntrySheet({
                   type="button"
                   aria-pressed={isSelected}
                   disabled={!hasReusableItems}
-                  onClick={() => selectNutritionSavedMeal(meal)}
+                  onClick={() => selectNutritionSavedMeal(meal, "meal_template")}
                   className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left outline-none transition ${
                     isSelected
                       ? "border-white/[0.14] bg-white/[0.08] shadow-[inset_3px_0_0_rgba(255,255,255,0.66)]"
@@ -6519,7 +7002,7 @@ export function NoteDatabaseEntrySheet({
                   type="button"
                   aria-pressed={isSelected}
                   disabled={!hasReusableItems}
-                  onClick={() => selectNutritionSavedMeal(meal)}
+                  onClick={() => selectNutritionSavedMeal(meal, "logged_meal")}
                   className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left outline-none transition ${
                     isSelected
                       ? "border-white/[0.14] bg-white/[0.08] shadow-[inset_3px_0_0_rgba(255,255,255,0.66)]"
@@ -6681,8 +7164,9 @@ export function NoteDatabaseEntrySheet({
                     }`}
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                    {department.label}
+                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-semibold">
+                    <NutritionFoodGroupIconSlot label={department.label} />
+                    <span className="min-w-0 truncate">{department.label}</span>
                   </span>
                   <span className="shrink-0 text-[11px] font-medium text-white/28">
                     {department.aisles.length}
@@ -6725,8 +7209,9 @@ export function NoteDatabaseEntrySheet({
                                 }`}
                                 aria-hidden="true"
                               />
-                              <span className="min-w-0 flex-1 truncate text-xs font-semibold">
-                                {aisle}
+                              <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-xs font-semibold">
+                                <NutritionFoodGroupIconSlot label={aisle} />
+                                <span className="min-w-0 truncate">{aisle}</span>
                               </span>
                             </button>
 
