@@ -60,6 +60,22 @@ export type NutritionMealDraft = {
   >;
 };
 
+export type NutritionMealTemplateDraft = {
+  name: string;
+  icon?: string;
+  metadata?: Json;
+  items: NutritionMealDraft["items"];
+};
+
+export type NutritionRecipeDraft = {
+  name: string;
+  icon?: string;
+  description?: string;
+  servings?: number;
+  metadata?: Json;
+  items: Array<Extract<NutritionMealDraft["items"][number], { type: "food" }>>;
+};
+
 export type NutritionMealTotals = {
   total_calories: number;
   total_carbs_g: number;
@@ -104,11 +120,21 @@ export type NutritionMealRpcPayload = {
 
 export type NutritionMealRow = Database["public"]["Tables"]["meals"]["Row"];
 export type NutritionMealItemRow = Database["public"]["Tables"]["meal_items"]["Row"];
+export type NutritionMealTemplateRow =
+  Database["public"]["Tables"]["meal_templates"]["Row"];
+export type NutritionMealTemplateItemRow =
+  Database["public"]["Tables"]["meal_template_items"]["Row"];
+export type NutritionRecipeRow = Database["public"]["Tables"]["recipes"]["Row"];
+export type NutritionRecipeItemRow =
+  Database["public"]["Tables"]["recipe_items"]["Row"];
 
 const MAX_ITEMS = 100;
 const MAX_TEXT_LENGTH = 5000;
 const MAX_NAME_LENGTH = 160;
+const MAX_ICON_LENGTH = 48;
 const MAX_SERVING_UNIT_LENGTH = 40;
+export const DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON = "🍽️";
+export const DEFAULT_NUTRITION_RECIPE_ICON = DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -134,6 +160,17 @@ function requiredTrimmedString(
   const trimmed = optionalTrimmedString(value, maxLength);
   if (!trimmed) return { ok: false, error: `${field} is required` };
   return { ok: true, value: trimmed };
+}
+
+export function sanitizeNutritionMealTemplateIcon(value: unknown): string {
+  return (
+    optionalTrimmedString(value, MAX_ICON_LENGTH) ??
+    DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON
+  );
+}
+
+export function sanitizeNutritionRecipeIcon(value: unknown): string {
+  return optionalTrimmedString(value, MAX_ICON_LENGTH) ?? DEFAULT_NUTRITION_RECIPE_ICON;
 }
 
 function optionalUuid(
@@ -202,50 +239,26 @@ function addUnique(target: Set<string>, value: string | undefined) {
   if (value) target.add(value);
 }
 
-export function parseNutritionMealDraft(
-  payload: unknown,
+function parseNutritionMealItems(
+  rawItems: unknown,
 ):
-  | { ok: true; value: NutritionMealRpcPayload }
+  | {
+      ok: true;
+      value: {
+        items: NutritionMealRpcItem[];
+        totals: NutritionMealTotals;
+        foodIds: string[];
+        recipeIds: string[];
+      };
+    }
   | { ok: false; error: string } {
-  if (!isRecord(payload)) {
-    return { ok: false, error: "Meal payload must be an object" };
-  }
-
-  const occurredAt = requiredTrimmedString(payload.occurredAt, "occurredAt", 80);
-  if (!occurredAt.ok) return occurredAt;
-  const occurredAtDate = new Date(occurredAt.value);
-  if (Number.isNaN(occurredAtDate.getTime())) {
-    return { ok: false, error: "occurredAt must be a valid date" };
-  }
-
-  if (!Array.isArray(payload.items) || payload.items.length === 0) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
     return { ok: false, error: "Meal must include at least one item" };
   }
 
-  if (payload.items.length > MAX_ITEMS) {
+  if (rawItems.length > MAX_ITEMS) {
     return { ok: false, error: `Meal cannot include more than ${MAX_ITEMS} items` };
   }
-
-  const sourceNoteId = optionalUuid(payload.sourceNoteId, "sourceNoteId");
-  if (!sourceNoteId.ok) return sourceNoteId;
-  const habitId = optionalUuid(payload.habitId, "habitId");
-  if (!habitId.ok) return habitId;
-
-  const timezone =
-    optionalTrimmedString(payload.timezone, 64) ?? "UTC";
-  const meal = {
-    occurred_at: occurredAtDate.toISOString(),
-    timezone,
-    name: optionalTrimmedString(payload.name, MAX_NAME_LENGTH),
-    note: optionalTrimmedString(payload.note, MAX_TEXT_LENGTH),
-    source_note_id: sourceNoteId.value,
-    source_note_entry_id: optionalTrimmedString(
-      payload.sourceNoteEntryId,
-      MAX_NAME_LENGTH,
-    ),
-    habit_id: habitId.value,
-    metadata: jsonObject(payload.metadata),
-  };
 
   const totals: NutritionMealTotals = {
     total_calories: 0,
@@ -257,7 +270,7 @@ export function parseNutritionMealDraft(
   const recipeIds = new Set<string>();
   const items: NutritionMealRpcItem[] = [];
 
-  for (const [index, rawItem] of payload.items.entries()) {
+  for (const [index, rawItem] of rawItems.entries()) {
     if (!isRecord(rawItem)) {
       return { ok: false, error: `items[${index}] must be an object` };
     }
@@ -362,7 +375,7 @@ export function parseNutritionMealDraft(
       rpcItem.custom_name = customName.value;
     }
 
-    // Snapshot nutrition is a line total for the stored quantity; the RPC stores both as-is.
+    // Snapshot nutrition is a line total for the stored quantity; storage keeps both as-is.
     totals.total_calories += rpcItem.snapshot_calories;
     totals.total_carbs_g += rpcItem.snapshot_carbs_g;
     totals.total_protein_g += rpcItem.snapshot_protein_g;
@@ -373,11 +386,263 @@ export function parseNutritionMealDraft(
   return {
     ok: true,
     value: {
-      meal,
       items,
       totals,
       foodIds: [...foodIds],
       recipeIds: [...recipeIds],
+    },
+  };
+}
+
+export function parseNutritionMealDraft(
+  payload: unknown,
+):
+  | { ok: true; value: NutritionMealRpcPayload }
+  | { ok: false; error: string } {
+  if (!isRecord(payload)) {
+    return { ok: false, error: "Meal payload must be an object" };
+  }
+
+  const occurredAt = requiredTrimmedString(payload.occurredAt, "occurredAt", 80);
+  if (!occurredAt.ok) return occurredAt;
+  const occurredAtDate = new Date(occurredAt.value);
+  if (Number.isNaN(occurredAtDate.getTime())) {
+    return { ok: false, error: "occurredAt must be a valid date" };
+  }
+
+  const sourceNoteId = optionalUuid(payload.sourceNoteId, "sourceNoteId");
+  if (!sourceNoteId.ok) return sourceNoteId;
+  const habitId = optionalUuid(payload.habitId, "habitId");
+  if (!habitId.ok) return habitId;
+  const parsedItems = parseNutritionMealItems(payload.items);
+  if (!parsedItems.ok) return parsedItems;
+
+  const timezone =
+    optionalTrimmedString(payload.timezone, 64) ?? "UTC";
+  const meal = {
+    occurred_at: occurredAtDate.toISOString(),
+    timezone,
+    name: optionalTrimmedString(payload.name, MAX_NAME_LENGTH),
+    note: optionalTrimmedString(payload.note, MAX_TEXT_LENGTH),
+    source_note_id: sourceNoteId.value,
+    source_note_entry_id: optionalTrimmedString(
+      payload.sourceNoteEntryId,
+      MAX_NAME_LENGTH,
+    ),
+    habit_id: habitId.value,
+    metadata: jsonObject(payload.metadata),
+  };
+
+  return {
+    ok: true,
+    value: {
+      meal,
+      items: parsedItems.value.items,
+      totals: parsedItems.value.totals,
+      foodIds: parsedItems.value.foodIds,
+      recipeIds: parsedItems.value.recipeIds,
+    },
+  };
+}
+
+export function parseNutritionMealTemplateDraft(
+  payload: unknown,
+):
+  | {
+      ok: true;
+      value: {
+        template: {
+          name: string;
+          icon: string;
+          metadata: Json;
+        };
+        items: NutritionMealRpcItem[];
+        totals: NutritionMealTotals;
+        foodIds: string[];
+        recipeIds: string[];
+      };
+    }
+  | { ok: false; error: string } {
+  if (!isRecord(payload)) {
+    return { ok: false, error: "Meal payload must be an object" };
+  }
+
+  const name = requiredTrimmedString(payload.name, "name", MAX_NAME_LENGTH);
+  if (!name.ok) return name;
+
+  const parsedItems = parseNutritionMealItems(payload.items);
+  if (!parsedItems.ok) return parsedItems;
+
+  return {
+    ok: true,
+    value: {
+      template: {
+        name: name.value,
+        icon: sanitizeNutritionMealTemplateIcon(payload.icon),
+        metadata: jsonObject(payload.metadata),
+      },
+      items: parsedItems.value.items,
+      totals: parsedItems.value.totals,
+      foodIds: parsedItems.value.foodIds,
+      recipeIds: parsedItems.value.recipeIds,
+    },
+  };
+}
+
+export function parseNutritionRecipeDraft(
+  payload: unknown,
+):
+  | {
+      ok: true;
+      value: {
+        recipe: {
+          name: string;
+          icon: string;
+          description?: string;
+          servings: number;
+          metadata: Json;
+        };
+        items: NutritionMealRpcItem[];
+        totals: NutritionMealTotals;
+        foodIds: string[];
+      };
+    }
+  | { ok: false; error: string } {
+  if (!isRecord(payload)) {
+    return { ok: false, error: "Recipe payload must be an object" };
+  }
+
+  const name = requiredTrimmedString(payload.name, "name", MAX_NAME_LENGTH);
+  if (!name.ok) return name;
+
+  const servings = optionalPositiveNumber(payload.servings, "servings", 10000);
+  if (!servings.ok) return servings;
+
+  if (!Array.isArray(payload.items) || payload.items.length === 0) {
+    return { ok: false, error: "Recipe must include at least one food" };
+  }
+
+  if (payload.items.length > MAX_ITEMS) {
+    return { ok: false, error: `Recipe cannot include more than ${MAX_ITEMS} items` };
+  }
+
+  const totals: NutritionMealTotals = {
+    total_calories: 0,
+    total_carbs_g: 0,
+    total_protein_g: 0,
+    total_fat_g: 0,
+  };
+  const foodIds = new Set<string>();
+  const items: NutritionMealRpcItem[] = [];
+
+  for (const [index, rawItem] of payload.items.entries()) {
+    if (!isRecord(rawItem)) {
+      return { ok: false, error: `items[${index}] must be an object` };
+    }
+
+    if (rawItem.type !== "food") {
+      return { ok: false, error: `items[${index}].type must be food` };
+    }
+
+    const foodId = requiredUuid(rawItem.foodId, `items[${index}].foodId`);
+    if (!foodId.ok) return foodId;
+
+    const snapshot = rawItem.snapshot;
+    if (!isRecord(snapshot)) {
+      return { ok: false, error: `items[${index}].snapshot is required` };
+    }
+
+    const quantity = optionalPositiveNumber(
+      rawItem.quantity,
+      `items[${index}].quantity`,
+      10000,
+    );
+    if (!quantity.ok) return quantity;
+
+    const servingGrams = optionalPositiveNumber(
+      rawItem.servingGrams,
+      `items[${index}].servingGrams`,
+      5000,
+    );
+    if (!servingGrams.ok) return servingGrams;
+
+    const snapshotName =
+      optionalTrimmedString(snapshot.displayName, MAX_NAME_LENGTH) ??
+      optionalTrimmedString(snapshot.name, MAX_NAME_LENGTH);
+
+    if (!snapshotName) {
+      return {
+        ok: false,
+        error: `items[${index}].snapshot.name is required`,
+      };
+    }
+
+    const calories = snapshotNumber(
+      snapshot,
+      "calories",
+      "calories",
+      `items[${index}].snapshot.calories`,
+    );
+    if (!calories.ok) return calories;
+    const carbs = snapshotNumber(
+      snapshot,
+      "carbs_g",
+      "carbs",
+      `items[${index}].snapshot.carbs_g`,
+    );
+    if (!carbs.ok) return carbs;
+    const protein = snapshotNumber(
+      snapshot,
+      "protein_g",
+      "protein",
+      `items[${index}].snapshot.protein_g`,
+    );
+    if (!protein.ok) return protein;
+    const fat = snapshotNumber(snapshot, "fat_g", "fat", `items[${index}].snapshot.fat_g`);
+    if (!fat.ok) return fat;
+
+    const rpcItem: NutritionMealRpcItem = {
+      item_type: "food",
+      food_id: foodId.value,
+      quantity: quantity.value ?? 1,
+      serving_unit: optionalTrimmedString(
+        rawItem.servingUnit,
+        MAX_SERVING_UNIT_LENGTH,
+      ),
+      serving_grams: servingGrams.value,
+      snapshot_name: snapshotName,
+      snapshot_brand_name:
+        optionalTrimmedString(snapshot.brandName, MAX_NAME_LENGTH) ??
+        optionalTrimmedString(snapshot.brand_name, MAX_NAME_LENGTH),
+      snapshot_calories: calories.value,
+      snapshot_carbs_g: carbs.value,
+      snapshot_protein_g: protein.value,
+      snapshot_fat_g: fat.value,
+      metadata: jsonObject(rawItem.metadata),
+      sort_order: index,
+    };
+
+    totals.total_calories += rpcItem.snapshot_calories;
+    totals.total_carbs_g += rpcItem.snapshot_carbs_g;
+    totals.total_protein_g += rpcItem.snapshot_protein_g;
+    totals.total_fat_g += rpcItem.snapshot_fat_g;
+    items.push(rpcItem);
+    foodIds.add(foodId.value);
+  }
+
+  return {
+    ok: true,
+    value: {
+      recipe: {
+        name: name.value,
+        icon: sanitizeNutritionRecipeIcon(payload.icon),
+        description: optionalTrimmedString(payload.description, MAX_TEXT_LENGTH),
+        servings: servings.value ?? 1,
+        metadata: jsonObject(payload.metadata),
+      },
+      items,
+      totals,
+      foodIds: [...foodIds],
     },
   };
 }

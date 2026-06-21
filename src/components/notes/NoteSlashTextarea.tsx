@@ -69,6 +69,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 import {
@@ -94,7 +95,11 @@ import {
   type NutritionEntryFields,
 } from "@/lib/nutrition/foods";
 import { getFoodIcon, type FoodIcon } from "@/lib/nutrition/foodIcons";
-import type { NutritionMealDraft } from "@/lib/nutrition/meals";
+import {
+  DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
+  DEFAULT_NUTRITION_RECIPE_ICON,
+  type NutritionMealDraft,
+} from "@/lib/nutrition/meals";
 
 type SlashCommandId =
   | "text"
@@ -271,6 +276,20 @@ const NUTRITION_FOOD_ACTION_TABS = [
   label: string;
   icon: LucideIcon;
 }>;
+const NUTRITION_MEAL_TEMPLATE_ICON_OPTIONS = [
+  "🍽️",
+  "🥗",
+  "🍳",
+  "🍔",
+  "🍗",
+  "🍚",
+  "🍜",
+  "🥪",
+  "🥩",
+  "🍣",
+  "🥣",
+  "🥤",
+] as const;
 const NOTE_DATABASE_TITLE_FIELD_NAMES = new Set([
   "name",
   "title",
@@ -295,6 +314,29 @@ function DatabaseInlineIcon({ iconKey }: { iconKey?: string | null }) {
     const Icon = resolvedIcon.Icon;
     return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
   }
+  if (resolvedIcon.kind === "iconify") {
+    return (
+      <span className="inline-flex h-3.5 w-3.5 items-center justify-center" aria-hidden="true">
+        <IconifyIcon icon={resolvedIcon.icon} className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-sm leading-none" aria-hidden="true">
+      {resolvedIcon.emoji}
+    </span>
+  );
+}
+
+function NutritionMealTemplateIcon({ icon }: { icon?: string | null }) {
+  const resolvedIcon = resolveNoteIcon(icon?.trim() || DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON);
+
+  if (resolvedIcon.kind === "lucide") {
+    const Icon = resolvedIcon.Icon;
+    return <Icon className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+
   if (resolvedIcon.kind === "iconify") {
     return (
       <span className="inline-flex h-3.5 w-3.5 items-center justify-center" aria-hidden="true">
@@ -1510,9 +1552,16 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
 type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
 type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
+type NutritionServingUnit = string;
+type NutritionServingOption = {
+  value: NutritionServingUnit;
+  label: string;
+};
+type NutritionMacroSourceKey = "calories" | "carbs_g" | "protein_g" | "fat_g";
 type NutritionSelectedFoodItem = {
   food: FoodSearchResult;
   quantity: number;
+  servingUnit: NutritionServingUnit;
 };
 type NutritionMealTotalsSource = {
   total_calories?: number | string | null;
@@ -1520,8 +1569,73 @@ type NutritionMealTotalsSource = {
   total_protein_g?: number | string | null;
   total_fat_g?: number | string | null;
 };
+type NutritionMealItemSource = {
+  id: string;
+  item_type: "food" | "recipe" | "custom";
+  food_id?: string | null;
+  recipe_id?: string | null;
+  custom_name?: string | null;
+  quantity?: number | string | null;
+  serving_unit?: string | null;
+  serving_grams?: number | string | null;
+  snapshot_name?: string | null;
+  snapshot_brand_name?: string | null;
+  snapshot_calories?: number | string | null;
+  snapshot_carbs_g?: number | string | null;
+  snapshot_protein_g?: number | string | null;
+  snapshot_fat_g?: number | string | null;
+  sort_order?: number | null;
+};
+type NutritionRecipeSearchResult = {
+  id: string;
+  name: string;
+  icon?: string | null;
+  description?: string | null;
+  servings?: number | string | null;
+  total_calories?: number | string | null;
+  total_carbs_g?: number | string | null;
+  total_protein_g?: number | string | null;
+  total_fat_g?: number | string | null;
+};
+type NutritionMealBuilderItem = {
+  id: string;
+  type: "food" | "recipe";
+  food?: FoodSearchResult;
+  recipe?: NutritionRecipeSearchResult;
+  quantity: number;
+  servingUnit: NutritionServingUnit;
+};
+type NutritionSelectedRecipeItem = {
+  recipe: NutritionSavedRecipe;
+  quantity: number;
+  servingUnit: NutritionServingUnit;
+};
+type NutritionSavedMeal = NutritionMealTotalsSource & {
+  id: string;
+  occurred_at?: string | null;
+  name?: string | null;
+  icon?: string | null;
+  meal_items?: NutritionMealItemSource[] | null;
+};
+type NutritionSavedRecipe = NutritionRecipeSearchResult & {
+  recipe_items?: NutritionMealItemSource[] | null;
+};
+type NutritionAllowedServingUnit =
+  | "g"
+  | "oz"
+  | "lb"
+  | "tsp"
+  | "tbsp"
+  | "cup"
+  | "ml"
+  | "fl oz"
+  | "serving";
 type NutritionFoodSearchResponse = {
   foods?: FoodSearchResult[];
+  error?: string;
+};
+type NutritionRecipeSearchResponse = {
+  recipes?: NutritionRecipeSearchResult[];
   error?: string;
 };
 type NutritionFoodBarcodeLookupResponse = FoodBarcodeLookupResult & {
@@ -1533,8 +1647,16 @@ type NutritionMealCreateResponse = {
   } | null;
   error?: string;
 };
+type NutritionRecipeCreateResponse = {
+  recipe?: NutritionSavedRecipe | null;
+  error?: string;
+};
 type NutritionMealsListResponse = {
-  meals?: NutritionMealTotalsSource[];
+  meals?: NutritionSavedMeal[];
+  error?: string;
+};
+type NutritionRecipesListResponse = {
+  recipes?: NutritionSavedRecipe[];
   error?: string;
 };
 
@@ -1683,6 +1805,52 @@ function getFoodBrowseNutritionPreview(food: FoodSearchResult) {
   return nutritionParts.join(" · ");
 }
 
+function getNutritionRecipeSearchResultMeta(recipe: NutritionRecipeSearchResult) {
+  const calories = formatFoodNutritionNumber(
+    parseNutritionProgressNumber(recipe.total_calories),
+  );
+  const servings = getPositiveNutritionDraftNumber(recipe.servings, 1);
+  const servingLabel =
+    servings === 1
+      ? "1 serving"
+      : `${formatFoodNutritionNumber(servings) ?? servings} servings`;
+
+  return calories ? `${calories} cal · ${servingLabel}` : servingLabel;
+}
+
+function getNutritionSavedRecipeIcon(recipe: NutritionRecipeSearchResult) {
+  return recipe.icon?.trim() || DEFAULT_NUTRITION_RECIPE_ICON;
+}
+
+function getNutritionSavedRecipeItemCount(recipe: NutritionSavedRecipe) {
+  return recipe.recipe_items?.length ?? 0;
+}
+
+function getNutritionSavedRecipeMeta(recipe: NutritionSavedRecipe) {
+  const itemCount = getNutritionSavedRecipeItemCount(recipe);
+  const calories = formatFoodNutritionNumber(
+    parseNutritionProgressNumber(recipe.total_calories),
+  );
+  const carbs = formatFoodNutritionNumber(
+    parseNutritionProgressNumber(recipe.total_carbs_g),
+  );
+  const protein = formatFoodNutritionNumber(
+    parseNutritionProgressNumber(recipe.total_protein_g),
+  );
+  const fat = formatFoodNutritionNumber(
+    parseNutritionProgressNumber(recipe.total_fat_g),
+  );
+  const itemLabel = itemCount === 1 ? "1 item" : `${itemCount} items`;
+  const nutritionParts = [
+    calories ? `${calories} cal` : null,
+    carbs ? `C ${carbs}g` : null,
+    protein ? `P ${protein}g` : null,
+    fat ? `F ${fat}g` : null,
+  ].filter(Boolean);
+
+  return [...nutritionParts, itemLabel].join(" · ");
+}
+
 function getNutritionFoodSelectionKey(food: FoodSearchResult) {
   return food.id;
 }
@@ -1699,6 +1867,252 @@ function normalizeNutritionQuantity(value: unknown) {
   return Math.min(10000, Math.max(0.01, parsed));
 }
 
+const NUTRITION_WEIGHT_UNITS = ["g", "oz", "lb"] as const;
+const NUTRITION_VOLUME_UNITS = ["tsp", "tbsp", "cup", "ml", "fl oz"] as const;
+const NUTRITION_ALLOWED_SERVING_UNITS = [
+  ...NUTRITION_WEIGHT_UNITS,
+  ...NUTRITION_VOLUME_UNITS,
+  "serving",
+] as const satisfies readonly NutritionAllowedServingUnit[];
+const NUTRITION_SERVING_UNIT_ALIASES: Record<string, NutritionAllowedServingUnit> = {
+  gram: "g",
+  grams: "g",
+  ounce: "oz",
+  ounces: "oz",
+  pound: "lb",
+  pounds: "lb",
+  tablespoon: "tbsp",
+  tablespoons: "tbsp",
+  teaspoon: "tsp",
+  teaspoons: "tsp",
+  "fluid ounce": "fl oz",
+  "fluid ounces": "fl oz",
+  milliliter: "ml",
+  milliliters: "ml",
+};
+const NUTRITION_VOLUME_UNIT_ML: Record<(typeof NUTRITION_VOLUME_UNITS)[number], number> = {
+  tsp: 14.7868 / 3,
+  tbsp: 14.7868,
+  cup: 14.7868 * 16,
+  ml: 1,
+  "fl oz": 14.7868 * 2,
+};
+
+function normalizeNutritionServingUnit(
+  value: unknown,
+  fallback: NutritionAllowedServingUnit = "serving",
+) {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return fallback;
+  const aliased = NUTRITION_SERVING_UNIT_ALIASES[normalized] ?? normalized;
+
+  return NUTRITION_ALLOWED_SERVING_UNITS.includes(aliased as NutritionAllowedServingUnit)
+    ? (aliased as NutritionAllowedServingUnit)
+    : fallback;
+}
+
+function getNutritionServingUnitKey(value: unknown) {
+  return normalizeNutritionServingUnit(value);
+}
+
+function getRawNutritionServingUnitKey(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return null;
+  const aliased = NUTRITION_SERVING_UNIT_ALIASES[normalized] ?? normalized;
+
+  return NUTRITION_ALLOWED_SERVING_UNITS.includes(aliased as NutritionAllowedServingUnit)
+    ? (aliased as NutritionAllowedServingUnit)
+    : null;
+}
+
+function isNutritionVolumeUnit(
+  unit: NutritionAllowedServingUnit | null | undefined,
+): unit is (typeof NUTRITION_VOLUME_UNITS)[number] {
+  return Boolean(
+    unit && NUTRITION_VOLUME_UNITS.includes(unit as (typeof NUTRITION_VOLUME_UNITS)[number]),
+  );
+}
+
+function hasFoodGramAnchor(food: FoodSearchResult) {
+  return Boolean(getPositiveNutritionNumber(food.serving_grams));
+}
+
+function hasExplicitFoodServingAnchor(food: FoodSearchResult) {
+  const servingSize = getPositiveNutritionNumber(food.serving_size);
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  const unit = getRawNutritionServingUnitKey(food.serving_unit);
+
+  if (!servingSize || !servingGrams) return false;
+  return !(unit === "g" && servingSize === 100 && servingGrams === 100);
+}
+
+function getFoodVolumeAnchor(food: FoodSearchResult) {
+  const unit = getRawNutritionServingUnitKey(food.serving_unit);
+  const servingSize = getPositiveNutritionNumber(food.serving_size);
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+
+  if (!isNutritionVolumeUnit(unit) || !servingSize || !servingGrams) return null;
+
+  return {
+    gramsPerMl: servingGrams / (servingSize * NUTRITION_VOLUME_UNIT_ML[unit]),
+  };
+}
+
+function getFoodServingOptions(food: FoodSearchResult): NutritionServingOption[] {
+  const options = new Map<NutritionAllowedServingUnit, NutritionServingOption>();
+  const defaultUnit = getRawNutritionServingUnitKey(food.serving_unit);
+  const volumeAnchor = getFoodVolumeAnchor(food);
+
+  if (hasExplicitFoodServingAnchor(food)) {
+    options.set("serving", { value: "serving", label: "serving" });
+  }
+
+  if (hasFoodGramAnchor(food)) {
+    for (const unit of NUTRITION_WEIGHT_UNITS) {
+      options.set(unit, { value: unit, label: unit });
+    }
+  }
+
+  if (volumeAnchor) {
+    for (const unit of NUTRITION_VOLUME_UNITS) {
+      options.set(unit, { value: unit, label: unit });
+    }
+  }
+
+  if (defaultUnit && options.has(defaultUnit)) {
+    const defaultOption = options.get(defaultUnit);
+    options.delete(defaultUnit);
+    if (defaultOption) {
+      return [defaultOption, ...options.values()];
+    }
+  }
+
+  return [...options.values()];
+}
+
+function getSafeFoodServingUnit(
+  food: FoodSearchResult,
+  unit: unknown,
+): NutritionAllowedServingUnit {
+  const normalizedUnit = getRawNutritionServingUnitKey(unit);
+  const optionValues = new Set(getFoodServingOptions(food).map((option) => option.value));
+
+  if (normalizedUnit && optionValues.has(normalizedUnit)) return normalizedUnit;
+  if (hasExplicitFoodServingAnchor(food)) return "serving";
+  if (hasFoodGramAnchor(food)) return "g";
+  return normalizedUnit ?? "serving";
+}
+
+function getDefaultFoodServingUnit(food: FoodSearchResult) {
+  const defaultUnit = getRawNutritionServingUnitKey(food.serving_unit);
+
+  return getSafeFoodServingUnit(food, defaultUnit ?? "serving");
+}
+
+function getDefaultFoodServingAmount(food: FoodSearchResult) {
+  const servingUnit = getDefaultFoodServingUnit(food);
+  const servingSize = getPositiveNutritionNumber(food.serving_size);
+
+  return servingUnit === "serving" ? 1 : servingSize ?? 1;
+}
+
+function getRecipeServingOptions(
+  recipe: NutritionRecipeSearchResult,
+): NutritionServingOption[] {
+  void recipe;
+  return [{ value: "serving", label: "serving" }];
+}
+
+function getNutritionServingMultiplier({
+  amount,
+  unit,
+  defaultServingGrams,
+  defaultServingSize,
+  defaultServingUnit,
+  gramsPerMl,
+}: {
+  amount: number;
+  unit: NutritionServingUnit;
+  defaultServingGrams?: number;
+  defaultServingSize?: number;
+  defaultServingUnit?: string | null;
+  gramsPerMl?: number;
+}) {
+  const normalizedAmount = normalizeNutritionQuantity(amount);
+  const unitKey = getNutritionServingUnitKey(unit);
+  const defaultUnitKey = getNutritionServingUnitKey(defaultServingUnit);
+
+  if (unitKey === "g") {
+    return defaultServingGrams ? normalizedAmount / defaultServingGrams : normalizedAmount;
+  }
+
+  if (unitKey === "oz") {
+    return defaultServingGrams
+      ? (normalizedAmount * 28.3495) / defaultServingGrams
+      : normalizedAmount;
+  }
+
+  if (unitKey === "lb") {
+    return defaultServingGrams
+      ? (normalizedAmount * 453.59237) / defaultServingGrams
+      : normalizedAmount;
+  }
+
+  if (isNutritionVolumeUnit(unitKey) && gramsPerMl && defaultServingGrams) {
+    return (
+      (normalizedAmount * NUTRITION_VOLUME_UNIT_ML[unitKey] * gramsPerMl) /
+      defaultServingGrams
+    );
+  }
+
+  if (
+    unitKey === defaultUnitKey &&
+    unitKey !== "serving" &&
+    defaultServingSize &&
+    defaultServingSize > 0
+  ) {
+    return normalizedAmount / defaultServingSize;
+  }
+
+  return normalizedAmount;
+}
+
+function getFoodServingMultiplier(item: NutritionSelectedFoodItem | NutritionMealBuilderItem) {
+  if (!item.food) return normalizeNutritionQuantity(item.quantity);
+  const safeUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
+  const volumeAnchor = getFoodVolumeAnchor(item.food);
+
+  return getNutritionServingMultiplier({
+    amount: item.quantity,
+    unit: safeUnit,
+    defaultServingGrams: getPositiveNutritionNumber(item.food.serving_grams),
+    defaultServingSize: getPositiveNutritionNumber(item.food.serving_size),
+    defaultServingUnit: getDefaultFoodServingUnit(item.food),
+    gramsPerMl: volumeAnchor?.gramsPerMl,
+  });
+}
+
+function getRecipeServingMultiplier(
+  item: NutritionMealBuilderItem | NutritionSelectedRecipeItem,
+) {
+  return normalizeNutritionQuantity(item.quantity);
+}
+
+function getNutritionLineValue(baseValue: unknown, multiplier: number) {
+  const value = getNutritionSnapshotNumber(baseValue);
+  return value * multiplier;
+}
+
+function formatNutritionServingAmount(value: number) {
+  return formatFoodNutritionNumber(normalizeNutritionQuantity(value)) ?? "1";
+}
+
+function formatNutritionServingLabel(amount: number, unit: NutritionServingUnit) {
+  return `${formatNutritionServingAmount(amount)} ${normalizeNutritionServingUnit(unit)}`;
+}
+
 function getNextWholeNutritionQuantity(quantity: number, step: -1 | 1) {
   const normalizedQuantity = normalizeNutritionQuantity(quantity);
   const nextQuantity =
@@ -1709,27 +2123,274 @@ function getNextWholeNutritionQuantity(quantity: number, step: -1 | 1) {
 
 function makeNutritionSelectedFoodItem(
   food: FoodSearchResult,
-  quantity = 1,
+  quantity = getDefaultFoodServingAmount(food),
+  servingUnit = getDefaultFoodServingUnit(food),
 ): NutritionSelectedFoodItem {
   return {
     food,
     quantity: normalizeNutritionQuantity(quantity),
+    servingUnit: getSafeFoodServingUnit(food, servingUnit),
+  };
+}
+
+function sanitizeNutritionSelectedFoodItem(
+  item: NutritionSelectedFoodItem,
+): NutritionSelectedFoodItem {
+  return {
+    ...item,
+    quantity: normalizeNutritionQuantity(item.quantity),
+    servingUnit: getSafeFoodServingUnit(item.food, item.servingUnit),
   };
 }
 
 function getNutritionSelectedFoodName(item: NutritionSelectedFoodItem) {
-  if (item.quantity === 1) return item.food.name;
-  const formattedQuantity = formatFoodNutritionNumber(item.quantity) ?? String(item.quantity);
-  return `${formattedQuantity} x ${item.food.name}`;
+  const defaultAmount = getDefaultFoodServingAmount(item.food);
+  const defaultUnit = getDefaultFoodServingUnit(item.food);
+  const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
+
+  if (item.quantity === defaultAmount && servingUnit === defaultUnit) {
+    return item.food.name;
+  }
+
+  return `${formatNutritionServingLabel(item.quantity, servingUnit)} ${item.food.name}`;
+}
+
+function getNutritionSelectedFoodQuantityBadgeLabel(item: NutritionSelectedFoodItem) {
+  const defaultAmount = getDefaultFoodServingAmount(item.food);
+  const defaultUnit = getDefaultFoodServingUnit(item.food);
+  const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
+
+  if (item.quantity === defaultAmount && servingUnit === defaultUnit) return null;
+  return formatNutritionServingLabel(item.quantity, servingUnit);
+}
+
+function getNutritionMealBuilderItemName(item: NutritionMealBuilderItem) {
+  return item.type === "food"
+    ? item.food?.name ?? "Food"
+    : item.recipe?.name ?? "Recipe";
+}
+
+function getNutritionMealBuilderItemBrand(item: NutritionMealBuilderItem) {
+  return item.type === "food" ? item.food?.brand_name ?? null : "Recipe";
+}
+
+function getNutritionMealBuilderItemUnit(item: NutritionMealBuilderItem) {
+  if (item.type === "food" && item.food) {
+    return getSafeFoodServingUnit(item.food, item.servingUnit);
+  }
+
+  return normalizeNutritionServingUnit(item.servingUnit);
+}
+
+function getNutritionMealBuilderItemBaseValue(
+  item: NutritionMealBuilderItem,
+  key: "calories" | "carbs_g" | "protein_g" | "fat_g",
+) {
+  if (item.type === "food") {
+    return getNutritionSnapshotNumber(item.food?.[key]);
+  }
+
+  const recipeKey =
+    key === "calories"
+      ? "total_calories"
+      : key === "carbs_g"
+        ? "total_carbs_g"
+        : key === "protein_g"
+          ? "total_protein_g"
+          : "total_fat_g";
+
+  return getNutritionSnapshotNumber(item.recipe?.[recipeKey]);
+}
+
+function getNutritionMealBuilderItemLineValue(
+  item: NutritionMealBuilderItem,
+  key: NutritionMacroSourceKey,
+) {
+  const multiplier =
+    item.type === "food" ? getFoodServingMultiplier(item) : getRecipeServingMultiplier(item);
+
+  return getNutritionMealBuilderItemBaseValue(item, key) * multiplier;
+}
+
+function getNutritionMealBuilderTotals(items: NutritionMealBuilderItem[]) {
+  return items.reduce<Record<NutritionDailyMetricKey, number>>(
+    (totals, item) => {
+      totals.calories += getNutritionMealBuilderItemLineValue(item, "calories");
+      totals.carbs += getNutritionMealBuilderItemLineValue(item, "carbs_g");
+      totals.protein += getNutritionMealBuilderItemLineValue(item, "protein_g");
+      totals.fat += getNutritionMealBuilderItemLineValue(item, "fat_g");
+      return totals;
+    },
+    { ...EMPTY_NUTRITION_TOTALS },
+  );
+}
+
+function makeNutritionMealBuilderFoodItem(food: FoodSearchResult): NutritionMealBuilderItem {
+  return {
+    id: `food-${food.id}-${buildClientDatabaseEntryId()}`,
+    type: "food",
+    food,
+    quantity: getDefaultFoodServingAmount(food),
+    servingUnit: getDefaultFoodServingUnit(food),
+  };
+}
+
+function makeNutritionMealBuilderRecipeItem(
+  recipe: NutritionRecipeSearchResult,
+): NutritionMealBuilderItem {
+  return {
+    id: `recipe-${recipe.id}-${buildClientDatabaseEntryId()}`,
+    type: "recipe",
+    recipe,
+    quantity: 1,
+    servingUnit: "serving",
+  };
+}
+
+function buildNutritionMealTemplateDraftItem(
+  item: NutritionMealBuilderItem,
+): NutritionMealDraft["items"][number] {
+  const quantity = normalizeNutritionQuantity(item.quantity);
+  const name = getNutritionMealBuilderItemName(item);
+  const brandName = item.type === "food" ? item.food?.brand_name ?? undefined : undefined;
+  const servingUnit = getNutritionMealBuilderItemUnit(item);
+  const servingGrams =
+    item.type === "food" ? getPositiveNutritionNumber(item.food?.serving_grams) : undefined;
+  const multiplier =
+    item.type === "food" ? getFoodServingMultiplier(item) : getRecipeServingMultiplier(item);
+  const snapshot = {
+    name,
+    displayName: name,
+    brandName,
+    brand_name: brandName,
+    servingUnit,
+    serving_unit: servingUnit,
+    servingGrams,
+    serving_grams: servingGrams,
+    calories: getNutritionMealBuilderItemLineValue(item, "calories"),
+    carbs_g: getNutritionMealBuilderItemLineValue(item, "carbs_g"),
+    protein_g: getNutritionMealBuilderItemLineValue(item, "protein_g"),
+    fat_g: getNutritionMealBuilderItemLineValue(item, "fat_g"),
+  };
+
+  if (item.type === "recipe" && item.recipe) {
+    return {
+      type: "recipe",
+      recipeId: item.recipe.id,
+      quantity,
+      servingUnit,
+      snapshot,
+      metadata: {
+        source: "meal-builder-recipe",
+        snapshotTotals: "line",
+        selectedServing: {
+          amount: quantity,
+          unit: servingUnit,
+          multiplier,
+        },
+        perServing: {
+          calories: getNutritionMealBuilderItemBaseValue(item, "calories"),
+          carbs_g: getNutritionMealBuilderItemBaseValue(item, "carbs_g"),
+          protein_g: getNutritionMealBuilderItemBaseValue(item, "protein_g"),
+          fat_g: getNutritionMealBuilderItemBaseValue(item, "fat_g"),
+        },
+      },
+    };
+  }
+
+  if (!item.food) {
+    return {
+      type: "custom",
+      name,
+      quantity,
+      servingUnit,
+      snapshot,
+    };
+  }
+
+  return {
+    type: "food",
+    foodId: item.food.id,
+    quantity,
+    servingUnit,
+    servingGrams,
+    snapshot,
+    metadata: {
+      source: item.food.source ?? "foods",
+      snapshotTotals: "line",
+      selectedServing: {
+        amount: quantity,
+        unit: servingUnit,
+        defaultServingGrams: servingGrams,
+        multiplier,
+      },
+      perServing: {
+        calories: getNutritionMealBuilderItemBaseValue(item, "calories"),
+        carbs_g: getNutritionMealBuilderItemBaseValue(item, "carbs_g"),
+        protein_g: getNutritionMealBuilderItemBaseValue(item, "protein_g"),
+        fat_g: getNutritionMealBuilderItemBaseValue(item, "fat_g"),
+      },
+    },
+  };
 }
 
 function getNutritionFoodLineValue(
-  food: FoodSearchResult,
-  key: "calories" | "carbs_g" | "protein_g" | "fat_g",
-  quantity: number,
+  item: NutritionSelectedFoodItem,
+  key: NutritionMacroSourceKey,
 ) {
-  const value = food[key];
-  return typeof value === "number" && Number.isFinite(value) ? value * quantity : null;
+  const value = item.food[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value * getFoodServingMultiplier(item);
+}
+
+function getNutritionSelectedFoodLineMeta(item: NutritionSelectedFoodItem) {
+  const calories = formatFoodNutritionNumber(
+    getNutritionFoodLineValue(item, "calories"),
+  );
+  const carbs = formatFoodNutritionNumber(getNutritionFoodLineValue(item, "carbs_g"));
+  const protein = formatFoodNutritionNumber(
+    getNutritionFoodLineValue(item, "protein_g"),
+  );
+  const fat = formatFoodNutritionNumber(getNutritionFoodLineValue(item, "fat_g"));
+  const nutritionParts = [
+    calories ? `${calories} cal` : null,
+    carbs ? `C ${carbs}g` : null,
+    protein ? `P ${protein}g` : null,
+    fat ? `F ${fat}g` : null,
+  ].filter(Boolean);
+
+  return nutritionParts.join(" · ");
+}
+
+function getNutritionMealBuilderItemLineMeta(item: NutritionMealBuilderItem) {
+  const calories =
+    formatFoodNutritionNumber(getNutritionMealBuilderItemLineValue(item, "calories")) ?? "0";
+  const carbs =
+    formatFoodNutritionNumber(getNutritionMealBuilderItemLineValue(item, "carbs_g")) ?? "0";
+  const protein =
+    formatFoodNutritionNumber(getNutritionMealBuilderItemLineValue(item, "protein_g")) ?? "0";
+  const fat =
+    formatFoodNutritionNumber(getNutritionMealBuilderItemLineValue(item, "fat_g")) ?? "0";
+
+  return `${calories} cal · C ${carbs}g · P ${protein}g · F ${fat}g`;
+}
+
+function getNutritionSelectedRecipeLineMeta(item: NutritionSelectedRecipeItem) {
+  const multiplier = getRecipeServingMultiplier(item);
+  const calories =
+    formatFoodNutritionNumber(getNutritionLineValue(item.recipe.total_calories, multiplier)) ??
+    "0";
+  const carbs =
+    formatFoodNutritionNumber(getNutritionLineValue(item.recipe.total_carbs_g, multiplier)) ??
+    "0";
+  const protein =
+    formatFoodNutritionNumber(getNutritionLineValue(item.recipe.total_protein_g, multiplier)) ??
+    "0";
+  const fat =
+    formatFoodNutritionNumber(getNutritionLineValue(item.recipe.total_fat_g, multiplier)) ??
+    "0";
+
+  return `${calories} cal · C ${carbs}g · P ${protein}g · F ${fat}g`;
 }
 
 function formatAggregatedNutritionValue(value: number, hasValue: boolean) {
@@ -1789,6 +2450,151 @@ function aggregateNutritionMealTotals(meals: NutritionMealTotalsSource[]) {
   );
 }
 
+function aggregateNutritionDraftTotals({
+  values,
+  caloriesField,
+  macroFields,
+}: {
+  values: Record<string, unknown>;
+  caloriesField: NoteDatabaseFieldDefinition | null;
+  macroFields: NoteDatabaseFieldDefinition[];
+}) {
+  const totals: Record<NutritionDailyMetricKey, number> = { ...EMPTY_NUTRITION_TOTALS };
+
+  if (caloriesField) {
+    totals.calories = parseNutritionProgressNumber(values[caloriesField.id]);
+  }
+
+  for (const field of macroFields) {
+    const macroKey = getNutritionMacroFieldKey(field);
+    if (!macroKey) continue;
+    totals[macroKey] = parseNutritionProgressNumber(values[field.id]);
+  }
+
+  return totals;
+}
+
+function NutritionDailyProgressBars({
+  savedTotals,
+  previewTotals,
+  error,
+  isAnimatedIn,
+  shouldReduceMotion,
+  className = "",
+}: {
+  savedTotals: Record<NutritionDailyMetricKey, number>;
+  previewTotals: Record<NutritionDailyMetricKey, number>;
+  error?: string | null;
+  isAnimatedIn: boolean;
+  shouldReduceMotion: boolean | null;
+  className?: string;
+}) {
+  function renderNutritionProgressBar({
+    label,
+    savedValue,
+    previewValue,
+    target,
+    unit = "",
+    size,
+  }: {
+    label: string;
+    savedValue: number;
+    previewValue: number;
+    target: number;
+    unit?: string;
+    size: "large" | "small";
+  }) {
+    const savedPercent =
+      target > 0 ? Math.min(100, Math.max(0, (savedValue / target) * 100)) : 0;
+    const previewPercent =
+      target > 0
+        ? Math.min(
+            Math.max(0, (previewValue / target) * 100),
+            Math.max(0, 100 - savedPercent),
+          )
+        : 0;
+    const displayValue = savedValue + previewValue;
+    const displayedSavedPercent = isAnimatedIn ? savedPercent : 0;
+    const displayedPreviewPercent = isAnimatedIn ? previewPercent : 0;
+    const formattedValue = formatFoodNutritionNumber(displayValue) ?? "0";
+    const formattedTarget = formatFoodNutritionNumber(target) ?? String(target);
+    const progressValue = `${formattedValue}${unit} / ${formattedTarget}${unit}`;
+    const barHeightClassName = size === "large" ? "h-3" : "h-2";
+    const labelClassName =
+      size === "large"
+        ? "text-sm font-semibold text-white/82"
+        : "text-[11px] font-semibold text-white/64";
+    const valueClassName =
+      size === "large"
+        ? "text-xs font-semibold text-white/52"
+        : "text-[10px] font-semibold text-white/42";
+    const fillTransitionClassName = shouldReduceMotion
+      ? ""
+      : "transition-[width] duration-700 ease-out";
+    const savedSegmentRadiusClassName = previewPercent > 0 ? "rounded-l-full" : "rounded-full";
+    const previewSegmentRadiusClassName = savedPercent > 0 ? "rounded-r-full" : "rounded-full";
+
+    return (
+      <div>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <span className={labelClassName}>{label}</span>
+          <span className={`${valueClassName} shrink-0 tabular-nums`}>{progressValue}</span>
+        </div>
+        <div
+          className={`relative mt-1.5 overflow-hidden rounded-full border border-white/[0.045] bg-black/36 shadow-[inset_0_1px_1px_rgba(255,255,255,0.07),inset_0_-1px_2px_rgba(0,0,0,0.55)] ${barHeightClassName}`}
+          role="meter"
+          aria-label={`${label} daily intake`}
+          aria-valuemin={0}
+          aria-valuemax={target}
+          aria-valuenow={Math.min(displayValue, target)}
+        >
+          <div className="flex h-full w-full overflow-hidden rounded-full" aria-hidden="true">
+            <div
+              className={`h-full shrink-0 bg-[#858585] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] ${savedSegmentRadiusClassName} ${fillTransitionClassName}`}
+              style={{ width: `${displayedSavedPercent}%` }}
+            />
+            <div
+              className={`h-full shrink-0 bg-[#5a5a5a] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ${previewSegmentRadiusClassName} ${fillTransitionClassName}`}
+              style={{ width: `${displayedPreviewPercent}%` }}
+            />
+          </div>
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.12]"
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`space-y-2.5 px-1 pb-2.5 ${className}`}>
+      {renderNutritionProgressBar({
+        label: "Calories",
+        savedValue: savedTotals.calories,
+        previewValue: previewTotals.calories,
+        target: DEFAULT_DAILY_NUTRITION_GOALS.calories,
+        size: "large",
+      })}
+      <div className="grid grid-cols-3 gap-1.5">
+        {NUTRITION_MACRO_FIELD_KEYS.map((macroKey) => (
+          <div key={macroKey} className="min-w-0 rounded-lg bg-white/[0.035] px-2 py-2">
+            {renderNutritionProgressBar({
+              label: macroKey === "carbs" ? "Carbs" : macroKey === "protein" ? "Protein" : "Fat",
+              savedValue: savedTotals[macroKey],
+              previewValue: previewTotals[macroKey],
+              target: DEFAULT_DAILY_NUTRITION_GOALS[macroKey],
+              unit: "g",
+              size: "small",
+            })}
+          </div>
+        ))}
+      </div>
+      {error ? <p className="text-[11px] font-medium text-red-200/68">{error}</p> : null}
+    </div>
+  );
+}
+
 function getNutritionMealOccurredAt(
   fields: NoteDatabaseFieldDefinition[],
   values: Record<string, unknown>,
@@ -1819,18 +2625,22 @@ function getNutritionMealOccurredAt(
 }
 
 function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
-  const { food, quantity } = item;
-  const calories = getNutritionSnapshotNumber(food.calories) * quantity;
-  const carbs = getNutritionSnapshotNumber(food.carbs_g) * quantity;
-  const protein = getNutritionSnapshotNumber(food.protein_g) * quantity;
-  const fat = getNutritionSnapshotNumber(food.fat_g) * quantity;
+  const { food } = item;
+  const quantity = normalizeNutritionQuantity(item.quantity);
+  const servingUnit = getSafeFoodServingUnit(food, item.servingUnit);
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  const multiplier = getFoodServingMultiplier(item);
+  const calories = getNutritionLineValue(food.calories, multiplier);
+  const carbs = getNutritionLineValue(food.carbs_g, multiplier);
+  const protein = getNutritionLineValue(food.protein_g, multiplier);
+  const fat = getNutritionLineValue(food.fat_g, multiplier);
 
   return {
     type: "food" as const,
     foodId: food.id,
     quantity,
-    servingUnit: food.serving_unit ?? undefined,
-    servingGrams: getPositiveNutritionNumber(food.serving_grams),
+    servingUnit,
+    servingGrams,
     snapshot: {
       name: food.name,
       displayName: food.name,
@@ -1838,10 +2648,10 @@ function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
       brand_name: food.brand_name ?? undefined,
       servingSize: food.serving_size ?? undefined,
       serving_size: food.serving_size ?? undefined,
-      servingUnit: food.serving_unit ?? undefined,
-      serving_unit: food.serving_unit ?? undefined,
-      servingGrams: food.serving_grams ?? undefined,
-      serving_grams: food.serving_grams ?? undefined,
+      servingUnit,
+      serving_unit: servingUnit,
+      servingGrams,
+      serving_grams: servingGrams,
       calories,
       carbs_g: carbs,
       protein_g: protein,
@@ -1850,6 +2660,12 @@ function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
     metadata: {
       source: food.source ?? "foods",
       snapshotTotals: "line",
+      selectedServing: {
+        amount: quantity,
+        unit: servingUnit,
+        defaultServingGrams: servingGrams,
+        multiplier,
+      },
       perServing: {
         calories: getNutritionSnapshotNumber(food.calories),
         carbs_g: getNutritionSnapshotNumber(food.carbs_g),
@@ -1858,6 +2674,166 @@ function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
       },
     },
   } satisfies NutritionMealDraft["items"][number];
+}
+
+function getSortedNutritionMealItems(meal: NutritionSavedMeal) {
+  return [...(meal.meal_items ?? [])].sort((a, b) => {
+    const orderDelta = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    if (orderDelta !== 0) return orderDelta;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function getNutritionMealItemName(item: NutritionMealItemSource) {
+  return item.snapshot_name?.trim() || item.custom_name?.trim() || "Food";
+}
+
+function getNutritionSavedMealDisplayName(meal: NutritionSavedMeal) {
+  if (meal.name?.trim()) return meal.name.trim();
+
+  const itemNames = getSortedNutritionMealItems(meal)
+    .slice(0, 3)
+    .map(getNutritionMealItemName)
+    .filter(Boolean);
+
+  return itemNames.length > 0 ? itemNames.join(", ") : "Saved meal";
+}
+
+function getNutritionSavedMealIcon(meal: NutritionSavedMeal) {
+  return meal.icon?.trim() || DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON;
+}
+
+function getNutritionSavedMealTimeLabel(meal: NutritionSavedMeal) {
+  if (!meal.occurred_at) return "Reusable meal";
+
+  const date = new Date(meal.occurred_at);
+  if (Number.isNaN(date.getTime())) return "Recent";
+
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function getNutritionSavedMealMeta(meal: NutritionSavedMeal) {
+  const itemCount = meal.meal_items?.length ?? 0;
+  const calories = formatFoodNutritionNumber(
+    parseNutritionProgressNumber(meal.total_calories),
+  );
+  const itemLabel = itemCount === 1 ? "1 item" : `${itemCount} items`;
+
+  return calories ? `${calories} cal · ${itemLabel}` : itemLabel;
+}
+
+function getPositiveNutritionDraftNumber(value: unknown, fallback: number) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value.trim())
+        : fallback;
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildCopiedNutritionMealItem(
+  item: NutritionMealItemSource,
+): NutritionMealDraft["items"][number] {
+  const snapshotName = getNutritionMealItemName(item);
+  const quantity = getPositiveNutritionDraftNumber(item.quantity, 1);
+  const servingGrams = getPositiveNutritionDraftNumber(item.serving_grams, 0) || undefined;
+  const snapshot = {
+    name: snapshotName,
+    displayName: snapshotName,
+    brandName: item.snapshot_brand_name ?? undefined,
+    brand_name: item.snapshot_brand_name ?? undefined,
+    servingUnit: item.serving_unit ?? undefined,
+    serving_unit: item.serving_unit ?? undefined,
+    servingGrams,
+    serving_grams: servingGrams,
+    calories: parseNutritionProgressNumber(item.snapshot_calories),
+    carbs_g: parseNutritionProgressNumber(item.snapshot_carbs_g),
+    protein_g: parseNutritionProgressNumber(item.snapshot_protein_g),
+    fat_g: parseNutritionProgressNumber(item.snapshot_fat_g),
+  };
+  const metadata = {
+    source: "reused-meal",
+    sourceMealItemId: item.id,
+    snapshotTotals: "line",
+  };
+
+  if (item.item_type === "food" && item.food_id) {
+    return {
+      type: "food",
+      foodId: item.food_id,
+      quantity,
+      servingUnit: item.serving_unit ?? undefined,
+      servingGrams,
+      snapshot,
+      metadata,
+    };
+  }
+
+  if (item.item_type === "recipe" && item.recipe_id) {
+    return {
+      type: "recipe",
+      recipeId: item.recipe_id,
+      quantity,
+      servingUnit: item.serving_unit ?? undefined,
+      servingGrams,
+      snapshot,
+      metadata,
+    };
+  }
+
+  return {
+    type: "custom",
+    name: item.custom_name?.trim() || snapshotName,
+    quantity,
+    servingUnit: item.serving_unit ?? undefined,
+    servingGrams,
+    snapshot,
+    metadata,
+  };
+}
+
+function buildSelectedNutritionRecipeMealItem(
+  item: NutritionSelectedRecipeItem,
+): NutritionMealDraft["items"][number] {
+  const { recipe } = item;
+  const name = recipe.name.trim() || "Recipe";
+  const quantity = normalizeNutritionQuantity(item.quantity);
+  const servingUnit = normalizeNutritionServingUnit(item.servingUnit);
+  const multiplier = getRecipeServingMultiplier(item);
+
+  return {
+    type: "recipe",
+    recipeId: recipe.id,
+    quantity,
+    servingUnit,
+    snapshot: {
+      name,
+      displayName: name,
+      servingUnit,
+      serving_unit: servingUnit,
+      calories: getNutritionLineValue(recipe.total_calories, multiplier),
+      carbs_g: getNutritionLineValue(recipe.total_carbs_g, multiplier),
+      protein_g: getNutritionLineValue(recipe.total_protein_g, multiplier),
+      fat_g: getNutritionLineValue(recipe.total_fat_g, multiplier),
+    },
+    metadata: {
+      source: "saved-recipe",
+      snapshotTotals: "line",
+      selectedServing: {
+        amount: quantity,
+        unit: servingUnit,
+        multiplier,
+      },
+      itemCount: getNutritionSavedRecipeItemCount(recipe),
+    },
+  };
 }
 
 function getNutritionMealName(values: Record<string, unknown>, fields: NutritionEntryFields) {
@@ -1871,6 +2847,8 @@ function buildNutritionMealDraft({
   databaseFields,
   selectedFoods,
   selectedFood,
+  selectedMeal,
+  selectedRecipe,
   selectedAction,
   values,
   entryId,
@@ -1880,6 +2858,8 @@ function buildNutritionMealDraft({
   databaseFields: NoteDatabaseFieldDefinition[];
   selectedFoods: NutritionSelectedFoodItem[];
   selectedFood: NutritionSelectedFoodItem | null;
+  selectedMeal: NutritionSavedMeal | null;
+  selectedRecipe: NutritionSelectedRecipeItem | null;
   selectedAction: NutritionFoodActionTabId;
   values: Record<string, unknown>;
   entryId: string;
@@ -1894,6 +2874,10 @@ function buildNutritionMealDraft({
     items = selectedFoods.map(buildFoodNutritionMealItem);
   } else if (selectedAction === "scan" && selectedFood) {
     items = [buildFoodNutritionMealItem(selectedFood)];
+  } else if ((selectedAction === "meals" || selectedAction === "recent") && selectedMeal) {
+    items = getSortedNutritionMealItems(selectedMeal).map(buildCopiedNutritionMealItem);
+  } else if (selectedAction === "recipes" && selectedRecipe) {
+    items = [buildSelectedNutritionRecipeMealItem(selectedRecipe)];
   } else if (selectedAction === "custom") {
     const name = getNutritionMealName(values, fields);
     items = [
@@ -1930,6 +2914,12 @@ function buildNutritionMealDraft({
     metadata: {
       source: "note-database-entry",
       databaseId: databaseDefinition.id,
+      ...((selectedAction === "meals" || selectedAction === "recent") && selectedMeal
+        ? { reusedMealId: selectedMeal.id }
+        : {}),
+      ...(selectedAction === "recipes" && selectedRecipe
+        ? { reusedRecipeId: selectedRecipe.recipe.id }
+        : {}),
     },
     items,
   };
@@ -1957,6 +2947,62 @@ async function createNutritionMeal(draft: NutritionMealDraft) {
   return mealId;
 }
 
+async function createNutritionMealTemplate(draft: {
+  name: string;
+  icon: string;
+  items: NutritionMealDraft["items"];
+}) {
+  const response = await fetch("/api/nutrition/meal-templates", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: draft.name,
+      icon: draft.icon,
+      items: draft.items,
+      metadata: {
+        source: "nutrition-meal-builder",
+      },
+    }),
+  });
+  const payload = (await response.json()) as NutritionMealCreateResponse;
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to create meal.");
+  }
+
+  return payload.meal ?? null;
+}
+
+async function createNutritionRecipe(draft: {
+  name: string;
+  icon: string;
+  items: NutritionMealDraft["items"];
+}) {
+  const response = await fetch("/api/nutrition/recipes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: draft.name,
+      icon: draft.icon,
+      items: draft.items,
+      metadata: {
+        source: "nutrition-recipe-builder",
+      },
+    }),
+  });
+  const payload = (await response.json()) as NutritionRecipeCreateResponse;
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to create recipe.");
+  }
+
+  return payload.recipe ?? null;
+}
+
 function mapSelectedNutritionFoodsToEntryValues(
   items: NutritionSelectedFoodItem[],
   databaseDefinition: NoteDatabaseDefinition | null | undefined,
@@ -1978,10 +3024,10 @@ function mapSelectedNutritionFoodsToEntryValues(
   };
 
   for (const item of items) {
-    const calories = getNutritionFoodLineValue(item.food, "calories", item.quantity);
-    const carbs = getNutritionFoodLineValue(item.food, "carbs_g", item.quantity);
-    const protein = getNutritionFoodLineValue(item.food, "protein_g", item.quantity);
-    const fat = getNutritionFoodLineValue(item.food, "fat_g", item.quantity);
+    const calories = getNutritionFoodLineValue(item, "calories");
+    const carbs = getNutritionFoodLineValue(item, "carbs_g");
+    const protein = getNutritionFoodLineValue(item, "protein_g");
+    const fat = getNutritionFoodLineValue(item, "fat_g");
 
     if (calories !== null) {
       totals.calories += calories;
@@ -2021,6 +3067,74 @@ function mapSelectedNutritionFoodsToEntryValues(
   }
   if (fatField) {
     values[fatField.id] = formatAggregatedNutritionValue(totals.fat, hasMetricValue.fat);
+  }
+
+  return values;
+}
+
+function mapNutritionSavedMealToEntryValues(
+  meal: NutritionSavedMeal,
+  databaseDefinition: NoteDatabaseDefinition | null | undefined,
+) {
+  const { foodField, caloriesField, carbsField, proteinField, fatField } =
+    findNutritionEntryFields(databaseDefinition);
+  const values: Record<string, string> = {};
+
+  if (foodField) {
+    values[foodField.id] = getNutritionSavedMealDisplayName(meal);
+  }
+  if (caloriesField) {
+    values[caloriesField.id] =
+      formatFoodNutritionNumber(parseNutritionProgressNumber(meal.total_calories)) ?? "";
+  }
+  if (carbsField) {
+    values[carbsField.id] =
+      formatFoodNutritionNumber(parseNutritionProgressNumber(meal.total_carbs_g)) ?? "";
+  }
+  if (proteinField) {
+    values[proteinField.id] =
+      formatFoodNutritionNumber(parseNutritionProgressNumber(meal.total_protein_g)) ?? "";
+  }
+  if (fatField) {
+    values[fatField.id] =
+      formatFoodNutritionNumber(parseNutritionProgressNumber(meal.total_fat_g)) ?? "";
+  }
+
+  return values;
+}
+
+function mapNutritionSavedRecipeToEntryValues(
+  item: NutritionSelectedRecipeItem,
+  databaseDefinition: NoteDatabaseDefinition | null | undefined,
+) {
+  const { recipe } = item;
+  const { foodField, caloriesField, carbsField, proteinField, fatField } =
+    findNutritionEntryFields(databaseDefinition);
+  const values: Record<string, string> = {};
+  const multiplier = getRecipeServingMultiplier(item);
+
+  if (foodField) {
+    values[foodField.id] = recipe.name;
+  }
+  if (caloriesField) {
+    values[caloriesField.id] =
+      formatFoodNutritionNumber(getNutritionLineValue(recipe.total_calories, multiplier)) ??
+      "";
+  }
+  if (carbsField) {
+    values[carbsField.id] =
+      formatFoodNutritionNumber(getNutritionLineValue(recipe.total_carbs_g, multiplier)) ??
+      "";
+  }
+  if (proteinField) {
+    values[proteinField.id] =
+      formatFoodNutritionNumber(getNutritionLineValue(recipe.total_protein_g, multiplier)) ??
+      "";
+  }
+  if (fatField) {
+    values[fatField.id] =
+      formatFoodNutritionNumber(getNutritionLineValue(recipe.total_fat_g, multiplier)) ??
+      "";
   }
 
   return values;
@@ -3119,11 +4233,17 @@ export function NoteDatabaseEntrySheet({
   >([]);
   const [selectedNutritionFood, setSelectedNutritionFood] =
     useState<NutritionSelectedFoodItem | null>(null);
+  const [selectedNutritionMeal, setSelectedNutritionMeal] =
+    useState<NutritionSavedMeal | null>(null);
+  const [selectedNutritionRecipe, setSelectedNutritionRecipe] =
+    useState<NutritionSelectedRecipeItem | null>(null);
   const [nutritionDailySavedTotals, setNutritionDailySavedTotals] =
     useState<Record<NutritionDailyMetricKey, number>>({ ...EMPTY_NUTRITION_TOTALS });
   const [nutritionDailyTotalsError, setNutritionDailyTotalsError] = useState<string | null>(
     null,
   );
+  const [nutritionProgressAnimationKey, setNutritionProgressAnimationKey] = useState(0);
+  const [isNutritionProgressAnimatedIn, setIsNutritionProgressAnimatedIn] = useState(false);
   const [nutritionFoodSearchQuery, setNutritionFoodSearchQuery] = useState("");
   const [nutritionFoodSearchResults, setNutritionFoodSearchResults] = useState<
     FoodSearchResult[]
@@ -3139,6 +4259,73 @@ export function NoteDatabaseEntrySheet({
   const [nutritionFoodBrowseError, setNutritionFoodBrowseError] = useState<string | null>(
     null,
   );
+  const [nutritionSavedMeals, setNutritionSavedMeals] = useState<NutritionSavedMeal[]>([]);
+  const [isNutritionSavedMealsLoading, setIsNutritionSavedMealsLoading] = useState(false);
+  const [nutritionSavedMealsError, setNutritionSavedMealsError] = useState<string | null>(
+    null,
+  );
+  const [nutritionMealTemplates, setNutritionMealTemplates] = useState<NutritionSavedMeal[]>([]);
+  const [isNutritionMealTemplatesLoading, setIsNutritionMealTemplatesLoading] =
+    useState(false);
+  const [nutritionMealTemplatesError, setNutritionMealTemplatesError] = useState<
+    string | null
+  >(null);
+  const [nutritionRecipes, setNutritionRecipes] = useState<NutritionSavedRecipe[]>([]);
+  const [isNutritionRecipesLoading, setIsNutritionRecipesLoading] = useState(false);
+  const [nutritionRecipesError, setNutritionRecipesError] = useState<string | null>(
+    null,
+  );
+  const [isNutritionMealBuilderOpen, setIsNutritionMealBuilderOpen] = useState(false);
+  const [nutritionMealBuilderName, setNutritionMealBuilderName] = useState("");
+  const [nutritionMealBuilderIcon, setNutritionMealBuilderIcon] = useState(
+    DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
+  );
+  const [isNutritionMealBuilderIconPickerOpen, setIsNutritionMealBuilderIconPickerOpen] =
+    useState(false);
+  const [nutritionMealBuilderItems, setNutritionMealBuilderItems] = useState<
+    NutritionMealBuilderItem[]
+  >([]);
+  const [nutritionMealBuilderSearchQuery, setNutritionMealBuilderSearchQuery] =
+    useState("");
+  const [nutritionMealBuilderFoodResults, setNutritionMealBuilderFoodResults] = useState<
+    FoodSearchResult[]
+  >([]);
+  const [nutritionMealBuilderRecipeResults, setNutritionMealBuilderRecipeResults] =
+    useState<NutritionRecipeSearchResult[]>([]);
+  const [isNutritionMealBuilderSearchLoading, setIsNutritionMealBuilderSearchLoading] =
+    useState(false);
+  const [nutritionMealBuilderSearchError, setNutritionMealBuilderSearchError] = useState<
+    string | null
+  >(null);
+  const [isNutritionMealBuilderSaving, setIsNutritionMealBuilderSaving] = useState(false);
+  const [nutritionMealBuilderSaveError, setNutritionMealBuilderSaveError] = useState<
+    string | null
+  >(null);
+  const [isNutritionRecipeBuilderOpen, setIsNutritionRecipeBuilderOpen] =
+    useState(false);
+  const [nutritionRecipeBuilderName, setNutritionRecipeBuilderName] = useState("");
+  const [nutritionRecipeBuilderIcon, setNutritionRecipeBuilderIcon] = useState(
+    DEFAULT_NUTRITION_RECIPE_ICON,
+  );
+  const [
+    isNutritionRecipeBuilderIconPickerOpen,
+    setIsNutritionRecipeBuilderIconPickerOpen,
+  ] = useState(false);
+  const [nutritionRecipeBuilderItems, setNutritionRecipeBuilderItems] = useState<
+    NutritionMealBuilderItem[]
+  >([]);
+  const [nutritionRecipeBuilderSearchQuery, setNutritionRecipeBuilderSearchQuery] =
+    useState("");
+  const [nutritionRecipeBuilderFoodResults, setNutritionRecipeBuilderFoodResults] =
+    useState<FoodSearchResult[]>([]);
+  const [isNutritionRecipeBuilderSearchLoading, setIsNutritionRecipeBuilderSearchLoading] =
+    useState(false);
+  const [nutritionRecipeBuilderSearchError, setNutritionRecipeBuilderSearchError] =
+    useState<string | null>(null);
+  const [isNutritionRecipeBuilderSaving, setIsNutritionRecipeBuilderSaving] =
+    useState(false);
+  const [nutritionRecipeBuilderSaveError, setNutritionRecipeBuilderSaveError] =
+    useState<string | null>(null);
   const [nutritionBarcodeValue, setNutritionBarcodeValue] = useState("");
   const [isNutritionBarcodeScannerLoading, setIsNutritionBarcodeScannerLoading] =
     useState(false);
@@ -3150,11 +4337,18 @@ export function NoteDatabaseEntrySheet({
   const [nutritionBarcodeLookupError, setNutritionBarcodeLookupError] = useState<
     string | null
   >(null);
+  const [openNutritionServingUnitMenu, setOpenNutritionServingUnitMenu] = useState<{
+    id: string;
+    top: number;
+    right: number;
+  } | null>(null);
   const nutritionFoodActionTabRefs = useRef<
     Partial<Record<NutritionFoodActionTabId, HTMLButtonElement | null>>
   >({});
-  const shouldReduceNutritionBrowseMotion = useReducedMotion();
-  const nutritionBrowseAccordionTransition = shouldReduceNutritionBrowseMotion
+  const nutritionMealBuilderIconPickerRef = useRef<HTMLDivElement | null>(null);
+  const nutritionRecipeBuilderIconPickerRef = useRef<HTMLDivElement | null>(null);
+  const shouldReduceNutritionMotion = useReducedMotion();
+  const nutritionBrowseAccordionTransition = shouldReduceNutritionMotion
     ? { duration: 0 }
     : NUTRITION_BROWSE_ACCORDION_TRANSITION;
   const databaseFields = getDatabaseFieldsWithTitleFirst(databaseDefinition);
@@ -3195,6 +4389,20 @@ export function NoteDatabaseEntrySheet({
   const normalizedNutritionFoodSearchValue = normalizeFoodSearchText(
     nutritionFoodSearchQuery,
   );
+  const normalizedNutritionMealBuilderSearchValue = normalizeFoodSearchText(
+    nutritionMealBuilderSearchQuery,
+  );
+  const normalizedNutritionRecipeBuilderSearchValue = normalizeFoodSearchText(
+    nutritionRecipeBuilderSearchQuery,
+  );
+  const nutritionMealBuilderTotals = useMemo(
+    () => getNutritionMealBuilderTotals(nutritionMealBuilderItems),
+    [nutritionMealBuilderItems],
+  );
+  const nutritionRecipeBuilderTotals = useMemo(
+    () => getNutritionMealBuilderTotals(nutritionRecipeBuilderItems),
+    [nutritionRecipeBuilderItems],
+  );
   const nutritionLocalDayWindow = useMemo(
     () => getNutritionLocalDayWindow(new Date(openedAt)),
     [openedAt],
@@ -3203,8 +4411,50 @@ export function NoteDatabaseEntrySheet({
     () => new Set(selectedNutritionFoods.map((item) => getNutritionFoodSelectionKey(item.food))),
     [selectedNutritionFoods],
   );
+  useEffect(() => {
+    if (
+      !isNutritionMealBuilderIconPickerOpen &&
+      !isNutritionRecipeBuilderIconPickerOpen &&
+      !openNutritionServingUnitMenu
+    ) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as HTMLElement;
+      if (
+        isNutritionMealBuilderIconPickerOpen &&
+        !nutritionMealBuilderIconPickerRef.current?.contains(event.target as Node)
+      ) {
+        setIsNutritionMealBuilderIconPickerOpen(false);
+      }
+      if (
+        isNutritionRecipeBuilderIconPickerOpen &&
+        !nutritionRecipeBuilderIconPickerRef.current?.contains(event.target as Node)
+      ) {
+        setIsNutritionRecipeBuilderIconPickerOpen(false);
+      }
+      if (openNutritionServingUnitMenu && !target.closest("[data-nutrition-serving-picker]")) {
+        setOpenNutritionServingUnitMenu(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [
+    isNutritionMealBuilderIconPickerOpen,
+    isNutritionRecipeBuilderIconPickerOpen,
+    openNutritionServingUnitMenu,
+  ]);
   const nutritionDailyProgress = shouldRenderNutritionDailyProgress
     ? nutritionDailySavedTotals
+    : EMPTY_NUTRITION_TOTALS;
+  const nutritionDailyPreviewTotals = shouldRenderNutritionDailyProgress
+    ? aggregateNutritionDraftTotals({
+        values: entryFormValues,
+        caloriesField: nutritionCaloriesField,
+        macroFields: nutritionMacroFields,
+      })
     : EMPTY_NUTRITION_TOTALS;
   const refreshNutritionDailyTotals = useCallback(async () => {
     if (!shouldRenderNutritionDailyProgress) {
@@ -3228,6 +4478,7 @@ export function NoteDatabaseEntrySheet({
 
       setNutritionDailySavedTotals(aggregateNutritionMealTotals(payload.meals ?? []));
       setNutritionDailyTotalsError(null);
+      setNutritionProgressAnimationKey((currentKey) => currentKey + 1);
     } catch (error) {
       console.error("Failed to load nutrition daily totals", { error });
       setNutritionDailyTotalsError("Saved daily totals are unavailable right now.");
@@ -3245,6 +4496,29 @@ export function NoteDatabaseEntrySheet({
   useEffect(() => {
     void refreshNutritionDailyTotals();
   }, [refreshNutritionDailyTotals]);
+
+  useLayoutEffect(() => {
+    if (!shouldRenderNutritionDailyProgress) {
+      setIsNutritionProgressAnimatedIn(false);
+      return;
+    }
+
+    if (shouldReduceNutritionMotion) {
+      setIsNutritionProgressAnimatedIn(true);
+      return;
+    }
+
+    setIsNutritionProgressAnimatedIn(false);
+    const frameId = window.requestAnimationFrame(() => {
+      setIsNutritionProgressAnimatedIn(true);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [
+    nutritionProgressAnimationKey,
+    shouldReduceNutritionMotion,
+    shouldRenderNutritionDailyProgress,
+  ]);
 
   useEffect(() => {
     if (
@@ -3360,6 +4634,265 @@ export function NoteDatabaseEntrySheet({
     openNutritionBrowseDepartment,
   ]);
 
+  useEffect(() => {
+    if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "recent") {
+      setIsNutritionSavedMealsLoading(false);
+      setNutritionSavedMealsError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsNutritionSavedMealsLoading(true);
+    setNutritionSavedMealsError(null);
+
+    const params = new URLSearchParams({ limit: "20" });
+
+    fetch(`/api/nutrition/meals?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as NutritionMealsListResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to load nutrition meals.");
+        }
+
+        setNutritionSavedMeals(payload.meals ?? []);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load saved nutrition meals", { error });
+        setNutritionSavedMeals([]);
+        setNutritionSavedMealsError("Saved meals are unavailable right now.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsNutritionSavedMealsLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isDefaultNutritionDatabase, selectedNutritionFoodAction]);
+
+  const refreshNutritionMealTemplates = useCallback(async () => {
+    if (!isDefaultNutritionDatabase) {
+      setNutritionMealTemplates([]);
+      setIsNutritionMealTemplatesLoading(false);
+      setNutritionMealTemplatesError(null);
+      return;
+    }
+
+    const params = new URLSearchParams({ limit: "50" });
+    setIsNutritionMealTemplatesLoading(true);
+    setNutritionMealTemplatesError(null);
+
+    try {
+      const response = await fetch(`/api/nutrition/meal-templates?${params.toString()}`);
+      const payload = (await response.json()) as NutritionMealsListResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load meals.");
+      }
+
+      setNutritionMealTemplates(payload.meals ?? []);
+    } catch (error) {
+      console.error("Failed to load reusable nutrition meals", { error });
+      setNutritionMealTemplates([]);
+      setNutritionMealTemplatesError("Meals are unavailable right now.");
+    } finally {
+      setIsNutritionMealTemplatesLoading(false);
+    }
+  }, [isDefaultNutritionDatabase]);
+
+  useEffect(() => {
+    if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "meals") {
+      setIsNutritionMealTemplatesLoading(false);
+      setNutritionMealTemplatesError(null);
+      return;
+    }
+
+    void refreshNutritionMealTemplates();
+  }, [
+    isDefaultNutritionDatabase,
+    refreshNutritionMealTemplates,
+    selectedNutritionFoodAction,
+  ]);
+
+  const refreshNutritionRecipes = useCallback(async () => {
+    if (!isDefaultNutritionDatabase) {
+      setNutritionRecipes([]);
+      setIsNutritionRecipesLoading(false);
+      setNutritionRecipesError(null);
+      return;
+    }
+
+    const params = new URLSearchParams({ limit: "50" });
+    setIsNutritionRecipesLoading(true);
+    setNutritionRecipesError(null);
+
+    try {
+      const response = await fetch(`/api/nutrition/recipes?${params.toString()}`);
+      const payload = (await response.json()) as NutritionRecipesListResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load recipes.");
+      }
+
+      setNutritionRecipes(payload.recipes ?? []);
+    } catch (error) {
+      console.error("Failed to load nutrition recipes", { error });
+      setNutritionRecipes([]);
+      setNutritionRecipesError("Recipes are unavailable right now.");
+    } finally {
+      setIsNutritionRecipesLoading(false);
+    }
+  }, [isDefaultNutritionDatabase]);
+
+  useEffect(() => {
+    if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "recipes") {
+      setIsNutritionRecipesLoading(false);
+      setNutritionRecipesError(null);
+      return;
+    }
+
+    void refreshNutritionRecipes();
+  }, [
+    isDefaultNutritionDatabase,
+    refreshNutritionRecipes,
+    selectedNutritionFoodAction,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isDefaultNutritionDatabase ||
+      !isNutritionMealBuilderOpen ||
+      normalizedNutritionMealBuilderSearchValue.length < 2
+    ) {
+      setNutritionMealBuilderFoodResults([]);
+      setNutritionMealBuilderRecipeResults([]);
+      setIsNutritionMealBuilderSearchLoading(false);
+      setNutritionMealBuilderSearchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const searchTimeout = window.setTimeout(() => {
+      setIsNutritionMealBuilderSearchLoading(true);
+      setNutritionMealBuilderSearchError(null);
+
+      const params = new URLSearchParams({
+        q: nutritionMealBuilderSearchQuery,
+        limit: "6",
+      });
+
+      Promise.all([
+        fetch(`/api/nutrition/foods/search?${params.toString()}`, {
+          signal: controller.signal,
+        }),
+        fetch(`/api/nutrition/recipes/search?${params.toString()}`, {
+          signal: controller.signal,
+        }),
+      ])
+        .then(async ([foodsResponse, recipesResponse]) => {
+          const foodsPayload = (await foodsResponse.json()) as NutritionFoodSearchResponse;
+          const recipesPayload =
+            (await recipesResponse.json()) as NutritionRecipeSearchResponse;
+
+          if (!foodsResponse.ok) {
+            throw new Error(foodsPayload.error || "Unable to search foods.");
+          }
+          if (!recipesResponse.ok) {
+            throw new Error(recipesPayload.error || "Unable to search recipes.");
+          }
+
+          setNutritionMealBuilderFoodResults(foodsPayload.foods ?? []);
+          setNutritionMealBuilderRecipeResults(recipesPayload.recipes ?? []);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          console.error("Failed to search meal builder items", { error });
+          setNutritionMealBuilderFoodResults([]);
+          setNutritionMealBuilderRecipeResults([]);
+          setNutritionMealBuilderSearchError("Search is unavailable right now.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsNutritionMealBuilderSearchLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(searchTimeout);
+      controller.abort();
+    };
+  }, [
+    isDefaultNutritionDatabase,
+    isNutritionMealBuilderOpen,
+    normalizedNutritionMealBuilderSearchValue,
+    nutritionMealBuilderSearchQuery,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isDefaultNutritionDatabase ||
+      !isNutritionRecipeBuilderOpen ||
+      normalizedNutritionRecipeBuilderSearchValue.length < 2
+    ) {
+      setNutritionRecipeBuilderFoodResults([]);
+      setIsNutritionRecipeBuilderSearchLoading(false);
+      setNutritionRecipeBuilderSearchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const searchTimeout = window.setTimeout(() => {
+      setIsNutritionRecipeBuilderSearchLoading(true);
+      setNutritionRecipeBuilderSearchError(null);
+
+      const params = new URLSearchParams({
+        q: nutritionRecipeBuilderSearchQuery,
+        limit: "6",
+      });
+
+      fetch(`/api/nutrition/foods/search?${params.toString()}`, {
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const payload = (await response.json()) as NutritionFoodSearchResponse;
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Unable to search foods.");
+          }
+
+          setNutritionRecipeBuilderFoodResults(payload.foods ?? []);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          console.error("Failed to search recipe builder foods", { error });
+          setNutritionRecipeBuilderFoodResults([]);
+          setNutritionRecipeBuilderSearchError("Food search is unavailable right now.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsNutritionRecipeBuilderSearchLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(searchTimeout);
+      controller.abort();
+    };
+  }, [
+    isDefaultNutritionDatabase,
+    isNutritionRecipeBuilderOpen,
+    normalizedNutritionRecipeBuilderSearchValue,
+    nutritionRecipeBuilderSearchQuery,
+  ]);
+
   function selectNutritionFoodAction(tabId: NutritionFoodActionTabId) {
     setSelectedNutritionFoodAction(tabId);
     nutritionFoodActionTabRefs.current[tabId]?.scrollIntoView({
@@ -3380,12 +4913,15 @@ export function NoteDatabaseEntrySheet({
   }
 
   function applyNutritionFoodSelection(nextFoods: NutritionSelectedFoodItem[]) {
+    const sanitizedFoods = nextFoods.map(sanitizeNutritionSelectedFoodItem);
     const mappedValues = mapSelectedNutritionFoodsToEntryValues(
-      nextFoods,
+      sanitizedFoods,
       databaseDefinition,
     );
-    setSelectedNutritionFoods(nextFoods);
+    setSelectedNutritionFoods(sanitizedFoods);
     setSelectedNutritionFood(null);
+    setSelectedNutritionMeal(null);
+    setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
@@ -3421,12 +4957,27 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function updateNutritionSelectedFoodQuantity(food: FoodSearchResult, quantity: number) {
+  function updateNutritionSelectedFoodServing(
+    food: FoodSearchResult,
+    quantity: number,
+    servingUnit?: NutritionServingUnit,
+  ) {
     const foodKey = getNutritionFoodSelectionKey(food);
     const nextQuantity = normalizeNutritionQuantity(quantity);
+    const nextServingUnit = getSafeFoodServingUnit(
+      food,
+      servingUnit ??
+        selectedNutritionFood?.servingUnit ??
+        getSelectedNutritionFoodItem(food)?.servingUnit ??
+        getDefaultFoodServingUnit(food),
+    );
 
     if (selectedNutritionFood?.food.id === foodKey) {
-      const nextItem = { ...selectedNutritionFood, quantity: nextQuantity };
+      const nextItem = {
+        ...selectedNutritionFood,
+        quantity: nextQuantity,
+        servingUnit: nextServingUnit,
+      };
       setSelectedNutritionFood(nextItem);
       setEntryFormValues((current) => ({
         ...current,
@@ -3438,7 +4989,11 @@ export function NoteDatabaseEntrySheet({
 
     const nextFoods = selectedNutritionFoods.map((selectedFood) =>
       getNutritionFoodSelectionKey(selectedFood.food) === foodKey
-        ? { ...selectedFood, quantity: nextQuantity }
+        ? {
+            ...selectedFood,
+            quantity: nextQuantity,
+            servingUnit: nextServingUnit,
+          }
         : selectedFood,
     );
     applyNutritionFoodSelection(nextFoods);
@@ -3458,8 +5013,245 @@ export function NoteDatabaseEntrySheet({
     const mappedValues = mapSelectedNutritionFoodsToEntryValues([nextItem], databaseDefinition);
     setSelectedNutritionFoods([]);
     setSelectedNutritionFood(nextItem);
+    setSelectedNutritionMeal(null);
+    setSelectedNutritionRecipe(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
+  }
+
+  function selectNutritionSavedMeal(meal: NutritionSavedMeal) {
+    const mappedValues = mapNutritionSavedMealToEntryValues(meal, databaseDefinition);
+    setSelectedNutritionFoods([]);
+    setSelectedNutritionFood(null);
+    setSelectedNutritionMeal(meal);
+    setSelectedNutritionRecipe(null);
+    setEntryFormValues((current) => ({ ...current, ...mappedValues }));
+    setSubmitError(null);
+  }
+
+  function selectNutritionSavedRecipe(recipe: NutritionSavedRecipe) {
+    const nextItem: NutritionSelectedRecipeItem = {
+      recipe,
+      quantity: 1,
+      servingUnit: "serving",
+    };
+    const mappedValues = mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition);
+    setSelectedNutritionFoods([]);
+    setSelectedNutritionFood(null);
+    setSelectedNutritionMeal(null);
+    setSelectedNutritionRecipe(nextItem);
+    setEntryFormValues((current) => ({ ...current, ...mappedValues }));
+    setSubmitError(null);
+  }
+
+  function updateNutritionSelectedRecipeServing(
+    quantity: number,
+    servingUnit = selectedNutritionRecipe?.servingUnit ?? "serving",
+  ) {
+    if (!selectedNutritionRecipe) return;
+
+    const nextItem: NutritionSelectedRecipeItem = {
+      ...selectedNutritionRecipe,
+      quantity: normalizeNutritionQuantity(quantity),
+      servingUnit: normalizeNutritionServingUnit(servingUnit),
+    };
+    setSelectedNutritionRecipe(nextItem);
+    setEntryFormValues((current) => ({
+      ...current,
+      ...mapNutritionSavedRecipeToEntryValues(nextItem, databaseDefinition),
+    }));
+    setSubmitError(null);
+  }
+
+  function openNutritionMealBuilder() {
+    setNutritionMealBuilderName("");
+    setNutritionMealBuilderIcon(DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON);
+    setIsNutritionMealBuilderIconPickerOpen(false);
+    setNutritionMealBuilderItems([]);
+    setNutritionMealBuilderSearchQuery("");
+    setNutritionMealBuilderFoodResults([]);
+    setNutritionMealBuilderRecipeResults([]);
+    setNutritionMealBuilderSearchError(null);
+    setNutritionMealBuilderSaveError(null);
+    setIsNutritionMealBuilderOpen(true);
+  }
+
+  function closeNutritionMealBuilder() {
+    setIsNutritionMealBuilderOpen(false);
+    setIsNutritionMealBuilderIconPickerOpen(false);
+    setNutritionMealBuilderSearchError(null);
+    setNutritionMealBuilderSaveError(null);
+  }
+
+  function openNutritionRecipeBuilder() {
+    setNutritionRecipeBuilderName("");
+    setNutritionRecipeBuilderIcon(DEFAULT_NUTRITION_RECIPE_ICON);
+    setIsNutritionRecipeBuilderIconPickerOpen(false);
+    setNutritionRecipeBuilderItems([]);
+    setNutritionRecipeBuilderSearchQuery("");
+    setNutritionRecipeBuilderFoodResults([]);
+    setNutritionRecipeBuilderSearchError(null);
+    setNutritionRecipeBuilderSaveError(null);
+    setIsNutritionRecipeBuilderOpen(true);
+  }
+
+  function closeNutritionRecipeBuilder() {
+    setIsNutritionRecipeBuilderOpen(false);
+    setIsNutritionRecipeBuilderIconPickerOpen(false);
+    setNutritionRecipeBuilderSearchError(null);
+    setNutritionRecipeBuilderSaveError(null);
+  }
+
+  function addNutritionMealBuilderFood(food: FoodSearchResult) {
+    setNutritionMealBuilderItems((currentItems) => [
+      ...currentItems,
+      makeNutritionMealBuilderFoodItem(food),
+    ]);
+    setNutritionMealBuilderSearchQuery("");
+    setNutritionMealBuilderFoodResults([]);
+    setNutritionMealBuilderRecipeResults([]);
+    setNutritionMealBuilderSearchError(null);
+  }
+
+  function addNutritionMealBuilderRecipe(recipe: NutritionRecipeSearchResult) {
+    setNutritionMealBuilderItems((currentItems) => [
+      ...currentItems,
+      makeNutritionMealBuilderRecipeItem(recipe),
+    ]);
+    setNutritionMealBuilderSearchQuery("");
+    setNutritionMealBuilderFoodResults([]);
+    setNutritionMealBuilderRecipeResults([]);
+    setNutritionMealBuilderSearchError(null);
+  }
+
+  function removeNutritionMealBuilderItem(itemId: string) {
+    setNutritionMealBuilderItems((currentItems) =>
+      currentItems.filter((item) => item.id !== itemId),
+    );
+  }
+
+  function addNutritionRecipeBuilderFood(food: FoodSearchResult) {
+    setNutritionRecipeBuilderItems((currentItems) => [
+      ...currentItems,
+      makeNutritionMealBuilderFoodItem(food),
+    ]);
+    setNutritionRecipeBuilderSearchQuery("");
+    setNutritionRecipeBuilderFoodResults([]);
+    setNutritionRecipeBuilderSearchError(null);
+  }
+
+  function removeNutritionRecipeBuilderItem(itemId: string) {
+    setNutritionRecipeBuilderItems((currentItems) =>
+      currentItems.filter((item) => item.id !== itemId),
+    );
+  }
+
+  function updateNutritionMealBuilderItemServing(
+    itemId: string,
+    quantity: number,
+    servingUnit?: NutritionServingUnit,
+  ) {
+    const nextQuantity = normalizeNutritionQuantity(quantity);
+    setNutritionMealBuilderItems((currentItems) =>
+      currentItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              quantity: nextQuantity,
+              servingUnit:
+                item.type === "food" && item.food
+                  ? getSafeFoodServingUnit(item.food, servingUnit ?? item.servingUnit)
+                  : normalizeNutritionServingUnit(servingUnit ?? item.servingUnit),
+            }
+          : item,
+      ),
+    );
+  }
+
+  function updateNutritionRecipeBuilderItemServing(
+    itemId: string,
+    quantity: number,
+    servingUnit?: NutritionServingUnit,
+  ) {
+    const nextQuantity = normalizeNutritionQuantity(quantity);
+    setNutritionRecipeBuilderItems((currentItems) =>
+      currentItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              quantity: nextQuantity,
+              servingUnit:
+                item.type === "food" && item.food
+                  ? getSafeFoodServingUnit(item.food, servingUnit ?? item.servingUnit)
+                  : normalizeNutritionServingUnit(servingUnit ?? item.servingUnit),
+            }
+          : item,
+      ),
+    );
+  }
+
+  async function saveNutritionMealBuilder() {
+    if (isNutritionMealBuilderSaving) return;
+
+    const name = nutritionMealBuilderName.trim();
+    if (!name) {
+      setNutritionMealBuilderSaveError("Name this meal first.");
+      return;
+    }
+    if (nutritionMealBuilderItems.length === 0) {
+      setNutritionMealBuilderSaveError("Add at least one food or recipe.");
+      return;
+    }
+
+    setIsNutritionMealBuilderSaving(true);
+    setNutritionMealBuilderSaveError(null);
+
+    try {
+      await createNutritionMealTemplate({
+        name,
+        icon: nutritionMealBuilderIcon,
+        items: nutritionMealBuilderItems.map(buildNutritionMealTemplateDraftItem),
+      });
+      closeNutritionMealBuilder();
+      await refreshNutritionMealTemplates();
+    } catch (error) {
+      console.error("Failed to create reusable nutrition meal", { error });
+      setNutritionMealBuilderSaveError("Unable to save this meal right now.");
+    } finally {
+      setIsNutritionMealBuilderSaving(false);
+    }
+  }
+
+  async function saveNutritionRecipeBuilder() {
+    if (isNutritionRecipeBuilderSaving) return;
+
+    const name = nutritionRecipeBuilderName.trim();
+    if (!name) {
+      setNutritionRecipeBuilderSaveError("Name this recipe first.");
+      return;
+    }
+    if (nutritionRecipeBuilderItems.length === 0) {
+      setNutritionRecipeBuilderSaveError("Add at least one food.");
+      return;
+    }
+
+    setIsNutritionRecipeBuilderSaving(true);
+    setNutritionRecipeBuilderSaveError(null);
+
+    try {
+      await createNutritionRecipe({
+        name,
+        icon: nutritionRecipeBuilderIcon,
+        items: nutritionRecipeBuilderItems.map(buildNutritionMealTemplateDraftItem),
+      });
+      closeNutritionRecipeBuilder();
+      await refreshNutritionRecipes();
+    } catch (error) {
+      console.error("Failed to create nutrition recipe", { error });
+      setNutritionRecipeBuilderSaveError("Unable to save this recipe right now.");
+    } finally {
+      setIsNutritionRecipeBuilderSaving(false);
+    }
   }
 
   async function lookupNutritionBarcode(barcodeValue = nutritionBarcodeValue) {
@@ -3684,150 +5476,212 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function renderNutritionProgressBar({
-    label,
-    value,
-    target,
-    unit = "",
-    size,
-  }: {
-    label: string;
-    value: number;
-    target: number;
-    unit?: string;
-    size: "large" | "small";
-  }) {
-    const clampedPercent = target > 0
-      ? Math.min(100, Math.max(0, (value / target) * 100))
-      : 0;
-    const formattedValue = formatFoodNutritionNumber(value) ?? "0";
-    const formattedTarget = formatFoodNutritionNumber(target) ?? String(target);
-    const progressValue = `${formattedValue}${unit} / ${formattedTarget}${unit}`;
-    const barHeightClassName = size === "large" ? "h-2.5" : "h-1.5";
-    const labelClassName =
-      size === "large"
-        ? "text-sm font-semibold text-white/82"
-        : "text-[11px] font-semibold text-white/64";
-    const valueClassName =
-      size === "large"
-        ? "text-xs font-semibold text-white/52"
-        : "text-[10px] font-semibold text-white/42";
-
-    return (
-      <div>
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className={labelClassName}>{label}</span>
-          <span className={`${valueClassName} shrink-0 tabular-nums`}>
-            {progressValue}
-          </span>
-        </div>
-        <div
-          className={`mt-1.5 overflow-hidden rounded-full bg-white/[0.075] ${barHeightClassName}`}
-          role="meter"
-          aria-label={`${label} daily intake`}
-          aria-valuemin={0}
-          aria-valuemax={target}
-          aria-valuenow={Math.min(value, target)}
-        >
-          <div
-            className="h-full rounded-full bg-white/72"
-            style={{ width: `${clampedPercent}%` }}
-          />
-        </div>
-      </div>
-    );
-  }
-
   function renderNutritionDailyProgress() {
     if (!shouldRenderNutritionDailyProgress) return null;
 
     return (
-      <div className="space-y-2.5 px-1 pb-2.5">
-        {renderNutritionProgressBar({
-          label: "Calories",
-          value: nutritionDailyProgress.calories,
-          target: DEFAULT_DAILY_NUTRITION_GOALS.calories,
-          size: "large",
-        })}
-        <div className="grid grid-cols-3 gap-1.5">
-          {NUTRITION_MACRO_FIELD_KEYS.map((macroKey) => (
-            <div
-              key={macroKey}
-              className="min-w-0 rounded-lg bg-white/[0.035] px-2 py-2"
-            >
-              {renderNutritionProgressBar({
-                label:
-                  macroKey === "carbs"
-                    ? "Carbs"
-                    : macroKey === "protein"
-                      ? "Protein"
-                      : "Fat",
-                value: nutritionDailyProgress[macroKey],
-                target: DEFAULT_DAILY_NUTRITION_GOALS[macroKey],
-                unit: "g",
-                size: "small",
-              })}
-            </div>
-          ))}
-        </div>
-        {nutritionDailyTotalsError ? (
-          <p className="text-[11px] font-medium text-red-200/68">
-            {nutritionDailyTotalsError}
-          </p>
-        ) : null}
-      </div>
+      <NutritionDailyProgressBars
+        savedTotals={nutritionDailyProgress}
+        previewTotals={nutritionDailyPreviewTotals}
+        error={nutritionDailyTotalsError}
+        isAnimatedIn={isNutritionProgressAnimatedIn}
+        shouldReduceMotion={shouldReduceNutritionMotion}
+      />
     );
   }
 
-  function renderNutritionFoodQuantityControl(item: NutritionSelectedFoodItem) {
-    const { food, quantity } = item;
+  function renderNutritionServingSelector({
+    id,
+    label,
+    amount,
+    unit,
+    options,
+    onChange,
+    compact = false,
+    stopPropagation = false,
+  }: {
+    id: string;
+    label: string;
+    amount: number;
+    unit: NutritionServingUnit;
+    options: NutritionServingOption[];
+    onChange: (nextAmount: number, nextUnit: NutritionServingUnit) => void;
+    compact?: boolean;
+    stopPropagation?: boolean;
+  }) {
+    const heightClassName = "h-8";
+    const buttonSizeClassName = "h-8 w-7";
+    const amountWidthClassName = compact ? "w-8" : "w-9";
+    const safeOptions =
+      options.length > 0 ? options : [{ value: "serving", label: "serving" }];
+    const requestedUnit = normalizeNutritionServingUnit(unit);
+    const normalizedUnit = safeOptions.some((option) => option.value === requestedUnit)
+      ? requestedUnit
+      : safeOptions[0].value;
+    const menuId = `nutrition-serving-unit-${id}`;
+    const isUnitMenuOpen = openNutritionServingUnitMenu?.id === menuId;
+    const unitMenuPosition = isUnitMenuOpen ? openNutritionServingUnitMenu : null;
 
     return (
       <div
-        className="flex shrink-0 items-center overflow-hidden rounded-lg border border-white/[0.07] bg-black/34 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
-        onClick={(event) => event.stopPropagation()}
+        data-nutrition-serving-picker
+        className="relative flex max-w-[8.75rem] shrink-0 items-center rounded-lg border border-white/[0.07] bg-black/34 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+        onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
       >
         <button
           type="button"
-          aria-label={`Decrease ${food.name} servings`}
+          aria-label={`Decrease ${label} amount`}
           onClick={(event) => {
-            event.stopPropagation();
-            updateNutritionSelectedFoodQuantity(
-              food,
-              getNextWholeNutritionQuantity(quantity, -1),
-            );
+            if (stopPropagation) event.stopPropagation();
+            onChange(getNextWholeNutritionQuantity(amount, -1), normalizedUnit);
           }}
-          className="flex h-8 w-8 items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          className={`flex ${buttonSizeClassName} items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white`}
         >
           <Minus className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
         <input
           type="text"
           inputMode="decimal"
-          value={quantity}
-          onClick={(event) => event.stopPropagation()}
-          onChange={(event) =>
-            updateNutritionSelectedFoodQuantity(food, Number(event.target.value))
-          }
-          aria-label={`${food.name} servings`}
-          className="h-8 w-14 border-x border-white/[0.055] bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-white/84 outline-none"
+          value={formatNutritionServingAmount(amount)}
+          onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
+          onChange={(event) => onChange(Number(event.target.value), normalizedUnit)}
+          aria-label={`${label} amount`}
+          className={`${heightClassName} ${amountWidthClassName} border-x border-white/[0.055] bg-transparent px-0.5 text-center text-xs font-semibold tabular-nums text-white/84 outline-none`}
         />
+        <div className="relative border-r border-white/[0.055]">
+          <button
+            type="button"
+            aria-label={`${label} unit`}
+            aria-expanded={isUnitMenuOpen}
+            aria-controls={menuId}
+            onClick={(event) => {
+              if (stopPropagation) event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              const menuHeight = Math.min(224, safeOptions.length * 32 + 8);
+              const shouldOpenAbove = rect.bottom + menuHeight + 8 > window.innerHeight;
+              const top = shouldOpenAbove
+                ? Math.max(8, rect.top - menuHeight - 5)
+                : rect.bottom + 5;
+
+              setOpenNutritionServingUnitMenu((currentMenu) =>
+                currentMenu?.id === menuId
+                  ? null
+                  : {
+                      id: menuId,
+                      top,
+                      right: Math.max(8, window.innerWidth - rect.right),
+                    },
+              );
+            }}
+            className={`${heightClassName} min-w-7 max-w-[3.2rem] truncate bg-[#101010] px-1.5 text-center text-xs font-semibold text-white/72 outline-none transition hover:bg-white/[0.07] focus-visible:bg-white/[0.08]`}
+          >
+            {normalizedUnit}
+          </button>
+        </div>
+        {unitMenuPosition && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                id={menuId}
+                data-nutrition-serving-picker
+                role="menu"
+                className="fixed z-[80] max-h-56 min-w-[4.5rem] overflow-y-auto rounded-lg border border-white/[0.08] bg-[#101010] py-1 shadow-[0_16px_32px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.045)]"
+                style={{
+                  top: unitMenuPosition.top,
+                  right: unitMenuPosition.right,
+                }}
+                onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
+              >
+                {safeOptions.map((option) => {
+                  const isSelected = option.value === normalizedUnit;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isSelected}
+                      onClick={(event) => {
+                        if (stopPropagation) event.stopPropagation();
+                        onChange(amount, option.value);
+                        setOpenNutritionServingUnitMenu(null);
+                      }}
+                      className={`flex h-8 w-full items-center justify-between gap-2 px-2.5 text-left text-xs font-semibold outline-none transition ${
+                        isSelected
+                          ? "bg-white/[0.08] text-white/86"
+                          : "text-white/58 hover:bg-white/[0.055] hover:text-white/78 focus-visible:bg-white/[0.07] focus-visible:text-white/84"
+                      }`}
+                    >
+                      <span>{option.label}</span>
+                      {isSelected ? (
+                        <Check className="h-3 w-3 text-white/58" aria-hidden="true" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>,
+              document.body,
+            )
+          : null}
         <button
           type="button"
-          aria-label={`Increase ${food.name} servings`}
+          aria-label={`Increase ${label} amount`}
           onClick={(event) => {
-            event.stopPropagation();
-            updateNutritionSelectedFoodQuantity(
-              food,
-              getNextWholeNutritionQuantity(quantity, 1),
-            );
+            if (stopPropagation) event.stopPropagation();
+            onChange(getNextWholeNutritionQuantity(amount, 1), normalizedUnit);
           }}
-          className="flex h-8 w-8 items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          className={`flex ${buttonSizeClassName} items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white`}
         >
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>
     );
+  }
+
+  function renderNutritionFoodQuantityControl(item: NutritionSelectedFoodItem) {
+    return renderNutritionServingSelector({
+      id: `food-${item.food.id}`,
+      label: item.food.name,
+      amount: item.quantity,
+      unit: getSafeFoodServingUnit(item.food, item.servingUnit),
+      options: getFoodServingOptions(item.food),
+      onChange: (amount, servingUnit) =>
+        updateNutritionSelectedFoodServing(item.food, amount, servingUnit),
+      compact: true,
+      stopPropagation: true,
+    });
+  }
+
+  function renderNutritionMealBuilderQuantityControl(item: NutritionMealBuilderItem) {
+    return renderNutritionServingSelector({
+      id: `meal-builder-${item.id}`,
+      label: getNutritionMealBuilderItemName(item),
+      amount: item.quantity,
+      unit: getNutritionMealBuilderItemUnit(item),
+      options:
+        item.type === "food" && item.food
+          ? getFoodServingOptions(item.food)
+          : item.recipe
+            ? getRecipeServingOptions(item.recipe)
+            : [{ value: "serving", label: "serving" }],
+      onChange: (amount, servingUnit) =>
+        updateNutritionMealBuilderItemServing(item.id, amount, servingUnit),
+      compact: true,
+    });
+  }
+
+  function renderNutritionRecipeBuilderQuantityControl(item: NutritionMealBuilderItem) {
+    return renderNutritionServingSelector({
+      id: `recipe-builder-${item.id}`,
+      label: getNutritionMealBuilderItemName(item),
+      amount: item.quantity,
+      unit: getNutritionMealBuilderItemUnit(item),
+      options: item.food
+        ? getFoodServingOptions(item.food)
+        : [{ value: "serving", label: "serving" }],
+      onChange: (amount, servingUnit) =>
+        updateNutritionRecipeBuilderItemServing(item.id, amount, servingUnit),
+      compact: true,
+    });
   }
 
   function renderNutritionFoodResultList({
@@ -3855,11 +5709,18 @@ export function NoteDatabaseEntrySheet({
               const meta = getFoodSearchResultMeta(food);
               const selectedItem = getSelectedNutritionFoodItem(food);
               const isSelected = Boolean(selectedItem);
+              const displayMeta = selectedItem
+                ? getNutritionSelectedFoodLineMeta(selectedItem)
+                : meta;
+              const subline =
+                selectedItem && displayMeta
+                  ? [food.brand_name, displayMeta].filter(Boolean).join(" · ")
+                  : food.brand_name;
 
               return (
                 <div
                   key={food.id}
-                  className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition ${
+                  className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition ${
                     isSelected
                       ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.7)]"
                       : "hover:bg-white/[0.045]"
@@ -3869,10 +5730,10 @@ export function NoteDatabaseEntrySheet({
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => toggleNutritionFoodSelection(food)}
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left outline-none"
                   >
                     <NutritionFoodIcon food={food} />
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-1.5">
                         {isSelected ? (
                           <Check
@@ -3884,14 +5745,16 @@ export function NoteDatabaseEntrySheet({
                           {food.name}
                         </span>
                       </span>
-                      {food.brand_name ? (
+                      {subline ? (
                         <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                          {food.brand_name}
+                          {subline}
                         </span>
                       ) : null}
                     </span>
                   </button>
-                  {selectedItem ? renderNutritionFoodQuantityControl(selectedItem) : meta ? (
+                  {selectedItem ? (
+                    renderNutritionFoodQuantityControl(selectedItem)
+                  ) : meta ? (
                     <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
                       {meta}
                     </span>
@@ -3930,7 +5793,8 @@ export function NoteDatabaseEntrySheet({
         <div className="space-y-1.5">
           {selectedItems.map((item) => {
             const { food } = item;
-            const meta = getFoodSearchResultMeta(food);
+            const meta = getNutritionSelectedFoodLineMeta(item);
+            const quantityBadgeLabel = getNutritionSelectedFoodQuantityBadgeLabel(item);
             const shouldShowQuantityEditor = selectedNutritionFoodAction === "scan";
 
             return (
@@ -3940,8 +5804,15 @@ export function NoteDatabaseEntrySheet({
               >
                 <NutritionFoodIcon food={food} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-white/84">
-                    {food.name}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {food.name}
+                    </span>
+                    {quantityBadgeLabel ? (
+                      <span className="shrink-0 rounded-full border border-white/[0.07] bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+                        {quantityBadgeLabel}
+                      </span>
+                    ) : null}
                   </span>
                   {meta ? (
                     <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
@@ -3949,7 +5820,13 @@ export function NoteDatabaseEntrySheet({
                     </span>
                   ) : null}
                 </span>
-                {shouldShowQuantityEditor ? renderNutritionFoodQuantityControl(item) : null}
+                {shouldShowQuantityEditor ? (
+                  renderNutritionFoodQuantityControl(item)
+                ) : (
+                  <div className="hidden sm:block">
+                    {renderNutritionFoodQuantityControl(item)}
+                  </div>
+                )}
                 <button
                   type="button"
                   aria-label={`Remove ${food.name}`}
@@ -3961,6 +5838,799 @@ export function NoteDatabaseEntrySheet({
               </div>
             );
           })}
+        </div>
+      </div>
+    );
+  }
+
+  function clearSelectedNutritionMeal() {
+    setSelectedNutritionMeal(null);
+    setEntryFormValues((current) => ({
+      ...current,
+      ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
+    }));
+    setSubmitError(null);
+  }
+
+  function clearSelectedNutritionRecipe() {
+    setSelectedNutritionRecipe(null);
+    setEntryFormValues((current) => ({
+      ...current,
+      ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
+    }));
+    setSubmitError(null);
+  }
+
+  function renderSelectedNutritionMeal() {
+    if (!selectedNutritionMeal) return null;
+
+    return (
+      <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
+        <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+            Selected meal
+          </span>
+          <span className="shrink-0 text-[11px] font-semibold text-white/46">
+            {getNutritionSavedMealMeta(selectedNutritionMeal)}
+          </span>
+        </div>
+        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <Utensils className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-white/84">
+              {getNutritionSavedMealDisplayName(selectedNutritionMeal)}
+            </span>
+            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+              {getNutritionSavedMealTimeLabel(selectedNutritionMeal)}
+            </span>
+          </span>
+          <button
+            type="button"
+            aria-label="Remove selected meal"
+            onClick={clearSelectedNutritionMeal}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderSelectedNutritionRecipe() {
+    if (!selectedNutritionRecipe) return null;
+    const { recipe } = selectedNutritionRecipe;
+    const lineMeta = getNutritionSelectedRecipeLineMeta(selectedNutritionRecipe);
+
+    return (
+      <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
+        <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+            Selected recipe
+          </span>
+          <span className="shrink-0 text-[11px] font-semibold text-white/46">
+            {lineMeta}
+          </span>
+        </div>
+        <div className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <NutritionMealTemplateIcon
+              icon={getNutritionSavedRecipeIcon(recipe)}
+            />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-white/84">
+              {recipe.name}
+            </span>
+            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+              {lineMeta} · {formatNutritionServingLabel(
+                selectedNutritionRecipe.quantity,
+                selectedNutritionRecipe.servingUnit,
+              )}
+            </span>
+          </span>
+          {renderNutritionServingSelector({
+            id: `selected-recipe-${recipe.id}`,
+            label: recipe.name,
+            amount: selectedNutritionRecipe.quantity,
+            unit: selectedNutritionRecipe.servingUnit,
+            options: getRecipeServingOptions(recipe),
+            onChange: updateNutritionSelectedRecipeServing,
+            compact: true,
+          })}
+          <button
+            type="button"
+            aria-label="Remove selected recipe"
+            onClick={clearSelectedNutritionRecipe}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderNutritionMealBuilderSearchResults() {
+    const hasResults =
+      nutritionMealBuilderFoodResults.length > 0 ||
+      nutritionMealBuilderRecipeResults.length > 0;
+
+    if (normalizedNutritionMealBuilderSearchValue.length < 2) return null;
+
+    return (
+      <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+        {isNutritionMealBuilderSearchLoading ? (
+          <p className="px-3 py-2.5 text-xs font-medium text-white/42">Searching...</p>
+        ) : nutritionMealBuilderSearchError ? (
+          <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
+            {nutritionMealBuilderSearchError}
+          </p>
+        ) : hasResults ? (
+          <div className="divide-y divide-white/[0.045]">
+            {nutritionMealBuilderFoodResults.map((food) => (
+              <button
+                key={`food-${food.id}`}
+                type="button"
+                onClick={() => addNutritionMealBuilderFood(food)}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
+              >
+                <NutritionFoodIcon food={food} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="rounded-full border border-white/[0.06] bg-white/[0.045] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-white/42">
+                      Food
+                    </span>
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {food.name}
+                    </span>
+                  </span>
+                  {food.brand_name ? (
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                      {food.brand_name}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                  {getFoodSearchResultMeta(food)}
+                </span>
+              </button>
+            ))}
+            {nutritionMealBuilderRecipeResults.map((recipe) => (
+              <button
+                key={`recipe-${recipe.id}`}
+                type="button"
+                onClick={() => addNutritionMealBuilderRecipe(recipe)}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <BookOpen className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="rounded-full border border-white/[0.06] bg-white/[0.045] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-white/42">
+                      Recipe
+                    </span>
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {recipe.name}
+                    </span>
+                  </span>
+                  {recipe.description ? (
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                      {recipe.description}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                  {getNutritionRecipeSearchResultMeta(recipe)}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="px-3 py-2.5 text-xs font-medium text-white/38">
+            No foods or recipes found.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  function renderNutritionRecipeBuilderSearchResults() {
+    if (normalizedNutritionRecipeBuilderSearchValue.length < 2) return null;
+
+    return (
+      <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+        {isNutritionRecipeBuilderSearchLoading ? (
+          <p className="px-3 py-2.5 text-xs font-medium text-white/42">Searching...</p>
+        ) : nutritionRecipeBuilderSearchError ? (
+          <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
+            {nutritionRecipeBuilderSearchError}
+          </p>
+        ) : nutritionRecipeBuilderFoodResults.length > 0 ? (
+          <div className="divide-y divide-white/[0.045]">
+            {nutritionRecipeBuilderFoodResults.map((food) => (
+              <button
+                key={`recipe-food-${food.id}`}
+                type="button"
+                onClick={() => addNutritionRecipeBuilderFood(food)}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
+              >
+                <NutritionFoodIcon food={food} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-white/84">
+                    {food.name}
+                  </span>
+                  {food.brand_name ? (
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                      {food.brand_name}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                  {getFoodSearchResultMeta(food)}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="px-3 py-2.5 text-xs font-medium text-white/38">
+            No foods found.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  function renderNutritionMealBuilderIconSelector() {
+    return (
+      <div ref={nutritionMealBuilderIconPickerRef} className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() =>
+            setIsNutritionMealBuilderIconPickerOpen((current) => !current)
+          }
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.075] bg-black/46 text-sm leading-none text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] outline-none transition hover:border-white/[0.13] hover:bg-white/[0.055] focus-visible:border-white/[0.18] focus-visible:ring-1 focus-visible:ring-white/16"
+          aria-label="Choose meal icon"
+          aria-expanded={isNutritionMealBuilderIconPickerOpen}
+        >
+          <NutritionMealTemplateIcon icon={nutritionMealBuilderIcon} />
+        </button>
+
+        {isNutritionMealBuilderIconPickerOpen ? (
+          <div className="absolute left-0 top-9 z-50 grid w-[8.5rem] grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-[#090909]/96 p-1.5 shadow-[0_18px_44px_-24px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+            {NUTRITION_MEAL_TEMPLATE_ICON_OPTIONS.map((icon) => {
+              const isSelected = nutritionMealBuilderIcon === icon;
+
+              return (
+                <button
+                  key={icon}
+                  type="button"
+                  onClick={() => {
+                    setNutritionMealBuilderIcon(icon);
+                    setIsNutritionMealBuilderIconPickerOpen(false);
+                    setNutritionMealBuilderSaveError(null);
+                  }}
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border text-sm leading-none outline-none transition ${
+                    isSelected
+                      ? "border-white/[0.18] bg-white/[0.11] text-white"
+                      : "border-white/[0.055] bg-white/[0.035] text-white/76 hover:border-white/[0.11] hover:bg-white/[0.07]"
+                  } focus-visible:border-white/[0.2] focus-visible:bg-white/[0.09]`}
+                  aria-label={`Use ${icon} meal icon`}
+                >
+                  {icon}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderNutritionRecipeBuilderIconSelector() {
+    return (
+      <div ref={nutritionRecipeBuilderIconPickerRef} className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() =>
+            setIsNutritionRecipeBuilderIconPickerOpen((current) => !current)
+          }
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.075] bg-black/46 text-sm leading-none text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] outline-none transition hover:border-white/[0.13] hover:bg-white/[0.055] focus-visible:border-white/[0.18] focus-visible:ring-1 focus-visible:ring-white/16"
+          aria-label="Choose recipe icon"
+          aria-expanded={isNutritionRecipeBuilderIconPickerOpen}
+        >
+          <NutritionMealTemplateIcon icon={nutritionRecipeBuilderIcon} />
+        </button>
+
+        {isNutritionRecipeBuilderIconPickerOpen ? (
+          <div className="absolute left-0 top-9 z-50 grid w-[8.5rem] grid-cols-4 gap-1 rounded-xl border border-white/[0.08] bg-[#090909]/96 p-1.5 shadow-[0_18px_44px_-24px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+            {NUTRITION_MEAL_TEMPLATE_ICON_OPTIONS.map((icon) => {
+              const isSelected = nutritionRecipeBuilderIcon === icon;
+
+              return (
+                <button
+                  key={icon}
+                  type="button"
+                  onClick={() => {
+                    setNutritionRecipeBuilderIcon(icon);
+                    setIsNutritionRecipeBuilderIconPickerOpen(false);
+                    setNutritionRecipeBuilderSaveError(null);
+                  }}
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border text-sm leading-none outline-none transition ${
+                    isSelected
+                      ? "border-white/[0.18] bg-white/[0.11] text-white"
+                      : "border-white/[0.055] bg-white/[0.035] text-white/76 hover:border-white/[0.11] hover:bg-white/[0.07]"
+                  } focus-visible:border-white/[0.2] focus-visible:bg-white/[0.09]`}
+                  aria-label={`Use ${icon} recipe icon`}
+                >
+                  {icon}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderNutritionMealBuilder() {
+    const calories = formatFoodNutritionNumber(nutritionMealBuilderTotals.calories) ?? "0";
+    const carbs = formatFoodNutritionNumber(nutritionMealBuilderTotals.carbs) ?? "0";
+    const protein = formatFoodNutritionNumber(nutritionMealBuilderTotals.protein) ?? "0";
+    const fat = formatFoodNutritionNumber(nutritionMealBuilderTotals.fat) ?? "0";
+
+    return (
+      <div className="mt-3 rounded-2xl border border-white/[0.065] bg-[#080808] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={closeNutritionMealBuilder}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.045] text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.07] hover:text-white/86 focus-visible:ring-1 focus-visible:ring-white/16"
+            aria-label="Close meal builder"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white/84">Meal Builder</p>
+            <p className="truncate text-[11px] font-medium text-white/38">
+              {calories} cal · C {carbs}g · P {protein}g · F {fat}g
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveNutritionMealBuilder()}
+            disabled={isNutritionMealBuilderSaving}
+            className="flex h-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.12] px-3 text-xs font-semibold text-white/84 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.16] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:ring-1 focus-visible:ring-white/16"
+          >
+            {isNutritionMealBuilderSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <span className="text-xs font-semibold text-white/46">Meal name</span>
+          <span className="mt-2 flex items-center gap-2">
+            {renderNutritionMealBuilderIconSelector()}
+            <input
+              type="text"
+              value={nutritionMealBuilderName}
+              onChange={(event) => {
+                setNutritionMealBuilderName(event.target.value);
+                setNutritionMealBuilderSaveError(null);
+              }}
+              className="h-11 min-w-0 flex-1 rounded-lg border border-white/[0.055] bg-white/[0.045] px-3 text-sm font-medium text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.08] hover:bg-white/[0.055] focus-visible:border-white/[0.14] focus-visible:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-white/10"
+              placeholder="Meal name"
+              aria-label="Meal name"
+            />
+          </span>
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+          <div className="flex min-h-9 items-center justify-between gap-2 border-b border-white/[0.045] px-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+              Items
+            </span>
+            <span className="shrink-0 text-[11px] font-semibold text-white/44">
+              {nutritionMealBuilderItems.length}
+            </span>
+          </div>
+          {nutritionMealBuilderItems.length > 0 ? (
+            <div className="divide-y divide-white/[0.045]">
+              {nutritionMealBuilderItems.map((item) => {
+                const itemName = getNutritionMealBuilderItemName(item);
+                const itemBrand = getNutritionMealBuilderItemBrand(item);
+                const lineMeta = getNutritionMealBuilderItemLineMeta(item);
+
+                return (
+                  <div key={item.id} className="flex items-center gap-2 px-3 py-2.5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-white/84">
+                        {itemName}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                        {itemBrand ? `${itemBrand} · ` : ""}
+                        {lineMeta}
+                      </span>
+                    </span>
+                    {renderNutritionMealBuilderQuantityControl(item)}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${itemName}`}
+                      onClick={() => removeNutritionMealBuilderItem(item.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/38 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="px-3 py-3 text-xs font-medium text-white/38">
+              Search below to add foods or recipes.
+            </p>
+          )}
+        </div>
+
+        <div className="relative mt-3">
+          <Search
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/36"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={nutritionMealBuilderSearchQuery}
+            onChange={(event) => setNutritionMealBuilderSearchQuery(event.target.value)}
+            className="h-11 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-sm font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
+            placeholder="Search foods and recipes..."
+            aria-label="Search foods and recipes"
+          />
+        </div>
+        {renderNutritionMealBuilderSearchResults()}
+        {nutritionMealBuilderSaveError ? (
+          <p className="mt-2 text-xs font-medium text-red-200/72">
+            {nutritionMealBuilderSaveError}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderNutritionRecipeBuilder() {
+    const calories = formatFoodNutritionNumber(nutritionRecipeBuilderTotals.calories) ?? "0";
+    const carbs = formatFoodNutritionNumber(nutritionRecipeBuilderTotals.carbs) ?? "0";
+    const protein = formatFoodNutritionNumber(nutritionRecipeBuilderTotals.protein) ?? "0";
+    const fat = formatFoodNutritionNumber(nutritionRecipeBuilderTotals.fat) ?? "0";
+
+    return (
+      <div className="mt-3 rounded-2xl border border-white/[0.065] bg-[#080808] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={closeNutritionRecipeBuilder}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.045] text-white/62 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.07] hover:text-white/86 focus-visible:ring-1 focus-visible:ring-white/16"
+            aria-label="Close recipe builder"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white/84">Recipe Builder</p>
+            <p className="truncate text-[11px] font-medium text-white/38">
+              {calories} cal · C {carbs}g · P {protein}g · F {fat}g
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveNutritionRecipeBuilder()}
+            disabled={isNutritionRecipeBuilderSaving}
+            className="flex h-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.12] px-3 text-xs font-semibold text-white/84 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.16] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:ring-1 focus-visible:ring-white/16"
+          >
+            {isNutritionRecipeBuilderSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <span className="text-xs font-semibold text-white/46">Recipe name</span>
+          <span className="mt-2 flex items-center gap-2">
+            {renderNutritionRecipeBuilderIconSelector()}
+            <input
+              type="text"
+              value={nutritionRecipeBuilderName}
+              onChange={(event) => {
+                setNutritionRecipeBuilderName(event.target.value);
+                setNutritionRecipeBuilderSaveError(null);
+              }}
+              className="h-11 min-w-0 flex-1 rounded-lg border border-white/[0.055] bg-white/[0.045] px-3 text-sm font-medium text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.08] hover:bg-white/[0.055] focus-visible:border-white/[0.14] focus-visible:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-white/10"
+              placeholder="Recipe name"
+              aria-label="Recipe name"
+            />
+          </span>
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+          <div className="flex min-h-9 items-center justify-between gap-2 border-b border-white/[0.045] px-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+              Foods
+            </span>
+            <span className="shrink-0 text-[11px] font-semibold text-white/44">
+              {nutritionRecipeBuilderItems.length}
+            </span>
+          </div>
+          {nutritionRecipeBuilderItems.length > 0 ? (
+            <div className="divide-y divide-white/[0.045]">
+              {nutritionRecipeBuilderItems.map((item) => {
+                const itemName = getNutritionMealBuilderItemName(item);
+                const lineMeta = getNutritionMealBuilderItemLineMeta(item);
+
+                return (
+                  <div key={item.id} className="flex items-center gap-2 px-3 py-2.5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-white/84">
+                        {itemName}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                        {lineMeta}
+                      </span>
+                    </span>
+                    {renderNutritionRecipeBuilderQuantityControl(item)}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${itemName}`}
+                      onClick={() => removeNutritionRecipeBuilderItem(item.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/38 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="px-3 py-3 text-xs font-medium text-white/38">
+              Search below to add foods.
+            </p>
+          )}
+        </div>
+
+        <div className="relative mt-3">
+          <Search
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/36"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={nutritionRecipeBuilderSearchQuery}
+            onChange={(event) => setNutritionRecipeBuilderSearchQuery(event.target.value)}
+            className="h-11 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-sm font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
+            placeholder="Search foods..."
+            aria-label="Search foods"
+          />
+        </div>
+        {renderNutritionRecipeBuilderSearchResults()}
+        {nutritionRecipeBuilderSaveError ? (
+          <p className="mt-2 text-xs font-medium text-red-200/72">
+            {nutritionRecipeBuilderSaveError}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderNutritionReusableMealsContent() {
+    return (
+      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-2.5">
+        {renderSelectedNutritionMeal()}
+        <div className={selectedNutritionMeal ? "mt-2 space-y-1.5" : "space-y-1.5"}>
+          <button
+            type="button"
+            onClick={openNutritionMealBuilder}
+            className="flex w-full items-center gap-3 rounded-lg border border-dashed border-white/[0.105] bg-white/[0.026] px-2.5 py-2.5 text-left outline-none transition hover:border-white/[0.16] hover:bg-white/[0.045] focus-visible:border-white/[0.18] focus-visible:bg-white/[0.06]"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-white/84">
+                Create meal
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                Build a reusable meal row
+              </span>
+            </span>
+          </button>
+
+          {isNutritionMealTemplatesLoading ? (
+            <p className="px-2 py-2 text-xs font-medium text-white/42">Loading meals...</p>
+          ) : nutritionMealTemplatesError ? (
+            <p className="px-2 py-2 text-xs font-medium text-red-200/72">
+              {nutritionMealTemplatesError}
+            </p>
+          ) : nutritionMealTemplates.length > 0 ? (
+            nutritionMealTemplates.map((meal) => {
+              const isSelected = selectedNutritionMeal?.id === meal.id;
+              const hasReusableItems = (meal.meal_items?.length ?? 0) > 0;
+
+              return (
+                <button
+                  key={meal.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  disabled={!hasReusableItems}
+                  onClick={() => selectNutritionSavedMeal(meal)}
+                  className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left outline-none transition ${
+                    isSelected
+                      ? "border-white/[0.14] bg-white/[0.08] shadow-[inset_3px_0_0_rgba(255,255,255,0.66)]"
+                      : "border-white/[0.055] bg-white/[0.026] hover:border-white/[0.09] hover:bg-white/[0.045]"
+                  } disabled:cursor-not-allowed disabled:opacity-42 focus-visible:border-white/[0.15] focus-visible:bg-white/[0.06]`}
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <NutritionMealTemplateIcon icon={getNutritionSavedMealIcon(meal)} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {getNutritionSavedMealDisplayName(meal)}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                      {getNutritionSavedMealMeta(meal)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                    {formatFoodNutritionNumber(
+                      parseNutritionProgressNumber(meal.total_calories),
+                    ) ?? "0"}{" "}
+                    cal
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="px-2 py-2 text-xs font-medium text-white/38">
+              Create reusable meals for one-tap logging.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderNutritionSavedMealsContent() {
+    return (
+      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-2.5">
+        {renderSelectedNutritionMeal()}
+        <div className={selectedNutritionMeal ? "mt-2 space-y-1.5" : "space-y-1.5"}>
+          {isNutritionSavedMealsLoading ? (
+            <p className="px-2 py-2 text-xs font-medium text-white/42">
+              Loading recent meals...
+            </p>
+          ) : nutritionSavedMealsError ? (
+            <p className="px-2 py-2 text-xs font-medium text-red-200/72">
+              {nutritionSavedMealsError}
+            </p>
+          ) : nutritionSavedMeals.length > 0 ? (
+            nutritionSavedMeals.map((meal) => {
+              const isSelected = selectedNutritionMeal?.id === meal.id;
+              const hasReusableItems = (meal.meal_items?.length ?? 0) > 0;
+
+              return (
+                <button
+                  key={meal.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  disabled={!hasReusableItems}
+                  onClick={() => selectNutritionSavedMeal(meal)}
+                  className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left outline-none transition ${
+                    isSelected
+                      ? "border-white/[0.14] bg-white/[0.08] shadow-[inset_3px_0_0_rgba(255,255,255,0.66)]"
+                      : "border-white/[0.055] bg-white/[0.026] hover:border-white/[0.09] hover:bg-white/[0.045]"
+                  } disabled:cursor-not-allowed disabled:opacity-42 focus-visible:border-white/[0.15] focus-visible:bg-white/[0.06]`}
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    {isSelected ? (
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Utensils className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {getNutritionSavedMealDisplayName(meal)}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                      {getNutritionSavedMealTimeLabel(meal)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                    {hasReusableItems ? getNutritionSavedMealMeta(meal) : "No items"}
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="px-2 py-2 text-xs font-medium text-white/38">
+              Saved meals will appear here after you log one.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderNutritionRecipesContent() {
+    return (
+      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-2.5">
+        {renderSelectedNutritionRecipe()}
+        <div className={selectedNutritionRecipe ? "mt-2 space-y-1.5" : "space-y-1.5"}>
+          <button
+            type="button"
+            onClick={openNutritionRecipeBuilder}
+            className="flex w-full items-center gap-3 rounded-lg border border-dashed border-white/[0.105] bg-white/[0.026] px-2.5 py-2.5 text-left outline-none transition hover:border-white/[0.16] hover:bg-white/[0.045] focus-visible:border-white/[0.18] focus-visible:bg-white/[0.06]"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-white/84">
+                Create recipe
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                Build from foods
+              </span>
+            </span>
+          </button>
+
+          {isNutritionRecipesLoading ? (
+            <p className="px-2 py-2 text-xs font-medium text-white/42">
+              Loading recipes...
+            </p>
+          ) : nutritionRecipesError ? (
+            <p className="px-2 py-2 text-xs font-medium text-red-200/72">
+              {nutritionRecipesError}
+            </p>
+          ) : nutritionRecipes.length > 0 ? (
+            nutritionRecipes.map((recipe) => {
+              const isSelected = selectedNutritionRecipe?.recipe.id === recipe.id;
+              const hasItems = getNutritionSavedRecipeItemCount(recipe) > 0;
+
+              return (
+                <button
+                  key={recipe.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  disabled={!hasItems}
+                  onClick={() => selectNutritionSavedRecipe(recipe)}
+                  className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left outline-none transition ${
+                    isSelected
+                      ? "border-white/[0.14] bg-white/[0.08] shadow-[inset_3px_0_0_rgba(255,255,255,0.66)]"
+                      : "border-white/[0.055] bg-white/[0.026] hover:border-white/[0.09] hover:bg-white/[0.045]"
+                  } disabled:cursor-not-allowed disabled:opacity-42 focus-visible:border-white/[0.15] focus-visible:bg-white/[0.06]`}
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                    <NutritionMealTemplateIcon icon={getNutritionSavedRecipeIcon(recipe)} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {recipe.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                      {hasItems ? getNutritionSavedRecipeMeta(recipe) : "No foods"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                    {formatFoodNutritionNumber(
+                      parseNutritionProgressNumber(recipe.total_calories),
+                    ) ?? "0"}{" "}
+                    cal
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="px-2 py-2 text-xs font-medium text-white/38">
+              Create recipes for one-tap logging.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -4083,7 +6753,9 @@ export function NoteDatabaseEntrySheet({
                                       const selectedItem = getSelectedNutritionFoodItem(food);
                                       const isSelected = Boolean(selectedItem);
                                       const nutritionPreview =
-                                        getFoodBrowseNutritionPreview(food);
+                                        selectedItem
+                                          ? getNutritionSelectedFoodLineMeta(selectedItem)
+                                          : getFoodBrowseNutritionPreview(food);
 
                                       return (
                                         <div
@@ -4153,9 +6825,15 @@ export function NoteDatabaseEntrySheet({
     return (
       <div key={field.id} className="block">
         {renderNutritionDailyProgress()}
-        {renderNutritionFoodActionTabs()}
+        {isNutritionMealBuilderOpen ? (
+          renderNutritionMealBuilder()
+        ) : isNutritionRecipeBuilderOpen ? (
+          renderNutritionRecipeBuilder()
+        ) : (
+          <>
+            {renderNutritionFoodActionTabs()}
 
-        {selectedNutritionFoodAction === "custom" ? (
+            {selectedNutritionFoodAction === "custom" ? (
           <div className="mt-3">{renderDatabaseEntryField(field)}</div>
         ) : selectedNutritionFoodAction === "scan" ? (
           <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
@@ -4222,6 +6900,12 @@ export function NoteDatabaseEntrySheet({
             ) : null}
             {renderSelectedNutritionFoods()}
           </div>
+        ) : selectedNutritionFoodAction === "meals" ? (
+          renderNutritionReusableMealsContent()
+        ) : selectedNutritionFoodAction === "recent" ? (
+          renderNutritionSavedMealsContent()
+        ) : selectedNutritionFoodAction === "recipes" ? (
+          renderNutritionRecipesContent()
         ) : (
           <>
             <div className="relative mt-2">
@@ -4250,6 +6934,8 @@ export function NoteDatabaseEntrySheet({
               })
             ) : null}
             {selectedNutritionFoodAction === "search" ? renderNutritionFoodBrowseContent() : null}
+          </>
+        )}
           </>
         )}
       </div>
@@ -4285,6 +6971,8 @@ export function NoteDatabaseEntrySheet({
       databaseFields,
       selectedFoods: selectedNutritionFoods,
       selectedFood: selectedNutritionFood,
+      selectedMeal: selectedNutritionMeal,
+      selectedRecipe: selectedNutritionRecipe,
       selectedAction: selectedNutritionFoodAction,
       values,
       entryId,
@@ -4463,6 +7151,15 @@ export function NoteDatabaseFocusedView({
   const [entrySheetKey, setEntrySheetKey] = useState(0);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [draftField, setDraftField] = useState<NoteDatabaseFieldDefinition | null>(null);
+  const [nutritionDailySavedTotals, setNutritionDailySavedTotals] =
+    useState<Record<NutritionDailyMetricKey, number>>({ ...EMPTY_NUTRITION_TOTALS });
+  const [nutritionDailyTotalsError, setNutritionDailyTotalsError] = useState<string | null>(
+    null,
+  );
+  const [nutritionProgressAnimationKey, setNutritionProgressAnimationKey] = useState(0);
+  const [isNutritionProgressAnimatedIn, setIsNutritionProgressAnimatedIn] = useState(false);
+  const [nutritionDailyProgressRefreshKey, setNutritionDailyProgressRefreshKey] = useState(0);
+  const shouldReduceNutritionMotion = useReducedMotion();
   const lastOpenEntrySheetKeyRef = useRef<string | null>(null);
   const segments = useMemo(() => parseNoteSegments(noteContent), [noteContent]);
   const databaseSegment = useMemo(
@@ -4491,10 +7188,48 @@ export function NoteDatabaseFocusedView({
   const displayTitle = getDatabaseDisplayTitle(databaseDefinition?.title ?? databaseSegment?.title);
   const parentNoteTitle = noteTitle?.trim() || "Note";
   const isStarterDatabaseSchemaLocked = isLockedStarterDatabase(databaseDefinition);
+  const isDefaultNutritionDatabase = databaseDefinition
+    ? isDefaultNutritionDatabaseDefinition(databaseDefinition)
+    : false;
+  const shouldRenderNutritionDailyProgress =
+    isDefaultNutritionDatabase && Boolean(activeDatabaseView);
+  const nutritionLocalDayWindow = useMemo(() => getNutritionLocalDayWindow(), []);
   const editingField =
     editingFieldId && databaseDefinition
       ? (databaseFields.find((field) => field.id === editingFieldId) ?? null)
       : null;
+  const refreshNutritionDailyTotals = useCallback(async () => {
+    if (!shouldRenderNutritionDailyProgress) {
+      setNutritionDailySavedTotals({ ...EMPTY_NUTRITION_TOTALS });
+      setNutritionDailyTotalsError(null);
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        start: nutritionLocalDayWindow.start.toISOString(),
+        end: nutritionLocalDayWindow.end.toISOString(),
+        limit: "100",
+      });
+      const response = await fetch(`/api/nutrition/meals?${params.toString()}`);
+      const payload = (await response.json()) as NutritionMealsListResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load nutrition meals.");
+      }
+
+      setNutritionDailySavedTotals(aggregateNutritionMealTotals(payload.meals ?? []));
+      setNutritionDailyTotalsError(null);
+      setNutritionProgressAnimationKey((currentKey) => currentKey + 1);
+    } catch (error) {
+      console.error("Failed to load nutrition daily totals", { error });
+      setNutritionDailyTotalsError("Saved daily totals are unavailable right now.");
+    }
+  }, [
+    nutritionLocalDayWindow.end,
+    nutritionLocalDayWindow.start,
+    shouldRenderNutritionDailyProgress,
+  ]);
 
   useEffect(() => {
     const { changed, definitions } = normalizeDatabaseDefinitionsForSegments(
@@ -4506,6 +7241,33 @@ export function NoteDatabaseFocusedView({
       onDatabaseDefinitionsChange?.(definitions);
     }
   }, [databaseDefinitions, onDatabaseDefinitionsChange, segments]);
+
+  useEffect(() => {
+    void refreshNutritionDailyTotals();
+  }, [nutritionDailyProgressRefreshKey, refreshNutritionDailyTotals]);
+
+  useLayoutEffect(() => {
+    if (!shouldRenderNutritionDailyProgress) {
+      setIsNutritionProgressAnimatedIn(false);
+      return;
+    }
+
+    if (shouldReduceNutritionMotion) {
+      setIsNutritionProgressAnimatedIn(true);
+      return;
+    }
+
+    setIsNutritionProgressAnimatedIn(false);
+    const frameId = window.requestAnimationFrame(() => {
+      setIsNutritionProgressAnimatedIn(true);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [
+    nutritionProgressAnimationKey,
+    shouldReduceNutritionMotion,
+    shouldRenderNutritionDailyProgress,
+  ]);
 
   useEffect(() => {
     if (!editingFieldId || !databaseDefinition) return;
@@ -4739,6 +7501,10 @@ export function NoteDatabaseFocusedView({
       ...currentEntries,
       [databaseDefinition.id]: [...(currentEntries[databaseDefinition.id] ?? []), nextEntry],
     });
+
+    if (isDefaultNutritionDatabase) {
+      setNutritionDailyProgressRefreshKey((currentKey) => currentKey + 1);
+    }
   }
 
   if (!databaseSegment || !databaseDefinition || !activeDatabaseView) {
@@ -4888,6 +7654,17 @@ export function NoteDatabaseFocusedView({
             : "mt-5 min-h-0 flex-1 overflow-visible"
         }
       >
+        {shouldRenderNutritionDailyProgress ? (
+          <div className="max-w-3xl px-2 pb-3 pt-1">
+            <NutritionDailyProgressBars
+              savedTotals={nutritionDailySavedTotals}
+              previewTotals={EMPTY_NUTRITION_TOTALS}
+              error={nutritionDailyTotalsError}
+              isAnimatedIn={isNutritionProgressAnimatedIn}
+              shouldReduceMotion={shouldReduceNutritionMotion}
+            />
+          </div>
+        ) : null}
         <NoteDatabaseEntriesView
           activeView={activeDatabaseView}
           definition={databaseDefinition}
