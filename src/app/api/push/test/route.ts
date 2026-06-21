@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { getCreatorFirebaseMessaging } from "@/lib/notifications/firebaseAdmin";
+import { sendPushToUser } from "@/lib/notifications/sendPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,49 +30,30 @@ export async function POST(request: Request) {
   const title = payload?.title?.trim() || "CREATOR test";
   const body = payload?.body?.trim() || "Backend push notifications are alive.";
 
-  const { data: tokens, error } = await supabase
-    .from("push_tokens")
-    .select("token")
-    .eq("user_id", user.id)
-    .eq("enabled", true)
-    .order("last_seen_at", { ascending: false })
-    .limit(10);
-
-  if (error) {
-    return NextResponse.json({ error: "Unable to load push tokens" }, { status: 500 });
-  }
-
-  const tokenValues = Array.from(
-    new Set((tokens ?? []).map((entry) => entry.token).filter(Boolean)),
-  );
-
-  if (tokenValues.length === 0) {
-    return NextResponse.json({ error: "No push tokens found for user" }, { status: 404 });
-  }
-
-  const messaging = getCreatorFirebaseMessaging();
-
-  const result = await messaging.sendEachForMulticast({
-    tokens: tokenValues,
+  const result = await sendPushToUser(supabase, user.id, {
     notification: {
       title,
       body,
     },
     data: {
-      source: "creator",
       type: "test",
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: "default",
-        },
-      },
     },
   });
 
+  if (result.skippedReason === "token_load_failed") {
+    return NextResponse.json({ error: "Unable to load push tokens" }, { status: 500 });
+  }
+
+  if (result.skippedReason === "no_tokens") {
+    return NextResponse.json({ error: "No push tokens found for user" }, { status: 404 });
+  }
+
+  if (result.error) {
+    return NextResponse.json({ error: "Unable to send push notification" }, { status: 500 });
+  }
+
   return NextResponse.json({
-    ok: result.failureCount === 0,
+    ok: result.ok,
     successCount: result.successCount,
     failureCount: result.failureCount,
   });

@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   closestCenter,
   DndContext,
@@ -565,69 +566,91 @@ function PriorityAdjustFilters({
   onClear: () => void;
 }) {
   const panelId = "priority-adjust-panel";
+  const clearMonumentFilters = useCallback(() => {
+    selectedMonumentIds.forEach(onToggleMonument);
+  }, [onToggleMonument, selectedMonumentIds]);
+  const clearSkillFilters = useCallback(() => {
+    selectedSkillIds.forEach(onToggleSkill);
+  }, [onToggleSkill, selectedSkillIds]);
 
   return (
     <section className="overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_32%,rgba(39,39,42,0.28)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.30)] sm:rounded-[20px]">
       <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_30px_rgba(0,0,0,0.32)] sm:rounded-[19px]">
-        {!isOpen ? (
-          <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
-            <button
-              type="button"
-              onClick={() => onOpenChange(true)}
-              aria-expanded={isOpen}
-              aria-controls={panelId}
-              className="inline-flex min-h-7 w-full items-center justify-center gap-2 rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+        <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+          <button
+            type="button"
+            onClick={() => onOpenChange(!isOpen)}
+            aria-expanded={isOpen}
+            aria-controls={panelId}
+            className="inline-flex min-h-7 w-full items-center justify-center gap-2 rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+          >
+            <SlidersHorizontal className="size-3" aria-hidden="true" />
+            Adjust
+          </button>
+        </div>
+        <AnimatePresence initial={false}>
+          {isOpen ? (
+            <motion.div
+              id={panelId}
+              className="overflow-hidden border-b border-black/40 bg-black/30"
+              initial={{ height: 0, opacity: 0, y: -6 }}
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -6 }}
+              transition={{
+                height: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+                opacity: { duration: 0.18, ease: "easeOut" },
+                y: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+              }}
             >
-              <SlidersHorizontal className="size-3" aria-hidden="true" />
-              Adjust
-            </button>
-          </div>
-        ) : (
-          <div id={panelId} className="border-b border-black/40 bg-black/30">
-            <div className="max-h-[58vh] space-y-4 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
-              <PriorityTypeSelector
-                selectedType={selectedType}
-                onTypeChange={onTypeChange}
-              />
-              <PriorityFilterSection
-                label="Monuments"
-                emptyLabel="No Monuments available."
-                options={monumentOptions}
-                selectedIds={selectedMonumentIds}
-                fallbackIcon="M"
-                onToggle={onToggleMonument}
-              />
-              <PriorityFilterSection
-                label="Skills"
-                emptyLabel="No Skills available."
-                options={skillOptions}
-                selectedIds={selectedSkillIds}
-                fallbackIcon="S"
-                onToggle={onToggleSkill}
-              />
-            </div>
-            <div className="flex items-center gap-2 border-t border-black/40 bg-black/35 px-2.5 py-2 sm:px-3 sm:py-3">
-              {hasActiveFilters ? (
-                <button
-                  type="button"
-                  onClick={onClear}
-                  className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-black/60 bg-black/25 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30"
-                >
-                  <X className="size-3" aria-hidden="true" />
-                  Clear
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                aria-controls={panelId}
-                className="inline-flex min-h-8 flex-1 items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:text-[11px]"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        )}
+              <div className="min-h-0 overflow-hidden">
+                <div className="max-h-[58vh] space-y-4 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
+                  <PriorityTypeSelector
+                    selectedType={selectedType}
+                    onTypeChange={onTypeChange}
+                  />
+                  <PriorityFilterSection
+                    label="Monuments"
+                    emptyLabel="No Monuments available."
+                    options={monumentOptions}
+                    selectedIds={selectedMonumentIds}
+                    fallbackIcon="M"
+                    onToggle={onToggleMonument}
+                    onClear={clearMonumentFilters}
+                  />
+                  <PriorityFilterSection
+                    label="Skills"
+                    emptyLabel="No Skills available."
+                    options={skillOptions}
+                    selectedIds={selectedSkillIds}
+                    fallbackIcon="S"
+                    onToggle={onToggleSkill}
+                    onClear={clearSkillFilters}
+                  />
+                </div>
+                <div className="flex items-center gap-2 border-t border-black/40 bg-black/35 px-2.5 py-2 sm:px-3 sm:py-3">
+                  {hasActiveFilters ? (
+                    <button
+                      type="button"
+                      onClick={onClear}
+                      className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-black/60 bg-black/25 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    >
+                      <X className="size-3" aria-hidden="true" />
+                      Clear
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onOpenChange(false)}
+                    aria-controls={panelId}
+                    className="inline-flex min-h-8 flex-1 items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:text-[11px]"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
         <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
           <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-zinc-300/70 sm:size-8 sm:rounded-lg">
             <SlidersHorizontal className="size-3.5 sm:size-4" aria-hidden="true" />
@@ -696,6 +719,7 @@ function PriorityFilterSection({
   selectedIds,
   fallbackIcon,
   onToggle,
+  onClear,
 }: {
   label: string;
   emptyLabel: string;
@@ -703,42 +727,92 @@ function PriorityFilterSection({
   selectedIds: string[];
   fallbackIcon: string;
   onToggle: (optionId: string) => void;
+  onClear: () => void;
 }) {
+  const [expanded, setExpanded] = useState(selectedIds.length > 0);
+  const sectionId = `priority-${label.toLowerCase()}-filters`;
+  const hasSelectedFilters = selectedIds.length > 0;
+
+  useEffect(() => {
+    if (hasSelectedFilters) {
+      setExpanded(true);
+    }
+  }, [hasSelectedFilters]);
+
+  const handleAllClick = () => {
+    if (hasSelectedFilters) {
+      onClear();
+      setExpanded(false);
+      return;
+    }
+
+    setExpanded((current) => !current);
+  };
+
   return (
     <section>
-      <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-        {label}
-      </p>
-      {options.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
-          {options.map((option) => {
-            const selected = selectedIds.includes(option.id);
-
-            return (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => onToggle(option.id)}
-                className={
-                  selected
-                    ? "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                    : "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                }
-              >
-                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                  {option.icon ?? fallbackIcon}
-                </span>
-                <span className="min-w-0 truncate">{option.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
-          {emptyLabel}
+      <div className="flex items-center gap-2">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
+          {label}
         </p>
-      )}
+        <button
+          type="button"
+          aria-controls={sectionId}
+          aria-expanded={expanded}
+          aria-pressed={!hasSelectedFilters}
+          onClick={handleAllClick}
+          className={cn(
+            "ml-auto inline-flex min-h-7 items-center justify-center rounded-full border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-8 sm:px-3.5 sm:text-[11px]",
+            hasSelectedFilters
+              ? "border-black/60 bg-black/30 text-zinc-400 hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200"
+              : "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]"
+          )}
+        >
+          ALL
+        </button>
+      </div>
+      <div
+        id={sectionId}
+        className={cn(
+          "grid overflow-hidden transition-[grid-template-rows,opacity,transform] duration-300 ease-out",
+          expanded
+            ? "mt-1.5 grid-rows-[1fr] opacity-100 translate-y-0 sm:mt-2"
+            : "mt-0 grid-rows-[0fr] opacity-0 -translate-y-1"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {options.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              {options.map((option) => {
+                const selected = selectedIds.includes(option.id);
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onToggle(option.id)}
+                    className={
+                      selected
+                        ? "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                        : "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                    }
+                  >
+                    <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                      {option.icon ?? fallbackIcon}
+                    </span>
+                    <span className="min-w-0 truncate">{option.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+              {emptyLabel}
+            </p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
