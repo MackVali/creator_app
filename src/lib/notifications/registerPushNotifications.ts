@@ -12,24 +12,18 @@ type RegisterCreatorPushOptions = {
 export async function registerCreatorPushNotifications({
   userId,
 }: RegisterCreatorPushOptions): Promise<void> {
-  console.info("[push] registerCreatorPushNotifications called", { userId });
-
   if (typeof window === "undefined") {
-    console.info("[push] skipped: window undefined");
     return;
   }
 
   if (!Capacitor.isNativePlatform()) {
-    console.info("[push] skipped: not native platform", Capacitor.getPlatform());
     return;
   }
 
   if (!Capacitor.isPluginAvailable("PushNotifications")) {
-    console.warn("[push] skipped: PushNotifications plugin is not available", Capacitor.getPlatform());
+    console.warn("PushNotifications plugin is not available on this platform.");
     return;
   }
-
-  console.info("[push] native plugin available", Capacitor.getPlatform());
 
   if (registrationInFlight) {
     return registrationInFlight;
@@ -52,7 +46,6 @@ async function registerPushToken(userId: string): Promise<void> {
 
   if (!listenersRegistered) {
     await PushNotifications.addListener("registration", async (token) => {
-      console.info("[push] registration callback received token", { preview: token.value.slice(0, 24), length: token.value.length });
       const now = new Date().toISOString();
 
       const { error } = await supabase.from("push_tokens").upsert(
@@ -71,15 +64,14 @@ async function registerPushToken(userId: string): Promise<void> {
       );
 
       if (error) {
-        console.error("[push] unable to save push token", error);
+        console.error("Unable to save push token", error);
         return;
       }
 
-      console.info("[push] CREATOR push token registered.");
     });
 
     await PushNotifications.addListener("registrationError", (error) => {
-      console.error("[push] registration failed", error);
+      console.error("Push registration failed", error);
     });
 
     await PushNotifications.addListener("pushNotificationReceived", (notification) => {
@@ -94,23 +86,18 @@ async function registerPushToken(userId: string): Promise<void> {
   }
 
   const permission = await PushNotifications.checkPermissions();
-  console.info("[push] current permission", permission);
 
   let receivePermission = permission.receive;
 
   if (receivePermission === "prompt" || receivePermission === "prompt-with-rationale") {
-    console.info("[push] requesting permission");
     const requested = await PushNotifications.requestPermissions();
-    console.info("[push] requested permission result", requested);
     receivePermission = requested.receive;
   }
 
   if (receivePermission !== "granted") {
-    console.warn("[push] permission was not granted", receivePermission);
+    console.warn("Push notification permission was not granted.");
     return;
   }
 
-  console.info("[push] calling PushNotifications.register()");
   await PushNotifications.register();
-  console.info("[push] PushNotifications.register() returned");
 }
