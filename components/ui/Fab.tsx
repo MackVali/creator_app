@@ -103,6 +103,7 @@ import {
 } from "@/components/habits/habit-form-fields";
 import { SCHEDULER_PRIORITY_LABELS } from "@/lib/types/ai";
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
+import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
 import type {
   AiIntent,
   AiIntentResponse,
@@ -227,6 +228,11 @@ type FabCreationRevealGeometry = {
   y: number;
   radius: number;
   nonce: number;
+};
+type FabNexusEditReturnState = {
+  activeFabPage: number;
+  menuVariant: "default" | "timeline";
+  expanded: boolean;
 };
 type FabAiOverlayOrigin = {
   top: number;
@@ -539,7 +545,7 @@ type ProjectTaskStackState = {
 type FabSearchResult = {
   id: string;
   name: string;
-  type: "PROJECT" | "HABIT";
+  type: "PROJECT" | "TASK" | "HABIT";
   nextScheduledAt: string | null;
   scheduleInstanceId: string | null;
   durationMinutes: number | null;
@@ -561,6 +567,18 @@ type FabSearchResult = {
   source_habit_type?: string | null;
   sourceType?: string | null;
   source_type?: string | null;
+  sourceId?: string | null;
+  source_id?: string | null;
+  scheduleInstanceSourceId?: string | null;
+  schedule_instance_source_id?: string | null;
+  instanceSourceId?: string | null;
+  instance_source_id?: string | null;
+  projectId?: string | null;
+  project_id?: string | null;
+  habitId?: string | null;
+  habit_id?: string | null;
+  taskId?: string | null;
+  task_id?: string | null;
   scheduleInstanceType?: string | null;
   schedule_instance_type?: string | null;
   scheduleInstanceSourceType?: string | null;
@@ -965,6 +983,8 @@ function FabHabitRoutineCreateRow({
 }
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
+const FAB_PRIMARY_PAGE_INDEX = 0;
+const FAB_NEXUS_PAGE_INDEX = 2;
 
 const FLAME_LEVELS: FlameLevel[] = [
   "NO",
@@ -1070,7 +1090,6 @@ function CompactNativeDateTimeField({
 
 const FAB_NEXUS_EXPANDED_SIZE_CLASS =
   "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
-const FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS = "h-[360px]";
 
 type FabCarouselChevronButtonProps = {
   direction: "previous" | "next";
@@ -1222,6 +1241,22 @@ const getFabTextEntryTarget = (
   );
 
   return isFabTextEntryElement(element) ? element : null;
+};
+
+const blurActiveEditableElement = () => {
+  if (typeof document === "undefined") return false;
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) return false;
+  if (
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement instanceof HTMLSelectElement ||
+    activeElement.isContentEditable
+  ) {
+    activeElement.blur();
+    return true;
+  }
+  return false;
 };
 
 const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
@@ -2850,25 +2885,50 @@ const getNexusRecordStringField = (
     : null;
 };
 
+const normalizeNexusScheduleSourceType = (
+  value?: string | null,
+): "PROJECT" | "TASK" | "HABIT" | null => {
+  const normalized = value?.trim().toUpperCase();
+  if (
+    normalized === "PROJECT" ||
+    normalized === "TASK" ||
+    normalized === "HABIT"
+  ) {
+    return normalized;
+  }
+  if (
+    normalized &&
+    HABIT_TYPE_BACKGROUND_MAP[normalizeNexusHabitTypeKey(normalized)]
+  ) {
+    return "HABIT";
+  }
+  return null;
+};
+
+const NEXUS_NESTED_SOURCE_FIELDS = [
+  "source",
+  "scheduleInstance",
+  "schedule_instance",
+  "instance",
+] as const;
+
 const getNexusResultScheduleSourceType = (
   result: FabSearchResult,
 ): "PROJECT" | "TASK" | "HABIT" | null => {
   for (const field of NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS) {
-    const normalized = getNexusRecordStringField(result, field)
-      ?.trim()
-      .toUpperCase();
-    if (
-      normalized === "PROJECT" ||
-      normalized === "TASK" ||
-      normalized === "HABIT"
-    ) {
-      return normalized;
-    }
-    if (
-      normalized &&
-      HABIT_TYPE_BACKGROUND_MAP[normalizeNexusHabitTypeKey(normalized)]
-    ) {
-      return "HABIT";
+    const normalized = normalizeNexusScheduleSourceType(
+      getNexusRecordStringField(result, field),
+    );
+    if (normalized) return normalized;
+  }
+
+  for (const nestedField of NEXUS_NESTED_SOURCE_FIELDS) {
+    const nested = (result as Record<string, unknown>)[nestedField];
+    for (const field of NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS) {
+      const normalized = normalizeNexusScheduleSourceType(
+        getNexusRecordStringField(nested, field),
+      );
+      if (normalized) return normalized;
     }
   }
 
@@ -2878,6 +2938,81 @@ const getNexusResultScheduleSourceType = (
   }
 
   return null;
+};
+
+type FabNexusEditableEntityType = Extract<
+  CreationType,
+  "PROJECT" | "TASK" | "HABIT"
+>;
+
+const NEXUS_SOURCE_ID_FIELDS = [
+  "sourceId",
+  "source_id",
+  "scheduleInstanceSourceId",
+  "schedule_instance_source_id",
+  "instanceSourceId",
+  "instance_source_id",
+] as const;
+
+const NEXUS_SOURCE_ID_FIELDS_BY_TYPE: Record<
+  FabNexusEditableEntityType,
+  readonly string[]
+> = {
+  PROJECT: ["projectId", "project_id"],
+  TASK: ["taskId", "task_id"],
+  HABIT: ["habitId", "habit_id"],
+};
+
+const getNexusResultEditableSourceId = (
+  result: FabSearchResult,
+  sourceType: FabNexusEditableEntityType,
+): string | null => {
+  const idFields = [
+    ...NEXUS_SOURCE_ID_FIELDS,
+    ...NEXUS_SOURCE_ID_FIELDS_BY_TYPE[sourceType],
+  ];
+  for (const field of idFields) {
+    const id = getNexusRecordStringField(result, field);
+    if (id) return id;
+  }
+
+  for (const nestedField of NEXUS_NESTED_SOURCE_FIELDS) {
+    const nested = (result as Record<string, unknown>)[nestedField];
+    const nestedId =
+      (nestedField === "source"
+        ? getNexusRecordStringField(nested, "id")
+        : null) ??
+      idFields
+        .map((field) => getNexusRecordStringField(nested, field))
+        .find((id): id is string => Boolean(id));
+    if (nestedId) return nestedId;
+  }
+
+  const resultType = normalizeNexusScheduleSourceType(result.type);
+  const fallbackId = typeof result.id === "string" ? result.id.trim() : "";
+  if (resultType === sourceType && fallbackId) {
+    return fallbackId;
+  }
+
+  return null;
+};
+
+const getNexusResultEditableSource = (
+  result: FabSearchResult,
+): { entityType: FabNexusEditableEntityType; entityId: string } | null => {
+  const sourceType =
+    getNexusResultScheduleSourceType(result) ??
+    normalizeNexusScheduleSourceType(result.type);
+  if (
+    sourceType !== "PROJECT" &&
+    sourceType !== "TASK" &&
+    sourceType !== "HABIT"
+  ) {
+    return null;
+  }
+
+  const entityId = getNexusResultEditableSourceId(result, sourceType);
+  return entityId ? { entityType: sourceType, entityId } : null;
 };
 
 const getNexusResultHabitTypeKey = (result: FabSearchResult): string => {
@@ -3336,7 +3471,7 @@ export function Fab({
   className = "",
   menuVariant = "default",
   swipeUpToOpen = false,
-  editTarget = null,
+  editTarget: controlledEditTarget,
   onEditTargetChange,
   onEditTargetConsumed,
   onEditClose,
@@ -3347,8 +3482,10 @@ export function Fab({
   creationRequest = null,
   ...wrapperProps
 }: FabProps) {
-  void onEditTargetChange;
   void onEditTargetConsumed;
+  const [internalEditTarget, setInternalEditTarget] =
+    useState<FabEditTarget | null>(null);
+  const editTarget = controlledEditTarget ?? internalEditTarget;
   const [isOpen, setIsOpen] = useState(false);
   const [isDirectCreationOpen, setIsDirectCreationOpen] = useState(false);
   const openOnMountConsumedRef = useRef(false);
@@ -3500,7 +3637,6 @@ export function Fab({
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayConfigExpanded, setOverlayConfigExpanded] = useState(false);
   const [overlayPickerOpen, setOverlayPickerOpen] = useState(false);
-  const [overlayPickerExpanded, setOverlayPickerExpanded] = useState(false);
   const [overlayPickerSelected, setOverlayPickerSelected] =
     useState<FabSearchResult | null>(null);
   const [overlayPlacedItems, setOverlayPlacedItems] = useState<
@@ -3793,7 +3929,6 @@ export function Fab({
   useEffect(() => {
     if (!overlayOpen) {
       clearOverlayCardDragState();
-      setOverlayPickerExpanded(false);
       stopOverlayTimelineResize();
     } else {
       setOverlayConfigExpanded(false);
@@ -3825,7 +3960,6 @@ export function Fab({
     setOverlayPlacedItems([]);
     setOverlayPickerSelected(null);
     setOverlayPickerOpen(false);
-    setOverlayPickerExpanded(false);
     setOverlayBlockMode("MANUAL");
     setOverlayDynamicBlockType("FOCUS");
     setOverlayDynamicLocationContextId("");
@@ -6806,6 +6940,7 @@ export function Fab({
   const pageCount = FAB_PAGES.length;
   const [activeFabPage, setActiveFabPage] = useState<number>(0);
   const [normalNexusExpanded, setNormalNexusExpanded] = useState(false);
+  const nexusEditReturnStateRef = useRef<FabNexusEditReturnState | null>(null);
   const activeFabPageType = pages[activeFabPage];
   const isNormalFabNexusPage =
     isOpen &&
@@ -6864,14 +6999,6 @@ export function Fab({
     useState<OverlayEventTypeFilter>("ALL");
   const [overlaySortMode, setOverlaySortMode] =
     useState<OverlaySortMode>("scheduled");
-  const [rescheduleTarget, setRescheduleTarget] =
-    useState<FabSearchResult | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState("");
-  const [rescheduleTime, setRescheduleTime] = useState("");
-  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [isSavingReschedule, setIsSavingReschedule] = useState(false);
-  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSavingFab, setIsSavingFab] = useState(false);
   const [isDeletingFabEntity, setIsDeletingFabEntity] = useState(false);
@@ -6894,6 +7021,7 @@ export function Fab({
   const searchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
   const searchCacheRef = useRef<FabSearchCacheEntry | null>(null);
+  const completingNexusInstanceIdsRef = useRef<Set<string>>(new Set());
   const buildSearchCacheKey = useCallback(
     () => JSON.stringify([searchQuery.trim(), overlaySortMode]),
     [overlaySortMode, searchQuery],
@@ -7323,6 +7451,8 @@ export function Fab({
   }, [clearFabBodyClassOwners]);
   const closeExpandedPanel = useCallback(
     (options?: { notifyEditClose?: boolean }) => {
+      const nexusEditReturnState = nexusEditReturnStateRef.current;
+      nexusEditReturnStateRef.current = null;
       if (creationSelectionTimeoutRef.current !== null) {
         window.clearTimeout(creationSelectionTimeoutRef.current);
         creationSelectionTimeoutRef.current = null;
@@ -7331,18 +7461,31 @@ export function Fab({
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
-      setNormalNexusExpanded(false);
-      setExpanded(false);
+      const shouldRestoreNexus =
+        nexusEditReturnState?.menuVariant === menuVariant;
+      setNormalNexusExpanded(
+        shouldRestoreNexus ? nexusEditReturnState.expanded : false,
+      );
+      setExpanded(shouldRestoreNexus ? nexusEditReturnState.expanded : false);
       setSelected(null);
       setPendingCreationNameFocus(null);
       openingCreationRequestIdRef.current = null;
       setIsDirectCreationOpen(false);
-      setIsOpen(false);
+      setActiveFabPage(
+        shouldRestoreNexus &&
+          nexusEditReturnState.activeFabPage === FAB_NEXUS_PAGE_INDEX
+          ? nexusEditReturnState.activeFabPage
+          : shouldRestoreNexus
+            ? FAB_NEXUS_PAGE_INDEX
+            : FAB_PRIMARY_PAGE_INDEX,
+      );
+      setIsOpen(Boolean(shouldRestoreNexus));
+      setInternalEditTarget(null);
       if (options?.notifyEditClose ?? Boolean(editTarget)) {
         onEditClose?.();
       }
     },
-    [editTarget, onEditClose, resetFabViewportState],
+    [editTarget, menuVariant, onEditClose, resetFabViewportState],
   );
   const isFabKeyboardActiveRaw =
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
@@ -7983,36 +8126,6 @@ export function Fab({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showTaskProjectFilters]);
 
-  const formatDateInput = (date: Date) =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-      2,
-      "0",
-    )}-${String(date.getDate()).padStart(2, "0")}`;
-
-  const formatTimeInput = (date: Date) =>
-    `${String(date.getHours()).padStart(2, "0")}:${String(
-      date.getMinutes(),
-    ).padStart(2, "0")}`;
-
-  const fetchNextScheduledInstance = useCallback(
-    async (sourceId: string, sourceType: "PROJECT" | "HABIT") => {
-      const params = new URLSearchParams({ sourceId, sourceType });
-      const response = await fetch(
-        `/api/schedule/instances/next?${params.toString()}`,
-      );
-      if (!response.ok) {
-        return null;
-      }
-      const payload = (await response.json().catch(() => null)) as {
-        instanceId: string | null;
-        startUtc: string | null;
-        durationMinutes?: number | null;
-      } | null;
-      return payload ?? null;
-    },
-    [],
-  );
-
   const buildSearchUrl = useCallback(
     (cursor: FabSearchCursor | null) => {
       const trimmed = searchQuery.trim();
@@ -8435,7 +8548,6 @@ export function Fab({
     setOverlayFilterEventType("ALL");
     setOverlaySortMode("scheduled");
     setOverlayPickerOpen(true);
-    setOverlayPickerExpanded(false);
     setOverlayPickerSelected(null);
     setSearchError(null);
   };
@@ -8479,38 +8591,10 @@ export function Fab({
     });
     setOverlayPickerSelected(null);
     setOverlayPickerOpen(false);
-    setOverlayPickerExpanded(false);
-  };
-
-  const handleOverlayPickerExpandedChange = (nextExpanded: boolean) => {
-    const scrollBody = overlayPickerNexusShellRef.current?.querySelector(
-      '[data-fab-nexus-scroll="true"]',
-    );
-    const shouldPinToBottom =
-      scrollBody instanceof HTMLElement &&
-      scrollBody.scrollHeight - scrollBody.scrollTop - scrollBody.clientHeight <
-        24;
-
-    setOverlayPickerExpanded(nextExpanded);
-
-    if (shouldPinToBottom && typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          const nextScrollBody =
-            overlayPickerNexusShellRef.current?.querySelector(
-              '[data-fab-nexus-scroll="true"]',
-            );
-          if (nextScrollBody instanceof HTMLElement) {
-            nextScrollBody.scrollTop = nextScrollBody.scrollHeight;
-          }
-        });
-      });
-    }
   };
 
   const handleOverlayPickerClose = () => {
     setOverlayPickerOpen(false);
-    setOverlayPickerExpanded(false);
   };
 
   const handlePlacementCancel = () => {
@@ -14135,7 +14219,9 @@ export function Fab({
       error={searchError}
       hasMore={Boolean(searchCursor)}
       onLoadMore={handleLoadMoreResults}
-      onSelectResult={handleOpenReschedule}
+      onSelectResult={() => {}}
+      onDoubleTapResult={handleCompleteNexusResult}
+      onLongPressResult={handleEditNexusResult}
       inputRef={nexusInputRef}
       onManualPlaceResult={handleManualPlacement}
       filterMonumentId={overlayFilterMonumentId}
@@ -14164,6 +14250,10 @@ export function Fab({
   );
 
   const renderPage = (pageIndex: number) => {
+    if (editTarget && expanded) {
+      return renderPrimaryPage();
+    }
+
     const page = pages[pageIndex];
     if (page === "primary") {
       return renderPrimaryPage();
@@ -14963,29 +15053,170 @@ export function Fab({
     }
   };
 
-  const handleOpenReschedule = (result: FabSearchResult) => {
-    if (result.type === "PROJECT" && result.isCompleted) {
-      return;
-    }
-    setRescheduleTarget(result);
-    setDeleteError(null);
-    setRescheduleError(
-      result.scheduleInstanceId
-        ? null
-        : "This event has no upcoming scheduled time.",
-    );
-    const baseDate = result.nextScheduledAt
-      ? new Date(result.nextScheduledAt)
-      : new Date();
-    if (Number.isNaN(baseDate.getTime())) {
-      const now = new Date();
-      setRescheduleDate(formatDateInput(now));
-      setRescheduleTime(formatTimeInput(now));
-      return;
-    }
-    setRescheduleDate(formatDateInput(baseDate));
-    setRescheduleTime(formatTimeInput(baseDate));
-  };
+  const openFabEditTarget = useCallback(
+    (target: FabEditTarget) => {
+      setActiveFabPage(FAB_PRIMARY_PAGE_INDEX);
+      if (onEditTargetChange) {
+        onEditTargetChange(target);
+        return;
+      }
+      setInternalEditTarget(target);
+    },
+    [onEditTargetChange],
+  );
+
+  const handleEditNexusResult = useCallback(
+    (result: FabSearchResult, originElement: HTMLElement) => {
+      const editableSource = getNexusResultEditableSource(result);
+      if (!editableSource) return false;
+
+      blurActiveEditableElement();
+      nexusEditReturnStateRef.current =
+        isNormalFabNexusPage || isTimelineFabNexusPage
+          ? {
+              activeFabPage:
+                activeFabPage === FAB_NEXUS_PAGE_INDEX
+                  ? activeFabPage
+                  : FAB_NEXUS_PAGE_INDEX,
+              menuVariant,
+              expanded: normalNexusExpanded && expanded,
+            }
+          : null;
+      setNormalNexusExpanded(false);
+      setIsOpen(false);
+      setExpanded(false);
+      setSelected(null);
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setPendingCreationNameFocus(null);
+      setIsDirectCreationOpen(false);
+
+      openFabEditTarget({
+        entityType: editableSource.entityType,
+        entityId: editableSource.entityId,
+        instanceId: result.scheduleInstanceId,
+        title: result.name,
+        originRect: getFabElementRect(originElement),
+        completed: result.isCompleted,
+        completedAt: result.completedAt,
+        habitSnapshot:
+          editableSource.entityType === "HABIT"
+            ? {
+                name: result.name,
+                habitType: result.habitType ?? result.habit_type ?? null,
+                durationMinutes: result.durationMinutes,
+                energy: result.energy ?? null,
+                goalId: result.goalId ?? null,
+                skillId: result.skillId ?? result.skill_id ?? null,
+                nextDueOverride: result.nextDueAt ?? null,
+              }
+            : null,
+      });
+
+      return true;
+    },
+    [
+      activeFabPage,
+      expanded,
+      isNormalFabNexusPage,
+      isTimelineFabNexusPage,
+      menuVariant,
+      normalNexusExpanded,
+      openFabEditTarget,
+    ],
+  );
+
+  const handleCompleteNexusResult = useCallback(
+    async (result: FabSearchResult) => {
+      if (result.isCompleted) return;
+      const scheduleInstanceId = result.scheduleInstanceId?.trim();
+      if (!scheduleInstanceId) return;
+      if (completingNexusInstanceIdsRef.current.has(scheduleInstanceId)) {
+        return;
+      }
+
+      completingNexusInstanceIdsRef.current.add(scheduleInstanceId);
+      const completedAt = new Date().toISOString();
+      try {
+        const response = await updateInstanceStatus(
+          scheduleInstanceId,
+          "completed",
+          { completedAtUTC: completedAt },
+        );
+        if (
+          response.error ||
+          (typeof response.status === "number" && response.status >= 400) ||
+          !response.data
+        ) {
+          throw new Error(
+            response.error?.message ?? "Unable to complete this event",
+          );
+        }
+
+        const nextCompletedAt = response.data.completed_at ?? completedAt;
+        setSearchResults((prev) => {
+          const nextResults = prev.map((item) =>
+            item.scheduleInstanceId === scheduleInstanceId
+              ? {
+                  ...item,
+                  completedAt: nextCompletedAt,
+                  isCompleted: true,
+                }
+              : item,
+          );
+          const searchKey = activeSearchKeyRef.current;
+          if (searchKey && searchCacheRef.current?.key === searchKey) {
+            searchCacheRef.current = {
+              ...searchCacheRef.current,
+              results: nextResults,
+            };
+          }
+          return nextResults;
+        });
+
+        const editableSource = getNexusResultEditableSource(result);
+        if (editableSource?.entityType === "HABIT") {
+          void fetch("/api/habits/completion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              habitId: editableSource.entityId,
+              completedAt: nextCompletedAt,
+              timeZone: getBrowserTimeZone() ?? undefined,
+              action: "complete",
+              scheduleInstanceId,
+              durationMin:
+                typeof result.durationMinutes === "number" &&
+                Number.isFinite(result.durationMinutes)
+                  ? result.durationMinutes
+                  : undefined,
+            }),
+          })
+            .then(async (habitResponse) => {
+              if (!habitResponse.ok) {
+                console.error(
+                  "Failed to sync Nexus habit completion",
+                  await habitResponse.text(),
+                );
+              }
+            })
+            .catch((error) => {
+              console.error("Failed to sync Nexus habit completion", error);
+            });
+        }
+      } catch (error) {
+        console.error("Failed to complete Nexus event", error);
+        toast.error(
+          "Unable to complete event",
+          error instanceof Error ? error.message : "Try again in a moment.",
+        );
+      } finally {
+        completingNexusInstanceIdsRef.current.delete(scheduleInstanceId);
+      }
+    },
+    [toast],
+  );
 
   const handleManualPlacement = (
     result: FabSearchResult,
@@ -15023,8 +15254,6 @@ export function Fab({
     setAiOpen(false);
     setOverlayOpen(false);
     setOverlayPickerOpen(false);
-    setOverlayPickerExpanded(false);
-    setRescheduleTarget(null);
   };
 
   const scrollFabTextEntryIntoView = useCallback((element: HTMLElement) => {
@@ -16272,13 +16501,6 @@ export function Fab({
     ],
   );
 
-  const handleCloseReschedule = () => {
-    if (isSavingReschedule || isDeletingEvent) return;
-    setRescheduleTarget(null);
-    setRescheduleError(null);
-    setDeleteError(null);
-  };
-
   useEffect(() => {
     const isEditTargetActive = Boolean(
       editTarget?.entityId && editTarget?.entityType,
@@ -16303,9 +16525,6 @@ export function Fab({
       }
       resetSearchState();
       resetFabFormState();
-      setRescheduleTarget(null);
-      setDeleteError(null);
-      setIsDeletingEvent(false);
       searchAbortRef.current?.abort();
     }
   }, [
@@ -16464,6 +16683,14 @@ export function Fab({
       return;
     }
     if (pages[activeFabPage] === "nexus" || overlayPickerOpen) {
+      const shouldSkipNexusAutoFocus =
+        isMobileViewport ||
+        (typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(max-width: 767px), (pointer: coarse)").matches);
+      if (shouldSkipNexusAutoFocus) {
+        return;
+      }
       const frame = requestAnimationFrame(() => {
         nexusInputRef.current?.focus();
       });
@@ -16475,103 +16702,7 @@ export function Fab({
     ) {
       nexusInputRef.current?.blur();
     }
-  }, [activeFabPage, isOpen, overlayPickerOpen, pages]);
-
-  const handleRescheduleSave = useCallback(async () => {
-    if (isDeletingEvent) {
-      return;
-    }
-    if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) {
-      setRescheduleError("Select both date and time");
-      return;
-    }
-    if (!rescheduleTarget.scheduleInstanceId) {
-      setRescheduleError("No scheduled instance available to update.");
-      return;
-    }
-    const parsed = new Date(`${rescheduleDate}T${rescheduleTime}`);
-    if (Number.isNaN(parsed.getTime())) {
-      setRescheduleError("Invalid date or time");
-      return;
-    }
-    setIsSavingReschedule(true);
-    setRescheduleError(null);
-    try {
-      const response = await fetch(
-        `/api/schedule/instances/${rescheduleTarget.scheduleInstanceId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startUtc: parsed.toISOString() }),
-        },
-      );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error ?? "Unable to update schedule");
-      }
-      const payload = (await response.json().catch(() => null)) as {
-        startUtc?: string | null;
-      } | null;
-      let nextStart = payload?.startUtc ?? parsed.toISOString();
-      let nextInstanceId = rescheduleTarget.scheduleInstanceId;
-      let nextDuration = rescheduleTarget.durationMinutes;
-
-      if (rescheduleTarget.type === "HABIT") {
-        const refreshed = await fetchNextScheduledInstance(
-          rescheduleTarget.id,
-          "HABIT",
-        );
-        if (refreshed) {
-          nextStart = refreshed.startUtc ?? nextStart;
-          nextInstanceId = refreshed.instanceId ?? nextInstanceId;
-          if (
-            typeof refreshed.durationMinutes === "number" &&
-            Number.isFinite(refreshed.durationMinutes)
-          ) {
-            nextDuration = refreshed.durationMinutes;
-          }
-        }
-      }
-
-      setSearchResults((prev) => {
-        const nextResults = prev.map((item) =>
-          item.id === rescheduleTarget.id && item.type === rescheduleTarget.type
-            ? {
-                ...item,
-                nextScheduledAt: nextStart,
-                scheduleInstanceId: nextInstanceId,
-                durationMinutes: nextDuration,
-              }
-            : item,
-        );
-        const searchKey = activeSearchKeyRef.current;
-        if (searchKey && searchCacheRef.current?.key === searchKey) {
-          searchCacheRef.current = {
-            ...searchCacheRef.current,
-            results: nextResults,
-          };
-        }
-        return nextResults;
-      });
-      void notifySchedulerOfChange();
-      setIsSavingReschedule(false);
-      setRescheduleTarget(null);
-      setDeleteError(null);
-    } catch (error) {
-      console.error("Failed to reschedule", error);
-      setRescheduleError(
-        error instanceof Error ? error.message : "Unable to update schedule",
-      );
-      setIsSavingReschedule(false);
-    }
-  }, [
-    fetchNextScheduledInstance,
-    isDeletingEvent,
-    rescheduleDate,
-    rescheduleTime,
-    rescheduleTarget,
-    notifySchedulerOfChange,
-  ]);
+  }, [activeFabPage, isMobileViewport, isOpen, overlayPickerOpen, pages]);
 
   const isSaveDisabled = useMemo(() => {
     if (isSavingFab || isDeletingFabEntity || editHydrating || !selected)
@@ -18415,58 +18546,8 @@ export function Fab({
         ) : null}
       </motion.div>
     ) : null;
-  const handleDeleteEvent = useCallback(async () => {
-    if (isDeletingEvent) {
-      return;
-    }
-    const target = rescheduleTarget;
-    if (!target) {
-      return;
-    }
-    setDeleteError(null);
-    setIsDeletingEvent(true);
-    try {
-      const typeSegment = target.type === "HABIT" ? "habit" : "project";
-      const response = await fetch(
-        `/api/schedule/events/${typeSegment}/${target.id}`,
-        { method: "DELETE" },
-      );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error ?? "Unable to delete this event");
-      }
-      setSearchResults((prev) => {
-        const nextResults = prev.filter(
-          (item) => !(item.id === target.id && item.type === target.type),
-        );
-        const searchKey = activeSearchKeyRef.current;
-        if (searchKey && searchCacheRef.current?.key === searchKey) {
-          searchCacheRef.current = {
-            ...searchCacheRef.current,
-            results: nextResults,
-          };
-        }
-        return nextResults;
-      });
-      setRescheduleTarget(null);
-      setRescheduleDate("");
-      setRescheduleTime("");
-      setRescheduleError(null);
-      setDeleteError(null);
-      void notifySchedulerOfChange();
-    } catch (error) {
-      console.error("Failed to delete schedule event", error);
-      setDeleteError(
-        error instanceof Error ? error.message : "Unable to delete this event",
-      );
-    } finally {
-      setIsDeletingEvent(false);
-    }
-  }, [isDeletingEvent, notifySchedulerOfChange, rescheduleTarget]);
-
   // Close menu when clicking outside
   useEffect(() => {
-    if (rescheduleTarget) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (isTourActive()) return;
       const target = event.target as Node | null;
@@ -18502,7 +18583,7 @@ export function Fab({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [expanded, isOpen, rescheduleTarget, aiOpen, closeAiOverlay]);
+  }, [expanded, isOpen, aiOpen, closeAiOverlay]);
 
   useEffect(() => {
     if (isOpen || isDirectCreationOpen) return;
@@ -19102,6 +19183,17 @@ export function Fab({
         },
       }
     : null;
+  const handleEditBackdropClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!shouldUseCenteredEditModal || !nexusEditReturnStateRef.current) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      closeExpandedPanel();
+    },
+    [closeExpandedPanel, shouldUseCenteredEditModal],
+  );
   const shouldRenderFabPanel = isOpen || expanded || isDirectCreationOpen;
   const shouldRenderFabCarouselChevrons =
     isOpen &&
@@ -19241,6 +19333,7 @@ export function Fab({
                       event.preventDefault();
                       event.stopPropagation();
                     }}
+                    onClick={handleEditBackdropClick}
                   />,
                   document.body,
                 )
@@ -20147,9 +20240,7 @@ export function Fab({
                         isOverlayBuilderNexusActive
                           ? "shadow-[0_28px_70px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.05)]"
                           : "shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
-                        overlayPickerExpanded
-                          ? FAB_NEXUS_EXPANDED_SIZE_CLASS
-                          : FAB_NEXUS_EMBEDDED_COMPACT_SIZE_CLASS,
+                        FAB_NEXUS_EXPANDED_SIZE_CLASS,
                       )}
                     >
                       <FabNexus
@@ -20175,10 +20266,6 @@ export function Fab({
                         availableMonuments={monuments}
                         availableSkills={skills}
                         availableSkillCategories={skillCategories}
-                        embeddedExpanded={overlayPickerExpanded}
-                        onEmbeddedExpandedChange={
-                          handleOverlayPickerExpandedChange
-                        }
                         showToolbar
                       />
                       <button
@@ -20602,21 +20689,6 @@ export function Fab({
             document.body,
           )
         : null}
-      <FabRescheduleOverlay
-        open={Boolean(rescheduleTarget)}
-        target={rescheduleTarget}
-        dateValue={rescheduleDate}
-        timeValue={rescheduleTime}
-        error={rescheduleError}
-        deleteError={deleteError}
-        isSaving={isSavingReschedule}
-        isDeleting={isDeletingEvent}
-        onDateChange={setRescheduleDate}
-        onTimeChange={setRescheduleTime}
-        onClose={handleCloseReschedule}
-        onSave={handleRescheduleSave}
-        onDelete={handleDeleteEvent}
-      />
       <PaywallModal
         open={Boolean(activeLimitCode)}
         onOpenChange={handleLimitModalOpenChange}
@@ -21932,6 +22004,11 @@ type FabNexusProps = {
   hasMore: boolean;
   onLoadMore: () => void;
   onSelectResult: (result: FabSearchResult) => void;
+  onDoubleTapResult?: (result: FabSearchResult) => void;
+  onLongPressResult?: (
+    result: FabSearchResult,
+    originElement: HTMLElement,
+  ) => boolean;
   filterMonumentId?: string;
   onFilterMonumentChange?: (value: string) => void;
   filterSkillId?: string;
@@ -21970,6 +22047,8 @@ function FabNexus({
   hasMore,
   onLoadMore,
   onSelectResult,
+  onDoubleTapResult,
+  onLongPressResult,
   filterMonumentId,
   onFilterMonumentChange,
   filterSkillId,
@@ -22006,18 +22085,30 @@ function FabNexus({
   const popupInstanceTypePillsId = useId();
   const dragStateRef = useRef<{
     id: string;
+    inputType: "pointer" | "touch";
     pointerId: number | null;
     startX: number;
     startY: number;
     dragging: boolean;
+    longPressFired: boolean;
     result: FabSearchResult;
+  } | null>(null);
+  const resultLongPressTimeoutRef = useRef<number | null>(null);
+  const lastResultTapRef = useRef<{
+    key: string;
+    timestamp: number;
   } | null>(null);
   const suppressClickRef = useRef(false);
   const RESULT_CARD_DRAG_THRESHOLD_PX = 12;
+  const RESULT_CARD_DOUBLE_TAP_THRESHOLD_MS = 360;
+  const RESULT_CARD_LONG_PRESS_THRESHOLD_MS = 550;
+  const RESULT_CARD_LONG_PRESS_CANCEL_PX = 14;
   const RESULT_CARD_PAGE_SWIPE_DOMINANCE = 1.25;
   const RESULT_CARD_VERTICAL_SCROLL_DOMINANCE = 1.15;
   const isEmbedded = variant === "embedded";
   const shouldUsePopupSizing = !isEmbedded && usePopupSizing;
+  const shouldShowEmbeddedExpandControl =
+    isEmbedded && Boolean(onEmbeddedExpandedChange);
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -22477,12 +22568,56 @@ function FabNexus({
     if (typeof window !== "undefined") {
       window.setTimeout(() => {
         suppressClickRef.current = false;
-      }, 350);
+      }, 700);
     }
   };
 
+  const clearResultLongPressTimer = useCallback(() => {
+    if (
+      typeof window !== "undefined" &&
+      resultLongPressTimeoutRef.current !== null
+    ) {
+      window.clearTimeout(resultLongPressTimeoutRef.current);
+    }
+    resultLongPressTimeoutRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearResultLongPressTimer();
+    };
+  }, [clearResultLongPressTimer]);
+
+  const activateResult = useCallback(
+    (result: FabSearchResult) => {
+      if (!onDoubleTapResult || isEmbedded) {
+        onSelectResult(result);
+        return;
+      }
+
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const tapKey = `${result.type}:${
+        result.scheduleInstanceId ?? result.id
+      }`;
+      const lastTap = lastResultTapRef.current;
+      if (
+        lastTap?.key === tapKey &&
+        now - lastTap.timestamp <= RESULT_CARD_DOUBLE_TAP_THRESHOLD_MS
+      ) {
+        lastResultTapRef.current = null;
+        onDoubleTapResult(result);
+        return;
+      }
+
+      lastResultTapRef.current = { key: tapKey, timestamp: now };
+      onSelectResult(result);
+    },
+    [isEmbedded, onDoubleTapResult, onSelectResult],
+  );
+
   const getStatusText = (result: FabSearchResult): React.ReactNode => {
-    if (result.type === "PROJECT" && result.isCompleted) {
+    if (result.isCompleted) {
       const completedLabel = formatDateTime(result.completedAt);
       return completedLabel ?? "Completed";
     }
@@ -22537,7 +22672,7 @@ function FabNexus({
             placeholder="search NEXUS"
             className={cn(
               "h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none",
-              showToolbar && isEmbedded && "pr-[5.75rem]",
+              showToolbar && shouldShowEmbeddedExpandControl && "pr-[5.75rem]",
               showToolbar &&
                 shouldUsePopupSizing &&
                 popupExpanded &&
@@ -22562,24 +22697,24 @@ function FabNexus({
               >
                 <Filter className="h-4 w-4" aria-hidden="true" />
               </button>
-              <button
-                type="button"
-                aria-label={
-                  embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"
-                }
-                aria-expanded={embeddedExpanded}
-                title={embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"}
-                onClick={() =>
-                  onEmbeddedExpandedChange?.(!embeddedExpanded)
-                }
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
-              >
-                {embeddedExpanded ? (
-                  <Shrink className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <Expand className="h-4 w-4" aria-hidden="true" />
-                )}
-              </button>
+              {shouldShowEmbeddedExpandControl ? (
+                <button
+                  type="button"
+                  aria-label={
+                    embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"
+                  }
+                  aria-expanded={embeddedExpanded}
+                  title={embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"}
+                  onClick={() => onEmbeddedExpandedChange(!embeddedExpanded)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+                >
+                  {embeddedExpanded ? (
+                    <Shrink className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Expand className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              ) : null}
             </div>
           ) : showToolbar && shouldUsePopupSizing && onPopupExpandedChange ? (
             <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
@@ -22712,11 +22847,12 @@ function FabNexus({
               {results.map((result) => {
               const isCompletedProject =
                 result.type === "PROJECT" && result.isCompleted;
+              const isCompletedNexusResult = result.isCompleted;
               const isDisabled = isCompletedProject;
               const statusText = getStatusText(result);
               const skillIcon = getNexusResultSkillIcon(result);
               const typeLabel = getNexusResultTypeLabel(result);
-              const nexusScheduleTheme = isCompletedProject
+              const nexusScheduleTheme = isCompletedNexusResult
                 ? null
                 : getNexusResultScheduleTheme(result);
               const cardStyle = nexusScheduleTheme
@@ -22729,8 +22865,8 @@ function FabNexus({
                   }
                 : undefined;
               const cardClassName = cn(
-                "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
-                isCompletedProject
+                "relative flex select-none flex-col gap-1 rounded-lg border px-3 py-2 text-left transition [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                isCompletedNexusResult
                   ? "shimmer-border-complete isolate z-0 overflow-hidden border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40"
                   : nexusScheduleTheme
                     ? cn(
@@ -22740,6 +22876,12 @@ function FabNexus({
                     : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
                 isDisabled && "cursor-not-allowed",
               );
+              const cardInteractionStyle: React.CSSProperties = {
+                ...(cardStyle ?? {}),
+                WebkitTouchCallout: "none",
+                WebkitUserSelect: "none",
+                userSelect: "none",
+              };
               const nameTextClass = "text-white";
               const metaLabelClass =
                 "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
@@ -22768,27 +22910,61 @@ function FabNexus({
                 suppressTransientClick();
               };
 
+              const beginLongPressTimer = (
+                pressState: NonNullable<typeof dragStateRef.current>,
+                originElement: HTMLElement,
+              ) => {
+                if (
+                  isEmbedded ||
+                  !onLongPressResult ||
+                  typeof window === "undefined"
+                ) {
+                  return;
+                }
+
+                resultLongPressTimeoutRef.current = window.setTimeout(() => {
+                  resultLongPressTimeoutRef.current = null;
+                  if (dragStateRef.current !== pressState) return;
+                  pressState.longPressFired = true;
+                  suppressTransientClick();
+                  onLongPressResult(result, originElement);
+                }, RESULT_CARD_LONG_PRESS_THRESHOLD_MS);
+              };
+
               const handlePointerDown = (event: React.PointerEvent) => {
-                if (isDisabled) return;
+                if (isDisabled && (isEmbedded || !onLongPressResult)) return;
                 if (event.pointerType === "mouse" && event.button !== 0) return;
-                dragStateRef.current = {
+                clearResultLongPressTimer();
+                const pressState = {
                   id: result.id,
+                  inputType: "pointer" as const,
                   pointerId: event.pointerId,
                   startX: event.clientX,
                   startY: event.clientY,
                   dragging: false,
+                  longPressFired: false,
                   result,
                 };
+                dragStateRef.current = pressState;
+                beginLongPressTimer(
+                  pressState,
+                  event.currentTarget as HTMLElement,
+                );
               };
 
               const handlePointerMove = (event: React.PointerEvent) => {
                 const state = dragStateRef.current;
                 if (!state || state.id !== result.id) return;
+                if (state.inputType !== "pointer") return;
                 if (
                   state.pointerId !== null &&
                   event.pointerId !== state.pointerId
                 )
                   return;
+                if (state.longPressFired) {
+                  event.preventDefault();
+                  return;
+                }
                 if (state.dragging) {
                   event.preventDefault();
                   return;
@@ -22798,7 +22974,18 @@ function FabNexus({
                 const absX = Math.abs(dx);
                 const absY = Math.abs(dy);
 
-                if (absY > 6 && absY > absX * 1.1) {
+                if (
+                  absX > RESULT_CARD_LONG_PRESS_CANCEL_PX ||
+                  absY > RESULT_CARD_LONG_PRESS_CANCEL_PX
+                ) {
+                  clearResultLongPressTimer();
+                }
+
+                if (
+                  absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absY > absX * 1.1
+                ) {
+                  clearResultLongPressTimer();
                   dragStateRef.current = null;
                   suppressTransientClick();
                   releaseCardPointer(event);
@@ -22809,6 +22996,7 @@ function FabNexus({
                   absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
                   absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
                 ) {
+                  clearResultLongPressTimer();
                   dragStateRef.current = null;
                   suppressTransientClick();
                   releaseCardPointer(event);
@@ -22823,12 +23011,14 @@ function FabNexus({
                 }
 
                 if (absY > absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE) {
+                  clearResultLongPressTimer();
                   dragStateRef.current = null;
                   suppressTransientClick();
                   releaseCardPointer(event);
                   return;
                 }
 
+                clearResultLongPressTimer();
                 state.dragging = true;
                 beginDrag(event, state.result);
                 event.preventDefault();
@@ -22837,28 +23027,141 @@ function FabNexus({
               const handlePointerUp = (event: React.PointerEvent) => {
                 const state = dragStateRef.current;
                 if (!state || state.id !== result.id) return;
+                if (state.inputType !== "pointer") return;
                 if (
                   state.pointerId !== null &&
                   event.pointerId !== state.pointerId
                 )
                   return;
                 const wasDragging = state.dragging;
+                const wasLongPress = state.longPressFired;
+                clearResultLongPressTimer();
                 dragStateRef.current = null;
                 releaseCardPointer(event);
-                if (wasDragging) {
+                if (wasDragging || wasLongPress) {
                   event.preventDefault();
-                  return;
-                }
-                if (suppressClickRef.current) {
-                  suppressClickRef.current = false;
+                  event.stopPropagation();
                   return;
                 }
                 if (!isDisabled) {
-                  onSelectResult(result);
+                  suppressTransientClick();
+                  activateResult(result);
                 }
               };
 
               const handlePointerCancel = () => {
+                clearResultLongPressTimer();
+                dragStateRef.current = null;
+              };
+
+              const handlePointerLeave = (event: React.PointerEvent) => {
+                if (event.pointerType === "mouse") {
+                  handlePointerCancel();
+                }
+              };
+
+              const getTrackedTouch = (
+                event: React.TouchEvent,
+                pointerId: number | null,
+              ) => {
+                const touches = Array.from(event.touches);
+                const changedTouches = Array.from(event.changedTouches);
+                if (pointerId !== null) {
+                  return (
+                    touches.find((touch) => touch.identifier === pointerId) ??
+                    changedTouches.find(
+                      (touch) => touch.identifier === pointerId,
+                    ) ??
+                    null
+                  );
+                }
+                return touches[0] ?? changedTouches[0] ?? null;
+              };
+
+              const handleTouchStart = (event: React.TouchEvent) => {
+                if (isDisabled && (isEmbedded || !onLongPressResult)) return;
+                const touch = event.touches[0];
+                if (!touch) return;
+                clearResultLongPressTimer();
+                const pressState = {
+                  id: result.id,
+                  inputType: "touch" as const,
+                  pointerId: touch.identifier,
+                  startX: touch.clientX,
+                  startY: touch.clientY,
+                  dragging: false,
+                  longPressFired: false,
+                  result,
+                };
+                dragStateRef.current = pressState;
+                beginLongPressTimer(
+                  pressState,
+                  event.currentTarget as HTMLElement,
+                );
+              };
+
+              const handleTouchMove = (event: React.TouchEvent) => {
+                const state = dragStateRef.current;
+                if (!state || state.id !== result.id) return;
+                if (state.inputType !== "touch") return;
+                const touch = getTrackedTouch(event, state.pointerId);
+                if (!touch) return;
+                if (state.longPressFired) {
+                  event.preventDefault();
+                  return;
+                }
+                const dx = touch.clientX - state.startX;
+                const dy = touch.clientY - state.startY;
+                const absX = Math.abs(dx);
+                const absY = Math.abs(dy);
+
+                if (
+                  absX > RESULT_CARD_LONG_PRESS_CANCEL_PX ||
+                  absY > RESULT_CARD_LONG_PRESS_CANCEL_PX
+                ) {
+                  clearResultLongPressTimer();
+                }
+
+                if (
+                  absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absY > absX * 1.1
+                ) {
+                  clearResultLongPressTimer();
+                  dragStateRef.current = null;
+                  return;
+                }
+
+                if (
+                  absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
+                ) {
+                  clearResultLongPressTimer();
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  return;
+                }
+              };
+
+              const handleTouchEnd = (event: React.TouchEvent) => {
+                const state = dragStateRef.current;
+                if (!state || state.id !== result.id) return;
+                if (state.inputType !== "touch") return;
+                const wasLongPress = state.longPressFired;
+                clearResultLongPressTimer();
+                dragStateRef.current = null;
+                if (wasLongPress) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                if (!isDisabled) {
+                  suppressTransientClick();
+                  activateResult(result);
+                }
+              };
+
+              const handleTouchCancel = () => {
+                clearResultLongPressTimer();
                 dragStateRef.current = null;
               };
 
@@ -22870,8 +23173,17 @@ function FabNexus({
                   return;
                 }
                 if (!isDisabled) {
-                  onSelectResult(result);
+                  activateResult(result);
                 }
+              };
+
+              const handleContextMenu = (event: React.MouseEvent) => {
+                event.preventDefault();
+                if (isEmbedded || !onLongPressResult) return;
+                clearResultLongPressTimer();
+                dragStateRef.current = null;
+                suppressTransientClick();
+                onLongPressResult(result, event.currentTarget as HTMLElement);
               };
 
               return (
@@ -22884,12 +23196,18 @@ function FabNexus({
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerCancel}
-                  disabled={isDisabled}
+                  onPointerLeave={handlePointerLeave}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  onTouchCancel={handleTouchCancel}
+                  onContextMenu={handleContextMenu}
                   aria-disabled={isDisabled}
+                  tabIndex={isDisabled ? -1 : undefined}
                   className={cardClassName}
-                  style={cardStyle}
+                  style={cardInteractionStyle}
                 >
-                  {isCompletedProject ? (
+                  {isCompletedNexusResult ? (
                     <span
                       className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
                       aria-hidden="true"
@@ -22958,196 +23276,5 @@ function FabNexus({
           )}
       </div>
     </div>
-  );
-}
-
-type FabRescheduleOverlayProps = {
-  open: boolean;
-  target: FabSearchResult | null;
-  dateValue: string;
-  timeValue: string;
-  error: string | null;
-  deleteError: string | null;
-  isSaving: boolean;
-  isDeleting: boolean;
-  onDateChange: (value: string) => void;
-  onTimeChange: (value: string) => void;
-  onClose: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-};
-
-function FabRescheduleOverlay({
-  open,
-  target,
-  dateValue,
-  timeValue,
-  error,
-  deleteError,
-  isSaving,
-  isDeleting,
-  onDateChange,
-  onTimeChange,
-  onClose,
-  onSave,
-  onDelete,
-}: FabRescheduleOverlayProps) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  useEffect(() => {
-    setConfirmingDelete(false);
-  }, [open, target?.id]);
-
-  if (typeof document === "undefined") return null;
-  const combinedErrors = [error, deleteError].filter(
-    (message): message is string =>
-      typeof message === "string" && message.length > 0,
-  );
-  const disableActions = isSaving || isDeleting;
-  const deleteLabel =
-    target?.type === "HABIT"
-      ? "Habit"
-      : target?.type === "PROJECT"
-        ? "Project"
-        : "Event";
-  const handleDeleteClick = () => {
-    if (disableActions || !target) return;
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
-      return;
-    }
-    setConfirmingDelete(false);
-    void onDelete();
-  };
-  return createPortal(
-    <AnimatePresence>
-      {open ? (
-        <motion.div
-          data-fab-reschedule-overlay
-          className="fixed inset-0 z-[2147483647] bg-black/60 backdrop-blur"
-          style={{ touchAction: "manipulation" }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          onTouchStart={(event) => event.stopPropagation()}
-        >
-          <motion.div
-            className="absolute left-1/2 top-1/2 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#050507]/95 p-5 text-white shadow-2xl"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 260, damping: 22 }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute right-4 top-4 rounded-full border border-white/10 p-1 text-white/70 transition hover:text-white"
-              aria-label="Close reschedule menu"
-              disabled={disableActions}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-[0.35em] text-white/40">
-                Reschedule
-              </p>
-              <h3 className="text-lg font-semibold leading-tight">
-                {target?.name ?? "Event"}
-              </h3>
-            </div>
-            <div className="mt-4 space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs uppercase tracking-[0.2em] text-white/55">
-                  Due date
-                </label>
-                <input
-                  type="date"
-                  value={dateValue}
-                  onChange={(event) => onDateChange(event.target.value)}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-                  disabled={disableActions}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs uppercase tracking-[0.2em] text-white/55">
-                  Time due
-                </label>
-                <input
-                  type="time"
-                  value={timeValue}
-                  onChange={(event) => onTimeChange(event.target.value)}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-                  disabled={disableActions}
-                />
-              </div>
-              {combinedErrors.length > 0 && (
-                <div className="rounded-xl border border-red-500/20 bg-red-900/30 px-3 py-2 text-sm text-red-100">
-                  {combinedErrors.map((message, index) => (
-                    <p key={`${message}-${index}`}>{message}</p>
-                  ))}
-                </div>
-              )}
-              <div className="pt-2">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={handleDeleteClick}
-                    onTouchEnd={(event) => {
-                      event.stopPropagation();
-                      handleDeleteClick();
-                    }}
-                    disabled={disableActions || !target}
-                    className={cn(
-                      "bg-red-600 text-white hover:bg-red-500 transition",
-                      confirmingDelete && "border border-white/40 bg-red-700",
-                    )}
-                  >
-                    {isDeleting
-                      ? "Deleting…"
-                      : confirmingDelete
-                        ? `Confirm delete ${deleteLabel}`
-                        : `Delete ${deleteLabel}`}
-                  </Button>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setConfirmingDelete(false);
-                        onClose();
-                      }}
-                      onTouchEnd={(event) => {
-                        event.stopPropagation();
-                        setConfirmingDelete(false);
-                        onClose();
-                      }}
-                      className="text-white/70 hover:bg-white/10"
-                      disabled={disableActions}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={onSave}
-                      onTouchEnd={(event) => {
-                        event.stopPropagation();
-                        onSave();
-                      }}
-                      disabled={disableActions || !target?.scheduleInstanceId}
-                      className="bg-white/90 text-black hover:bg-white"
-                    >
-                      {isSaving ? "Saving…" : "Save"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>,
-    document.body,
   );
 }

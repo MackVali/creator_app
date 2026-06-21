@@ -37,18 +37,55 @@ function toNullableNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeFoodResultServingUnit(
+  value: string | null | undefined,
+  servingSize: number | null,
+  servingGrams: number | null,
+) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return null;
+
+  const aliases: Record<string, string> = {
+    gram: "g",
+    grams: "g",
+    ounce: "oz",
+    ounces: "oz",
+    pound: "lb",
+    pounds: "lb",
+    tablespoon: "tbsp",
+    tablespoons: "tbsp",
+    teaspoon: "tsp",
+    teaspoons: "tsp",
+    "fluid ounce": "fl oz",
+    "fluid ounces": "fl oz",
+    milliliter: "ml",
+    milliliters: "ml",
+  };
+  const unit = aliases[normalized] ?? normalized;
+
+  if (["g", "oz", "lb", "tsp", "tbsp", "cup", "ml", "fl oz", "serving"].includes(unit)) {
+    return unit;
+  }
+
+  return servingSize && servingGrams ? "serving" : null;
+}
+
 function mapFoodRow(
   row: FoodSearchRow,
   browsePlacement?: FoodBrowsePlacement,
 ): FoodSearchResult {
+  const servingSize = toNullableNumber(row.serving_size);
+  const servingGrams = toNullableNumber(row.serving_grams);
+
   return {
     id: row.id,
     name: row.name,
     brand_name: row.brand_name,
     source: row.source ?? null,
-    serving_size: toNullableNumber(row.serving_size),
-    serving_unit: row.serving_unit,
-    serving_grams: toNullableNumber(row.serving_grams),
+    serving_size: servingSize,
+    serving_unit: normalizeFoodResultServingUnit(row.serving_unit, servingSize, servingGrams),
+    serving_grams: servingGrams,
     calories: toNullableNumber(row.calories),
     carbs_g: toNullableNumber(row.carbs_g),
     protein_g: toNullableNumber(row.protein_g),
@@ -165,7 +202,7 @@ export async function GET(request: NextRequest) {
       return a.name.localeCompare(b.name);
     })
     .slice(0, limit)
-    .map(mapFoodRow);
+    .map((row) => mapFoodRow(row));
 
   return NextResponse.json({ foods });
 }
