@@ -2244,20 +2244,25 @@ function getSafeFoodServingUnit(
   const optionValues = new Set(getFoodServingOptions(food).map((option) => option.value));
 
   if (normalizedUnit && optionValues.has(normalizedUnit)) return normalizedUnit;
-  if (hasExplicitFoodServingAnchor(food)) return "serving";
   if (hasFoodGramAnchor(food)) return "g";
+  if (hasExplicitFoodServingAnchor(food)) return "serving";
   return normalizedUnit ?? "serving";
 }
 
 function getDefaultFoodServingUnit(food: FoodSearchResult) {
-  const defaultUnit = getRawNutritionServingUnitKey(food.serving_unit);
+  if (hasFoodGramAnchor(food)) return "g";
 
+  const defaultUnit = getRawNutritionServingUnitKey(food.serving_unit);
   return getSafeFoodServingUnit(food, defaultUnit ?? "serving");
 }
 
 function getDefaultFoodServingAmount(food: FoodSearchResult) {
   const servingUnit = getDefaultFoodServingUnit(food);
   const servingSize = getPositiveNutritionNumber(food.serving_size);
+
+  if (servingUnit === "g") {
+    return getPositiveNutritionNumber(food.serving_grams) ?? servingSize ?? 1;
+  }
 
   return servingUnit === "serving" ? 1 : servingSize ?? 1;
 }

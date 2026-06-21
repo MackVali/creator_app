@@ -523,6 +523,7 @@ export default function PriorityEditorClient({
                 isSaving={isSavingGlobalPriorityOrder}
                 sensors={sensors}
                 isFiltered={hasActiveFilters}
+                appearance="priorityEditor"
                 onDragEnd={handleGlobalPriorityDragEnd}
                 onCampaignGoalDragEnd={handleCampaignGoalDragEnd}
               />

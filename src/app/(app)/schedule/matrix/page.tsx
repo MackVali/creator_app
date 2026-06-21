@@ -2,7 +2,19 @@
 
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Calendar, Grid2x2, Grid3x3, LayoutGrid, List, Pin } from "lucide-react";
+import {
+  BadgeAlert,
+  Calendar,
+  CircleAlert,
+  Grid2x2,
+  Grid3x3,
+  LayoutGrid,
+  List,
+  OctagonAlert,
+  Pin,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -303,6 +315,16 @@ const MATRIX_LIBRARY_CARD_CLASS =
   "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 const MATRIX_LIBRARY_SMALL_CARD_CLASS =
   "goal-card group relative flex h-full min-h-[108px] w-full transform-gpu flex-col rounded-xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.09),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] p-[0.65rem_0.45rem] text-white shadow-[0_14px_28px_-24px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30";
+const MATRIX_ROW_NEXUS_CARD_CLASS =
+  "border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(120,126,138,0.28),transparent_58%),linear-gradient(140deg,rgb(8,8,10)_0%,rgb(22,22,26)_42%,rgb(34,35,42)_100%)] shadow-[0_0_0_1px_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] outline outline-1 -outline-offset-1 outline-black/85 hover:border-white/16 hover:brightness-[1.08]";
+const MATRIX_ROW_NEXUS_CHORE_CARD_CLASS =
+  "border-rose-200/45 bg-[radial-gradient(circle_at_10%_-25%,rgba(248,113,113,0.34),transparent_58%),linear-gradient(135deg,rgb(127,29,29)_0%,rgb(185,28,28)_48%,rgb(168,34,43)_100%)] shadow-[0_18px_36px_rgba(56,16,24,0.38),0_8px_18px_rgba(76,20,32,0.26),inset_0_1px_0_rgba(255,255,255,0.12)] outline outline-1 -outline-offset-1 outline-black/85 hover:border-rose-100/55 hover:brightness-[1.08]";
+const MATRIX_ROW_NEXUS_SYNC_CARD_CLASS =
+  "border-amber-200/45 bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.34),transparent_58%),linear-gradient(135deg,rgb(82,82,91)_0%,rgb(113,113,122)_48%,rgb(124,126,136)_100%)] shadow-[0_18px_36px_rgba(58,44,14,0.32),0_8px_18px_rgba(82,62,18,0.24),inset_0_1px_0_rgba(255,255,255,0.12)] outline outline-1 -outline-offset-1 outline-black/85 hover:border-amber-100/55 hover:brightness-[1.08]";
+const MATRIX_ROW_NEXUS_PRACTICE_CARD_CLASS =
+  "border-slate-500/50 bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgb(8,9,20)_0%,rgb(24,27,51)_46%,rgb(34,38,70)_100%)] shadow-[0_30px_60px_rgba(2,2,6,0.72),0_12px_28px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.08)] outline outline-1 -outline-offset-1 outline-black/85 hover:border-slate-400/60 hover:brightness-[1.08]";
+const MATRIX_ROW_NEXUS_COMPLETED_CARD_CLASS =
+  "shimmer-border-complete isolate z-0 overflow-hidden border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
 const MATRIX_HABIT_CHORE_CARD_BG_CLASS =
   "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
 const MATRIX_HABIT_PRACTICE_CARD_BG_CLASS =
@@ -310,7 +332,7 @@ const MATRIX_HABIT_PRACTICE_CARD_BG_CLASS =
 const MATRIX_HABIT_DEFAULT_CARD_BG_CLASS =
   "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
 const MATRIX_ROW_PROJECT_CARD_CLASS =
-  "border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.08),transparent_55%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(17,17,20,0.96)_54%,rgba(31,32,36,0.72)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] hover:border-black/80";
+  MATRIX_ROW_NEXUS_CARD_CLASS;
 const MATRIX_TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
   "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
 const MATRIX_TIMELINE_COMPLETED_SHADOW =
@@ -757,25 +779,12 @@ function getHabitCardBorderClass(habitType: string | null | undefined): string {
 
 function getHabitRowTypeClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
-  if (normalized === "CHORE") {
-    return cn(
-      MATRIX_HABIT_CHORE_CARD_BG_CLASS,
-      "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-black/80"
-    );
-  }
+  if (normalized === "CHORE") return MATRIX_ROW_NEXUS_CHORE_CARD_CLASS;
   if (normalized === "SYNC" || normalized === "MEMO") {
-    return "border-black/70 bg-[radial-gradient(circle_at_12%_-20%,rgba(226,232,240,0.28),transparent_58%),linear-gradient(135deg,rgba(82,82,91,0.96)_0%,rgba(113,113,122,0.92)_48%,rgba(161,161,170,0.78)_100%)] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.055)] hover:border-black/80";
+    return MATRIX_ROW_NEXUS_SYNC_CARD_CLASS;
   }
-  if (normalized === "PRACTICE") {
-    return cn(
-      MATRIX_HABIT_PRACTICE_CARD_BG_CLASS,
-      "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-black/80"
-    );
-  }
-  return cn(
-    MATRIX_HABIT_DEFAULT_CARD_BG_CLASS,
-    "border-black/70 shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-black/80"
-  );
+  if (normalized === "PRACTICE") return MATRIX_ROW_NEXUS_PRACTICE_CARD_CLASS;
+  return MATRIX_ROW_NEXUS_CARD_CLASS;
 }
 
 function getScheduleHabitTypeClass(
@@ -914,6 +923,68 @@ function normalizeEnergyCode(value?: string | null): string {
 function normalizeFlameLevel(value?: string | null): FlameLevel {
   const normalized = normalizeEnergyCode(value);
   return normalized as FlameLevel;
+}
+
+function formatMatrixDurationLabel(minutes: number): string {
+  const rounded = Math.max(1, Math.round(minutes));
+  if (rounded < 60) return `${rounded}m`;
+
+  const hours = Math.floor(rounded / 60);
+  const remainingMinutes = rounded % 60;
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
+type MatrixPrioritySignal = {
+  label: string;
+  Icon: LucideIcon;
+  className: string;
+  iconClassName: string;
+};
+
+const MATRIX_PRIORITY_SIGNALS: Record<string, MatrixPrioritySignal> = {
+  LOW: {
+    label: "Low",
+    Icon: CircleAlert,
+    className:
+      "border-sky-300/20 bg-sky-400/8 text-sky-100 shadow-[0_0_10px_rgba(125,211,252,0.1)]",
+    iconClassName: "h-2.5 w-2.5",
+  },
+  MEDIUM: {
+    label: "Medium",
+    Icon: BadgeAlert,
+    className:
+      "border-amber-300/25 bg-amber-400/10 text-amber-100 shadow-[0_0_10px_rgba(251,191,36,0.12)]",
+    iconClassName: "h-2.5 w-2.5",
+  },
+  HIGH: {
+    label: "High",
+    Icon: TriangleAlert,
+    className:
+      "border-orange-300/30 bg-orange-500/12 text-orange-100 shadow-[0_0_10px_rgba(251,146,60,0.15)]",
+    iconClassName: "h-2.5 w-2.5",
+  },
+  CRITICAL: {
+    label: "Critical",
+    Icon: TriangleAlert,
+    className:
+      "border-red-300/35 bg-red-500/14 text-red-100 shadow-[0_0_10px_rgba(248,113,113,0.18)]",
+    iconClassName: "h-2.5 w-2.5",
+  },
+  "ULTRA-CRITICAL": {
+    label: "Ultra",
+    Icon: OctagonAlert,
+    className:
+      "border-rose-200/40 bg-rose-500/16 text-rose-50 shadow-[0_0_12px_rgba(251,113,133,0.22)]",
+    iconClassName: "h-2.5 w-2.5",
+  },
+};
+
+function getMatrixPriorityIconSignal(
+  priority?: string | null
+): MatrixPrioritySignal | null {
+  const normalized = normalizePriorityCode(priority);
+  if (normalized === "NO") return null;
+  return MATRIX_PRIORITY_SIGNALS[normalized] ?? null;
 }
 
 function toScheduleHabit(habit: HabitRow): HabitScheduleItem {
@@ -2024,24 +2095,24 @@ function MatrixEventRowCard({
           : undefined
       }
       className={cn(
-        "matrix-event-row-card group relative grid min-h-[3.65rem] w-full min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-stretch overflow-hidden rounded-md border text-left text-white transition sm:grid-cols-[2.25rem_minmax(0,1fr)]",
+        "matrix-event-row-card group relative grid min-h-[3.75rem] w-full min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-stretch overflow-hidden rounded-lg border text-left text-white backdrop-blur transition-[filter,transform,border-color,box-shadow] duration-200 sm:grid-cols-[2.45rem_minmax(0,1fr)]",
         completed ? null : className,
         completedPresentation?.className,
         onOpenChange
-          ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25"
+          ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"
           : null,
         open && !completed ? "border-black/80" : null,
         open ? "ring-1 ring-white/[0.08]" : null,
         overdue && !completed
-          ? "outline outline-1 -outline-offset-1 outline-rose-300/[0.16] shadow-[0_10px_22px_-20px_rgba(0,0,0,0.95),0_0_0_1px_rgba(244,63,94,0.045),inset_0_1px_0_rgba(255,255,255,0.045)]"
+          ? "outline-rose-300/[0.22] shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_18px_36px_rgba(56,16,24,0.26),inset_0_1px_0_rgba(255,255,255,0.09)]"
           : null
       )}
       style={completedPresentation?.style}
     >
-      <div className="relative z-[2] flex min-h-full items-center justify-center border-r border-white/[0.055] bg-black/20 px-1.5 text-white/72">
+      <div className="relative z-[2] flex min-h-full items-center justify-center border-r border-white/[0.055] bg-black/15 px-1.5 text-white/72">
         <span
           className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] text-[11px] font-semibold leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)] sm:size-8 sm:rounded-lg sm:text-xs",
+            "flex size-7 shrink-0 items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.07] px-1 text-center text-[11px] font-semibold leading-none text-white/86 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)] sm:size-8 sm:rounded-lg sm:text-xs",
             completed
               ? "!border-white/10 !bg-white/[0.055] !text-white/82 !shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]"
               : null
@@ -2050,11 +2121,11 @@ function MatrixEventRowCard({
           {glyph}
         </span>
       </div>
-      <div className="relative z-[2] flex min-w-0 flex-col justify-center gap-1 px-2 py-2 sm:px-3">
+      <div className="relative z-[2] flex min-w-0 flex-col justify-center gap-1 px-2.5 py-2 sm:px-3">
         <div className="flex min-w-0 items-start gap-2">
           <span
             className={cn(
-              "line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold leading-snug sm:text-sm",
+              "line-clamp-2 min-w-0 flex-1 break-words text-[12px] font-semibold leading-snug tracking-wide sm:text-[13px]",
               completed ? "normal-case text-white/92" : "uppercase text-white/88"
             )}
             title={title}
@@ -2065,9 +2136,9 @@ function MatrixEventRowCard({
           {status && !completed ? (
             <span
               className={cn(
-                "mt-0.5 max-w-[42%] shrink-0 truncate rounded-full border border-white/[0.07] bg-black/25 px-1.5 py-[3px] text-[7px] font-semibold uppercase leading-none tracking-[0.06em] text-white/45 sm:max-w-[36%]",
+                "mt-0.5 max-w-[42%] shrink-0 truncate rounded border border-white/[0.08] bg-white/[0.06] px-1.5 py-[3px] text-[7px] font-bold uppercase leading-none tracking-[0.12em] text-white/56 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:max-w-[36%]",
                 overdue
-                  ? "border-rose-200/[0.24] bg-rose-950/[0.28] text-rose-50/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+                  ? "border-rose-200/[0.28] bg-rose-950/[0.30] text-rose-50/90"
                   : null
               )}
             >
@@ -2075,7 +2146,7 @@ function MatrixEventRowCard({
             </span>
           ) : null}
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/42 sm:text-[10px]">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52 sm:text-[10px]">
           {meta}
         </div>
       </div>
@@ -2405,6 +2476,159 @@ function MatrixProjectCard({
   );
 }
 
+function MatrixScheduledEventRowCard({
+  event,
+  completed,
+  status,
+  open = false,
+  onOpenChange,
+}: {
+  event: MatrixEvent;
+  completed: boolean;
+  status?: string | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const sourceType = event.goal ? "PROJECT" : "HABIT";
+  const displayStatus = completed ? "Completed" : status ?? "Scheduled";
+  const project = event.goal?.projects?.[0] ?? null;
+  const durationMinutes =
+    typeof event.instance.duration_min === "number" &&
+    Number.isFinite(event.instance.duration_min) &&
+    event.instance.duration_min > 0
+      ? event.instance.duration_min
+      : sourceType === "PROJECT"
+        ? project?.durationMinutes
+        : event.habit?.duration_minutes;
+  const prioritySignal =
+    sourceType === "PROJECT"
+      ? getMatrixPriorityIconSignal(
+          event.goal?.priorityCode ?? project?.priorityCode
+        )
+      : null;
+  const energyLevel =
+    sourceType === "PROJECT"
+      ? normalizeFlameLevel(
+          event.goal?.energyCode ?? project?.energyCode ?? event.instance.energy_resolved
+        )
+      : normalizeFlameLevel(event.habit?.energy ?? event.instance.energy_resolved);
+  const dueDate = sourceType === "PROJECT" ? event.goal?.dueDate : null;
+  const progress =
+    sourceType === "PROJECT" && typeof event.goal?.progress === "number"
+      ? Math.max(0, Math.min(100, Math.round(event.goal.progress)))
+      : null;
+  const metaItems = [
+    displayStatus,
+    typeof durationMinutes === "number" &&
+    Number.isFinite(durationMinutes) &&
+    durationMinutes > 0
+      ? formatMatrixDurationLabel(durationMinutes)
+      : null,
+    dueDate ? `Due ${dueDate}` : null,
+    progress !== null ? `${progress}%` : null,
+  ].filter(
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0
+  );
+
+  return (
+    <div
+      role={onOpenChange ? "button" : undefined}
+      tabIndex={onOpenChange ? 0 : undefined}
+      aria-expanded={onOpenChange ? open : undefined}
+      onClick={onOpenChange ? () => onOpenChange(!open) : undefined}
+      onKeyDown={
+        onOpenChange
+          ? (keyboardEvent: KeyboardEvent<HTMLDivElement>) => {
+              if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") {
+                return;
+              }
+              keyboardEvent.preventDefault();
+              onOpenChange(!open);
+            }
+          : undefined
+      }
+      className={cn(
+        "relative flex min-h-[56px] select-none rounded-lg border px-3 py-1.5 text-left transition-[filter,transform,border-color,box-shadow] duration-200 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+        completed
+          ? MATRIX_ROW_NEXUS_COMPLETED_CARD_CLASS
+          : sourceType === "PROJECT"
+            ? MATRIX_ROW_PROJECT_CARD_CLASS
+            : getHabitRowTypeClass(event.habit?.habit_type),
+        onOpenChange ? "cursor-pointer" : null,
+        open && !completed ? "ring-1 ring-white/[0.08]" : null
+      )}
+      style={completed ? getMatrixCompleteShimmerStyle() : undefined}
+    >
+      {completed ? (
+        <span
+          className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+          aria-hidden="true"
+        />
+      ) : null}
+      <div className="relative z-[2] flex w-full min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <span
+            className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] p-0.5 text-center text-[15px] leading-none text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+            aria-hidden="true"
+          >
+            <span className="flex size-6 max-w-full items-center justify-center truncate">
+              {event.glyph}
+            </span>
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="block min-w-0 flex-1 line-clamp-2 break-words text-[13px] font-semibold leading-snug tracking-wide text-white">
+              {event.title}
+            </span>
+            <div className="flex min-w-0 items-center overflow-hidden whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-[0.14em] text-white/60 md:text-[8px]">
+              {metaItems.map((item, index) => (
+                <span
+                  key={`${item}-${index}`}
+                  className={cn(
+                    "min-w-0 truncate",
+                    index > 0 ? "ml-1.5" : null
+                  )}
+                >
+                  {index > 0 ? (
+                    <span className="mr-1.5 text-white/28">/</span>
+                  ) : null}
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-1 overflow-visible">
+          {prioritySignal ? (
+            <span
+              className={cn(
+                "inline-flex size-4 items-center justify-center rounded border",
+                prioritySignal.className
+              )}
+              title={`Priority ${prioritySignal.label}`}
+              aria-label={`Priority ${prioritySignal.label}`}
+            >
+              <prioritySignal.Icon
+                className={prioritySignal.iconClassName}
+                aria-hidden="true"
+              />
+            </span>
+          ) : null}
+          {energyLevel !== "NO" ? (
+            <span className="grid h-7 w-7 shrink-0 place-items-center overflow-visible">
+              <FlameEmber
+                level={energyLevel}
+                size="sm"
+                className="shrink-0 overflow-visible drop-shadow-[0_0_7px_rgba(0,0,0,0.5)]"
+              />
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScheduledEventCard({
   event,
   open,
@@ -2657,6 +2881,14 @@ function ScheduledEventCard({
 
         onComplete(instanceId, completed ? "scheduled" : "completed");
       }}
+    />
+  ) : density === "row" && (scheduledGoal || event.habit) ? (
+    <MatrixScheduledEventRowCard
+      event={event}
+      completed={isCompleted}
+      status={cleanStatus}
+      open={open}
+      onOpenChange={scheduledGoal ? onOpenChange : undefined}
     />
   ) : scheduledGoal ? (
     density !== "large" ? (

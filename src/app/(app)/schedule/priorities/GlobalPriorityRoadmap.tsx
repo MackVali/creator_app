@@ -73,6 +73,7 @@ type DragHandleListenerMap = {
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onTouchStart?: (event: ReactTouchEvent<HTMLButtonElement>) => void;
 };
+type GlobalPriorityRoadmapAppearance = "default" | "priorityEditor";
 
 const GLOBAL_PRIORITY_BUCKET_PREFIX = "global-priority-bucket:";
 const CAMPAIGN_GOAL_BUCKET_PREFIX = "campaign-goal-bucket:";
@@ -85,6 +86,10 @@ const PRIORITY_DND_AUTO_SCROLL = {
   acceleration: 8,
   interval: 5,
 };
+const PRIORITY_EDITOR_PROJECT_ROW_CLASS =
+  "border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(120,126,138,0.28),transparent_58%),linear-gradient(140deg,rgb(8,8,10)_0%,rgb(22,22,26)_42%,rgb(34,35,42)_100%)] shadow-[0_0_0_1px_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] outline outline-1 -outline-offset-1 outline-black/85 hover:border-white/16";
+const PRIORITY_EDITOR_PROJECT_ROW_DRAGGING_CLASS =
+  "bg-[radial-gradient(circle_at_0%_0%,rgba(120,126,138,0.18),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.94)_0%,rgba(22,22,26,0.9)_42%,rgba(34,35,42,0.82)_100%)]";
 
 export function usePriorityRoadmapSensors() {
   return useSensors(
@@ -553,6 +558,7 @@ export function GlobalPriorityRoadmap({
   isSaving,
   sensors,
   isFiltered,
+  appearance = "default",
   onGoalOpen,
   onGoalLongPressEdit,
   onDragEnd,
@@ -564,6 +570,7 @@ export function GlobalPriorityRoadmap({
   isSaving: boolean;
   sensors: PriorityRoadmapSensors;
   isFiltered: boolean;
+  appearance?: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit?: GlobalPriorityGoalLongPressEditHandler;
   onDragEnd: (
@@ -717,6 +724,7 @@ export function GlobalPriorityRoadmap({
                     sensors={sensors}
                     isTopLevelDragDisabled={false}
                     isCampaignGoalDragDisabled={false}
+                    appearance={appearance}
                     onGoalOpen={onGoalOpen}
                     onGoalLongPressEdit={handleGoalLongPressEdit}
                     onCampaignGoalDragEnd={onCampaignGoalDragEnd}
@@ -726,7 +734,10 @@ export function GlobalPriorityRoadmap({
             </div>
             <PriorityRoadmapDragOverlay zIndex={1000}>
               {activePriorityItem ? (
-                <GlobalPriorityItemDragOverlay item={activePriorityItem} />
+                <GlobalPriorityItemDragOverlay
+                  item={activePriorityItem}
+                  appearance={appearance}
+                />
               ) : null}
             </PriorityRoadmapDragOverlay>
           </DndContext>
@@ -763,6 +774,7 @@ function GlobalPriorityBucket({
   sensors,
   isTopLevelDragDisabled,
   isCampaignGoalDragDisabled,
+  appearance,
   onGoalOpen,
   onGoalLongPressEdit,
   onCampaignGoalDragEnd,
@@ -774,6 +786,7 @@ function GlobalPriorityBucket({
   sensors: PriorityRoadmapSensors;
   isTopLevelDragDisabled: boolean;
   isCampaignGoalDragDisabled: boolean;
+  appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: (
     goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
@@ -822,6 +835,7 @@ function GlobalPriorityBucket({
                 sensors={sensors}
                 isTopLevelDragDisabled={isTopLevelDragDisabled}
                 isCampaignGoalDragDisabled={isCampaignGoalDragDisabled}
+                appearance={appearance}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
                 onCampaignGoalDragEnd={onCampaignGoalDragEnd}
@@ -845,6 +859,7 @@ function SortableGlobalPriorityItem({
   sensors,
   isTopLevelDragDisabled,
   isCampaignGoalDragDisabled,
+  appearance,
   onGoalOpen,
   onGoalLongPressEdit,
   onCampaignGoalDragEnd,
@@ -855,6 +870,7 @@ function SortableGlobalPriorityItem({
   sensors: PriorityRoadmapSensors;
   isTopLevelDragDisabled: boolean;
   isCampaignGoalDragDisabled: boolean;
+  appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: (
     goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
@@ -966,8 +982,14 @@ function SortableGlobalPriorityItem({
       style={style}
       className={cn(
         "border-b border-black/40 bg-white/[0.026] last:border-b-0",
+        appearance === "priorityEditor" ? PRIORITY_EDITOR_PROJECT_ROW_CLASS : "",
         isDragging
-          ? "relative z-10 bg-white/[0.018] opacity-45 shadow-none ring-1 ring-white/[0.06]"
+          ? cn(
+              "relative z-10 opacity-45 shadow-none ring-1 ring-white/[0.06]",
+              appearance === "priorityEditor"
+                ? PRIORITY_EDITOR_PROJECT_ROW_DRAGGING_CLASS
+                : "bg-white/[0.018]"
+            )
           : ""
       )}
     >
@@ -1057,12 +1079,16 @@ function SortableGlobalPriorityItem({
                   isDragDisabled={isCampaignGoalDragDisabled}
                   onGoalOpen={onGoalOpen}
                   onGoalLongPressEdit={onGoalLongPressEdit}
+                  appearance={appearance}
                 />
               ))}
             </div>
             <PriorityRoadmapDragOverlay zIndex={1001}>
               {activeCampaignGoal ? (
-                <CampaignGoalDragOverlay goal={activeCampaignGoal} />
+                <CampaignGoalDragOverlay
+                  goal={activeCampaignGoal}
+                  appearance={appearance}
+                />
               ) : null}
             </PriorityRoadmapDragOverlay>
           </DndContext>
@@ -1092,15 +1118,22 @@ function getGlobalPriorityItemRank(item: GlobalPriorityRoadmapItem) {
 
 function GlobalPriorityItemDragOverlay({
   item,
+  appearance,
 }: {
   item: GlobalPriorityRoadmapItem;
+  appearance: GlobalPriorityRoadmapAppearance;
 }) {
   const isCampaign = item.type === "campaign";
   const identity = getGlobalPriorityItemIdentity(item);
   const globalRank = isCampaign ? null : getGlobalPriorityItemRank(item);
 
   return (
-    <div className="scale-[1.015] overflow-hidden rounded-[16px] border border-white/[0.13] bg-zinc-950/95 opacity-[0.98] shadow-[0_22px_48px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.075)] ring-1 ring-white/[0.08] backdrop-blur-md">
+    <div
+      className={cn(
+        "scale-[1.015] overflow-hidden rounded-[16px] border border-white/[0.13] bg-zinc-950/95 opacity-[0.98] shadow-[0_22px_48px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.075)] ring-1 ring-white/[0.08] backdrop-blur-md",
+        appearance === "priorityEditor" ? PRIORITY_EDITOR_PROJECT_ROW_CLASS : ""
+      )}
+    >
       <div className="flex min-h-10 items-center gap-2 px-2 py-1.5 sm:px-2.5">
         <span
           className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-black/35 text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]"
@@ -1138,12 +1171,14 @@ function CampaignGoalPriorityBucket({
   campaignId,
   bucket,
   isDragDisabled,
+  appearance,
   onGoalOpen,
   onGoalLongPressEdit,
 }: {
   campaignId: string;
   bucket: { priority: PriorityBucketId; goals: RoadmapPriorityGoal[] };
   isDragDisabled: boolean;
+  appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: (
     goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
@@ -1187,6 +1222,7 @@ function CampaignGoalPriorityBucket({
                 campaignId={campaignId}
                 goal={goal}
                 isDragDisabled={isDragDisabled}
+                appearance={appearance}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
               />
@@ -1202,12 +1238,14 @@ function GlobalCampaignGoalRow({
   campaignId,
   goal,
   isDragDisabled,
+  appearance,
   onGoalOpen,
   onGoalLongPressEdit,
 }: {
   campaignId: string;
   goal: RoadmapPriorityGoal;
   isDragDisabled: boolean;
+  appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: (
     goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
@@ -1272,8 +1310,14 @@ function GlobalCampaignGoalRow({
       style={style}
       className={cn(
         "flex min-h-8 items-center gap-2 rounded-lg border border-black/45 bg-white/[0.018] px-2 py-1.5",
+        appearance === "priorityEditor" ? PRIORITY_EDITOR_PROJECT_ROW_CLASS : "",
         isDragging
-          ? "relative z-10 bg-white/[0.012] opacity-45 shadow-none ring-1 ring-white/[0.055]"
+          ? cn(
+              "relative z-10 opacity-45 shadow-none ring-1 ring-white/[0.055]",
+              appearance === "priorityEditor"
+                ? PRIORITY_EDITOR_PROJECT_ROW_DRAGGING_CLASS
+                : "bg-white/[0.012]"
+            )
           : ""
       )}
     >
@@ -1523,12 +1567,23 @@ function getCampaignGoalRank(goal: RoadmapPriorityGoal) {
     : null;
 }
 
-function CampaignGoalDragOverlay({ goal }: { goal: RoadmapPriorityGoal }) {
+function CampaignGoalDragOverlay({
+  goal,
+  appearance,
+}: {
+  goal: RoadmapPriorityGoal;
+  appearance: GlobalPriorityRoadmapAppearance;
+}) {
   const identity = getCampaignGoalIdentity(goal);
   const globalRank = getCampaignGoalRank(goal);
 
   return (
-    <div className="flex min-h-8 scale-[1.012] items-center gap-2 rounded-lg border border-white/[0.12] bg-zinc-950/95 px-2 py-1.5 opacity-[0.98] shadow-[0_16px_34px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.07)] ring-1 ring-white/[0.07] backdrop-blur-md">
+    <div
+      className={cn(
+        "flex min-h-8 scale-[1.012] items-center gap-2 rounded-lg border border-white/[0.12] bg-zinc-950/95 px-2 py-1.5 opacity-[0.98] shadow-[0_16px_34px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.07)] ring-1 ring-white/[0.07] backdrop-blur-md",
+        appearance === "priorityEditor" ? PRIORITY_EDITOR_PROJECT_ROW_CLASS : ""
+      )}
+    >
       <span
         className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-black/30 text-zinc-500"
         aria-hidden="true"
