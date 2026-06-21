@@ -7,6 +7,11 @@ type PushResult =
       ok?: boolean;
       successCount?: number;
       failureCount?: number;
+      skippedReason?: string | null;
+      instanceId?: string;
+      startUtc?: string;
+      title?: string;
+      body?: string;
       error?: string;
     }
   | null;
@@ -15,20 +20,17 @@ export default function PushTestPage() {
   const [result, setResult] = useState<PushResult>(null);
   const [sending, setSending] = useState(false);
 
-  const sendTestPush = async () => {
+  const sendPushRequest = async (endpoint: string, body?: Record<string, string>) => {
     setSending(true);
     setResult(null);
 
     try {
-      const response = await fetch("/api/push/test", {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          title: "CREATOR backend test",
-          body: "This came from the CREATOR backend.",
-        }),
+        ...(body ? { body: JSON.stringify(body) } : {}),
       });
 
       const payload = (await response.json().catch(() => null)) as PushResult;
@@ -47,6 +49,17 @@ export default function PushTestPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const sendTestPush = async () => {
+    await sendPushRequest("/api/push/test", {
+      title: "CREATOR backend test",
+      body: "This came from the CREATOR backend.",
+    });
+  };
+
+  const sendNextScheduleReminder = async () => {
+    await sendPushRequest("/api/push/schedule-reminder/test");
   };
 
   return (
@@ -69,6 +82,15 @@ export default function PushTestPage() {
           className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-50"
         >
           {sending ? "Sending..." : "Send test push"}
+        </button>
+
+        <button
+          type="button"
+          onClick={sendNextScheduleReminder}
+          disabled={sending}
+          className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-bold text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Send next schedule reminder
         </button>
 
         {result && (

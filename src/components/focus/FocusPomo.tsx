@@ -24,6 +24,7 @@ import {
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
@@ -3491,6 +3492,71 @@ async function fetchUserRoutineOptions(
   );
 }
 
+function FocusPomoFilterSection({
+  label,
+  hasSelectedFilters,
+  onClear,
+  children,
+}: {
+  label: string;
+  hasSelectedFilters: boolean;
+  onClear: () => void;
+  children: ReactNode;
+}) {
+  const sectionId = useId();
+  const [expanded, setExpanded] = useState(hasSelectedFilters);
+
+  useEffect(() => {
+    if (hasSelectedFilters) {
+      setExpanded(true);
+    }
+  }, [hasSelectedFilters]);
+
+  const handleAllClick = () => {
+    if (hasSelectedFilters) {
+      onClear();
+      setExpanded(false);
+      return;
+    }
+
+    setExpanded((current) => !current);
+  };
+
+  return (
+    <section>
+      <div className="flex items-center gap-2">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400/85 sm:text-[10px] sm:tracking-[0.22em]">
+          {label}
+        </p>
+        <button
+          type="button"
+          aria-controls={sectionId}
+          aria-expanded={expanded}
+          aria-pressed={!hasSelectedFilters}
+          onClick={handleAllClick}
+          className={
+            hasSelectedFilters
+              ? "ml-auto inline-flex min-h-7 items-center justify-center rounded-full border border-black/60 bg-black/30 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-8 sm:px-3.5 sm:text-[11px]"
+              : "ml-auto inline-flex min-h-7 items-center justify-center rounded-full border border-black/50 bg-white/10 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-8 sm:px-3.5 sm:text-[11px]"
+          }
+        >
+          ALL
+        </button>
+      </div>
+      <div
+        id={sectionId}
+        className={
+          expanded
+            ? "grid translate-y-0 grid-rows-[1fr] overflow-hidden opacity-100 transition-[grid-template-rows,opacity,transform] duration-300 ease-out mt-1.5 sm:mt-2"
+            : "grid -translate-y-1 grid-rows-[0fr] overflow-hidden opacity-0 transition-[grid-template-rows,opacity,transform] duration-300 ease-out mt-0"
+        }
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
+      </div>
+    </section>
+  );
+}
+
 export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const fabCreation = useFabCreation();
   const [mounted, setMounted] = useState(false);
@@ -4768,6 +4834,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setScopeOpen(true);
   };
 
+  const toggleScopeEditor = () => {
+    if (scopeOpen) {
+      setDraftSelectedMonumentIds(selectedMonumentIds);
+      setDraftSelectedSkillIds(selectedSkillIds);
+      setScopeOpen(false);
+      return;
+    }
+
+    openScopeEditor();
+  };
+
   const commitScopeEditor = () => {
     const scopeChanged =
       !sameSelectedIds(selectedMonumentIds, draftSelectedMonumentIds) ||
@@ -4806,6 +4883,44 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setRunHistory([]);
     setHasRunStarted(false);
     setIsRunLogExpanded(false);
+  };
+
+  const clearDraftMonumentScope = () => {
+    setDraftSelectedMonumentIds([]);
+  };
+
+  const clearDraftSkillScope = () => {
+    setDraftSelectedSkillIds([]);
+  };
+
+  const clearWorkTypeFilters = () => {
+    setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
+    resetScopeRunState();
+  };
+
+  const clearHabitTypeFilters = () => {
+    setEnabledHabitTypes(null);
+    resetScopeRunState();
+  };
+
+  const clearTagFilters = () => {
+    setSelectedTagIds([]);
+    resetScopeRunState();
+  };
+
+  const clearGoalFilters = () => {
+    setSelectedGoalIds([]);
+    resetScopeRunState();
+  };
+
+  const clearCampaignFilters = () => {
+    setSelectedCampaignIds([]);
+    resetScopeRunState();
+  };
+
+  const clearRoutineFilters = () => {
+    setSelectedRoutineIds([]);
+    resetScopeRunState();
   };
 
   const getSkillIdsForMonument = (monumentId: string) =>
@@ -5196,53 +5311,78 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 {!hasRunStarted ? (
                   <section className="relative mx-auto w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
                     <div className="overflow-clip rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
+                      <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                        <button
+                          type="button"
+                          onClick={toggleScopeEditor}
+                          aria-expanded={scopeOpen}
+                          aria-controls={executionScopePanelId}
+                          className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                        >
+                          Adjust
+                        </button>
+                      </div>
                   <AnimatePresence initial={false}>
                     {scopeOpen ? (
                       <motion.div
                         id={executionScopePanelId}
-                        className="flex max-h-[min(50dvh,32rem)] flex-col overflow-hidden border-b border-black/40 bg-black/25 px-3 py-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4"
+                        className="overflow-hidden border-b border-black/40 bg-black/25"
                         initial={
                           prefersReducedMotion
                             ? { opacity: 0 }
-                            : { opacity: 0, height: 0, y: 8 }
+                            : { height: 0, opacity: 0, y: -6 }
                         }
                         animate={
                           prefersReducedMotion
                             ? { opacity: 1 }
-                            : { opacity: 1, height: "auto", y: 0 }
+                            : { height: "auto", opacity: 1, y: 0 }
                         }
                         exit={
                           prefersReducedMotion
                             ? { opacity: 0 }
-                            : { opacity: 0, height: 0, y: 8 }
+                            : { height: 0, opacity: 0, y: -6 }
                         }
                         transition={{
-                          duration: prefersReducedMotion ? 0.01 : 0.18,
-                          ease: [0.22, 1, 0.36, 1],
+                          height: {
+                            duration: prefersReducedMotion ? 0.01 : 0.24,
+                            ease: [0.22, 1, 0.36, 1],
+                          },
+                          opacity: {
+                            duration: prefersReducedMotion ? 0.01 : 0.18,
+                            ease: "easeOut",
+                          },
+                          y: {
+                            duration: prefersReducedMotion ? 0.01 : 0.24,
+                            ease: [0.22, 1, 0.36, 1],
+                          },
                         }}
                       >
-                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 sm:space-y-4">
-                          <div className="flex items-center justify-between gap-2 sm:gap-3">
-                            <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
-                              Focus Scope
-                            </h3>
-                            {hasDraftSelectedScope || hasCustomExecutionFilters ? (
-                              <button
-                                type="button"
-                                onClick={resetScopeEditorFilters}
-                                className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
-                              >
-                                Reset filters
-                              </button>
-                            ) : null}
-                          </div>
+                        <div className="flex max-h-[min(50dvh,32rem)] min-h-0 flex-col overflow-hidden px-3 py-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4">
+                          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 sm:space-y-4">
+                            <div className="flex items-center justify-between gap-2 sm:gap-3">
+                              <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
+                                Focus Scope
+                              </h3>
+                              {hasDraftSelectedScope || hasCustomExecutionFilters ? (
+                                <button
+                                  type="button"
+                                  onClick={resetScopeEditorFilters}
+                                  className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
+                                >
+                                  Reset filters
+                                </button>
+                              ) : null}
+                            </div>
 
-                          <section>
-                            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400/85 sm:text-[10px] sm:tracking-[0.22em]">
-                              Monuments
-                            </p>
+                          <FocusPomoFilterSection
+                            label="Monuments"
+                            hasSelectedFilters={
+                              draftSelectedMonumentIds.length > 0
+                            }
+                            onClear={clearDraftMonumentScope}
+                          >
                             {monumentOptions.length > 0 ? (
-                              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                 {monumentOptions.map((option) => {
                                   const selected =
                                     draftSelectedMonumentIds.includes(option.id);
@@ -5274,18 +5414,19 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                              <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
                                 No monuments available.
                               </p>
                             )}
-                          </section>
+                          </FocusPomoFilterSection>
 
-                          <section>
-                            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400/85 sm:text-[10px] sm:tracking-[0.22em]">
-                              Skills
-                            </p>
+                          <FocusPomoFilterSection
+                            label="Skills"
+                            hasSelectedFilters={draftSelectedSkillIds.length > 0}
+                            onClear={clearDraftSkillScope}
+                          >
                             {skillOptions.length > 0 ? (
-                              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                 {sortedSkillOptions.map((option) => {
                                   const selected =
                                     draftSelectedSkillIds.includes(option.id);
@@ -5315,17 +5456,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                              <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
                                 No skills available.
                               </p>
                             )}
-                          </section>
+                          </FocusPomoFilterSection>
 
-                          <section>
-                            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-                              Work Type
-                            </p>
-                            <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                          <FocusPomoFilterSection
+                            label="Work Type"
+                            hasSelectedFilters={hasCustomWorkTypeFilters}
+                            onClear={clearWorkTypeFilters}
+                          >
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
                               {workTypeOptions.map((option) => {
                                 const selected = enabledItemTypes.includes(
                                   option.value
@@ -5348,14 +5490,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 );
                               })}
                             </div>
-                          </section>
+                          </FocusPomoFilterSection>
 
                           {showHabitTypeSection ? (
-                            <section>
-                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-                                Habit Type
-                              </p>
-                              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                            <FocusPomoFilterSection
+                              label="Habit Type"
+                              hasSelectedFilters={hasCustomHabitTypeFilters}
+                              onClear={clearHabitTypeFilters}
+                            >
+                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                 {habitTypePillOptions.map((option) => {
                                   const lockedOff = isLockedOffHabitTypeKey(
                                     option.key
@@ -5387,16 +5530,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   );
                                 })}
                               </div>
-                            </section>
+                            </FocusPomoFilterSection>
                           ) : null}
 
                           {showTagsSection ? (
-                            <section>
-                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-                                Tags
-                              </p>
+                            <FocusPomoFilterSection
+                              label="Tags"
+                              hasSelectedFilters={selectedTagIds.length > 0}
+                              onClear={clearTagFilters}
+                            >
                               {tagOptions.length > 0 ? (
-                                <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                   {tagOptions.map((option) => {
                                     const selected = selectedTagIds.includes(
                                       option.id
@@ -5425,20 +5569,21 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
                                   No tags available.
                                 </p>
                               )}
-                            </section>
+                            </FocusPomoFilterSection>
                           ) : null}
 
                           {showGoalsSection ? (
-                            <section>
-                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-                                Goals
-                              </p>
+                            <FocusPomoFilterSection
+                              label="Goals"
+                              hasSelectedFilters={selectedGoalIds.length > 0}
+                              onClear={clearGoalFilters}
+                            >
                               {goalOptions.length > 0 ? (
-                                <div className="mt-1.5 space-y-2 sm:mt-2 sm:space-y-3">
+                                <div className="space-y-2 sm:space-y-3">
                                   {groupedGoalOptions.map((group) => (
                                     <div key={group.key}>
                                       <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 sm:gap-2 sm:text-[11px]">
@@ -5495,20 +5640,23 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   ))}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
                                   No goals available.
                                 </p>
                               )}
-                            </section>
+                            </FocusPomoFilterSection>
                           ) : null}
 
                           {showCampaignsSection ? (
-                            <section>
-                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-                                Campaigns
-                              </p>
+                            <FocusPomoFilterSection
+                              label="Campaigns"
+                              hasSelectedFilters={
+                                selectedCampaignIds.length > 0
+                              }
+                              onClear={clearCampaignFilters}
+                            >
                               {campaignOptions.length > 0 ? (
-                                <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                   {campaignOptions.map((option) => {
                                     const selected =
                                       selectedCampaignIds.includes(option.id);
@@ -5539,20 +5687,21 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
                                   No campaigns available.
                                 </p>
                               )}
-                            </section>
+                            </FocusPomoFilterSection>
                           ) : null}
 
                           {showRoutinesSection ? (
-                            <section>
-                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
-                                Routines
-                              </p>
+                            <FocusPomoFilterSection
+                              label="Routines"
+                              hasSelectedFilters={selectedRoutineIds.length > 0}
+                              onClear={clearRoutineFilters}
+                            >
                               {routineOptions.length > 0 ? (
-                                <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                   {routineOptions.map((option) => {
                                     const selected =
                                       selectedRoutineIds.includes(option.id);
@@ -5583,11 +5732,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
                                   No routines available.
                                 </p>
                               )}
-                            </section>
+                            </FocusPomoFilterSection>
                           ) : null}
                         </div>
                         <div className="shrink-0 border-t border-black/40 bg-black/35 px-0 py-2 sm:py-3">
@@ -5600,22 +5749,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             Done
                           </button>
                         </div>
+                        </div>
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
-                      {!scopeOpen ? (
-                        <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
-                          <button
-                            type="button"
-                            onClick={openScopeEditor}
-                            aria-expanded={scopeOpen}
-                            aria-controls={executionScopePanelId}
-                            className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
-                          >
-                            Adjust
-                          </button>
-                        </div>
-                      ) : null}
                       <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
                           {displaySource?.icon ? (

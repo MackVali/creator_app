@@ -78,6 +78,7 @@ export interface FocusPomoQueueItem {
   project_order?: number | null;
   projectGlobalRank?: number | null;
   project_global_rank?: number | null;
+  global_order?: number | null;
   taskId?: string | null;
   task_id?: string | null;
   taskOrder?: number | null;
@@ -126,6 +127,7 @@ type HabitRow = {
   tags?: unknown;
   icon?: string | null;
   emoji?: string | null;
+  global_order?: number | string | null;
 };
 
 type ProjectRow = {
@@ -233,7 +235,7 @@ export type FocusPomoQueueRelation = {
 };
 
 const HABIT_BASE_COLUMNS =
-  "id, name, habit_type, recurrence, recurrence_days, last_completed_at, next_due_override, created_at, updated_at, duration_minutes, energy, skill_id";
+  "id, name, habit_type, recurrence, recurrence_days, last_completed_at, next_due_override, created_at, updated_at, duration_minutes, energy, skill_id, global_order";
 
 const HABIT_SELECTS = [
   `${HABIT_BASE_COLUMNS}, goal_id, campaign_id, routine_id, tags, icon, emoji`,
@@ -487,23 +489,6 @@ function buildRelation(
   };
 }
 
-function compareQueueItems(
-  a: FocusPomoQueueItem,
-  b: FocusPomoQueueItem
-): number {
-  const kindOrder: Record<FocusPomoQueueKind, number> = {
-    chore: 0,
-    habit: 1,
-    project: 2,
-  };
-
-  return (
-    kindOrder[a.kind] - kindOrder[b.kind] ||
-    a.title.localeCompare(b.title, undefined, { sensitivity: "base" }) ||
-    a.id.localeCompare(b.id)
-  );
-}
-
 export type FocusPomoExecutionSortContext = {
   selectedMonumentIds?: string[];
   monumentOptions?: Array<
@@ -527,6 +512,7 @@ export type FocusPomoExecutionSortContext = {
 };
 
 type FocusPomoExecutionSortKey = {
+  globalRankOrder: number;
   bucket: number;
   monumentOrder: number;
   goalOrder: number;
@@ -884,6 +870,19 @@ function priorityOrder(item: FocusPomoQueueItem): number {
   }
 }
 
+function getItemGlobalRankOrder(item: FocusPomoQueueItem): number {
+  const record = item as unknown as Record<string, unknown>;
+  const rank = isHabitItem(item)
+    ? readFiniteNumber(item.global_order) ?? readRecordNumber(record, ["global_order"])
+    : item.sourceType === "PROJECT" || item.kind === "project"
+      ? readFiniteNumber(item.projectGlobalRank) ??
+        readFiniteNumber(item.project_global_rank) ??
+        readRecordNumber(record, ["global_rank", "globalRank"])
+      : null;
+
+  return rank !== null && rank > 0 ? rank : Number.POSITIVE_INFINITY;
+}
+
 export function getFocusPomoExecutionSortKey(
   item: FocusPomoQueueItem,
   context: FocusPomoExecutionSortContext = {}
@@ -902,6 +901,7 @@ export function getFocusPomoExecutionSortKey(
   const taskId = readString(item.taskId) ?? readString(item.task_id);
 
   return {
+    globalRankOrder: getItemGlobalRankOrder(item),
     bucket,
     monumentOrder: getMonumentOrder(item, context),
     goalOrder: getGoalOrder(item, context),
@@ -956,6 +956,7 @@ function compareSortKey(
   b: FocusPomoExecutionSortKey
 ): number {
   return (
+    a.globalRankOrder - b.globalRankOrder ||
     a.bucket - b.bucket ||
     a.monumentOrder - b.monumentOrder ||
     a.goalOrder - b.goalOrder ||
@@ -1040,6 +1041,7 @@ function mapHabit(
     updatedAt: readString(row.updated_at),
     updated_at: readString(row.updated_at),
     statusLabel: "Ready",
+    global_order: readFiniteNumber(row.global_order),
     icon,
     skillId,
     skillName: readString(skill?.name),
@@ -1659,8 +1661,9 @@ export async function fetchFocusPomoQueue(params: {
     ]);
 
     const now = new Date();
-    return filterEligibleQueueItems([...habits, ...projects], now).sort(
-      compareQueueItems
+    return sortFocusPomoQueue(
+      filterEligibleQueueItems([...habits, ...projects], now),
+      { now }
     );
   }
 
@@ -1692,7 +1695,8 @@ export async function fetchFocusPomoQueue(params: {
   ]);
 
   const now = new Date();
-  return filterEligibleQueueItems([...habits, ...projects], now).sort(
-    compareQueueItems
+  return sortFocusPomoQueue(
+    filterEligibleQueueItems([...habits, ...projects], now),
+    { now }
   );
 }
