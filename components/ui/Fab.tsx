@@ -10208,14 +10208,6 @@ export function Fab({
     );
   };
 
-  const associatedEditCardStyle: React.CSSProperties = {
-    boxShadow:
-      "0 12px 28px -20px rgba(0,0,0,0.96), 0 0 0 1px rgba(255,255,255,0.025), inset 0 1px 0 rgba(255,255,255,0.055)",
-    outline: "1px solid rgba(0, 0, 0, 0.9)",
-    outlineOffset: "-1px",
-    background:
-      "radial-gradient(circle at 0% 0%, rgba(161, 161, 170, 0.14), transparent 54%), linear-gradient(140deg, rgba(3, 4, 7, 0.98) 0%, rgba(11, 12, 17, 0.97) 48%, rgba(24, 25, 32, 0.92) 100%)",
-  };
   const associatedEditBlankStyle: React.CSSProperties = {
     boxShadow:
       "0 10px 24px -22px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.035)",
@@ -10232,39 +10224,12 @@ export function Fab({
     "grid content-start gap-[0.5px] auto-rows-[92px]";
   const associatedEditViewportClass =
     "self-start max-h-[277px] overflow-y-auto overscroll-contain pr-1";
-  const projectTaskEditCardClass =
-    "group relative grid h-[120px] min-h-[120px] max-h-[120px] w-full min-w-0 grid-cols-[2.35rem_minmax(0,calc(100%_-_4.6rem))_2.25rem] overflow-hidden rounded-md border border-black/80 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30";
   const projectTaskEditBlankClass =
-    "group relative flex h-[120px] min-h-[120px] max-h-[120px] w-full items-center justify-center overflow-hidden rounded-md border border-black/75 text-white backdrop-blur-sm transition-[background,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25";
+    "group relative flex h-[92px] min-h-[82px] max-h-[96px] w-full items-center justify-center overflow-hidden rounded-lg border border-black/75 text-white backdrop-blur-sm transition-[background,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25";
   const projectTaskEditGridClass =
-    "grid content-start gap-[0.5px] auto-rows-[120px]";
+    "grid content-start gap-[0.5px] auto-rows-[92px]";
   const projectTaskEditViewportClass =
-    "self-start max-h-[361px] overflow-y-auto overscroll-contain pr-1";
-  const renderAssociatedSkillBadge = (
-    visualValue: string | null | undefined,
-    label: string,
-  ) => {
-    const visual = visualValue?.trim() || "🛠️";
-    const isCompactVisual = visual.length <= 3;
-    return (
-      <span
-        className="relative z-[2] flex min-h-full items-center justify-center border-r border-white/[0.055] bg-black/20 px-1.5 text-white/72"
-        title={label}
-        aria-hidden="true"
-      >
-        <span
-          className={cn(
-            "flex size-7 max-w-full items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.055] px-1 text-center leading-none text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]",
-            isCompactVisual
-              ? "text-lg"
-              : "text-[7px] font-extrabold uppercase tracking-[0.06em]",
-          )}
-        >
-          {visual}
-        </span>
-      </span>
-    );
-  };
+    "self-start max-h-[277px] overflow-y-auto overscroll-contain pr-1";
   const renderAssociatedEnergyFlame = (energy?: string | null) => (
     <span className="relative z-[2] flex min-h-full items-center justify-center border-l border-white/[0.045] bg-black/10">
       <FlameEmber
@@ -10322,74 +10287,133 @@ export function Fab({
     const goalProjectDraftCardClass = goalProjectListShouldScroll
       ? "min-h-[72px]"
       : "h-full min-h-0";
+    const goalProjectNexusCardStyle: React.CSSProperties = {
+      background: NEXUS_TIMELINE_DARK_EVENT_BACKGROUND,
+      borderColor: NEXUS_TIMELINE_DEFAULT_BORDER_COLOR,
+      boxShadow: NEXUS_TIMELINE_RESTING_CARD_SHADOW,
+      outline: NEXUS_TIMELINE_DEFAULT_OUTLINE,
+      outlineOffset: "-1px",
+    };
+    const goalProjectNexusCardClass = cn(
+      associatedEditCardClass,
+      "flex h-auto min-h-[72px] max-h-none select-none flex-col justify-center gap-1 rounded-lg px-3 py-2 backdrop-blur transition-[filter,transform,border-color] hover:brightness-[1.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40 focus-visible:ring-0",
+    );
+    const resolveGoalProjectSkill = (skillIds: string[]) => {
+      const linkedSkills = skillIds
+        .map((skillId) => findSkillById(skillId))
+        .filter(
+          (value): value is Skill =>
+            value !== null && typeof value.name === "string",
+        );
+      const skillNames = linkedSkills
+        .map((skill) => skill.name ?? null)
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.trim().length > 0,
+        );
+      const label =
+        skillNames.length > 0
+          ? skillNames.join(", ")
+          : skillIds.length > 0
+            ? "Linked skill"
+            : "No skill";
+      const visual =
+        linkedSkills.find(
+          (skill) =>
+            typeof skill.icon === "string" && skill.icon.trim().length > 0,
+        )?.icon ?? "🛠️";
+
+      return { label, visual };
+    };
+    const getGoalProjectMetaItems = (project: {
+      durationMin: number | null;
+      dueDate: string | null;
+    }) =>
+      [
+        typeof project.durationMin === "number" &&
+        Number.isFinite(project.durationMin) &&
+        project.durationMin > 0
+          ? formatDurationLabel(project.durationMin)
+          : null,
+        project.dueDate ? `Due ${project.dueDate}` : null,
+      ].filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      );
+    const renderGoalProjectCardContent = (project: {
+      name: string;
+      priority: string | null;
+      energy: string | null;
+      stage: string | null;
+      durationMin: number | null;
+      dueDate: string | null;
+      skillIds: string[];
+    }) => {
+      const skill = resolveGoalProjectSkill(project.skillIds);
+      const metaItems = getGoalProjectMetaItems(project);
+      const skillVisualIsCompact = skill.visual.trim().length <= 3;
+
+      return (
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.85rem] items-stretch gap-2">
+          <div className="flex min-w-0 flex-col justify-center gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.07] px-1 text-center leading-none text-white/86 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]",
+                  skillVisualIsCompact
+                    ? "text-base"
+                    : "text-[7px] font-extrabold uppercase tracking-[0.06em]",
+                )}
+                title={skill.label}
+                aria-hidden="true"
+              >
+                {skill.visual}
+              </span>
+              {renderAssociatedPriorityIndicator(project.priority)}
+              <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white">
+                {project.name}
+              </span>
+              <span className="shrink-0 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-white/62">
+                Project
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5 pl-9 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52">
+              <span className="min-w-0 shrink truncate text-white/62">
+                {skill.label}
+              </span>
+              {metaItems.length > 0 ? (
+                <>
+                  <span className="shrink-0 text-white/28">/</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {metaItems.join(" / ")}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {renderAssociatedEnergyFlame(project.energy)}
+        </div>
+      );
+    };
     const projectItems = visibleEditProjects
       ? (() => {
-          const editCards = visibleEditProjects.map((project) => {
-            const linkedSkills = project.skillIds
-              .map((skillId) => findSkillById(skillId))
-              .filter(
-                (value): value is Skill =>
-                  value !== null && typeof value.name === "string",
-              );
-            const skillNames = linkedSkills
-              .map((skill) => skill.name ?? null)
-              .filter(
-                (value): value is string =>
-                  typeof value === "string" && value.trim().length > 0,
-              );
-            const skillLabel =
-              skillNames.length > 0
-                ? skillNames.join(", ")
-                : project.skillIds.length > 0
-                  ? "Linked skill"
-                  : "No skill";
-            const skillVisual =
-              linkedSkills.find(
-                (skill) =>
-                  typeof skill.icon === "string" &&
-                  skill.icon.trim().length > 0,
-              )?.icon ?? "🛠️";
-            const metaItems = [
-              project.durationMin ? `${project.durationMin}m` : null,
-              project.dueDate,
-            ].filter(
-              (value): value is string =>
-                typeof value === "string" && value.trim().length > 0,
-            );
-            return (
-              <button
-                key={project.id}
-                type="button"
-                onClick={() =>
-                  openGoalProjectStack({
-                    mode: "edit-existing",
-                    project,
-                  })
-                }
-                className={cn(
-                  associatedEditCardClass,
-                  "w-full text-left",
-                )}
-                style={associatedEditCardStyle}
-              >
-                {renderAssociatedSkillBadge(skillVisual, skillLabel)}
-                <span className="relative z-[2] flex h-full min-w-0 flex-col justify-center gap-1 self-stretch px-2 py-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {renderAssociatedPriorityIndicator(project.priority)}
-                    <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white/90">
-                      {project.name}
-                    </span>
-                  </span>
-                  {metaItems.length > 0 ? (
-                    <span className="truncate text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/48">
-                      {metaItems.join(" / ")}
-                    </span>
-                  ) : null}
-                </span>
-                {renderAssociatedEnergyFlame(project.energy)}
-              </button>
-            );
-          });
+          const editCards = visibleEditProjects.map((project) => (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() =>
+                openGoalProjectStack({
+                  mode: "edit-existing",
+                  project,
+                })
+              }
+              className={cn(goalProjectNexusCardClass, "h-full min-h-0")}
+              style={goalProjectNexusCardStyle}
+              aria-label={`Edit project ${project.name}`}
+            >
+              {renderGoalProjectCardContent(project)}
+            </button>
+          ));
           const blankCount = goalProjectListShouldScroll
             ? 0
             : Math.max(0, 3 - visibleEditProjects.length);
@@ -10408,14 +10432,6 @@ export function Fab({
         })()
       : goalDraftProjects.length > 0
         ? goalDraftProjects.map((project) => {
-            const skillLabel =
-              project.skillIds
-                .map((skillId) => findSkillById(skillId)?.name ?? null)
-                .filter(
-                  (value): value is string =>
-                    typeof value === "string" && value.trim().length > 0,
-                )
-                .join(", ") || "No skill";
             return (
               <div
                 key={project.tempId}
@@ -10430,9 +10446,11 @@ export function Fab({
                   openGoalProjectStack({ mode: "edit-draft", draft: project });
                 }}
                 className={cn(
-                  "relative grid gap-1.5 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-3.5 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08]",
+                  goalProjectNexusCardClass,
                   goalProjectDraftCardClass,
                 )}
+                style={goalProjectNexusCardStyle}
+                aria-label={`Edit draft project ${project.name}`}
               >
                 <button
                   type="button"
@@ -10447,19 +10465,8 @@ export function Fab({
                 >
                   <X className="h-3 w-3" />
                 </button>
-                <div className="pr-6 text-xs font-semibold uppercase tracking-[0.08em] text-white">
-                  {project.name}
-                </div>
-                <div className="flex flex-wrap gap-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
-                  <span>{project.stage}</span>
-                  <span>{formatFabPriorityLabel(project.priority)}</span>
-                  <span>{project.energy}</span>
-                  {project.durationMin ? (
-                    <span>{project.durationMin}m</span>
-                  ) : null}
-                </div>
-                <div className="truncate text-[10px] text-white/58">
-                  {skillLabel}
+                <div className="pr-6">
+                  {renderGoalProjectCardContent(project)}
                 </div>
               </div>
             );
@@ -10870,58 +10877,119 @@ export function Fab({
       : projectDraftTasks.length;
     const projectTaskListShouldScroll = visibleTaskCount > 3;
     const projectTaskDraftCardClass = projectTaskListShouldScroll
-      ? "min-h-[72px]"
+      ? "min-h-[84px]"
       : "h-full min-h-0";
+    const projectTaskNexusCardStyle: React.CSSProperties = {
+      background: NEXUS_TIMELINE_DARK_EVENT_BACKGROUND,
+      borderColor: NEXUS_TIMELINE_DEFAULT_BORDER_COLOR,
+      boxShadow: NEXUS_TIMELINE_RESTING_CARD_SHADOW,
+      outline: NEXUS_TIMELINE_DEFAULT_OUTLINE,
+      outlineOffset: "-1px",
+    };
+    const projectTaskNexusCardClass =
+      "group relative flex h-auto min-h-[84px] max-h-none w-full min-w-0 select-none flex-col justify-center gap-1 overflow-hidden rounded-lg border px-3 py-2.5 text-left text-white backdrop-blur transition-[filter,transform,border-color] duration-200 hover:-translate-y-px hover:brightness-[1.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40 focus-visible:ring-0";
+    const resolveProjectTaskSkill = (skillId: string | null | undefined) => {
+      const taskSkill = skillId ? findSkillById(skillId) : null;
+      const label = skillId ? (taskSkill?.name ?? "Linked skill") : "No skill";
+      const visual =
+        typeof taskSkill?.icon === "string" && taskSkill.icon.trim().length > 0
+          ? taskSkill.icon
+          : "🛠️";
+
+      return { label, visual };
+    };
+    const getProjectTaskMetaItems = (task: {
+      stage: string | null;
+      durationMin: number | null;
+      dueDate: string | null;
+    }) =>
+      [
+        task.stage
+          ? (TASK_STAGE_OPTIONS_LOCAL.find(
+              (option) => option.value === task.stage,
+            )?.label ?? task.stage)
+          : null,
+        typeof task.durationMin === "number" &&
+        Number.isFinite(task.durationMin) &&
+        task.durationMin > 0
+          ? formatDurationLabel(task.durationMin)
+          : null,
+        task.dueDate ? `Due ${task.dueDate}` : null,
+      ].filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      );
+    const renderProjectTaskCardContent = (task: {
+      name: string;
+      priority: string | null;
+      energy: string | null;
+      stage: string | null;
+      durationMin: number | null;
+      dueDate: string | null;
+      skillId: string | null;
+    }) => {
+      const skill = resolveProjectTaskSkill(task.skillId);
+      const metaItems = getProjectTaskMetaItems(task);
+      const skillVisualIsCompact = skill.visual.trim().length <= 3;
+
+      return (
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.85rem] items-stretch gap-2">
+          <div className="flex min-w-0 flex-col justify-center gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={cn(
+                  "flex size-7 shrink-0 items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.07] px-1 text-center leading-none text-white/86 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]",
+                  skillVisualIsCompact
+                    ? "text-base"
+                    : "text-[7px] font-extrabold uppercase tracking-[0.06em]",
+                )}
+                title={skill.label}
+                aria-hidden="true"
+              >
+                {skill.visual}
+              </span>
+              {renderAssociatedPriorityIndicator(task.priority)}
+              <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white">
+                {task.name}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5 pl-9 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52">
+              <span className="min-w-0 shrink truncate text-white/62">
+                {skill.label}
+              </span>
+              {metaItems.length > 0 ? (
+                <>
+                  <span className="shrink-0 text-white/28">/</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {metaItems.join(" / ")}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {renderAssociatedEnergyFlame(task.energy)}
+        </div>
+      );
+    };
     const taskItems = visibleEditTasks
       ? (() => {
-          const editCards = visibleEditTasks.map((task) => {
-            const taskSkill = findSkillById(task.skillId);
-            const skillLabel = task.skillId
-              ? (taskSkill?.name ?? "Linked skill")
-              : "No skill";
-            const skillVisual =
-              typeof taskSkill?.icon === "string" &&
-              taskSkill.icon.trim().length > 0
-                ? taskSkill.icon
-                : "🛠️";
-            const durationLabel =
-              typeof task.durationMin === "number" &&
-              Number.isFinite(task.durationMin) &&
-              task.durationMin > 0
-                ? formatDurationLabel(task.durationMin)
-                : null;
-            return (
-              <button
-                key={task.id}
-                type="button"
-                className={projectTaskEditCardClass}
-                style={associatedEditCardStyle}
-                onClick={() => {
-                  void openProjectTaskStack({
-                    mode: "edit-existing",
-                    task,
-                  });
-                }}
-                aria-label={`Edit task ${task.name}`}
-              >
-                {renderAssociatedSkillBadge(skillVisual, skillLabel)}
-                <span className="relative z-[2] flex h-full min-w-0 flex-col justify-center gap-1 self-stretch px-2 py-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {renderAssociatedPriorityIndicator(task.priority)}
-                    <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white/90">
-                      {task.name}
-                    </span>
-                  </span>
-                  {durationLabel ? (
-                    <span className="truncate text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/48">
-                      {durationLabel}
-                    </span>
-                  ) : null}
-                </span>
-                {renderAssociatedEnergyFlame(task.energy)}
-              </button>
-            );
-          });
+          const editCards = visibleEditTasks.map((task) => (
+            <button
+              key={task.id}
+              type="button"
+              className={cn(projectTaskNexusCardClass, "h-full min-h-0")}
+              style={projectTaskNexusCardStyle}
+              onClick={() => {
+                void openProjectTaskStack({
+                  mode: "edit-existing",
+                  task,
+                });
+              }}
+              aria-label={`Edit task ${task.name}`}
+            >
+              {renderProjectTaskCardContent(task)}
+            </button>
+          ));
           const blankCount = projectTaskListShouldScroll
             ? 0
             : Math.max(0, 3 - visibleEditTasks.length);
@@ -10943,21 +11011,22 @@ export function Fab({
         ? projectDraftTasks.map((task) => (
             <div
               key={task.tempId}
-              role="button"
-              tabIndex={0}
-              className={cn(
-                "relative grid gap-1.5 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-3.5 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm",
-                projectTaskDraftCardClass,
-              )}
-              onClick={() => {
-                void openProjectTaskStack({ mode: "edit-draft", draft: task });
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                void openProjectTaskStack({ mode: "edit-draft", draft: task });
-              }}
+              className={cn("relative", projectTaskDraftCardClass)}
             >
+              <button
+                type="button"
+                className={cn(projectTaskNexusCardClass, "h-full min-h-0 pr-8")}
+                style={projectTaskNexusCardStyle}
+                onClick={() => {
+                  void openProjectTaskStack({
+                    mode: "edit-draft",
+                    draft: task,
+                  });
+                }}
+                aria-label={`Edit draft task ${task.name}`}
+              >
+                {renderProjectTaskCardContent(task)}
+              </button>
               <button
                 type="button"
                 onClick={(event) => {
@@ -10971,15 +11040,6 @@ export function Fab({
               >
                 <X className="h-3 w-3" />
               </button>
-              <div className="pr-6 text-xs font-semibold uppercase tracking-[0.08em] text-white">
-                {task.name}
-              </div>
-              <div className="flex flex-wrap gap-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
-                <span>{task.stage}</span>
-                {task.skillId ? (
-                  <span>{findSkillById(task.skillId)?.name ?? "Skill"}</span>
-                ) : null}
-              </div>
             </div>
           ))
         : Array.from({ length: 3 }, (_, index) => (
@@ -10989,10 +11049,10 @@ export function Fab({
               onClick={() => {
                 void openProjectTaskStack({ mode: "create" });
               }}
-                className={cn(
-                  "flex items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08]",
-                  projectTaskDraftCardClass,
-                )}
+              className={cn(
+                "flex items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08]",
+                projectTaskDraftCardClass,
+              )}
               aria-label="Add draft task"
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/78">
