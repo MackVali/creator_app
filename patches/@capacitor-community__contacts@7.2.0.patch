@@ -1,0 +1,13 @@
+diff --git a/Package.swift b/Package.swift
+index 6be3b7d8ba0b93ef98c5c3144bd1648ed7be3ac3..f85286a32fa8b2627575b117196b3dbbc6116475 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -10,7 +10,7 @@ let package = Package(
+             targets: ["ContactsPlugin"])
+     ],
+     dependencies: [
+-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "7.0.0")
++        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")
+     ],
+     targets: [
+         .target(

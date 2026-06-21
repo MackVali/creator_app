@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { initRevenueCatIfCapacitor } from "@/lib/revenuecat/initRevenueCat";
+import { registerCreatorPushNotifications } from "@/lib/notifications/registerPushNotifications";
 import type { Session, User } from "@supabase/supabase-js";
 
 type AuthContextValue = {
@@ -130,6 +131,7 @@ export default function AuthProvider({
     }
 
     void initRevenueCatIfCapacitor(user.id)
+    void registerCreatorPushNotifications({ userId: user.id })
   }, [user?.id])
 
   if (!canRender) return null;
