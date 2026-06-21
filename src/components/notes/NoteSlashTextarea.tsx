@@ -84,7 +84,6 @@ import {
 } from "@/lib/nutrition/barcodeScanner";
 import {
   findNutritionEntryFields,
-  mapFoodToNutritionEntryValues,
   normalizeFoodBarcode,
   normalizeFoodSearchText,
   type FoodBarcodeLookupResult,
@@ -92,8 +91,10 @@ import {
   type FoodBrowseAisleLabel,
   type FoodBrowseDepartmentLabel,
   type FoodSearchResult,
+  type NutritionEntryFields,
 } from "@/lib/nutrition/foods";
 import { getFoodIcon, type FoodIcon } from "@/lib/nutrition/foodIcons";
+import type { NutritionMealDraft } from "@/lib/nutrition/meals";
 
 type SlashCommandId =
   | "text"
@@ -243,6 +244,13 @@ const DEFAULT_DAILY_NUTRITION_GOALS = {
   protein: 150,
   fat: 70,
 } as const;
+const EMPTY_NUTRITION_TOTALS = {
+  calories: 0,
+  carbs: 0,
+  protein: 0,
+  fat: 0,
+} satisfies Record<keyof typeof DEFAULT_DAILY_NUTRITION_GOALS, number>;
+const NUTRITION_DAY_START_HOUR = 4;
 const NUTRITION_MACRO_FIELD_KEYS = ["carbs", "protein", "fat"] as const;
 const NUTRITION_FOOD_FIELD_LOOKUP_KEYS = new Set(["food", "foodname", "name"]);
 const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
@@ -1502,11 +1510,31 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
 type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
 type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
+type NutritionSelectedFoodItem = {
+  food: FoodSearchResult;
+  quantity: number;
+};
+type NutritionMealTotalsSource = {
+  total_calories?: number | string | null;
+  total_carbs_g?: number | string | null;
+  total_protein_g?: number | string | null;
+  total_fat_g?: number | string | null;
+};
 type NutritionFoodSearchResponse = {
   foods?: FoodSearchResult[];
   error?: string;
 };
 type NutritionFoodBarcodeLookupResponse = FoodBarcodeLookupResult & {
+  error?: string;
+};
+type NutritionMealCreateResponse = {
+  meal?: {
+    id?: string | null;
+  } | null;
+  error?: string;
+};
+type NutritionMealsListResponse = {
+  meals?: NutritionMealTotalsSource[];
   error?: string;
 };
 
@@ -1629,13 +1657,6 @@ function parseNutritionProgressDate(value: unknown) {
   return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
 }
 
-function isDateOnLocalDay(value: unknown, dayStart: Date, nextDayStart: Date) {
-  const parsedDate = parseNutritionProgressDate(value);
-  if (!parsedDate) return false;
-
-  return parsedDate >= dayStart && parsedDate < nextDayStart;
-}
-
 function getFoodSearchResultMeta(food: FoodSearchResult) {
   const calories = formatFoodNutritionNumber(food.calories);
   const carbs = formatFoodNutritionNumber(food.carbs_g);
@@ -1666,13 +1687,278 @@ function getNutritionFoodSelectionKey(food: FoodSearchResult) {
   return food.id;
 }
 
+function normalizeNutritionQuantity(value: unknown) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value.trim())
+        : 1;
+
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  return Math.min(10000, Math.max(0.01, parsed));
+}
+
+function getNextWholeNutritionQuantity(quantity: number, step: -1 | 1) {
+  const normalizedQuantity = normalizeNutritionQuantity(quantity);
+  const nextQuantity =
+    step > 0 ? Math.floor(normalizedQuantity) + 1 : Math.ceil(normalizedQuantity) - 1;
+
+  return Math.min(10000, Math.max(1, nextQuantity));
+}
+
+function makeNutritionSelectedFoodItem(
+  food: FoodSearchResult,
+  quantity = 1,
+): NutritionSelectedFoodItem {
+  return {
+    food,
+    quantity: normalizeNutritionQuantity(quantity),
+  };
+}
+
+function getNutritionSelectedFoodName(item: NutritionSelectedFoodItem) {
+  if (item.quantity === 1) return item.food.name;
+  const formattedQuantity = formatFoodNutritionNumber(item.quantity) ?? String(item.quantity);
+  return `${formattedQuantity} x ${item.food.name}`;
+}
+
+function getNutritionFoodLineValue(
+  food: FoodSearchResult,
+  key: "calories" | "carbs_g" | "protein_g" | "fat_g",
+  quantity: number,
+) {
+  const value = food[key];
+  return typeof value === "number" && Number.isFinite(value) ? value * quantity : null;
+}
+
 function formatAggregatedNutritionValue(value: number, hasValue: boolean) {
   if (!hasValue) return "";
   return formatFoodNutritionNumber(value) ?? "";
 }
 
+function getPositiveNutritionNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function getNutritionSnapshotNumber(value: unknown) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value.trim())
+        : 0;
+
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function getLocalTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getNutritionLocalDayWindow(referenceDate = new Date()) {
+  const start = new Date(referenceDate);
+  start.setHours(NUTRITION_DAY_START_HOUR, 0, 0, 0);
+
+  if (referenceDate < start) {
+    start.setDate(start.getDate() - 1);
+  }
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 1);
+
+  return { start, end };
+}
+
+function aggregateNutritionMealTotals(meals: NutritionMealTotalsSource[]) {
+  return meals.reduce<Record<NutritionDailyMetricKey, number>>(
+    (totals, meal) => {
+      totals.calories += parseNutritionProgressNumber(meal.total_calories);
+      totals.carbs += parseNutritionProgressNumber(meal.total_carbs_g);
+      totals.protein += parseNutritionProgressNumber(meal.total_protein_g);
+      totals.fat += parseNutritionProgressNumber(meal.total_fat_g);
+      return totals;
+    },
+    { ...EMPTY_NUTRITION_TOTALS },
+  );
+}
+
+function getNutritionMealOccurredAt(
+  fields: NoteDatabaseFieldDefinition[],
+  values: Record<string, unknown>,
+  fallbackIso: string,
+) {
+  const createdAtField = fields.find(isDatabaseCreatedAtField);
+  const dateFields = fields.filter((field) => field.type === "date");
+  const whenDateField =
+    dateFields.find((field) => {
+      const lookupKey = normalizeDatabaseFieldLookupKey(getDatabaseFieldName(field));
+      return (
+        lookupKey === "when" ||
+        lookupKey === "date" ||
+        lookupKey === "time" ||
+        lookupKey === "occurredat"
+      );
+    }) ?? dateFields[0];
+  const candidateFields = [createdAtField, whenDateField].filter(
+    (field): field is NoteDatabaseFieldDefinition => Boolean(field),
+  );
+
+  for (const field of candidateFields) {
+    const parsedDate = parseNutritionProgressDate(values[field.id]);
+    if (parsedDate) return parsedDate.toISOString();
+  }
+
+  return fallbackIso;
+}
+
+function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
+  const { food, quantity } = item;
+  const calories = getNutritionSnapshotNumber(food.calories) * quantity;
+  const carbs = getNutritionSnapshotNumber(food.carbs_g) * quantity;
+  const protein = getNutritionSnapshotNumber(food.protein_g) * quantity;
+  const fat = getNutritionSnapshotNumber(food.fat_g) * quantity;
+
+  return {
+    type: "food" as const,
+    foodId: food.id,
+    quantity,
+    servingUnit: food.serving_unit ?? undefined,
+    servingGrams: getPositiveNutritionNumber(food.serving_grams),
+    snapshot: {
+      name: food.name,
+      displayName: food.name,
+      brandName: food.brand_name ?? undefined,
+      brand_name: food.brand_name ?? undefined,
+      servingSize: food.serving_size ?? undefined,
+      serving_size: food.serving_size ?? undefined,
+      servingUnit: food.serving_unit ?? undefined,
+      serving_unit: food.serving_unit ?? undefined,
+      servingGrams: food.serving_grams ?? undefined,
+      serving_grams: food.serving_grams ?? undefined,
+      calories,
+      carbs_g: carbs,
+      protein_g: protein,
+      fat_g: fat,
+    },
+    metadata: {
+      source: food.source ?? "foods",
+      snapshotTotals: "line",
+      perServing: {
+        calories: getNutritionSnapshotNumber(food.calories),
+        carbs_g: getNutritionSnapshotNumber(food.carbs_g),
+        protein_g: getNutritionSnapshotNumber(food.protein_g),
+        fat_g: getNutritionSnapshotNumber(food.fat_g),
+      },
+    },
+  } satisfies NutritionMealDraft["items"][number];
+}
+
+function getNutritionMealName(values: Record<string, unknown>, fields: NutritionEntryFields) {
+  const nameValue = fields.foodField ? values[fields.foodField.id] : null;
+  if (typeof nameValue === "string" && nameValue.trim()) return nameValue.trim();
+  return "Nutrition entry";
+}
+
+function buildNutritionMealDraft({
+  databaseDefinition,
+  databaseFields,
+  selectedFoods,
+  selectedFood,
+  selectedAction,
+  values,
+  entryId,
+  now,
+}: {
+  databaseDefinition: NoteDatabaseDefinition;
+  databaseFields: NoteDatabaseFieldDefinition[];
+  selectedFoods: NutritionSelectedFoodItem[];
+  selectedFood: NutritionSelectedFoodItem | null;
+  selectedAction: NutritionFoodActionTabId;
+  values: Record<string, unknown>;
+  entryId: string;
+  now: string;
+}): NutritionMealDraft | null {
+  if (!isDefaultNutritionDatabaseDefinition(databaseDefinition)) return null;
+
+  const fields = findNutritionEntryFields(databaseDefinition);
+  let items: NutritionMealDraft["items"] = [];
+
+  if (selectedAction === "search") {
+    items = selectedFoods.map(buildFoodNutritionMealItem);
+  } else if (selectedAction === "scan" && selectedFood) {
+    items = [buildFoodNutritionMealItem(selectedFood)];
+  } else if (selectedAction === "custom") {
+    const name = getNutritionMealName(values, fields);
+    items = [
+      {
+        type: "custom",
+        name,
+        quantity: 1,
+        snapshot: {
+          name,
+          calories: getNutritionSnapshotNumber(
+            fields.caloriesField ? values[fields.caloriesField.id] : 0,
+          ),
+          carbs_g: getNutritionSnapshotNumber(
+            fields.carbsField ? values[fields.carbsField.id] : 0,
+          ),
+          protein_g: getNutritionSnapshotNumber(
+            fields.proteinField ? values[fields.proteinField.id] : 0,
+          ),
+          fat_g: getNutritionSnapshotNumber(
+            fields.fatField ? values[fields.fatField.id] : 0,
+          ),
+        },
+      },
+    ];
+  }
+
+  if (items.length === 0) return null;
+
+  return {
+    occurredAt: getNutritionMealOccurredAt(databaseFields, values, now),
+    timezone: getLocalTimezone(),
+    name: getNutritionMealName(values, fields),
+    sourceNoteEntryId: entryId,
+    metadata: {
+      source: "note-database-entry",
+      databaseId: databaseDefinition.id,
+    },
+    items,
+  };
+}
+
+async function createNutritionMeal(draft: NutritionMealDraft) {
+  const response = await fetch("/api/nutrition/meals", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(draft),
+  });
+  const payload = (await response.json()) as NutritionMealCreateResponse;
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to create nutrition meal.");
+  }
+
+  const mealId = payload.meal?.id;
+  if (!mealId) {
+    throw new Error("Nutrition meal API did not return a meal id.");
+  }
+
+  return mealId;
+}
+
 function mapSelectedNutritionFoodsToEntryValues(
-  foods: FoodSearchResult[],
+  items: NutritionSelectedFoodItem[],
   databaseDefinition: NoteDatabaseDefinition | null | undefined,
 ) {
   const { foodField, caloriesField, carbsField, proteinField, fatField } =
@@ -1684,38 +1970,40 @@ function mapSelectedNutritionFoodsToEntryValues(
     protein: 0,
     fat: 0,
   } satisfies Record<NutritionDailyMetricKey, number>;
-  const hasMetricValue = {
+  const hasMetricValue: Record<NutritionDailyMetricKey, boolean> = {
     calories: false,
     carbs: false,
     protein: false,
     fat: false,
-  } satisfies Record<NutritionDailyMetricKey, boolean>;
+  };
 
-  for (const food of foods) {
-    const calories = food.calories;
-    const carbs = food.carbs_g;
-    const protein = food.protein_g;
-    const fat = food.fat_g;
+  for (const item of items) {
+    const calories = getNutritionFoodLineValue(item.food, "calories", item.quantity);
+    const carbs = getNutritionFoodLineValue(item.food, "carbs_g", item.quantity);
+    const protein = getNutritionFoodLineValue(item.food, "protein_g", item.quantity);
+    const fat = getNutritionFoodLineValue(item.food, "fat_g", item.quantity);
 
-    if (typeof calories === "number" && Number.isFinite(calories)) {
+    if (calories !== null) {
       totals.calories += calories;
       hasMetricValue.calories = true;
     }
-    if (typeof carbs === "number" && Number.isFinite(carbs)) {
+    if (carbs !== null) {
       totals.carbs += carbs;
       hasMetricValue.carbs = true;
     }
-    if (typeof protein === "number" && Number.isFinite(protein)) {
+    if (protein !== null) {
       totals.protein += protein;
       hasMetricValue.protein = true;
     }
-    if (typeof fat === "number" && Number.isFinite(fat)) {
+    if (fat !== null) {
       totals.fat += fat;
       hasMetricValue.fat = true;
     }
   }
 
-  if (foodField) values[foodField.id] = foods.map((food) => food.name).join(", ");
+  if (foodField) {
+    values[foodField.id] = items.map(getNutritionSelectedFoodName).join(", ");
+  }
   if (caloriesField) {
     values[caloriesField.id] = formatAggregatedNutritionValue(
       totals.calories,
@@ -2806,12 +3094,11 @@ function findListSelectionForCaret(nextSegments: NoteSegment[], caretOffset: num
 
 export function NoteDatabaseEntrySheet({
   databaseDefinition,
-  entries,
   onClose,
   onSaveEntry,
 }: {
   databaseDefinition: NoteDatabaseDefinition;
-  entries: NoteDatabaseEntry[];
+  entries?: NoteDatabaseEntry[];
   onClose: () => void;
   onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
 }) {
@@ -2827,7 +3114,16 @@ export function NoteDatabaseEntrySheet({
     useState<FoodBrowseDepartmentLabel | null>(null);
   const [openNutritionBrowseAisle, setOpenNutritionBrowseAisle] =
     useState<FoodBrowseAisleLabel | null>(null);
-  const [selectedNutritionFoods, setSelectedNutritionFoods] = useState<FoodSearchResult[]>([]);
+  const [selectedNutritionFoods, setSelectedNutritionFoods] = useState<
+    NutritionSelectedFoodItem[]
+  >([]);
+  const [selectedNutritionFood, setSelectedNutritionFood] =
+    useState<NutritionSelectedFoodItem | null>(null);
+  const [nutritionDailySavedTotals, setNutritionDailySavedTotals] =
+    useState<Record<NutritionDailyMetricKey, number>>({ ...EMPTY_NUTRITION_TOTALS });
+  const [nutritionDailyTotalsError, setNutritionDailyTotalsError] = useState<string | null>(
+    null,
+  );
   const [nutritionFoodSearchQuery, setNutritionFoodSearchQuery] = useState("");
   const [nutritionFoodSearchResults, setNutritionFoodSearchResults] = useState<
     FoodSearchResult[]
@@ -2899,65 +3195,56 @@ export function NoteDatabaseEntrySheet({
   const normalizedNutritionFoodSearchValue = normalizeFoodSearchText(
     nutritionFoodSearchQuery,
   );
+  const nutritionLocalDayWindow = useMemo(
+    () => getNutritionLocalDayWindow(new Date(openedAt)),
+    [openedAt],
+  );
   const selectedNutritionFoodIds = useMemo(
-    () => new Set(selectedNutritionFoods.map(getNutritionFoodSelectionKey)),
+    () => new Set(selectedNutritionFoods.map((item) => getNutritionFoodSelectionKey(item.food))),
     [selectedNutritionFoods],
   );
-  const nutritionDailyProgress = (() => {
-    const emptyTotals = {
-      calories: 0,
-      carbs: 0,
-      protein: 0,
-      fat: 0,
-    } satisfies Record<NutritionDailyMetricKey, number>;
-
-    if (!shouldRenderNutritionDailyProgress) return emptyTotals;
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const tomorrowStart = new Date(todayStart);
-    tomorrowStart.setDate(todayStart.getDate() + 1);
-    const dateField = createdAtFields[0] ?? databaseFields.find((field) => field.type === "date");
-    const nutritionDailyMetricFields = [nutritionCaloriesField, ...nutritionMacroFields].filter(
-      (field): field is NoteDatabaseFieldDefinition => Boolean(field),
-    );
-    const metricFieldEntries = nutritionDailyMetricFields
-      .map((field) => [getNutritionDailyMetricFieldKey(field), field] as const)
-      .filter(
-        (entry): entry is readonly [NutritionDailyMetricKey, NoteDatabaseFieldDefinition] =>
-          Boolean(entry[0]),
-      );
-
-    const safeEntries = Array.isArray(entries) ? entries : [];
-    const totals = safeEntries.reduce<Record<NutritionDailyMetricKey, number>>(
-      (nextTotals, entry) => {
-        const entryDateValue = dateField
-          ? entry.values[dateField.id] ?? entry.createdAt
-          : entry.createdAt;
-
-        if (!isDateOnLocalDay(entryDateValue, todayStart, tomorrowStart)) {
-          return nextTotals;
-        }
-
-        for (const [metricKey, field] of metricFieldEntries) {
-          nextTotals[metricKey] += parseNutritionProgressNumber(entry.values[field.id]);
-        }
-
-        return nextTotals;
-      },
-      { ...emptyTotals },
-    );
-
-    for (const [metricKey, field] of metricFieldEntries) {
-      totals[metricKey] += parseNutritionProgressNumber(entryFormValues[field.id]);
+  const nutritionDailyProgress = shouldRenderNutritionDailyProgress
+    ? nutritionDailySavedTotals
+    : EMPTY_NUTRITION_TOTALS;
+  const refreshNutritionDailyTotals = useCallback(async () => {
+    if (!shouldRenderNutritionDailyProgress) {
+      setNutritionDailySavedTotals({ ...EMPTY_NUTRITION_TOTALS });
+      setNutritionDailyTotalsError(null);
+      return;
     }
 
-    return totals;
-  })();
+    try {
+      const params = new URLSearchParams({
+        start: nutritionLocalDayWindow.start.toISOString(),
+        end: nutritionLocalDayWindow.end.toISOString(),
+        limit: "100",
+      });
+      const response = await fetch(`/api/nutrition/meals?${params.toString()}`);
+      const payload = (await response.json()) as NutritionMealsListResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load nutrition meals.");
+      }
+
+      setNutritionDailySavedTotals(aggregateNutritionMealTotals(payload.meals ?? []));
+      setNutritionDailyTotalsError(null);
+    } catch (error) {
+      console.error("Failed to load nutrition daily totals", { error });
+      setNutritionDailyTotalsError("Saved daily totals are unavailable right now.");
+    }
+  }, [
+    nutritionLocalDayWindow.end,
+    nutritionLocalDayWindow.start,
+    shouldRenderNutritionDailyProgress,
+  ]);
 
   function updateEntryFormValue(fieldId: string, value: string) {
     setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
   }
+
+  useEffect(() => {
+    void refreshNutritionDailyTotals();
+  }, [refreshNutritionDailyTotals]);
 
   useEffect(() => {
     if (
@@ -3092,12 +3379,13 @@ export function NoteDatabaseEntrySheet({
     selectNutritionFoodAction(NUTRITION_FOOD_ACTION_TABS[nextIndex].id);
   }
 
-  function applyNutritionFoodSelection(nextFoods: FoodSearchResult[]) {
+  function applyNutritionFoodSelection(nextFoods: NutritionSelectedFoodItem[]) {
     const mappedValues = mapSelectedNutritionFoodsToEntryValues(
       nextFoods,
       databaseDefinition,
     );
     setSelectedNutritionFoods(nextFoods);
+    setSelectedNutritionFood(null);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
@@ -3106,16 +3394,70 @@ export function NoteDatabaseEntrySheet({
     const foodKey = getNutritionFoodSelectionKey(food);
     const nextFoods = selectedNutritionFoodIds.has(foodKey)
       ? selectedNutritionFoods.filter(
-          (selectedFood) => getNutritionFoodSelectionKey(selectedFood) !== foodKey,
+          (selectedFood) => getNutritionFoodSelectionKey(selectedFood.food) !== foodKey,
         )
-      : [...selectedNutritionFoods, food];
+      : [...selectedNutritionFoods, makeNutritionSelectedFoodItem(food)];
 
     applyNutritionFoodSelection(nextFoods);
   }
 
+  function removeNutritionSelectedFood(food: FoodSearchResult) {
+    const foodKey = getNutritionFoodSelectionKey(food);
+
+    if (selectedNutritionFood?.food.id === foodKey) {
+      setSelectedNutritionFood(null);
+      setEntryFormValues((current) => ({
+        ...current,
+        ...mapSelectedNutritionFoodsToEntryValues([], databaseDefinition),
+      }));
+      setSubmitError(null);
+      return;
+    }
+
+    applyNutritionFoodSelection(
+      selectedNutritionFoods.filter(
+        (selectedFood) => getNutritionFoodSelectionKey(selectedFood.food) !== foodKey,
+      ),
+    );
+  }
+
+  function updateNutritionSelectedFoodQuantity(food: FoodSearchResult, quantity: number) {
+    const foodKey = getNutritionFoodSelectionKey(food);
+    const nextQuantity = normalizeNutritionQuantity(quantity);
+
+    if (selectedNutritionFood?.food.id === foodKey) {
+      const nextItem = { ...selectedNutritionFood, quantity: nextQuantity };
+      setSelectedNutritionFood(nextItem);
+      setEntryFormValues((current) => ({
+        ...current,
+        ...mapSelectedNutritionFoodsToEntryValues([nextItem], databaseDefinition),
+      }));
+      setSubmitError(null);
+      return;
+    }
+
+    const nextFoods = selectedNutritionFoods.map((selectedFood) =>
+      getNutritionFoodSelectionKey(selectedFood.food) === foodKey
+        ? { ...selectedFood, quantity: nextQuantity }
+        : selectedFood,
+    );
+    applyNutritionFoodSelection(nextFoods);
+  }
+
+  function getSelectedNutritionFoodItem(food: FoodSearchResult) {
+    const foodKey = getNutritionFoodSelectionKey(food);
+    return (
+      selectedNutritionFoods.find(
+        (selectedFood) => getNutritionFoodSelectionKey(selectedFood.food) === foodKey,
+      ) ?? null
+    );
+  }
+
   function selectNutritionFood(food: FoodSearchResult) {
-    const mappedValues = mapFoodToNutritionEntryValues(food, databaseDefinition);
+    const nextItem = makeNutritionSelectedFoodItem(food);
+    const mappedValues = mapSelectedNutritionFoodsToEntryValues([nextItem], databaseDefinition);
     setSelectedNutritionFoods([]);
+    setSelectedNutritionFood(nextItem);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
   }
@@ -3428,6 +3770,62 @@ export function NoteDatabaseEntrySheet({
             </div>
           ))}
         </div>
+        {nutritionDailyTotalsError ? (
+          <p className="text-[11px] font-medium text-red-200/68">
+            {nutritionDailyTotalsError}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderNutritionFoodQuantityControl(item: NutritionSelectedFoodItem) {
+    const { food, quantity } = item;
+
+    return (
+      <div
+        className="flex shrink-0 items-center overflow-hidden rounded-lg border border-white/[0.07] bg-black/34 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          aria-label={`Decrease ${food.name} servings`}
+          onClick={(event) => {
+            event.stopPropagation();
+            updateNutritionSelectedFoodQuantity(
+              food,
+              getNextWholeNutritionQuantity(quantity, -1),
+            );
+          }}
+          className="flex h-8 w-8 items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white"
+        >
+          <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={quantity}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) =>
+            updateNutritionSelectedFoodQuantity(food, Number(event.target.value))
+          }
+          aria-label={`${food.name} servings`}
+          className="h-8 w-14 border-x border-white/[0.055] bg-transparent px-1 text-center text-xs font-semibold tabular-nums text-white/84 outline-none"
+        />
+        <button
+          type="button"
+          aria-label={`Increase ${food.name} servings`}
+          onClick={(event) => {
+            event.stopPropagation();
+            updateNutritionSelectedFoodQuantity(
+              food,
+              getNextWholeNutritionQuantity(quantity, 1),
+            );
+          }}
+          className="flex h-8 w-8 items-center justify-center text-white/48 outline-none transition hover:bg-white/[0.07] hover:text-white/80 focus-visible:bg-white/[0.08] focus-visible:text-white"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
       </div>
     );
   }
@@ -3455,21 +3853,24 @@ export function NoteDatabaseEntrySheet({
           <div className="divide-y divide-white/[0.045]">
             {foods.map((food) => {
               const meta = getFoodSearchResultMeta(food);
-              const isSelected = selectedNutritionFoodIds.has(getNutritionFoodSelectionKey(food));
+              const selectedItem = getSelectedNutritionFoodItem(food);
+              const isSelected = Boolean(selectedItem);
 
               return (
-                <button
+                <div
                   key={food.id}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => toggleNutritionFoodSelection(food)}
                   className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition ${
                     isSelected
                       ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.7)]"
                       : "hover:bg-white/[0.045]"
                   } focus-visible:bg-white/[0.06]`}
                 >
-                  <span className="flex min-w-0 flex-1 items-center gap-3">
+                  <button
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => toggleNutritionFoodSelection(food)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
+                  >
                     <NutritionFoodIcon food={food} />
                     <span className="min-w-0">
                       <span className="flex min-w-0 items-center gap-1.5">
@@ -3489,13 +3890,13 @@ export function NoteDatabaseEntrySheet({
                         </span>
                       ) : null}
                     </span>
-                  </span>
-                  {meta ? (
+                  </button>
+                  {selectedItem ? renderNutritionFoodQuantityControl(selectedItem) : meta ? (
                     <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
                       {meta}
                     </span>
                   ) : null}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -3507,7 +3908,14 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderSelectedNutritionFoods() {
-    if (selectedNutritionFoods.length === 0) return null;
+    const selectedItems =
+      selectedNutritionFoodAction === "scan"
+        ? selectedNutritionFood
+          ? [selectedNutritionFood]
+          : []
+        : selectedNutritionFoods;
+
+    if (selectedItems.length === 0) return null;
 
     return (
       <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
@@ -3516,20 +3924,19 @@ export function NoteDatabaseEntrySheet({
             Selected
           </span>
           <span className="shrink-0 text-[11px] font-semibold text-white/46">
-            {selectedNutritionFoods.length}
+            {selectedItems.length}
           </span>
         </div>
         <div className="space-y-1.5">
-          {selectedNutritionFoods.map((food) => {
+          {selectedItems.map((item) => {
+            const { food } = item;
             const meta = getFoodSearchResultMeta(food);
+            const shouldShowQuantityEditor = selectedNutritionFoodAction === "scan";
 
             return (
-              <button
+              <div
                 key={food.id}
-                type="button"
-                aria-label={`Remove ${food.name}`}
-                onClick={() => toggleNutritionFoodSelection(food)}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2 text-left outline-none transition hover:border-white/[0.1] hover:bg-white/[0.045] focus-visible:border-white/[0.13] focus-visible:bg-white/[0.06]"
+                className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2"
               >
                 <NutritionFoodIcon food={food} />
                 <span className="min-w-0 flex-1">
@@ -3542,8 +3949,16 @@ export function NoteDatabaseEntrySheet({
                     </span>
                   ) : null}
                 </span>
-                <X className="h-3.5 w-3.5 shrink-0 text-white/42" aria-hidden="true" />
-              </button>
+                {shouldShowQuantityEditor ? renderNutritionFoodQuantityControl(item) : null}
+                <button
+                  type="button"
+                  aria-label={`Remove ${food.name}`}
+                  onClick={() => removeNutritionSelectedFood(food)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </div>
             );
           })}
         </div>
@@ -3665,43 +4080,49 @@ export function NoteDatabaseEntrySheet({
                                     </p>
                                   ) : nutritionFoodBrowseResults.length > 0 ? (
                                     nutritionFoodBrowseResults.map((food) => {
-                                      const isSelected = selectedNutritionFoodIds.has(
-                                        getNutritionFoodSelectionKey(food),
-                                      );
+                                      const selectedItem = getSelectedNutritionFoodItem(food);
+                                      const isSelected = Boolean(selectedItem);
                                       const nutritionPreview =
                                         getFoodBrowseNutritionPreview(food);
 
                                       return (
-                                        <button
+                                        <div
                                           key={food.id}
-                                          type="button"
-                                          aria-pressed={isSelected}
-                                          onClick={() => toggleNutritionFoodSelection(food)}
                                           className={`flex w-full items-center gap-3 border-t border-white/[0.04] py-2.5 pl-12 pr-3 text-left outline-none transition ${
                                             isSelected
                                               ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.68)]"
                                               : "hover:bg-white/[0.022]"
                                           } focus-visible:bg-white/[0.055]`}
                                         >
-                                          <NutritionFoodIcon food={food} />
-                                          <span className="min-w-0 flex-1">
-                                            <span className="flex min-w-0 items-center gap-1.5">
-                                              {isSelected ? (
-                                                <Check
-                                                  className="h-3.5 w-3.5 shrink-0 text-white/68"
-                                                  aria-hidden="true"
-                                                />
-                                              ) : null}
-                                              <span className="block truncate text-sm font-semibold text-white/84">
-                                                {food.name}
+                                          <button
+                                            type="button"
+                                            aria-pressed={isSelected}
+                                            onClick={() => toggleNutritionFoodSelection(food)}
+                                            className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
+                                          >
+                                            <NutritionFoodIcon food={food} />
+                                            <span className="min-w-0 flex-1">
+                                              <span className="flex min-w-0 items-center gap-1.5">
+                                                {isSelected ? (
+                                                  <Check
+                                                    className="h-3.5 w-3.5 shrink-0 text-white/68"
+                                                    aria-hidden="true"
+                                                  />
+                                                ) : null}
+                                                <span className="block truncate text-sm font-semibold text-white/84">
+                                                  {food.name}
+                                                </span>
+                                              </span>
+                                              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                                                {nutritionPreview ||
+                                                  "Nutrition details unavailable"}
                                               </span>
                                             </span>
-                                            <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                                              {nutritionPreview ||
-                                                "Nutrition details unavailable"}
-                                            </span>
-                                          </span>
-                                        </button>
+                                          </button>
+                                          {selectedItem
+                                            ? renderNutritionFoodQuantityControl(selectedItem)
+                                            : null}
+                                        </div>
                                       );
                                     })
                                   ) : (
@@ -3799,6 +4220,7 @@ export function NoteDatabaseEntrySheet({
                 {nutritionBarcodeLookupStatus}
               </p>
             ) : null}
+            {renderSelectedNutritionFoods()}
           </div>
         ) : (
           <>
@@ -3838,6 +4260,7 @@ export function NoteDatabaseEntrySheet({
     if (isSubmitting) return;
 
     const now = new Date().toISOString();
+    const entryId = buildClientDatabaseEntryId();
     const values = databaseFields.reduce<Record<string, unknown>>(
       (nextValues, field) => {
         const rawValue = entryFormValues[field.id] ?? "";
@@ -3852,16 +4275,51 @@ export function NoteDatabaseEntrySheet({
       {},
     );
     const nextEntry: NoteDatabaseEntry = {
-      id: buildClientDatabaseEntryId(),
+      id: entryId,
       createdAt: now,
       updatedAt: now,
       values,
     };
+    const nutritionMealDraft = buildNutritionMealDraft({
+      databaseDefinition,
+      databaseFields,
+      selectedFoods: selectedNutritionFoods,
+      selectedFood: selectedNutritionFood,
+      selectedAction: selectedNutritionFoodAction,
+      values,
+      entryId,
+      now,
+    });
 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      await onSaveEntry(nextEntry);
+      let entryToSave = nextEntry;
+
+      if (nutritionMealDraft) {
+        try {
+          const nutritionMealId = await createNutritionMeal(nutritionMealDraft);
+          await refreshNutritionDailyTotals();
+          entryToSave = {
+            ...nextEntry,
+            values: {
+              ...nextEntry.values,
+              nutritionMealId,
+            },
+          };
+        } catch (mealError) {
+          console.error("Failed to create nutrition meal", {
+            error: mealError,
+            databaseId: databaseDefinition.id,
+            entryId: nextEntry.id,
+          });
+          await onSaveEntry(nextEntry);
+          setSubmitError("Saved note entry, but the meal record could not be created.");
+          return;
+        }
+      }
+
+      await onSaveEntry(entryToSave);
       onClose();
     } catch (error) {
       console.error("Failed to save database entry", { error, databaseId: databaseDefinition.id });

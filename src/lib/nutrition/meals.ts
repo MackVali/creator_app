@@ -5,6 +5,12 @@ export type NutritionSnapshot = {
   displayName?: unknown;
   brandName?: unknown;
   brand_name?: unknown;
+  servingSize?: unknown;
+  serving_size?: unknown;
+  servingUnit?: unknown;
+  serving_unit?: unknown;
+  servingGrams?: unknown;
+  serving_grams?: unknown;
   calories?: unknown;
   carbs?: unknown;
   carbs_g?: unknown;
@@ -356,6 +362,7 @@ export function parseNutritionMealDraft(
       rpcItem.custom_name = customName.value;
     }
 
+    // Snapshot nutrition is a line total for the stored quantity; the RPC stores both as-is.
     totals.total_calories += rpcItem.snapshot_calories;
     totals.total_carbs_g += rpcItem.snapshot_carbs_g;
     totals.total_protein_g += rpcItem.snapshot_protein_g;

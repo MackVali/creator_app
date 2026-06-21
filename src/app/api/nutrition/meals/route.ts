@@ -22,6 +22,21 @@ function parseLimit(value: string | null) {
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed)));
 }
 
+function parseDateParam(value: string | null, field: string) {
+  if (!value) return { ok: true as const, value: undefined };
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { error: `${field} must be a valid date` },
+        { status: 400 },
+      ),
+    };
+  }
+  return { ok: true as const, value: parsedDate.toISOString() };
+}
+
 function databaseErrorResponse(message: string, error: unknown) {
   console.error(message, { error });
   return NextResponse.json({ error: message }, { status: 500 });
@@ -144,6 +159,10 @@ export async function GET(request: NextRequest) {
 
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
   const before = request.nextUrl.searchParams.get("before");
+  const start = parseDateParam(request.nextUrl.searchParams.get("start"), "start");
+  if (!start.ok) return start.response;
+  const end = parseDateParam(request.nextUrl.searchParams.get("end"), "end");
+  if (!end.ok) return end.response;
 
   let query = supabase
     .from("meals")
@@ -161,6 +180,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "before must be a valid date" }, { status: 400 });
     }
     query = query.lt("occurred_at", beforeDate.toISOString());
+  }
+  if (start.value) {
+    query = query.gte("occurred_at", start.value);
+  }
+  if (end.value) {
+    query = query.lt("occurred_at", end.value);
   }
 
   const { data, error } = await query;
