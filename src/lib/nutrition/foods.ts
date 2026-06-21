@@ -22,6 +22,7 @@ export type FoodSearchResult = {
   fat_g: number | null;
   browse_department?: string | null;
   browse_aisle?: string | null;
+  metadata?: Json | null;
 };
 
 export const FOOD_BROWSE_DEPARTMENTS = [

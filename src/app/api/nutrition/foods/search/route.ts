@@ -55,6 +55,7 @@ function mapFoodRow(
     fat_g: toNullableNumber(row.fat_g),
     browse_department: browsePlacement?.department ?? null,
     browse_aisle: browsePlacement?.aisle ?? null,
+    metadata: row.metadata ?? null,
   };
 }
 
@@ -144,7 +145,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("foods")
     .select(
-      "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,normalized_name,normalized_brand_name",
+      "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,normalized_name,normalized_brand_name,source,metadata",
     )
     .eq("is_active", true)
     .or(`normalized_name.ilike.${pattern},normalized_brand_name.ilike.${pattern}`)

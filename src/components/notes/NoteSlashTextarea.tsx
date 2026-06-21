@@ -54,6 +54,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import Image from "next/image";
 import {
   type CSSProperties,
   Fragment,
@@ -82,6 +83,7 @@ import {
   type NutritionBarcodeScannerResult,
 } from "@/lib/nutrition/barcodeScanner";
 import {
+  findNutritionEntryFields,
   mapFoodToNutritionEntryValues,
   normalizeFoodBarcode,
   normalizeFoodSearchText,
@@ -91,6 +93,7 @@ import {
   type FoodBrowseDepartmentLabel,
   type FoodSearchResult,
 } from "@/lib/nutrition/foods";
+import { getFoodIcon, type FoodIcon } from "@/lib/nutrition/foodIcons";
 
 type SlashCommandId =
   | "text"
@@ -249,7 +252,6 @@ const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
 const NUTRITION_FOOD_ACTION_TABS = [
   { id: "search", label: "Search", icon: Search },
   { id: "scan", label: "Scan", icon: ScanLine },
-  { id: "browse", label: "Browse", icon: Tags },
   { id: "favs", label: "Favs", icon: Star },
   { id: "custom", label: "Custom", icon: PencilLine },
   { id: "meals", label: "Meals", icon: Utensils },
@@ -1508,6 +1510,50 @@ type NutritionFoodBarcodeLookupResponse = FoodBarcodeLookupResult & {
   error?: string;
 };
 
+function NutritionFoodIcon({ food }: { food: FoodSearchResult }) {
+  const icon = getFoodIcon(food);
+
+  return <NutritionFoodIconSlot icon={icon} fallbackInitial={food.name.charAt(0)} />;
+}
+
+function NutritionFoodIconSlot({
+  icon,
+  fallbackInitial,
+}: {
+  icon: FoodIcon;
+  fallbackInitial: string;
+}) {
+  const [hasImageError, setHasImageError] = useState(false);
+  const assetPath = hasImageError ? null : icon.assetPath;
+  const initial = fallbackInitial.trim().charAt(0).toUpperCase() || "F";
+
+  return (
+    <span
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      aria-hidden="true"
+    >
+      {assetPath ? (
+        <Image
+          src={assetPath}
+          alt=""
+          width={32}
+          height={32}
+          className="h-8 w-8 object-contain"
+          onError={() => setHasImageError(true)}
+        />
+      ) : icon.fallbackEmoji ? (
+        <span className="text-[24px] leading-none" aria-hidden="true">
+          {icon.fallbackEmoji}
+        </span>
+      ) : (
+        <span className="text-xs font-bold text-white/52" aria-hidden="true">
+          {initial}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function normalizeDatabaseFieldLookupKey(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -1614,6 +1660,82 @@ function getFoodBrowseNutritionPreview(food: FoodSearchResult) {
   ].filter(Boolean);
 
   return nutritionParts.join(" · ");
+}
+
+function getNutritionFoodSelectionKey(food: FoodSearchResult) {
+  return food.id;
+}
+
+function formatAggregatedNutritionValue(value: number, hasValue: boolean) {
+  if (!hasValue) return "";
+  return formatFoodNutritionNumber(value) ?? "";
+}
+
+function mapSelectedNutritionFoodsToEntryValues(
+  foods: FoodSearchResult[],
+  databaseDefinition: NoteDatabaseDefinition | null | undefined,
+) {
+  const { foodField, caloriesField, carbsField, proteinField, fatField } =
+    findNutritionEntryFields(databaseDefinition);
+  const values: Record<string, string> = {};
+  const totals = {
+    calories: 0,
+    carbs: 0,
+    protein: 0,
+    fat: 0,
+  } satisfies Record<NutritionDailyMetricKey, number>;
+  const hasMetricValue = {
+    calories: false,
+    carbs: false,
+    protein: false,
+    fat: false,
+  } satisfies Record<NutritionDailyMetricKey, boolean>;
+
+  for (const food of foods) {
+    const calories = food.calories;
+    const carbs = food.carbs_g;
+    const protein = food.protein_g;
+    const fat = food.fat_g;
+
+    if (typeof calories === "number" && Number.isFinite(calories)) {
+      totals.calories += calories;
+      hasMetricValue.calories = true;
+    }
+    if (typeof carbs === "number" && Number.isFinite(carbs)) {
+      totals.carbs += carbs;
+      hasMetricValue.carbs = true;
+    }
+    if (typeof protein === "number" && Number.isFinite(protein)) {
+      totals.protein += protein;
+      hasMetricValue.protein = true;
+    }
+    if (typeof fat === "number" && Number.isFinite(fat)) {
+      totals.fat += fat;
+      hasMetricValue.fat = true;
+    }
+  }
+
+  if (foodField) values[foodField.id] = foods.map((food) => food.name).join(", ");
+  if (caloriesField) {
+    values[caloriesField.id] = formatAggregatedNutritionValue(
+      totals.calories,
+      hasMetricValue.calories,
+    );
+  }
+  if (carbsField) {
+    values[carbsField.id] = formatAggregatedNutritionValue(totals.carbs, hasMetricValue.carbs);
+  }
+  if (proteinField) {
+    values[proteinField.id] = formatAggregatedNutritionValue(
+      totals.protein,
+      hasMetricValue.protein,
+    );
+  }
+  if (fatField) {
+    values[fatField.id] = formatAggregatedNutritionValue(totals.fat, hasMetricValue.fat);
+  }
+
+  return values;
 }
 
 function getDatabaseEntryTitle(entry: NoteDatabaseEntry, definition: NoteDatabaseDefinition) {
@@ -2705,10 +2827,8 @@ export function NoteDatabaseEntrySheet({
     useState<FoodBrowseDepartmentLabel | null>(null);
   const [openNutritionBrowseAisle, setOpenNutritionBrowseAisle] =
     useState<FoodBrowseAisleLabel | null>(null);
-  const [selectedNutritionBrowseFood, setSelectedNutritionBrowseFood] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [selectedNutritionFoods, setSelectedNutritionFoods] = useState<FoodSearchResult[]>([]);
+  const [nutritionFoodSearchQuery, setNutritionFoodSearchQuery] = useState("");
   const [nutritionFoodSearchResults, setNutritionFoodSearchResults] = useState<
     FoodSearchResult[]
   >([]);
@@ -2749,11 +2869,10 @@ export function NoteDatabaseEntrySheet({
     : "";
   const databaseFormTitle = getDatabaseFormTitle(databaseDefinition.title);
   const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
-  const isNutritionScanMode =
-    isDefaultNutritionDatabase && selectedNutritionFoodAction === "scan";
-  const isNutritionBrowseMode =
-    isDefaultNutritionDatabase && selectedNutritionFoodAction === "browse";
-  const shouldHideNutritionEntryFields = isNutritionScanMode || isNutritionBrowseMode;
+  const isNutritionSearchMode =
+    isDefaultNutritionDatabase && selectedNutritionFoodAction === "search";
+  const shouldHideNutritionEntryFields =
+    isDefaultNutritionDatabase && selectedNutritionFoodAction !== "custom";
   const nutritionMacroFields = isDefaultNutritionDatabase
     ? NUTRITION_MACRO_FIELD_KEYS.map((macroKey) =>
         editableDatabaseFields.find((field) => getNutritionMacroFieldKey(field) === macroKey),
@@ -2777,11 +2896,12 @@ export function NoteDatabaseEntrySheet({
   const nutritionFoodField = isDefaultNutritionDatabase
     ? editableDatabaseFields.find(isDefaultNutritionFoodField) ?? null
     : null;
-  const nutritionFoodSearchValue = nutritionFoodField
-    ? entryFormValues[nutritionFoodField.id] ?? ""
-    : "";
   const normalizedNutritionFoodSearchValue = normalizeFoodSearchText(
-    nutritionFoodSearchValue,
+    nutritionFoodSearchQuery,
+  );
+  const selectedNutritionFoodIds = useMemo(
+    () => new Set(selectedNutritionFoods.map(getNutritionFoodSelectionKey)),
+    [selectedNutritionFoods],
   );
   const nutritionDailyProgress = (() => {
     const emptyTotals = {
@@ -2857,7 +2977,7 @@ export function NoteDatabaseEntrySheet({
       setNutritionFoodSearchError(null);
 
       const params = new URLSearchParams({
-        q: nutritionFoodSearchValue,
+        q: nutritionFoodSearchQuery,
         limit: "8",
       });
 
@@ -2893,13 +3013,13 @@ export function NoteDatabaseEntrySheet({
   }, [
     isDefaultNutritionDatabase,
     normalizedNutritionFoodSearchValue,
-    nutritionFoodSearchValue,
+    nutritionFoodSearchQuery,
     selectedNutritionFoodAction,
   ]);
 
   useEffect(() => {
     if (
-      !isNutritionBrowseMode ||
+      !isNutritionSearchMode ||
       !openNutritionBrowseDepartment ||
       !openNutritionBrowseAisle
     ) {
@@ -2948,7 +3068,7 @@ export function NoteDatabaseEntrySheet({
       controller.abort();
     };
   }, [
-    isNutritionBrowseMode,
+    isNutritionSearchMode,
     openNutritionBrowseAisle,
     openNutritionBrowseDepartment,
   ]);
@@ -2972,14 +3092,31 @@ export function NoteDatabaseEntrySheet({
     selectNutritionFoodAction(NUTRITION_FOOD_ACTION_TABS[nextIndex].id);
   }
 
+  function applyNutritionFoodSelection(nextFoods: FoodSearchResult[]) {
+    const mappedValues = mapSelectedNutritionFoodsToEntryValues(
+      nextFoods,
+      databaseDefinition,
+    );
+    setSelectedNutritionFoods(nextFoods);
+    setEntryFormValues((current) => ({ ...current, ...mappedValues }));
+    setSubmitError(null);
+  }
+
+  function toggleNutritionFoodSelection(food: FoodSearchResult) {
+    const foodKey = getNutritionFoodSelectionKey(food);
+    const nextFoods = selectedNutritionFoodIds.has(foodKey)
+      ? selectedNutritionFoods.filter(
+          (selectedFood) => getNutritionFoodSelectionKey(selectedFood) !== foodKey,
+        )
+      : [...selectedNutritionFoods, food];
+
+    applyNutritionFoodSelection(nextFoods);
+  }
+
   function selectNutritionFood(food: FoodSearchResult) {
     const mappedValues = mapFoodToNutritionEntryValues(food, databaseDefinition);
+    setSelectedNutritionFoods([]);
     setEntryFormValues((current) => ({ ...current, ...mappedValues }));
-    if (selectedNutritionFoodAction === "browse") {
-      setSelectedNutritionBrowseFood({ id: food.id, name: food.name });
-    } else {
-      setSelectedNutritionBrowseFood(null);
-    }
     setSubmitError(null);
   }
 
@@ -3318,23 +3455,40 @@ export function NoteDatabaseEntrySheet({
           <div className="divide-y divide-white/[0.045]">
             {foods.map((food) => {
               const meta = getFoodSearchResultMeta(food);
+              const isSelected = selectedNutritionFoodIds.has(getNutritionFoodSelectionKey(food));
 
               return (
                 <button
                   key={food.id}
                   type="button"
-                  onClick={() => selectNutritionFood(food)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.045] focus-visible:bg-white/[0.06]"
+                  aria-pressed={isSelected}
+                  onClick={() => toggleNutritionFoodSelection(food)}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left outline-none transition ${
+                    isSelected
+                      ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.7)]"
+                      : "hover:bg-white/[0.045]"
+                  } focus-visible:bg-white/[0.06]`}
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-white/84">
-                      {food.name}
-                    </span>
-                    {food.brand_name ? (
-                      <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                        {food.brand_name}
+                  <span className="flex min-w-0 flex-1 items-center gap-3">
+                    <NutritionFoodIcon food={food} />
+                    <span className="min-w-0">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {isSelected ? (
+                          <Check
+                            className="h-3.5 w-3.5 shrink-0 text-white/76"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        <span className="block truncate text-sm font-semibold text-white/84">
+                          {food.name}
+                        </span>
                       </span>
-                    ) : null}
+                      {food.brand_name ? (
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                          {food.brand_name}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
                   {meta ? (
                     <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
@@ -3352,16 +3506,61 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderSelectedNutritionFoods() {
+    if (selectedNutritionFoods.length === 0) return null;
+
+    return (
+      <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
+        <div className="flex items-center justify-between gap-2 px-1 pb-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+            Selected
+          </span>
+          <span className="shrink-0 text-[11px] font-semibold text-white/46">
+            {selectedNutritionFoods.length}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {selectedNutritionFoods.map((food) => {
+            const meta = getFoodSearchResultMeta(food);
+
+            return (
+              <button
+                key={food.id}
+                type="button"
+                aria-label={`Remove ${food.name}`}
+                onClick={() => toggleNutritionFoodSelection(food)}
+                className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2 text-left outline-none transition hover:border-white/[0.1] hover:bg-white/[0.045] focus-visible:border-white/[0.13] focus-visible:bg-white/[0.06]"
+              >
+                <NutritionFoodIcon food={food} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-white/84">
+                    {food.name}
+                  </span>
+                  {meta ? (
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                      {meta}
+                    </span>
+                  ) : null}
+                </span>
+                <X className="h-3.5 w-3.5 shrink-0 text-white/42" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   function renderNutritionFoodBrowseContent() {
     return (
       <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
-        {selectedNutritionBrowseFood ? (
+        {selectedNutritionFoods.length > 0 ? (
           <div className="flex min-h-9 items-center gap-2 border-b border-white/[0.055] bg-white/[0.035] px-3 text-xs font-semibold text-white/62">
             <Check className="h-3.5 w-3.5 shrink-0 text-white/70" aria-hidden="true" />
             <span className="min-w-0 truncate">
-              {selectedNutritionBrowseFood.name} selected
+              {selectedNutritionFoods.length} selected
             </span>
-            <span className="shrink-0 text-white/34">· Ready to add</span>
+            <span className="shrink-0 text-white/34">· Search and Browse</span>
           </div>
         ) : null}
 
@@ -3380,10 +3579,9 @@ export function NoteDatabaseEntrySheet({
                       currentDepartment === department.label ? null : department.label,
                     );
                     setOpenNutritionBrowseAisle(null);
-                    setSelectedNutritionBrowseFood(null);
                   }}
                   className={`flex h-11 w-full items-center gap-3 border-t px-3 text-left outline-none transition ${
-                    selectedNutritionBrowseFood || !isFirstDepartment
+                    selectedNutritionFoods.length > 0 || !isFirstDepartment
                       ? "border-white/[0.055]"
                       : "border-transparent"
                   } ${
@@ -3429,7 +3627,6 @@ export function NoteDatabaseEntrySheet({
                                 setOpenNutritionBrowseAisle((currentAisle) =>
                                   currentAisle === aisle ? null : aisle,
                                 );
-                                setSelectedNutritionBrowseFood(null);
                               }}
                               className={`flex h-10 w-full items-center gap-2.5 border-t border-white/[0.045] py-0 pl-7 pr-3 text-left outline-none transition ${
                                 isAisleOpen
@@ -3468,8 +3665,9 @@ export function NoteDatabaseEntrySheet({
                                     </p>
                                   ) : nutritionFoodBrowseResults.length > 0 ? (
                                     nutritionFoodBrowseResults.map((food) => {
-                                      const isSelected =
-                                        selectedNutritionBrowseFood?.id === food.id;
+                                      const isSelected = selectedNutritionFoodIds.has(
+                                        getNutritionFoodSelectionKey(food),
+                                      );
                                       const nutritionPreview =
                                         getFoodBrowseNutritionPreview(food);
 
@@ -3477,13 +3675,15 @@ export function NoteDatabaseEntrySheet({
                                         <button
                                           key={food.id}
                                           type="button"
-                                          onClick={() => selectNutritionFood(food)}
+                                          aria-pressed={isSelected}
+                                          onClick={() => toggleNutritionFoodSelection(food)}
                                           className={`flex w-full items-center gap-3 border-t border-white/[0.04] py-2.5 pl-12 pr-3 text-left outline-none transition ${
                                             isSelected
-                                              ? "bg-white/[0.045]"
+                                              ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.68)]"
                                               : "hover:bg-white/[0.022]"
                                           } focus-visible:bg-white/[0.055]`}
                                         >
+                                          <NutritionFoodIcon food={food} />
                                           <span className="min-w-0 flex-1">
                                             <span className="flex min-w-0 items-center gap-1.5">
                                               {isSelected ? (
@@ -3527,7 +3727,6 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderNutritionFoodSearchField(field: NoteDatabaseFieldDefinition) {
-    const fieldValue = entryFormValues[field.id] ?? "";
     const normalizedBarcodeValue = normalizeFoodBarcode(nutritionBarcodeValue);
 
     return (
@@ -3537,8 +3736,6 @@ export function NoteDatabaseEntrySheet({
 
         {selectedNutritionFoodAction === "custom" ? (
           <div className="mt-3">{renderDatabaseEntryField(field)}</div>
-        ) : selectedNutritionFoodAction === "browse" ? (
-          renderNutritionFoodBrowseContent()
         ) : selectedNutritionFoodAction === "scan" ? (
           <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
             <button
@@ -3612,13 +3809,14 @@ export function NoteDatabaseEntrySheet({
               />
               <input
                 type="text"
-                value={fieldValue}
-                onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+                value={nutritionFoodSearchQuery}
+                onChange={(event) => setNutritionFoodSearchQuery(event.target.value)}
                 className="h-12 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
                 placeholder="Search foods..."
                 aria-label="Food"
               />
             </div>
+            {renderSelectedNutritionFoods()}
             {selectedNutritionFoodAction === "search" &&
             normalizedNutritionFoodSearchValue.length >= 2 ? (
               renderNutritionFoodResultList({
@@ -3629,6 +3827,7 @@ export function NoteDatabaseEntrySheet({
                 emptyLabel: "No foods found.",
               })
             ) : null}
+            {selectedNutritionFoodAction === "search" ? renderNutritionFoodBrowseContent() : null}
           </>
         )}
       </div>
