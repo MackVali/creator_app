@@ -62,8 +62,24 @@ type BlockMetadata = {
 type PreviewEvent = {
   id: string;
   name: string;
+  skillIcon?: string | null;
   sourceType: string;
   startUtc: string;
+};
+
+type ProjectSkillRow = {
+  project_id: string | null;
+  skill_id: string | null;
+};
+
+type SourceSkillRow = {
+  id: string | null;
+  skill_id: string | null;
+};
+
+type SkillIconRow = {
+  id: string | null;
+  icon: string | null;
 };
 
 function normalizeTimeZoneOrFallback(timeZone: string | null) {
@@ -161,23 +177,24 @@ function eventName(instance: ScheduleInstance) {
   );
 }
 
-function formatEventPreview(instance: ScheduleInstance) {
-  return `${eventName(instance)} (${formatSourceType(instance.source_type)})`;
+function formatEventPreview(event: Pick<PreviewEvent, "name" | "skillIcon">) {
+  const skillIcon = event.skillIcon?.trim();
+  return skillIcon ? `${skillIcon} ${event.name}` : event.name;
 }
 
-function buildBriefBody(instances: ScheduleInstance[]) {
-  const count = instances.length;
+function buildBriefBody(events: PreviewEvent[]) {
+  const count = events.length;
 
   if (count === 1) {
-    return `1 scheduled: ${formatEventPreview(instances[0])}`;
+    return `1 scheduled: ${formatEventPreview(events[0])}`;
   }
 
   if (count <= 3) {
-    return `${count} scheduled: ${instances.map(formatEventPreview).join(" · ")}`;
+    return `${count} scheduled: ${events.map(formatEventPreview).join(" · ")}`;
   }
 
   const remaining = count - 2;
-  return `${count} scheduled: ${instances
+  return `${count} scheduled: ${events
     .slice(0, 2)
     .map(formatEventPreview)
     .join(" · ")} · +${remaining} more`;
@@ -282,6 +299,167 @@ async function loadBlockMetadata(
   };
 }
 
+function addUniqueSourceId(target: Set<string>, instance: ScheduleInstance) {
+  const sourceId = instance.source_id?.trim();
+  if (sourceId) {
+    target.add(sourceId);
+  }
+}
+
+function assignSkillId(
+  instanceSkillIds: Map<string, string>,
+  instance: ScheduleInstance,
+  skillId: string | null | undefined,
+) {
+  const normalized = skillId?.trim();
+  if (normalized) {
+    instanceSkillIds.set(instance.id, normalized);
+  }
+}
+
+async function loadSkillIconByInstanceId(
+  client: AdminClient,
+  userId: string,
+  instances: ScheduleInstance[],
+): Promise<Map<string, string>> {
+  const projectIds = new Set<string>();
+  const habitIds = new Set<string>();
+  const taskIds = new Set<string>();
+
+  for (const instance of instances) {
+    if (instance.source_type === "PROJECT") {
+      addUniqueSourceId(projectIds, instance);
+    } else if (instance.source_type === "HABIT") {
+      addUniqueSourceId(habitIds, instance);
+    } else if (instance.source_type === "TASK") {
+      addUniqueSourceId(taskIds, instance);
+    }
+  }
+
+  const [projectSkillResult, habitResult, taskResult] = await Promise.all([
+    projectIds.size > 0
+      ? client
+          .from("project_skills")
+          .select("project_id, skill_id")
+          .in("project_id", Array.from(projectIds))
+      : Promise.resolve({ data: null, error: null }),
+    habitIds.size > 0
+      ? client
+          .from("habits")
+          .select("id, skill_id")
+          .eq("user_id", userId)
+          .in("id", Array.from(habitIds))
+      : Promise.resolve({ data: null, error: null }),
+    taskIds.size > 0
+      ? client
+          .from("tasks")
+          .select("id, skill_id")
+          .eq("user_id", userId)
+          .in("id", Array.from(taskIds))
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  if (projectSkillResult.error) {
+    console.warn("[PUSH_SCHEDULE_TEST] project skill lookup failed", {
+      userId,
+      error: projectSkillResult.error,
+    });
+  }
+
+  if (habitResult.error) {
+    console.warn("[PUSH_SCHEDULE_TEST] habit skill lookup failed", {
+      userId,
+      error: habitResult.error,
+    });
+  }
+
+  if (taskResult.error) {
+    console.warn("[PUSH_SCHEDULE_TEST] task skill lookup failed", {
+      userId,
+      error: taskResult.error,
+    });
+  }
+
+  const projectSkillIds = new Map<string, string>();
+  for (const row of (projectSkillResult.data ?? []) as ProjectSkillRow[]) {
+    const projectId = row.project_id?.trim();
+    const skillId = row.skill_id?.trim();
+    if (projectId && skillId && !projectSkillIds.has(projectId)) {
+      projectSkillIds.set(projectId, skillId);
+    }
+  }
+
+  const habitSkillIds = new Map<string, string>();
+  for (const row of (habitResult.data ?? []) as SourceSkillRow[]) {
+    const habitId = row.id?.trim();
+    const skillId = row.skill_id?.trim();
+    if (habitId && skillId) {
+      habitSkillIds.set(habitId, skillId);
+    }
+  }
+
+  const taskSkillIds = new Map<string, string>();
+  for (const row of (taskResult.data ?? []) as SourceSkillRow[]) {
+    const taskId = row.id?.trim();
+    const skillId = row.skill_id?.trim();
+    if (taskId && skillId) {
+      taskSkillIds.set(taskId, skillId);
+    }
+  }
+
+  const instanceSkillIds = new Map<string, string>();
+  for (const instance of instances) {
+    const sourceId = instance.source_id?.trim();
+    if (!sourceId) continue;
+
+    if (instance.source_type === "PROJECT") {
+      assignSkillId(instanceSkillIds, instance, projectSkillIds.get(sourceId));
+    } else if (instance.source_type === "HABIT") {
+      assignSkillId(instanceSkillIds, instance, habitSkillIds.get(sourceId));
+    } else if (instance.source_type === "TASK") {
+      assignSkillId(instanceSkillIds, instance, taskSkillIds.get(sourceId));
+    }
+  }
+
+  const skillIds = Array.from(new Set(instanceSkillIds.values()));
+  if (skillIds.length === 0) {
+    return new Map();
+  }
+
+  const { data: skillRows, error: skillError } = await client
+    .from("skills")
+    .select("id, icon")
+    .eq("user_id", userId)
+    .in("id", skillIds);
+
+  if (skillError) {
+    console.warn("[PUSH_SCHEDULE_TEST] skill icon lookup failed", {
+      userId,
+      error: skillError,
+    });
+    return new Map();
+  }
+
+  const skillIcons = new Map<string, string>();
+  for (const row of (skillRows ?? []) as SkillIconRow[]) {
+    const skillId = row.id?.trim();
+    const icon = row.icon?.trim();
+    if (skillId && icon) {
+      skillIcons.set(skillId, icon);
+    }
+  }
+
+  const iconsByInstanceId = new Map<string, string>();
+  for (const [instanceId, skillId] of instanceSkillIds) {
+    const icon = skillIcons.get(skillId)?.trim();
+    if (icon) {
+      iconsByInstanceId.set(instanceId, icon);
+    }
+  }
+
+  return iconsByInstanceId;
+}
+
 function isSameBlock(anchor: ScheduleInstance, candidate: ScheduleInstance) {
   if (anchor.time_block_id) {
     return candidate.time_block_id === anchor.time_block_id;
@@ -298,10 +476,16 @@ function isSameBlock(anchor: ScheduleInstance, candidate: ScheduleInstance) {
   return candidate.id === anchor.id;
 }
 
-function toPreviewEvent(instance: ScheduleInstance): PreviewEvent {
+function toPreviewEvent(
+  instance: ScheduleInstance,
+  skillIconsByInstanceId: Map<string, string>,
+): PreviewEvent {
+  const skillIcon = skillIconsByInstanceId.get(instance.id)?.trim() ?? null;
+
   return {
     id: instance.id,
     name: eventName(instance),
+    skillIcon,
     sourceType: formatSourceType(instance.source_type),
     startUtc: instance.start_utc,
   };
@@ -389,8 +573,15 @@ export async function POST() {
     start,
     timeZone,
   });
-  const body = buildBriefBody(briefInstances);
-  const previewEvents = briefInstances.map(toPreviewEvent);
+  const skillIconsByInstanceId = await loadSkillIconByInstanceId(
+    adminClient,
+    user.id,
+    briefInstances,
+  );
+  const previewEvents = briefInstances.map((briefInstance) =>
+    toPreviewEvent(briefInstance, skillIconsByInstanceId),
+  );
+  const body = buildBriefBody(previewEvents);
   const entityId =
     anchor.time_block_id ??
     anchor.day_type_time_block_id ??
