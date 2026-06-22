@@ -35,6 +35,8 @@
 	<string>CREATOR needs camera access so you can scan nutrition barcodes and take a new profile photo.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>CREATOR uses contacts to help you find friends and invite collaborators.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>CREATOR needs permission to save edited profile photos when needed.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

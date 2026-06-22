@@ -31,6 +31,9 @@ importers:
       '@capacitor/ios':
         specifier: ^8.0.2
         version: 8.0.2(@capacitor/core@8.0.2)
+      '@capacitor/local-notifications':
+        specifier: ^8
+        version: 8.2.0(@capacitor/core@8.0.2)
       '@capacitor/push-notifications':
         specifier: ^8.1.1
         version: 8.1.1(@capacitor/core@8.0.2)
@@ -100,6 +103,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.21
         version: 10.4.22(postcss@8.5.6)
+      capacitor-live-activity:
+        specifier: ^8.2.0
+        version: 8.2.0(@capacitor/core@8.0.2)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -242,6 +248,11 @@ packages:
     resolution: {integrity: sha512-7EM7vBxXI3Ku49aYCJcS9su5Y3i6UmXpx7e0y+oQV9PzCnZ6l5B0ACJ+gXAU0bM3q7/f+kGBsOtXMid84rU6MQ==}
     peerDependencies:
       '@capacitor/core': ^8.0.0
+
+  '@capacitor/local-notifications@8.2.0':
+    resolution: {integrity: sha512-fvLY0w2w4MiX+DD4+Wv4DOwOLdzKZsMDwAcRv/Juudd+QbKbn69s6cM3xVqPwAiDqfnqsY4/S8xtQD6M73wY2A==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/push-notifications@8.1.1':
     resolution: {integrity: sha512-WqzjPKIbYbARMN+GC0XMAJcxJpUUzqgzS/Ny8RODLrro38pQhm3GXYwX2Mwd+LZlLY39rGImkCkrKyQSNfuikA==}
@@ -2238,6 +2249,11 @@ packages:
 
   caniuse-lite@1.0.30001760:
     resolution: {integrity: sha512-7AAMPcueWELt1p3mi13HR/LHH0TJLT11cnwDJEs3xA4+CK/PLKeO9Kl1oru24htkyUKtkGCvAx4ohB0Ttry8Dw==}
+
+  capacitor-live-activity@8.2.0:
+    resolution: {integrity: sha512-w0Q6TZgCJXhjUaf63EsPI8jV/Rq3qd26cIuSIKjLVwo2k1EfxZ1PTJF6X8f1xKAAP9GYrWycEcNJb3Z+eWcVcw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   chai@6.2.1:
     resolution: {integrity: sha512-p4Z49OGG5W/WBCPSS/dH3jQ73kD6tiMmUM+bckNK6Jr5JHMG3k9bg/BvKR8lKmtVBKmOiuVaV2ws8s9oSbwysg==}
@@ -4404,6 +4420,10 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.0.2
 
+  '@capacitor/local-notifications@8.2.0(@capacitor/core@8.0.2)':
+    dependencies:
+      '@capacitor/core': 8.0.2
+
   '@capacitor/push-notifications@8.1.1(@capacitor/core@8.0.2)':
     dependencies:
       '@capacitor/core': 8.0.2
@@ -6228,6 +6248,10 @@ snapshots:
   callsites@3.1.0: {}
 
   caniuse-lite@1.0.30001760: {}
+
+  capacitor-live-activity@8.2.0(@capacitor/core@8.0.2):
+    dependencies:
+      '@capacitor/core': 8.0.2
 
   chai@6.2.1: {}
 
