@@ -3,13 +3,21 @@
 import { RotateCcw } from "lucide-react";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
+  hapticComplete,
   hapticError,
+  hapticErrorPattern,
   hapticHeavyImpact,
   hapticLightImpact,
+  hapticLevelUp,
+  hapticLongPress,
   hapticMediumImpact,
+  hapticPress,
+  hapticSnap,
   hapticSelectionChanged,
+  hapticSoftTick,
   hapticSuccess,
   hapticWarning,
+  hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
 
 const buttonClass =
@@ -25,6 +33,16 @@ export default function ToastTestPanel() {
     { label: "Warning notification", action: hapticWarning },
     { label: "Error notification", action: hapticError },
     { label: "Selection changed", action: hapticSelectionChanged },
+  ];
+  const hapticRecipeTests = [
+    { label: "Press", action: hapticPress },
+    { label: "Soft tick", action: hapticSoftTick },
+    { label: "Snap", action: hapticSnap },
+    { label: "Long press", action: hapticLongPress },
+    { label: "Complete", action: hapticComplete },
+    { label: "Level up", action: hapticLevelUp },
+    { label: "Warning pattern", action: hapticWarningPattern },
+    { label: "Error pattern", action: hapticErrorPattern },
   ];
 
   return (
@@ -51,19 +69,51 @@ export default function ToastTestPanel() {
               Haptics only fire on supported native devices and may be silent in browser.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {hapticTests.map((test) => (
-              <button
-                key={test.label}
-                type="button"
-                className={buttonClass}
-                onClick={() => {
-                  void test.action();
-                }}
-              >
-                {test.label}
-              </button>
-            ))}
+          <div className="space-y-5">
+            <div>
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+                Raw Haptics
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {hapticTests.map((test) => (
+                  <button
+                    key={test.label}
+                    type="button"
+                    className={buttonClass}
+                    onClick={() => {
+                      void test.action();
+                    }}
+                  >
+                    {test.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-3">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+                  Haptic Recipes
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-white/50">
+                  These combine multiple native haptics with tight timing for richer feedback.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {hapticRecipeTests.map((test) => (
+                  <button
+                    key={test.label}
+                    type="button"
+                    className={buttonClass}
+                    onClick={() => {
+                      void test.action();
+                    }}
+                  >
+                    {test.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
