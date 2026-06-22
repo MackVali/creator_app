@@ -87,7 +87,7 @@ export function AppCartQuickView({
         <button
           type="button"
           aria-label={`Open cart quick-view${itemCount > 0 ? ` with ${itemCount} items` : ""}`}
-          onClick={() => {
+          onPointerDown={() => {
             void hapticPress();
           }}
           className={`relative inline-flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11 ${

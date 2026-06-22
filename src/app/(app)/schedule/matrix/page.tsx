@@ -55,6 +55,11 @@ import {
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 import { cn } from "@/lib/utils";
 
 type ScheduleInstance =
@@ -227,6 +232,9 @@ type MatrixPreferences = {
   cardDensityByGroup?: MatrixCardDensityPreferenceMap;
   collapsedGroupKeysByView?: MatrixCollapsedGroupPreferences;
 };
+type MatrixScheduledCompletionOptions = {
+  hapticOnComplete?: boolean;
+};
 type MatrixTag = {
   id: string;
   name: string;
@@ -333,18 +341,6 @@ const MATRIX_HABIT_DEFAULT_CARD_BG_CLASS =
   "bg-[radial-gradient(circle_at_18%_-24%,rgba(255,255,255,0.055),transparent_54%),linear-gradient(145deg,rgba(10,11,14,0.98)_0%,rgba(17,18,22,0.96)_58%,rgba(24,26,31,0.88)_100%)]";
 const MATRIX_ROW_PROJECT_CARD_CLASS =
   MATRIX_ROW_NEXUS_CARD_CLASS;
-const MATRIX_TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
-  "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
-const MATRIX_TIMELINE_COMPLETED_SHADOW =
-  "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
-const MATRIX_TIMELINE_SYNC_COMPLETED_SHADOW =
-  "0 28px 48px rgba(0, 0, 0, 0.48), 0 10px 22px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
-const MATRIX_COMPLETED_GEM_BEVEL_INSET =
-  "inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -2px 8px rgba(0, 0, 0, 0.11), inset 0 0 0 1px rgba(0, 0, 0, 0.08)";
-const MATRIX_COMPLETED_PROJECT_BACKGROUND =
-  "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)";
-const MATRIX_COMPLETED_PROJECT_OUTLINE =
-  "1px solid rgba(22, 101, 52, 0.42)";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SCHEDULED_EVENT_DOUBLE_TAP_MS = 300;
 const MATRIX_CARD_LONG_PRESS_MS = 520;
@@ -785,85 +781,6 @@ function getHabitRowTypeClass(habitType: string | null | undefined): string {
   }
   if (normalized === "PRACTICE") return MATRIX_ROW_NEXUS_PRACTICE_CARD_CLASS;
   return MATRIX_ROW_NEXUS_CARD_CLASS;
-}
-
-function getScheduleHabitTypeClass(
-  habitType: string | null | undefined
-): string {
-  const normalized = normalizeRelatedHabitType(habitType);
-  if (normalized === "MEMO") return "habit-card--type-memo";
-  if (normalized === "CHORE") return "habit-card--type-chore";
-  if (normalized === "RELAXER") return "habit-card--type-relaxer";
-  if (normalized === "PRACTICE") return "habit-card--type-practice";
-  if (normalized === "SYNC") return "habit-card--type-sync";
-  return "habit-card--type-default";
-}
-
-function getCompletedHabitRowBorderClass(
-  habitType: string | null | undefined
-): string {
-  const normalized = normalizeRelatedHabitType(habitType);
-  if (normalized === "SYNC" || normalized === "MEMO") {
-    return "border-emerald-300/25";
-  }
-  if (normalized === "CHORE") return "border-emerald-300/22";
-  return "border-emerald-300/24";
-}
-
-function getCompletedHabitRowOutline(
-  habitType: string | null | undefined
-): string {
-  const normalized = normalizeRelatedHabitType(habitType);
-  if (normalized === "SYNC" || normalized === "MEMO") {
-    return "1px solid rgba(10, 60, 44, 0.52)";
-  }
-  if (normalized === "CHORE") return "1px solid rgba(10, 60, 44, 0.48)";
-  return "1px solid rgba(10, 60, 44, 0.50)";
-}
-
-function getCompletedHabitRowShadow(
-  habitType: string | null | undefined
-): string {
-  const normalized = normalizeRelatedHabitType(habitType);
-  const completedShadow =
-    normalized === "SYNC" || normalized === "MEMO"
-      ? MATRIX_TIMELINE_SYNC_COMPLETED_SHADOW
-      : MATRIX_TIMELINE_COMPLETED_SHADOW;
-
-  return `${completedShadow}, ${MATRIX_COMPLETED_GEM_BEVEL_INSET}`;
-}
-
-function getCompletedMatrixRowPresentation({
-  variant,
-  habitType,
-}: {
-  variant: "habit" | "project";
-  habitType?: string | null;
-}): { className: string; style: CSSProperties } {
-  if (variant === "project") {
-    return {
-      className: "border-green-900/45",
-      style: {
-        background: MATRIX_COMPLETED_PROJECT_BACKGROUND,
-        boxShadow: MATRIX_TIMELINE_COMPACT_CARD_COMPLETED_SHADOW,
-        outline: MATRIX_COMPLETED_PROJECT_OUTLINE,
-        outlineOffset: "-1px",
-      },
-    };
-  }
-
-  return {
-    className: cn(
-      "habit-card habit-card--completed habit-card--completed-gem",
-      getScheduleHabitTypeClass(habitType),
-      getCompletedHabitRowBorderClass(habitType)
-    ),
-    style: {
-      boxShadow: getCompletedHabitRowShadow(habitType),
-      outline: getCompletedHabitRowOutline(habitType),
-      outlineOffset: "-1px",
-    },
-  };
 }
 
 function mapPriority(priority: string | null | undefined): Goal["priority"] {
@@ -2053,8 +1970,6 @@ function MatrixEventRowCard({
   meta,
   status,
   completed = false,
-  completedVariant = "habit",
-  habitType,
   overdue = false,
   className,
   open = false,
@@ -2065,20 +1980,11 @@ function MatrixEventRowCard({
   meta: ReactNode;
   status?: string | null;
   completed?: boolean;
-  completedVariant?: "habit" | "project";
-  habitType?: string | null;
   overdue?: boolean;
   className?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const completedPresentation = completed
-    ? getCompletedMatrixRowPresentation({
-        variant: completedVariant,
-        habitType,
-      })
-    : null;
-
   return (
     <div
       role={onOpenChange ? "button" : undefined}
@@ -2095,59 +2001,57 @@ function MatrixEventRowCard({
           : undefined
       }
       className={cn(
-        "matrix-event-row-card group relative grid min-h-[3.75rem] w-full min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-stretch overflow-hidden rounded-lg border text-left text-white backdrop-blur transition-[filter,transform,border-color,box-shadow] duration-200 sm:grid-cols-[2.45rem_minmax(0,1fr)]",
-        completed ? null : className,
-        completedPresentation?.className,
+        "relative flex min-h-[56px] w-full min-w-0 select-none rounded-lg border px-3 py-1.5 text-left text-white transition-[filter,transform,border-color,box-shadow] duration-200 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+        completed
+          ? MATRIX_ROW_NEXUS_COMPLETED_CARD_CLASS
+          : className,
         onOpenChange
-          ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"
+          ? "cursor-pointer"
           : null,
-        open && !completed ? "border-black/80" : null,
         open ? "ring-1 ring-white/[0.08]" : null,
         overdue && !completed
           ? "outline-rose-300/[0.22] shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_18px_36px_rgba(56,16,24,0.26),inset_0_1px_0_rgba(255,255,255,0.09)]"
           : null
       )}
-      style={completedPresentation?.style}
+      style={completed ? getMatrixCompleteShimmerStyle() : undefined}
     >
-      <div className="relative z-[2] flex min-h-full items-center justify-center border-r border-white/[0.055] bg-black/15 px-1.5 text-white/72">
+      {completed ? (
         <span
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.07] px-1 text-center text-[11px] font-semibold leading-none text-white/86 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)] sm:size-8 sm:rounded-lg sm:text-xs",
-            completed
-              ? "!border-white/10 !bg-white/[0.055] !text-white/82 !shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]"
-              : null
-          )}
-        >
-          {glyph}
-        </span>
-      </div>
-      <div className="relative z-[2] flex min-w-0 flex-col justify-center gap-1 px-2.5 py-2 sm:px-3">
-        <div className="flex min-w-0 items-start gap-2">
+          className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+          aria-hidden="true"
+        />
+      ) : null}
+      <div className="relative z-[2] flex w-full min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
           <span
-            className={cn(
-              "line-clamp-2 min-w-0 flex-1 break-words text-[12px] font-semibold leading-snug tracking-wide sm:text-[13px]",
-              completed ? "normal-case text-white/92" : "uppercase text-white/88"
-            )}
-            title={title}
-            style={{ hyphens: "auto" }}
+            className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] p-0.5 text-center text-[15px] leading-none text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+            aria-hidden="true"
           >
-            {title}
-          </span>
-          {status && !completed ? (
-            <span
-              className={cn(
-                "mt-0.5 max-w-[42%] shrink-0 truncate rounded border border-white/[0.08] bg-white/[0.06] px-1.5 py-[3px] text-[7px] font-bold uppercase leading-none tracking-[0.12em] text-white/56 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:max-w-[36%]",
-                overdue
-                  ? "border-rose-200/[0.28] bg-rose-950/[0.30] text-rose-50/90"
-                  : null
-              )}
-            >
-              {status}
+            <span className="flex size-6 max-w-full items-center justify-center truncate">
+              {glyph}
             </span>
-          ) : null}
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52 sm:text-[10px]">
-          {meta}
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="block min-w-0 flex-1 line-clamp-2 break-words text-[13px] font-semibold leading-snug tracking-wide text-white">
+              {title}
+            </span>
+            <div className="flex min-w-0 items-center overflow-hidden whitespace-nowrap text-[7px] font-semibold uppercase leading-none tracking-[0.14em] text-white/60 md:text-[8px]">
+              {status && !completed ? (
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    overdue ? "text-rose-50/90" : null
+                  )}
+                >
+                  {status}
+                </span>
+              ) : null}
+              {status && !completed ? (
+                <span className="mx-1.5 text-white/28">/</span>
+              ) : null}
+              {meta}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2199,8 +2103,6 @@ function MatrixHabitCard({
         title={title}
         status={status}
         completed={isCompleted}
-        completedVariant="habit"
-        habitType={habitType}
         overdue={overdue}
         className={getHabitRowTypeClass(habitType)}
         meta={
@@ -2364,7 +2266,6 @@ function MatrixProjectCard({
         glyph={displayGlyph}
         title={goal.title}
         completed={completed}
-        completedVariant="project"
         status={completed ? "Completed" : null}
         open={open}
         onOpenChange={onOpenChange}
@@ -2639,7 +2540,11 @@ function ScheduledEventCard({
   event: MatrixEvent;
   open: boolean;
   onOpenChange(open: boolean): void;
-  onComplete(instanceId: string, nextStatus: ScheduleInstance["status"]): void;
+  onComplete(
+    instanceId: string,
+    nextStatus: ScheduleInstance["status"],
+    options?: MatrixScheduledCompletionOptions
+  ): void;
   density: MatrixCardDensity;
 }) {
   const fabCreation = useFabCreation();
@@ -2667,9 +2572,20 @@ function ScheduledEventCard({
   const completeEvent = useCallback(() => {
     if (event.routine) {
       const nextStatus = isCompleted ? "scheduled" : "completed";
+      let shouldFireCompletionHaptic = nextStatus === "completed";
+      let validInstanceCount = 0;
       for (const habit of event.routine.habits) {
         const instanceId = habit.sourceInstance?.id;
-        if (instanceId) onComplete(instanceId, nextStatus);
+        if (!instanceId) continue;
+
+        onComplete(instanceId, nextStatus, {
+          hapticOnComplete: shouldFireCompletionHaptic,
+        });
+        validInstanceCount += 1;
+        shouldFireCompletionHaptic = false;
+      }
+      if (validInstanceCount === 0) {
+        void hapticWarningPattern();
       }
       return;
     }
@@ -2877,7 +2793,10 @@ function ScheduledEventCard({
           (habit) => habit.id === habitId
         );
         const instanceId = routineHabit?.sourceInstance?.id;
-        if (!instanceId) return;
+        if (!instanceId) {
+          void hapticWarningPattern();
+          return;
+        }
 
         onComplete(instanceId, completed ? "scheduled" : "completed");
       }}
@@ -3189,8 +3108,6 @@ function MatrixRoutineCard({
             glyph={routineGlyph}
             title={routineName}
             completed={completed}
-            completedVariant="habit"
-            habitType={null}
             className={getHabitRowTypeClass(null)}
             meta={
               <span
@@ -3610,7 +3527,8 @@ function MatrixGridCarousel({
   matrixScope: MatrixScope;
   onCompleteScheduledEvent(
     instanceId: string,
-    nextStatus: ScheduleInstance["status"]
+    nextStatus: ScheduleInstance["status"],
+    options?: MatrixScheduledCompletionOptions
   ): void;
   onCompleteDueHabit(habitId: string, completedToday: boolean): void;
   completingDueHabitIds: Set<string>;
@@ -4505,6 +4423,7 @@ function MatrixContent() {
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
   const matrixStateRef = useRef<MatrixState>(initialState);
   const completingDueHabitIdsRef = useRef<Set<string>>(new Set());
+  const pendingScheduledCompletionIdsRef = useRef<Set<string>>(new Set());
   const matrixReorderHoldTimeoutsRef = useRef<
     Map<string, ReturnType<typeof setTimeout>>
   >(new Map());
@@ -4702,85 +4621,122 @@ function MatrixContent() {
   }, []);
 
   const commitScheduledEventCompletion = useCallback(
-    async (instanceId: string, nextStatus: ScheduleInstance["status"]) => {
-      if (!user?.id) return;
+    async (
+      instanceId: string,
+      nextStatus: ScheduleInstance["status"],
+      options?: MatrixScheduledCompletionOptions
+    ) => {
+      if (!user?.id) {
+        void hapticWarningPattern();
+        return false;
+      }
 
       const supabase = getSupabaseBrowser();
       if (!supabase) {
         console.error("Supabase client is not available.");
-        return;
+        void hapticWarningPattern();
+        return false;
       }
 
-      const { error } = await supabase
-        .from("schedule_instances")
-        .update({ status: nextStatus })
-        .eq("id", instanceId)
-        .eq("user_id", user.id);
-
-      if (error) {
-        console.error("Failed to toggle scheduled Matrix Event", error);
-        return;
+      if (pendingScheduledCompletionIdsRef.current.has(instanceId)) {
+        void hapticWarningPattern();
+        return false;
       }
+      pendingScheduledCompletionIdsRef.current.add(instanceId);
 
-      const heldItemIds = getScheduledCompletionHoldIds(instanceId);
-      if (nextStatus === "completed") {
-        holdMatrixReorderItems("scheduled", heldItemIds);
-      } else {
-        releaseMatrixReorderHold("scheduled", heldItemIds);
-      }
+      try {
+        const { error } = await supabase
+          .from("schedule_instances")
+          .update({ status: nextStatus })
+          .eq("id", instanceId)
+          .eq("user_id", user.id);
 
-      const updateScheduledEventGroups = (
-        groups: MonumentGroup<MatrixEvent>[]
-      ) =>
-        groups.map((group) => ({
-          ...group,
-          items: group.items.map((event) => {
-            const nextEvent =
-              event.instance.id === instanceId
-                ? {
-                    ...event,
-                    instance: {
-                      ...event.instance,
-                      status: nextStatus,
-                    },
-                  }
-                : event;
+        if (error) {
+          console.error("Failed to toggle scheduled Matrix Event", error);
+          void hapticErrorPattern();
+          return false;
+        }
 
-            if (!nextEvent.routine) return nextEvent;
+        const heldItemIds = getScheduledCompletionHoldIds(instanceId);
+        if (nextStatus === "completed") {
+          holdMatrixReorderItems("scheduled", heldItemIds);
+        } else {
+          releaseMatrixReorderHold("scheduled", heldItemIds);
+        }
 
-            const nextHabits = nextEvent.routine.habits.map((habit) => {
-              if (habit.sourceInstance?.id !== instanceId) return habit;
+        const updateScheduledEventGroups = (
+          groups: MonumentGroup<MatrixEvent>[]
+        ) =>
+          groups.map((group) => ({
+            ...group,
+            items: group.items.map((event) => {
+              const nextEvent =
+                event.instance.id === instanceId
+                  ? {
+                      ...event,
+                      instance: {
+                        ...event.instance,
+                        status: nextStatus,
+                      },
+                    }
+                  : event;
 
-              const sourceInstance = {
-                ...habit.sourceInstance,
-                status: nextStatus,
-              };
+              if (!nextEvent.routine) return nextEvent;
+
+              const nextHabits = nextEvent.routine.habits.map((habit) => {
+                if (habit.sourceInstance?.id !== instanceId) return habit;
+
+                const sourceInstance = {
+                  ...habit.sourceInstance,
+                  status: nextStatus,
+                };
+
+                return {
+                  ...habit,
+                  dueLabel: getMatrixScheduledHabitLabel(nextStatus),
+                  completed: nextStatus === "completed",
+                  sourceInstance,
+                };
+              });
 
               return {
-                ...habit,
-                dueLabel: getMatrixScheduledHabitLabel(nextStatus),
-                completed: nextStatus === "completed",
-                sourceInstance,
+                ...nextEvent,
+                routine: {
+                  ...nextEvent.routine,
+                  habits: nextHabits,
+                },
               };
-            });
+            }),
+          }));
 
-            return {
-              ...nextEvent,
-              routine: {
-                ...nextEvent.routine,
-                habits: nextHabits,
-              },
-            };
-          }),
+        setState((current) => ({
+          ...current,
+          eventGroups: updateScheduledEventGroups(current.eventGroups),
+          skillEventGroups: updateScheduledEventGroups(
+            current.skillEventGroups
+          ),
+          blockEventGroups: updateScheduledEventGroups(
+            current.blockEventGroups
+          ),
+          typeEventGroups: updateScheduledEventGroups(
+            current.typeEventGroups
+          ),
         }));
 
-      setState((current) => ({
-        ...current,
-        eventGroups: updateScheduledEventGroups(current.eventGroups),
-        skillEventGroups: updateScheduledEventGroups(current.skillEventGroups),
-        blockEventGroups: updateScheduledEventGroups(current.blockEventGroups),
-        typeEventGroups: updateScheduledEventGroups(current.typeEventGroups),
-      }));
+        if (
+          nextStatus === "completed" &&
+          options?.hapticOnComplete !== false
+        ) {
+          void hapticComplete();
+        }
+        return true;
+      } catch (error) {
+        console.error("Failed to toggle scheduled Matrix Event", error);
+        void hapticErrorPattern();
+        return false;
+      } finally {
+        pendingScheduledCompletionIdsRef.current.delete(instanceId);
+      }
     },
     [
       getScheduledCompletionHoldIds,
@@ -4888,7 +4844,11 @@ function MatrixContent() {
   );
 
   const handleCompleteScheduledEvent = useCallback(
-    (instanceId: string, nextStatus: ScheduleInstance["status"]) => {
+    (
+      instanceId: string,
+      nextStatus: ScheduleInstance["status"],
+      options?: MatrixScheduledCompletionOptions
+    ) => {
       const event = findMatrixEvent(instanceId);
       if (
         nextStatus === "completed" &&
@@ -4903,7 +4863,7 @@ function MatrixContent() {
         });
         return;
       }
-      void commitScheduledEventCompletion(instanceId, nextStatus);
+      void commitScheduledEventCompletion(instanceId, nextStatus, options);
     },
     [commitScheduledEventCompletion, findMatrixEvent]
   );
