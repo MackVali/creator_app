@@ -20,6 +20,7 @@ import type { Project, Task } from "../types";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
+import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 
 export type ProjectCardMorphOrigin = {
   x: number;
@@ -535,6 +536,7 @@ export function ProjectRow({
         timerRef.current = null;
         longPressTriggeredRef.current = true;
         skipClickRef.current = true;
+        void hapticLongPress();
         triggerBounce();
         openProjectEditor();
       }, LONG_PRESS_MS);

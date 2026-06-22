@@ -58,9 +58,13 @@ import type { CatRow } from "@/lib/types/cat";
 import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticLongPress,
   hapticPress,
   hapticSnap,
   hapticSoftTick,
+  hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
@@ -2637,9 +2641,11 @@ async function completeFocusPomoScheduleInstance(
         "FocusPomo failed to complete schedule instance",
         await response.text()
       );
+      void hapticErrorPattern();
     }
   } catch (error) {
     console.error("FocusPomo failed to complete schedule instance", error);
+    void hapticErrorPattern();
   }
 }
 
@@ -2700,6 +2706,7 @@ async function completeFocusPomoItem({
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       console.warn("FocusPomo could not complete project: Supabase unavailable");
+      void hapticErrorPattern();
       return;
     }
 
@@ -2710,6 +2717,7 @@ async function completeFocusPomoItem({
 
     if (userError || !user) {
       console.error("FocusPomo could not complete project: user unavailable", userError);
+      void hapticErrorPattern();
       return;
     }
 
@@ -2727,6 +2735,7 @@ async function completeFocusPomoItem({
 
     if (error) {
       console.error("FocusPomo failed to complete project", error);
+      void hapticErrorPattern();
       return;
     }
   } else {
@@ -2749,10 +2758,12 @@ async function completeFocusPomoItem({
           "FocusPomo failed to record habit completion",
           await response.text()
         );
+        void hapticErrorPattern();
         return;
       }
     } catch (error) {
       console.error("FocusPomo failed to record habit completion", error);
+      void hapticErrorPattern();
       return;
     }
   }
@@ -3162,6 +3173,7 @@ function SortableFocusQueueItem({
       longPressStartRef.current = null;
       longPressOriginRef.current = null;
 
+      void hapticLongPress();
       onLongPressEdit(element);
     }, FOCUS_QUEUE_LONG_PRESS_MS);
   };
@@ -5241,7 +5253,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const handleSkip = () => {
-    if (!currentItem) return;
+    if (!currentItem) {
+      void hapticWarningPattern();
+      return;
+    }
 
     const itemKey = getFocusPomoQueueItemKey(currentItem);
     const plannedMs = currentTimerDurationMs;
@@ -5285,10 +5300,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     }
 
     dismissCurrentQueueItem(currentItem);
+    void hapticSnap();
   };
 
   const handleComplete = () => {
-    if (!canCompleteCurrentRun || !currentItem) return;
+    if (!canCompleteCurrentRun || !currentItem) {
+      void hapticWarningPattern();
+      return;
+    }
 
     const itemKey = getFocusPomoQueueItemKey(currentItem);
     const plannedMs = currentTimerDurationMs;
@@ -5333,6 +5352,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     }
 
     dismissCurrentQueueItem(currentItem);
+    void hapticComplete();
 
     const completionRequest = completeFocusPomoItem({
       item: currentItem,
@@ -5343,6 +5363,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     void completionRequest
       .catch((error) => {
         console.error("FocusPomo failed to complete run-history session", error);
+        void hapticErrorPattern();
       })
       .finally(() => {
         completionRequestsRef.current.delete(sessionId);

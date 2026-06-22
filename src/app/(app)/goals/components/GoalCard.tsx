@@ -41,6 +41,7 @@ import {
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { ProjectQuickEditDialog } from "./ProjectQuickEditDialog";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
+import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 
 const energyAccent: Record<Goal["energy"], { dot: string; bar: string }> = {
   No: {
@@ -474,6 +475,7 @@ function GoalCardImpl({
     projectLongPressTimerRef.current = setTimeout(() => {
       projectLongPressTimerRef.current = null;
       projectLongPressTriggeredRef.current = true;
+      void hapticLongPress();
       if (isTasksOnlyCompactShell) {
         cancelCompactShellClick();
         openFirstProjectEditor();
@@ -520,6 +522,7 @@ function GoalCardImpl({
       goalLongPressTimerRef.current = setTimeout(() => {
         goalLongPressTimerRef.current = null;
         goalLongPressTriggeredRef.current = true;
+        void hapticLongPress();
         onGoalLongPressEdit(goal, goalLongPressElementRef.current);
       }, 520);
     },

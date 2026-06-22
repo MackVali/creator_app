@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import type { Skill } from "./useSkillsData";
 import type { SkillProgressData } from "./useSkillProgress";
 
@@ -167,6 +168,7 @@ export default function SkillRow({ skill, progress, onColor, onOpen }: Props) {
         }}
         onPointerDown={markOpening}
         onClick={() => {
+          void hapticPress();
           storeOpenPreview();
           onOpen(skill);
         }}
@@ -190,7 +192,10 @@ export default function SkillRow({ skill, progress, onColor, onOpen }: Props) {
         markOpening();
       }}
       onPointerDown={markOpening}
-      onClick={storeOpenPreview}
+      onClick={() => {
+        void hapticPress();
+        storeOpenPreview();
+      }}
       onDragStart={(e) => e.preventDefault()}
       style={{ color: onColor }}
     >

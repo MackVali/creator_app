@@ -21,6 +21,7 @@ import {
 } from "./ProjectRow";
 import type { Project, Task } from "../types";
 import { Progress } from "@/components/ui/Progress";
+import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 
 interface ProjectsDropdownProps {
   id: string;
@@ -324,6 +325,7 @@ function ProjectTasksOnlyRows({
   const openProjectEditor = useCallback(() => {
     taskLongPressTriggeredRef.current = true;
     const origin = buildTaskOrigin(taskOriginRef.current, project);
+    void hapticLongPress();
     onProjectLongPress?.(project, origin);
     taskOriginRef.current = null;
   }, [onProjectLongPress, project]);

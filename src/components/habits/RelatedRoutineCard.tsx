@@ -31,6 +31,7 @@ import { arrayMove, SortableContext, useSortable } from "@dnd-kit/sortable";
 import FlameEmber from "@/components/FlameEmber";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 
 export type RelatedRoutineCardHabit = {
   id: string;
@@ -1237,6 +1238,7 @@ export function RelatedRoutineCard({
           // Pointer capture can already be released by the browser.
         }
 
+        void hapticLongPress();
         fabCreation.requestEntityEdit({
           entityType: "HABIT",
           entityId: habit.id,

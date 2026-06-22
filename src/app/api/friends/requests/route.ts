@@ -3,13 +3,101 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { mapFriendRequest } from "@/lib/friends/mappers";
+import { sendPushToUser } from "@/lib/notifications/sendPush";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const profileSelect = "user_id, username, name, avatar_url";
+const PUSH_BODY_LIMIT = 120;
 
 function getDisplayName(profile?: { name?: string | null; username: string }) {
   const trimmed = profile?.name?.trim();
   return trimmed ? trimmed : profile?.username;
+}
+
+function truncatePushBody(body: string) {
+  if (body.length <= PUSH_BODY_LIMIT) {
+    return body;
+  }
+
+  return `${body.slice(0, PUSH_BODY_LIMIT - 3).trimEnd()}...`;
+}
+
+async function sendFriendRequestPush({
+  requestId,
+  timestamp,
+  requesterId,
+  targetId,
+  requesterDisplayName,
+  note,
+}: {
+  requestId: string;
+  timestamp?: string | null;
+  requesterId: string;
+  targetId: string;
+  requesterDisplayName: string;
+  note?: string | null;
+}) {
+  if (requesterId === targetId) {
+    return;
+  }
+
+  try {
+    const adminClient = createAdminClient();
+
+    if (!adminClient) {
+      console.warn("Friend request push skipped: admin client unavailable", {
+        requestId,
+      });
+      return;
+    }
+
+    const trimmedNote = note?.trim();
+    const body = truncatePushBody(
+      trimmedNote
+        ? `${requesterDisplayName}: ${trimmedNote}`
+        : `${requesterDisplayName} wants to connect.`,
+    );
+
+    const result = await sendPushToUser(
+      adminClient,
+      targetId,
+      {
+        notification: {
+          title: "New friend request",
+          body,
+        },
+        data: {
+          type: "friend_request",
+          requestId,
+          requesterId,
+          targetId,
+        },
+      },
+      {
+        delivery: {
+          kind: "friend_request",
+          entityType: "friend_request",
+          entityId: requestId,
+          scheduledFor: timestamp ?? new Date().toISOString(),
+          dedupe: true,
+        },
+      },
+    );
+
+    if (!result.ok) {
+      console.warn("Friend request push send incomplete", {
+        requestId,
+        skippedReason: result.skippedReason,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.warn("Friend request push failed", {
+      requestId,
+      error: error instanceof Error ? error.message : "Unknown push error",
+    });
+  }
 }
 
 const RequestSchema = z.object({
@@ -272,6 +360,21 @@ export async function POST(request: Request) {
         );
       }
 
+      void sendFriendRequestPush({
+        requestId: updated.id,
+        timestamp: updated.updated_at ?? updated.created_at,
+        requesterId: updated.requester_id,
+        targetId: updated.target_id,
+        requesterDisplayName:
+          updated.requester_display_name ?? updated.requester_username,
+        note: updated.note,
+      }).catch((error) => {
+        console.warn("Friend request push failed", {
+          requestId: updated.id,
+          error: error instanceof Error ? error.message : "Unknown push error",
+        });
+      });
+
       return NextResponse.json(
         { request: mapFriendRequest(updated, user.id) },
         { status: 200 }
@@ -395,6 +498,21 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  void sendFriendRequestPush({
+    requestId: inserted.id,
+    timestamp: inserted.created_at,
+    requesterId: inserted.requester_id,
+    targetId: inserted.target_id,
+    requesterDisplayName:
+      inserted.requester_display_name ?? inserted.requester_username,
+    note: inserted.note,
+  }).catch((error) => {
+    console.warn("Friend request push failed", {
+      requestId: inserted.id,
+      error: error instanceof Error ? error.message : "Unknown push error",
+    });
+  });
 
   return NextResponse.json(
     { request: mapFriendRequest(inserted, user.id) },

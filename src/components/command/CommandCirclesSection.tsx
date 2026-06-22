@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToastHelpers } from "@/components/ui/toast";
+import { hapticLongPress, hapticPress } from "@/lib/haptics/creatorHaptics";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
@@ -3747,6 +3748,7 @@ function CircleHabitsPanel({
         } catch {
           // Pointer capture can already be released by the browser.
         }
+        void hapticLongPress();
         onEditHabit(habit, element);
       }, CIRCLE_HABIT_LONG_PRESS_MS);
     },
@@ -4944,6 +4946,7 @@ export const CommandCirclesSection = forwardRef<
         return;
       }
 
+      void hapticPress();
       resetCircleDetailPageScroll();
 
       const appViewportRect = getCircleAppViewportRect();
