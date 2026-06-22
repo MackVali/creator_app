@@ -2,12 +2,30 @@
 
 import { RotateCcw } from "lucide-react";
 import { useToastHelpers } from "@/components/ui/toast";
+import {
+  hapticError,
+  hapticHeavyImpact,
+  hapticLightImpact,
+  hapticMediumImpact,
+  hapticSelectionChanged,
+  hapticSuccess,
+  hapticWarning,
+} from "@/lib/haptics/creatorHaptics";
 
 const buttonClass =
   "rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1] focus:outline-none focus:ring-2 focus:ring-white/30";
 
 export default function ToastTestPanel() {
   const toast = useToastHelpers();
+  const hapticTests = [
+    { label: "Light impact", action: hapticLightImpact },
+    { label: "Medium impact", action: hapticMediumImpact },
+    { label: "Heavy impact", action: hapticHeavyImpact },
+    { label: "Success notification", action: hapticSuccess },
+    { label: "Warning notification", action: hapticWarning },
+    { label: "Error notification", action: hapticError },
+    { label: "Selection changed", action: hapticSelectionChanged },
+  ];
 
   return (
     <main className="min-h-[calc(100vh-9rem)] bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
@@ -25,6 +43,36 @@ export default function ToastTestPanel() {
         </div>
 
         <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              Haptics
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-white/60">
+              Haptics only fire on supported native devices and may be silent in browser.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {hapticTests.map((test) => (
+              <button
+                key={test.label}
+                type="button"
+                className={buttonClass}
+                onClick={() => {
+                  void test.action();
+                }}
+              >
+                {test.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              Toasts
+            </h2>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
