@@ -75,6 +75,7 @@ import {
   type ScheduleInstance,
   type ScheduleContext,
 } from "@/lib/scheduler/instanceRepo";
+import { syncScheduleBlockLocalNotifications } from "@/lib/notifications/scheduleBlockLocalNotifications";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
 import { windowRectMinutes } from "@/lib/scheduler/windowRect";
@@ -4100,6 +4101,11 @@ export default function ScheduleTabContent({
       setHabits(payload.habits);
       setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
+      void syncScheduleBlockLocalNotifications(nextInstances).catch((error) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[schedule.local_notifications.sync_failed]", error);
+        }
+      });
       setAllInstances(nextInstances);
       setInstances(nextInstances);
       nextInstances.forEach((instance) => {
