@@ -9,8 +9,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { User, LogIn, Settings, LogOut, Inbox } from "lucide-react";
+import { User, LogIn, Settings, LogOut, Inbox, FlaskConical } from "lucide-react";
 import { signOut } from "@/lib/auth";
+import { userIsAdmin } from "@/lib/auth/userRoles";
 
 interface Profile {
   user_id: string;
@@ -46,6 +47,10 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
     router.push("/inbox");
   };
 
+  const handleTestClick = () => {
+    router.push("/test");
+  };
+
   const handleSignInClick = () => {
     router.push("/auth");
   };
@@ -69,6 +74,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const initials = getInitials(profile?.name || null, profile?.username || "U");
   const displayName = profile?.name?.trim() || profile?.username || "You";
   const handleTagline = profile?.username ? `@${profile.username}` : user?.email;
+  const isAdmin = userIsAdmin(user);
 
   return (
     <DropdownMenu>
@@ -143,6 +149,15 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                 <Inbox className="h-4 w-4 text-white/55" />
                 Inbox
               </DropdownMenuItem>
+              {isAdmin ? (
+                <DropdownMenuItem
+                  onClick={handleTestClick}
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
+                >
+                  <FlaskConical className="h-4 w-4 text-white/55" />
+                  Test
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem
                 onClick={handleSignOut}
                 className="mt-1 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border-t border-white/10 px-3 py-2.5 text-white/60 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
