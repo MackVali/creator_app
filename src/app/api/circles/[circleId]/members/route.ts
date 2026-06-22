@@ -1,11 +1,13 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
+import { sendPushToUser } from "@/lib/notifications/sendPush";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-const circleColumns = "id";
+const circleColumns = "id, name, circle_type";
 
 const memberColumns =
   "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
@@ -16,6 +18,8 @@ const allowedRoles = new Set(["MEMBER", "OPERATOR", "MANAGER", "VIEWER"]);
 
 type CircleRow = {
   id: string;
+  name: string | null;
+  circle_type: string | null;
 };
 
 type CircleMemberRole = "MEMBER" | "OPERATOR" | "MANAGER" | "VIEWER";
@@ -51,6 +55,17 @@ type CircleMemberParams = {
   }>;
 };
 
+type CircleInvitePushParams = {
+  memberId: string;
+  circleId: string;
+  circleName: string | null;
+  circleType: string | null;
+  invitedUserId: string;
+  invitedByUserId: string;
+  role: string;
+  timestamp: string;
+};
+
 async function getServerClient() {
   const cookieStore = await cookies();
   const supabase = getSupabaseServer(
@@ -78,6 +93,77 @@ function normalizeRole(value: unknown): CircleMemberRole | null {
   return allowedRoles.has(normalized)
     ? (normalized as CircleMemberRole)
     : null;
+}
+
+async function sendCircleInvitePush({
+  memberId,
+  circleId,
+  circleName,
+  circleType,
+  invitedUserId,
+  invitedByUserId,
+  role,
+  timestamp,
+}: CircleInvitePushParams) {
+  if (invitedUserId === invitedByUserId) {
+    return;
+  }
+
+  try {
+    const adminClient = createAdminClient();
+
+    if (!adminClient) {
+      console.warn("Circle invite push skipped: admin client unavailable", {
+        memberId,
+      });
+      return;
+    }
+
+    const trimmedCircleName = circleName?.trim() || null;
+    const result = await sendPushToUser(
+      adminClient,
+      invitedUserId,
+      {
+        notification: {
+          title: "Circle invite",
+          body: trimmedCircleName
+            ? `You were invited to ${trimmedCircleName}.`
+            : "You have a new Circle invite.",
+        },
+        data: {
+          type: "circle_invite",
+          memberId,
+          circleId,
+          circleName: trimmedCircleName,
+          circleType,
+          role,
+          invitedByUserId,
+        },
+      },
+      {
+        delivery: {
+          kind: "circle_invite",
+          entityType: "circle_member",
+          entityId: memberId,
+          scheduledFor: timestamp,
+          dedupe: true,
+        },
+      },
+    );
+
+    if (!result.ok) {
+      console.warn("Circle invite push send incomplete", {
+        memberId,
+        skippedReason: result.skippedReason,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.warn("Circle invite push failed", {
+      memberId,
+      error: error instanceof Error ? error.message : "Unknown push error",
+    });
+  }
 }
 
 export async function POST(
@@ -251,6 +337,24 @@ export async function POST(
       );
     }
 
+    after(() => {
+      void sendCircleInvitePush({
+        memberId: updatedMember.id,
+        circleId: updatedMember.circle_id,
+        circleName: circle.name,
+        circleType: circle.circle_type,
+        invitedUserId: updatedMember.user_id,
+        invitedByUserId: user.id,
+        role: updatedMember.role,
+        timestamp: updatedMember.updated_at ?? updatedMember.created_at,
+      }).catch((error) => {
+        console.warn("Circle invite push failed", {
+          memberId: updatedMember.id,
+          error: error instanceof Error ? error.message : "Unknown push error",
+        });
+      });
+    });
+
     return NextResponse.json(
       {
         member: {
@@ -299,6 +403,24 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  after(() => {
+    void sendCircleInvitePush({
+      memberId: member.id,
+      circleId: member.circle_id,
+      circleName: circle.name,
+      circleType: circle.circle_type,
+      invitedUserId: member.user_id,
+      invitedByUserId: user.id,
+      role: member.role,
+      timestamp: member.created_at,
+    }).catch((error) => {
+      console.warn("Circle invite push failed", {
+        memberId: member.id,
+        error: error instanceof Error ? error.message : "Unknown push error",
+      });
+    });
+  });
 
   return NextResponse.json(
     {
