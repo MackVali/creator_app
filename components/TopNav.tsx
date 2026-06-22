@@ -27,7 +27,7 @@ import {
   type NoteDatabaseEntry,
 } from "@/components/notes/NoteSlashTextarea";
 import { isScheduleRoute } from "@/components/appChromeVisibility";
-import { hapticPress } from "@/lib/haptics/creatorHaptics";
+import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import { getMonumentNote, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import { getNote, updateSkillNote } from "@/lib/notesStorage";
 
@@ -368,6 +368,7 @@ function QuickAddStatusDialog({
       aria-label="Database entry form"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
+          void hapticSnap();
           onClose();
         }
       }}
@@ -376,7 +377,10 @@ function QuickAddStatusDialog({
         <p className="text-sm font-medium text-white/68">{message}</p>
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => {
+            void hapticSnap();
+            onClose();
+          }}
           className="mt-1 inline-flex h-10 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.045] px-4 text-sm font-semibold text-white/68 outline-none transition hover:bg-white/[0.07] hover:text-white/86 focus-visible:ring-1 focus-visible:ring-white/24"
         >
           Close

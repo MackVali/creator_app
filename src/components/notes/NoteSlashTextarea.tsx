@@ -100,6 +100,13 @@ import {
   DEFAULT_NUTRITION_RECIPE_ICON,
   type NutritionMealDraft,
 } from "@/lib/nutrition/meals";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticSnap,
+  hapticSoftTick,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 
 type SlashCommandId =
   | "text"
@@ -4074,6 +4081,7 @@ function NoteDatabaseFieldEditSheet({
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
+        void hapticSnap();
         onClose();
       }
     }
@@ -4101,6 +4109,7 @@ function NoteDatabaseFieldEditSheet({
       }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
+          void hapticSnap();
           onClose();
         }
       }}
@@ -4119,7 +4128,10 @@ function NoteDatabaseFieldEditSheet({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              void hapticSnap();
+              onClose();
+            }}
             aria-label={`Close ${sheetTitle.toLowerCase()} sheet`}
             className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
           >
@@ -4171,6 +4183,7 @@ function NoteDatabaseFieldEditSheet({
                     aria-pressed={isSelected}
                     onClick={() => {
                       if (!isSelected) {
+                        void hapticSoftTick();
                         onFieldTypeChange(option.type);
                       }
                     }}
@@ -4231,14 +4244,20 @@ function NoteDatabaseFieldEditSheet({
           <div className="flex gap-2 border-t border-white/[0.04] p-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                void hapticSnap();
+                onClose();
+              }}
               className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
             >
               Cancel
             </button>
             <button
               type="button"
-              onClick={onConfirmCreate}
+              onClick={() => {
+                void hapticComplete();
+                onConfirmCreate?.();
+              }}
               className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24"
             >
               Add field
@@ -5571,10 +5590,12 @@ export function NoteDatabaseEntrySheet({
 
     const name = nutritionMealBuilderName.trim();
     if (!name) {
+      void hapticWarningPattern();
       setNutritionMealBuilderSaveError("Name this meal first.");
       return;
     }
     if (nutritionMealBuilderItems.length === 0) {
+      void hapticWarningPattern();
       setNutritionMealBuilderSaveError("Add at least one food or recipe.");
       return;
     }
@@ -5590,8 +5611,10 @@ export function NoteDatabaseEntrySheet({
       });
       closeNutritionMealBuilder();
       await refreshNutritionMealTemplates();
+      void hapticComplete();
     } catch (error) {
       console.error("Failed to create reusable nutrition meal", { error });
+      void hapticErrorPattern();
       setNutritionMealBuilderSaveError("Unable to save this meal right now.");
     } finally {
       setIsNutritionMealBuilderSaving(false);
@@ -5603,10 +5626,12 @@ export function NoteDatabaseEntrySheet({
 
     const name = nutritionRecipeBuilderName.trim();
     if (!name) {
+      void hapticWarningPattern();
       setNutritionRecipeBuilderSaveError("Name this recipe first.");
       return;
     }
     if (nutritionRecipeBuilderItems.length === 0) {
+      void hapticWarningPattern();
       setNutritionRecipeBuilderSaveError("Add at least one food.");
       return;
     }
@@ -5622,8 +5647,10 @@ export function NoteDatabaseEntrySheet({
       });
       closeNutritionRecipeBuilder();
       await refreshNutritionRecipes();
+      void hapticComplete();
     } catch (error) {
       console.error("Failed to create nutrition recipe", { error });
+      void hapticErrorPattern();
       setNutritionRecipeBuilderSaveError("Unable to save this recipe right now.");
     } finally {
       setIsNutritionRecipeBuilderSaving(false);
@@ -5635,6 +5662,7 @@ export function NoteDatabaseEntrySheet({
 
     const normalizedBarcode = normalizeFoodBarcode(barcodeValue);
     if (!normalizedBarcode) {
+      void hapticWarningPattern();
       setNutritionBarcodeLookupStatus("Enter a barcode.");
       setNutritionBarcodeLookupError(null);
       return;
@@ -5681,6 +5709,7 @@ export function NoteDatabaseEntrySheet({
       setNutritionBarcodeLookupStatus(messageByStatus[payload.status]);
     } catch (error) {
       console.error("Failed to look up nutrition barcode", { error });
+      void hapticErrorPattern();
       setNutritionBarcodeLookupError("Barcode lookup is unavailable right now.");
     } finally {
       setIsNutritionBarcodeLookupLoading(false);
@@ -5697,9 +5726,13 @@ export function NoteDatabaseEntrySheet({
     try {
       const result: NutritionBarcodeScannerResult = await scanNutritionBarcode();
 
-      if (result.status === "cancelled") return;
+      if (result.status === "cancelled") {
+        void hapticSnap();
+        return;
+      }
 
       if (result.status !== "scanned") {
+        void hapticWarningPattern();
         setNutritionBarcodeLookupStatus(result.message);
         return;
       }
@@ -7492,15 +7525,18 @@ export function NoteDatabaseEntrySheet({
             entryId: nextEntry.id,
           });
           await onSaveEntry(nextEntry);
+          void hapticErrorPattern();
           setSubmitError("Saved note entry, but the meal record could not be created.");
           return;
         }
       }
 
       await onSaveEntry(entryToSave);
+      void hapticComplete();
       onClose();
     } catch (error) {
       console.error("Failed to save database entry", { error, databaseId: databaseDefinition.id });
+      void hapticErrorPattern();
       setSubmitError("Unable to save entry right now.");
     } finally {
       setIsSubmitting(false);
@@ -7515,6 +7551,7 @@ export function NoteDatabaseEntrySheet({
       aria-labelledby="note-database-entry-form-title"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
+          void hapticSnap();
           onClose();
         }
       }}
@@ -7530,7 +7567,10 @@ export function NoteDatabaseEntrySheet({
           <button
             type="button"
             aria-label="Close entry form"
-            onClick={onClose}
+            onClick={() => {
+              void hapticSnap();
+              onClose();
+            }}
             className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
           >
             <X className="h-4 w-4" />
@@ -7591,7 +7631,10 @@ export function NoteDatabaseEntrySheet({
         <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              void hapticSnap();
+              onClose();
+            }}
             disabled={isSubmitting}
             className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:text-white/28"
           >
@@ -7822,6 +7865,7 @@ export function NoteDatabaseFocusedView({
   }
 
   function toggleDatabaseBodyPin() {
+    void hapticSoftTick();
     updateDatabaseDefinition((currentDefinition) => {
       if (currentDefinition.pinnedSurface === "body") {
         const nextDefinition = { ...currentDefinition };
@@ -7837,6 +7881,10 @@ export function NoteDatabaseFocusedView({
   }
 
   function updateDatabaseActiveView(viewType: NoteDatabaseViewType) {
+    if (activeDatabaseView.type !== viewType) {
+      void hapticSoftTick();
+    }
+
     updateDatabaseDefinition((currentDefinition) => {
       const activeView = currentDefinition.views?.find((view) => view.type === viewType);
       return {
@@ -8003,7 +8051,10 @@ export function NoteDatabaseFocusedView({
         <div className="flex h-6 items-center gap-1.5">
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => {
+              void hapticSnap();
+              onBack();
+            }}
             aria-label="Back"
             className="-ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.055] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24"
           >
@@ -8034,6 +8085,7 @@ export function NoteDatabaseFocusedView({
 
     setIsBuilderOpen(false);
     await onDeleteDatabase?.();
+    void hapticComplete();
   }
 
   return (
@@ -8041,7 +8093,10 @@ export function NoteDatabaseFocusedView({
       <div className="flex h-6 items-center gap-1.5">
         <button
           type="button"
-          onClick={onBack}
+          onClick={() => {
+            void hapticSnap();
+            onBack();
+          }}
           aria-label="Back"
           className="-ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.055] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24"
         >
@@ -8215,6 +8270,7 @@ export function NoteDatabaseFocusedView({
           aria-label={`Database builder for ${displayTitle}`}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
+              void hapticSnap();
               setIsBuilderOpen(false);
             }
           }}
@@ -8231,7 +8287,10 @@ export function NoteDatabaseFocusedView({
               <button
                 type="button"
                 aria-label="Close database builder"
-                onClick={() => setIsBuilderOpen(false)}
+                onClick={() => {
+                  void hapticSnap();
+                  setIsBuilderOpen(false);
+                }}
                 className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
               >
                 <X className="h-4 w-4" />
@@ -9360,6 +9419,7 @@ function NoteSlashTextarea({
         nextEntry,
       ],
     });
+    void hapticComplete();
     closeDatabaseEntrySheet();
   }
 
@@ -9373,6 +9433,7 @@ function NoteSlashTextarea({
   }
 
   function toggleDatabaseBodyPin(databaseId: string) {
+    void hapticSoftTick();
     updateDatabaseDefinition(databaseId, (currentDefinition) => {
       if (currentDefinition.pinnedSurface === "body") {
         const nextDefinition = { ...currentDefinition };
@@ -9439,6 +9500,14 @@ function NoteSlashTextarea({
   }
 
   function updateDatabaseActiveView(databaseId: string, viewType: NoteDatabaseViewType) {
+    const currentViewType =
+      normalizedDatabaseDefinitions[databaseId]?.views?.find(
+        (view) => view.id === normalizedDatabaseDefinitions[databaseId]?.activeViewId,
+      )?.type ?? NOTE_DATABASE_VIEW_TYPES[0];
+    if (currentViewType !== viewType) {
+      void hapticSoftTick();
+    }
+
     updateDatabaseDefinition(databaseId, (currentDefinition) => {
       const activeView = currentDefinition.views?.find((view) => view.type === viewType);
       return {
@@ -10117,6 +10186,7 @@ function NoteSlashTextarea({
           aria-labelledby="note-inline-database-entry-form-title"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
+              void hapticSnap();
               closeDatabaseEntrySheet();
             }
           }}
@@ -10132,7 +10202,10 @@ function NoteSlashTextarea({
               <button
                 type="button"
                 aria-label="Close entry form"
-                onClick={closeDatabaseEntrySheet}
+                onClick={() => {
+                  void hapticSnap();
+                  closeDatabaseEntrySheet();
+                }}
                 className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
               >
                 <X className="h-4 w-4" />
@@ -10249,7 +10322,10 @@ function NoteSlashTextarea({
             <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
               <button
                 type="button"
-                onClick={closeDatabaseEntrySheet}
+                onClick={() => {
+                  void hapticSnap();
+                  closeDatabaseEntrySheet();
+                }}
                 className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
               >
                 Cancel
@@ -10275,6 +10351,7 @@ function NoteSlashTextarea({
           aria-label={`Database builder for ${getDatabaseDisplayTitle(activeDatabaseDefinition.title)}`}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
+              void hapticSnap();
               setActiveDatabaseId(null);
             }
           }}
@@ -10291,7 +10368,10 @@ function NoteSlashTextarea({
               <button
                 type="button"
                 aria-label="Close database builder"
-                onClick={() => setActiveDatabaseId(null)}
+                onClick={() => {
+                  void hapticSnap();
+                  setActiveDatabaseId(null);
+                }}
                 className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
               >
                 <X className="h-4 w-4" />

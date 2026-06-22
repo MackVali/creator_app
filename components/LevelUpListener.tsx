@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { useProfileContext } from "@/components/ProfileProvider";
 import { useToastHelpers } from "@/components/ui/toast";
+import { hapticLevelUp } from "@/lib/haptics/creatorHaptics";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type DarkXpEvent = {
@@ -74,6 +75,7 @@ export default function LevelUpListener() {
             `${skillName} leveled up!`,
             `Now level ${event.new_skill_level}`
           );
+          void hapticLevelUp();
         }
       );
 

@@ -15,7 +15,11 @@ import {
 import type { DragEndEvent } from "@dnd-kit/core";
 import { Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { hapticSnap, hapticSoftTick } from "@/lib/haptics/creatorHaptics";
+import {
+  hapticLevelUp,
+  hapticSnap,
+  hapticSoftTick,
+} from "@/lib/haptics/creatorHaptics";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
@@ -3911,6 +3915,7 @@ export function MonumentGoalsList({
         }
 
         setGoals((prev) => prev.map(applyCompletedStatus));
+        void hapticLevelUp();
         setRoadmapOpenGoal((current) =>
           current?.id === goal.id ? applyCompletedStatus(current) : current
         );
