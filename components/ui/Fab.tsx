@@ -118,6 +118,7 @@ import {
   LimitReachedError,
   getLimitCodeFromError,
 } from "@/lib/goals/persistGoalUpdate";
+import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
@@ -3533,6 +3534,7 @@ export function Fab({
     setAiLoading(false);
   }, []);
   const closeAiOverlay = useCallback(() => {
+    void hapticPress();
     resetAiHelperState();
     setAiOpen(false);
   }, [resetAiHelperState]);
@@ -8542,6 +8544,7 @@ export function Fab({
     overlayPickerSelected,
   );
   const handleAddFromNexusClick = () => {
+    void hapticPress();
     setSearchQuery("");
     setOverlayFilterMonumentId("");
     setOverlayFilterSkillId("");
@@ -8594,6 +8597,7 @@ export function Fab({
   };
 
   const handleOverlayPickerClose = () => {
+    void hapticPress();
     setOverlayPickerOpen(false);
   };
 
@@ -14657,6 +14661,7 @@ export function Fab({
   }, []);
 
   const handleFabButtonClick = () => {
+    void hapticPress();
     if (!isOpen) {
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
@@ -20037,7 +20042,10 @@ export function Fab({
           >
             <div
               className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
-              onClick={() => setOverlayOpen(false)}
+              onClick={() => {
+                void hapticPress();
+                setOverlayOpen(false);
+              }}
             />
             <motion.div
               initial={{ opacity: 0 }}
@@ -20565,7 +20573,10 @@ export function Fab({
                   size="iconSquare"
                   haptic={false}
                   className="h-11 w-11 shrink-0 transform-none touch-manipulation bg-transparent p-0 text-white transition-none hover:scale-100 hover:bg-transparent active:translate-y-0 focus-visible:ring-2 focus-visible:ring-red-400/65 focus-visible:ring-offset-0"
-                  onClick={() => setOverlayOpen(false)}
+                  onClick={() => {
+                    void hapticPress();
+                    setOverlayOpen(false);
+                  }}
                 >
                   <span
                     className="btn-3d btn-3d--red flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-gradient-to-b from-red-500 to-red-700 text-white shadow-[0_6px_14px_rgba(0,0,0,0.28),0_2px_6px_rgba(0,0,0,0.22)]"
@@ -20989,7 +21000,10 @@ function ProposalTimelineCard({
           </p>
           <button
             type="button"
-            onClick={() => setDetailsOpen((prev) => !prev)}
+            onClick={() => {
+              void hapticSnap();
+              setDetailsOpen((prev) => !prev);
+            }}
             className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:text-white"
           >
             {detailsOpen ? "Hide details" : "Edit details"}
@@ -22748,7 +22762,10 @@ function FabNexus({
                 aria-expanded={embeddedAdjustOpen}
                 aria-controls={embeddedAdjustControlsId}
                 title="Toggle Nexus filters"
-                onClick={() => setEmbeddedAdjustOpen((prev) => !prev)}
+                onClick={() => {
+                  void hapticSnap();
+                  setEmbeddedAdjustOpen((prev) => !prev);
+                }}
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60",
                   (embeddedAdjustOpen || hasActiveFilter) &&
@@ -22765,7 +22782,10 @@ function FabNexus({
                   }
                   aria-expanded={embeddedExpanded}
                   title={embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"}
-                  onClick={() => onEmbeddedExpandedChange(!embeddedExpanded)}
+                  onClick={() => {
+                    void hapticSnap();
+                    onEmbeddedExpandedChange(!embeddedExpanded);
+                  }}
                   className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
                 >
                   {embeddedExpanded ? (
@@ -22785,7 +22805,10 @@ function FabNexus({
                   aria-expanded={popupAdjustOpen}
                   aria-controls="fab-nexus-adjust-controls"
                   title="Toggle Nexus adjustments"
-                  onClick={() => setPopupAdjustOpen((prev) => !prev)}
+                  onClick={() => {
+                    void hapticSnap();
+                    setPopupAdjustOpen((prev) => !prev);
+                  }}
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60",
                     popupAdjustOpen && "border-white/25 bg-white/10 text-white",
@@ -22799,7 +22822,10 @@ function FabNexus({
                 aria-label={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
                 aria-expanded={popupExpanded}
                 title={popupExpanded ? "Collapse Nexus" : "Expand Nexus"}
-                onClick={() => onPopupExpandedChange(!popupExpanded)}
+                onClick={() => {
+                  void hapticSnap();
+                  onPopupExpandedChange(!popupExpanded);
+                }}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
               >
                 {popupExpanded ? (
@@ -22814,7 +22840,10 @@ function FabNexus({
               type="button"
               aria-label="Toggle Nexus filters"
               aria-expanded={showControls}
-              onClick={() => setShowControls((prev) => !prev)}
+              onClick={() => {
+                void hapticSnap();
+                setShowControls((prev) => !prev);
+              }}
               className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
             >
               <Filter className="h-4 w-4" />

@@ -12,6 +12,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { User, LogIn, Settings, LogOut, Inbox, FlaskConical } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { userIsAdmin } from "@/lib/auth/userRoles";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 
 interface Profile {
   user_id: string;
@@ -30,6 +31,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const { user } = useAuth();
 
   const handleProfileClick = () => {
+    void hapticPress();
     if (user) {
       router.push(profile?.username ? `/profile/${profile.username}` : "/profile");
     } else {
@@ -39,23 +41,28 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
 
   const handleEditProfileClick = () => {
     if (userId) {
+      void hapticPress();
       router.push("/profile/edit");
     }
   };
 
   const handleInboxClick = () => {
+    void hapticPress();
     router.push("/inbox");
   };
 
   const handleTestClick = () => {
+    void hapticPress();
     router.push("/test");
   };
 
   const handleSignInClick = () => {
+    void hapticPress();
     router.push("/auth");
   };
 
   const handleSignOut = async () => {
+    void hapticPress();
     await signOut();
   };
 
@@ -82,6 +89,9 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
         <button
           className="h-8 w-8 rounded-full overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
           data-testid="topnav-avatar"
+          onClick={() => {
+            void hapticPress();
+          }}
         >
           <Avatar className="h-8 w-8">
             {profile?.avatar_url ? (
