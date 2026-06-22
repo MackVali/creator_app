@@ -3,6 +3,12 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticSnap,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 
 type ThreadMessage = {
   id: string;
@@ -135,6 +141,7 @@ export default function InboxThreadPage() {
   }, [messages.length]);
 
   const handleBackToInbox = useCallback(() => {
+    void hapticSnap();
     try {
       sessionStorage.setItem(INBOX_REFRESH_REQUEST_KEY, "1");
     } catch {
@@ -157,8 +164,12 @@ export default function InboxThreadPage() {
     const submittedComposerValue = composerValue;
     const composerEditVersionAtSubmit = composerEditVersionRef.current;
     const trimmed = composerValue.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      void hapticWarningPattern();
+      return;
+    }
     if (!participant?.username || !participant?.userId || !currentUserId) {
+      void hapticWarningPattern();
       setSendError("Unable to send a message right now.");
       return;
     }
@@ -222,9 +233,11 @@ export default function InboxThreadPage() {
             : message
         )
       );
+      void hapticComplete();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unable to send message.";
+      void hapticErrorPattern();
       setSendError(message);
       setMessages((prev) =>
         prev.filter((message) => message.id !== optimisticId)

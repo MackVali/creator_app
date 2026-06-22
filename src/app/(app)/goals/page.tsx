@@ -33,6 +33,7 @@ import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import { hapticLevelUp } from "@/lib/haptics/creatorHaptics";
 import {
   addGoalToCampaign,
   listGoalCampaignCards,
@@ -1508,6 +1509,7 @@ export default function GoalsPage() {
     }
 
     await recordGoalCompletionEvent(goal.id, completedAt);
+    void hapticLevelUp();
 
     updateGoal({
       ...goal,

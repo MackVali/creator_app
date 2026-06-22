@@ -1,3 +1,4 @@
+import type { SendResponse } from "firebase-admin/messaging";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getCreatorFirebaseMessaging } from "@/lib/notifications/firebaseAdmin";
@@ -40,6 +41,8 @@ type PushTokenRow = {
 type DeliveryOptions = NonNullable<SendPushOptions["delivery"]>;
 
 const DEFAULT_TOKEN_LIMIT = 10;
+const MAX_FIREBASE_ERROR_LENGTH = 500;
+const MAX_FIREBASE_ERROR_PART_LENGTH = 160;
 
 function normalizeData(data: Record<string, unknown> | undefined) {
   const normalized: Record<string, string> = {
@@ -56,6 +59,43 @@ function normalizeData(data: Record<string, unknown> | undefined) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown push send error";
+}
+
+function truncateError(value: string, maxLength: number) {
+  return value.length <= maxLength ? value : value.slice(0, maxLength - 3).trimEnd() + "...";
+}
+
+function compactFirebaseError(response: SendResponse) {
+  const code = response.error?.code?.trim();
+
+  if (code) {
+    return code;
+  }
+
+  const message = response.error?.message?.replace(/\s+/g, " ").trim();
+  return message ? truncateError(message, MAX_FIREBASE_ERROR_PART_LENGTH) : null;
+}
+
+function collectFirebaseFailureErrors(responses: SendResponse[]) {
+  const errors = responses.reduce<string[]>((accumulator, response) => {
+    if (response.success) {
+      return accumulator;
+    }
+
+    const error = compactFirebaseError(response);
+
+    if (error && !accumulator.includes(error)) {
+      accumulator.push(error);
+    }
+
+    return accumulator;
+  }, []);
+
+  if (errors.length === 0) {
+    return "Unknown Firebase send error";
+  }
+
+  return truncateError(errors.join("; "), MAX_FIREBASE_ERROR_LENGTH);
 }
 
 function isUniqueConstraintError(error: { code?: string } | null) {
@@ -289,11 +329,15 @@ export async function sendPushToUser(
       },
     });
 
+    const firebaseError =
+      result.failureCount > 0 ? collectFirebaseFailureErrors(result.responses) : undefined;
+
     return maybeLogDelivery(supabase, userId, delivery, {
       ok: result.failureCount === 0,
       attemptedCount: tokenValues.length,
       successCount: result.successCount,
       failureCount: result.failureCount,
+      error: firebaseError,
     }, true, claimedDeliveryId);
   } catch (error) {
     return maybeLogDelivery(supabase, userId, delivery, {

@@ -29,6 +29,13 @@ import {
   Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticSnap,
+  hapticSoftTick,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 
 const FALLBACK_TIMEZONES = [
   "UTC",
@@ -231,6 +238,7 @@ export default function SettingsPage() {
     setPreferenceError(null);
     const previousValue = notifications;
     const nextValue = !notifications;
+    void hapticSoftTick();
     setNotifications(nextValue);
     setSavingPreference((prev) => ({ ...prev, notifications: true }));
 
@@ -240,6 +248,7 @@ export default function SettingsPage() {
 
     if (error) {
       console.error("Failed to update notifications preference:", error);
+      void hapticErrorPattern();
       setNotifications(previousValue);
       setPreferenceError("We couldn't save your preferences. Please try again.");
     } else {
@@ -255,6 +264,7 @@ export default function SettingsPage() {
 
     setPreferenceError(null);
     const previousValue = timezone;
+    void hapticSoftTick();
     setTimezone(nextTimezone);
     setSavingTimezone(true);
 
@@ -264,6 +274,7 @@ export default function SettingsPage() {
 
     if (timezoneError) {
       console.error("Failed to update timezone preference:", timezoneError);
+      void hapticErrorPattern();
       setTimezone(previousValue);
       setPreferenceError("We couldn't save your preferences. Please try again.");
     } else {
@@ -290,6 +301,7 @@ export default function SettingsPage() {
 
   const closeDeleteDialog = () => {
     if (deletingAccount) return;
+    void hapticSnap();
     setDeleteDialogOpen(false);
     setDeleteConfirmation("");
     setDeleteError(null);
@@ -297,6 +309,7 @@ export default function SettingsPage() {
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmation !== "DELETE" || deletingAccount) {
+      void hapticWarningPattern();
       return;
     }
 
@@ -315,17 +328,20 @@ export default function SettingsPage() {
       const result = await response.json().catch(() => null);
 
       if (!response.ok || !result?.success) {
+        void hapticErrorPattern();
         setDeleteError(result?.error || "We couldn't delete your account. Please try again.");
         setDeletingAccount(false);
         return;
       }
 
+      void hapticComplete();
       const supabase = getSupabaseBrowser();
       await supabase?.auth.signOut().catch(() => undefined);
       router.replace("/auth");
       router.refresh();
     } catch (error) {
       console.error("Failed to delete account:", error);
+      void hapticErrorPattern();
       setDeleteError("We couldn't delete your account. Please try again.");
       setDeletingAccount(false);
     }
@@ -458,7 +474,10 @@ export default function SettingsPage() {
             title="Dark mode"
             description={isDarkTheme ? "Current theme: Dark" : "Current theme: Light"}
             checked={isDarkTheme}
-            onChange={toggleTheme}
+            onChange={() => {
+              void hapticSoftTick();
+              toggleTheme();
+            }}
             ariaLabel="Toggle theme"
           />
           <SettingsToggleRow
@@ -523,7 +542,10 @@ export default function SettingsPage() {
           <button
             type="button"
             aria-label="Go back to dashboard"
-            onClick={() => router.push("/dashboard")}
+            onClick={() => {
+              void hapticSnap();
+              router.push("/dashboard");
+            }}
             className="inline-flex h-9 w-9 items-center justify-center text-[var(--text)] transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
           >
             <span aria-hidden="true" className="text-3xl font-light leading-none">

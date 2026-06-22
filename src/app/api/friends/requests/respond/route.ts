@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { mapFriendRequest } from "@/lib/friends/mappers";
@@ -289,16 +289,18 @@ export async function POST(request: Request) {
     }
   }
 
-  void sendFriendRequestAcceptedPush({
-    requestId: updated.id,
-    timestamp: updated.responded_at ?? now,
-    requesterId: updated.requester_id,
-    targetId: updated.target_id,
-    targetDisplayName,
-  }).catch((error) => {
-    console.warn("Friend request accepted push failed", {
+  after(() => {
+    void sendFriendRequestAcceptedPush({
       requestId: updated.id,
-      error: error instanceof Error ? error.message : "Unknown push error",
+      timestamp: updated.responded_at ?? now,
+      requesterId: updated.requester_id,
+      targetId: updated.target_id,
+      targetDisplayName,
+    }).catch((error) => {
+      console.warn("Friend request accepted push failed", {
+        requestId: updated.id,
+        error: error instanceof Error ? error.message : "Unknown push error",
+      });
     });
   });
 

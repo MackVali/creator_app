@@ -9,6 +9,12 @@ import type { DiscoveryProfile, Friend } from "@/types/friends";
 import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 import { readNativeContactsForImport } from "@/lib/friends/nativeContacts";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticSnap,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 
 type SearchFriendsProps = {
   data: Friend[];
@@ -354,6 +360,7 @@ export default function SearchFriends({
           if (!response.ok) {
             const message = payload?.error ?? "Unable to follow right now.";
             updateStatus("idle");
+            void hapticErrorPattern();
             setFollowError(message);
             return;
           }
@@ -361,9 +368,11 @@ export default function SearchFriends({
           updateStatus("following");
           setFollowError(null);
           await onRequestResolved?.();
+          void hapticComplete();
         } catch (error) {
           console.error("Failed to follow user", error);
           updateStatus("idle");
+          void hapticErrorPattern();
           setFollowError(
             error instanceof Error ? error.message : "Unable to follow right now."
           );
@@ -385,16 +394,19 @@ export default function SearchFriends({
         const nativeContacts = await readNativeContactsForImport();
 
         if (nativeContacts.status === "unsupported") {
+          void hapticWarningPattern();
           setImportError(nativeContacts.message);
           return;
         }
 
         if (nativeContacts.status === "denied") {
+          void hapticWarningPattern();
           setImportError(nativeContacts.message);
           return;
         }
 
         if (nativeContacts.status === "empty") {
+          void hapticWarningPattern();
           setImportNotice(nativeContacts.message);
           return;
         }
@@ -439,8 +451,10 @@ export default function SearchFriends({
               } ready to invite.`
             : "No contacts found on CREATOR yet."
         );
+        void hapticComplete();
       } catch (error) {
         console.error("Contact import failed", error);
+        void hapticErrorPattern();
         setImportError(
           error instanceof Error ? error.message : "Unable to import contacts."
         );
@@ -472,6 +486,7 @@ export default function SearchFriends({
             url: inviteUrl,
           });
           setImportNotice(`Invite ready for ${contact.name}.`);
+          void hapticComplete();
           return;
         }
 
@@ -481,16 +496,20 @@ export default function SearchFriends({
         ) {
           await navigator.clipboard.writeText(inviteText);
           setImportNotice("Invite link copied.");
+          void hapticComplete();
           return;
         }
 
+        void hapticWarningPattern();
         setImportError("Sharing is not supported on this device.");
       } catch (error) {
         if ((error as DOMException)?.name === "AbortError") {
+          void hapticSnap();
           return;
         }
 
         console.error("Failed to invite contact", error);
+        void hapticErrorPattern();
         setImportError(
           error instanceof Error ? error.message : "Unable to invite right now."
         );
@@ -504,6 +523,7 @@ export default function SearchFriends({
     event.preventDefault();
     const value = inviteEmail.trim();
     if (!value || !value.includes("@")) {
+      void hapticWarningPattern();
       setInviteError("Enter an email so we know where to send the invite.");
       setInviteSuccess(false);
       return;
@@ -529,9 +549,11 @@ export default function SearchFriends({
 
         setInviteSuccess(true);
         setInviteEmail("");
+        void hapticComplete();
       })
       .catch((error) => {
         console.error("Failed to send invite", error);
+        void hapticErrorPattern();
         setInviteError(
           error instanceof Error ? error.message : "Unable to send invite."
         );

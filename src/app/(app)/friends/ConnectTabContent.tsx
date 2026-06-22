@@ -32,7 +32,13 @@ import {
 import { ArrowRight, Check, ChevronDown, Search } from 'lucide-react';
 import { userHasAppManagerAccess } from '@/lib/auth/userRoles';
 import { useProfile } from '@/lib/hooks/useProfile';
-import { hapticSnap, hapticSoftTick } from '@/lib/haptics/creatorHaptics';
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticSnap,
+  hapticSoftTick,
+  hapticWarningPattern,
+} from '@/lib/haptics/creatorHaptics';
 
 type ConnectTab = 'friends' | 'search' | 'requests' | 'circles';
 type ConnectTabItem = RelationshipView | 'requests' | 'circles';
@@ -235,6 +241,7 @@ export default function ConnectTabContent() {
       const trimmedName = newCircleName.trim();
 
       if (!canCreateCircle) {
+        void hapticWarningPattern();
         setCreateCircleError(
           'CREATOR Manager access is required to create a Circle.'
         );
@@ -242,6 +249,7 @@ export default function ConnectTabContent() {
       }
 
       if (!trimmedName) {
+        void hapticWarningPattern();
         setCreateCircleError('Circle name is required.');
         return;
       }
@@ -276,12 +284,14 @@ export default function ConnectTabContent() {
         setNewCircleType('CUSTOM');
         setShowCreateCircleForm(false);
         await refreshCircles();
+        void hapticComplete();
       } catch (err) {
         if (!isMountedRef.current) {
           return;
         }
         const message =
           err instanceof Error ? err.message : 'Unable to create circle.';
+        void hapticErrorPattern();
         setCreateCircleError(message);
       } finally {
         if (isMountedRef.current) {
@@ -523,6 +533,7 @@ export default function ConnectTabContent() {
           refreshFriends(),
           ...(canCreateCircle ? [refreshCircles()] : []),
         ]);
+        void hapticComplete();
       } catch (err) {
         if (!isMountedRef.current) {
           return;
@@ -531,6 +542,7 @@ export default function ConnectTabContent() {
           err instanceof Error
             ? err.message
             : 'Unable to respond to Circle invite.';
+        void hapticErrorPattern();
         setCircleInvitesError(message);
       } finally {
         if (isMountedRef.current) {
@@ -1039,6 +1051,9 @@ export default function ConnectTabContent() {
                   <Select
                     value={newCircleType}
                     onValueChange={(value) => {
+                      if (value !== newCircleType) {
+                        void hapticSoftTick();
+                      }
                       setNewCircleType(value as CircleType);
                       setCreateCircleError(null);
                     }}

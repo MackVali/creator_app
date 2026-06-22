@@ -11,6 +11,7 @@ import type {
   ContactImportStatus,
 } from "@/types/friends";
 import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
+import { hapticComplete, hapticErrorPattern } from "@/lib/haptics/creatorHaptics";
 
 const actionButtonClass =
   "rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
@@ -128,8 +129,10 @@ export default function RequestsInvites({
         prev.map((req) => (req.id === id ? { ...req, status } : req))
       );
       await onRequestResolved?.();
+      void hapticComplete();
     } catch (error) {
       console.error("Failed to respond to request", error);
+      void hapticErrorPattern();
     }
   };
 
@@ -155,8 +158,10 @@ export default function RequestsInvites({
       setInviteState((prev) =>
         prev.map((invite) => (invite.id === id ? payload.invite : invite))
       );
+      void hapticComplete();
     } catch (error) {
       console.error("Failed to cancel invite", error);
+      void hapticErrorPattern();
     } finally {
       setPendingInviteId(null);
     }
@@ -184,8 +189,10 @@ export default function RequestsInvites({
       setInviteState((prev) =>
         prev.map((invite) => (invite.id === id ? payload.invite : invite))
       );
+      void hapticComplete();
     } catch (error) {
       console.error("Failed to resend invite", error);
+      void hapticErrorPattern();
     } finally {
       setPendingInviteId(null);
     }
@@ -226,8 +233,10 @@ export default function RequestsInvites({
         )
       );
       await onRequestResolved?.();
+      void hapticComplete();
     } catch (error) {
       console.error("Failed to follow suggested profile", error);
+      void hapticErrorPattern();
       setSuggestionState((prev) =>
         prev.map((item) =>
           item.id === suggestion.id ? { ...item, status: "idle" } : item

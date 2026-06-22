@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { mapFriendRequest } from "@/lib/friends/mappers";
@@ -360,18 +360,20 @@ export async function POST(request: Request) {
         );
       }
 
-      void sendFriendRequestPush({
-        requestId: updated.id,
-        timestamp: updated.updated_at ?? updated.created_at,
-        requesterId: updated.requester_id,
-        targetId: updated.target_id,
-        requesterDisplayName:
-          updated.requester_display_name ?? updated.requester_username,
-        note: updated.note,
-      }).catch((error) => {
-        console.warn("Friend request push failed", {
+      after(() => {
+        void sendFriendRequestPush({
           requestId: updated.id,
-          error: error instanceof Error ? error.message : "Unknown push error",
+          timestamp: updated.updated_at ?? updated.created_at,
+          requesterId: updated.requester_id,
+          targetId: updated.target_id,
+          requesterDisplayName:
+            updated.requester_display_name ?? updated.requester_username,
+          note: updated.note,
+        }).catch((error) => {
+          console.warn("Friend request push failed", {
+            requestId: updated.id,
+            error: error instanceof Error ? error.message : "Unknown push error",
+          });
         });
       });
 
@@ -499,18 +501,20 @@ export async function POST(request: Request) {
     );
   }
 
-  void sendFriendRequestPush({
-    requestId: inserted.id,
-    timestamp: inserted.created_at,
-    requesterId: inserted.requester_id,
-    targetId: inserted.target_id,
-    requesterDisplayName:
-      inserted.requester_display_name ?? inserted.requester_username,
-    note: inserted.note,
-  }).catch((error) => {
-    console.warn("Friend request push failed", {
+  after(() => {
+    void sendFriendRequestPush({
       requestId: inserted.id,
-      error: error instanceof Error ? error.message : "Unknown push error",
+      timestamp: inserted.created_at,
+      requesterId: inserted.requester_id,
+      targetId: inserted.target_id,
+      requesterDisplayName:
+        inserted.requester_display_name ?? inserted.requester_username,
+      note: inserted.note,
+    }).catch((error) => {
+      console.warn("Friend request push failed", {
+        requestId: inserted.id,
+        error: error instanceof Error ? error.message : "Unknown push error",
+      });
     });
   });
 

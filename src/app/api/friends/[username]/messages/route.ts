@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { sendPushToUser } from "@/lib/notifications/sendPush";
@@ -190,14 +190,16 @@ export async function POST(
       );
     }
 
-    void sendFriendMessagePush({
-      body,
-      createdAt: data.created_at,
-      messageId: data.id,
-      recipientId,
-      senderId,
-    }).catch((error) => {
-      console.warn("[friend_messages] Push send failed", error);
+    after(() => {
+      void sendFriendMessagePush({
+        body,
+        createdAt: data.created_at,
+        messageId: data.id,
+        recipientId,
+        senderId,
+      }).catch((error) => {
+        console.warn("[friend_messages] Push send failed", error);
+      });
     });
 
     return NextResponse.json({
