@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import type { ProductCheckoutResponse } from "@/types/checkout";
 
 import type { AppCartItem } from "./AppCartProvider";
@@ -86,6 +87,9 @@ export function AppCartQuickView({
         <button
           type="button"
           aria-label={`Open cart quick-view${itemCount > 0 ? ` with ${itemCount} items` : ""}`}
+          onClick={() => {
+            void hapticPress();
+          }}
           className={`relative inline-flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11 ${
             itemCount > 0
               ? "border-white/25 bg-black/60 text-white shadow-[0_12px_32px_rgba(0,0,0,0.45)] hover:border-white/45 hover:bg-black/75"
@@ -151,7 +155,10 @@ export function AppCartQuickView({
         <div className="border-t border-white/10 p-3">
           <button
             type="button"
-            onClick={onCheckout}
+            onClick={() => {
+              void hapticPress();
+              onCheckout();
+            }}
             disabled={cartItems.length === 0 || isCheckoutDisabled}
             className="inline-flex w-full items-center justify-center rounded-xl border border-white/30 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-white/60 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:border-white/15 disabled:text-white/40"
           >
@@ -159,7 +166,10 @@ export function AppCartQuickView({
           </button>
           <button
             type="button"
-            onClick={onClearCart}
+            onClick={() => {
+              void hapticPress();
+              onClearCart();
+            }}
             disabled={cartItems.length === 0}
             className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-transparent px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/55 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
           >

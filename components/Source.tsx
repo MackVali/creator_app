@@ -61,6 +61,7 @@ import {
 import {
   PRODUCT_ORDER_FULFILLMENT_STATUSES,
 } from "@/types/source"
+import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics"
 import type {
   IntegrationsResponse,
   ListingsResponse,
@@ -2695,6 +2696,7 @@ export default function Source() {
 
   const handleProductDetailSheetOpenChange = (next: boolean) => {
     if (!next) {
+      void hapticSnap()
       setSelectedProductId(null)
       setProductDetailError(null)
       setIsProductDetailSubmitting(false)
@@ -2782,6 +2784,7 @@ export default function Source() {
 
   const handleServiceDetailSheetOpenChange = (next: boolean) => {
     if (!next) {
+      void hapticSnap()
       setSelectedServiceId(null)
       setServiceDetailError(null)
       setIsServiceDetailSubmitting(false)
@@ -2856,9 +2859,11 @@ export default function Source() {
 
   const handleProductCardClick = (listing: SourceListing) => {
     if (selectedProductId === listing.id) {
+      void hapticPress()
       setSelectedProductId(null)
       return
     }
+    void hapticPress()
     setIsProductSheetOpen(false)
     setProductDetailError(null)
     setSelectedProductId(listing.id)
@@ -2866,9 +2871,11 @@ export default function Source() {
 
   const handleServiceCardClick = (listing: SourceListing) => {
     if (selectedServiceId === listing.id) {
+      void hapticPress()
       setSelectedServiceId(null)
       return
     }
+    void hapticPress()
     setIsServiceSheetOpen(false)
     setServiceDetailError(null)
     setSelectedServiceId(listing.id)
@@ -4100,7 +4107,10 @@ export default function Source() {
               })}
               <button
                 type="button"
-                onClick={() => handleServiceSheetOpenChange(true)}
+                onClick={() => {
+                  void hapticPress()
+                  handleServiceSheetOpenChange(true)
+                }}
                 className="group flex min-h-[178px] transform-gpu flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.07),transparent_46%),linear-gradient(145deg,rgba(4,4,5,0.98)_0%,rgba(10,10,12,0.98)_58%,rgba(18,18,22,0.88)_100%)] px-3 py-5 text-center text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500 shadow-[0_14px_30px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-px hover:border-white/20 hover:text-zinc-300 hover:shadow-[0_18px_36px_-28px_rgba(255,255,255,0.16),0_12px_28px_-22px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] active:translate-y-px active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
               >
                 <span className="flex size-9 items-center justify-center rounded-full border border-white/10 bg-black/25 text-zinc-400 transition group-hover:border-white/20 group-hover:text-zinc-200">
@@ -4129,7 +4139,10 @@ export default function Source() {
             })}
             <button
               type="button"
-              onClick={() => handleProductSheetOpenChange(true)}
+              onClick={() => {
+                void hapticPress()
+                handleProductSheetOpenChange(true)
+              }}
               className="group flex min-h-[178px] transform-gpu flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.07),transparent_46%),linear-gradient(145deg,rgba(4,4,5,0.98)_0%,rgba(10,10,12,0.98)_58%,rgba(18,18,22,0.88)_100%)] px-3 py-5 text-center text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500 shadow-[0_14px_30px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-px hover:border-white/20 hover:text-zinc-300 hover:shadow-[0_18px_36px_-28px_rgba(255,255,255,0.16),0_12px_28px_-22px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] active:translate-y-px active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
             >
               <span className="flex size-9 items-center justify-center rounded-full border border-white/10 bg-black/25 text-zinc-400 transition group-hover:border-white/20 group-hover:text-zinc-200">

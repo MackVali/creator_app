@@ -35,6 +35,9 @@ export default function ToastTestPanel() {
     { label: "Selection changed", action: hapticSelectionChanged },
   ];
   const hapticRecipeTests = [
+    // Rollout language: press = navigation/opening; snap = panel/tab/drawer transitions;
+    // softTick = lightweight selection; longPress = hold recognized; complete = completion/reward;
+    // levelUp = major reward; warning/error = blocked or failed action.
     { label: "Press", action: hapticPress },
     { label: "Soft tick", action: hapticSoftTick },
     { label: "Snap", action: hapticSnap },

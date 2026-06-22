@@ -60,6 +60,7 @@ import {
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
@@ -6671,6 +6672,7 @@ export default function ScheduleTabContent({
 
   const closeInlineJumpToDate = useCallback(async () => {
     if (!isInlineJumpToDateOpen) return;
+    void hapticSnap();
     await animateInlineJumpClosed();
   }, [animateInlineJumpClosed, isInlineJumpToDateOpen]);
 
@@ -6690,6 +6692,7 @@ export default function ScheduleTabContent({
       }
     }
 
+    void hapticSnap();
     void animateInlineJumpOpen({ source: "button" });
   }, [
     animateInlineJumpOpen,
@@ -10000,7 +10003,10 @@ export default function ScheduleTabContent({
           onBack={handleBack}
           onToday={handleToday}
           onOpenJumpToDate={openInlineJumpToDateFromButton}
-          onOpenSearch={() => setIsSearchOpen(true)}
+          onOpenSearch={() => {
+            void hapticPress();
+            setIsSearchOpen(true);
+          }}
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
           isRescheduling={isScheduling}
@@ -10187,7 +10193,10 @@ export default function ScheduleTabContent({
       />
       <JumpToDateSheet
         open={isJumpToDateOpen}
-        onOpenChange={(open) => setIsJumpToDateOpen(open)}
+        onOpenChange={(open) => {
+          void hapticSnap();
+          setIsJumpToDateOpen(open);
+        }}
         currentDate={currentDate}
         timeZone={effectiveTimeZone}
         onSelectDate={handleJumpToDateSelect}
@@ -10195,7 +10204,10 @@ export default function ScheduleTabContent({
       />
       <ScheduleSearchSheet
         open={isSearchOpen}
-        onOpenChange={(open) => setIsSearchOpen(open)}
+        onOpenChange={(open) => {
+          void hapticSnap();
+          setIsSearchOpen(open);
+        }}
         instances={instances}
         taskMap={taskMap}
         projectMap={projectMap}
@@ -10203,7 +10215,10 @@ export default function ScheduleTabContent({
       />
       <SchedulerModeSheet
         open={isModeSheetOpen}
-        onOpenChange={setIsModeSheetOpen}
+        onOpenChange={(open) => {
+          void hapticSnap();
+          setIsModeSheetOpen(open);
+        }}
         modeType={modeType}
         onModeTypeChange={handleModeTypeChange}
         monumentId={modeMonumentId}

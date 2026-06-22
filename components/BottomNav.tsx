@@ -13,6 +13,7 @@ import {
 import { CLOSE_ACTIVE_COMMAND_CIRCLE_DETAIL_EVENT } from "@/components/command/events";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import { CLOSE_ACTIVE_SKILL_DETAIL_EVENT } from "@/components/skills/events";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import {
   MAIN_TAB_ROUTES,
   isPersistentMainTabRoute,
@@ -116,6 +117,7 @@ export default function BottomNav() {
                 (href === "/schedule" && pathname.startsWith("/schedule/"))
               }
               onNavigate={(href) => {
+                void hapticPress();
                 const targetHref = href as MainTabRouteHref;
                 const skillDetailOverlayOpen = isSkillDetailOverlayOpen();
 

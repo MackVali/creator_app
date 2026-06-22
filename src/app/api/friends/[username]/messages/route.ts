@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { sendPushToUser } from "@/lib/notifications/sendPush";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const PUSH_BODY_MAX_LENGTH = 120;
 
 const sendMessageSchema = z.object({
   body: z
@@ -12,6 +16,93 @@ const sendMessageSchema = z.object({
   senderId: z.string().min(1, "Missing sender"),
   recipientId: z.string().min(1, "Missing recipient"),
 });
+
+function truncatePushBody(body: string) {
+  if (body.length <= PUSH_BODY_MAX_LENGTH) {
+    return body;
+  }
+
+  return `${body.slice(0, PUSH_BODY_MAX_LENGTH - 3).trimEnd()}...`;
+}
+
+function resolveDisplayName(profile: { name: string | null; username: string | null } | null) {
+  return profile?.name?.trim() || profile?.username?.trim() || "New message";
+}
+
+async function sendFriendMessagePush({
+  body,
+  createdAt,
+  messageId,
+  recipientId,
+  senderId,
+}: {
+  body: string;
+  createdAt: string;
+  messageId: string;
+  recipientId: string;
+  senderId: string;
+}) {
+  if (recipientId === senderId) {
+    return;
+  }
+
+  try {
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      console.warn("[friend_messages] Push skipped: admin client unavailable");
+      return;
+    }
+
+    const { data: senderProfile, error: profileError } = await adminClient
+      .from("profiles")
+      .select("name, username")
+      .eq("user_id", senderId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.warn("[friend_messages] Sender profile lookup failed", profileError.message);
+    }
+
+    const result = await sendPushToUser(
+      adminClient,
+      recipientId,
+      {
+        notification: {
+          title: resolveDisplayName(senderProfile ?? null),
+          body: truncatePushBody(body),
+        },
+        data: {
+          type: "friend_message",
+          messageId,
+          senderId,
+          recipientId,
+          threadUserId: senderId,
+          createdAt,
+        },
+      },
+      {
+        delivery: {
+          kind: "friend_message",
+          entityType: "friend_message",
+          entityId: messageId,
+          scheduledFor: createdAt,
+          dedupe: true,
+        },
+      },
+    );
+
+    if (!result.ok) {
+      console.warn("[friend_messages] Push send failed", {
+        messageId,
+        recipientId,
+        skippedReason: result.skippedReason,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.warn("[friend_messages] Push send failed", error);
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -98,6 +189,16 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    void sendFriendMessagePush({
+      body,
+      createdAt: data.created_at,
+      messageId: data.id,
+      recipientId,
+      senderId,
+    }).catch((error) => {
+      console.warn("[friend_messages] Push send failed", error);
+    });
 
     return NextResponse.json({
       success: true,

@@ -32,6 +32,7 @@ import {
 import { ArrowRight, Check, ChevronDown, Search } from 'lucide-react';
 import { userHasAppManagerAccess } from '@/lib/auth/userRoles';
 import { useProfile } from '@/lib/hooks/useProfile';
+import { hapticSnap, hapticSoftTick } from '@/lib/haptics/creatorHaptics';
 
 type ConnectTab = 'friends' | 'search' | 'requests' | 'circles';
 type ConnectTabItem = RelationshipView | 'requests' | 'circles';
@@ -769,6 +770,9 @@ export default function ConnectTabContent() {
                 id={`${view}-tab`}
                 role="tab"
                 onClick={() => {
+                  if (!isSelected) {
+                    void hapticSoftTick();
+                  }
                   setFriendsView(view);
                   setTab('friends');
                 }}
@@ -791,7 +795,12 @@ export default function ConnectTabContent() {
             ref={requestsTabRef}
             id="requests-tab"
             role="tab"
-            onClick={() => setTab('requests')}
+            onClick={() => {
+              if (tab !== 'requests') {
+                void hapticSoftTick();
+              }
+              setTab('requests');
+            }}
             onKeyDown={handleKeyDown}
             type="button"
             aria-selected={tab === 'requests'}
@@ -809,7 +818,12 @@ export default function ConnectTabContent() {
             ref={circlesTabRef}
             id="circles-tab"
             role="tab"
-            onClick={() => setTab('circles')}
+            onClick={() => {
+              if (tab !== 'circles') {
+                void hapticSoftTick();
+              }
+              setTab('circles');
+            }}
             onKeyDown={handleKeyDown}
             type="button"
             aria-selected={tab === 'circles'}
@@ -949,6 +963,7 @@ export default function ConnectTabContent() {
               <button
                 type="button"
                 onClick={() => {
+                  void hapticSnap();
                   setShowCreateCircleForm((current) => !current);
                   setCreateCircleError(null);
                 }}
@@ -1061,6 +1076,7 @@ export default function ConnectTabContent() {
                   <button
                     type="button"
                     onClick={() => {
+                      void hapticSnap();
                       setShowCreateCircleForm(false);
                       setCreateCircleError(null);
                       setNewCircleName('');

@@ -27,6 +27,7 @@ import {
   type NoteDatabaseEntry,
 } from "@/components/notes/NoteSlashTextarea";
 import { isScheduleRoute } from "@/components/appChromeVisibility";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import { getMonumentNote, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import { getNote, updateSkillNote } from "@/lib/notesStorage";
 
@@ -232,6 +233,7 @@ function BodyPanelAddEntryButton({
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
+        void hapticPress();
         onClick();
       }}
       className="mr-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-400 text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-zinc-300 active:bg-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60"
@@ -691,6 +693,7 @@ export default function TopNav() {
           label: database.title,
           iconKey: database.iconKey,
           onClick: () => {
+            void hapticPress();
             setIsBodyMenuOpen(false);
             router.push(database.href);
           },
@@ -770,6 +773,9 @@ export default function TopNav() {
               <button
                 className="h-11 w-11 p-2 hover:text-gray-200 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 [-webkit-tap-highlight-color:transparent]"
                 aria-label="Open menu"
+                onClick={() => {
+                  void hapticPress();
+                }}
               >
                 <Menu className="h-6 w-6" />
               </button>
@@ -784,6 +790,9 @@ export default function TopNav() {
                   href="/schedule/priorities"
                   prefetch
                   className="text-[var(--muted)]"
+                  onClick={() => {
+                    void hapticPress();
+                  }}
                   onFocus={prefetchPriorityEditor}
                   onMouseEnter={prefetchPriorityEditor}
                 >
@@ -791,23 +800,56 @@ export default function TopNav() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/focus-pomo" className="text-[var(--muted)]">
+                <Link
+                  href="/focus-pomo"
+                  className="text-[var(--muted)]"
+                  onClick={() => {
+                    void hapticPress();
+                  }}
+                >
                   FocusPomo
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/schedule/matrix" className="text-[var(--muted)]">
+                <Link
+                  href="/schedule/matrix"
+                  className="text-[var(--muted)]"
+                  onClick={() => {
+                    void hapticPress();
+                  }}
+                >
                   Matrix
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/analytics">Analytics</Link>
+                <Link
+                  href="/analytics"
+                  onClick={() => {
+                    void hapticPress();
+                  }}
+                >
+                  Analytics
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/settings">Settings</Link>
+                <Link
+                  href="/settings"
+                  onClick={() => {
+                    void hapticPress();
+                  }}
+                >
+                  Settings
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/help">Help</Link>
+                <Link
+                  href="/help"
+                  onClick={() => {
+                    void hapticPress();
+                  }}
+                >
+                  Help
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -818,7 +860,10 @@ export default function TopNav() {
             aria-label="Open body intake panel"
             aria-expanded={isBodyMenuOpen}
             aria-controls="body-intake-panel"
-            onClick={() => setIsBodyMenuOpen((open) => !open)}
+            onClick={() => {
+              void hapticPress();
+              setIsBodyMenuOpen((open) => !open);
+            }}
           >
             <Icon icon="game-icons:stomach" className="h-5 w-5 text-zinc-500" aria-hidden="true" />
           </button>

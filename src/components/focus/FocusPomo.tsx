@@ -57,6 +57,11 @@ import { getSkillsForUser } from "@/lib/queries/skills";
 import type { CatRow } from "@/lib/types/cat";
 import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import {
+  hapticPress,
+  hapticSnap,
+  hapticSoftTick,
+} from "@/lib/haptics/creatorHaptics";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 
@@ -4840,11 +4845,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   }
 
   const handleClose = () => {
+    void hapticPress();
     setIsRunning(false);
     onClose();
   };
 
   const handleModeChange = (nextMode: FocusPomoMode) => {
+    if (nextMode !== mode) {
+      void hapticSoftTick();
+    }
     setMode(nextMode);
     setIsRunning(false);
     setElapsedMs(0);
@@ -4901,6 +4910,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const toggleScopeEditor = () => {
+    void hapticSnap();
     if (scopeOpen) {
       setDraftSelectedMonumentIds(selectedMonumentIds);
       setDraftSelectedSkillIds(selectedSkillIds);
@@ -5918,9 +5928,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             {earlierRunResultsCount > 0 ? (
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setIsRunLogExpanded((current) => !current)
-                                }
+                                onClick={() => {
+                                  void hapticSnap();
+                                  setIsRunLogExpanded((current) => !current);
+                                }}
                                 aria-expanded={isRunLogExpanded}
                                 className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
                               >
@@ -6233,9 +6244,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         <div className="border-t border-black/40 bg-black/25 px-2.5 py-2 sm:px-3 sm:py-3">
                           <button
                             type="button"
-                            onClick={() =>
-                              setIsQueueExpanded((current) => !current)
-                            }
+                            onClick={() => {
+                              void hapticSnap();
+                              setIsQueueExpanded((current) => !current);
+                            }}
                             aria-expanded={isQueueExpanded}
                             aria-controls={queueListId}
                             className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.03] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
