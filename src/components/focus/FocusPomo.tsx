@@ -226,6 +226,16 @@ function formatSignedTimerMs(totalMs: number): string {
   return `${sign}${paddedMinutes}:${paddedSeconds}.${paddedCentiseconds}`;
 }
 
+function formatElapsedTimerMs(totalMs: number): string {
+  const safeMs = Number.isFinite(totalMs) ? Math.max(totalMs, 0) : 0;
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const seconds = totalSeconds % 60;
+  const minutes = Math.floor(totalSeconds / 60);
+  const paddedSeconds = String(seconds).padStart(2, "0");
+
+  return `${minutes}:${paddedSeconds}`;
+}
+
 function clampTimerRingProgress(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(Math.max(value, 0), 1);
@@ -3611,6 +3621,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     itemKey: string | null;
     durationMs: number;
   } | null>(null);
+  const preserveRunningTimerItemRef = useRef<{
+    itemKey: string | null;
+    durationMs: number;
+  } | null>(null);
   const timerStartedAtMsRef = useRef(0);
   const timerBaseElapsedMsRef = useRef(0);
   const timerBaseRemainingMsRef = useRef(0);
@@ -4455,12 +4469,20 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const currentRoutineDisplay = getItemRoutineDisplay(currentItem);
   const currentMetaDisplay =
     currentItem?.kind === "project" ? currentGoalDisplay : currentRoutineDisplay;
-  const resetTimerToDuration = (durationMs: number) => {
-    elapsedMsRef.current = 0;
-    remainingMsRef.current = durationMs;
-    setElapsedMs(0);
-    setRemainingMs(durationMs);
-  };
+  const resetTimerToDuration = useCallback(
+    (durationMs: number, options?: { rebaseRunningTimer?: boolean }) => {
+      elapsedMsRef.current = 0;
+      remainingMsRef.current = durationMs;
+      if (options?.rebaseRunningTimer) {
+        timerStartedAtMsRef.current = Date.now();
+        timerBaseElapsedMsRef.current = 0;
+        timerBaseRemainingMsRef.current = durationMs;
+      }
+      setElapsedMs(0);
+      setRemainingMs(durationMs);
+    },
+    []
+  );
   const handleUndoRunHistorySession = (session: FocusPomoRunResult) => {
     const restoredItemKey = getFocusPomoQueueItemKey(session.item);
     const nextRunHistory = runHistory.filter((result) => result.id !== session.id);
@@ -4525,6 +4547,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       session.energyCode,
       session.energyLabel
     );
+    const elapsedLabel =
+      session.actualMs !== null ? formatElapsedTimerMs(session.actualMs) : null;
+    const elapsedClassName =
+      session.resultTone === "under"
+        ? "ml-auto inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-green-900/45 bg-green-950/25 px-2 font-mono text-[10px] font-semibold tabular-nums tracking-normal text-emerald-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:h-8 sm:rounded-lg sm:px-2.5 sm:text-[11px]"
+        : "ml-auto inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-orange-900/40 bg-orange-950/18 px-2 font-mono text-[10px] font-semibold tabular-nums tracking-normal text-orange-200/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:rounded-lg sm:px-2.5 sm:text-[11px]";
     const rowClassName =
       variant === "latest"
         ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.03] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:px-3 sm:py-2.5"
@@ -4588,8 +4616,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
             {metadataLine}
           </span>
         </span>
+        {elapsedLabel ? (
+          <span
+            className={elapsedClassName}
+            title={`Elapsed ${elapsedLabel}`}
+            aria-label={`Elapsed ${elapsedLabel}`}
+          >
+            {elapsedLabel}
+          </span>
+        ) : null}
         {hasEnergy ? (
-          <span className="ml-auto flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
+          <span className="flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
             <FlameEmber
               level={energyLevel}
               size="sm"
@@ -4699,10 +4736,24 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     if (previousActiveIndex === activeIndex) return;
 
-    setIsRunning(false);
-    setElapsedMs(0);
-    setRemainingMs(currentTimerDurationMs);
-  }, [activeIndex, currentTimerDurationMs]);
+    const shouldPreserveRunning =
+      isRunning &&
+      preserveRunningTimerItemRef.current?.itemKey === currentItemTimerKey &&
+      preserveRunningTimerItemRef.current.durationMs === currentTimerDurationMs;
+
+    if (!shouldPreserveRunning) {
+      setIsRunning(false);
+    }
+    resetTimerToDuration(currentTimerDurationMs, {
+      rebaseRunningTimer: shouldPreserveRunning,
+    });
+  }, [
+    activeIndex,
+    currentItemTimerKey,
+    currentTimerDurationMs,
+    isRunning,
+    resetTimerToDuration,
+  ]);
 
   useEffect(() => {
     const previousTimerItem = previousTimerItemRef.current;
@@ -4718,12 +4769,27 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     if (!timerItemChanged) return;
 
-    if (isRunning) {
+    const shouldPreserveRunning =
+      isRunning &&
+      preserveRunningTimerItemRef.current?.itemKey === currentItemTimerKey &&
+      preserveRunningTimerItemRef.current.durationMs === currentTimerDurationMs;
+
+    if (isRunning && !shouldPreserveRunning) {
       setIsRunning(false);
     }
-    setElapsedMs(0);
-    setRemainingMs(currentTimerDurationMs);
-  }, [currentItemTimerKey, currentTimerDurationMs, isRunning]);
+    resetTimerToDuration(currentTimerDurationMs, {
+      rebaseRunningTimer: shouldPreserveRunning,
+    });
+
+    if (shouldPreserveRunning) {
+      preserveRunningTimerItemRef.current = null;
+    }
+  }, [
+    currentItemTimerKey,
+    currentTimerDurationMs,
+    isRunning,
+    resetTimerToDuration,
+  ]);
 
   useEffect(() => {
     elapsedMsRef.current = elapsedMs;
@@ -5026,7 +5092,30 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     resetTimerToDuration(currentTimerDurationMs);
   };
 
-  const getNextPendingItemIndex = (dismissedItemKey: string) => {
+  const getCurrentElapsedMsSnapshot = () => {
+    if (!isRunning) {
+      if (mode === "stopwatch") return elapsedMsRef.current;
+
+      const effectiveRemainingMs = timerMatchesCurrentItem
+        ? remainingMsRef.current
+        : currentTimerDurationMs;
+
+      return currentTimerDurationMs - effectiveRemainingMs;
+    }
+
+    const elapsedSinceStartMs = Date.now() - timerStartedAtMsRef.current;
+
+    if (mode === "stopwatch") {
+      return timerBaseElapsedMsRef.current + elapsedSinceStartMs;
+    }
+
+    return (
+      currentTimerDurationMs -
+      (timerBaseRemainingMsRef.current - elapsedSinceStartMs)
+    );
+  };
+
+  const getNextPendingItem = (dismissedItemKey: string) => {
     const dismissedItemIndex =
       sortedQueueIndexByKey.get(dismissedItemKey) ?? activeIndex;
     const isPendingCandidate = (item: FocusPomoQueueItem) => {
@@ -5039,9 +5128,16 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         (item, index) => index > dismissedItemIndex && isPendingCandidate(item)
       ) ?? sortedQueue.find(isPendingCandidate);
 
-    return nextItem
-      ? (sortedQueueIndexByKey.get(getFocusPomoQueueItemKey(nextItem)) ?? 0)
-      : 0;
+    if (!nextItem) return null;
+
+    return {
+      item: nextItem,
+      index: sortedQueueIndexByKey.get(getFocusPomoQueueItemKey(nextItem)) ?? 0,
+    };
+  };
+
+  const getNextPendingItemIndex = (dismissedItemKey: string) => {
+    return getNextPendingItem(dismissedItemKey)?.index ?? 0;
   };
 
   const dismissCurrentQueueItem = (item: FocusPomoQueueItem) => {
@@ -5137,6 +5233,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const handleSkip = () => {
     if (!currentItem) return;
 
+    const itemKey = getFocusPomoQueueItemKey(currentItem);
+    const plannedMs = currentTimerDurationMs;
+    const actualMs = Math.max(0, getCurrentElapsedMsSnapshot());
+    const deltaMs = actualMs - plannedMs;
+    const nextPendingItem = getNextPendingItem(itemKey);
+    const shouldKeepRunning = Boolean(isRunning && nextPendingItem);
     const completedAt = new Date().toISOString();
     const timeZone = getBrowserTimeZone();
 
@@ -5150,30 +5252,40 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         title: currentItem.title,
         ...buildRunResultDisplayMetadata(currentItem),
         action: "skipped",
-        plannedMs: currentTimerDurationMs,
-        actualMs: null,
-        deltaMs: null,
+        plannedMs,
+        actualMs,
+        deltaMs,
         completedAt,
         timeZone,
-        resultTone: "skipped",
+        resultTone: deltaMs <= 0 ? "under" : "over",
       },
       ...current,
     ]);
 
-    setIsRunning(false);
-    resetCurrentTimer();
+    if (shouldKeepRunning && nextPendingItem) {
+      const nextDurationMs =
+        (nextPendingItem.item.durationMinutes ?? 25) * 60 * 1000;
+      preserveRunningTimerItemRef.current = {
+        itemKey: nextPendingItem.item.id,
+        durationMs: nextDurationMs,
+      };
+    } else {
+      setIsRunning(false);
+      resetCurrentTimer();
+    }
+
     dismissCurrentQueueItem(currentItem);
   };
 
   const handleComplete = () => {
     if (!canCompleteCurrentRun || !currentItem) return;
 
+    const itemKey = getFocusPomoQueueItemKey(currentItem);
     const plannedMs = currentTimerDurationMs;
-    const actualMs =
-      mode === "pomo"
-        ? plannedMs - remainingMsRef.current
-        : elapsedMsRef.current;
+    const actualMs = Math.max(0, getCurrentElapsedMsSnapshot());
     const deltaMs = actualMs - plannedMs;
+    const nextPendingItem = getNextPendingItem(itemKey);
+    const shouldKeepRunning = Boolean(isRunning && nextPendingItem);
     const completedAt = new Date().toISOString();
     const timeZone = getBrowserTimeZone();
     const sessionId = createLocalSessionId();
@@ -5198,8 +5310,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       ...current,
     ]);
 
-    setIsRunning(false);
-    resetCurrentTimer();
+    if (shouldKeepRunning && nextPendingItem) {
+      const nextDurationMs =
+        (nextPendingItem.item.durationMinutes ?? 25) * 60 * 1000;
+      preserveRunningTimerItemRef.current = {
+        itemKey: nextPendingItem.item.id,
+        durationMs: nextDurationMs,
+      };
+    } else {
+      setIsRunning(false);
+      resetCurrentTimer();
+    }
+
     dismissCurrentQueueItem(currentItem);
 
     const completionRequest = completeFocusPomoItem({

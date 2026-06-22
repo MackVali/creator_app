@@ -17,6 +17,7 @@ import {
 } from "@/components/monuments/MonumentDetail";
 import { OPEN_MONUMENT_DIALOG_EVENT } from "@/components/monuments/AddMonumentDialog";
 import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 
 const DASHBOARD_DETAIL_SAFE_TOP_GAP = 8;
@@ -418,6 +419,8 @@ export function MonumentGridWithSharedTransition({
     if (sourceRect.width <= 0 || sourceRect.height <= 0) {
       return;
     }
+
+    void hapticPress();
 
     scrollMonumentDashboardPageToTop();
 
