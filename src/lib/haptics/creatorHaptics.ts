@@ -30,8 +30,82 @@ async function runHaptic(effect: () => Promise<void>) {
   }
 }
 
+function hapticDelay(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+async function selectionTick() {
+  await Haptics.selectionStart();
+  await Haptics.selectionChanged();
+  await Haptics.selectionEnd();
+}
+
 export function hapticTap() {
   return runHaptic(() => Haptics.impact({ style: ImpactStyle.Light }));
+}
+
+export function hapticPress() {
+  return runHaptic(() => Haptics.impact({ style: ImpactStyle.Medium }));
+}
+
+export function hapticSoftTick() {
+  return runHaptic(selectionTick);
+}
+
+export function hapticSnap() {
+  return runHaptic(async () => {
+    await Haptics.impact({ style: ImpactStyle.Medium });
+    await hapticDelay(35);
+    await selectionTick();
+  });
+}
+
+export function hapticLongPress() {
+  return runHaptic(async () => {
+    await Haptics.impact({ style: ImpactStyle.Heavy });
+    await hapticDelay(55);
+    await selectionTick();
+  });
+}
+
+export function hapticComplete() {
+  return runHaptic(async () => {
+    await Haptics.impact({ style: ImpactStyle.Medium });
+    await hapticDelay(45);
+    await Haptics.notification({ type: NotificationType.Success });
+    await hapticDelay(65);
+    await Haptics.impact({ style: ImpactStyle.Light });
+  });
+}
+
+export function hapticLevelUp() {
+  return runHaptic(async () => {
+    await Haptics.impact({ style: ImpactStyle.Heavy });
+    await hapticDelay(45);
+    await Haptics.notification({ type: NotificationType.Success });
+    await hapticDelay(80);
+    await Haptics.impact({ style: ImpactStyle.Medium });
+  });
+}
+
+export function hapticWarningPattern() {
+  return runHaptic(async () => {
+    await Haptics.impact({ style: ImpactStyle.Medium });
+    await hapticDelay(55);
+    await Haptics.notification({ type: NotificationType.Warning });
+  });
+}
+
+export function hapticErrorPattern() {
+  return runHaptic(async () => {
+    await Haptics.impact({ style: ImpactStyle.Heavy });
+    await hapticDelay(45);
+    await Haptics.notification({ type: NotificationType.Error });
+    await hapticDelay(70);
+    await Haptics.impact({ style: ImpactStyle.Medium });
+  });
 }
 
 export function hapticLightImpact() {
@@ -69,11 +143,7 @@ export function hapticImpact(style: CreatorHapticImpactStyle) {
 }
 
 export function hapticSelectionChanged() {
-  return runHaptic(async () => {
-    await Haptics.selectionStart();
-    await Haptics.selectionChanged();
-    await Haptics.selectionEnd();
-  });
+  return runHaptic(selectionTick);
 }
 
 export { ImpactStyle as CreatorImpactStyle };

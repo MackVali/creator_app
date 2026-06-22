@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { formatDateKeyInTimeZone } from "@/lib/scheduler/timezone";
+import {
+  addDaysInTimeZone,
+  formatDateKeyInTimeZone,
+  startOfDayInTimeZone,
+} from "@/lib/scheduler/timezone";
 import { sendPushToUser } from "@/lib/notifications/sendPush";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
@@ -9,10 +13,58 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const FALLBACK_TIME_ZONE = "America/Chicago";
+const UNNAMED_BLOCK_LABEL = "Unnamed Time Block";
 
-function pickBlockName(eventName: string | null, projectName: string | null) {
-  return eventName?.trim() || projectName?.trim() || "Your scheduled block";
-}
+type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>;
+
+type ScheduleInstance = {
+  id: string;
+  event_name: string | null;
+  project_name: string | null;
+  source_type: string;
+  source_id: string;
+  start_utc: string;
+  end_utc: string | null;
+  duration_min: number | null;
+  status: string;
+  time_block_id: string | null;
+  day_type_time_block_id: string | null;
+  window_id: string | null;
+};
+
+type TimeBlockRow = {
+  id: string;
+  label: string | null;
+  start_local: string;
+  end_local: string;
+};
+
+type DayTypeTimeBlockRow = {
+  id: string;
+  time_block_id: string;
+  time_block_label: string | null;
+  block_type: string;
+  time_blocks: TimeBlockRow | TimeBlockRow[] | null;
+};
+
+type WindowRow = {
+  id: string;
+  label: string;
+  window_kind: string;
+};
+
+type BlockMetadata = {
+  timeBlock: TimeBlockRow | null;
+  dayTypeTimeBlock: DayTypeTimeBlockRow | null;
+  window: WindowRow | null;
+};
+
+type PreviewEvent = {
+  id: string;
+  name: string;
+  sourceType: string;
+  startUtc: string;
+};
 
 function normalizeTimeZoneOrFallback(timeZone: string | null) {
   const trimmed = timeZone?.trim();
@@ -73,22 +125,71 @@ function formatWeekday(date: Date, timeZone: string) {
   }).format(date);
 }
 
-function normalizeDurationMinutes(durationMin: number | null) {
-  if (typeof durationMin !== "number" || !Number.isFinite(durationMin)) {
-    return null;
-  }
-
-  const rounded = Math.round(durationMin);
-  return rounded > 0 && rounded <= 24 * 60 ? rounded : null;
+function pickText(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed || null;
 }
 
-function buildReminderCopy({
-  blockName,
+function joinedTimeBlock(
+  dayTypeTimeBlock: DayTypeTimeBlockRow | null,
+): TimeBlockRow | null {
+  const joined = dayTypeTimeBlock?.time_blocks;
+  if (!joined) return null;
+  return Array.isArray(joined) ? (joined[0] ?? null) : joined;
+}
+
+function resolveBlockLabel(metadata: BlockMetadata) {
+  return (
+    pickText(metadata.timeBlock?.label) ??
+    pickText(metadata.dayTypeTimeBlock?.time_block_label) ??
+    pickText(joinedTimeBlock(metadata.dayTypeTimeBlock)?.label) ??
+    pickText(metadata.window?.label) ??
+    UNNAMED_BLOCK_LABEL
+  );
+}
+
+function formatSourceType(sourceType: string | null | undefined) {
+  const trimmed = sourceType?.trim();
+  return trimmed ? trimmed.toUpperCase() : "";
+}
+
+function eventName(instance: ScheduleInstance) {
+  return (
+    pickText(instance.event_name) ??
+    pickText(instance.project_name) ??
+    "Scheduled event"
+  );
+}
+
+function formatEventPreview(instance: ScheduleInstance) {
+  return `${eventName(instance)} (${formatSourceType(instance.source_type)})`;
+}
+
+function buildBriefBody(instances: ScheduleInstance[]) {
+  const count = instances.length;
+
+  if (count === 1) {
+    return `1 scheduled: ${formatEventPreview(instances[0])}`;
+  }
+
+  if (count <= 3) {
+    return `${count} scheduled: ${instances.map(formatEventPreview).join(" · ")}`;
+  }
+
+  const remaining = count - 2;
+  return `${count} scheduled: ${instances
+    .slice(0, 2)
+    .map(formatEventPreview)
+    .join(" · ")} · +${remaining} more`;
+}
+
+function buildBriefTitle({
+  blockLabel,
   now,
   start,
   timeZone,
 }: {
-  blockName: string;
+  blockLabel: string;
   now: Date;
   start: Date;
   timeZone: string;
@@ -96,17 +197,12 @@ function buildReminderCopy({
   const minutesUntilStart = Math.max(0, (start.getTime() - now.getTime()) / 60000);
 
   if (minutesUntilStart <= 2) {
-    return {
-      title: "Time to start",
-      body: `${blockName} is ready now.`,
-    };
+    return `${blockLabel} is live`;
   }
 
   if (minutesUntilStart < 60) {
-    return {
-      title: "Upcoming block",
-      body: `${blockName} starts in ${Math.ceil(minutesUntilStart)} min.`,
-    };
+    const displayMinutes = Math.min(59, Math.max(3, Math.ceil(minutesUntilStart)));
+    return `${blockLabel} starts in ${displayMinutes} min`;
   }
 
   const localTime = formatLocalTime(start, timeZone);
@@ -114,15 +210,100 @@ function buildReminderCopy({
   const startKey = formatDateKeyInTimeZone(start, timeZone);
 
   if (startKey === todayKey) {
-    return {
-      title: "Later today",
-      body: `${blockName} starts at ${localTime}.`,
-    };
+    return `${blockLabel} starts at ${localTime}`;
+  }
+
+  return `${blockLabel} starts ${formatWeekday(start, timeZone)} at ${localTime}`;
+}
+
+async function loadBlockMetadata(
+  client: AdminClient,
+  userId: string,
+  instance: ScheduleInstance,
+): Promise<BlockMetadata> {
+  const [timeBlockResult, dayTypeTimeBlockResult, windowResult] = await Promise.all([
+    instance.time_block_id
+      ? client
+          .from("time_blocks")
+          .select("id, label, start_local, end_local")
+          .eq("user_id", userId)
+          .eq("id", instance.time_block_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    instance.day_type_time_block_id
+      ? client
+          .from("day_type_time_blocks")
+          .select(
+            "id, time_block_id, time_block_label, block_type, time_blocks(label, start_local, end_local)",
+          )
+          .eq("user_id", userId)
+          .eq("id", instance.day_type_time_block_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    instance.window_id
+      ? client
+          .from("windows")
+          .select("id, label, window_kind")
+          .eq("user_id", userId)
+          .eq("id", instance.window_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  if (timeBlockResult.error) {
+    console.warn("[PUSH_SCHEDULE_TEST] time block lookup failed", {
+      userId,
+      timeBlockId: instance.time_block_id,
+      error: timeBlockResult.error,
+    });
+  }
+
+  if (dayTypeTimeBlockResult.error) {
+    console.warn("[PUSH_SCHEDULE_TEST] day type time block lookup failed", {
+      userId,
+      dayTypeTimeBlockId: instance.day_type_time_block_id,
+      error: dayTypeTimeBlockResult.error,
+    });
+  }
+
+  if (windowResult.error) {
+    console.warn("[PUSH_SCHEDULE_TEST] window lookup failed", {
+      userId,
+      windowId: instance.window_id,
+      error: windowResult.error,
+    });
   }
 
   return {
-    title: "Scheduled block",
-    body: `${blockName} starts ${formatWeekday(start, timeZone)} at ${localTime}.`,
+    timeBlock: (timeBlockResult.data as TimeBlockRow | null) ?? null,
+    dayTypeTimeBlock:
+      (dayTypeTimeBlockResult.data as DayTypeTimeBlockRow | null) ?? null,
+    window: (windowResult.data as WindowRow | null) ?? null,
+  };
+}
+
+function isSameBlock(anchor: ScheduleInstance, candidate: ScheduleInstance) {
+  if (anchor.time_block_id) {
+    return candidate.time_block_id === anchor.time_block_id;
+  }
+
+  if (anchor.day_type_time_block_id) {
+    return candidate.day_type_time_block_id === anchor.day_type_time_block_id;
+  }
+
+  if (anchor.window_id) {
+    return candidate.window_id === anchor.window_id;
+  }
+
+  return candidate.id === anchor.id;
+}
+
+function toPreviewEvent(instance: ScheduleInstance): PreviewEvent {
+  return {
+    id: instance.id,
+    name: eventName(instance),
+    sourceType: formatSourceType(instance.source_type),
+    startUtc: instance.start_utc,
   };
 }
 
@@ -151,7 +332,9 @@ export async function POST() {
   const nowIso = now.toISOString();
   const { data: instance, error: instanceError } = await adminClient
     .from("schedule_instances")
-    .select("id, event_name, project_name, source_type, source_id, start_utc, duration_min")
+    .select(
+      "id, event_name, project_name, source_type, source_id, start_utc, end_utc, duration_min, status, time_block_id, day_type_time_block_id, window_id",
+    )
     .eq("user_id", user.id)
     .eq("status", "scheduled")
     .not("start_utc", "is", null)
@@ -168,18 +351,51 @@ export async function POST() {
     return NextResponse.json({ error: "No upcoming scheduled block found" }, { status: 404 });
   }
 
+  const anchor = instance as ScheduleInstance;
   const timeZone = normalizeTimeZoneOrFallback(
     await resolveProfileTimeZone(adminClient, user.id),
   );
-  const blockName = pickBlockName(instance.event_name, instance.project_name);
-  const start = new Date(instance.start_utc);
-  const { title, body } = buildReminderCopy({
-    blockName,
+  const start = new Date(anchor.start_utc);
+  const dayStart = startOfDayInTimeZone(start, timeZone);
+  const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone);
+  const metadata = await loadBlockMetadata(adminClient, user.id, anchor);
+  const blockLabel = resolveBlockLabel(metadata);
+
+  const { data: dayInstancesData, error: dayInstancesError } = await adminClient
+    .from("schedule_instances")
+    .select(
+      "id, event_name, project_name, source_type, source_id, start_utc, end_utc, duration_min, status, time_block_id, day_type_time_block_id, window_id",
+    )
+    .eq("user_id", user.id)
+    .eq("status", "scheduled")
+    .not("start_utc", "is", null)
+    .gte("start_utc", dayStart.toISOString())
+    .lt("start_utc", dayEnd.toISOString());
+
+  if (dayInstancesError) {
+    return NextResponse.json(
+      { error: "Unable to load scheduled events for block" },
+      { status: 500 },
+    );
+  }
+
+  const blockInstances = ((dayInstancesData as ScheduleInstance[] | null) ?? [anchor])
+    .filter((candidate) => isSameBlock(anchor, candidate))
+    .sort((left, right) => left.start_utc.localeCompare(right.start_utc));
+  const briefInstances = blockInstances.length > 0 ? blockInstances : [anchor];
+  const title = buildBriefTitle({
+    blockLabel,
     now,
     start,
     timeZone,
   });
-  const durationMinutes = normalizeDurationMinutes(instance.duration_min);
+  const body = buildBriefBody(briefInstances);
+  const previewEvents = briefInstances.map(toPreviewEvent);
+  const entityId =
+    anchor.time_block_id ??
+    anchor.day_type_time_block_id ??
+    anchor.window_id ??
+    anchor.id;
 
   const result = await sendPushToUser(
     adminClient,
@@ -190,19 +406,24 @@ export async function POST() {
         body,
       },
       data: {
-        type: "schedule_start_reminder",
-        instanceId: instance.id,
-        sourceType: instance.source_type,
-        sourceId: instance.source_id,
-        startUtc: instance.start_utc,
+        type: "schedule_block_brief",
+        instanceId: anchor.id,
+        sourceType: anchor.source_type,
+        sourceId: anchor.source_id,
+        startUtc: anchor.start_utc,
+        blockLabel,
+        blockEventCount: briefInstances.length,
+        timeBlockId: anchor.time_block_id,
+        dayTypeTimeBlockId: anchor.day_type_time_block_id,
+        windowId: anchor.window_id,
       },
     },
     {
       delivery: {
-        kind: "schedule_start_reminder",
-        entityType: "schedule_instance",
-        entityId: instance.id,
-        scheduledFor: instance.start_utc,
+        kind: "schedule_block_brief",
+        entityType: "schedule_block",
+        entityId,
+        scheduledFor: anchor.start_utc,
         dedupe: true,
       },
     },
@@ -213,9 +434,11 @@ export async function POST() {
     successCount: result.successCount,
     failureCount: result.failureCount,
     skippedReason: result.skippedReason ?? null,
-    instanceId: instance.id,
-    startUtc: instance.start_utc,
-    ...(durationMinutes !== null ? { durationMinutes } : {}),
+    instanceId: anchor.id,
+    startUtc: anchor.start_utc,
+    blockLabel,
+    blockEventCount: briefInstances.length,
+    previewEvents,
     title,
     body,
     ...(result.error ? { error: result.error } : {}),
