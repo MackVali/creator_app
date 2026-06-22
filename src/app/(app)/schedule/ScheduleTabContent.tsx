@@ -60,7 +60,15 @@ import {
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticLongPress,
+  hapticPress,
+  hapticSnap,
+  hapticSoftTick,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
@@ -3053,6 +3061,10 @@ export default function ScheduleTabContent({
   );
   const handleModeTypeChange = useCallback(
     (type: SchedulerModeType) => {
+      if (type === modeType) {
+        return;
+      }
+      void hapticSoftTick();
       setModeType(type);
       if (type === "MONUMENTAL") {
         setModeMonumentId((prev) => {
@@ -3063,12 +3075,17 @@ export default function ScheduleTabContent({
         });
       }
     },
-    [monuments]
+    [modeType, monuments]
   );
   const handleMonumentChange = useCallback((id: string | null) => {
+    if (id === modeMonumentId) {
+      return;
+    }
+    void hapticSoftTick();
     setModeMonumentId(id);
-  }, []);
+  }, [modeMonumentId]);
   const handleSkillToggle = useCallback((skillId: string) => {
+    void hapticSoftTick();
     setModeSkillIds((prev) => {
       const next = new Set(prev);
       if (next.has(skillId)) {
@@ -3080,8 +3097,12 @@ export default function ScheduleTabContent({
     });
   }, []);
   const handleClearSkills = useCallback(() => {
+    if (modeSkillIds.length === 0) {
+      return;
+    }
+    void hapticSoftTick();
     setModeSkillIds([]);
-  }, []);
+  }, [modeSkillIds.length]);
 
   const peekDataDepsRef = useRef<{
     projectMap: typeof projectMap;
@@ -3490,9 +3511,11 @@ export default function ScheduleTabContent({
             "Failed to sync habit completion metadata",
             await response.text()
           );
+          void hapticErrorPattern();
         }
       } catch (error) {
         console.error("Failed to sync habit completion metadata", error);
+        void hapticErrorPattern();
       }
     },
     [effectiveTimeZone, userId]
@@ -5372,6 +5395,7 @@ export default function ScheduleTabContent({
       if (pending) {
         logOverlayStage(4, { reason: "pending block" });
         console.log(`[SKIP] reason=pending instanceId=${instanceId}`);
+        void hapticWarningPattern();
         return;
       }
       logOverlayStage(4, { reason: "guards pass" });
@@ -5559,8 +5583,12 @@ export default function ScheduleTabContent({
                 : null),
           });
         }
+        if (nextStatus === "completed") {
+          void hapticComplete();
+        }
       } catch (error) {
         console.error(error);
+        void hapticErrorPattern();
         if (previousInstances) {
           setInstances(previousInstances);
         }
@@ -5780,7 +5808,10 @@ export default function ScheduleTabContent({
     async (taskId: string) => {
       const task = taskMap[taskId];
       if (!task) return;
-      if (pendingBacklogTaskIds.has(taskId)) return;
+      if (pendingBacklogTaskIds.has(taskId)) {
+        void hapticWarningPattern();
+        return;
+      }
 
       const currentStage = task.stage;
       const isCurrentlyCompleted = currentStage === "PERFECT";
@@ -5819,6 +5850,9 @@ export default function ScheduleTabContent({
 
         if (isCurrentlyCompleted) {
           snapshots.delete(taskId);
+        }
+        if (nextStage === "PERFECT") {
+          void hapticComplete();
         }
 
         const shouldAwardXp = isCurrentlyCompleted || nextStage === "PERFECT";
@@ -5885,6 +5919,7 @@ export default function ScheduleTabContent({
         }
       } catch (error) {
         console.error("Failed to toggle backlog task completion", error);
+        void hapticErrorPattern();
         setTasks((prev) =>
           prev.map((t) => (t.id === taskId ? { ...t, stage: currentStage } : t))
         );
@@ -6892,6 +6927,7 @@ export default function ScheduleTabContent({
             id: instance?.id || habitId,
             source_type: instance?.source_type,
           });
+          void hapticLongPress();
           onLongPress();
         }, SCHEDULE_CARD_LONG_PRESS_MS);
         longPressTimerRef.current = timerId;
@@ -7036,6 +7072,7 @@ export default function ScheduleTabContent({
             id: instance.id,
             source_type: instance.source_type,
           });
+          void hapticLongPress();
           const nextSnapshot: EditingSnapshot = {
             source_type: sourceType,
             projectId: sourceType === "PROJECT" ? instance.source_id : null,
@@ -7071,6 +7108,7 @@ export default function ScheduleTabContent({
             id: habitId,
             source_type: "HABIT",
           });
+          void hapticLongPress();
           const syntheticHabitInstance: ScheduleInstance = {
             id: `synthetic-${habitId}-${dayViewDateKey}`,
             source_type: "HABIT",

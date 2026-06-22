@@ -62,6 +62,7 @@ import {
   DayType24hPreview,
   type DayType24hPreviewBlock,
 } from "@/components/schedule/DayType24hPreview";
+import { hapticSnap, hapticSoftTick } from "@/lib/haptics/creatorHaptics";
 
 import {
   getSkillsForUser,
@@ -434,6 +435,7 @@ export function JumpToDateSheet({
       energyViewOrder[
         (energyViewOrder.indexOf(energyView) + 1) % energyViewOrder.length
       ];
+    void hapticSoftTick();
     setPrevEnergyView(energyView);
     setIsPrevFading(false);
     setEnergyView(next);
@@ -539,6 +541,7 @@ export function JumpToDateSheet({
   }, [isPaintMode, onInlineEditorModeChange, variant]);
 
   const togglePaintMode = () => {
+    void hapticSoftTick();
     setIsPaintMode((prev) => {
       const next = !prev;
       if (!next) {
@@ -2349,15 +2352,22 @@ export function JumpToDateSheet({
 
   const handleSelect = (date: Date, dateKey?: string) => {
     if (isPaintMode && dateKey) {
+      if (paintSelectionKey !== dateKey) {
+        void hapticSoftTick();
+      }
       setPaintSelectionKey(dateKey);
       setShowTimeBlocks(false);
       setSaveError(null);
       return;
     }
+    if (dateKey && dateKey !== selectedDateKey) {
+      void hapticSoftTick();
+    }
     onSelectDate(new Date(date));
   };
 
   const goToOffsetMonth = (offset: number) => {
+    void hapticSnap();
     setVisibleMonth((prev) => {
       const next = new Date(prev);
       next.setMonth(prev.getMonth() + offset);
@@ -2367,6 +2377,10 @@ export function JumpToDateSheet({
   };
 
   const handleSelectVisibleYear = (selectedYear: number) => {
+    if (selectedYear === visibleMonth.getFullYear()) {
+      return;
+    }
+    void hapticSnap();
     setVisibleMonth((prev) => {
       const next = new Date(prev);
       next.setFullYear(selectedYear);
@@ -2377,6 +2391,9 @@ export function JumpToDateSheet({
 
   const handleSelectToday = () => {
     if (!todayKey) return;
+    if (todayKey !== selectedDateKey) {
+      void hapticSoftTick();
+    }
     const parsed = parseDateKey(todayKey);
     if (parsed) {
       onSelectDate(parsed);
@@ -2408,9 +2425,15 @@ export function JumpToDateSheet({
     [assignDayTypeToSelection, paintSelectionKey]
   );
 
+  const activePaintSchedulerMode =
+    (paintDayType ?? defaultDayTypeForSelection ?? null)?.schedulerMode ??
+    "REGULAR";
+
   const handleChangeMode = useCallback(
     async (nextMode: string) => {
       if (!paintSelectionKey) return;
+      if (nextMode === activePaintSchedulerMode) return;
+      void hapticSoftTick();
       setSaveError(null);
       try {
         const supabase = getSupabaseBrowser();
@@ -2458,6 +2481,7 @@ export function JumpToDateSheet({
     [
       assignmentDayTypeId,
       assignDayTypeToSelection,
+      activePaintSchedulerMode,
       ensureCustomDayTypeForDate,
       paintDayType?.id,
       paintSelectionKey,
@@ -2741,9 +2765,10 @@ export function JumpToDateSheet({
                           aria-checked={showTimeBlocks}
                           aria-label="Toggle time blocks"
                           className="relative inline-flex h-8 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3a3d44]"
-                          onClick={() =>
-                            setShowTimeBlocks((current) => !current)
-                          }
+                          onClick={() => {
+                            void hapticSoftTick();
+                            setShowTimeBlocks((current) => !current);
+                          }}
                         >
                           <span
                             className={cn(

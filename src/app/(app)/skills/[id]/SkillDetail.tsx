@@ -57,6 +57,7 @@ import {
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
+import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
@@ -1809,6 +1810,7 @@ export function SkillDetail({
         } catch {
           // Pointer capture can already be released by the browser.
         }
+        void hapticLongPress();
         fabCreation?.requestEntityEdit({
           entityType: "HABIT",
           entityId: habit.id,

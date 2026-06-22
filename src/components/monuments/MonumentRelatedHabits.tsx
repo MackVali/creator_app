@@ -41,6 +41,7 @@ import {
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
+import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
 
 interface MonumentRelatedHabitsProps {
   monumentId: string;
@@ -1771,6 +1772,7 @@ export function MonumentRelatedHabits({
         } catch {
           // Pointer capture can already be released by the browser.
         }
+        void hapticLongPress();
         fabCreation?.requestEntityEdit({
           entityType: "HABIT",
           entityId: habit.id,

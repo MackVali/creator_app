@@ -118,7 +118,15 @@ import {
   LimitReachedError,
   getLimitCodeFromError,
 } from "@/lib/goals/persistGoalUpdate";
-import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticLongPress,
+  hapticPress,
+  hapticSnap,
+  hapticSoftTick,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
@@ -3167,7 +3175,12 @@ function FabCreationModeButton({
   onSelect: (mode: CreationFormMode) => void;
 }) {
   const Icon = mode.icon;
-  const tapHandlers = useTapHandler(() => onSelect(mode.id));
+  const tapHandlers = useTapHandler(() => {
+    if (!isActive) {
+      void hapticSnap();
+    }
+    onSelect(mode.id);
+  });
 
   return (
     <button
@@ -5314,6 +5327,7 @@ export function Fab({
   );
   const handleMemoCaptureActionToggle = useCallback(
     (action: MemoCaptureToggleAction) => {
+      void hapticSoftTick();
       if (
         action === "form" &&
         !memoCaptureActions.form &&
@@ -5441,6 +5455,7 @@ export function Fab({
         | { mode: "edit-draft"; draft: DraftProjectChild }
         | { mode: "edit-existing"; project: EditGoalProjectChild },
     ) => {
+      void hapticSnap();
       const parentGoalId =
         editTarget?.entityType === "GOAL" && editTarget.entityId
           ? editTarget.entityId
@@ -5541,6 +5556,7 @@ export function Fab({
         | { mode: "edit-draft"; draft: DraftTaskChild }
         | { mode: "edit-existing"; task: EditProjectTaskChild },
     ) => {
+      void hapticSnap();
       const parentProjectId =
         editTarget?.entityType === "PROJECT" && editTarget.entityId
           ? editTarget.entityId
@@ -5722,6 +5738,7 @@ export function Fab({
   const handleAddGoalDraftProject = useCallback(() => {
     const trimmedName = draftProjectName.trim();
     if (!trimmedName || draftProjectSkillIds.length === 0) return;
+    void hapticComplete();
     setGoalDraftProjects((current) => [
       ...current,
       {
@@ -6588,6 +6605,7 @@ export function Fab({
   const handleAddProjectDraftTask = useCallback(() => {
     const trimmedName = draftTaskName.trim();
     if (!trimmedName || !draftTaskSkillId) return;
+    void hapticComplete();
     setProjectDraftTasks((current) => [
       ...current,
       {
@@ -6812,7 +6830,10 @@ export function Fab({
     return (
       <button
         type="button"
-        onClick={() => onChange(getNextFabEnergyValue(resolvedLevel))}
+        onClick={() => {
+          void hapticSoftTick();
+          onChange(getNextFabEnergyValue(resolvedLevel));
+        }}
         className={cn(
           "flex h-12 w-12 items-center justify-center rounded-md border border-white/15 bg-white/[0.06] text-white transition hover:border-white/30 hover:bg-white/10",
           className,
@@ -10460,6 +10481,7 @@ export function Fab({
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
+                    void hapticPress();
                     setGoalDraftProjects((current) =>
                       current.filter((item) => item.tempId !== project.tempId),
                     );
@@ -10507,6 +10529,7 @@ export function Fab({
             <button
               type="button"
               onClick={() => {
+                void hapticSnap();
                 resetNestedProjectDraftForm();
                 setNestedDraftPanel(null);
               }}
@@ -10559,7 +10582,10 @@ export function Fab({
                 </Label>
                 <Select
                   value={draftProjectPriority}
-                  onValueChange={setDraftProjectPriority}
+                  onValueChange={(value) => {
+                    void hapticSoftTick();
+                    setDraftProjectPriority(value);
+                  }}
                   triggerClassName={cn(
                     "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                     FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -10597,7 +10623,10 @@ export function Fab({
                 </Label>
                 <Select
                   value={draftProjectStage}
-                  onValueChange={setDraftProjectStage}
+                  onValueChange={(value) => {
+                    void hapticSoftTick();
+                    setDraftProjectStage(value);
+                  }}
                   triggerClassName={cn(
                     "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                     FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -10691,6 +10720,7 @@ export function Fab({
                 value={draftProjectSkillIds[0] ?? ""}
                 onOpenChange={handleSkillDropdownOpenChange}
                 onValueChange={(value) => {
+                  void hapticSoftTick();
                   setDraftProjectSkillIds(value ? [value] : []);
                   const skill = findSkillById(value);
                   setSkillSearch(skill?.name ?? "");
@@ -11035,6 +11065,7 @@ export function Fab({
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
+                  void hapticPress();
                   setProjectDraftTasks((current) =>
                     current.filter((item) => item.tempId !== task.tempId),
                   );
@@ -11078,6 +11109,7 @@ export function Fab({
             <button
               type="button"
               onClick={() => {
+                void hapticSnap();
                 resetNestedTaskDraftForm();
                 setNestedDraftPanel(null);
               }}
@@ -11128,7 +11160,10 @@ export function Fab({
                 </Label>
                 <Select
                   value={draftTaskPriority}
-                  onValueChange={setDraftTaskPriority}
+                  onValueChange={(value) => {
+                    void hapticSoftTick();
+                    setDraftTaskPriority(value);
+                  }}
                   triggerClassName={cn(
                     "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                     FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -11160,7 +11195,10 @@ export function Fab({
                 </Label>
                 <Select
                   value={draftTaskStage}
-                  onValueChange={setDraftTaskStage}
+                  onValueChange={(value) => {
+                    void hapticSoftTick();
+                    setDraftTaskStage(value);
+                  }}
                   triggerClassName={cn(
                     "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                     FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -11701,7 +11739,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={goalPriority}
-                        onValueChange={setGoalPriority}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setGoalPriority(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 md:h-14 text-[11px] uppercase tracking-[0.12em]",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -11734,6 +11775,7 @@ export function Fab({
                       <Select
                         value={goalCampaignId ?? ""}
                         onValueChange={(value) => {
+                          void hapticSoftTick();
                           resetGoalCampaignInlineCreation();
                           setGoalCampaignId(
                             value.trim().length > 0 ? value : null,
@@ -12197,7 +12239,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={projectPriority}
-                        onValueChange={setProjectPriority}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setProjectPriority(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -12235,7 +12280,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={projectStage}
-                        onValueChange={setProjectStage}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setProjectStage(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 w-full min-w-0 max-w-full overflow-hidden px-2 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -12290,6 +12338,7 @@ export function Fab({
                         value={projectSkillIds[0] ?? ""}
                         onOpenChange={handleSkillDropdownOpenChange}
                         onValueChange={(value) => {
+                          void hapticSoftTick();
                           setProjectSkillIds(value ? [value] : []);
                           const skill = findSkillById(value);
                           setSkillSearch(skill?.name ?? "");
@@ -12465,6 +12514,7 @@ export function Fab({
                       value={taskProjectId ?? ""}
                       onValueChange={(value) => {
                         if (projectTaskStack) return;
+                        void hapticSoftTick();
                         setTaskProjectId(value);
                       }}
                       onOpenChange={(open) => {
@@ -12689,7 +12739,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={taskPriority}
-                        onValueChange={setTaskPriority}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setTaskPriority(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -12721,7 +12774,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={taskStage}
-                        onValueChange={setTaskStage}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setTaskStage(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -12812,6 +12868,7 @@ export function Fab({
                         value={taskSkillId ?? ""}
                         onOpenChange={handleSkillDropdownOpenChange}
                         onValueChange={(value) => {
+                          void hapticSoftTick();
                           setTaskSkillId(value);
                           const skill = findSkillById(value);
                           setSkillSearch(skill?.name ?? "");
@@ -12952,6 +13009,7 @@ export function Fab({
                       <Select
                         value={habitRoutineId ?? ""}
                         onValueChange={(value) => {
+                          void hapticSoftTick();
                           if (value === "__create__") {
                             setHabitRoutineId("");
                             setIsCreatingHabitRoutineInline(true);
@@ -13305,7 +13363,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={habitType}
-                        onValueChange={setHabitType}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setHabitType(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -13336,7 +13397,10 @@ export function Fab({
                       </Label>
                       <Select
                         value={habitRecurrence}
-                        onValueChange={setHabitRecurrence}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          setHabitRecurrence(value);
+                        }}
                         triggerClassName={cn(
                           "h-12 md:h-14 text-[11px] uppercase tracking-[0.12em]",
                           FAB_CREATION_SELECT_TRIGGER_CLASS,
@@ -13391,6 +13455,7 @@ export function Fab({
                       value={habitSkillId ?? ""}
                       onOpenChange={handleSkillDropdownOpenChange}
                       onValueChange={(value) => {
+                        void hapticSoftTick();
                         setHabitSkillId(value);
                         const skill = findSkillById(value);
                         setSkillSearch(skill?.name ?? "");
@@ -13698,11 +13763,12 @@ export function Fab({
                               : "Skill"
                           }`}
                           aria-pressed={memoNoteDestinationType === "monument"}
-                          onClick={() =>
+                          onClick={() => {
+                            void hapticSoftTick();
                             setMemoNoteDestinationType((current) =>
                               current === "skill" ? "monument" : "skill",
-                            )
-                          }
+                            );
+                          }}
                           className="rounded-full p-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                         >
                           <span
@@ -13731,6 +13797,7 @@ export function Fab({
                             value={memoNoteSkillId ?? ""}
                             onOpenChange={handleSkillDropdownOpenChange}
                             onValueChange={(value) => {
+                              void hapticSoftTick();
                               setMemoNoteSkillId(value);
                               const skill = findSkillById(value);
                               setSkillSearch(skill?.name ?? "");
@@ -13861,7 +13928,10 @@ export function Fab({
                         <>
                           <Select
                             value={memoNoteMonumentId}
-                            onValueChange={setMemoNoteMonumentId}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setMemoNoteMonumentId(value);
+                            }}
                             placeholder="Choose a monument"
                             triggerClassName={cn(
                               "h-10 text-white",
@@ -13943,9 +14013,10 @@ export function Fab({
                                 key={target.id}
                                 type="button"
                                 aria-pressed={isSelected}
-                                onClick={() =>
-                                  setSelectedMemoDatabaseTargetId(target.id)
-                                }
+                                onClick={() => {
+                                  void hapticSoftTick();
+                                  setSelectedMemoDatabaseTargetId(target.id);
+                                }}
                                 className={cn(
                                   "min-h-8 rounded-md border px-2.5 py-1.5 text-left text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
                                   isSelected
@@ -14032,15 +14103,16 @@ export function Fab({
                                 ? "none"
                                 : "__unavailable__")
                           }
-                          onValueChange={(value) =>
+                          onValueChange={(value) => {
+                            void hapticSoftTick();
                             setHabitLocationContextId(
                               value === "none" ||
                                 value === "__loading__" ||
                                 value === "__unavailable__"
                                 ? ""
                                 : value,
-                            )
-                          }
+                            );
+                          }}
                           disabled={
                             locationContextsLoading ||
                             validLocationContexts.length === 0
@@ -14111,7 +14183,10 @@ export function Fab({
                           </Label>
                           <Select
                             value={habitDaylightPreference}
-                            onValueChange={setHabitDaylightPreference}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setHabitDaylightPreference(value);
+                            }}
                             contentWrapperClassName={HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS}
                           >
                             <SelectTrigger
@@ -14144,7 +14219,10 @@ export function Fab({
                           </Label>
                           <Select
                             value={habitWindowEdgePreference}
-                            onValueChange={setHabitWindowEdgePreference}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setHabitWindowEdgePreference(value);
+                            }}
                             contentWrapperClassName={HABIT_ADVANCED_SELECT_CONTENT_WRAPPER_CLASS}
                           >
                             <SelectTrigger
@@ -14333,6 +14411,9 @@ export function Fab({
     triggerElement?: HTMLElement | null,
     options?: { skipLauncher?: boolean; originRect?: { top: number; left: number; width: number; height: number } | null },
   ) => {
+    if (!options?.skipLauncher) {
+      void hapticPress();
+    }
     const shouldAttemptNameFocus = !editTarget;
     const shouldFocusImmediatelyForMobile =
       shouldAttemptNameFocus &&
@@ -14595,6 +14676,7 @@ export function Fab({
   }, [isOpen]);
 
   const handleExtraClick = (label: string) => {
+    void hapticPress();
     setIsOpen(false);
     if (label === "NOTE") {
       setShowNote(true);
@@ -15805,6 +15887,7 @@ export function Fab({
 
   const handleGoalRelationChange = useCallback(
     (value: string) => {
+      void hapticSoftTick();
       resetGoalCampaignInlineCreation();
       setSaveError(null);
 
@@ -16277,6 +16360,7 @@ export function Fab({
         resetPageDragState();
         return;
       }
+      void hapticSnap();
       const width = stageWidth > 0 ? stageWidth : 280;
       const resolvedDirection =
         options?.direction ??
@@ -16845,9 +16929,13 @@ export function Fab({
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
+      const setBlockedSaveError = (message: string) => {
+        void hapticWarningPattern();
+        setSaveError(message);
+      };
       const supabase = getSupabaseBrowser();
       if (!supabase) {
-        setSaveError("Supabase client not available.");
+        setBlockedSaveError("Supabase client not available.");
         return;
       }
       const {
@@ -16855,11 +16943,11 @@ export function Fab({
         error: userError,
       } = await supabase.auth.getUser();
       if (userError) {
-        setSaveError("Unable to resolve user.");
+        setBlockedSaveError("Unable to resolve user.");
         return;
       }
       if (!user) {
-        setSaveError("You need to be signed in to save.");
+        setBlockedSaveError("You need to be signed in to save.");
         return;
       }
       const trimmedName =
@@ -16871,7 +16959,7 @@ export function Fab({
               ? taskName.trim()
               : habitName.trim();
       if (trimmedName.length === 0) {
-        setSaveError("Please enter a name.");
+        setBlockedSaveError("Please enter a name.");
         return;
       }
       const goalRelationResolution =
@@ -16884,53 +16972,53 @@ export function Fab({
             };
       if (selected === "GOAL") {
         if (goalRelationResolution.error) {
-          setSaveError(goalRelationResolution.error);
+          setBlockedSaveError(goalRelationResolution.error);
           return;
         }
         if (!goalEnergy) {
-          setSaveError("Select an energy level before saving.");
+          setBlockedSaveError("Select an energy level before saving.");
           return;
         }
         if (!goalPriority) {
-          setSaveError("Select a priority before saving.");
+          setBlockedSaveError("Select a priority before saving.");
           return;
         }
       }
       if (selected === "PROJECT") {
         if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
-          setSaveError("Link this project to a goal before saving.");
+          setBlockedSaveError("Link this project to a goal before saving.");
           return;
         }
         if (projectSkillIds.length === 0) {
-          setSaveError("Link at least one skill before saving.");
+          setBlockedSaveError("Link at least one skill before saving.");
           return;
         }
       }
       if (selected === "TASK") {
         if (!taskProjectId && projectTaskStack?.parentMode !== "create") {
-          setSaveError("Link this task to a project before saving.");
+          setBlockedSaveError("Link this task to a project before saving.");
           return;
         }
         if (!taskSkillId) {
-          setSaveError("Link this task to a skill before saving.");
+          setBlockedSaveError("Link this task to a skill before saving.");
           return;
         }
       }
       if (selected === "HABIT") {
         if (!habitEnergy) {
-          setSaveError("Select an energy level before saving.");
+          setBlockedSaveError("Select an energy level before saving.");
           return;
         }
         if (!habitRecurrence) {
-          setSaveError("Select a recurrence before saving.");
+          setBlockedSaveError("Select a recurrence before saving.");
           return;
         }
         if (!habitType) {
-          setSaveError("Select a habit type before saving.");
+          setBlockedSaveError("Select a habit type before saving.");
           return;
         }
         if (!habitSkillId) {
-          setSaveError("Link this habit to a skill before saving.");
+          setBlockedSaveError("Link this habit to a skill before saving.");
           return;
         }
       }
@@ -16944,7 +17032,7 @@ export function Fab({
           projectExactFallbackDate,
         );
         if (parsed.error) {
-          setSaveError(parsed.error);
+          setBlockedSaveError(parsed.error);
           return;
         }
         exactSchedule = parsed.schedule;
@@ -16958,7 +17046,7 @@ export function Fab({
           taskExactFallbackDate,
         );
         if (parsed.error) {
-          setSaveError(parsed.error);
+          setBlockedSaveError(parsed.error);
           return;
         }
         exactSchedule = parsed.schedule;
@@ -16970,7 +17058,7 @@ export function Fab({
           habitFixedEndTime,
         );
         if (parsed.error) {
-          setSaveError(parsed.error);
+          setBlockedSaveError(parsed.error);
           return;
         }
         habitFixedTime = parsed.schedule;
@@ -17180,6 +17268,7 @@ export function Fab({
               ]);
             }
             restoreGoalProjectStack();
+            void hapticComplete();
             toast.success(
               goalProjectStack.projectMode === "edit-draft"
                 ? "Project updated"
@@ -17190,7 +17279,7 @@ export function Fab({
 
           const parentGoalId = goalProjectStack.parentGoalId;
           if (!parentGoalId) {
-            setSaveError("Goal context is missing.");
+            setBlockedSaveError("Goal context is missing.");
             return;
           }
 
@@ -17298,6 +17387,7 @@ export function Fab({
             goalId: parentGoalId,
           });
           restoreGoalProjectStack();
+          void hapticComplete();
           toast.success(
             goalProjectStack.projectMode === "edit-existing"
               ? "Project updated"
@@ -17343,6 +17433,7 @@ export function Fab({
               ]);
             }
             restoreProjectTaskStack();
+            void hapticComplete();
             toast.success(
               projectTaskStack.taskMode === "edit-draft"
                 ? "Task updated"
@@ -17353,7 +17444,7 @@ export function Fab({
 
           const parentProjectId = projectTaskStack.parentProjectId;
           if (!parentProjectId) {
-            setSaveError("Project context is missing.");
+            setBlockedSaveError("Project context is missing.");
             return;
           }
 
@@ -17452,6 +17543,7 @@ export function Fab({
             monumentId: null,
           });
           restoreProjectTaskStack();
+          void hapticComplete();
           toast.success(
             projectTaskStack.taskMode === "edit-existing"
               ? "Task updated"
@@ -17491,7 +17583,7 @@ export function Fab({
             ? "CIRCLE"
             : "MONUMENT";
           if (originalRelationType !== nextRelationType) {
-            setSaveError(
+            setBlockedSaveError(
               "Moving a Goal between Monument and Circle is coming next.",
             );
             return;
@@ -17500,7 +17592,7 @@ export function Fab({
             originalRelationType === "CIRCLE" &&
             existingGoal.circle_id !== goalRelationResolution.selectedCircleId
           ) {
-            setSaveError("Moving a Goal between Circles is coming next.");
+            setBlockedSaveError("Moving a Goal between Circles is coming next.");
             return;
           }
 
@@ -17596,6 +17688,7 @@ export function Fab({
           closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
+          void hapticComplete();
           toast.success("Goal updated");
           if (tagAttachmentFailed) {
             toast.error(
@@ -17682,6 +17775,7 @@ export function Fab({
           closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
+          void hapticComplete();
           toast.success("Project updated");
           if (tagAttachmentFailed) {
             toast.error(
@@ -17741,6 +17835,7 @@ export function Fab({
           closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
+          void hapticComplete();
           toast.success("Task updated");
           if (tagAttachmentFailed) {
             toast.error(
@@ -17760,7 +17855,7 @@ export function Fab({
           if (isCreatingHabitRoutineInline) {
             const trimmedRoutineName = habitInlineRoutineName.trim();
             if (!trimmedRoutineName) {
-              setSaveError("Please name the routine before saving.");
+              setBlockedSaveError("Please name the routine before saving.");
               return;
             }
             const trimmedRoutineDescription =
@@ -17840,6 +17935,7 @@ export function Fab({
           closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
           onEditClose?.();
+          void hapticComplete();
           toast.success("Habit updated");
           if (tagAttachmentFailed) {
             toast.error(
@@ -17985,7 +18081,7 @@ export function Fab({
           if (isCreatingHabitRoutineInline) {
             const trimmedRoutineName = habitInlineRoutineName.trim();
             if (!trimmedRoutineName) {
-              setSaveError("Please name the routine before saving.");
+              setBlockedSaveError("Please name the routine before saving.");
               return;
             }
             const trimmedRoutineDescription =
@@ -18253,7 +18349,8 @@ export function Fab({
                 ? "Task"
                 : createdType === "HABIT"
                   ? "Habit"
-                  : "Item";
+              : "Item";
+        void hapticComplete();
         toast.success(`${successLabel} created`);
         if (tagAttachmentFailed) {
           toast.error(
@@ -18274,6 +18371,7 @@ export function Fab({
           console.error("[fab goal edit save] failed", error);
         }
         if (error instanceof LimitReachedError) {
+          void hapticWarningPattern();
           setSaveError(null);
           setActiveLimitCode(error.limitCode);
           return;
@@ -18282,6 +18380,7 @@ export function Fab({
           (error as { message?: string })?.message ||
           (error as { error?: { message?: string } })?.error?.message ||
           "Unable to save right now.";
+        void hapticErrorPattern();
         setSaveError(errorMessage);
       } finally {
         setIsSavingFab(false);
@@ -18380,6 +18479,7 @@ export function Fab({
       if (isDeletingFabEntity || !editableDeleteTarget) {
         return;
       }
+      void hapticPress();
 
       const { entityType, entityId } = editableDeleteTarget;
       const typeSegment = entityType === "HABIT" ? "habit" : "project";
@@ -18429,6 +18529,7 @@ export function Fab({
             entityId,
             error,
           });
+          void hapticErrorPattern();
           setSaveError(
             error instanceof Error
               ? error.message
@@ -18486,6 +18587,7 @@ export function Fab({
         closeExpandedPanel({ notifyEditClose: false });
         onEditClose?.();
         await notifySchedulerOfChange();
+        void hapticComplete();
         toast.success(`${successLabel} deleted`);
       } catch (error) {
         console.error("Failed to delete FAB edit entity", {
@@ -18500,6 +18602,7 @@ export function Fab({
               ? "Unable to delete this goal"
               : `Unable to delete this ${typeSegment}`,
         );
+        void hapticErrorPattern();
       } finally {
         setIsDeletingFabEntity(false);
       }
@@ -18517,6 +18620,7 @@ export function Fab({
   );
 
   const overhangCancelTapHandlers = useTapHandler(() => {
+    void hapticSnap();
     if (projectTaskStack) {
       restoreProjectTaskStack();
       return;
@@ -18532,6 +18636,7 @@ export function Fab({
   });
   const handleCancelFabGoalDelete = useCallback(() => {
     if (isDeletingFabEntity) return;
+    void hapticSnap();
     setGoalDeleteConfirmTarget(null);
   }, [isDeletingFabEntity]);
   const handleConfirmFabGoalDelete = useCallback(() => {
@@ -18587,6 +18692,7 @@ export function Fab({
             <Button
               type="button"
               variant="ghost"
+              haptic={false}
               onClick={handleCancelFabGoalDelete}
               disabled={isDeletingFabEntity}
               className="h-7 rounded-lg px-2 text-xs text-white/70 hover:bg-white/10 hover:text-white"
@@ -18596,6 +18702,7 @@ export function Fab({
             <Button
               type="button"
               variant="destructive"
+              haptic={false}
               onClick={handleConfirmFabGoalDelete}
               disabled={isDeletingFabEntity}
               className="h-7 rounded-lg px-2 text-xs"
@@ -19255,6 +19362,7 @@ export function Fab({
       }
       event.preventDefault();
       event.stopPropagation();
+      void hapticSnap();
       closeExpandedPanel();
     },
     [closeExpandedPanel, shouldUseCenteredEditModal],
@@ -19326,6 +19434,7 @@ export function Fab({
             aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
             variant="ghost"
             size="iconSquare"
+            haptic={false}
             disabled={isDeletingFabEntity || isPreparingGoalDelete}
             className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation border border-white/15 bg-black text-white hover:bg-zinc-900 disabled:opacity-50"
             {...overhangDeleteTapHandlers}
@@ -19342,6 +19451,7 @@ export function Fab({
           aria-label="Discard"
           variant="cancelSquare"
           size="iconSquare"
+          haptic={false}
           className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
           {...overhangCancelTapHandlers}
         >
@@ -19357,6 +19467,7 @@ export function Fab({
           variant="confirmSquare"
           size="iconSquare"
           disabled={isSaveDisabled}
+          haptic={false}
           className={cn(
             "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
             isSaveDisabled ? "opacity-50" : "",
@@ -19934,6 +20045,7 @@ export function Fab({
                           aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
                           variant="ghost"
                           size="iconSquare"
+                          haptic={false}
                           disabled={
                             isDeletingFabEntity || isPreparingGoalDelete
                           }
@@ -19952,6 +20064,7 @@ export function Fab({
                         aria-label="Discard"
                         variant="cancelSquare"
                         size="iconSquare"
+                        haptic={false}
                         className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
                         {...overhangCancelTapHandlers}
                       >
@@ -19967,6 +20080,7 @@ export function Fab({
                         variant="confirmSquare"
                         size="iconSquare"
                         disabled={isSaveDisabled}
+                        haptic={false}
                         className={cn(
                           "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
                           isSaveDisabled ? "opacity-50" : "",
@@ -23016,6 +23130,7 @@ function FabNexus({
                   if (dragStateRef.current !== pressState) return;
                   pressState.longPressFired = true;
                   suppressTransientClick();
+                  void hapticLongPress();
                   onLongPressResult(result, originElement);
                 }, RESULT_CARD_LONG_PRESS_THRESHOLD_MS);
               };
@@ -23272,6 +23387,7 @@ function FabNexus({
                 clearResultLongPressTimer();
                 dragStateRef.current = null;
                 suppressTransientClick();
+                void hapticLongPress();
                 onLongPressResult(result, event.currentTarget as HTMLElement);
               };
 

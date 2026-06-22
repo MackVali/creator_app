@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
 import { SkillDetail } from "@/app/(app)/skills/[id]/SkillDetail";
 import { CLOSE_ACTIVE_SKILL_DETAIL_EVENT } from "@/components/skills/events";
+import { hapticSnap, hapticSoftTick } from "@/lib/haptics/creatorHaptics";
 import type { SkillRow } from "@/lib/types/skill";
 
 const FALLBACK_COLOR = "#6366f1";
@@ -1025,6 +1026,10 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
       }
 
       const bounded = Math.max(0, Math.min(nextIndex, communitySkillCategoryNames.length - 1));
+      if (bounded === activeCommunitySkillCategoryIndexRef.current) {
+        return;
+      }
+      void hapticSnap();
       activeCommunitySkillCategoryIndexRef.current = bounded;
       setActiveCommunitySkillCategoryIndex((current) => (current === bounded ? current : bounded));
       setOpenCommunitySkillSubcategories({});
@@ -1059,6 +1064,17 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     [communitySkillCategoryNames, setCommunitySkillCategoryIndex]
   );
 
+  const selectCommunitySkill = useCallback(
+    (skillKey: string) => {
+      if (skillKey === selectedCommunitySkillId) {
+        return;
+      }
+      void hapticSoftTick();
+      setSelectedCommunitySkillId(skillKey);
+    },
+    [selectedCommunitySkillId]
+  );
+
   const syncCommunityCategoryFromResultsScroll = useCallback(() => {
     const pager = communityResultsPagerRef.current;
     if (!pager || pager.clientWidth <= 0 || communitySkillCategoryNames.length === 0) {
@@ -1073,14 +1089,13 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
       )
     );
 
-    setActiveCommunitySkillCategoryIndex((current) => {
-      if (current === nextIndex) {
-        return current;
-      }
-      activeCommunitySkillCategoryIndexRef.current = nextIndex;
-      setOpenCommunitySkillSubcategories({});
-      return nextIndex;
-    });
+    if (nextIndex === activeCommunitySkillCategoryIndexRef.current) {
+      return;
+    }
+    void hapticSnap();
+    activeCommunitySkillCategoryIndexRef.current = nextIndex;
+    setOpenCommunitySkillSubcategories({});
+    setActiveCommunitySkillCategoryIndex(nextIndex);
   }, [communitySkillCategoryNames.length]);
 
   const handleCommunityResultsScroll = useCallback(() => {
@@ -1518,6 +1533,9 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
         }
       }
 
+      if (!options.instant && bounded !== activeIndexRef.current) {
+        void hapticSnap();
+      }
       activeIndexRef.current = bounded;
       setActiveIndex((prev) => (prev === bounded ? prev : bounded));
 
@@ -1559,6 +1577,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
     });
 
     if (nearest !== activeIndexRef.current) {
+      void hapticSnap();
       activeIndexRef.current = nearest;
       setActiveIndex((prev) => (prev === nearest ? prev : nearest));
 
@@ -2316,7 +2335,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                               <button
                                 key={skillKey}
                                 type="button"
-                                onClick={() => setSelectedCommunitySkillId(skillKey)}
+                                onClick={() => selectCommunitySkill(skillKey)}
                                 aria-pressed={isSelected}
                                 className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                                   isSelected
@@ -2349,7 +2368,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                               <button
                                 key={skillKey}
                                 type="button"
-                                onClick={() => setSelectedCommunitySkillId(skillKey)}
+                                onClick={() => selectCommunitySkill(skillKey)}
                                 aria-pressed={isSelected}
                                 className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                                   isSelected
@@ -2502,7 +2521,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                                         <button
                                           key={skillKey}
                                           type="button"
-                                          onClick={() => setSelectedCommunitySkillId(skillKey)}
+                                          onClick={() => selectCommunitySkill(skillKey)}
                                           aria-pressed={isSelected}
                                           className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                                             isSelected
@@ -2564,9 +2583,7 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                                                   <button
                                                     key={skillKey}
                                                     type="button"
-                                                    onClick={() =>
-                                                      setSelectedCommunitySkillId(skillKey)
-                                                    }
+                                                    onClick={() => selectCommunitySkill(skillKey)}
                                                     aria-pressed={isSelected}
                                                     className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                                                       isSelected

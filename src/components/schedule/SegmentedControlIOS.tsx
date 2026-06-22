@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { hapticSoftTick } from "@/lib/haptics/creatorHaptics";
 import { cn } from "@/lib/utils";
 
 interface SegmentedControlIOSProps {
@@ -34,7 +35,13 @@ export function SegmentedControlIOS({
             "flex-1 rounded-md px-2 py-1 text-xs",
             value === i ? "bg-zinc-800 text-white" : "text-zinc-400"
           )}
-          onClick={() => onChange?.(i)}
+          onClick={() => {
+            if (value === i) {
+              return;
+            }
+            void hapticSoftTick();
+            onChange?.(i);
+          }}
         >
           {label}
         </button>

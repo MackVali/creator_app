@@ -15,6 +15,7 @@ import {
 import type { DragEndEvent } from "@dnd-kit/core";
 import { Grid2x2, Grid3x3 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { hapticSnap, hapticSoftTick } from "@/lib/haptics/creatorHaptics";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
@@ -2413,6 +2414,10 @@ export function MonumentGoalsList({
 
   const handleGoalPanelChange = useCallback(
     (panel: GoalPanel) => {
+      if (panel === activeGoalPanel) {
+        return;
+      }
+      void hapticSnap();
       const nextHeight = getGoalPanelHeight(panel);
       if (nextHeight) {
         setGoalPanelHeight(nextHeight);
@@ -2421,10 +2426,11 @@ export function MonumentGoalsList({
       setActiveGoalPanel(panel);
       onGoalSectionChange?.(panel);
     },
-    [getGoalPanelHeight, onGoalSectionChange]
+    [activeGoalPanel, getGoalPanelHeight, onGoalSectionChange]
   );
 
   const handleGoalCardDensityToggle = useCallback(() => {
+    void hapticSoftTick();
     setGoalCardDensity((currentDensity) =>
       currentDensity === "large" ? "small" : "large"
     );

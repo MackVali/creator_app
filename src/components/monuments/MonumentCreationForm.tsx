@@ -27,6 +27,7 @@ type MonumentCreationFormProps = {
   onCreate?: () => void;
   submitLabel?: string;
   submitButtonClassName?: string;
+  variant?: "default" | "dialog";
 };
 
 type SkillGroup = {
@@ -39,6 +40,7 @@ export function MonumentCreationForm({
   onCreate,
   submitLabel = "Create monument",
   submitButtonClassName,
+  variant = "default",
 }: MonumentCreationFormProps) {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -274,11 +276,25 @@ export function MonumentCreationForm({
     router.refresh();
   }
 
+  const isDialogVariant = variant === "dialog";
+  const labelClassName = isDialogVariant
+    ? "text-[10px] font-semibold uppercase tracking-[0.26em] text-white/48"
+    : "text-xs font-semibold uppercase tracking-[0.2em] text-white/70";
+  const fieldClassName = isDialogVariant
+    ? "border-white/10 bg-black/25 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_10px_22px_-18px_rgba(0,0,0,0.9)] outline-none transition placeholder:text-white/34 focus-visible:border-white/28 focus-visible:ring-2 focus-visible:ring-white/12"
+    : "";
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="flex flex-row gap-3">
-        <div className="min-w-[72px] basis-[20%] flex flex-col gap-2">
-          <Label htmlFor="monument-emoji" className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+    <form onSubmit={handleSubmit} className={isDialogVariant ? "space-y-4" : "space-y-6"}>
+      <div className={isDialogVariant ? "flex flex-row gap-2.5" : "flex flex-row gap-3"}>
+        <div
+          className={
+            isDialogVariant
+              ? "flex min-w-[64px] basis-[18%] flex-col gap-1.5"
+              : "min-w-[72px] basis-[20%] flex flex-col gap-2"
+          }
+        >
+          <Label htmlFor="monument-emoji" className={labelClassName}>
             Icon
           </Label>
           <Input
@@ -286,11 +302,22 @@ export function MonumentCreationForm({
             value={emoji}
             onChange={(event) => setEmoji(event.target.value)}
             maxLength={2}
-            className="h-14 rounded-2xl border-white/10 bg-white/[0.05] text-center text-3xl"
+            className={cn(
+              isDialogVariant
+                ? "h-12 rounded-[16px] px-2 text-center text-2xl"
+                : "h-14 rounded-2xl border-white/10 bg-white/[0.05] text-center text-3xl",
+              fieldClassName,
+            )}
           />
         </div>
-        <div className="basis-[80%] flex-1 min-w-0 flex flex-col gap-2">
-          <Label htmlFor="monument-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+        <div
+          className={
+            isDialogVariant
+              ? "flex min-w-0 flex-1 basis-[82%] flex-col gap-1.5"
+              : "basis-[80%] flex-1 min-w-0 flex flex-col gap-2"
+          }
+        >
+          <Label htmlFor="monument-title" className={labelClassName}>
             Title
           </Label>
           <Input
@@ -299,13 +326,18 @@ export function MonumentCreationForm({
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Name your monument"
-            className="h-12 rounded-xl border-white/10 bg-white/[0.05] text-white placeholder:text-white/40"
+            className={cn(
+              isDialogVariant
+                ? "h-12 rounded-[16px] text-[0.95rem] font-medium"
+                : "h-12 rounded-xl border-white/10 bg-white/[0.05] text-white placeholder:text-white/40",
+              fieldClassName,
+            )}
           />
         </div>
       </div>
 
-      <div className="space-y-3">
-        <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+      <div className={isDialogVariant ? "space-y-2.5" : "space-y-3"}>
+        <Label className={labelClassName}>
           Related skills
         </Label>
         <DropdownMenu>
@@ -313,8 +345,10 @@ export function MonumentCreationForm({
             <button
               type="button"
               className={cn(
-                "flex items-center justify-between gap-3 rounded-full border px-4 py-2 text-sm font-medium transition",
-                "border-white/20 bg-white/[0.04] text-white/80 hover:border-white/40 hover:text-white",
+                "flex items-center justify-between gap-3 border font-medium transition",
+                isDialogVariant
+                  ? "h-10 w-full rounded-[14px] border-white/10 bg-white/[0.045] px-3 text-sm text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-white/22 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/18"
+                  : "rounded-full border-white/20 bg-white/[0.04] px-4 py-2 text-sm text-white/80 hover:border-white/40 hover:text-white",
               )}
             >
               <span>
@@ -327,7 +361,12 @@ export function MonumentCreationForm({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
-            className="min-w-[260px] border-white/10 bg-[#0b101b] text-white z-[230]"
+            className={cn(
+              "z-[230] border-white/10 text-white",
+              isDialogVariant
+                ? "max-h-[min(320px,calc(100dvh-220px))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-[260px] max-w-[calc(100vw-32px)] rounded-[16px] bg-[#07080d]/95 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+                : "min-w-[260px] bg-[#0b101b]",
+            )}
           >
             {skillsLoading ? (
               <DropdownMenuItem disabled className="text-white/60">
@@ -343,15 +382,21 @@ export function MonumentCreationForm({
               </DropdownMenuItem>
             ) : (
               groupedAvailableSkills.map((group, index) => (
-                // eslint-disable-next-line react/no-array-index-key
                 <div
                   key={group.id}
                   className={cn(
-                    "space-y-2 border-t border-white/5 px-3 pb-2 pt-3 text-sm text-white",
+                    "border-t border-white/5 text-sm text-white",
+                    isDialogVariant ? "space-y-1.5 px-2 pb-2 pt-2.5" : "space-y-2 px-3 pb-2 pt-3",
                     index === 0 ? "border-t-0 pt-0" : "",
                   )}
                 >
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">
+                  <p
+                    className={
+                      isDialogVariant
+                        ? "px-1 text-[10px] font-semibold uppercase tracking-[0.26em] text-white/42"
+                        : "text-xs font-semibold uppercase tracking-[0.3em] text-white/50"
+                    }
+                  >
                     {group.label}
                   </p>
                   <div className="flex flex-col gap-1">
@@ -360,7 +405,12 @@ export function MonumentCreationForm({
                         key={skill.id}
                         checked={skills.includes(skill.id)}
                         onCheckedChange={() => toggleSkill(skill.id)}
-                        className="gap-3 text-sm text-white"
+                        className={cn(
+                          "gap-3 text-sm text-white",
+                          isDialogVariant
+                            ? "rounded-[10px] text-white/78 focus:bg-white/[0.07] focus:text-white"
+                            : "",
+                        )}
                       >
                         <span className="text-base">{skill.icon ?? "•"}</span>
                         <span>{skill.name}</span>
@@ -373,14 +423,18 @@ export function MonumentCreationForm({
           </DropdownMenuContent>
         </DropdownMenu>
         {skills.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className={isDialogVariant ? "flex flex-wrap gap-1.5" : "flex flex-wrap gap-2"}>
             {skills.map((skillId) => {
               const skill = availableSkills.find((item) => item.id === skillId);
               if (!skill) return null;
               return (
                 <span
                   key={skillId}
-                  className="rounded-full border border-white/15 bg-white/[0.06] px-3 py-1 text-xs text-white/80"
+                  className={
+                    isDialogVariant
+                      ? "rounded-full border border-white/10 bg-white/[0.045] px-2.5 py-1 text-[11px] font-medium text-white/68"
+                      : "rounded-full border border-white/15 bg-white/[0.06] px-3 py-1 text-xs text-white/80"
+                  }
                 >
                   {skill.name}
                 </span>
@@ -388,25 +442,45 @@ export function MonumentCreationForm({
             })}
           </div>
         ) : (
-          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-red-400">
+          <p
+            className={
+              isDialogVariant
+                ? "text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36"
+                : "text-xs font-semibold uppercase tracking-[0.15em] text-red-400"
+            }
+          >
             IMPORTANT
           </p>
         )}
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+        <div
+          className={
+            isDialogVariant
+              ? "rounded-[14px] border border-red-400/20 bg-red-500/10 px-3 py-2.5 text-sm text-red-100"
+              : "rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+          }
+        >
           {error}
         </div>
       ) : null}
 
-      <div className="flex justify-end">
+      <div
+        className={
+          isDialogVariant
+            ? "border-t border-white/10 pt-3"
+            : "flex justify-end"
+        }
+      >
         <Button
           type="submit"
           disabled={loading}
           className={
             submitButtonClassName ??
-            "h-12 rounded-xl bg-gradient-to-r from-slate-600 to-slate-400 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed"
+            (isDialogVariant
+              ? "h-11 w-full rounded-[14px] border border-white/25 bg-white text-sm font-semibold text-black shadow-[0_16px_30px_-18px_rgba(255,255,255,0.62),inset_0_1px_0_rgba(255,255,255,0.8)] transition hover:bg-zinc-100 hover:text-black focus-visible:ring-white/35 disabled:cursor-not-allowed disabled:bg-white/35 disabled:text-black/55"
+              : "h-12 rounded-xl bg-gradient-to-r from-slate-600 to-slate-400 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed")
           }
         >
           {loading ? "Creating..." : submitLabel}

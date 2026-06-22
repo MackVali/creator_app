@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { mapFriendRequest } from "@/lib/friends/mappers";
+import { sendPushToUser } from "@/lib/notifications/sendPush";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const profileSelect = "user_id, username, name, avatar_url";
 
@@ -13,6 +15,74 @@ function getDisplayName(profile?: {
 }) {
   const trimmed = profile?.name?.trim();
   return trimmed ? trimmed : profile?.username;
+}
+
+async function sendFriendRequestAcceptedPush({
+  requestId,
+  timestamp,
+  requesterId,
+  targetId,
+  targetDisplayName,
+}: {
+  requestId: string;
+  timestamp?: string | null;
+  requesterId: string;
+  targetId: string;
+  targetDisplayName: string;
+}) {
+  if (requesterId === targetId) {
+    return;
+  }
+
+  try {
+    const adminClient = createAdminClient();
+
+    if (!adminClient) {
+      console.warn("Friend request accepted push skipped: admin client unavailable", {
+        requestId,
+      });
+      return;
+    }
+
+    const result = await sendPushToUser(
+      adminClient,
+      requesterId,
+      {
+        notification: {
+          title: "Friend request accepted",
+          body: `${targetDisplayName} accepted your request.`,
+        },
+        data: {
+          type: "friend_request_accepted",
+          requestId,
+          requesterId,
+          targetId,
+        },
+      },
+      {
+        delivery: {
+          kind: "friend_request_accepted",
+          entityType: "friend_request",
+          entityId: requestId,
+          scheduledFor: timestamp ?? new Date().toISOString(),
+          dedupe: true,
+        },
+      },
+    );
+
+    if (!result.ok) {
+      console.warn("Friend request accepted push send incomplete", {
+        requestId,
+        skippedReason: result.skippedReason,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.warn("Friend request accepted push failed", {
+      requestId,
+      error: error instanceof Error ? error.message : "Unknown push error",
+    });
+  }
 }
 
 const RespondSchema = z.object({
@@ -218,6 +288,19 @@ export async function POST(request: Request) {
       console.error("Failed to insert friend connection", insertError);
     }
   }
+
+  void sendFriendRequestAcceptedPush({
+    requestId: updated.id,
+    timestamp: updated.responded_at ?? now,
+    requesterId: updated.requester_id,
+    targetId: updated.target_id,
+    targetDisplayName,
+  }).catch((error) => {
+    console.warn("Friend request accepted push failed", {
+      requestId: updated.id,
+      error: error instanceof Error ? error.message : "Unknown push error",
+    });
+  });
 
   return NextResponse.json(
     { request: mapFriendRequest(updated, user.id) },
