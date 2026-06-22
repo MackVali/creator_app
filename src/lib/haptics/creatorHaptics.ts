@@ -34,9 +34,27 @@ export function hapticTap() {
   return runHaptic(() => Haptics.impact({ style: ImpactStyle.Light }));
 }
 
+export function hapticLightImpact() {
+  return runHaptic(() => Haptics.impact({ style: ImpactStyle.Light }));
+}
+
+export function hapticMediumImpact() {
+  return runHaptic(() => Haptics.impact({ style: ImpactStyle.Medium }));
+}
+
+export function hapticHeavyImpact() {
+  return runHaptic(() => Haptics.impact({ style: ImpactStyle.Heavy }));
+}
+
 export function hapticSuccess() {
   return runHaptic(() =>
     Haptics.notification({ type: NotificationType.Success })
+  );
+}
+
+export function hapticWarning() {
+  return runHaptic(() =>
+    Haptics.notification({ type: NotificationType.Warning })
   );
 }
 
@@ -48,6 +66,14 @@ export function hapticError() {
 
 export function hapticImpact(style: CreatorHapticImpactStyle) {
   return runHaptic(() => Haptics.impact({ style }));
+}
+
+export function hapticSelectionChanged() {
+  return runHaptic(async () => {
+    await Haptics.selectionStart();
+    await Haptics.selectionChanged();
+    await Haptics.selectionEnd();
+  });
 }
 
 export { ImpactStyle as CreatorImpactStyle };

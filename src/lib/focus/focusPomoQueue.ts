@@ -1,4 +1,12 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
+import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import {
+  addDaysInTimeZone,
+  formatDateKeyInTimeZone,
+  normalizeTimeZone,
+  startOfDayInTimeZone,
+} from "@/lib/scheduler/timezone";
 
 export type FocusPomoQueueKind = "chore" | "habit" | "project";
 
@@ -62,10 +70,21 @@ export interface FocusPomoQueueItem {
   habitType?: string | null;
   recurrence?: string | null;
   recurrence_days?: number[] | null;
+  recurrenceMode?: string | null;
+  recurrence_mode?: string | null;
+  anchorType?: string | null;
+  anchor_type?: string | null;
+  anchorValue?: string | null;
+  anchor_value?: string | null;
+  anchorStartDate?: string | null;
+  anchor_start_date?: string | null;
   lastCompletedAt?: string | null;
   last_completed_at?: string | null;
   nextDueOverride?: string | null;
   next_due_override?: string | null;
+  windowId?: string | null;
+  window_id?: string | null;
+  windowDays?: number[] | null;
   rawTypeLabel?: string | null;
   goal?: FocusPomoQueueRelation | null;
   goal_id?: string | null;
@@ -114,8 +133,16 @@ type HabitRow = {
   habit_type?: string | null;
   recurrence?: string | null;
   recurrence_days?: number[] | null;
+  recurrence_mode?: string | null;
+  anchor_type?: string | null;
+  anchor_value?: string | null;
+  anchor_start_date?: string | null;
   last_completed_at?: string | null;
   next_due_override?: string | null;
+  window_id?: string | null;
+  window?: {
+    days?: number[] | null;
+  } | null;
   created_at?: string | null;
   updated_at?: string | null;
   duration_minutes?: number | string | null;
@@ -235,6 +262,9 @@ export type FocusPomoQueueRelation = {
 };
 
 const HABIT_BASE_COLUMNS =
+  "id, name, habit_type, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, last_completed_at, next_due_override, window_id, window:windows(days), created_at, updated_at, duration_minutes, energy, skill_id, global_order";
+
+const HABIT_LEGACY_BASE_COLUMNS =
   "id, name, habit_type, recurrence, recurrence_days, last_completed_at, next_due_override, created_at, updated_at, duration_minutes, energy, skill_id, global_order";
 
 const HABIT_SELECTS = [
@@ -246,6 +276,14 @@ const HABIT_SELECTS = [
   `${HABIT_BASE_COLUMNS}, icon`,
   `${HABIT_BASE_COLUMNS}, emoji`,
   HABIT_BASE_COLUMNS,
+  `${HABIT_LEGACY_BASE_COLUMNS}, goal_id, campaign_id, routine_id, tags, icon, emoji`,
+  `${HABIT_LEGACY_BASE_COLUMNS}, goal_id, campaign_id, routine_id, icon, emoji`,
+  `${HABIT_LEGACY_BASE_COLUMNS}, goal_id, routine_id, icon, emoji`,
+  `${HABIT_LEGACY_BASE_COLUMNS}, routine_id, icon, emoji`,
+  `${HABIT_LEGACY_BASE_COLUMNS}, icon, emoji`,
+  `${HABIT_LEGACY_BASE_COLUMNS}, icon`,
+  `${HABIT_LEGACY_BASE_COLUMNS}, emoji`,
+  HABIT_LEGACY_BASE_COLUMNS,
 ];
 
 const PROJECT_SELECTS = [
@@ -723,6 +761,80 @@ function isHabitDueNow(item: FocusPomoQueueItem, now: Date): boolean {
   return nextDue.getTime() <= now.getTime();
 }
 
+function toHabitScheduleItem(item: FocusPomoQueueItem): HabitScheduleItem | null {
+  const id = readString(item.id);
+  if (!id) return null;
+
+  return {
+    id,
+    name: item.title || "Untitled habit",
+    memoCaptureConfig: null,
+    durationMinutes: item.durationMinutes,
+    createdAt: readString(item.createdAt) ?? readString(item.created_at),
+    updatedAt: readString(item.updatedAt) ?? readString(item.updated_at),
+    lastCompletedAt:
+      readString(item.lastCompletedAt) ?? readString(item.last_completed_at),
+    currentStreakDays: 0,
+    longestStreakDays: 0,
+    habitType: item.habitType ?? item.habit_type ?? "HABIT",
+    windowId: item.windowId ?? item.window_id ?? null,
+    energy: item.energyCode ?? null,
+    recurrence: item.recurrence ?? null,
+    recurrenceDays: Array.isArray(item.recurrence_days)
+      ? item.recurrence_days
+      : null,
+    recurrenceMode: item.recurrenceMode ?? item.recurrence_mode ?? null,
+    anchorType: item.anchorType ?? item.anchor_type ?? null,
+    anchorValue: item.anchorValue ?? item.anchor_value ?? null,
+    anchorStartDate: item.anchorStartDate ?? item.anchor_start_date ?? null,
+    skillId: item.skillId ?? null,
+    goalId: item.goalId ?? item.goal_id ?? null,
+    completionTarget: null,
+    locationContextId: null,
+    locationContextValue: null,
+    locationContextName: null,
+    daylightPreference: null,
+    windowEdgePreference: null,
+    nextDueOverride: item.nextDueOverride ?? item.next_due_override ?? null,
+    fixedStartLocal: null,
+    fixedEndLocal: null,
+    fixedTimezone: null,
+    window: item.windowDays
+      ? {
+          id: item.windowId ?? item.window_id ?? "",
+          label: null,
+          energy: null,
+          startLocal: "00:00",
+          endLocal: "00:00",
+          days: item.windowDays,
+          locationContextId: null,
+          locationContextValue: null,
+          locationContextName: null,
+        }
+      : null,
+  };
+}
+
+function isHabitDueToday(
+  item: FocusPomoQueueItem,
+  now: Date,
+  timeZone: string
+): boolean {
+  const habit = toHabitScheduleItem(item);
+  if (!habit) return false;
+  const override = habit.nextDueOverride ? new Date(habit.nextDueOverride) : null;
+  const nextDueOverride =
+    override && Number.isFinite(override.getTime()) ? override : null;
+
+  return evaluateHabitDueOnDate({
+    habit,
+    date: now,
+    timeZone,
+    windowDays: item.windowDays ?? null,
+    nextDueOverride,
+  }).isDue;
+}
+
 function isHabitItem(item: FocusPomoQueueItem): boolean {
   return item.sourceType === "HABIT" || item.kind === "habit" || item.kind === "chore";
 }
@@ -744,18 +856,29 @@ function isCompletedQueueItem(item: FocusPomoQueueItem): boolean {
 
 function isQueueItemEligibleToRun(
   item: FocusPomoQueueItem,
-  now: Date
+  now: Date,
+  options: {
+    completedHabitIdsToday?: Set<string>;
+    timeZone?: string;
+  } = {}
 ): boolean {
   if (isCompletedQueueItem(item)) return false;
-  if (isHabitItem(item)) return isHabitDueNow(item, now);
+  if (isHabitItem(item)) {
+    if (options.completedHabitIdsToday?.has(item.id)) return false;
+    return isHabitDueToday(item, now, options.timeZone ?? "UTC");
+  }
   return true;
 }
 
 function filterEligibleQueueItems(
   items: FocusPomoQueueItem[],
-  now: Date
+  now: Date,
+  options: {
+    completedHabitIdsToday?: Set<string>;
+    timeZone?: string;
+  } = {}
 ): FocusPomoQueueItem[] {
-  return items.filter((item) => isQueueItemEligibleToRun(item, now));
+  return items.filter((item) => isQueueItemEligibleToRun(item, now, options));
 }
 
 function isChoreItem(item: FocusPomoQueueItem): boolean {
@@ -1096,10 +1219,21 @@ function mapHabit(
     recurrence_days: Array.isArray(row.recurrence_days)
       ? row.recurrence_days
       : null,
+    recurrenceMode: readString(row.recurrence_mode),
+    recurrence_mode: readString(row.recurrence_mode),
+    anchorType: readString(row.anchor_type),
+    anchor_type: readString(row.anchor_type),
+    anchorValue: readString(row.anchor_value),
+    anchor_value: readString(row.anchor_value),
+    anchorStartDate: readString(row.anchor_start_date),
+    anchor_start_date: readString(row.anchor_start_date),
     lastCompletedAt: readString(row.last_completed_at),
     last_completed_at: readString(row.last_completed_at),
     nextDueOverride: readString(row.next_due_override),
     next_due_override: readString(row.next_due_override),
+    windowId: readString(row.window_id),
+    window_id: readString(row.window_id),
+    windowDays: Array.isArray(row.window?.days) ? row.window.days : null,
     rawTypeLabel,
   };
 }
@@ -1499,6 +1633,89 @@ async function fetchProjectIdsForSkill(
   );
 }
 
+async function fetchFocusPomoTimeZone(
+  supabase: SupabaseBrowserClient,
+  userId: string
+): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Failed to load FocusPomo timezone", error);
+      return normalizeTimeZone();
+    }
+
+    const profile = data as { timezone?: string | null } | null;
+    return normalizeTimeZone(
+      typeof profile?.timezone === "string" ? profile.timezone : null
+    );
+  } catch (error) {
+    console.warn("Failed to load FocusPomo timezone", error);
+    return normalizeTimeZone();
+  }
+}
+
+async function fetchCompletedHabitIdsForDate(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  habitIds: string[],
+  dateKey: string
+): Promise<Set<string>> {
+  const ids = Array.from(new Set(habitIds.filter(Boolean)));
+  if (ids.length === 0) return new Set();
+
+  const { data, error } = await supabase
+    .from("habit_completion_days")
+    .select("habit_id")
+    .eq("user_id", userId)
+    .eq("completion_day", dateKey)
+    .in("habit_id", ids);
+
+  if (error) throw error;
+
+  return new Set(
+    (data ?? [])
+      .map((row) => readString((row as { habit_id?: string | null }).habit_id))
+      .filter((id): id is string => Boolean(id))
+  );
+}
+
+async function fetchCompletedScheduledHabitIdsForDate(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  habitIds: string[],
+  date: Date,
+  timeZone: string
+): Promise<Set<string>> {
+  const ids = Array.from(new Set(habitIds.filter(Boolean)));
+  if (ids.length === 0) return new Set();
+
+  const dayStart = startOfDayInTimeZone(date, timeZone);
+  const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone);
+
+  const { data, error } = await supabase
+    .from("schedule_instances")
+    .select("source_id")
+    .eq("user_id", userId)
+    .eq("source_type", "HABIT")
+    .eq("status", "completed")
+    .lt("start_utc", dayEnd.toISOString())
+    .gt("end_utc", dayStart.toISOString())
+    .in("source_id", ids);
+
+  if (error) throw error;
+
+  return new Set(
+    (data ?? [])
+      .map((row) => readString((row as { source_id?: string | null }).source_id))
+      .filter((id): id is string => Boolean(id))
+  );
+}
+
 async function fetchHabits(
   supabase: SupabaseBrowserClient,
   userId: string,
@@ -1661,8 +1878,34 @@ export async function fetchFocusPomoQueue(params: {
     ]);
 
     const now = new Date();
+    const timeZone = await fetchFocusPomoTimeZone(supabase, user.id);
+    const habitIds = habits.map((item) => item.id);
+    const [completionDayHabitIds, completedScheduledHabitIds] =
+      await Promise.all([
+        fetchCompletedHabitIdsForDate(
+          supabase,
+          user.id,
+          habitIds,
+          formatDateKeyInTimeZone(now, timeZone)
+        ),
+        fetchCompletedScheduledHabitIdsForDate(
+          supabase,
+          user.id,
+          habitIds,
+          now,
+          timeZone
+        ),
+      ]);
+    // Matrix can show scheduled Habit Events as completed from instance status before habit_completion_days exists.
+    const completedHabitIdsToday = new Set([
+      ...completionDayHabitIds,
+      ...completedScheduledHabitIds,
+    ]);
     return sortFocusPomoQueue(
-      filterEligibleQueueItems([...habits, ...projects], now),
+      filterEligibleQueueItems([...habits, ...projects], now, {
+        completedHabitIdsToday,
+        timeZone,
+      }),
       { now }
     );
   }
@@ -1695,8 +1938,34 @@ export async function fetchFocusPomoQueue(params: {
   ]);
 
   const now = new Date();
+  const timeZone = await fetchFocusPomoTimeZone(supabase, user.id);
+  const habitIds = habits.map((item) => item.id);
+  const [completionDayHabitIds, completedScheduledHabitIds] =
+    await Promise.all([
+      fetchCompletedHabitIdsForDate(
+        supabase,
+        user.id,
+        habitIds,
+        formatDateKeyInTimeZone(now, timeZone)
+      ),
+      fetchCompletedScheduledHabitIdsForDate(
+        supabase,
+        user.id,
+        habitIds,
+        now,
+        timeZone
+      ),
+    ]);
+  // Matrix can show scheduled Habit Events as completed from instance status before habit_completion_days exists.
+  const completedHabitIdsToday = new Set([
+    ...completionDayHabitIds,
+    ...completedScheduledHabitIds,
+  ]);
   return sortFocusPomoQueue(
-    filterEligibleQueueItems([...habits, ...projects], now),
+    filterEligibleQueueItems([...habits, ...projects], now, {
+      completedHabitIdsToday,
+      timeZone,
+    }),
     { now }
   );
 }

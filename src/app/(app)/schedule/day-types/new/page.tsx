@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type PointerEvent,
   type UIEvent,
 } from "react";
 import Link from "next/link";
@@ -130,7 +129,6 @@ const DAY_PREVIEWS = [
   { key: "sat", shortLabel: "Sat", fullLabel: "Saturday", index: 6 },
   { key: "sun", shortLabel: "Sun", fullLabel: "Sunday", index: 0 },
 ];
-const DAY_PREVIEW_SWIPE_THRESHOLD_PX = 48;
 
 const SHOW_INTERNAL_DAY_TYPE_CONTROLS = false;
 
@@ -147,10 +145,6 @@ const DAY_INDEX_TO_LABEL = DAYS_OF_WEEK.reduce<Record<number, string>>((acc, day
 }, {});
 const DAY_KEY_TO_FULL_LABEL = DAY_PREVIEWS.reduce<Record<string, string>>((acc, day) => {
   acc[day.key] = day.fullLabel;
-  return acc;
-}, {});
-const DAY_PREVIEW_KEY_TO_POSITION = DAY_PREVIEWS.reduce<Record<string, number>>((acc, day, index) => {
-  acc[day.key] = index;
   return acc;
 }, {});
 
@@ -299,13 +293,6 @@ function findDayTypeForWeekday(dayKey: string, dayTypes: DayType[]): DayType | n
   );
 }
 
-function getDayPreviewKeyByOffset(dayKey: string, offset: number): string {
-  const currentPosition = DAY_PREVIEW_KEY_TO_POSITION[dayKey] ?? 0;
-  const nextPosition =
-    (currentPosition + offset + DAY_PREVIEWS.length) % DAY_PREVIEWS.length;
-  return DAY_PREVIEWS[nextPosition]?.key ?? DEFAULT_DAY_PREVIEW.key;
-}
-
 function timeBlocksOverlap(
   proposed: Pick<TimeBlock, "start_local" | "end_local">,
   existing: Pick<TimeBlock, "start_local" | "end_local">
@@ -448,10 +435,8 @@ export default function NewDayTypePage() {
   const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(null);
   const [focusedDayKey, setFocusedDayKey] = useState(DEFAULT_DAY_PREVIEW.key);
   const dayPreviewScrollerRef = useRef<HTMLDivElement | null>(null);
-  const dayPreviewScrollFrameRef = useRef<number | null>(null);
+  const dayPreviewScrollSettleTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const dayPreviewScrollSyncTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const dayPreviewPointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const dayPreviewPointerDraggingRef = useRef(false);
   const dayPreviewSuppressClickRef = useRef(false);
   const [isCreatingDayType, setIsCreatingDayType] = useState(false);
   const [isEditingExisting, setIsEditingExisting] = useState(false);
@@ -2478,16 +2463,16 @@ export default function NewDayTypePage() {
 
   const handleDayPreviewScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
-      if (dayPreviewPointerDraggingRef.current || dayPreviewSuppressClickRef.current) {
+      if (dayPreviewSuppressClickRef.current) {
         return;
       }
 
       const scroller = event.currentTarget;
-      if (dayPreviewScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(dayPreviewScrollFrameRef.current);
+      if (dayPreviewScrollSettleTimeoutRef.current !== null) {
+        window.clearTimeout(dayPreviewScrollSettleTimeoutRef.current);
       }
 
-      dayPreviewScrollFrameRef.current = window.requestAnimationFrame(() => {
+      dayPreviewScrollSettleTimeoutRef.current = window.setTimeout(() => {
         const scrollerRect = scroller.getBoundingClientRect();
         const scrollerCenter = scrollerRect.left + scrollerRect.width / 2;
         let closestDayKey = focusedDayKey;
@@ -2503,11 +2488,11 @@ export default function NewDayTypePage() {
           }
         });
 
-        dayPreviewScrollFrameRef.current = null;
+        dayPreviewScrollSettleTimeoutRef.current = null;
         if (closestDayKey !== focusedDayKey) {
           handleFocusWeekday(closestDayKey);
         }
-      });
+      }, 120);
     },
     [focusedDayKey, handleFocusWeekday]
   );
@@ -2541,49 +2526,10 @@ export default function NewDayTypePage() {
     scrollFocusedDayPreviewIntoView();
   }, [scrollFocusedDayPreviewIntoView]);
 
-  const handleDayPreviewPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    dayPreviewPointerStartRef.current = { x: event.clientX, y: event.clientY };
-    dayPreviewPointerDraggingRef.current = true;
-  }, []);
-
-  const clearDayPreviewPointer = useCallback(() => {
-    dayPreviewPointerStartRef.current = null;
-    dayPreviewPointerDraggingRef.current = false;
-  }, []);
-
-  const handleDayPreviewPointerUp = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const start = dayPreviewPointerStartRef.current;
-      clearDayPreviewPointer();
-      if (!start) return;
-
-      const deltaX = start.x - event.clientX;
-      const deltaY = start.y - event.clientY;
-      if (
-        Math.abs(deltaX) < DAY_PREVIEW_SWIPE_THRESHOLD_PX ||
-        Math.abs(deltaX) < Math.abs(deltaY)
-      ) {
-        return;
-      }
-
-      dayPreviewSuppressClickRef.current = true;
-      if (dayPreviewScrollSyncTimeoutRef.current !== null) {
-        window.clearTimeout(dayPreviewScrollSyncTimeoutRef.current);
-      }
-      dayPreviewScrollSyncTimeoutRef.current = window.setTimeout(() => {
-        dayPreviewSuppressClickRef.current = false;
-        dayPreviewScrollSyncTimeoutRef.current = null;
-      }, 260);
-      handleFocusWeekday(getDayPreviewKeyByOffset(focusedDayKey, deltaX > 0 ? 1 : -1));
-    },
-    [clearDayPreviewPointer, focusedDayKey, handleFocusWeekday]
-  );
-
   useEffect(() => {
     return () => {
-      if (dayPreviewScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(dayPreviewScrollFrameRef.current);
+      if (dayPreviewScrollSettleTimeoutRef.current !== null) {
+        window.clearTimeout(dayPreviewScrollSettleTimeoutRef.current);
       }
       if (dayPreviewScrollSyncTimeoutRef.current !== null) {
         window.clearTimeout(dayPreviewScrollSyncTimeoutRef.current);
@@ -3267,11 +3213,8 @@ export default function NewDayTypePage() {
             </div>
             <div
               ref={dayPreviewScrollerRef}
-              className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4"
+              className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth px-3 pb-2 [scroll-padding-inline:0.75rem] [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [touch-action:pan-x_pan-y] sm:-mx-4 sm:px-4 sm:[scroll-padding-inline:1rem] [&::-webkit-scrollbar]:hidden"
               onScroll={handleDayPreviewScroll}
-              onPointerDown={handleDayPreviewPointerDown}
-              onPointerUp={handleDayPreviewPointerUp}
-              onPointerCancel={clearDayPreviewPointer}
             >
               {dayPreviewItems.map((day) => (
                 <article
@@ -3290,7 +3233,7 @@ export default function NewDayTypePage() {
                     handleFocusWeekday(day.key);
                   }}
                   className={cn(
-                    "min-w-[86%] snap-center rounded-2xl border bg-gradient-to-b from-[#141820] to-[#0d0f14] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_42px_rgba(0,0,0,0.42)] sm:min-w-[21rem]",
+                    "w-[86%] flex-none snap-center snap-always scroll-mx-3 rounded-2xl border bg-gradient-to-b from-[#141820] to-[#0d0f14] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_42px_rgba(0,0,0,0.42)] sm:w-[21rem] sm:scroll-mx-4",
                     day.hasCreateConflict
                       ? "border-red-400/45"
                       : day.active
