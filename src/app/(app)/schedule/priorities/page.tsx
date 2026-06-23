@@ -56,12 +56,28 @@ type CampaignRow = {
 };
 
 type GoalProjectRow = {
-  tasks?: GoalProjectTaskSkillRow[] | null;
+  id?: string | null;
+  name?: string | null;
+  priority?: string | null;
+  energy?: string | null;
+  stage?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  global_rank?: number | string | null;
+  tasks?: GoalProjectTaskRow[] | null;
   project_skills?: GoalProjectSkillRow[] | null;
 };
 
-type GoalProjectTaskSkillRow = {
+type GoalProjectTaskRow = {
+  id?: string | null;
+  name?: string | null;
   skill_id?: string | null;
+  priority?: string | null;
+  energy?: string | null;
+  stage?: string | null;
+  completed_at?: string | null;
+  duration_min?: number | null;
+  created_at?: string | null;
   skills?: SkillMetadataRow | null;
 };
 
@@ -283,6 +299,42 @@ function collectGoalSkills(
   );
 }
 
+function getSkillFilterData(
+  skillId?: string | null,
+  rowSkill?: SkillMetadataRow | null,
+  skillsById: Map<string, SkillMetadataRow> = new Map()
+): RoadmapFilterOptionData | null {
+  const skill = skillId ? skillsById.get(skillId) : undefined;
+  const id = skillId ?? rowSkill?.id ?? skill?.id ?? null;
+  const name = skill?.name ?? rowSkill?.name ?? null;
+  const icon = skill?.icon ?? rowSkill?.icon ?? null;
+  if (!id && !name && !icon) return null;
+  return { id, name, icon };
+}
+
+function sortGoalProjects(projects: NonNullable<GoalRow["projects"]>) {
+  return [...projects].sort((a, b) => {
+    const rankDelta = compareRankValues(
+      parseGlobalRank(a.global_rank),
+      parseGlobalRank(b.global_rank)
+    );
+    if (rankDelta !== 0) return rankDelta;
+
+    const createdDelta = compareText(a.created_at, b.created_at);
+    if (createdDelta !== 0) return createdDelta;
+
+    return compareText(a.id, b.id);
+  });
+}
+
+function sortProjectTasks(tasks: NonNullable<GoalProjectRow["tasks"]>) {
+  return [...tasks].sort((a, b) => {
+    const createdDelta = compareText(a.created_at, b.created_at);
+    if (createdDelta !== 0) return createdDelta;
+    return compareText(a.id, b.id);
+  });
+}
+
 function firstRelatedRow<T>(value?: T | T[] | null): T | null {
   if (Array.isArray(value)) {
     return value[0] ?? null;
@@ -309,6 +361,76 @@ function normalizeGoal(
     priorityOrder: parseGlobalRank(row.priority_order),
     priorityRank: parseGlobalRank(row.priority_rank),
     createdAt: row.created_at ?? null,
+    projects: sortGoalProjects(row.projects ?? [])
+      .filter((project) => project.id)
+      .map((project) => {
+        const projectSkills = (project.project_skills ?? [])
+          .map((projectSkill) =>
+            getSkillFilterData(
+              projectSkill.skill_id,
+              projectSkill.skills ?? null,
+              skillsById
+            )
+          )
+          .filter((skill): skill is RoadmapFilterOptionData => Boolean(skill));
+        const tasks = sortProjectTasks(project.tasks ?? [])
+          .filter((task) => task.id)
+          .map((task) => {
+            const skill = getSkillFilterData(
+              task.skill_id,
+              task.skills ?? null,
+              skillsById
+            );
+            return {
+              id: task.id as string,
+              name: (task.name ?? "").trim() || "Untitled Task",
+              skillId: task.skill_id ?? skill?.id ?? null,
+              skillName: skill?.name ?? null,
+              skillIcon: skill?.icon ?? null,
+              priority: normalizePriority(task.priority),
+              energy: task.energy ?? null,
+              stage: task.stage ?? null,
+              completedAt: task.completed_at ?? null,
+              durationMin: task.duration_min ?? null,
+              createdAt: task.created_at ?? null,
+            };
+          });
+        const taskSkillOptions = tasks
+          .map<RoadmapFilterOptionData>((task) => ({
+            id: task.skillId ?? null,
+            name: task.skillName ?? null,
+            icon: task.skillIcon ?? null,
+          }))
+          .filter((skill) => Boolean(skill.id || skill.name || skill.icon));
+        const primarySkill = [...projectSkills, ...taskSkillOptions].find(
+          (skill) => skill.id || skill.name || skill.icon
+        );
+        const skillIds = Array.from(
+          new Set(
+            projectSkills
+              .map((skill) => skill.id)
+              .filter((skillId): skillId is string => Boolean(skillId))
+          )
+        );
+
+        return {
+          id: project.id as string,
+          name: (project.name ?? "").trim() || "Untitled Project",
+          emoji: primarySkill?.icon ?? null,
+          skillId: primarySkill?.id ?? null,
+          skillName: primarySkill?.name ?? null,
+          skillIcon: primarySkill?.icon ?? null,
+          skillIds,
+          taskSkillIds: tasks.map((task) => task.skillId ?? null),
+          priority: normalizePriority(project.priority),
+          energy: project.energy ?? null,
+          stage: project.stage ?? null,
+          completedAt: project.completed_at ?? null,
+          globalRank: parseGlobalRank(project.global_rank),
+          createdAt: project.created_at ?? null,
+          tasks,
+        };
+      }),
   };
 }
 
@@ -547,6 +669,7 @@ function buildGlobalPriorityItems({
         globalRank: normalizedGoal.globalRank,
         priorityRank: normalizedGoal.priorityRank,
         createdAt: goal.created_at ?? null,
+        projects: normalizedGoal.projects,
       };
     });
 
@@ -755,8 +878,9 @@ export default async function PriorityEditorPage() {
     .select(
       `id,name,emoji,monument_id,roadmap_id,circle_id,status,priority,priority_code,priority_order,global_rank,priority_rank,created_at,monument:monuments(id,title,emoji),
       projects(
-        tasks(skill_id),
-        project_skills(skill_id)
+        id,name,priority,energy,stage,completed_at,created_at,global_rank,
+        tasks(id,name,skill_id,priority,energy,stage,completed_at,duration_min,created_at,skills(id,name,icon,monument_id,cat_id,sort_order,created_at)),
+        project_skills(skill_id,skills(id,name,icon,monument_id,cat_id,sort_order,created_at))
       )`
     )
     .eq("user_id", userId);
