@@ -129,6 +129,7 @@ import {
 } from "@/lib/haptics/creatorHaptics";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
+import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
@@ -412,6 +413,10 @@ const MEMO_DATABASE_TARGET_OPTIONS: MemoDatabaseTargetOption[] =
 
 const hasFabCompletionTimestamp = (value?: string | null) =>
   typeof value === "string" && value.trim().length > 0;
+const FAB_GOAL_PROJECT_LONG_PRESS_MS = 650;
+const FAB_GOAL_PROJECT_DOUBLE_TAP_MS = 325;
+const FAB_GOAL_PROJECT_SINGLE_TAP_DELAY_MS = FAB_GOAL_PROJECT_DOUBLE_TAP_MS;
+const FAB_GOAL_PROJECT_DRAG_CANCEL_PX = 10;
 
 const isFabCompletionStatus = (value?: string | null) => {
   const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
@@ -524,9 +529,36 @@ type EditProjectTaskChild = {
   priority: string | null;
   energy: string | null;
   stage: string | null;
+  completedAt: string | null;
   durationMin: number | null;
   skillId: string | null;
   dueDate: string | null;
+};
+
+type FabProjectCompletionUpdateQuery = {
+  update: (values: {
+    stage: "RELEASE";
+    completed_at: string;
+    updated_at: string;
+  }) => {
+    eq: (
+      column: "id",
+      value: string,
+    ) => PromiseLike<{ error: unknown | null }>;
+  };
+};
+type FabTaskCompletionUpdateBuilder = PromiseLike<{ error: unknown | null }> & {
+  eq: (
+    column: "id" | "user_id",
+    value: string,
+  ) => FabTaskCompletionUpdateBuilder;
+};
+type FabTaskCompletionUpdateQuery = {
+  update: (values: {
+    stage: "PERFECT";
+    completed_at: string;
+    updated_at: string;
+  }) => FabTaskCompletionUpdateBuilder;
 };
 
 type NestedDraftPanel = "goal-project" | "project-task" | null;
@@ -4996,6 +5028,29 @@ export function Fab({
   const [editGoalProjects, setEditGoalProjects] = useState<
     EditGoalProjectChild[]
   >([]);
+  const goalProjectLongPressTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const goalProjectLongPressTriggeredRef = useRef(false);
+  const goalProjectSuppressClickRef = useRef(false);
+  const goalProjectSuppressClickTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const goalProjectPointerStartRef = useRef<{
+    projectId: string;
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
+  const goalProjectLastTapRef = useRef<{
+    projectId: string;
+    timestamp: number;
+  } | null>(null);
+  const goalProjectSingleTapTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const goalProjectCompletingIdsRef = useRef<Set<string>>(new Set());
   const [taskName, setTaskName] = useState("");
   const [taskStage, setTaskStage] = useState("PREPARE");
   const [taskDuration, setTaskDuration] = useState<string>("");
@@ -5018,6 +5073,29 @@ export function Fab({
   const [editProjectTasks, setEditProjectTasks] = useState<
     EditProjectTaskChild[]
   >([]);
+  const projectTaskLongPressTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const projectTaskLongPressTriggeredRef = useRef(false);
+  const projectTaskSuppressClickRef = useRef(false);
+  const projectTaskSuppressClickTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const projectTaskPointerStartRef = useRef<{
+    taskId: string;
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
+  const projectTaskLastTapRef = useRef<{
+    taskId: string;
+    timestamp: number;
+  } | null>(null);
+  const projectTaskSingleTapTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const projectTaskCompletingIdsRef = useRef<Set<string>>(new Set());
   const [habitName, setHabitName] = useState("");
   const [habitType, setHabitType] = useState(defaultHabitType);
   const [habitRecurrence, setHabitRecurrence] = useState(
@@ -5533,6 +5611,403 @@ export function Fab({
     ],
   );
 
+  const isEditGoalProjectCompleted = useCallback(
+    (project: EditGoalProjectChild) =>
+      project.stage?.trim().toUpperCase() === "RELEASE",
+    [],
+  );
+
+  const clearGoalProjectLongPressTimer = useCallback(() => {
+    if (goalProjectLongPressTimerRef.current) {
+      clearTimeout(goalProjectLongPressTimerRef.current);
+      goalProjectLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const clearGoalProjectSingleTapTimer = useCallback(() => {
+    if (goalProjectSingleTapTimeoutRef.current) {
+      clearTimeout(goalProjectSingleTapTimeoutRef.current);
+      goalProjectSingleTapTimeoutRef.current = null;
+    }
+  }, []);
+
+  const suppressNextGoalProjectClick = useCallback(() => {
+    goalProjectSuppressClickRef.current = true;
+    if (goalProjectSuppressClickTimerRef.current) {
+      clearTimeout(goalProjectSuppressClickTimerRef.current);
+    }
+    goalProjectSuppressClickTimerRef.current = setTimeout(() => {
+      goalProjectSuppressClickRef.current = false;
+      goalProjectSuppressClickTimerRef.current = null;
+    }, FAB_GOAL_PROJECT_DOUBLE_TAP_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearGoalProjectLongPressTimer();
+      clearGoalProjectSingleTapTimer();
+      if (goalProjectSuppressClickTimerRef.current) {
+        clearTimeout(goalProjectSuppressClickTimerRef.current);
+        goalProjectSuppressClickTimerRef.current = null;
+      }
+    },
+    [clearGoalProjectLongPressTimer, clearGoalProjectSingleTapTimer],
+  );
+
+  const completeEditGoalProject = useCallback(
+    async (project: EditGoalProjectChild) => {
+      if (
+        isEditGoalProjectCompleted(project) ||
+        goalProjectCompletingIdsRef.current.has(project.id)
+      ) {
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        console.warn("Supabase client not available for project completion");
+        return;
+      }
+
+      goalProjectCompletingIdsRef.current.add(project.id);
+      try {
+        const completedAt = new Date().toISOString();
+        const projectCompletionUpdate = supabase.from(
+          "projects",
+        ) as unknown as FabProjectCompletionUpdateQuery;
+        const { error } = await projectCompletionUpdate
+          .update({
+            stage: "RELEASE",
+            completed_at: completedAt,
+            updated_at: completedAt,
+          })
+          .eq("id", project.id);
+
+        if (error) {
+          throw error;
+        }
+
+        setEditGoalProjects((current) =>
+          current.map((item) =>
+            item.id === project.id ? { ...item, stage: "RELEASE" } : item,
+          ),
+        );
+        dispatchCreatorEntitySaved({
+          entityType: "PROJECT",
+          entityId: project.id,
+          action: "updated",
+          goalId:
+            editTarget?.entityType === "GOAL" ? editTarget.entityId : null,
+        });
+        void hapticComplete();
+        void recordProjectCompletion(
+          {
+            projectId: project.id,
+            projectSkillIds: project.skillIds,
+          },
+          "complete",
+        );
+      } catch (error) {
+        console.error("Failed to complete goal project", error);
+        void hapticErrorPattern();
+      } finally {
+        goalProjectCompletingIdsRef.current.delete(project.id);
+      }
+    },
+    [editTarget?.entityId, editTarget?.entityType, isEditGoalProjectCompleted],
+  );
+
+  const openEditGoalProject = useCallback(
+    (project: EditGoalProjectChild) => {
+      openGoalProjectStack({
+        mode: "edit-existing",
+        project,
+      });
+    },
+    [openGoalProjectStack],
+  );
+
+  const handleEditGoalProjectPointerDown = useCallback(
+    (
+      event: React.PointerEvent<HTMLButtonElement>,
+      project: EditGoalProjectChild,
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      clearGoalProjectLongPressTimer();
+      clearGoalProjectSingleTapTimer();
+      goalProjectLongPressTriggeredRef.current = false;
+      goalProjectPointerStartRef.current = {
+        projectId: project.id,
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        moved: false,
+      };
+
+      goalProjectLongPressTimerRef.current = setTimeout(() => {
+        const pointerStart = goalProjectPointerStartRef.current;
+        if (!pointerStart || pointerStart.projectId !== project.id) {
+          return;
+        }
+        goalProjectLongPressTimerRef.current = null;
+        goalProjectLongPressTriggeredRef.current = true;
+        suppressNextGoalProjectClick();
+        goalProjectLastTapRef.current = null;
+        clearGoalProjectSingleTapTimer();
+        void hapticLongPress();
+        openEditGoalProject(project);
+      }, FAB_GOAL_PROJECT_LONG_PRESS_MS);
+    },
+    [
+      clearGoalProjectLongPressTimer,
+      clearGoalProjectSingleTapTimer,
+      openEditGoalProject,
+      suppressNextGoalProjectClick,
+    ],
+  );
+
+  const handleEditGoalProjectPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      const pointerStart = goalProjectPointerStartRef.current;
+      if (!pointerStart || pointerStart.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = Math.abs(event.clientX - pointerStart.x);
+      const deltaY = Math.abs(event.clientY - pointerStart.y);
+      if (
+        deltaX > FAB_GOAL_PROJECT_DRAG_CANCEL_PX ||
+        deltaY > FAB_GOAL_PROJECT_DRAG_CANCEL_PX
+      ) {
+        pointerStart.moved = true;
+        clearGoalProjectLongPressTimer();
+      }
+    },
+    [clearGoalProjectLongPressTimer],
+  );
+
+  const handleEditGoalProjectPointerEnd = useCallback(
+    (
+      event: React.PointerEvent<HTMLButtonElement>,
+      project: EditGoalProjectChild,
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      const pointerStart = goalProjectPointerStartRef.current;
+      const moved =
+        pointerStart?.projectId === project.id ? pointerStart.moved : false;
+      goalProjectPointerStartRef.current = null;
+      clearGoalProjectLongPressTimer();
+
+      if (goalProjectLongPressTriggeredRef.current) {
+        event.preventDefault();
+        return;
+      }
+
+      if (moved) {
+        goalProjectLastTapRef.current = null;
+        suppressNextGoalProjectClick();
+        clearGoalProjectSingleTapTimer();
+        return;
+      }
+
+      const now = Date.now();
+      const lastTap = goalProjectLastTapRef.current;
+      if (
+        lastTap?.projectId === project.id &&
+        now - lastTap.timestamp <= FAB_GOAL_PROJECT_DOUBLE_TAP_MS
+      ) {
+        goalProjectLastTapRef.current = null;
+        clearGoalProjectSingleTapTimer();
+        suppressNextGoalProjectClick();
+        event.preventDefault();
+        if (!isEditGoalProjectCompleted(project)) {
+          void completeEditGoalProject(project);
+        }
+        return;
+      }
+
+      goalProjectLastTapRef.current = {
+        projectId: project.id,
+        timestamp: now,
+      };
+    },
+    [
+      clearGoalProjectLongPressTimer,
+      clearGoalProjectSingleTapTimer,
+      completeEditGoalProject,
+      isEditGoalProjectCompleted,
+      suppressNextGoalProjectClick,
+    ],
+  );
+
+  const handleEditGoalProjectPointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      goalProjectPointerStartRef.current = null;
+      goalProjectLastTapRef.current = null;
+      clearGoalProjectLongPressTimer();
+      clearGoalProjectSingleTapTimer();
+      suppressNextGoalProjectClick();
+      event.preventDefault();
+    },
+    [
+      clearGoalProjectLongPressTimer,
+      clearGoalProjectSingleTapTimer,
+      suppressNextGoalProjectClick,
+    ],
+  );
+
+  const handleEditGoalProjectClick = useCallback(
+    (
+      event: React.MouseEvent<HTMLButtonElement>,
+      project: EditGoalProjectChild,
+    ) => {
+      if (
+        goalProjectSuppressClickRef.current ||
+        goalProjectLongPressTriggeredRef.current
+      ) {
+        event.preventDefault();
+        goalProjectSuppressClickRef.current = false;
+        goalProjectLongPressTriggeredRef.current = false;
+        return;
+      }
+
+      if (event.detail === 0) {
+        event.preventDefault();
+        goalProjectLastTapRef.current = null;
+        clearGoalProjectSingleTapTimer();
+        openEditGoalProject(project);
+        return;
+      }
+
+      clearGoalProjectSingleTapTimer();
+      goalProjectSingleTapTimeoutRef.current = setTimeout(() => {
+        const lastTap = goalProjectLastTapRef.current;
+        if (lastTap?.projectId !== project.id) {
+          goalProjectSingleTapTimeoutRef.current = null;
+          return;
+        }
+        goalProjectLastTapRef.current = null;
+        openEditGoalProject(project);
+        goalProjectSingleTapTimeoutRef.current = null;
+      }, FAB_GOAL_PROJECT_SINGLE_TAP_DELAY_MS);
+    },
+    [clearGoalProjectSingleTapTimer, openEditGoalProject],
+  );
+
+  const isEditProjectTaskCompleted = useCallback(
+    (task: EditProjectTaskChild) =>
+      task.stage?.trim().toUpperCase() === "PERFECT" ||
+      hasFabCompletionTimestamp(task.completedAt),
+    [],
+  );
+
+  const clearProjectTaskLongPressTimer = useCallback(() => {
+    if (projectTaskLongPressTimerRef.current) {
+      clearTimeout(projectTaskLongPressTimerRef.current);
+      projectTaskLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const clearProjectTaskSingleTapTimer = useCallback(() => {
+    if (projectTaskSingleTapTimeoutRef.current) {
+      clearTimeout(projectTaskSingleTapTimeoutRef.current);
+      projectTaskSingleTapTimeoutRef.current = null;
+    }
+  }, []);
+
+  const suppressNextProjectTaskClick = useCallback(() => {
+    projectTaskSuppressClickRef.current = true;
+    if (projectTaskSuppressClickTimerRef.current) {
+      clearTimeout(projectTaskSuppressClickTimerRef.current);
+    }
+    projectTaskSuppressClickTimerRef.current = setTimeout(() => {
+      projectTaskSuppressClickRef.current = false;
+      projectTaskSuppressClickTimerRef.current = null;
+    }, FAB_GOAL_PROJECT_DOUBLE_TAP_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearProjectTaskLongPressTimer();
+      clearProjectTaskSingleTapTimer();
+      if (projectTaskSuppressClickTimerRef.current) {
+        clearTimeout(projectTaskSuppressClickTimerRef.current);
+        projectTaskSuppressClickTimerRef.current = null;
+      }
+    },
+    [clearProjectTaskLongPressTimer, clearProjectTaskSingleTapTimer],
+  );
+
+  const completeEditProjectTask = useCallback(
+    async (task: EditProjectTaskChild) => {
+      if (
+        isEditProjectTaskCompleted(task) ||
+        projectTaskCompletingIdsRef.current.has(task.id)
+      ) {
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        console.warn("Supabase client not available for task completion");
+        return;
+      }
+
+      projectTaskCompletingIdsRef.current.add(task.id);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          return;
+        }
+
+        const completedAt = new Date().toISOString();
+        const taskCompletionUpdate = supabase.from(
+          "tasks",
+        ) as unknown as FabTaskCompletionUpdateQuery;
+        const { error } = await taskCompletionUpdate
+          .update({
+            stage: "PERFECT",
+            completed_at: completedAt,
+            updated_at: completedAt,
+          })
+          .eq("id", task.id)
+          .eq("user_id", user.id);
+
+        if (error) {
+          throw error;
+        }
+
+        setEditProjectTasks((current) =>
+          current.map((item) =>
+            item.id === task.id
+              ? { ...item, stage: "PERFECT", completedAt }
+              : item,
+          ),
+        );
+        dispatchCreatorEntitySaved({
+          entityType: "TASK",
+          entityId: task.id,
+          action: "updated",
+        });
+        void hapticComplete();
+      } catch (error) {
+        console.error("Failed to complete project task", error);
+        void hapticErrorPattern();
+      } finally {
+        projectTaskCompletingIdsRef.current.delete(task.id);
+      }
+    },
+    [isEditProjectTaskCompleted],
+  );
+
   const restoreProjectTaskStack = useCallback(() => {
     if (!projectTaskStack) return;
 
@@ -5733,6 +6208,198 @@ export function Fab({
       selectedTagIds,
       tagInputValue,
     ],
+  );
+
+  const openEditProjectTask = useCallback(
+    (task: EditProjectTaskChild) => {
+      void openProjectTaskStack({
+        mode: "edit-existing",
+        task,
+      });
+    },
+    [openProjectTaskStack],
+  );
+
+  const handleEditProjectTaskPointerDown = useCallback(
+    (
+      event: React.PointerEvent<HTMLButtonElement>,
+      task: EditProjectTaskChild,
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      clearProjectTaskLongPressTimer();
+      clearProjectTaskSingleTapTimer();
+      projectTaskLongPressTriggeredRef.current = false;
+      projectTaskPointerStartRef.current = {
+        taskId: task.id,
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        moved: false,
+      };
+
+      projectTaskLongPressTimerRef.current = setTimeout(() => {
+        const pointerStart = projectTaskPointerStartRef.current;
+        if (!pointerStart || pointerStart.taskId !== task.id) {
+          return;
+        }
+        projectTaskLongPressTimerRef.current = null;
+        projectTaskLongPressTriggeredRef.current = true;
+        suppressNextProjectTaskClick();
+        projectTaskLastTapRef.current = null;
+        clearProjectTaskSingleTapTimer();
+        void hapticLongPress();
+        openEditProjectTask(task);
+      }, FAB_GOAL_PROJECT_LONG_PRESS_MS);
+    },
+    [
+      clearProjectTaskLongPressTimer,
+      clearProjectTaskSingleTapTimer,
+      openEditProjectTask,
+      suppressNextProjectTaskClick,
+    ],
+  );
+
+  const handleEditProjectTaskPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      const pointerStart = projectTaskPointerStartRef.current;
+      if (!pointerStart || pointerStart.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const deltaX = Math.abs(event.clientX - pointerStart.x);
+      const deltaY = Math.abs(event.clientY - pointerStart.y);
+      if (
+        deltaX > FAB_GOAL_PROJECT_DRAG_CANCEL_PX ||
+        deltaY > FAB_GOAL_PROJECT_DRAG_CANCEL_PX
+      ) {
+        pointerStart.moved = true;
+        clearProjectTaskLongPressTimer();
+      }
+    },
+    [clearProjectTaskLongPressTimer],
+  );
+
+  const handleEditProjectTaskPointerEnd = useCallback(
+    (
+      event: React.PointerEvent<HTMLButtonElement>,
+      task: EditProjectTaskChild,
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      const pointerStart = projectTaskPointerStartRef.current;
+      const moved =
+        pointerStart?.taskId === task.id ? pointerStart.moved : false;
+      projectTaskPointerStartRef.current = null;
+      clearProjectTaskLongPressTimer();
+
+      if (projectTaskLongPressTriggeredRef.current) {
+        event.preventDefault();
+        return;
+      }
+
+      if (moved) {
+        projectTaskLastTapRef.current = null;
+        suppressNextProjectTaskClick();
+        clearProjectTaskSingleTapTimer();
+        return;
+      }
+
+      const now = Date.now();
+      const lastTap = projectTaskLastTapRef.current;
+      if (
+        lastTap?.taskId === task.id &&
+        now - lastTap.timestamp <= FAB_GOAL_PROJECT_DOUBLE_TAP_MS
+      ) {
+        projectTaskLastTapRef.current = null;
+        clearProjectTaskSingleTapTimer();
+        suppressNextProjectTaskClick();
+        event.preventDefault();
+        if (!isEditProjectTaskCompleted(task)) {
+          void completeEditProjectTask(task);
+        }
+        return;
+      }
+
+      projectTaskLastTapRef.current = {
+        taskId: task.id,
+        timestamp: now,
+      };
+    },
+    [
+      clearProjectTaskLongPressTimer,
+      clearProjectTaskSingleTapTimer,
+      completeEditProjectTask,
+      isEditProjectTaskCompleted,
+      suppressNextProjectTaskClick,
+    ],
+  );
+
+  const handleEditProjectTaskPointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      projectTaskPointerStartRef.current = null;
+      projectTaskLastTapRef.current = null;
+      clearProjectTaskLongPressTimer();
+      clearProjectTaskSingleTapTimer();
+      suppressNextProjectTaskClick();
+      event.preventDefault();
+    },
+    [
+      clearProjectTaskLongPressTimer,
+      clearProjectTaskSingleTapTimer,
+      suppressNextProjectTaskClick,
+    ],
+  );
+
+  const handleEditProjectTaskScroll = useCallback(() => {
+    projectTaskPointerStartRef.current = null;
+    projectTaskLastTapRef.current = null;
+    clearProjectTaskLongPressTimer();
+    clearProjectTaskSingleTapTimer();
+    suppressNextProjectTaskClick();
+  }, [
+    clearProjectTaskLongPressTimer,
+    clearProjectTaskSingleTapTimer,
+    suppressNextProjectTaskClick,
+  ]);
+
+  const handleEditProjectTaskClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, task: EditProjectTaskChild) => {
+      if (
+        projectTaskSuppressClickRef.current ||
+        projectTaskLongPressTriggeredRef.current
+      ) {
+        event.preventDefault();
+        projectTaskSuppressClickRef.current = false;
+        projectTaskLongPressTriggeredRef.current = false;
+        return;
+      }
+
+      if (event.detail === 0) {
+        event.preventDefault();
+        projectTaskLastTapRef.current = null;
+        clearProjectTaskSingleTapTimer();
+        openEditProjectTask(task);
+        return;
+      }
+
+      clearProjectTaskSingleTapTimer();
+      projectTaskSingleTapTimeoutRef.current = setTimeout(() => {
+        const lastTap = projectTaskLastTapRef.current;
+        if (lastTap?.taskId !== task.id) {
+          projectTaskSingleTapTimeoutRef.current = null;
+          return;
+        }
+        projectTaskLastTapRef.current = null;
+        openEditProjectTask(task);
+        projectTaskSingleTapTimeoutRef.current = null;
+      }, FAB_GOAL_PROJECT_SINGLE_TAP_DELAY_MS);
+    },
+    [clearProjectTaskSingleTapTimer, openEditProjectTask],
   );
 
   const handleAddGoalDraftProject = useCallback(() => {
@@ -6286,7 +6953,9 @@ export function Fab({
 
           const { data: taskRows, error: taskRowsError } = await supabase
             .from("tasks")
-            .select("id, name, priority, energy, stage, duration_min, skill_id")
+            .select(
+              "id, name, priority, energy, stage, completed_at, duration_min, skill_id",
+            )
             .eq("user_id", user.id)
             .eq("project_id", entityId);
           if (cancelled) return;
@@ -6303,6 +6972,10 @@ export function Fab({
                   priority: task.priority ?? null,
                   energy: task.energy ?? null,
                   stage: task.stage ?? null,
+                  completedAt:
+                    typeof task.completed_at === "string"
+                      ? task.completed_at
+                      : null,
                   durationMin:
                     typeof task.duration_min === "number" &&
                     Number.isFinite(task.duration_min)
@@ -10426,15 +11099,22 @@ export function Fab({
             <button
               key={project.id}
               type="button"
-              onClick={() =>
-                openGoalProjectStack({
-                  mode: "edit-existing",
-                  project,
-                })
+              onPointerDown={(event) =>
+                handleEditGoalProjectPointerDown(event, project)
               }
+              onPointerMove={handleEditGoalProjectPointerMove}
+              onPointerUp={(event) =>
+                handleEditGoalProjectPointerEnd(event, project)
+              }
+              onPointerCancel={handleEditGoalProjectPointerCancel}
+              onClick={(event) => handleEditGoalProjectClick(event, project)}
               className={cn(goalProjectNexusCardClass, "h-full min-h-0")}
               style={goalProjectNexusCardStyle}
-              aria-label={`Edit project ${project.name}`}
+              aria-label={`${project.name}. ${
+                isEditGoalProjectCompleted(project)
+                  ? "Completed"
+                  : "Double tap to complete. Long press to edit"
+              }`}
             >
               {renderGoalProjectCardContent(project)}
             </button>
@@ -11013,13 +11693,20 @@ export function Fab({
               type="button"
               className={cn(projectTaskNexusCardClass, "h-full min-h-0")}
               style={projectTaskNexusCardStyle}
-              onClick={() => {
-                void openProjectTaskStack({
-                  mode: "edit-existing",
-                  task,
-                });
-              }}
-              aria-label={`Edit task ${task.name}`}
+              onPointerDown={(event) =>
+                handleEditProjectTaskPointerDown(event, task)
+              }
+              onPointerMove={handleEditProjectTaskPointerMove}
+              onPointerUp={(event) =>
+                handleEditProjectTaskPointerEnd(event, task)
+              }
+              onPointerCancel={handleEditProjectTaskPointerCancel}
+              onClick={(event) => handleEditProjectTaskClick(event, task)}
+              aria-label={`${task.name}. ${
+                isEditProjectTaskCompleted(task)
+                  ? "Completed"
+                  : "Double tap to complete. Long press to edit"
+              }`}
             >
               {renderProjectTaskCardContent(task)}
             </button>
@@ -11464,6 +12151,7 @@ export function Fab({
               projectTaskListShouldScroll &&
               "max-h-full overflow-y-auto overscroll-contain",
           )}
+          onScroll={isEditingProject ? handleEditProjectTaskScroll : undefined}
         >
           <div
             className={cn(
@@ -17521,6 +18209,7 @@ export function Fab({
             priority: taskPriority,
             energy: taskEnergy,
             stage: taskStage,
+            completedAt: taskStage === "PERFECT" ? taskCompletedAt : null,
             durationMin: normalizedTaskDuration || null,
             skillId: taskSkillId || null,
             dueDate: taskDue || null,
@@ -18456,6 +19145,7 @@ export function Fab({
     taskHasExactDate,
     taskName,
     taskNotes,
+    taskCompletedAt,
     taskPriority,
     taskProjectId,
     taskSkillId,

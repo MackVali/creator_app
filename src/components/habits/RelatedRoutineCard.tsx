@@ -153,6 +153,9 @@ const routineDrawerNewHabitMotion = {
   },
 } as const;
 
+const routineHabitCompletedSurfaceClass =
+  "shimmer-border-complete focus-pomo-start-glint isolate z-0 border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] outline outline-1 outline-green-900/40";
+
 type RoutineUpdateQuery = {
   update: (payload: { name: string; icon?: string | null }) => {
     eq: (column: string, value: string) => {
@@ -320,7 +323,7 @@ function RoutineHabitRowBody({
         className={clsx(
           "relative flex w-full min-w-0 select-none items-center gap-2 overflow-hidden rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2",
           habit.completed
-            ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_0_1px_0_rgba(255,255,255,0.04)]"
+            ? routineHabitCompletedSurfaceClass
             : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
           habit.pending ? "pointer-events-none opacity-75 brightness-95" : null,
           onHabitCompletionToggle && !habit.pending ? "cursor-pointer" : null,

@@ -12,6 +12,7 @@ import { Textarea } from "./textarea";
 import { Select, SelectContent, SelectItem } from "./select";
 import { useToastHelpers } from "./toast";
 
+import { hapticPress } from "@/lib/haptics/creatorHaptics";
 import type {
   IntegrationsResponse,
   PublishResult,
@@ -161,6 +162,8 @@ export function PostModal({ isOpen, onClose }: PostModalProps) {
   };
 
   const toggleMediaType = (value: MediaTypeValue) => {
+    void hapticPress();
+
     setSelectedMediaTypes((prev) => {
       if (prev.includes(value)) {
         if (prev.length === 1) {

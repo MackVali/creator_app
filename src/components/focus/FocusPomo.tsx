@@ -2618,8 +2618,8 @@ async function awardFocusPomoCompletionUndoXp({
 async function completeFocusPomoScheduleInstance(
   scheduleInstanceId: string | null,
   completedAt: string
-) {
-  if (!scheduleInstanceId) return;
+): Promise<boolean> {
+  if (!scheduleInstanceId) return true;
 
   try {
     const response = await fetch("/api/schedule/instances/batchStatus", {
@@ -2642,11 +2642,15 @@ async function completeFocusPomoScheduleInstance(
         await response.text()
       );
       void hapticErrorPattern();
+      return false;
     }
   } catch (error) {
     console.error("FocusPomo failed to complete schedule instance", error);
     void hapticErrorPattern();
+    return false;
   }
+
+  return true;
 }
 
 async function undoFocusPomoScheduleInstance(scheduleInstanceId: string | null) {
@@ -2689,9 +2693,9 @@ async function completeFocusPomoItem({
   item: FocusPomoQueueItem;
   completedAt: string;
   timeZone: string;
-}) {
+}): Promise<boolean> {
   const kind = getFocusPomoCompletionKind(item);
-  if (!kind) return;
+  if (!kind) return true;
 
   const scheduleInstanceId = readFocusPomoScheduleInstanceId(item);
   const durationMin = normalizeFocusPomoDurationMinutes(item.durationMinutes);
@@ -2700,14 +2704,18 @@ async function completeFocusPomoItem({
     timeZone
   );
 
-  await completeFocusPomoScheduleInstance(scheduleInstanceId, completedAt);
+  const scheduleCompleted = await completeFocusPomoScheduleInstance(
+    scheduleInstanceId,
+    completedAt
+  );
+  if (!scheduleCompleted) return false;
 
   if (kind === "project") {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       console.warn("FocusPomo could not complete project: Supabase unavailable");
       void hapticErrorPattern();
-      return;
+      return false;
     }
 
     const {
@@ -2718,7 +2726,7 @@ async function completeFocusPomoItem({
     if (userError || !user) {
       console.error("FocusPomo could not complete project: user unavailable", userError);
       void hapticErrorPattern();
-      return;
+      return false;
     }
 
     const projectsTable = supabase.from(
@@ -2736,7 +2744,7 @@ async function completeFocusPomoItem({
     if (error) {
       console.error("FocusPomo failed to complete project", error);
       void hapticErrorPattern();
-      return;
+      return false;
     }
   } else {
     try {
@@ -2759,24 +2767,30 @@ async function completeFocusPomoItem({
           await response.text()
         );
         void hapticErrorPattern();
-        return;
+        return false;
       }
     } catch (error) {
       console.error("FocusPomo failed to record habit completion", error);
       void hapticErrorPattern();
-      return;
+      return false;
     }
   }
 
-  await awardFocusPomoCompletionXp({
-    item,
-    kind,
-    completedAt,
-    timeZone,
-    durationMin,
-    scheduleInstanceId,
-    productivityDayKey,
-  });
+  try {
+    await awardFocusPomoCompletionXp({
+      item,
+      kind,
+      completedAt,
+      timeZone,
+      durationMin,
+      scheduleInstanceId,
+      productivityDayKey,
+    });
+  } catch {
+    return false;
+  }
+
+  return true;
 }
 
 async function undoFocusPomoItem({
@@ -3541,11 +3555,13 @@ function FocusPomoFilterSection({
 
   const handleAllClick = () => {
     if (hasSelectedFilters) {
+      void hapticSoftTick();
       onClear();
       setExpanded(false);
       return;
     }
 
+    void hapticSnap();
     setExpanded((current) => !current);
   };
 
@@ -4873,6 +4889,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const resetExecutionFilters = () => {
+    if (hasSelectedScope || hasCustomExecutionFilters) {
+      void hapticSoftTick();
+    }
+
     setSelectedMonumentIds([]);
     setSelectedSkillIds([]);
     setDraftSelectedMonumentIds([]);
@@ -4892,6 +4912,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const resetScopeEditorFilters = () => {
+    if (hasDraftSelectedScope || hasCustomExecutionFilters) {
+      void hapticSoftTick();
+    }
+
     setDraftSelectedMonumentIds([]);
     setDraftSelectedSkillIds([]);
     setSelectedTagIds([]);
@@ -4938,6 +4962,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       !sameSelectedIds(selectedMonumentIds, draftSelectedMonumentIds) ||
       !sameSelectedIds(selectedSkillIds, draftSelectedSkillIds);
 
+    void hapticSnap();
     setSelectedMonumentIds(draftSelectedMonumentIds);
     setSelectedSkillIds(draftSelectedSkillIds);
     setScopeOpen(false);
@@ -4951,6 +4976,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setter: Dispatch<SetStateAction<string[]>>,
     id: string
   ) => {
+    void hapticSoftTick();
     setter((current) =>
       current.includes(id)
         ? current.filter((selectedId) => selectedId !== id)
@@ -5052,6 +5078,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     const selected = draftSelectedMonumentIds.includes(id);
     const skillIds = getSkillIdsForMonument(id);
 
+    void hapticSoftTick();
     setDraftSelectedMonumentIds((current) =>
       selected
         ? current.filter((selectedId) => selectedId !== id)
@@ -5071,6 +5098,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       ? draftSelectedSkillIds.filter((selectedId) => selectedId !== id)
       : [...draftSelectedSkillIds, id];
 
+    void hapticSoftTick();
     setDraftSelectedSkillIds(nextSkillIds);
     setDraftSelectedMonumentIds((current) =>
       reconcileMonumentScopesForSkills(current, nextSkillIds)
@@ -5078,6 +5106,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const toggleItemType = (type: FocusExecutionItemType) => {
+    void hapticSoftTick();
     setEnabledItemTypes((current) =>
       current.includes(type)
         ? current.filter((enabledType) => enabledType !== type)
@@ -5092,8 +5121,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const toggleHabitType = (type: string) => {
-    if (isLockedOffHabitTypeKey(type)) return;
+    if (isLockedOffHabitTypeKey(type)) {
+      void hapticWarningPattern();
+      return;
+    }
 
+    void hapticSoftTick();
     setEnabledHabitTypes((current) => {
       const enabledTypes =
         current ?? getDefaultEnabledHabitTypes(habitTypePillOptions);
@@ -5179,6 +5212,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     if (nextItemKey === currentItemKey) return;
 
+    void hapticSoftTick();
     setActiveIndex(nextIndex);
   };
 
@@ -5228,6 +5262,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         : -1;
 
       setCustomQueueOrder(nextOrder);
+      void hapticSnap();
       if (nextActiveIndex !== -1) {
         setActiveIndex(nextActiveIndex);
       }
@@ -5238,6 +5273,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
   const handlePrimaryAction = () => {
     if (isRunning) {
+      void hapticSnap();
       setIsRunning(false);
       resetCurrentTimer();
       setHasRunStarted(false);
@@ -5247,6 +5283,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     if (!currentItem) return;
 
+    void hapticPress();
     setHasRunStarted(true);
     setIsRunning(true);
     console.info("Focus pomo start requested", { mode, source });
@@ -5352,7 +5389,6 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     }
 
     dismissCurrentQueueItem(currentItem);
-    void hapticComplete();
 
     const completionRequest = completeFocusPomoItem({
       item: currentItem,
@@ -5361,6 +5397,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     });
     completionRequestsRef.current.set(sessionId, completionRequest);
     void completionRequest
+      .then((completed) => {
+        if (completed) {
+          void hapticComplete();
+        }
+      })
       .catch((error) => {
         console.error("FocusPomo failed to complete run-history session", error);
         void hapticErrorPattern();
@@ -5479,7 +5520,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                     {scopeOpen ? (
                       <motion.div
                         id={executionScopePanelId}
-                        className="overflow-hidden border-b border-black/40 bg-black/25"
+                        className="flex max-h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] min-h-0 flex-col overflow-hidden border-b border-black/40 bg-black/25 sm:block sm:max-h-none"
                         initial={
                           prefersReducedMotion
                             ? { opacity: 0 }
@@ -5510,8 +5551,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           },
                         }}
                       >
-                        <div className="flex max-h-[min(50dvh,32rem)] min-h-0 flex-col overflow-hidden px-3 py-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4">
-                          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 sm:space-y-4">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pt-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4">
+                          <div className="min-h-0 flex-1 basis-0 space-y-3 overflow-y-auto overscroll-contain pb-2 pr-1 sm:space-y-4 sm:pb-0">
                             <div className="flex items-center justify-between gap-2 sm:gap-3">
                               <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
                                 Focus Scope
@@ -5892,7 +5933,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </FocusPomoFilterSection>
                           ) : null}
                         </div>
-                        <div className="shrink-0 border-t border-black/40 bg-black/35 px-0 py-2 sm:py-3">
+                        <div className="shrink-0 border-t border-black/40 bg-black/35 px-0 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2 sm:py-3">
                           <button
                             type="button"
                             onClick={commitScopeEditor}

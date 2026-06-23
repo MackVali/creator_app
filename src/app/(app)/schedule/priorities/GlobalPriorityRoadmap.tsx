@@ -34,6 +34,7 @@ import {
 } from "@dnd-kit/sortable";
 import { ChevronDown, GripVertical } from "lucide-react";
 
+import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
@@ -621,11 +622,14 @@ export function GlobalPriorityRoadmap({
     return grouped;
   }, [displayedItems]);
   const handleToggleCampaign = useCallback((campaignId: string) => {
+    if (appearance === "priorityEditor") {
+      void hapticSnap();
+    }
     setOpenCampaignIds((current) => ({
       ...current,
       [campaignId]: !current[campaignId],
     }));
-  }, []);
+  }, [appearance]);
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
       const activeData = event.active.data.current as
@@ -982,10 +986,20 @@ function SortableGlobalPriorityItem({
   const handleGoalLongPress = useCallback(
     (element: HTMLElement) => {
       if (isDragging || isCampaign) return;
+      if (appearance === "priorityEditor") {
+        void hapticPress();
+      }
       onGoalLongPressEdit(item, element);
     },
-    [isCampaign, isDragging, item, onGoalLongPressEdit]
+    [appearance, isCampaign, isDragging, item, onGoalLongPressEdit]
   );
+  const handleGoalOpen = useCallback(() => {
+    if (!onGoalOpen) return;
+    if (appearance === "priorityEditor") {
+      void hapticPress();
+    }
+    onGoalOpen(item.id);
+  }, [appearance, item.id, onGoalOpen]);
   const goalLongPressHandlers = usePriorityEditLongPress(
     handleGoalLongPress,
     isDragging || isCampaign
@@ -1057,7 +1071,7 @@ function SortableGlobalPriorityItem({
         ) : (
           <button
             type="button"
-            onClick={onGoalOpen ? () => onGoalOpen(item.id) : undefined}
+            onClick={onGoalOpen ? handleGoalOpen : undefined}
             {...goalLongPressHandlers}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
           >
@@ -1310,10 +1324,20 @@ function GlobalCampaignGoalRow({
   const handleGoalLongPress = useCallback(
     (element: HTMLElement) => {
       if (isDragging) return;
+      if (appearance === "priorityEditor") {
+        void hapticPress();
+      }
       onGoalLongPressEdit(goal, element);
     },
-    [goal, isDragging, onGoalLongPressEdit]
+    [appearance, goal, isDragging, onGoalLongPressEdit]
   );
+  const handleGoalOpen = useCallback(() => {
+    if (!onGoalOpen) return;
+    if (appearance === "priorityEditor") {
+      void hapticPress();
+    }
+    onGoalOpen(goal.id);
+  }, [appearance, goal.id, onGoalOpen]);
   const goalLongPressHandlers = usePriorityEditLongPress(
     handleGoalLongPress,
     isDragging
@@ -1358,7 +1382,7 @@ function GlobalCampaignGoalRow({
       {onGoalOpen ? (
         <button
           type="button"
-          onClick={() => onGoalOpen(goal.id)}
+          onClick={handleGoalOpen}
           {...goalLongPressHandlers}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
         >
