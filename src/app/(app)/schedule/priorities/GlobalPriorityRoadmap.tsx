@@ -204,27 +204,33 @@ export function moveGlobalPriorityItem(
   overItem?: GlobalPriorityRoadmapItem
 ): GlobalPriorityRoadmapItem[] {
   const sortedItems = sortGlobalPriorityItems(items);
+  const currentItem = sortedItems.find((item) =>
+    isSameGlobalPriorityItem(item, draggedItem)
+  );
+  if (!currentItem) {
+    return sortedItems;
+  }
+  const validOverItem = overItem
+    ? sortedItems.find((item) => isSameGlobalPriorityItem(item, overItem))
+    : undefined;
   const buckets = new Map<PriorityBucketId, GlobalPriorityRoadmapItem[]>(
     PRIORITY_ORDER.map((priority) => [
       priority,
       sortedItems.filter((item) => item.priority === priority),
     ])
   );
-  const currentItem =
-    sortedItems.find((item) => isSameGlobalPriorityItem(item, draggedItem)) ??
-    draggedItem;
   const currentBucket = buckets.get(currentItem.priority) ?? [];
 
   if (
-    overItem &&
+    validOverItem &&
     currentItem.priority === targetPriority &&
-    overItem.priority === targetPriority
+    validOverItem.priority === targetPriority
   ) {
     const oldIndex = currentBucket.findIndex((item) =>
       isSameGlobalPriorityItem(item, currentItem)
     );
     const newIndex = currentBucket.findIndex((item) =>
-      isSameGlobalPriorityItem(item, overItem)
+      isSameGlobalPriorityItem(item, validOverItem)
     );
 
     if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
@@ -249,9 +255,9 @@ export function moveGlobalPriorityItem(
   const targetItems = buckets.get(targetPriority) ?? [];
   const movedItem = { ...currentItem, priority: targetPriority };
 
-  if (overItem && overItem.priority === targetPriority) {
+  if (validOverItem && validOverItem.priority === targetPriority) {
     const overIndex = targetItems.findIndex((item) =>
-      isSameGlobalPriorityItem(item, overItem)
+      isSameGlobalPriorityItem(item, validOverItem)
     );
     targetItems.splice(overIndex >= 0 ? overIndex : targetItems.length, 0, movedItem);
   } else {
@@ -358,24 +364,31 @@ export function moveCampaignGoal(
   targetPriority: PriorityBucketId,
   overGoal?: RoadmapPriorityGoal
 ): RoadmapPriorityGoal[] {
+  const currentGoal = goals.find((goal) => goal.id === draggedGoal.id);
+  if (!currentGoal) {
+    return assignCampaignGoalPriorityOrders(
+      groupCampaignGoalsByPriority(goals).flatMap((bucket) => bucket.goals)
+    );
+  }
+  const validOverGoal = overGoal
+    ? goals.find((goal) => goal.id === overGoal.id)
+    : undefined;
   const buckets = new Map<PriorityBucketId, RoadmapPriorityGoal[]>(
     groupCampaignGoalsByPriority(goals).map((bucket) => [
       bucket.priority,
       bucket.goals,
     ])
   );
-  const currentGoal =
-    goals.find((goal) => goal.id === draggedGoal.id) ?? draggedGoal;
   const currentPriority = normalizePriority(currentGoal.priority);
   const currentBucket = buckets.get(currentPriority) ?? [];
 
   if (
-    overGoal &&
+    validOverGoal &&
     currentPriority === targetPriority &&
-    normalizePriority(overGoal.priority) === targetPriority
+    normalizePriority(validOverGoal.priority) === targetPriority
   ) {
     const oldIndex = currentBucket.findIndex((goal) => goal.id === currentGoal.id);
-    const newIndex = currentBucket.findIndex((goal) => goal.id === overGoal.id);
+    const newIndex = currentBucket.findIndex((goal) => goal.id === validOverGoal.id);
 
     if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
       return assignCampaignGoalPriorityOrders(
@@ -399,8 +412,8 @@ export function moveCampaignGoal(
   const targetGoals = buckets.get(targetPriority) ?? [];
   const movedGoal = { ...currentGoal, priority: targetPriority };
 
-  if (overGoal && normalizePriority(overGoal.priority) === targetPriority) {
-    const overIndex = targetGoals.findIndex((goal) => goal.id === overGoal.id);
+  if (validOverGoal && normalizePriority(validOverGoal.priority) === targetPriority) {
+    const overIndex = targetGoals.findIndex((goal) => goal.id === validOverGoal.id);
     targetGoals.splice(overIndex >= 0 ? overIndex : targetGoals.length, 0, movedGoal);
   } else {
     targetGoals.push(movedGoal);
@@ -668,6 +681,7 @@ export function GlobalPriorityRoadmap({
       setActivePriorityItem(null);
       setPreviewPriorityItems(null);
       stopEdgeAutoscroll();
+      if (!event.over || !event.active.data.current) return;
       onDragEnd(event, isFiltered ? null : previewItemsOnDrop);
     },
     [isFiltered, onDragEnd, previewPriorityItems, stopEdgeAutoscroll]
@@ -930,6 +944,7 @@ function SortableGlobalPriorityItem({
       setActiveCampaignGoal(null);
       stopCampaignGoalEdgeAutoscroll();
       if (isCampaignGoalDragDisabled) return;
+      if (!event.over || !event.active.data.current) return;
       onCampaignGoalDragEnd(item, event);
     },
     [
