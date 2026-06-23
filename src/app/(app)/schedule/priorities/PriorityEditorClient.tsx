@@ -28,6 +28,14 @@ import {
 } from "@dnd-kit/sortable";
 import { GripVertical, SlidersHorizontal, X } from "lucide-react";
 
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticPress,
+  hapticSnap,
+  hapticSoftTick,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
@@ -109,6 +117,10 @@ type PriorityEditorSupabaseClient = NonNullable<
   ): Promise<{ error: { message?: string } | null }>;
 };
 
+type CreatorEntitySavedEventDetail = {
+  entityType?: string;
+};
+
 const GLOBAL_HABIT_BUCKET_PREFIX = "global-habit-bucket:";
 const GLOBAL_HABIT_ITEM_PREFIX = "global-habit-item:";
 const EDGE_AUTOSCROLL_THRESHOLD_PX = 96;
@@ -120,6 +132,14 @@ const PRIORITY_DND_AUTO_SCROLL = {
   acceleration: 8,
   interval: 5,
 };
+const PRIORITY_EDITOR_REFRESH_DEBOUNCE_MS = 250;
+const PRIORITY_EDITOR_REFRESH_MIN_INTERVAL_MS = 1200;
+const PRIORITY_EDITOR_REFRESH_ENTITY_TYPES = new Set([
+  "GOAL",
+  "PROJECT",
+  "TASK",
+  "HABIT",
+]);
 
 export default function PriorityEditorClient({
   userId,
@@ -148,6 +168,9 @@ export default function PriorityEditorClient({
     string[]
   >([]);
   const [selectedSkillFilterIds, setSelectedSkillFilterIds] = useState<string[]>([]);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRefreshAtRef = useRef(0);
+  const isSavingOrderRef = useRef(false);
 
   const sensors = usePriorityRoadmapSensors();
 
@@ -156,6 +179,88 @@ export default function PriorityEditorClient({
     setHabitRoadmapItems(initialHabitItems);
     setError(initialError);
   }, [initialGlobalPriorityItems, initialHabitItems, initialError]);
+
+  useEffect(() => {
+    isSavingOrderRef.current =
+      isSavingGlobalPriorityOrder || isSavingHabitOrder;
+  }, [isSavingGlobalPriorityOrder, isSavingHabitOrder]);
+
+  const schedulePriorityEditorRefresh = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (refreshTimeoutRef.current) {
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastRefreshAtRef.current;
+    const delay = Math.max(
+      PRIORITY_EDITOR_REFRESH_DEBOUNCE_MS,
+      PRIORITY_EDITOR_REFRESH_MIN_INTERVAL_MS - elapsed
+    );
+
+    const refresh = () => {
+      if (isSavingOrderRef.current) {
+        refreshTimeoutRef.current = window.setTimeout(
+          refresh,
+          PRIORITY_EDITOR_REFRESH_DEBOUNCE_MS
+        );
+        return;
+      }
+
+      refreshTimeoutRef.current = null;
+      lastRefreshAtRef.current = Date.now();
+      router.refresh();
+    };
+
+    refreshTimeoutRef.current = window.setTimeout(refresh, delay);
+  }, [router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<CreatorEntitySavedEventDetail>).detail;
+      const entityType = detail?.entityType;
+      if (
+        !entityType ||
+        !PRIORITY_EDITOR_REFRESH_ENTITY_TYPES.has(entityType)
+      ) {
+        return;
+      }
+
+      schedulePriorityEditorRefresh();
+    };
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") {
+        schedulePriorityEditorRefresh();
+      }
+    };
+    const handleFocus = () => {
+      if (document.visibilityState !== "hidden") {
+        schedulePriorityEditorRefresh();
+      }
+    };
+
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener(
+        "creator:entity-saved",
+        handleCreatorEntitySaved
+      );
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleFocus);
+      if (refreshTimeoutRef.current) {
+        window.clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+    };
+  }, [schedulePriorityEditorRefresh]);
 
   const filterSourceItems = useMemo(
     () =>
@@ -302,6 +407,7 @@ export default function PriorityEditorClient({
       if (!supabase) {
         setGlobalPriorityItems(previousItems);
         setGlobalPriorityError("Unable to save priority order.");
+        void hapticWarningPattern();
         return;
       }
 
@@ -323,11 +429,13 @@ export default function PriorityEditorClient({
           throw rankError;
         }
 
+        void hapticComplete();
         router.refresh();
       } catch (caught) {
         console.error("Failed to save global priority item", caught);
         setGlobalPriorityItems(previousItems);
         setGlobalPriorityError("Could not save priority order.");
+        void hapticErrorPattern();
       } finally {
         setIsSavingGlobalPriorityOrder(false);
       }
@@ -398,16 +506,19 @@ export default function PriorityEditorClient({
       if (!supabase) {
         setGlobalPriorityItems(previousItems);
         setGlobalPriorityError("Unable to save Campaign Goal order.");
+        void hapticWarningPattern();
         return;
       }
 
       try {
         await saveCampaignGoalPriorityOrder(supabase, updates);
+        void hapticComplete();
         router.refresh();
       } catch (caught) {
         console.error("Failed to save Campaign Goal order", caught);
         setGlobalPriorityItems(previousItems);
         setGlobalPriorityError("Could not save Campaign Goal order.");
+        void hapticErrorPattern();
       }
     },
     [globalPriorityItems, router]
@@ -449,6 +560,7 @@ export default function PriorityEditorClient({
       if (!supabase) {
         setHabitRoadmapItems(previousItems);
         setHabitRoadmapError("Unable to save Habit order.");
+        void hapticWarningPattern();
         return;
       }
 
@@ -469,11 +581,13 @@ export default function PriorityEditorClient({
           throw saveError;
         }
 
+        void hapticComplete();
         router.refresh();
       } catch (caught) {
         console.error("Failed to save global Habit order", caught);
         setHabitRoadmapItems(previousItems);
         setHabitRoadmapError("Could not save Habit order.");
+        void hapticErrorPattern();
       } finally {
         setIsSavingHabitOrder(false);
       }
@@ -572,6 +686,22 @@ function PriorityAdjustFilters({
   const clearSkillFilters = useCallback(() => {
     selectedSkillIds.forEach(onToggleSkill);
   }, [onToggleSkill, selectedSkillIds]);
+  const handleOpenToggle = useCallback(() => {
+    void hapticSnap();
+    onOpenChange(!isOpen);
+  }, [isOpen, onOpenChange]);
+  const handleClear = useCallback(() => {
+    if (hasActiveFilters) {
+      void hapticSoftTick();
+    }
+    onClear();
+  }, [hasActiveFilters, onClear]);
+  const handleDone = useCallback(() => {
+    if (isOpen) {
+      void hapticSnap();
+    }
+    onOpenChange(false);
+  }, [isOpen, onOpenChange]);
 
   return (
     <section className="overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_32%,rgba(39,39,42,0.28)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.30)] sm:rounded-[20px]">
@@ -579,7 +709,7 @@ function PriorityAdjustFilters({
         <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
           <button
             type="button"
-            onClick={() => onOpenChange(!isOpen)}
+            onClick={handleOpenToggle}
             aria-expanded={isOpen}
             aria-controls={panelId}
             className="inline-flex min-h-7 w-full items-center justify-center gap-2 rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
@@ -631,7 +761,7 @@ function PriorityAdjustFilters({
                   {hasActiveFilters ? (
                     <button
                       type="button"
-                      onClick={onClear}
+                      onClick={handleClear}
                       className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-black/60 bg-black/25 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30"
                     >
                       <X className="size-3" aria-hidden="true" />
@@ -640,7 +770,7 @@ function PriorityAdjustFilters({
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => onOpenChange(false)}
+                    onClick={handleDone}
                     aria-controls={panelId}
                     className="inline-flex min-h-8 flex-1 items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:text-[11px]"
                   >
@@ -689,13 +819,19 @@ function PriorityTypeSelector({
       <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-lg border border-black/60 bg-black/35 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:mt-2">
         {options.map((option) => {
           const selected = selectedType === option.id;
+          const handleClick = () => {
+            if (!selected) {
+              void hapticSoftTick();
+              onTypeChange(option.id);
+            }
+          };
 
           return (
             <button
               key={option.id}
               type="button"
               aria-pressed={selected}
-              onClick={() => onTypeChange(option.id)}
+              onClick={handleClick}
               className={cn(
                 "inline-flex min-h-8 items-center justify-center rounded-md px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-9 sm:text-[11px]",
                 selected
@@ -741,11 +877,13 @@ function PriorityFilterSection({
 
   const handleAllClick = () => {
     if (hasSelectedFilters) {
+      void hapticSoftTick();
       onClear();
       setExpanded(false);
       return;
     }
 
+    void hapticSnap();
     setExpanded((current) => !current);
   };
 
@@ -791,7 +929,10 @@ function PriorityFilterSection({
                     key={option.id}
                     type="button"
                     aria-pressed={selected}
-                    onClick={() => onToggle(option.id)}
+                    onClick={() => {
+                      void hapticSoftTick();
+                      onToggle(option.id);
+                    }}
                     className={
                       selected
                         ? "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
@@ -1521,6 +1662,7 @@ function GlobalHabitRoadmap({
   }, [stopEdgeAutoscroll]);
   const handleHabitLongPressEdit = useCallback(
     (habit: RoadmapHabitItem, element: HTMLElement) => {
+      void hapticPress();
       fabCreation?.requestEntityEdit({
         entityType: "HABIT",
         entityId: habit.id,

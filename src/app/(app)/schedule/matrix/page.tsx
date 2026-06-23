@@ -165,6 +165,7 @@ type MatrixRoutineHabit = RelatedRoutineCardHabit & {
 };
 type MatrixRoutine = Omit<RelatedRoutineCardRoutine, "habits"> & {
   habits: MatrixRoutineHabit[];
+  completed: boolean;
   monumentId: string | null;
   skillIds: string[];
   glyph: string;
@@ -646,7 +647,7 @@ function getMatrixEventStartTime(event: MatrixEvent): number {
 
 function isMatrixEventCompleted(event: MatrixEvent): boolean {
   if (event.routine) {
-    return event.routine.habits.every((habit) => habit.completed);
+    return event.routine.completed;
   }
 
   return event.instance.status?.trim().toLowerCase() === "completed";
@@ -692,7 +693,19 @@ function isMatrixDueItemCompleted(item: MatrixDueItem): boolean {
     return isMatrixDueHabitCompleted(item.habit);
   }
 
-  return item.routine.habits.every((habit) => habit.completed);
+  return item.routine.completed;
+}
+
+function isMatrixScheduledRoutineCompleted(
+  habits: readonly MatrixRoutineHabit[]
+) {
+  return (
+    habits.length > 0 &&
+    habits.every(
+      (habit) =>
+        habit.sourceInstance?.status?.trim().toLowerCase() === "completed"
+    )
+  );
 }
 
 function sortMatrixScheduledItems(
@@ -1231,7 +1244,7 @@ function buildMatrixEvents({
     const habitSkillIcon =
       habit?.skill_id ? skillIdToIcon.get(habit.skill_id) : null;
     const dueStatus = habit
-      ? getMatrixHabitDueStatus(habit, date, timeZone)
+      ? getMatrixHabitDisplayStatus(habit, date, timeZone)
       : undefined;
     const event: MatrixEvent = {
       instance,
@@ -1330,7 +1343,7 @@ function buildMatrixScheduledEvents({
             name: habit.name,
             dueLabel: getMatrixScheduledHabitLabel(event.instance.status),
             skillIcon: habit.skillIcon,
-            completed: isMatrixEventCompleted(event),
+            completed: isMatrixDueHabitCompleted(habit),
             routinePosition: habit.routine_position ?? index + 1,
             currentStreakDays: habit.current_streak_days,
             habitType: habit.habit_type,
@@ -1372,6 +1385,7 @@ function buildMatrixScheduledEvents({
       description: routine?.description ?? null,
       icon: routineIcon,
       habits: matrixRoutineHabits,
+      completed: isMatrixScheduledRoutineCompleted(matrixRoutineHabits),
       monumentId: routineMonumentId,
       skillIds: routineSkillIds,
       glyph: routineIcon,
@@ -1493,6 +1507,7 @@ function buildMatrixDueItems({
       description: routine?.description ?? null,
       icon: routineIcon,
       habits: matrixRoutineHabits,
+      completed: matrixRoutineHabits.every((habit) => habit.completed),
       monumentId: routineMonumentId,
       skillIds: routineSkillIds,
       glyph: routineIcon,
@@ -3095,7 +3110,7 @@ function MatrixRoutineCard({
   const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
   const routineName = routine.name?.trim() || "Routine";
   const routineGlyph = routine.glyph || routine.icon?.trim() || "🔁";
-  const completed = routine.habits.every((habit) => habit.completed);
+  const completed = routine.completed;
 
   if (density === "row") {
     return (
@@ -3147,9 +3162,10 @@ function MatrixRoutineCard({
         <MatrixHabitCard
           glyph={routineGlyph}
           title={routineName}
-          pill={habitCountLabel}
+          pill={completed ? "COMPLETE" : habitCountLabel}
           habitType={null}
           overdue={false}
+          completed={completed}
           density={density}
         />
       </div>
@@ -4694,7 +4710,6 @@ function MatrixContent() {
                 return {
                   ...habit,
                   dueLabel: getMatrixScheduledHabitLabel(nextStatus),
-                  completed: nextStatus === "completed",
                   sourceInstance,
                 };
               });
@@ -4704,6 +4719,7 @@ function MatrixContent() {
                 routine: {
                   ...nextEvent.routine,
                   habits: nextHabits,
+                  completed: isMatrixScheduledRoutineCompleted(nextHabits),
                 },
               };
             }),
