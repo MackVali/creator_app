@@ -1079,8 +1079,8 @@ function compareSortKey(
   b: FocusPomoExecutionSortKey
 ): number {
   return (
-    a.globalRankOrder - b.globalRankOrder ||
     a.bucket - b.bucket ||
+    a.globalRankOrder - b.globalRankOrder ||
     a.monumentOrder - b.monumentOrder ||
     a.goalOrder - b.goalOrder ||
     a.projectOrder - b.projectOrder ||

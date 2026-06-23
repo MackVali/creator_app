@@ -11119,9 +11119,7 @@ export function Fab({
               {renderGoalProjectCardContent(project)}
             </button>
           ));
-          const blankCount = goalProjectListShouldScroll
-            ? 0
-            : Math.max(0, 3 - visibleEditProjects.length);
+          const blankCount = Math.max(1, 3 - visibleEditProjects.length);
           return [
             ...editCards,
             ...Array.from({ length: blankCount }, (_, index) =>
@@ -11711,9 +11709,7 @@ export function Fab({
               {renderProjectTaskCardContent(task)}
             </button>
           ));
-          const blankCount = projectTaskListShouldScroll
-            ? 0
-            : Math.max(0, 3 - visibleEditTasks.length);
+          const blankCount = Math.max(1, 3 - visibleEditTasks.length);
           return [
             ...editCards,
             ...Array.from({ length: blankCount }, (_, index) =>
