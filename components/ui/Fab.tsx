@@ -515,6 +515,7 @@ type EditGoalProjectChild = {
   id: string;
   name: string;
   stage: string | null;
+  completedAt: string | null;
   priority: string | null;
   energy: string | null;
   why: string | null;
@@ -5613,8 +5614,61 @@ export function Fab({
 
   const isEditGoalProjectCompleted = useCallback(
     (project: EditGoalProjectChild) =>
-      project.stage?.trim().toUpperCase() === "RELEASE",
+      project.stage?.trim().toUpperCase() === "RELEASE" ||
+      hasFabCompletionTimestamp(project.completedAt),
     [],
+  );
+
+  const awardEditProjectTaskCompletion = useCallback(
+    async (task: EditProjectTaskChild, completedAt: string) => {
+      const skill = task.skillId ? findSkillById(task.skillId) : null;
+      const skillIds = task.skillId ? [task.skillId] : [];
+      const monumentIds =
+        typeof skill?.monument_id === "string" && skill.monument_id.length > 0
+          ? [skill.monument_id]
+          : [];
+      const body: Record<string, unknown> = {
+        kind: "task",
+        awardKeyBase: `task:${task.id}:complete`,
+        completion: {
+          action: "complete",
+          sourceType: "TASK",
+          sourceId: task.id,
+          completedAt,
+          wasScheduled: false,
+          durationMin:
+            typeof task.durationMin === "number" &&
+            Number.isFinite(task.durationMin)
+              ? Math.max(0, Math.round(task.durationMin))
+              : null,
+          timeZone: getBrowserTimeZone() ?? undefined,
+        },
+      };
+
+      if (skillIds.length > 0) {
+        body.skillIds = skillIds;
+      }
+      if (monumentIds.length > 0) {
+        body.monumentIds = monumentIds;
+      }
+
+      try {
+        const response = await fetch("/api/xp/award", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          console.error(
+            "Failed to award XP for project task completion",
+            await response.text(),
+          );
+        }
+      } catch (error) {
+        console.error("Failed to award XP for project task completion", error);
+      }
+    },
+    [findSkillById],
   );
 
   const clearGoalProjectLongPressTimer = useCallback(() => {
@@ -5689,7 +5743,9 @@ export function Fab({
 
         setEditGoalProjects((current) =>
           current.map((item) =>
-            item.id === project.id ? { ...item, stage: "RELEASE" } : item,
+            item.id === project.id
+              ? { ...item, stage: "RELEASE", completedAt }
+              : item,
           ),
         );
         dispatchCreatorEntitySaved({
@@ -5998,6 +6054,7 @@ export function Fab({
           action: "updated",
         });
         void hapticComplete();
+        void awardEditProjectTaskCompletion(task, completedAt);
       } catch (error) {
         console.error("Failed to complete project task", error);
         void hapticErrorPattern();
@@ -6005,7 +6062,7 @@ export function Fab({
         projectTaskCompletingIdsRef.current.delete(task.id);
       }
     },
-    [isEditProjectTaskCompleted],
+    [awardEditProjectTaskCompletion, isEditProjectTaskCompleted],
   );
 
   const restoreProjectTaskStack = useCallback(() => {
@@ -6647,7 +6704,7 @@ export function Fab({
             supabase
               .from("projects")
               .select(
-                "id, name, stage, priority, energy, why, duration_min, due_date",
+                "id, name, stage, completed_at, priority, energy, why, duration_min, due_date",
               )
               .eq("user_id", user.id)
               .eq("goal_id", entityId)
@@ -6717,6 +6774,7 @@ export function Fab({
                 id: string;
                 name: string | null;
                 stage: string | null;
+                completed_at: string | null;
                 priority: string | null;
                 energy: string | null;
                 why: string | null;
@@ -6817,6 +6875,10 @@ export function Fab({
               id: project.id,
               name: project.name ?? "Untitled project",
               stage: project.stage ?? null,
+              completedAt:
+                typeof project.completed_at === "string"
+                  ? project.completed_at
+                  : null,
               priority: project.priority ?? null,
               energy: project.energy ?? null,
               why: project.why ?? null,
@@ -10914,8 +10976,25 @@ export function Fab({
     background:
       "radial-gradient(circle at 0% 0%, rgba(161, 161, 170, 0.08), transparent 54%), linear-gradient(140deg, rgba(3, 4, 7, 0.72) 0%, rgba(10, 11, 15, 0.66) 48%, rgba(21, 23, 29, 0.42) 100%)",
   };
+  const associatedCompletedEditCardStyle: React.CSSProperties = {
+    boxShadow:
+      "0 18px 34px rgba(2,32,24,0.52), inset 2px 0 0 rgba(209,250,229,0.22), inset 0 1px 0 rgba(255,255,255,0.12)",
+    outline: "1px solid rgba(110, 231, 183, 0.38)",
+    outlineOffset: "-1px",
+    background:
+      "linear-gradient(135deg, rgba(30,204,163,0.95) 0%, rgba(16,185,129,0.85) 45%, rgba(4,120,87,0.92) 100%)",
+    borderColor: "rgba(52, 211, 153, 0.55)",
+  };
   const associatedEditCardClass =
     "group relative grid h-[92px] min-h-[82px] max-h-[96px] w-full min-w-0 grid-cols-[2.35rem_minmax(0,1fr)_2.25rem] overflow-hidden rounded-md border border-black/80 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30";
+  const associatedCompletedEditCardClass =
+    "ring-1 ring-emerald-300/60 hover:border-emerald-300/55";
+  const associatedCompletedPrimaryTextClass = "text-emerald-50";
+  const associatedCompletedMetaTextClass = "text-emerald-50/82";
+  const associatedCompletedBadgeClass =
+    "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90";
+  const associatedCompletedIdentityClass =
+    "border-emerald-50/28 bg-emerald-950/18 text-emerald-50";
   const associatedEditBlankClass =
     "group relative flex h-[92px] min-h-[82px] max-h-[96px] w-full items-center justify-center overflow-hidden rounded-md border border-black/75 text-white backdrop-blur-sm transition-[background,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25";
   const associatedEditGridClass =
@@ -11043,6 +11122,7 @@ export function Fab({
       priority: string | null;
       energy: string | null;
       stage: string | null;
+      completedAt?: string | null;
       durationMin: number | null;
       dueDate: string | null;
       skillIds: string[];
@@ -11050,6 +11130,9 @@ export function Fab({
       const skill = resolveGoalProjectSkill(project.skillIds);
       const metaItems = getGoalProjectMetaItems(project);
       const skillVisualIsCompact = skill.visual.trim().length <= 3;
+      const isCompleted =
+        project.stage?.trim().toUpperCase() === "RELEASE" ||
+        hasFabCompletionTimestamp(project.completedAt);
 
       return (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.85rem] items-stretch gap-2">
@@ -11058,6 +11141,7 @@ export function Fab({
               <span
                 className={cn(
                   "flex size-7 shrink-0 items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.07] px-1 text-center leading-none text-white/86 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]",
+                  isCompleted && associatedCompletedIdentityClass,
                   skillVisualIsCompact
                     ? "text-base"
                     : "text-[7px] font-extrabold uppercase tracking-[0.06em]",
@@ -11068,15 +11152,35 @@ export function Fab({
                 {skill.visual}
               </span>
               {renderAssociatedPriorityIndicator(project.priority)}
-              <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white">
+              <span
+                className={cn(
+                  "line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white",
+                  isCompleted && associatedCompletedPrimaryTextClass,
+                )}
+              >
                 {project.name}
               </span>
-              <span className="shrink-0 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-white/62">
-                Project
+              <span
+                className={cn(
+                  "shrink-0 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-white/62",
+                  isCompleted && associatedCompletedBadgeClass,
+                )}
+              >
+                {isCompleted ? "Done" : "Project"}
               </span>
             </div>
-            <div className="flex min-w-0 items-center gap-1.5 pl-9 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52">
-              <span className="min-w-0 shrink truncate text-white/62">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 pl-9 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52",
+                isCompleted && associatedCompletedMetaTextClass,
+              )}
+            >
+              <span
+                className={cn(
+                  "min-w-0 shrink truncate text-white/62",
+                  isCompleted && associatedCompletedMetaTextClass,
+                )}
+              >
                 {skill.label}
               </span>
               {metaItems.length > 0 ? (
@@ -11095,30 +11199,41 @@ export function Fab({
     };
     const projectItems = visibleEditProjects
       ? (() => {
-          const editCards = visibleEditProjects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onPointerDown={(event) =>
-                handleEditGoalProjectPointerDown(event, project)
-              }
-              onPointerMove={handleEditGoalProjectPointerMove}
-              onPointerUp={(event) =>
-                handleEditGoalProjectPointerEnd(event, project)
-              }
-              onPointerCancel={handleEditGoalProjectPointerCancel}
-              onClick={(event) => handleEditGoalProjectClick(event, project)}
-              className={cn(goalProjectNexusCardClass, "h-full min-h-0")}
-              style={goalProjectNexusCardStyle}
-              aria-label={`${project.name}. ${
-                isEditGoalProjectCompleted(project)
-                  ? "Completed"
-                  : "Double tap to complete. Long press to edit"
-              }`}
-            >
-              {renderGoalProjectCardContent(project)}
-            </button>
-          ));
+          const editCards = visibleEditProjects.map((project) => {
+            const isCompleted = isEditGoalProjectCompleted(project);
+            return (
+              <button
+                key={project.id}
+                type="button"
+                onPointerDown={(event) =>
+                  handleEditGoalProjectPointerDown(event, project)
+                }
+                onPointerMove={handleEditGoalProjectPointerMove}
+                onPointerUp={(event) =>
+                  handleEditGoalProjectPointerEnd(event, project)
+                }
+                onPointerCancel={handleEditGoalProjectPointerCancel}
+                onClick={(event) => handleEditGoalProjectClick(event, project)}
+                className={cn(
+                  goalProjectNexusCardClass,
+                  "h-full min-h-0",
+                  isCompleted && associatedCompletedEditCardClass,
+                )}
+                style={
+                  isCompleted
+                    ? associatedCompletedEditCardStyle
+                    : goalProjectNexusCardStyle
+                }
+                aria-label={`${project.name}. ${
+                  isCompleted
+                    ? "Completed"
+                    : "Double tap to complete. Long press to edit"
+                }`}
+              >
+                {renderGoalProjectCardContent(project)}
+              </button>
+            );
+          });
           const blankCount = Math.max(1, 3 - visibleEditProjects.length);
           return [
             ...editCards,
@@ -11636,6 +11751,7 @@ export function Fab({
       priority: string | null;
       energy: string | null;
       stage: string | null;
+      completedAt?: string | null;
       durationMin: number | null;
       dueDate: string | null;
       skillId: string | null;
@@ -11643,6 +11759,9 @@ export function Fab({
       const skill = resolveProjectTaskSkill(task.skillId);
       const metaItems = getProjectTaskMetaItems(task);
       const skillVisualIsCompact = skill.visual.trim().length <= 3;
+      const isCompleted =
+        task.stage?.trim().toUpperCase() === "PERFECT" ||
+        hasFabCompletionTimestamp(task.completedAt);
 
       return (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.85rem] items-stretch gap-2">
@@ -11651,6 +11770,7 @@ export function Fab({
               <span
                 className={cn(
                   "flex size-7 shrink-0 items-center justify-center truncate rounded-md border border-white/10 bg-white/[0.07] px-1 text-center leading-none text-white/86 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_5px_10px_rgba(0,0,0,0.3)]",
+                  isCompleted && associatedCompletedIdentityClass,
                   skillVisualIsCompact
                     ? "text-base"
                     : "text-[7px] font-extrabold uppercase tracking-[0.06em]",
@@ -11661,12 +11781,27 @@ export function Fab({
                 {skill.visual}
               </span>
               {renderAssociatedPriorityIndicator(task.priority)}
-              <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white">
+              <span
+                className={cn(
+                  "line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold uppercase leading-snug text-white",
+                  isCompleted && associatedCompletedPrimaryTextClass,
+                )}
+              >
                 {task.name}
               </span>
             </div>
-            <div className="flex min-w-0 items-center gap-1.5 pl-9 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52">
-              <span className="min-w-0 shrink truncate text-white/62">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 pl-9 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-white/52",
+                isCompleted && associatedCompletedMetaTextClass,
+              )}
+            >
+              <span
+                className={cn(
+                  "min-w-0 shrink truncate text-white/62",
+                  isCompleted && associatedCompletedMetaTextClass,
+                )}
+              >
                 {skill.label}
               </span>
               {metaItems.length > 0 ? (
@@ -11685,30 +11820,41 @@ export function Fab({
     };
     const taskItems = visibleEditTasks
       ? (() => {
-          const editCards = visibleEditTasks.map((task) => (
-            <button
-              key={task.id}
-              type="button"
-              className={cn(projectTaskNexusCardClass, "h-full min-h-0")}
-              style={projectTaskNexusCardStyle}
-              onPointerDown={(event) =>
-                handleEditProjectTaskPointerDown(event, task)
-              }
-              onPointerMove={handleEditProjectTaskPointerMove}
-              onPointerUp={(event) =>
-                handleEditProjectTaskPointerEnd(event, task)
-              }
-              onPointerCancel={handleEditProjectTaskPointerCancel}
-              onClick={(event) => handleEditProjectTaskClick(event, task)}
-              aria-label={`${task.name}. ${
-                isEditProjectTaskCompleted(task)
-                  ? "Completed"
-                  : "Double tap to complete. Long press to edit"
-              }`}
-            >
-              {renderProjectTaskCardContent(task)}
-            </button>
-          ));
+          const editCards = visibleEditTasks.map((task) => {
+            const isCompleted = isEditProjectTaskCompleted(task);
+            return (
+              <button
+                key={task.id}
+                type="button"
+                className={cn(
+                  projectTaskNexusCardClass,
+                  "h-full min-h-0",
+                  isCompleted && associatedCompletedEditCardClass,
+                )}
+                style={
+                  isCompleted
+                    ? associatedCompletedEditCardStyle
+                    : projectTaskNexusCardStyle
+                }
+                onPointerDown={(event) =>
+                  handleEditProjectTaskPointerDown(event, task)
+                }
+                onPointerMove={handleEditProjectTaskPointerMove}
+                onPointerUp={(event) =>
+                  handleEditProjectTaskPointerEnd(event, task)
+                }
+                onPointerCancel={handleEditProjectTaskPointerCancel}
+                onClick={(event) => handleEditProjectTaskClick(event, task)}
+                aria-label={`${task.name}. ${
+                  isCompleted
+                    ? "Completed"
+                    : "Double tap to complete. Long press to edit"
+                }`}
+              >
+                {renderProjectTaskCardContent(task)}
+              </button>
+            );
+          });
           const blankCount = Math.max(1, 3 - visibleEditTasks.length);
           return [
             ...editCards,
@@ -18045,6 +18191,7 @@ export function Fab({
             id: savedProjectId,
             name: trimmedName,
             stage: projectStage,
+            completedAt: null,
             priority: projectPriority,
             energy: projectEnergy,
             why: projectWhy?.trim() || null,

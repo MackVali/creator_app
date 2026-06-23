@@ -48,6 +48,39 @@ export type RoadmapPriorityGoal = {
   campaignPosition?: number;
   campaignGoalCreatedAt?: string | null;
   createdAt?: string | null;
+  projects?: RoadmapPriorityProject[];
+};
+
+export type RoadmapPriorityProject = {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  skillId?: string | null;
+  skillName?: string | null;
+  skillIcon?: string | null;
+  skillIds?: string[];
+  taskSkillIds?: Array<string | null>;
+  priority?: PriorityBucketId;
+  energy?: string | null;
+  stage?: string | null;
+  completedAt?: string | null;
+  globalRank?: number;
+  createdAt?: string | null;
+  tasks?: RoadmapPriorityTask[];
+};
+
+export type RoadmapPriorityTask = {
+  id: string;
+  name: string;
+  skillId?: string | null;
+  skillName?: string | null;
+  skillIcon?: string | null;
+  priority?: PriorityBucketId;
+  energy?: string | null;
+  stage?: string | null;
+  completedAt?: string | null;
+  durationMin?: number | null;
+  createdAt?: string | null;
 };
 
 export type RoadmapPriorityCampaign = {
@@ -102,6 +135,7 @@ export type GlobalPriorityRoadmapItem = {
   position?: number;
   createdAt?: string | null;
   goals?: RoadmapPriorityGoal[];
+  projects?: RoadmapPriorityProject[];
 };
 
 export type RoadmapHabitItem = {

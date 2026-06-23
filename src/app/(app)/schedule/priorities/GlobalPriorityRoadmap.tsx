@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -34,7 +35,12 @@ import {
 } from "@dnd-kit/sortable";
 import { ChevronDown, GripVertical } from "lucide-react";
 
-import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
+import {
+  hapticComplete,
+  hapticErrorPattern,
+  hapticPress,
+  hapticSnap,
+} from "@/lib/haptics/creatorHaptics";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
@@ -46,6 +52,8 @@ import {
   type GlobalPriorityRoadmapItem,
   type PriorityBucketId,
   type RoadmapPriorityGoal,
+  type RoadmapPriorityProject,
+  type RoadmapPriorityTask,
 } from "./utils";
 
 export type PriorityRoadmapSensors = ReturnType<typeof useSensors>;
@@ -69,6 +77,15 @@ export type GlobalPriorityGoalLongPressEditHandler = (
   element: HTMLElement
 ) => void;
 
+export type GlobalPriorityProjectCompleteHandler = (
+  project: RoadmapPriorityProject
+) => void | Promise<void>;
+
+export type GlobalPriorityTaskCompleteHandler = (
+  task: RoadmapPriorityTask,
+  project: RoadmapPriorityProject
+) => void | Promise<void>;
+
 type DragScrollTarget = Element | Window;
 type DragHandleListenerMap = {
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -78,9 +95,13 @@ type GlobalPriorityRoadmapAppearance = "default" | "priorityEditor";
 
 const GLOBAL_PRIORITY_BUCKET_PREFIX = "global-priority-bucket:";
 const CAMPAIGN_GOAL_BUCKET_PREFIX = "campaign-goal-bucket:";
+const TOP_LEVEL_GOAL_ROW_PREFIX = "top-level-goal:";
+const CAMPAIGN_GOAL_ROW_PREFIX = "campaign-goal:";
+const ROADMAP_PROJECT_ROW_PREFIX = "roadmap-project:";
 const EDGE_AUTOSCROLL_THRESHOLD_PX = 96;
 const EDGE_AUTOSCROLL_MAX_STEP_PX = 12;
 const PRIORITY_EDIT_LONG_PRESS_MS = 560;
+const PRIORITY_ROW_DOUBLE_TAP_MS = 325;
 const PRIORITY_EDIT_LONG_PRESS_MOVE_TOLERANCE_PX = 8;
 const PRIORITY_DND_AUTO_SCROLL = {
   threshold: { x: 0, y: 0.16 },
@@ -91,6 +112,8 @@ const PRIORITY_EDITOR_PROJECT_ROW_CLASS =
   "border-black/70 bg-[radial-gradient(circle_at_0%_0%,rgba(120,126,138,0.28),transparent_58%),linear-gradient(140deg,rgb(8,8,10)_0%,rgb(22,22,26)_42%,rgb(34,35,42)_100%)] shadow-[0_0_0_1px_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] outline outline-1 -outline-offset-1 outline-black/85 hover:border-white/16";
 const PRIORITY_EDITOR_PROJECT_ROW_DRAGGING_CLASS =
   "bg-[radial-gradient(circle_at_0%_0%,rgba(120,126,138,0.18),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.94)_0%,rgba(22,22,26,0.9)_42%,rgba(34,35,42,0.82)_100%)]";
+const PRIORITY_EDITOR_COMPLETED_NESTED_ROW_CLASS =
+  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)]";
 
 export function usePriorityRoadmapSensors() {
   return useSensors(
@@ -131,6 +154,18 @@ function getGlobalPriorityItemDragId(item: GlobalPriorityRoadmapItem) {
 
 function getCampaignGoalDragId(campaignId: string, goalId: string) {
   return `campaign-goal:${campaignId}:${goalId}`;
+}
+
+function getTopLevelGoalRowKey(goalId: string) {
+  return `${TOP_LEVEL_GOAL_ROW_PREFIX}${goalId}`;
+}
+
+function getCampaignGoalRowKey(campaignId: string, goalId: string) {
+  return `${CAMPAIGN_GOAL_ROW_PREFIX}${campaignId}:${goalId}`;
+}
+
+function getProjectRowKey(goalRowKey: string, projectId: string) {
+  return `${ROADMAP_PROJECT_ROW_PREFIX}${goalRowKey}:${projectId}`;
 }
 
 function isSameGlobalPriorityItem(
@@ -575,6 +610,8 @@ export function GlobalPriorityRoadmap({
   appearance = "default",
   onGoalOpen,
   onGoalLongPressEdit,
+  onProjectComplete,
+  onTaskComplete,
   onDragEnd,
   onCampaignGoalDragEnd,
 }: {
@@ -587,6 +624,8 @@ export function GlobalPriorityRoadmap({
   appearance?: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit?: GlobalPriorityGoalLongPressEditHandler;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   onDragEnd: (
     event: DragEndEvent,
     previewItems?: GlobalPriorityRoadmapItem[] | null
@@ -600,6 +639,9 @@ export function GlobalPriorityRoadmap({
   const [openCampaignIds, setOpenCampaignIds] = useState<Record<string, boolean>>(
     {}
   );
+  const [openGoalIds, setOpenGoalIds] = useState<Record<string, boolean>>({});
+  const [openProjectIds, setOpenProjectIds] = useState<Record<string, boolean>>({});
+  const [blockedProjectIds, setBlockedProjectIds] = useState<Record<string, boolean>>({});
   const [activePriorityItem, setActivePriorityItem] =
     useState<GlobalPriorityRoadmapItem | null>(null);
   const [previewPriorityItems, setPreviewPriorityItems] = useState<
@@ -630,6 +672,36 @@ export function GlobalPriorityRoadmap({
       [campaignId]: !current[campaignId],
     }));
   }, [appearance]);
+  const handleToggleGoal = useCallback((goalRowKey: string) => {
+    if (appearance === "priorityEditor") {
+      void hapticSnap();
+    }
+    setOpenGoalIds((current) => ({
+      ...current,
+      [goalRowKey]: !current[goalRowKey],
+    }));
+  }, [appearance]);
+  const handleToggleProject = useCallback((projectRowKey: string) => {
+    if (appearance === "priorityEditor") {
+      void hapticSnap();
+    }
+    setOpenProjectIds((current) => ({
+      ...current,
+      [projectRowKey]: !current[projectRowKey],
+    }));
+  }, [appearance]);
+  const handleProjectBlocked = useCallback((projectRowKey: string) => {
+    void hapticErrorPattern();
+    setBlockedProjectIds((current) => ({ ...current, [projectRowKey]: true }));
+    window.setTimeout(() => {
+      setBlockedProjectIds((current) => {
+        if (!current[projectRowKey]) return current;
+        const next = { ...current };
+        delete next[projectRowKey];
+        return next;
+      });
+    }, 380);
+  }, []);
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
       const activeData = event.active.data.current as
@@ -697,7 +769,9 @@ export function GlobalPriorityRoadmap({
   }, [stopEdgeAutoscroll]);
   const handleDefaultGoalLongPressEdit = useCallback(
     (
-      goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
+      goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name"> & {
+        status?: string | null;
+      },
       element: HTMLElement
     ) => {
       fabCreation?.requestEntityEdit({
@@ -738,13 +812,21 @@ export function GlobalPriorityRoadmap({
                     priority={priority}
                     items={bucketItems}
                     openCampaignIds={openCampaignIds}
+                    openGoalIds={openGoalIds}
+                    openProjectIds={openProjectIds}
+                    blockedProjectIds={blockedProjectIds}
                     onToggleCampaign={handleToggleCampaign}
+                    onToggleGoal={handleToggleGoal}
+                    onToggleProject={handleToggleProject}
+                    onProjectBlocked={handleProjectBlocked}
                     sensors={sensors}
                     isTopLevelDragDisabled={false}
                     isCampaignGoalDragDisabled={false}
                     appearance={appearance}
                     onGoalOpen={onGoalOpen}
                     onGoalLongPressEdit={handleGoalLongPressEdit}
+                    onProjectComplete={onProjectComplete}
+                    onTaskComplete={onTaskComplete}
                     onCampaignGoalDragEnd={onCampaignGoalDragEnd}
                   />
                 );
@@ -788,28 +870,41 @@ function GlobalPriorityBucket({
   priority,
   items,
   openCampaignIds,
+  openGoalIds,
+  openProjectIds,
+  blockedProjectIds,
   onToggleCampaign,
+  onToggleGoal,
+  onToggleProject,
+  onProjectBlocked,
   sensors,
   isTopLevelDragDisabled,
   isCampaignGoalDragDisabled,
   appearance,
   onGoalOpen,
   onGoalLongPressEdit,
+  onProjectComplete,
+  onTaskComplete,
   onCampaignGoalDragEnd,
 }: {
   priority: PriorityBucketId;
   items: GlobalPriorityRoadmapItem[];
   openCampaignIds: Record<string, boolean>;
+  openGoalIds: Record<string, boolean>;
+  openProjectIds: Record<string, boolean>;
+  blockedProjectIds: Record<string, boolean>;
   onToggleCampaign: (campaignId: string) => void;
+  onToggleGoal: (goalRowKey: string) => void;
+  onToggleProject: (projectRowKey: string) => void;
+  onProjectBlocked: (projectRowKey: string) => void;
   sensors: PriorityRoadmapSensors;
   isTopLevelDragDisabled: boolean;
   isCampaignGoalDragDisabled: boolean;
   appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
-  onGoalLongPressEdit: (
-    goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
-    element: HTMLElement
-  ) => void;
+  onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   onCampaignGoalDragEnd: (
     campaign: GlobalPriorityRoadmapItem,
     event: DragEndEvent
@@ -849,13 +944,27 @@ function GlobalPriorityBucket({
                 isOpen={
                   item.type === "campaign" ? openCampaignIds[item.id] ?? false : false
                 }
+                isGoalOpen={
+                  item.type === "goal"
+                    ? openGoalIds[getTopLevelGoalRowKey(item.id)] ?? false
+                    : false
+                }
                 onToggle={() => onToggleCampaign(item.id)}
+                onToggleGoal={() => onToggleGoal(getTopLevelGoalRowKey(item.id))}
+                openGoalIds={openGoalIds}
+                openProjectIds={openProjectIds}
+                blockedProjectIds={blockedProjectIds}
+                onToggleNestedGoal={onToggleGoal}
+                onToggleProject={onToggleProject}
+                onProjectBlocked={onProjectBlocked}
                 sensors={sensors}
                 isTopLevelDragDisabled={isTopLevelDragDisabled}
                 isCampaignGoalDragDisabled={isCampaignGoalDragDisabled}
                 appearance={appearance}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
+                onProjectComplete={onProjectComplete}
+                onTaskComplete={onTaskComplete}
                 onCampaignGoalDragEnd={onCampaignGoalDragEnd}
               />
             ))
@@ -873,27 +982,44 @@ function GlobalPriorityBucket({
 function SortableGlobalPriorityItem({
   item,
   isOpen,
+  isGoalOpen,
   onToggle,
+  onToggleGoal,
+  openGoalIds,
+  openProjectIds,
+  blockedProjectIds,
+  onToggleNestedGoal,
+  onToggleProject,
+  onProjectBlocked,
   sensors,
   isTopLevelDragDisabled,
   isCampaignGoalDragDisabled,
   appearance,
   onGoalOpen,
   onGoalLongPressEdit,
+  onProjectComplete,
+  onTaskComplete,
   onCampaignGoalDragEnd,
 }: {
   item: GlobalPriorityRoadmapItem;
   isOpen: boolean;
+  isGoalOpen: boolean;
   onToggle: () => void;
+  onToggleGoal: () => void;
+  openGoalIds: Record<string, boolean>;
+  openProjectIds: Record<string, boolean>;
+  blockedProjectIds: Record<string, boolean>;
+  onToggleNestedGoal: (goalRowKey: string) => void;
+  onToggleProject: (projectRowKey: string) => void;
+  onProjectBlocked: (projectRowKey: string) => void;
   sensors: PriorityRoadmapSensors;
   isTopLevelDragDisabled: boolean;
   isCampaignGoalDragDisabled: boolean;
   appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
-  onGoalLongPressEdit: (
-    goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
-    element: HTMLElement
-  ) => void;
+  onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
   onCampaignGoalDragEnd: (
     campaign: GlobalPriorityRoadmapItem,
     event: DragEndEvent
@@ -915,6 +1041,8 @@ function SortableGlobalPriorityItem({
   const isCampaign = item.type === "campaign";
   const identity = getGlobalPriorityItemIdentity(item);
   const globalRank = isCampaign ? null : getGlobalPriorityItemRank(item);
+  const goalProjects = item.projects ?? [];
+  const hasGoalProjects = goalProjects.length > 0;
   const campaignGoalBuckets = useMemo(
     () => groupCampaignGoalsByPriority(item.goals ?? []),
     [item.goals]
@@ -1000,7 +1128,14 @@ function SortableGlobalPriorityItem({
     }
     onGoalOpen(item.id);
   }, [appearance, item.id, onGoalOpen]);
-  const goalLongPressHandlers = usePriorityEditLongPress(
+  const handleGoalToggle = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onToggleGoal();
+    },
+    [onToggleGoal]
+  );
+  const goalLongPressHandlers = usePriorityEditLongPress<HTMLButtonElement>(
     handleGoalLongPress,
     isDragging || isCampaign
   );
@@ -1069,26 +1204,60 @@ function SortableGlobalPriorityItem({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={onGoalOpen ? handleGoalOpen : undefined}
-            {...goalLongPressHandlers}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
-          >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-              {identity}
-            </span>
-            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
-              {item.name}
-            </p>
-            {globalRank ? (
-              <span className="shrink-0 text-[11px] font-semibold leading-none text-zinc-600">
-                #{globalRank}
+          <>
+            <button
+              type="button"
+              onClick={onGoalOpen ? handleGoalOpen : undefined}
+              {...goalLongPressHandlers}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.04] text-[11px] font-semibold text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                {identity}
               </span>
+              <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-white/82">
+                {item.name}
+              </p>
+              {globalRank ? (
+                <span className="shrink-0 text-[11px] font-semibold leading-none text-zinc-600">
+                  #{globalRank}
+                </span>
+              ) : null}
+            </button>
+            {hasGoalProjects ? (
+              <button
+                type="button"
+                aria-expanded={isGoalOpen}
+                onClick={handleGoalToggle}
+                className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[10px] font-semibold leading-none text-zinc-600 outline-none transition hover:bg-white/[0.025] hover:text-zinc-400 focus-visible:ring-1 focus-visible:ring-white/15"
+              >
+                <span>
+                  {goalProjects.length} Project
+                  {goalProjects.length === 1 ? "" : "s"}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "size-3.5 shrink-0 transition-transform",
+                    isGoalOpen ? "rotate-180" : ""
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
             ) : null}
-          </button>
+          </>
         )}
       </div>
+      {!isCampaign && isGoalOpen && hasGoalProjects ? (
+        <GoalProjectRows
+          projects={goalProjects}
+          goalRowKey={getTopLevelGoalRowKey(item.id)}
+          openProjectIds={openProjectIds}
+          blockedProjectIds={blockedProjectIds}
+          onToggleProject={onToggleProject}
+          onProjectBlocked={onProjectBlocked}
+          onProjectComplete={onProjectComplete}
+          onTaskComplete={onTaskComplete}
+        />
+      ) : null}
       {isCampaign && isOpen ? (
         <div className="border-t border-black/35 bg-black/20 px-2 pb-2 pt-1.5 sm:px-2.5">
           <DndContext
@@ -1108,7 +1277,15 @@ function SortableGlobalPriorityItem({
                   isDragDisabled={isCampaignGoalDragDisabled}
                   onGoalOpen={onGoalOpen}
                   onGoalLongPressEdit={onGoalLongPressEdit}
+                  openGoalIds={openGoalIds}
+                  openProjectIds={openProjectIds}
+                  blockedProjectIds={blockedProjectIds}
+                  onToggleGoal={onToggleNestedGoal}
+                  onToggleProject={onToggleProject}
+                  onProjectBlocked={onProjectBlocked}
                   appearance={appearance}
+                  onProjectComplete={onProjectComplete}
+                  onTaskComplete={onTaskComplete}
                 />
               ))}
             </div>
@@ -1203,16 +1380,29 @@ function CampaignGoalPriorityBucket({
   appearance,
   onGoalOpen,
   onGoalLongPressEdit,
+  openGoalIds,
+  openProjectIds,
+  blockedProjectIds,
+  onToggleGoal,
+  onToggleProject,
+  onProjectBlocked,
+  onProjectComplete,
+  onTaskComplete,
 }: {
   campaignId: string;
   bucket: { priority: PriorityBucketId; goals: RoadmapPriorityGoal[] };
   isDragDisabled: boolean;
   appearance: GlobalPriorityRoadmapAppearance;
   onGoalOpen?: (goalId: string) => void;
-  onGoalLongPressEdit: (
-    goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
-    element: HTMLElement
-  ) => void;
+  onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  openGoalIds: Record<string, boolean>;
+  openProjectIds: Record<string, boolean>;
+  blockedProjectIds: Record<string, boolean>;
+  onToggleGoal: (goalRowKey: string) => void;
+  onToggleProject: (projectRowKey: string) => void;
+  onProjectBlocked: (projectRowKey: string) => void;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
 }) {
   const bucketId = getCampaignGoalBucketId(campaignId, bucket.priority);
   const { setNodeRef, isOver } = useDroppable({
@@ -1252,8 +1442,20 @@ function CampaignGoalPriorityBucket({
                 goal={goal}
                 isDragDisabled={isDragDisabled}
                 appearance={appearance}
+                isOpen={
+                  openGoalIds[getCampaignGoalRowKey(campaignId, goal.id)] ?? false
+                }
+                onToggle={() =>
+                  onToggleGoal(getCampaignGoalRowKey(campaignId, goal.id))
+                }
+                openProjectIds={openProjectIds}
+                blockedProjectIds={blockedProjectIds}
+                onToggleProject={onToggleProject}
+                onProjectBlocked={onProjectBlocked}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
+                onProjectComplete={onProjectComplete}
+                onTaskComplete={onTaskComplete}
               />
             ))}
           </div>
@@ -1268,18 +1470,31 @@ function GlobalCampaignGoalRow({
   goal,
   isDragDisabled,
   appearance,
+  isOpen,
+  onToggle,
+  openProjectIds,
+  blockedProjectIds,
+  onToggleProject,
+  onProjectBlocked,
   onGoalOpen,
   onGoalLongPressEdit,
+  onProjectComplete,
+  onTaskComplete,
 }: {
   campaignId: string;
   goal: RoadmapPriorityGoal;
   isDragDisabled: boolean;
   appearance: GlobalPriorityRoadmapAppearance;
+  isOpen: boolean;
+  onToggle: () => void;
+  openProjectIds: Record<string, boolean>;
+  blockedProjectIds: Record<string, boolean>;
+  onToggleProject: (projectRowKey: string) => void;
+  onProjectBlocked: (projectRowKey: string) => void;
   onGoalOpen?: (goalId: string) => void;
-  onGoalLongPressEdit: (
-    goal: Pick<GlobalPriorityRoadmapItem | RoadmapPriorityGoal, "id" | "name">,
-    element: HTMLElement
-  ) => void;
+  onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
 }) {
   const {
     attributes,
@@ -1300,6 +1515,8 @@ function GlobalCampaignGoalRow({
   });
   const identity = getCampaignGoalIdentity(goal);
   const globalRank = getCampaignGoalRank(goal);
+  const projects = goal.projects ?? [];
+  const hasProjects = projects.length > 0;
   const dragHandleListeners = listeners as DragHandleListenerMap | undefined;
   const handleDragHandlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1338,7 +1555,14 @@ function GlobalCampaignGoalRow({
     }
     onGoalOpen(goal.id);
   }, [appearance, goal.id, onGoalOpen]);
-  const goalLongPressHandlers = usePriorityEditLongPress(
+  const handleToggle = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onToggle();
+    },
+    [onToggle]
+  );
+  const goalLongPressHandlers = usePriorityEditLongPress<HTMLButtonElement>(
     handleGoalLongPress,
     isDragging
   );
@@ -1348,7 +1572,7 @@ function GlobalCampaignGoalRow({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex min-h-8 items-center gap-2 rounded-lg border border-black/45 bg-white/[0.018] px-2 py-1.5",
+        "rounded-lg border border-black/45 bg-white/[0.018]",
         appearance === "priorityEditor" ? PRIORITY_EDITOR_PROJECT_ROW_CLASS : "",
         isDragging
           ? cn(
@@ -1360,67 +1584,101 @@ function GlobalCampaignGoalRow({
           : ""
       )}
     >
-      <button
-        ref={setActivatorNodeRef}
-        type="button"
-        disabled={isDragDisabled}
-        className={cn(
-          "flex size-5 shrink-0 touch-none items-center justify-center rounded-md border border-black/50 bg-black/25 text-zinc-700 transition",
-          isDragDisabled
-            ? "cursor-default opacity-45"
-            : "cursor-grab hover:bg-white/[0.04] hover:text-zinc-400 active:cursor-grabbing"
+      <div className="flex min-h-8 items-center gap-2 px-2 py-1.5">
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          disabled={isDragDisabled}
+          className={cn(
+            "flex size-5 shrink-0 touch-none items-center justify-center rounded-md border border-black/50 bg-black/25 text-zinc-700 transition",
+            isDragDisabled
+              ? "cursor-default opacity-45"
+              : "cursor-grab hover:bg-white/[0.04] hover:text-zinc-400 active:cursor-grabbing"
+          )}
+          aria-label={`Move ${goal.name} within Campaign`}
+          onClick={(event) => event.stopPropagation()}
+          {...attributes}
+          {...listeners}
+          onPointerDown={handleDragHandlePointerDown}
+          onTouchStart={handleDragHandleTouchStart}
+        >
+          <GripVertical className="size-3" aria-hidden="true" />
+        </button>
+        {onGoalOpen ? (
+          <button
+            type="button"
+            onClick={handleGoalOpen}
+            {...goalLongPressHandlers}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            {identity ? (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
+                {identity}
+              </span>
+            ) : null}
+            <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
+              {goal.name}
+            </p>
+            {globalRank ? (
+              <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-700">
+                #{globalRank}
+              </span>
+            ) : null}
+          </button>
+        ) : (
+          <button
+            type="button"
+            {...goalLongPressHandlers}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            {identity ? (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
+                {identity}
+              </span>
+            ) : null}
+            <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
+              {goal.name}
+            </p>
+            {globalRank ? (
+              <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-700">
+                #{globalRank}
+              </span>
+            ) : null}
+          </button>
         )}
-        aria-label={`Move ${goal.name} within Campaign`}
-        onClick={(event) => event.stopPropagation()}
-        {...attributes}
-        {...listeners}
-        onPointerDown={handleDragHandlePointerDown}
-        onTouchStart={handleDragHandleTouchStart}
-      >
-        <GripVertical className="size-3" aria-hidden="true" />
-      </button>
-      {onGoalOpen ? (
-        <button
-          type="button"
-          onClick={handleGoalOpen}
-          {...goalLongPressHandlers}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
-        >
-          {identity ? (
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
-              {identity}
+        {hasProjects ? (
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            onClick={handleToggle}
+            className="flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-[9px] font-semibold leading-none text-zinc-700 outline-none transition hover:bg-white/[0.025] hover:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/15"
+          >
+            <span>
+              {projects.length} Project{projects.length === 1 ? "" : "s"}
             </span>
-          ) : null}
-          <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
-            {goal.name}
-          </p>
-          {globalRank ? (
-            <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-700">
-              #{globalRank}
-            </span>
-          ) : null}
-        </button>
-      ) : (
-        <button
-          type="button"
-          {...goalLongPressHandlers}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
-        >
-          {identity ? (
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.035] text-[10px] font-semibold text-white/70">
-              {identity}
-            </span>
-          ) : null}
-          <p className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/68">
-            {goal.name}
-          </p>
-          {globalRank ? (
-            <span className="shrink-0 text-[10px] font-semibold leading-none text-zinc-700">
-              #{globalRank}
-            </span>
-          ) : null}
-        </button>
-      )}
+            <ChevronDown
+              className={cn(
+                "size-3 shrink-0 transition-transform",
+                isOpen ? "rotate-180" : ""
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        ) : null}
+      </div>
+      {isOpen && hasProjects ? (
+        <GoalProjectRows
+          projects={projects}
+          goalRowKey={getCampaignGoalRowKey(campaignId, goal.id)}
+          openProjectIds={openProjectIds}
+          blockedProjectIds={blockedProjectIds}
+          onToggleProject={onToggleProject}
+          onProjectBlocked={onProjectBlocked}
+          onProjectComplete={onProjectComplete}
+          onTaskComplete={onTaskComplete}
+          nested
+        />
+      ) : null}
     </div>
   );
 }
@@ -1441,7 +1699,7 @@ function getPriorityRowFabOriginRect(element: HTMLElement) {
   };
 }
 
-function usePriorityEditLongPress(
+function usePriorityEditLongPress<TElement extends HTMLElement = HTMLElement>(
   onLongPress: (element: HTMLElement) => void,
   disabled = false
 ) {
@@ -1468,7 +1726,7 @@ function usePriorityEditLongPress(
   );
 
   const cancel = useCallback(
-    (event?: ReactPointerEvent<HTMLElement>) => {
+    (event?: ReactPointerEvent<TElement>) => {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -1486,7 +1744,7 @@ function usePriorityEditLongPress(
   );
 
   const handlePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLElement>) => {
+    (event: ReactPointerEvent<TElement>) => {
       if (disabled || (event.pointerType === "mouse" && event.button !== 0)) {
         return;
       }
@@ -1520,7 +1778,7 @@ function usePriorityEditLongPress(
   );
 
   const handlePointerMove = useCallback(
-    (event: ReactPointerEvent<HTMLElement>) => {
+    (event: ReactPointerEvent<TElement>) => {
       const start = startRef.current;
       if (!start || start.pointerId !== event.pointerId) return;
 
@@ -1536,7 +1794,7 @@ function usePriorityEditLongPress(
   );
 
   const handlePointerUp = useCallback(
-    (event: ReactPointerEvent<HTMLElement>) => {
+    (event: ReactPointerEvent<TElement>) => {
       cancel(event);
       if (triggeredRef.current) {
         event.preventDefault();
@@ -1547,7 +1805,7 @@ function usePriorityEditLongPress(
   );
 
   const handlePointerCancel = useCallback(
-    (event: ReactPointerEvent<HTMLElement>) => {
+    (event: ReactPointerEvent<TElement>) => {
       cancel(event);
       triggeredRef.current = false;
     },
@@ -1555,7 +1813,7 @@ function usePriorityEditLongPress(
   );
 
   const handlePointerLeave = useCallback(
-    (event: ReactPointerEvent<HTMLElement>) => {
+    (event: ReactPointerEvent<TElement>) => {
       if (event.pointerType === "mouse") {
         cancel(event);
       }
@@ -1564,7 +1822,7 @@ function usePriorityEditLongPress(
   );
 
   const handleClickCapture = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
+    (event: ReactMouseEvent<TElement>) => {
       if (!triggeredRef.current) return;
       triggeredRef.current = false;
       event.preventDefault();
@@ -1574,24 +1832,61 @@ function usePriorityEditLongPress(
   );
 
   useEffect(() => cancel, [cancel]);
+  const interactionStyle: CSSProperties = {
+    userSelect: "none",
+    WebkitUserSelect: "none",
+    WebkitTouchCallout: "none",
+    WebkitTapHighlightColor: "transparent",
+  };
 
   return {
     draggable: false,
-    style: {
-      userSelect: "none",
-      WebkitUserSelect: "none",
-      WebkitTouchCallout: "none",
-      WebkitTapHighlightColor: "transparent",
-    },
+    style: interactionStyle,
     onPointerDown: handlePointerDown,
     onPointerMove: handlePointerMove,
     onPointerUp: handlePointerUp,
     onPointerCancel: handlePointerCancel,
     onPointerLeave: handlePointerLeave,
     onClickCapture: handleClickCapture,
-    onContextMenu: (event: ReactMouseEvent<HTMLElement>) => event.preventDefault(),
-    onDragStart: (event: ReactMouseEvent<HTMLElement>) => event.preventDefault(),
+    onContextMenu: (event: ReactMouseEvent<TElement>) => event.preventDefault(),
+    onDragStart: (event: ReactDragEvent<TElement>) => event.preventDefault(),
   };
+}
+
+function useRoadmapRowDoubleTap<TElement extends HTMLElement = HTMLElement>(
+  onDoubleTap: () => void,
+  disabled = false
+) {
+  const lastTapRef = useRef<number | null>(null);
+
+  const handleClick = useCallback(
+    (event: ReactMouseEvent<TElement>) => {
+      if (disabled) {
+        lastTapRef.current = null;
+        return;
+      }
+
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+      if (event.detail > 1 || (lastTap !== null && now - lastTap <= PRIORITY_ROW_DOUBLE_TAP_MS)) {
+        lastTapRef.current = null;
+        event.preventDefault();
+        event.stopPropagation();
+        onDoubleTap();
+        return;
+      }
+
+      lastTapRef.current = now;
+      window.setTimeout(() => {
+        if (lastTapRef.current === now) {
+          lastTapRef.current = null;
+        }
+      }, PRIORITY_ROW_DOUBLE_TAP_MS);
+    },
+    [disabled, onDoubleTap]
+  );
+
+  return { onClick: handleClick };
 }
 
 function getCampaignGoalIdentity(goal: RoadmapPriorityGoal) {
@@ -1604,6 +1899,312 @@ function getCampaignGoalRank(goal: RoadmapPriorityGoal) {
     goal.globalRank > 0
     ? goal.globalRank
     : null;
+}
+
+function GoalProjectRows({
+  projects,
+  goalRowKey,
+  openProjectIds,
+  blockedProjectIds,
+  onToggleProject,
+  onProjectBlocked,
+  onProjectComplete,
+  onTaskComplete,
+  nested = false,
+}: {
+  projects: RoadmapPriorityProject[];
+  goalRowKey: string;
+  openProjectIds: Record<string, boolean>;
+  blockedProjectIds: Record<string, boolean>;
+  onToggleProject: (projectRowKey: string) => void;
+  onProjectBlocked: (projectRowKey: string) => void;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+  nested?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "border-t border-black/35 bg-black/20 px-2 pb-2 pt-1.5 sm:px-2.5",
+        nested ? "px-2 pb-2 pt-1" : ""
+      )}
+    >
+      <div className={cn("space-y-1", nested ? "ml-7" : "ml-10")}>
+        {projects.map((project) => {
+          const projectRowKey = getProjectRowKey(goalRowKey, project.id);
+          return (
+            <GoalProjectRow
+              key={project.id}
+              project={project}
+              isOpen={openProjectIds[projectRowKey] ?? false}
+              isBlocked={blockedProjectIds[projectRowKey] ?? false}
+              onToggle={() => onToggleProject(projectRowKey)}
+              onBlocked={() => onProjectBlocked(projectRowKey)}
+              onProjectComplete={onProjectComplete}
+              onTaskComplete={onTaskComplete}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GoalProjectRow({
+  project,
+  isOpen,
+  isBlocked,
+  onToggle,
+  onBlocked,
+  onProjectComplete,
+  onTaskComplete,
+}: {
+  project: RoadmapPriorityProject;
+  isOpen: boolean;
+  isBlocked: boolean;
+  onToggle: () => void;
+  onBlocked: () => void;
+  onProjectComplete?: GlobalPriorityProjectCompleteHandler;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+}) {
+  const fabCreation = useFabCreation();
+  const tasks = project.tasks ?? [];
+  const hasTasks = tasks.length > 0;
+  const identity = getProjectSkillIdentity(project);
+  const isCompleted = isRoadmapProjectCompleted(project);
+  const canCompleteProject = tasks.every(isRoadmapTaskCompleted);
+  const handleProjectLongPress = useCallback(
+    (element: HTMLElement) => {
+      void hapticPress();
+      fabCreation?.requestEntityEdit({
+        entityType: "PROJECT",
+        entityId: project.id,
+        title: project.name,
+        stage: project.stage ?? null,
+        completedAt: project.completedAt ?? null,
+        originRect: getPriorityRowFabOriginRect(element),
+      });
+    },
+    [fabCreation, project.completedAt, project.id, project.name, project.stage]
+  );
+  const handleProjectDoubleTap = useCallback(() => {
+    if (isCompleted || !onProjectComplete) return;
+    if (!canCompleteProject) {
+      onBlocked();
+      return;
+    }
+    void hapticComplete();
+    void onProjectComplete(project);
+  }, [canCompleteProject, isCompleted, onBlocked, onProjectComplete, project]);
+  const handleToggle = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onToggle();
+    },
+    [onToggle]
+  );
+  const projectLongPressHandlers = usePriorityEditLongPress<HTMLButtonElement>(
+    handleProjectLongPress
+  );
+  const projectDoubleTapHandlers = useRoadmapRowDoubleTap<HTMLButtonElement>(
+    handleProjectDoubleTap,
+    isCompleted || !onProjectComplete
+  );
+
+  return (
+    <div
+      className={cn(
+        "rounded-md border border-black/45 bg-white/[0.014]",
+        isCompleted ? PRIORITY_EDITOR_COMPLETED_NESTED_ROW_CLASS : "",
+        isBlocked
+          ? "goal-manual-complete-reject border-red-400/70 ring-1 ring-red-400/30"
+          : ""
+      )}
+    >
+      <div className="flex min-h-7 items-center gap-2 px-2 py-1.5">
+        <button
+          type="button"
+          {...projectLongPressHandlers}
+          {...projectDoubleTapHandlers}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15"
+          aria-label={`${project.name}. ${
+            isCompleted
+              ? "Completed"
+              : canCompleteProject
+                ? "Double tap to complete. Long press to edit"
+                : "Complete all Tasks before completing this Project. Long press to edit"
+          }`}
+        >
+          <span
+            className={cn(
+              "flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.028] px-1 text-center text-[9px] font-semibold leading-none text-white/70",
+              isCompleted ? "border-emerald-50/24 bg-emerald-950/16 text-emerald-50" : ""
+            )}
+          >
+            {identity}
+          </span>
+          <p
+            className={cn(
+              "min-w-0 flex-1 truncate text-[11px] font-medium leading-tight text-white/62",
+              isCompleted ? "text-emerald-50" : ""
+            )}
+          >
+            {project.name}
+          </p>
+          {project.globalRank ? (
+            <span
+              className={cn(
+                "shrink-0 text-[9px] font-semibold leading-none text-zinc-700",
+                isCompleted ? "text-emerald-50/75" : ""
+              )}
+            >
+              #{project.globalRank}
+            </span>
+          ) : null}
+        </button>
+        {hasTasks ? (
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            onClick={handleToggle}
+            className={cn(
+              "flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-[9px] font-semibold leading-none text-zinc-700 outline-none transition hover:bg-white/[0.025] hover:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/15",
+              isCompleted ? "text-emerald-50/72 hover:text-emerald-50" : ""
+            )}
+          >
+            <span>
+              {tasks.length} Task{tasks.length === 1 ? "" : "s"}
+            </span>
+            <ChevronDown
+              className={cn(
+                "size-3 shrink-0 transition-transform",
+                isOpen ? "rotate-180" : ""
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        ) : null}
+      </div>
+      {isOpen && hasTasks ? (
+        <div className="border-t border-black/30 bg-black/18 px-2 pb-2 pt-1">
+          <div className="ml-7 space-y-1">
+            {tasks.map((task) => (
+              <GoalProjectTaskRow
+                key={task.id}
+                task={task}
+                project={project}
+                onTaskComplete={onTaskComplete}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GoalProjectTaskRow({
+  task,
+  project,
+  onTaskComplete,
+}: {
+  task: RoadmapPriorityTask;
+  project: RoadmapPriorityProject;
+  onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+}) {
+  const fabCreation = useFabCreation();
+  const identity = getTaskSkillIdentity(task);
+  const isCompleted = isRoadmapTaskCompleted(task);
+  const handleTaskLongPress = useCallback(
+    (element: HTMLElement) => {
+      void hapticPress();
+      fabCreation?.requestEntityEdit({
+        entityType: "TASK",
+        entityId: task.id,
+        title: task.name,
+        stage: task.stage ?? null,
+        completedAt: task.completedAt ?? null,
+        originRect: getPriorityRowFabOriginRect(element),
+      });
+    },
+    [fabCreation, task.completedAt, task.id, task.name, task.stage]
+  );
+  const handleTaskDoubleTap = useCallback(() => {
+    if (isCompleted || !onTaskComplete) return;
+    void hapticComplete();
+    void onTaskComplete(task, project);
+  }, [isCompleted, onTaskComplete, project, task]);
+  const taskLongPressHandlers = usePriorityEditLongPress<HTMLButtonElement>(
+    handleTaskLongPress
+  );
+  const taskDoubleTapHandlers = useRoadmapRowDoubleTap<HTMLButtonElement>(
+    handleTaskDoubleTap,
+    isCompleted || !onTaskComplete
+  );
+
+  return (
+    <button
+      type="button"
+      {...taskLongPressHandlers}
+      {...taskDoubleTapHandlers}
+      className={cn(
+        "flex min-h-7 w-full min-w-0 items-center gap-2 rounded-md border border-black/45 bg-white/[0.012] px-2 py-1.5 text-left outline-none transition hover:bg-white/[0.025] focus-visible:ring-1 focus-visible:ring-white/15",
+        isCompleted ? PRIORITY_EDITOR_COMPLETED_NESTED_ROW_CLASS : ""
+      )}
+      aria-label={`${task.name}. ${
+        isCompleted ? "Completed" : "Double tap to complete. Long press to edit"
+      }`}
+    >
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-md border border-black/50 bg-white/[0.026] px-1 text-center text-[9px] font-semibold leading-none text-white/60",
+          isCompleted ? "border-emerald-50/24 bg-emerald-950/16 text-emerald-50" : ""
+        )}
+      >
+        {identity}
+      </span>
+      <p
+        className={cn(
+          "min-w-0 flex-1 truncate text-[11px] font-medium leading-tight text-white/56",
+          isCompleted ? "text-emerald-50" : ""
+        )}
+      >
+        {task.name}
+      </p>
+    </button>
+  );
+}
+
+function getProjectSkillIdentity(project: RoadmapPriorityProject) {
+  return (
+    project.skillIcon?.trim() ||
+    project.emoji?.trim() ||
+    project.skillName?.trim().slice(0, 2).toUpperCase() ||
+    "P"
+  );
+}
+
+function getTaskSkillIdentity(task: RoadmapPriorityTask) {
+  return (
+    task.skillIcon?.trim() ||
+    task.skillName?.trim().slice(0, 2).toUpperCase() ||
+    "T"
+  );
+}
+
+function isRoadmapProjectCompleted(project: RoadmapPriorityProject) {
+  const normalizedStage = project.stage?.trim().toUpperCase();
+  return (
+    Boolean(project.completedAt) ||
+    normalizedStage === "RELEASE" ||
+    normalizedStage === "COMPLETE" ||
+    normalizedStage === "COMPLETED" ||
+    normalizedStage === "DONE"
+  );
+}
+
+function isRoadmapTaskCompleted(task: RoadmapPriorityTask) {
+  return Boolean(task.completedAt) || task.stage?.trim().toUpperCase() === "PERFECT";
 }
 
 function CampaignGoalDragOverlay({

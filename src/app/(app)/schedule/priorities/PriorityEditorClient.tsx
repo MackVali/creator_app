@@ -37,6 +37,7 @@ import {
   hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
@@ -47,6 +48,8 @@ import {
   type PriorityBucketId,
   type RoadmapHabitItem,
   type RoadmapPriorityGoal,
+  type RoadmapPriorityProject,
+  type RoadmapPriorityTask,
   sortHabitRoadmapItems,
   sortGlobalPriorityItems,
   type UserPriorityFilterOptionData,
@@ -117,6 +120,30 @@ type PriorityEditorSupabaseClient = NonNullable<
   ): Promise<{ error: { message?: string } | null }>;
 };
 
+type PriorityEditorTaskCompletionUpdateQuery = {
+  update(values: {
+    stage: "PERFECT";
+    completed_at: string;
+    updated_at: string;
+  }): {
+    eq(column: "id", value: string): {
+      eq(
+        column: "user_id",
+        value: string
+      ): Promise<{ error: { message?: string } | null }>;
+    };
+  };
+};
+
+type PriorityEditorGoalPriorityUpdateQuery = {
+  update(values: {
+    priority_code: PriorityBucketId;
+    priority_order: number;
+  }): {
+    eq(column: "id", value: string): Promise<{ error: { message?: string } | null }>;
+  };
+};
+
 type CreatorEntitySavedEventDetail = {
   entityType?: string;
 };
@@ -140,6 +167,121 @@ const PRIORITY_EDITOR_REFRESH_ENTITY_TYPES = new Set([
   "TASK",
   "HABIT",
 ]);
+
+function getBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
+function dispatchPriorityEditorEntitySaved(entityType: "PROJECT" | "TASK", entityId: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("creator:entity-saved", {
+      detail: { entityType, entityId, action: "updated" },
+    })
+  );
+}
+
+function updateRoadmapProject(
+  items: GlobalPriorityRoadmapItem[],
+  projectId: string,
+  update: (project: RoadmapPriorityProject) => RoadmapPriorityProject
+) {
+  return items.map((item) => {
+    const updateProjects = (projects?: RoadmapPriorityProject[]) =>
+      projects?.map((project) =>
+        project.id === projectId ? update(project) : project
+      );
+
+    if (item.type === "campaign") {
+      return {
+        ...item,
+        goals: item.goals?.map((goal) => ({
+          ...goal,
+          projects: updateProjects(goal.projects),
+        })),
+      };
+    }
+
+    return {
+      ...item,
+      projects: updateProjects(item.projects),
+    };
+  });
+}
+
+function updateRoadmapTask(
+  items: GlobalPriorityRoadmapItem[],
+  taskId: string,
+  update: (task: RoadmapPriorityTask) => RoadmapPriorityTask
+) {
+  return items.map((item) => {
+    const updateProjects = (projects?: RoadmapPriorityProject[]) =>
+      projects?.map((project) => ({
+        ...project,
+        tasks: project.tasks?.map((task) =>
+          task.id === taskId ? update(task) : task
+        ),
+      }));
+
+    if (item.type === "campaign") {
+      return {
+        ...item,
+        goals: item.goals?.map((goal) => ({
+          ...goal,
+          projects: updateProjects(goal.projects),
+        })),
+      };
+    }
+
+    return {
+      ...item,
+      projects: updateProjects(item.projects),
+    };
+  });
+}
+
+async function awardPriorityEditorTaskCompletion(task: RoadmapPriorityTask, completedAt: string) {
+  const body: Record<string, unknown> = {
+    kind: "task",
+    awardKeyBase: `task:${task.id}:complete`,
+    completion: {
+      action: "complete",
+      sourceType: "TASK",
+      sourceId: task.id,
+      completedAt,
+      wasScheduled: false,
+      durationMin:
+        typeof task.durationMin === "number" && Number.isFinite(task.durationMin)
+          ? Math.max(0, Math.round(task.durationMin))
+          : null,
+      timeZone: getBrowserTimeZone() ?? undefined,
+    },
+  };
+
+  if (task.skillId) {
+    body.skillIds = [task.skillId];
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      console.error(
+        "Failed to award XP for priority roadmap task completion",
+        await response.text()
+      );
+    }
+  } catch (error) {
+    console.error("Failed to award XP for priority roadmap task completion", error);
+  }
+}
 
 export default function PriorityEditorClient({
   userId,
@@ -168,7 +310,7 @@ export default function PriorityEditorClient({
     string[]
   >([]);
   const [selectedSkillFilterIds, setSelectedSkillFilterIds] = useState<string[]>([]);
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimeoutRef = useRef<number | null>(null);
   const lastRefreshAtRef = useRef(0);
   const isSavingOrderRef = useRef(false);
 
@@ -595,6 +737,96 @@ export default function PriorityEditorClient({
     [habitRoadmapItems, router, userId]
   );
 
+  const handleRoadmapProjectComplete = useCallback(
+    async (project: RoadmapPriorityProject) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setGlobalPriorityError("Unable to complete Project.");
+        void hapticWarningPattern();
+        return;
+      }
+
+      const completedAt = new Date().toISOString();
+      const previousItems = globalPriorityItems;
+      setGlobalPriorityError(null);
+      setGlobalPriorityItems((current) =>
+        updateRoadmapProject(current, project.id, (item) => ({
+          ...item,
+          stage: "RELEASE",
+          completedAt,
+        }))
+      );
+
+      try {
+        await recordProjectCompletion(
+          {
+            projectId: project.id,
+            projectSkillIds: project.skillIds,
+            taskSkillIds:
+              project.taskSkillIds ?? project.tasks?.map((task) => task.skillId),
+          },
+          "complete"
+        );
+        dispatchPriorityEditorEntitySaved("PROJECT", project.id);
+      } catch (caught) {
+        console.error("Failed to complete roadmap Project", caught);
+        setGlobalPriorityItems(previousItems);
+        setGlobalPriorityError("Could not complete Project.");
+        void hapticErrorPattern();
+      }
+    },
+    [globalPriorityItems]
+  );
+
+  const handleRoadmapTaskComplete = useCallback(
+    async (task: RoadmapPriorityTask) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setGlobalPriorityError("Unable to complete Task.");
+        void hapticWarningPattern();
+        return;
+      }
+
+      const completedAt = new Date().toISOString();
+      const previousItems = globalPriorityItems;
+      setGlobalPriorityError(null);
+      setGlobalPriorityItems((current) =>
+        updateRoadmapTask(current, task.id, (item) => ({
+          ...item,
+          stage: "PERFECT",
+          completedAt,
+        }))
+      );
+
+      try {
+        const taskCompletionUpdate = supabase.from(
+          "tasks"
+        ) as unknown as PriorityEditorTaskCompletionUpdateQuery;
+        const { error: updateError } = await taskCompletionUpdate
+          .update({
+            stage: "PERFECT",
+            completed_at: completedAt,
+            updated_at: completedAt,
+          })
+          .eq("id", task.id)
+          .eq("user_id", userId);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        await awardPriorityEditorTaskCompletion(task, completedAt);
+        dispatchPriorityEditorEntitySaved("TASK", task.id);
+      } catch (caught) {
+        console.error("Failed to complete roadmap Task", caught);
+        setGlobalPriorityItems(previousItems);
+        setGlobalPriorityError("Could not complete Task.");
+        void hapticErrorPattern();
+      }
+    },
+    [globalPriorityItems, userId]
+  );
+
   return (
     <main className="min-h-screen bg-[#050507] text-white">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-12 sm:pt-2">
@@ -641,6 +873,8 @@ export default function PriorityEditorClient({
                 appearance="priorityEditor"
                 onDragEnd={handleGlobalPriorityDragEnd}
                 onCampaignGoalDragEnd={handleCampaignGoalDragEnd}
+                onProjectComplete={handleRoadmapProjectComplete}
+                onTaskComplete={handleRoadmapTaskComplete}
               />
             )}
           </>
@@ -1419,8 +1653,10 @@ async function saveCampaignGoalPriorityOrder(
 ) {
   await Promise.all(
     updates.map(async (update) => {
-      const { error } = await supabase
-        .from("goals")
+      const goalPriorityUpdate = supabase.from(
+        "goals"
+      ) as unknown as PriorityEditorGoalPriorityUpdateQuery;
+      const { error } = await goalPriorityUpdate
         .update({
           priority_code: update.priority,
           priority_order: update.priorityOrder,
@@ -2043,15 +2279,16 @@ function usePriorityEditLongPress(
   );
 
   useEffect(() => cancel, [cancel]);
+  const interactionStyle: CSSProperties = {
+    userSelect: "none",
+    WebkitUserSelect: "none",
+    WebkitTouchCallout: "none",
+    WebkitTapHighlightColor: "transparent",
+  };
 
   return {
     draggable: false,
-    style: {
-      userSelect: "none",
-      WebkitUserSelect: "none",
-      WebkitTouchCallout: "none",
-      WebkitTapHighlightColor: "transparent",
-    },
+    style: interactionStyle,
     onPointerDown: handlePointerDown,
     onPointerMove: handlePointerMove,
     onPointerUp: handlePointerUp,
