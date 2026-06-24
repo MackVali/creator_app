@@ -71,7 +71,7 @@ function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50 w-[min(calc(100vw-1.5rem),20rem)] space-y-1.5 sm:right-5 sm:top-[calc(env(safe-area-inset-top)+1rem)] sm:w-80">
+    <div className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[2147483647] w-[min(calc(100vw-1.5rem),20rem)] space-y-1.5 sm:right-5 sm:top-[calc(env(safe-area-inset-top)+1rem)] sm:w-80">
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onRemove={removeToast} />
       ))}

@@ -18,9 +18,13 @@ import {
 import { ChevronDown } from "lucide-react";
 import type { Project, Task } from "../types";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import { useToastHelpers } from "@/components/ui/toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
-import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
+import {
+  hapticErrorPattern,
+  hapticLongPress,
+} from "@/lib/haptics/creatorHaptics";
 
 export type ProjectCardMorphOrigin = {
   x: number;
@@ -198,6 +202,7 @@ export function ProjectRow({
   const onTaskToggleCompletion =
     onTaskToggleCompletionProp ??
     taskInteractionContext.onTaskToggleCompletion;
+  const toast = useToastHelpers();
   const prefersReducedMotion = useReducedMotion();
   const isCompactNested = variant === "compactNested";
   const hasTasks = project.tasks.length > 0;
@@ -207,6 +212,7 @@ export function ProjectRow({
     setOpen((o) => !o);
   }, [hasTasks]);
   const [isBouncing, setIsBouncing] = useState(false);
+  const [completionRejected, setCompletionRejected] = useState(false);
   const [completionPending, setCompletionPending] = useState(false);
   const [localStatus, setLocalStatus] = useState<Project["status"]>(project.status);
   const [localStage, setLocalStage] = useState(project.stage ?? "BUILD");
@@ -225,6 +231,9 @@ export function ProjectRow({
   const tapSequenceRef = useRef(0);
   const lastTaskTapRef = useRef<{ taskId: string; time: number } | null>(null);
   const lastActiveProgressRef = useRef(project.progress);
+  const completionRejectedTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   useEffect(() => {
     setLocalStatus(project.status);
@@ -255,6 +264,9 @@ export function ProjectRow({
       }
       if (taskSingleTapTimeoutRef.current) {
         clearTimeout(taskSingleTapTimeoutRef.current);
+      }
+      if (completionRejectedTimerRef.current) {
+        clearTimeout(completionRejectedTimerRef.current);
       }
     },
     []
@@ -291,6 +303,19 @@ export function ProjectRow({
       taskSingleTapTimeoutRef.current = null;
     }
   }, []);
+
+  const rejectProjectCompletion = useCallback(() => {
+    setCompletionRejected(true);
+    if (completionRejectedTimerRef.current) {
+      clearTimeout(completionRejectedTimerRef.current);
+    }
+    completionRejectedTimerRef.current = setTimeout(() => {
+      completionRejectedTimerRef.current = null;
+      setCompletionRejected(false);
+    }, 460);
+    void hapticErrorPattern();
+    toast.error("Complete all tasks first");
+  }, [toast]);
 
   const buildTaskOrigin = useCallback(
     (element: HTMLElement | null): ProjectCardMorphOrigin | null => {
@@ -441,7 +466,26 @@ export function ProjectRow({
       return;
     }
 
-    const shouldComplete = localStatus !== "Done";
+    const projectWithCompletion = project as Project & {
+      completedAt?: string | null;
+      completed_at?: string | null;
+    };
+    const isProjectAlreadyCompleted =
+      localStatus === "Done" ||
+      localStage === "RELEASE" ||
+      Number(project.progress ?? 0) >= 100 ||
+      Boolean(projectWithCompletion.completedAt) ||
+      Boolean(projectWithCompletion.completed_at);
+    const shouldComplete = !isProjectAlreadyCompleted;
+    if (
+      shouldComplete &&
+      project.tasks.length > 0 &&
+      project.tasks.some((task) => !isTaskComplete(task))
+    ) {
+      rejectProjectCompletion();
+      return;
+    }
+
     const fallbackStage = localStage && localStage !== "RELEASE" ? localStage : lastActiveStage;
     const nextStage = shouldComplete ? "RELEASE" : fallbackStage || "BUILD";
     const completedAt = shouldComplete ? new Date().toISOString() : null;
@@ -508,6 +552,7 @@ export function ProjectRow({
     project.progress,
     project.skillIds,
     project.tasks,
+    rejectProjectCompletion,
   ]);
 
   const projectWithCompletion = project as Project & {
@@ -696,6 +741,10 @@ export function ProjectRow({
             : "rounded-lg px-1.5 py-1.5 sm:px-2.5 sm:py-2"
         } ${cardSurfaceClass} ${primaryTextClass} ${
           completionPending ? "opacity-70" : ""
+        } ${
+          completionRejected
+            ? "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]"
+            : ""
         }`}
         style={cardAnimationStyle}
       >

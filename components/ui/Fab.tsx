@@ -415,7 +415,6 @@ const hasFabCompletionTimestamp = (value?: string | null) =>
   typeof value === "string" && value.trim().length > 0;
 const FAB_GOAL_PROJECT_LONG_PRESS_MS = 650;
 const FAB_GOAL_PROJECT_DOUBLE_TAP_MS = 325;
-const FAB_GOAL_PROJECT_SINGLE_TAP_DELAY_MS = FAB_GOAL_PROJECT_DOUBLE_TAP_MS;
 const FAB_GOAL_PROJECT_DRAG_CANCEL_PX = 10;
 
 const isFabCompletionStatus = (value?: string | null) => {
@@ -538,8 +537,8 @@ type EditProjectTaskChild = {
 
 type FabProjectCompletionUpdateQuery = {
   update: (values: {
-    stage: "RELEASE";
-    completed_at: string;
+    stage: string;
+    completed_at: string | null;
     updated_at: string;
   }) => {
     eq: (
@@ -556,8 +555,8 @@ type FabTaskCompletionUpdateBuilder = PromiseLike<{ error: unknown | null }> & {
 };
 type FabTaskCompletionUpdateQuery = {
   update: (values: {
-    stage: "PERFECT";
-    completed_at: string;
+    stage: string;
+    completed_at: string | null;
     updated_at: string;
   }) => FabTaskCompletionUpdateBuilder;
 };
@@ -5029,6 +5028,12 @@ export function Fab({
   const [editGoalProjects, setEditGoalProjects] = useState<
     EditGoalProjectChild[]
   >([]);
+  const [rejectedGoalProjectId, setRejectedGoalProjectId] = useState<
+    string | null
+  >(null);
+  const rejectedGoalProjectTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const goalProjectLongPressTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -5614,13 +5619,17 @@ export function Fab({
 
   const isEditGoalProjectCompleted = useCallback(
     (project: EditGoalProjectChild) =>
-      project.stage?.trim().toUpperCase() === "RELEASE" ||
-      hasFabCompletionTimestamp(project.completedAt),
+      hasFabCompletionTimestamp(project.completedAt) ||
+      project.stage?.trim().toUpperCase() === "RELEASE",
     [],
   );
 
   const awardEditProjectTaskCompletion = useCallback(
-    async (task: EditProjectTaskChild, completedAt: string) => {
+    async (
+      task: EditProjectTaskChild,
+      completedAt: string,
+      action: "complete" | "undo" = "complete",
+    ) => {
       const skill = task.skillId ? findSkillById(task.skillId) : null;
       const skillIds = task.skillId ? [task.skillId] : [];
       const monumentIds =
@@ -5629,9 +5638,12 @@ export function Fab({
           : [];
       const body: Record<string, unknown> = {
         kind: "task",
-        awardKeyBase: `task:${task.id}:complete`,
+        awardKeyBase:
+          action === "undo"
+            ? `task:${task.id}:complete:undo`
+            : `task:${task.id}:complete`,
         completion: {
-          action: "complete",
+          action,
           sourceType: "TASK",
           sourceId: task.id,
           completedAt,
@@ -5644,6 +5656,9 @@ export function Fab({
           timeZone: getBrowserTimeZone() ?? undefined,
         },
       };
+      if (action === "undo") {
+        body.amount = -1;
+      }
 
       if (skillIds.length > 0) {
         body.skillIds = skillIds;
@@ -5660,12 +5675,15 @@ export function Fab({
         });
         if (!response.ok) {
           console.error(
-            "Failed to award XP for project task completion",
+            "Failed to award XP for project task completion change",
             await response.text(),
           );
         }
       } catch (error) {
-        console.error("Failed to award XP for project task completion", error);
+        console.error(
+          "Failed to award XP for project task completion change",
+          error,
+        );
       }
     },
     [findSkillById],
@@ -5704,8 +5722,28 @@ export function Fab({
         clearTimeout(goalProjectSuppressClickTimerRef.current);
         goalProjectSuppressClickTimerRef.current = null;
       }
+      if (rejectedGoalProjectTimerRef.current) {
+        clearTimeout(rejectedGoalProjectTimerRef.current);
+        rejectedGoalProjectTimerRef.current = null;
+      }
     },
     [clearGoalProjectLongPressTimer, clearGoalProjectSingleTapTimer],
+  );
+
+  const rejectEditGoalProjectCompletion = useCallback(
+    (projectId: string) => {
+      setRejectedGoalProjectId(projectId);
+      if (rejectedGoalProjectTimerRef.current) {
+        clearTimeout(rejectedGoalProjectTimerRef.current);
+      }
+      rejectedGoalProjectTimerRef.current = setTimeout(() => {
+        rejectedGoalProjectTimerRef.current = null;
+        setRejectedGoalProjectId((current) =>
+          current === projectId ? null : current,
+        );
+      }, 460);
+    },
+    [],
   );
 
   const completeEditGoalProject = useCallback(
@@ -5725,6 +5763,35 @@ export function Fab({
 
       goalProjectCompletingIdsRef.current.add(project.id);
       try {
+        const { data: taskRows, error: taskRowsError } = await supabase
+          .from("tasks")
+          .select("id, completed_at, stage")
+          .eq("project_id", project.id);
+
+        if (taskRowsError) {
+          throw taskRowsError;
+        }
+
+        const hasIncompleteTasks = Array.isArray(taskRows)
+          ? taskRows.some((task) => {
+              const completedAt =
+                typeof task.completed_at === "string"
+                  ? task.completed_at
+                  : null;
+              return (
+                !hasFabCompletionTimestamp(completedAt) &&
+                task.stage?.trim().toUpperCase() !== "PERFECT"
+              );
+            })
+          : false;
+
+        if (hasIncompleteTasks) {
+          rejectEditGoalProjectCompletion(project.id);
+          void hapticErrorPattern();
+          toast.error("Complete all tasks first");
+          return;
+        }
+
         const completedAt = new Date().toISOString();
         const projectCompletionUpdate = supabase.from(
           "projects",
@@ -5770,7 +5837,99 @@ export function Fab({
         goalProjectCompletingIdsRef.current.delete(project.id);
       }
     },
+    [
+      editTarget?.entityId,
+      editTarget?.entityType,
+      isEditGoalProjectCompleted,
+      rejectEditGoalProjectCompletion,
+      toast,
+    ],
+  );
+
+  const uncompleteEditGoalProject = useCallback(
+    async (project: EditGoalProjectChild) => {
+      if (
+        !isEditGoalProjectCompleted(project) ||
+        goalProjectCompletingIdsRef.current.has(project.id)
+      ) {
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        console.warn("Supabase client not available for project completion");
+        return;
+      }
+
+      const previousStage = project.stage?.trim().toUpperCase();
+      const nextStage =
+        previousStage && previousStage !== "RELEASE"
+          ? (project.stage ?? "BUILD")
+          : "BUILD";
+      const updatedAt = new Date().toISOString();
+
+      goalProjectCompletingIdsRef.current.add(project.id);
+      try {
+        const projectCompletionUpdate = supabase.from(
+          "projects",
+        ) as unknown as FabProjectCompletionUpdateQuery;
+        const { error } = await projectCompletionUpdate
+          .update({
+            stage: nextStage,
+            completed_at: null,
+            updated_at: updatedAt,
+          })
+          .eq("id", project.id);
+
+        if (error) {
+          throw error;
+        }
+
+        setEditGoalProjects((current) =>
+          current.map((item) =>
+            item.id === project.id
+              ? { ...item, stage: nextStage, completedAt: null }
+              : item,
+          ),
+        );
+        dispatchCreatorEntitySaved({
+          entityType: "PROJECT",
+          entityId: project.id,
+          action: "updated",
+          goalId:
+            editTarget?.entityType === "GOAL" ? editTarget.entityId : null,
+        });
+        void hapticSnap();
+        void recordProjectCompletion(
+          {
+            projectId: project.id,
+            projectSkillIds: project.skillIds,
+          },
+          "undo",
+        );
+      } catch (error) {
+        console.error("Failed to uncomplete goal project", error);
+        void hapticErrorPattern();
+      } finally {
+        goalProjectCompletingIdsRef.current.delete(project.id);
+      }
+    },
     [editTarget?.entityId, editTarget?.entityType, isEditGoalProjectCompleted],
+  );
+
+  const toggleEditGoalProjectCompletion = useCallback(
+    (project: EditGoalProjectChild) => {
+      if (isEditGoalProjectCompleted(project)) {
+        void uncompleteEditGoalProject(project);
+      } else {
+        void completeEditGoalProject(project);
+      }
+    },
+    [
+      completeEditGoalProject,
+      isEditGoalProjectCompleted,
+      uncompleteEditGoalProject,
+    ],
   );
 
   const openEditGoalProject = useCallback(
@@ -5882,9 +6041,7 @@ export function Fab({
         clearGoalProjectSingleTapTimer();
         suppressNextGoalProjectClick();
         event.preventDefault();
-        if (!isEditGoalProjectCompleted(project)) {
-          void completeEditGoalProject(project);
-        }
+        toggleEditGoalProjectCompletion(project);
         return;
       }
 
@@ -5896,9 +6053,8 @@ export function Fab({
     [
       clearGoalProjectLongPressTimer,
       clearGoalProjectSingleTapTimer,
-      completeEditGoalProject,
-      isEditGoalProjectCompleted,
       suppressNextGoalProjectClick,
+      toggleEditGoalProjectCompletion,
     ],
   );
 
@@ -5917,6 +6073,18 @@ export function Fab({
       suppressNextGoalProjectClick,
     ],
   );
+
+  const handleEditGoalProjectScroll = useCallback(() => {
+    goalProjectPointerStartRef.current = null;
+    goalProjectLastTapRef.current = null;
+    clearGoalProjectLongPressTimer();
+    clearGoalProjectSingleTapTimer();
+    suppressNextGoalProjectClick();
+  }, [
+    clearGoalProjectLongPressTimer,
+    clearGoalProjectSingleTapTimer,
+    suppressNextGoalProjectClick,
+  ]);
 
   const handleEditGoalProjectClick = useCallback(
     (
@@ -5940,26 +6108,14 @@ export function Fab({
         openEditGoalProject(project);
         return;
       }
-
-      clearGoalProjectSingleTapTimer();
-      goalProjectSingleTapTimeoutRef.current = setTimeout(() => {
-        const lastTap = goalProjectLastTapRef.current;
-        if (lastTap?.projectId !== project.id) {
-          goalProjectSingleTapTimeoutRef.current = null;
-          return;
-        }
-        goalProjectLastTapRef.current = null;
-        openEditGoalProject(project);
-        goalProjectSingleTapTimeoutRef.current = null;
-      }, FAB_GOAL_PROJECT_SINGLE_TAP_DELAY_MS);
     },
     [clearGoalProjectSingleTapTimer, openEditGoalProject],
   );
 
   const isEditProjectTaskCompleted = useCallback(
     (task: EditProjectTaskChild) =>
-      task.stage?.trim().toUpperCase() === "PERFECT" ||
-      hasFabCompletionTimestamp(task.completedAt),
+      hasFabCompletionTimestamp(task.completedAt) ||
+      task.stage?.trim().toUpperCase() === "PERFECT",
     [],
   );
 
@@ -6063,6 +6219,91 @@ export function Fab({
       }
     },
     [awardEditProjectTaskCompletion, isEditProjectTaskCompleted],
+  );
+
+  const uncompleteEditProjectTask = useCallback(
+    async (task: EditProjectTaskChild) => {
+      if (
+        !isEditProjectTaskCompleted(task) ||
+        projectTaskCompletingIdsRef.current.has(task.id)
+      ) {
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        console.warn("Supabase client not available for task completion");
+        return;
+      }
+
+      projectTaskCompletingIdsRef.current.add(task.id);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          return;
+        }
+
+        const previousStage = task.stage?.trim().toUpperCase();
+        const nextStage =
+          previousStage && previousStage !== "PERFECT"
+            ? (task.stage ?? "PRODUCE")
+            : "PRODUCE";
+        const updatedAt = new Date().toISOString();
+        const taskCompletionUpdate = supabase.from(
+          "tasks",
+        ) as unknown as FabTaskCompletionUpdateQuery;
+        const { error } = await taskCompletionUpdate
+          .update({
+            stage: nextStage,
+            completed_at: null,
+            updated_at: updatedAt,
+          })
+          .eq("id", task.id)
+          .eq("user_id", user.id);
+
+        if (error) {
+          throw error;
+        }
+
+        setEditProjectTasks((current) =>
+          current.map((item) =>
+            item.id === task.id
+              ? { ...item, stage: nextStage, completedAt: null }
+              : item,
+          ),
+        );
+        dispatchCreatorEntitySaved({
+          entityType: "TASK",
+          entityId: task.id,
+          action: "updated",
+        });
+        void hapticSnap();
+        void awardEditProjectTaskCompletion(task, updatedAt, "undo");
+      } catch (error) {
+        console.error("Failed to uncomplete project task", error);
+        void hapticErrorPattern();
+      } finally {
+        projectTaskCompletingIdsRef.current.delete(task.id);
+      }
+    },
+    [awardEditProjectTaskCompletion, isEditProjectTaskCompleted],
+  );
+
+  const toggleEditProjectTaskCompletion = useCallback(
+    (task: EditProjectTaskChild) => {
+      if (isEditProjectTaskCompleted(task)) {
+        void uncompleteEditProjectTask(task);
+      } else {
+        void completeEditProjectTask(task);
+      }
+    },
+    [
+      completeEditProjectTask,
+      isEditProjectTaskCompleted,
+      uncompleteEditProjectTask,
+    ],
   );
 
   const restoreProjectTaskStack = useCallback(() => {
@@ -6376,9 +6617,7 @@ export function Fab({
         clearProjectTaskSingleTapTimer();
         suppressNextProjectTaskClick();
         event.preventDefault();
-        if (!isEditProjectTaskCompleted(task)) {
-          void completeEditProjectTask(task);
-        }
+        toggleEditProjectTaskCompletion(task);
         return;
       }
 
@@ -6390,9 +6629,8 @@ export function Fab({
     [
       clearProjectTaskLongPressTimer,
       clearProjectTaskSingleTapTimer,
-      completeEditProjectTask,
-      isEditProjectTaskCompleted,
       suppressNextProjectTaskClick,
+      toggleEditProjectTaskCompletion,
     ],
   );
 
@@ -6443,18 +6681,6 @@ export function Fab({
         openEditProjectTask(task);
         return;
       }
-
-      clearProjectTaskSingleTapTimer();
-      projectTaskSingleTapTimeoutRef.current = setTimeout(() => {
-        const lastTap = projectTaskLastTapRef.current;
-        if (lastTap?.taskId !== task.id) {
-          projectTaskSingleTapTimeoutRef.current = null;
-          return;
-        }
-        projectTaskLastTapRef.current = null;
-        openEditProjectTask(task);
-        projectTaskSingleTapTimeoutRef.current = null;
-      }, FAB_GOAL_PROJECT_SINGLE_TAP_DELAY_MS);
     },
     [clearProjectTaskSingleTapTimer, openEditProjectTask],
   );
@@ -10976,19 +11202,10 @@ export function Fab({
     background:
       "radial-gradient(circle at 0% 0%, rgba(161, 161, 170, 0.08), transparent 54%), linear-gradient(140deg, rgba(3, 4, 7, 0.72) 0%, rgba(10, 11, 15, 0.66) 48%, rgba(21, 23, 29, 0.42) 100%)",
   };
-  const associatedCompletedEditCardStyle: React.CSSProperties = {
-    boxShadow:
-      "0 18px 34px rgba(2,32,24,0.52), inset 2px 0 0 rgba(209,250,229,0.22), inset 0 1px 0 rgba(255,255,255,0.12)",
-    outline: "1px solid rgba(110, 231, 183, 0.38)",
-    outlineOffset: "-1px",
-    background:
-      "linear-gradient(135deg, rgba(30,204,163,0.95) 0%, rgba(16,185,129,0.85) 45%, rgba(4,120,87,0.92) 100%)",
-    borderColor: "rgba(52, 211, 153, 0.55)",
-  };
   const associatedEditCardClass =
     "group relative grid h-[92px] min-h-[82px] max-h-[96px] w-full min-w-0 grid-cols-[2.35rem_minmax(0,1fr)_2.25rem] overflow-hidden rounded-md border border-black/80 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30";
   const associatedCompletedEditCardClass =
-    "ring-1 ring-emerald-300/60 hover:border-emerald-300/55";
+    "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] hover:border-green-900/45 hover:brightness-105";
   const associatedCompletedPrimaryTextClass = "text-emerald-50";
   const associatedCompletedMetaTextClass = "text-emerald-50/82";
   const associatedCompletedBadgeClass =
@@ -11000,13 +11217,9 @@ export function Fab({
   const associatedEditGridClass =
     "grid content-start gap-[0.5px] auto-rows-[92px]";
   const associatedEditViewportClass =
-    "self-start max-h-[277px] overflow-y-auto overscroll-contain pr-1";
-  const projectTaskEditBlankClass =
-    "group relative flex h-[92px] min-h-[82px] max-h-[96px] w-full items-center justify-center overflow-hidden rounded-lg border border-black/75 text-white backdrop-blur-sm transition-[background,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25";
-  const projectTaskEditGridClass =
-    "grid content-start gap-[0.5px] auto-rows-[92px]";
+    "h-[277px] max-h-[277px] overflow-y-auto overscroll-contain pr-1";
   const projectTaskEditViewportClass =
-    "self-start max-h-[277px] overflow-y-auto overscroll-contain pr-1";
+    "h-[277px] max-h-[277px] overflow-y-auto overscroll-contain pr-1";
   const renderAssociatedEnergyFlame = (energy?: string | null) => (
     <span className="relative z-[2] flex min-h-full items-center justify-center border-l border-white/[0.045] bg-black/10">
       <FlameEmber
@@ -11201,6 +11414,7 @@ export function Fab({
       ? (() => {
           const editCards = visibleEditProjects.map((project) => {
             const isCompleted = isEditGoalProjectCompleted(project);
+            const isRejected = rejectedGoalProjectId === project.id;
             return (
               <button
                 key={project.id}
@@ -11218,15 +11432,13 @@ export function Fab({
                   goalProjectNexusCardClass,
                   "h-full min-h-0",
                   isCompleted && associatedCompletedEditCardClass,
+                  isRejected &&
+                    "goal-manual-complete-reject !border-red-400/80 ring-1 ring-red-400/35 shadow-[0_0_0_1px_rgba(248,113,113,0.58),0_12px_28px_-22px_rgba(248,113,113,0.65)]",
                 )}
-                style={
-                  isCompleted
-                    ? associatedCompletedEditCardStyle
-                    : goalProjectNexusCardStyle
-                }
+                style={isCompleted ? undefined : goalProjectNexusCardStyle}
                 aria-label={`${project.name}. ${
                   isCompleted
-                    ? "Completed"
+                    ? "Completed. Double tap to uncomplete. Long press to edit"
                     : "Double tap to complete. Long press to edit"
                 }`}
               >
@@ -11677,6 +11889,7 @@ export function Fab({
               goalProjectListShouldScroll &&
               "max-h-full overflow-y-auto overscroll-contain",
           )}
+          onScroll={isEditingGoal ? handleEditGoalProjectScroll : undefined}
         >
           <div
             className={cn(
@@ -11831,11 +12044,7 @@ export function Fab({
                   "h-full min-h-0",
                   isCompleted && associatedCompletedEditCardClass,
                 )}
-                style={
-                  isCompleted
-                    ? associatedCompletedEditCardStyle
-                    : projectTaskNexusCardStyle
-                }
+                style={isCompleted ? undefined : projectTaskNexusCardStyle}
                 onPointerDown={(event) =>
                   handleEditProjectTaskPointerDown(event, task)
                 }
@@ -11847,7 +12056,7 @@ export function Fab({
                 onClick={(event) => handleEditProjectTaskClick(event, task)}
                 aria-label={`${task.name}. ${
                   isCompleted
-                    ? "Completed"
+                    ? "Completed. Double tap to uncomplete. Long press to edit"
                     : "Double tap to complete. Long press to edit"
                 }`}
               >
@@ -11865,7 +12074,6 @@ export function Fab({
                 () => {
                   void openProjectTaskStack({ mode: "create" });
                 },
-                projectTaskEditBlankClass,
               ),
             ),
           ];
@@ -11924,7 +12132,6 @@ export function Fab({
               </span>
             </button>
           ));
-
     if (nestedDraftPanel === "project-task" && !isEditingProject) {
       return (
         <div
@@ -12259,7 +12466,10 @@ export function Fab({
       <div
         className={cn(
           "grid gap-3",
-          expanded && "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
+          expanded &&
+            (isEditingProject
+              ? "content-start"
+              : "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start"),
         )}
         style={secondaryCreationPanelStyle}
       >
@@ -12286,10 +12496,6 @@ export function Fab({
               ? projectTaskEditViewportClass
               : "h-full min-h-0 pr-1",
             !isEditingProject &&
-              expanded &&
-              !projectTaskListShouldScroll &&
-              "min-h-0",
-            !isEditingProject &&
               projectTaskListShouldScroll &&
               "max-h-full overflow-y-auto overscroll-contain",
           )}
@@ -12298,7 +12504,7 @@ export function Fab({
           <div
             className={cn(
               isEditingProject
-                ? projectTaskEditGridClass
+                ? associatedEditGridClass
                 : projectTaskListShouldScroll
                   ? "grid max-h-full gap-3 auto-rows-[minmax(84px,1fr)]"
                   : "grid h-full grid-rows-3 gap-3",
@@ -19742,6 +19948,7 @@ export function Fab({
   const goalCenteredEditMinHeight = 320;
   const projectCreationMinHeight = 280;
   const projectCenteredEditMinHeight = 480;
+  const projectTasksCenteredEditMinHeight = 380;
   const taskCreationMinHeight = 320;
   const taskCenteredEditMinHeight = 460;
   const habitCreationMinHeight = 300;
@@ -19759,7 +19966,11 @@ export function Fab({
     selected === "GOAL"
       ? goalCenteredEditMinHeight
       : selected === "PROJECT"
-        ? projectCenteredEditMinHeight
+        ? shouldUseCenteredEditModal &&
+          editTarget?.entityType === "PROJECT" &&
+          activeCreationMode === "tasks"
+          ? projectTasksCenteredEditMinHeight
+          : projectCenteredEditMinHeight
         : selected === "TASK"
           ? taskCenteredEditMinHeight
           : selected === "HABIT"
@@ -19880,7 +20091,11 @@ export function Fab({
   ]);
   const secondaryCreationPanelMinHeight =
     expanded && isContentSizedCreationExpanded && activeCreationMode !== "main"
-      ? selectedCreationShellHeight ?? selectedCreationTypeMinHeight
+      ? shouldUseCenteredEditModal &&
+        editTarget?.entityType === "PROJECT" &&
+        activeCreationMode === "tasks"
+        ? undefined
+        : selectedCreationShellHeight ?? selectedCreationTypeMinHeight
       : undefined;
   const baseMinHeightExpanded = expanded
     ? selectedExpandedMinHeight !== null

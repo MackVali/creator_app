@@ -2987,6 +2987,10 @@ export default function ScheduleTabContent({
   const [hasInteractedWithProjects, setHasInteractedWithProjects] =
     useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [
+    isClearingUncompletedScheduleInstances,
+    setIsClearingUncompletedScheduleInstances,
+  ] = useState(false);
   const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null);
   const [dayTransitionDirection, setDayTransitionDirection] =
     useState<DayTransitionDirection>(0);
@@ -6247,6 +6251,52 @@ export default function ScheduleTabContent({
     loadInstancesRef,
     canonicalTodayDateKey,
     effectiveTimeZone,
+  ]);
+
+  const handleClearUncompletedScheduleInstances = useCallback(async () => {
+    if (!userId || isClearingUncompletedScheduleInstances) return;
+
+    setIsClearingUncompletedScheduleInstances(true);
+    try {
+      const response = await fetch(
+        "/api/schedule/instances/clear-uncompleted",
+        {
+          method: "DELETE",
+          cache: "no-store",
+        }
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { deleted?: number; error?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ?? "Unable to clear uncompleted schedule instances"
+        );
+      }
+
+      await refreshScheduleData();
+      await refreshScheduledProjectIds();
+      void hapticComplete();
+      toast.success(
+        "Schedule cleared",
+        "Uncompleted schedule instances were removed. Completed instances were preserved."
+      );
+    } catch (error) {
+      console.error("Failed to clear uncompleted schedule instances", error);
+      void hapticErrorPattern();
+      toast.error(
+        "Schedule clear failed",
+        error instanceof Error ? error.message : "Try again in a moment."
+      );
+    } finally {
+      setIsClearingUncompletedScheduleInstances(false);
+    }
+  }, [
+    userId,
+    isClearingUncompletedScheduleInstances,
+    refreshScheduleData,
+    refreshScheduledProjectIds,
+    toast,
   ]);
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
@@ -10054,6 +10104,12 @@ export default function ScheduleTabContent({
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
           isRescheduling={isScheduling}
+          onClearUncompletedScheduleInstances={
+            handleClearUncompletedScheduleInstances
+          }
+          isClearingUncompletedScheduleInstances={
+            isClearingUncompletedScheduleInstances
+          }
           onHeightChange={setTopBarHeight}
         />
         <div
