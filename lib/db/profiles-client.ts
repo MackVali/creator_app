@@ -32,7 +32,7 @@ export async function updateMyProfile(
 
     const result = await response.json();
     return result;
-  } catch (error) {
+  } catch {
     return { success: false, error: "Failed to update profile" };
   }
 }
@@ -52,7 +52,7 @@ export async function updateMyOnboarding(
 
     const result = await response.json();
     return result;
-  } catch (error) {
+  } catch {
     return { success: false, error: "Failed to update onboarding" };
   }
 }

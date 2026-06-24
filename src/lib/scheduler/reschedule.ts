@@ -123,6 +123,7 @@ type ScheduleInstanceUpdate =
   Database["public"]["Tables"]["schedule_instances"]["Update"];
 
 const SCHEDULER_DIRECT_WRITE_BATCH_SIZE = 500;
+const PROJECT_RANK_WRITE_BATCH_SIZE = 25;
 
 type CompatibleWindowRecord = {
   id: string;
@@ -150,17 +151,20 @@ type OverlayWindowBlock = {
 
 type OverlayWindowBlockCache = {
   blocksByKey: Map<string, Promise<OverlayWindowBlock[]>>;
+  resolvedBlocksByKey: Map<string, OverlayWindowBlock[]>;
 };
 
 function createOverlayWindowBlockCache(): OverlayWindowBlockCache {
   return {
     blocksByKey: new Map<string, Promise<OverlayWindowBlock[]>>(),
+    resolvedBlocksByKey: new Map<string, OverlayWindowBlock[]>(),
   };
 }
 
 export type DynamicOverlayWindowCache = {
   effectiveNow: Date;
   windowsByKey: Map<string, Promise<WindowLite[]>>;
+  resolvedWindowsByKey: Map<string, WindowLite[]>;
 };
 
 export function createDynamicOverlayWindowCache(
@@ -169,6 +173,7 @@ export function createDynamicOverlayWindowCache(
   return {
     effectiveNow: new Date(effectiveNow),
     windowsByKey: new Map<string, Promise<WindowLite[]>>(),
+    resolvedWindowsByKey: new Map<string, WindowLite[]>(),
   };
 }
 
@@ -448,6 +453,19 @@ const addMergedScheduleSegmentToMap = (
     segmentMap.set(key, segments);
   }
 };
+
+function normalizeProjectGlobalRank(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
 
 const subtractScheduleSegments = (
   segments: ScheduleSegment[],
@@ -1161,6 +1179,187 @@ type HabitScheduleDayResult = {
   instances: ScheduleInstance[];
   failures: ScheduleFailure[];
 };
+
+type HabitPlacementNoFitCache = Map<string, true>;
+
+type WindowCacheKeyMetadata = WindowLite & {
+  day_type_time_block_id?: string | null;
+  time_block_id?: string | null;
+  timeBlockId?: string | null;
+  overlayWindowId?: string | null;
+  overlay_window_id?: string | null;
+};
+
+type HabitPlacementNoFitCacheStats = {
+  hit: number;
+  miss: number;
+  set: number;
+  bypass: number;
+};
+
+type HabitPlacementPass =
+  | "initialDaily"
+  | "postProject"
+  | "cleanup"
+  | "nonDaily"
+  | "finalSyncRetry";
+
+type HabitPassMetric =
+  | "compatibleWindowCalls"
+  | "compatibleWindowMs"
+  | "candidateWindowsConsidered"
+  | "daysConsidered"
+  | "eligibilitySkips"
+  | "existingInstanceChecks"
+  | "asyncReads"
+  | "asyncReadMs"
+  | "reservationChecks"
+  | "practiceHistoryChecks"
+  | "sortDedupeMs"
+  | "dueEvaluationMs"
+  | "prePlacementMs";
+
+type HabitAsyncReadSource =
+  | "nonDailyMetadataUpdate"
+  | "nonDailyPruneCancel"
+  | "nonDailyOverrideClear"
+  | "habitOverrideClear"
+  | "habitRevalidationCancel"
+  | "habitRevalidationMiss"
+  | "habitPersistFailureMiss"
+  | "habitPersistUpdateExisting"
+  | "habitPersistInsertNew"
+  | "overlayBlocks"
+  | "horizonFetchWindows"
+  | "fetchWindows"
+  | "dynamicOverlayWindows"
+  | "other";
+
+const habitPassTimingSuffix: Record<HabitPlacementPass, string> = {
+  initialDaily: "InitialDaily",
+  postProject: "PostProject",
+  cleanup: "Cleanup",
+  nonDaily: "NonDaily",
+  finalSyncRetry: "FinalSyncRetry",
+};
+
+type PlaceItemCounterSnapshot = {
+  calls: number;
+  noFit: number;
+};
+
+function snapshotPlaceItemCounters(
+  timing: SchedulerTiming | null | undefined
+): PlaceItemCounterSnapshot | null {
+  if (!timing) return null;
+  return {
+    calls: timing.schedule.placeItem.calls,
+    noFit: timing.schedule.placeItem.noFit,
+  };
+}
+
+function recordHabitPlaceItemDelta(
+  timing: SchedulerTiming | null | undefined,
+  pass: HabitPlacementPass,
+  before: PlaceItemCounterSnapshot | null
+) {
+  if (!timing || !before) return;
+  const calls = Math.max(0, timing.schedule.placeItem.calls - before.calls);
+  const noFit = Math.max(0, timing.schedule.placeItem.noFit - before.noFit);
+  const counters = timing.schedule.habitPlacementInstrumentation;
+  switch (pass) {
+    case "initialDaily":
+      counters.placeCallsInitialDaily += calls;
+      counters.placeNoFitInitialDaily += noFit;
+      break;
+    case "postProject":
+      counters.placeCallsPostProject += calls;
+      counters.placeNoFitPostProject += noFit;
+      break;
+    case "cleanup":
+      counters.placeCallsCleanup += calls;
+      counters.placeNoFitCleanup += noFit;
+      break;
+    case "nonDaily":
+      counters.placeCallsNonDaily += calls;
+      counters.placeNoFitNonDaily += noFit;
+      break;
+    case "finalSyncRetry":
+      counters.placeCallsFinalSyncRetry += calls;
+      counters.placeNoFitFinalSyncRetry += noFit;
+      break;
+  }
+}
+
+function recordHabitNoFitCacheStats(
+  timing: SchedulerTiming | null | undefined,
+  stats: HabitPlacementNoFitCacheStats
+) {
+  if (!timing) return;
+  const counters = timing.schedule.habitPlacementInstrumentation;
+  counters.noFitCacheHit += stats.hit;
+  counters.noFitCacheMiss += stats.miss;
+  counters.noFitCacheSet += stats.set;
+  counters.noFitCacheBypass += stats.bypass;
+}
+
+function recordHabitPassMetric(
+  timing: SchedulerTiming | null | undefined,
+  pass: HabitPlacementPass | null | undefined,
+  metric: HabitPassMetric,
+  value = 1
+) {
+  if (!timing || !pass || !Number.isFinite(value) || value === 0) return;
+  const key = `${metric}${habitPassTimingSuffix[pass]}`;
+  const counters = timing.schedule.habitPlacementInstrumentation as Record<
+    string,
+    number
+  >;
+  counters[key] = Math.round(((counters[key] ?? 0) + value) * 100) / 100;
+}
+
+function recordHabitAsyncReadSource(
+  timing: SchedulerTiming | null | undefined,
+  pass: HabitPlacementPass | null | undefined,
+  source: HabitAsyncReadSource | null | undefined,
+  ms: number
+) {
+  if (!timing || !pass || !Number.isFinite(ms)) return;
+  const sourceName = source ?? "other";
+  const key = `${capitalizeTimingSegment(sourceName)}${
+    habitPassTimingSuffix[pass]
+  }`;
+  const sourceTiming = timing.schedule.habitAsyncReadSources[key] ?? {
+    count: 0,
+    ms: 0,
+  };
+  sourceTiming.count += 1;
+  sourceTiming.ms = Math.round((sourceTiming.ms + ms) * 100) / 100;
+  timing.schedule.habitAsyncReadSources[key] = sourceTiming;
+}
+
+function capitalizeTimingSegment(value: string) {
+  return value.length === 0
+    ? value
+    : `${value[0].toUpperCase()}${value.slice(1)}`;
+}
+
+async function recordHabitAsyncRead<T>(
+  timing: SchedulerTiming | null | undefined,
+  pass: HabitPlacementPass | null | undefined,
+  source: HabitAsyncReadSource | null | undefined,
+  read: () => Promise<T>
+): Promise<T> {
+  const startedAt = schedulerNowMs();
+  try {
+    return await read();
+  } finally {
+    const ms = elapsedMs(startedAt);
+    recordHabitPassMetric(timing, pass, "asyncReads");
+    recordHabitPassMetric(timing, pass, "asyncReadMs", ms);
+    recordHabitAsyncReadSource(timing, pass, source, ms);
+  }
+}
 
 type HabitReservation = {
   habitId: string;
@@ -2548,6 +2747,12 @@ export async function scheduleBacklog(
     if (!timing) return;
     recordSchedulerPhase(timing, label, elapsedMs(startedAt));
   };
+  const habitPlacementNoFitCacheStats: HabitPlacementNoFitCacheStats = {
+    hit: 0,
+    miss: 0,
+    set: 0,
+    bypass: 0,
+  };
   try {
   const supabase = await ensureClient(client);
   const overlayReconcileStartedAt = schedulerNowMs();
@@ -2590,6 +2795,7 @@ export async function scheduleBacklog(
     parity: parityOptions,
   };
   const blockerCache: BlockerCache = new Map<string, ScheduleInstance[]>();
+  const habitPlacementNoFitCache: HabitPlacementNoFitCache = new Map();
   const result: ScheduleBacklogResult = {
     placed: [],
     failures: [],
@@ -3023,18 +3229,54 @@ export async function scheduleBacklog(
     projectsMap: Record<string, CanonicalProjectRecord>,
     supabase: Client
   ) {
-    const projectRankUpdates = getCanonicalProjectGlobalRankUpdates(
+    const canonicalProjectRankAssignments = getCanonicalProjectGlobalRankUpdates(
       Object.values(projectsMap),
       goalsById
     );
-
-    for (const { id, global_rank } of projectRankUpdates) {
-      await supabase.from("projects").update({ global_rank }).eq("id", id);
-
-      if (projectsMap[id]) {
-        projectsMap[id].globalRank = global_rank;
-        projectsMap[id].global_rank = global_rank;
+    const projectRankUpdates = canonicalProjectRankAssignments.filter(
+      ({ id, global_rank }) => {
+        const currentRank = normalizeProjectGlobalRank(
+          projectsMap[id]?.global_rank ?? projectsMap[id]?.globalRank
+        );
+        return currentRank !== global_rank;
       }
+    );
+
+    if (projectRankUpdates.length === 0) {
+      logSchedulerDebug("[PROJECT_RANK_RECALCULATION]", {
+        eligibleProjects: canonicalProjectRankAssignments.length,
+        changedRanks: 0,
+        skippedWrites: canonicalProjectRankAssignments.length,
+      });
+      return;
+    }
+
+    logSchedulerDebug("[PROJECT_RANK_RECALCULATION]", {
+      eligibleProjects: canonicalProjectRankAssignments.length,
+      changedRanks: projectRankUpdates.length,
+      skippedWrites:
+        canonicalProjectRankAssignments.length - projectRankUpdates.length,
+    });
+
+    for (
+      let i = 0;
+      i < projectRankUpdates.length;
+      i += PROJECT_RANK_WRITE_BATCH_SIZE
+    ) {
+      const batch = projectRankUpdates.slice(
+        i,
+        i + PROJECT_RANK_WRITE_BATCH_SIZE
+      );
+      await Promise.all(
+        batch.map(async ({ id, global_rank }) => {
+          await supabase.from("projects").update({ global_rank }).eq("id", id);
+
+          if (projectsMap[id]) {
+            projectsMap[id].globalRank = global_rank;
+            projectsMap[id].global_rank = global_rank;
+          }
+        })
+      );
     }
   }
 
@@ -4291,6 +4533,7 @@ export async function scheduleBacklog(
     const existingInstances = getDayInstances(offset);
 
     const habitPlacementStartedAt = schedulerNowMs();
+    const placeItemBefore = snapshotPlaceItemCounters(timing);
     const dayResult = await scheduleHabitsForDay({
       userId,
       habits: dailyHabits,
@@ -4331,8 +4574,12 @@ export async function scheduleBacklog(
       nonDailyHabitIds,
       nonDailyReplacementInstanceIds,
       isRescheduleRebuild,
+      noFitCache: habitPlacementNoFitCache,
+      noFitCacheStats: habitPlacementNoFitCacheStats,
+      habitTimingPass: "initialDaily",
       timing,
     });
+    recordHabitPlaceItemDelta(timing, "initialDaily", placeItemBefore);
     if (timing) {
       const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
       timing.schedule.habitPasses.placementMs += habitPlacementMs;
@@ -4516,12 +4763,18 @@ export async function scheduleBacklog(
       if (!instance?.id) return instance ?? null;
       const merged = mergeNonDailyMetadata(instance.metadata, payload);
       instance.metadata = merged as any;
-      const { data, error } = await supabase
-        .from("schedule_instances")
-        .update({ metadata: merged })
-        .eq("id", instance.id)
-        .select("*")
-        .single();
+      const { data, error } = await recordHabitAsyncRead(
+        timing,
+        "nonDaily",
+        "nonDailyMetadataUpdate",
+        () =>
+          supabase
+            .from("schedule_instances")
+            .update({ metadata: merged })
+            .eq("id", instance.id)
+            .select("*")
+            .single()
+      );
       if (error) {
         result.failures.push({
           itemId: instance.id,
@@ -4536,9 +4789,11 @@ export async function scheduleBacklog(
       return instance;
     };
     const collectHabitInstances = (habitId: string): ScheduleInstance[] => {
+      const startedAt = schedulerNowMs();
       const seen = new Set<string>();
       const bucket: ScheduleInstance[] = [];
       const consider = (inst: ScheduleInstance | null | undefined) => {
+        recordHabitPassMetric(timing, "nonDaily", "existingInstanceChecks");
         if (
           !inst ||
           inst.source_type !== "HABIT" ||
@@ -4575,13 +4830,23 @@ export async function scheduleBacklog(
         if (diff !== 0) return diff;
         return (a.id ?? "").localeCompare(b.id ?? "");
       });
+      recordHabitPassMetric(
+        timing,
+        "nonDaily",
+        "sortDedupeMs",
+        elapsedMs(startedAt)
+      );
       return bucket;
     };
 
     for (const habit of nonDailyHabits) {
+      const nonDailyHabitStartedAt = schedulerNowMs();
       const normalizedType =
         habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
-      if (normalizedType === "SYNC") continue;
+      if (normalizedType === "SYNC") {
+        recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
+        continue;
+      }
       const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
       if (nextDueOverride) {
         const overrideDayStart = startOfDayInTimeZone(
@@ -4590,15 +4855,23 @@ export async function scheduleBacklog(
         );
         const baseStartMs = baseStart.getTime();
         if (baseStartMs < overrideDayStart.getTime()) {
+          recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
           continue;
         }
         overrideClears.add(habit.id);
       }
 
+      const nonDailyPlanStartedAt = schedulerNowMs();
       const plan = computeNonDailyChainPlan(
         habit,
         baseDate.toISOString(),
         timeZone
+      );
+      recordHabitPassMetric(
+        timing,
+        "nonDaily",
+        "dueEvaluationMs",
+        elapsedMs(nonDailyPlanStartedAt)
       );
       const chainKey = `HABIT:${habit.id}:${plan.anchor.completedAtUtc}`;
       const existingInstances = collectHabitInstances(habit.id);
@@ -4636,6 +4909,12 @@ export async function scheduleBacklog(
         });
         continue;
       }
+      recordHabitPassMetric(
+        timing,
+        "nonDaily",
+        "prePlacementMs",
+        elapsedMs(nonDailyHabitStartedAt)
+      );
       const resolvedEnergy = resolveHabitExplicitEnergy(habit) ?? "";
       const locationContextIdRaw = habit.locationContextId ?? null;
       const locationContextId =
@@ -4679,6 +4958,7 @@ export async function scheduleBacklog(
         let cursorDay = startOfDayInTimeZone(minStartDate, timeZone);
         let firstDay = true;
         while (cursorDay.getTime() <= horizonEndLocalDay.getTime()) {
+          recordHabitPassMetric(timing, "nonDaily", "daysConsidered");
           const offset = differenceInCalendarDaysInTimeZone(
             horizonStartLocalDay,
             cursorDay,
@@ -4689,12 +4969,14 @@ export async function scheduleBacklog(
             offset < 0 ||
             offset >= habitWriteLookaheadDays
           ) {
+            recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
             cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
             firstDay = false;
             continue;
           }
           const localDayMs = cursorDay.getTime();
           if (blockLocalDays.has(localDayMs)) {
+            recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
             cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
             firstDay = false;
             continue;
@@ -4705,6 +4987,7 @@ export async function scheduleBacklog(
               return { instance: null, startLocalDay: null };
             }
             if (firstDay && fixedRange.end.getTime() <= minStartDate.getTime()) {
+              recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
               cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
               firstDay = false;
               continue;
@@ -4726,6 +5009,8 @@ export async function scheduleBacklog(
               timeZone,
               existingInstance: params.reuseInstance ?? null,
               metadata: fixedMetadata,
+              timing,
+              habitTimingPass: "nonDaily",
             });
             if (fixedResult.error || !fixedResult.instance || !fixedResult.range) {
               if (fixedResult.error) {
@@ -4835,12 +5120,12 @@ export async function scheduleBacklog(
               overlayBlockCache,
               dynamicOverlayCache,
               restMode: isRestMode,
-            userId,
-            parity: parityOptions,
-            locationContextId,
-            locationContextValue,
-            daylight: daylightConstraint,
-            enforceNightSpan: daylightConstraint?.preference === "NIGHT",
+              userId,
+              parity: parityOptions,
+              locationContextId,
+              locationContextValue,
+              daylight: daylightConstraint,
+              enforceNightSpan: daylightConstraint?.preference === "NIGHT",
               nightSunlight: nightSunlightBundle,
               anchor: anchorPreference,
               requireLocationContextMatch: true,
@@ -4848,14 +5133,22 @@ export async function scheduleBacklog(
                 Boolean(locationContextId) || Boolean(locationContextValue),
               locationDebugContext,
               timing,
+              habitTimingPass: "nonDaily",
             }
           );
           const compatibleWindows = compatibleDayResult.windows;
           if (compatibleWindows.length === 0) {
+            recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
             cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
             firstDay = false;
             continue;
           }
+          recordHabitPassMetric(
+            timing,
+            "nonDaily",
+            "candidateWindowsConsidered",
+            compatibleWindows.length
+          );
           const placement = await placeItemInWindows({
             userId,
             item: {
@@ -5029,9 +5322,15 @@ export async function scheduleBacklog(
       for (const inst of existingInstances) {
         if (!inst?.id) continue;
         if (keepIds.has(inst.id)) continue;
-        await cancelScheduleInstance(inst.id, {
-          reason: "NON_DAILY_CHAIN_PRUNE",
-        });
+        await recordHabitAsyncRead(
+          timing,
+          "nonDaily",
+          "nonDailyPruneCancel",
+          () =>
+            cancelScheduleInstance(inst.id, {
+              reason: "NON_DAILY_CHAIN_PRUNE",
+            })
+        );
         removeInstanceFromBuckets(inst.id);
       }
 
@@ -5050,11 +5349,17 @@ export async function scheduleBacklog(
     }
 
     if (overrideClears.size > 0) {
-      const { error } = await supabase
-        .from("habits")
-        .update({ next_due_override: null })
-        .eq("user_id", userId)
-        .in("id", Array.from(overrideClears));
+      const { error } = await recordHabitAsyncRead(
+        timing,
+        "nonDaily",
+        "nonDailyOverrideClear",
+        () =>
+          supabase
+            .from("habits")
+            .update({ next_due_override: null })
+            .eq("user_id", userId)
+            .in("id", Array.from(overrideClears))
+      );
       if (error) {
         log("error", "[HABIT_OVERRIDE_CLEAR]", {
           error,
@@ -5067,8 +5372,10 @@ export async function scheduleBacklog(
   };
   const initialHabitPassStartedAt = schedulerNowMs();
   const nonDailyHabitPassStartedAt = schedulerNowMs();
+  const nonDailyPlaceItemBefore = snapshotPlaceItemCounters(timing);
   nonDailyReplacementInstanceIds =
     await scheduleNonDailyHabitsAcrossHorizon(nonDailyHabits);
+  recordHabitPlaceItemDelta(timing, "nonDaily", nonDailyPlaceItemBefore);
   recordPhaseSince(
     "scheduler.schedule.non_daily_habit_pass",
     nonDailyHabitPassStartedAt
@@ -6420,6 +6727,7 @@ export async function scheduleBacklog(
     const day =
       offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
     await prepareWindowsForDay(day);
+    const placeItemBefore = snapshotPlaceItemCounters(timing);
     const dayResult = await scheduleHabitsForDay({
       userId,
       habits: dailyHabits,
@@ -6460,8 +6768,12 @@ export async function scheduleBacklog(
       nonDailyHabitIds,
       nonDailyReplacementInstanceIds,
       isRescheduleRebuild,
+      noFitCache: habitPlacementNoFitCache,
+      noFitCacheStats: habitPlacementNoFitCacheStats,
+      habitTimingPass: "postProject",
       timing,
     });
+    recordHabitPlaceItemDelta(timing, "postProject", placeItemBefore);
 
     if (dayResult.placements.length > 0) {
       result.timeline.push(...dayResult.placements);
@@ -6572,6 +6884,7 @@ export async function scheduleBacklog(
       );
       if (hasHabitInstances) {
         const habitPlacementStartedAt = schedulerNowMs();
+        const placeItemBefore = snapshotPlaceItemCounters(timing);
     const cleanupResult = await scheduleHabitsForDay({
       userId,
       habits: dailyHabits,
@@ -6613,8 +6926,12 @@ export async function scheduleBacklog(
         nonDailyHabitIds,
         nonDailyReplacementInstanceIds,
         isRescheduleRebuild,
+        noFitCache: habitPlacementNoFitCache,
+        noFitCacheStats: habitPlacementNoFitCacheStats,
+        habitTimingPass: "cleanup",
         timing,
       });
+        recordHabitPlaceItemDelta(timing, "cleanup", placeItemBefore);
         if (timing) {
           const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
           timing.schedule.habitPasses.placementMs += habitPlacementMs;
@@ -6738,8 +7055,12 @@ export async function scheduleBacklog(
           finalDayStartMs
         )
       );
+    if (finalSyncHabits.length === 0) {
+      return;
+    }
 
     const habitPlacementStartedAt = schedulerNowMs();
+    const placeItemBefore = snapshotPlaceItemCounters(timing);
     const finalResult = await scheduleHabitsForDay({
       userId,
       habits: finalSyncHabits,
@@ -6780,8 +7101,12 @@ export async function scheduleBacklog(
       nonDailyReplacementInstanceIds,
       isRescheduleRebuild,
       postAnchorSyncRetry: true,
+      noFitCache: habitPlacementNoFitCache,
+      noFitCacheStats: habitPlacementNoFitCacheStats,
+      habitTimingPass: "finalSyncRetry",
       timing,
     });
+    recordHabitPlaceItemDelta(timing, "finalSyncRetry", placeItemBefore);
     if (timing) {
       const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
       timing.schedule.habitPasses.placementMs += habitPlacementMs;
@@ -7267,6 +7592,7 @@ export async function scheduleBacklog(
 
   return result;
   } finally {
+    recordHabitNoFitCacheStats(timing, habitPlacementNoFitCacheStats);
     if (timing) {
       timing.schedule.totalMs += elapsedMs(scheduleStartedAt);
     }
@@ -8628,6 +8954,9 @@ async function scheduleHabitsForDay(params: {
   onPersistedHabit?: (instance: ScheduleInstance | null | undefined) => void;
   isRescheduleRebuild?: boolean;
   postAnchorSyncRetry?: boolean;
+  noFitCache?: HabitPlacementNoFitCache;
+  noFitCacheStats?: HabitPlacementNoFitCacheStats;
+  habitTimingPass?: HabitPlacementPass;
   timing?: SchedulerTiming | null;
 }): Promise<HabitScheduleDayResult> {
   const {
@@ -8673,6 +9002,9 @@ async function scheduleHabitsForDay(params: {
     onPersistedHabit,
     isRescheduleRebuild = false,
     postAnchorSyncRetry = false,
+    noFitCache,
+    noFitCacheStats,
+    habitTimingPass,
     timing = null,
   } = params;
 
@@ -8694,16 +9026,23 @@ async function scheduleHabitsForDay(params: {
   const locationMismatchRequeue = new Map<string, ScheduleInstance>();
   const placedSoFar: ScheduleInstance[] = [];
   const overridesToClear = new Set<string>();
+  const prePlacementStartedAt = schedulerNowMs();
   const clearHabitOverrides = async () => {
     if (!client || overridesToClear.size === 0) return;
     const ids = Array.from(overridesToClear);
     if (ids.length === 0) return;
     try {
-      await client
-        .from("habits")
-        .update({ next_due_override: null })
-        .in("id", ids)
-        .eq("user_id", userId);
+      await recordHabitAsyncRead(
+        timing,
+        habitTimingPass,
+        "habitOverrideClear",
+        () =>
+          client
+            .from("habits")
+            .update({ next_due_override: null })
+            .in("id", ids)
+            .eq("user_id", userId)
+      );
     } catch (error) {
       log("error", "Failed to clear habit due overrides", error);
     } finally {
@@ -8711,9 +9050,16 @@ async function scheduleHabitsForDay(params: {
     }
   };
   if (!habits.length) {
+    recordHabitPassMetric(
+      timing,
+      habitTimingPass,
+      "prePlacementMs",
+      elapsedMs(prePlacementStartedAt)
+    );
     await clearHabitOverrides();
     return result;
   }
+  recordHabitPassMetric(timing, habitTimingPass, "daysConsidered");
 
   const registerReservationForInstance = (
     instanceId: string | null | undefined,
@@ -8749,12 +9095,18 @@ async function scheduleHabitsForDay(params: {
   const cancelScheduledInstance = async (instance: ScheduleInstance) => {
     if (!instance?.id) return false;
     try {
-      const cancel = await client
-        .from("schedule_instances")
-        .update({ status: "canceled" })
-        .eq("id", instance.id)
-        .select("id")
-        .single();
+      const cancel = await recordHabitAsyncRead(
+        timing,
+        habitTimingPass,
+        "habitRevalidationCancel",
+        () =>
+          client
+            .from("schedule_instances")
+            .update({ status: "canceled" })
+            .eq("id", instance.id)
+            .select("id")
+            .single()
+      );
       if (cancel.error) {
         result.failures.push({
           itemId: instance.source_id ?? instance.id,
@@ -8790,12 +9142,18 @@ async function scheduleHabitsForDay(params: {
         status: "missed",
         ...(reason ? { missed_reason: reason } : {}),
       } as Database["public"]["Tables"]["schedule_instances"]["Update"];
-      const miss = await client
-        .from("schedule_instances")
-        .update(payload)
-        .eq("id", instance.id)
-        .select("id")
-        .single();
+      const miss = await recordHabitAsyncRead(
+        timing,
+        habitTimingPass,
+        "habitRevalidationMiss",
+        () =>
+          client
+            .from("schedule_instances")
+            .update(payload)
+            .eq("id", instance.id)
+            .select("id")
+            .single()
+      );
       if (miss.error) {
         result.failures.push({
           itemId: instance.source_id ?? instance.id,
@@ -9049,7 +9407,9 @@ async function scheduleHabitsForDay(params: {
     segments: { start: number; end: number }[]
   ) => getSyncOverlapConflict(startMs, endMs, segments);
 
+  const existingInstanceClassificationStartedAt = schedulerNowMs();
   for (const inst of existingInstances) {
+    recordHabitPassMetric(timing, habitTimingPass, "existingInstanceChecks");
     if (!inst) continue;
     if (inst.source_type !== "HABIT" || inst.status !== "scheduled") {
       carryoverInstances.push(inst);
@@ -9074,6 +9434,12 @@ async function scheduleHabitsForDay(params: {
   };
 
   for (const [habitId, bucket] of scheduledHabitBuckets) {
+    recordHabitPassMetric(
+      timing,
+      habitTimingPass,
+      "existingInstanceChecks",
+      bucket.length
+    );
     bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b));
     const isNonDailyHabit = Boolean(nonDailyHabitIds?.has(habitId));
     if (postAnchorSyncRetry) {
@@ -9130,6 +9496,12 @@ async function scheduleHabitsForDay(params: {
       }
     }
   }
+  recordHabitPassMetric(
+    timing,
+    habitTimingPass,
+    "sortDedupeMs",
+    elapsedMs(existingInstanceClassificationStartedAt)
+  );
 
   for (const [habitId, bucket] of scheduledHabitBuckets) {
     const habit = habitMap.get(habitId);
@@ -9298,6 +9670,7 @@ async function scheduleHabitsForDay(params: {
       for (const habit of habits) {
         const windowDays = habit.windowId ? null : habit.window?.days ?? null;
         const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+        const missingWindowDueStartedAt = schedulerNowMs();
         const dueInfo = evaluateHabitDueOnDate({
           habit,
           date: day,
@@ -9308,6 +9681,12 @@ async function scheduleHabitsForDay(params: {
             : getLastScheduledHabitStart(habit.id, day),
           nextDueOverride,
         });
+        recordHabitPassMetric(
+          timing,
+          habitTimingPass,
+          "dueEvaluationMs",
+          elapsedMs(missingWindowDueStartedAt)
+        );
         recordDueEvaluationForAudit(habit, dueInfo);
         if (!dueInfo.isDue) continue;
         if (repeatablePracticeIds.has(habit.id)) {
@@ -9333,6 +9712,7 @@ async function scheduleHabitsForDay(params: {
   const typeMismatchInstances: ScheduleInstance[] = [];
   const seenInvalidIds = new Set<string>();
   for (let index = dayInstances.length - 1; index >= 0; index -= 1) {
+    recordHabitPassMetric(timing, habitTimingPass, "existingInstanceChecks");
     const instance = dayInstances[index];
     if (!instance) continue;
     if (instance.source_type !== "HABIT") continue;
@@ -9398,6 +9778,7 @@ async function scheduleHabitsForDay(params: {
     if (instanceDayStart.getTime() !== dayStart.getTime()) continue;
     const windowDays = habit.windowId ? null : habit.window?.days ?? null;
     const lastScheduledStart = getLastScheduledHabitStart(habitId, day);
+    const revalidationDueStartedAt = schedulerNowMs();
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date: instanceDayStart,
@@ -9406,6 +9787,12 @@ async function scheduleHabitsForDay(params: {
       lastScheduledStart,
       nextDueOverride,
     });
+    recordHabitPassMetric(
+      timing,
+      habitTimingPass,
+      "dueEvaluationMs",
+      elapsedMs(revalidationDueStartedAt)
+    );
     if (!dueInfo.isDue) {
       if (
         instance.id &&
@@ -9499,6 +9886,7 @@ async function scheduleHabitsForDay(params: {
     for (const habit of habits) {
       const windowDays = habit.windowId ? null : habit.window?.days ?? null;
       const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+      const auditDueStartedAt = schedulerNowMs();
       const dueInfo = evaluateHabitDueOnDate({
         habit,
         date: day,
@@ -9509,6 +9897,12 @@ async function scheduleHabitsForDay(params: {
           : getLastScheduledHabitStart(habit.id, day),
         nextDueOverride,
       });
+      recordHabitPassMetric(
+        timing,
+        habitTimingPass,
+        "dueEvaluationMs",
+        elapsedMs(auditDueStartedAt)
+      );
       recordDueEvaluationForAudit(habit, dueInfo);
     }
   }
@@ -9710,6 +10104,7 @@ async function scheduleHabitsForDay(params: {
     const normalizedType =
       habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
     if (postAnchorSyncRetry && normalizedType !== "SYNC") {
+      recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
       continue;
     }
     if (normalizedType === "PRACTICE") {
@@ -9721,6 +10116,7 @@ async function scheduleHabitsForDay(params: {
       if (process.env.NODE_ENV === "test" && habit.id === "habit-practice") {
         logSchedulerDebug("skip practice due to offset", offset);
       }
+      recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
       continue;
     }
     // Exclude unreserved SYNC/ASYNC habits from regular habit scheduling - they get post-pass treatment.
@@ -9730,6 +10126,7 @@ async function scheduleHabitsForDay(params: {
       !postAnchorSyncRetry &&
       !reservedPlacements?.has(habit.id)
     ) {
+      recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
       continue;
     }
     if (
@@ -9741,6 +10138,7 @@ async function scheduleHabitsForDay(params: {
           inst.source_id === habit.id
       )
     ) {
+      recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
       continue;
     }
     const windowDays = habit.windowId ? null : habit.window?.days ?? null;
@@ -9752,6 +10150,7 @@ async function scheduleHabitsForDay(params: {
     if (overrideDayStart) {
       const todayStart = startOfDayInTimeZone(day, zone);
       if (todayStart.getTime() < overrideDayStart.getTime()) {
+        recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
         continue;
       }
     }
@@ -9770,6 +10169,7 @@ async function scheduleHabitsForDay(params: {
       ? null
       : getLastScheduledHabitStart(habit.id, day);
     const existingInstanceBeforeDue = existingByHabitId.get(habit.id) ?? null;
+    const dueEvaluationStartedAt = schedulerNowMs();
     const tracedDueInfo = evaluateHabitDueOnDate({
       habit: habitWithEffectiveLastCompletedAt,
       date: day,
@@ -9778,6 +10178,12 @@ async function scheduleHabitsForDay(params: {
       lastScheduledStart: dueEvalLastScheduledStart,
       nextDueOverride,
     });
+    recordHabitPassMetric(
+      timing,
+      habitTimingPass,
+      "dueEvaluationMs",
+      elapsedMs(dueEvaluationStartedAt)
+    );
     recordDueEvaluationForAudit(habit, tracedDueInfo);
     const dueInfo = tracedDueInfo;
     if (
@@ -9788,6 +10194,7 @@ async function scheduleHabitsForDay(params: {
       logSchedulerDebug("practice due info", { offset, isDue: dueInfo.isDue });
     }
     if (!dueInfo.isDue) {
+      recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
       logHabitPlacementAudit(habit, "due_habits_entry", {
         enteredDueHabits: false,
         debugTag: dueInfo.debugTag,
@@ -9826,6 +10233,12 @@ async function scheduleHabitsForDay(params: {
   }
 
   if (dueHabits.length === 0) {
+    recordHabitPassMetric(
+      timing,
+      habitTimingPass,
+      "prePlacementMs",
+      elapsedMs(prePlacementStartedAt)
+    );
     await clearHabitOverrides();
     return result;
   }
@@ -9919,13 +10332,26 @@ async function scheduleHabitsForDay(params: {
     sunlightOptions
   );
 
+  const dueSortStartedAt = schedulerNowMs();
   const sortedHabits = [...dueHabits].sort((a, b) =>
     compareHabitScheduleOrder(a, b, dueInfoByHabitId, defaultDueMs)
+  );
+  recordHabitPassMetric(
+    timing,
+    habitTimingPass,
+    "sortDedupeMs",
+    elapsedMs(dueSortStartedAt)
   );
 
   const practicePlacementCounts = new Map<string, number>();
   const failedHabitIds = new Set<string>();
   const habitQueue = [...sortedHabits];
+  recordHabitPassMetric(
+    timing,
+    habitTimingPass,
+    "prePlacementMs",
+    elapsedMs(prePlacementStartedAt)
+  );
   while (habitQueue.length > 0) {
     const habit = habitQueue.shift();
     if (!habit) continue;
@@ -9959,6 +10385,8 @@ async function scheduleHabitsForDay(params: {
         day,
         timeZone: zone,
         existingInstance,
+        timing,
+        habitTimingPass,
       });
       if (fixedResult.error || !fixedResult.instance || !fixedResult.range) {
         result.failures.push({
@@ -10204,6 +10632,7 @@ async function scheduleHabitsForDay(params: {
       availableStartLocal: Date;
     }> = [];
     let sawExpiredTodayWindows = false;
+    recordHabitPassMetric(timing, habitTimingPass, "reservationChecks");
     const reservation = reservedPlacements?.get(habit.id) ?? null;
     let usedReservation = false;
     let reservedStartMs: number | null = null;
@@ -10294,6 +10723,7 @@ async function scheduleHabitsForDay(params: {
                 ? nightEligibleWindows
                 : windows,
             allowedWindowKinds,
+            habitTimingPass,
             timing,
             auditZeroStageCallback: auditEnabled || shouldLogPlacementAudit
               ? (stage) => {
@@ -10338,6 +10768,7 @@ async function scheduleHabitsForDay(params: {
     });
 
     if (compatibleWindows.length === 0) {
+      recordHabitPassMetric(timing, habitTimingPass, "eligibilitySkips");
       if (offset === 0 && sawExpiredTodayWindows) {
         logHabitPlacementAudit(habit, "placement_rejection", {
           reason: "expiredTodayWindows",
@@ -10386,6 +10817,7 @@ async function scheduleHabitsForDay(params: {
     let placedInWindow = false;
     let persistFailed = false;
     for (const target of compatibleWindows) {
+      recordHabitPassMetric(timing, habitTimingPass, "candidateWindowsConsidered");
       const window = windowsById.get(target.id);
       if (!window) {
         continue;
@@ -10717,6 +11149,7 @@ async function scheduleHabitsForDay(params: {
       }
 
       if (normalizedType === "PRACTICE") {
+        recordHabitPassMetric(timing, habitTimingPass, "practiceHistoryChecks");
         const habitSkillContextId = habit.skillMonumentId ?? null;
         if (habitSkillContextId) {
           practiceContextId = habitSkillContextId;
@@ -10844,6 +11277,7 @@ async function scheduleHabitsForDay(params: {
       }
 
       if (!isRepeatablePractice) {
+        recordHabitPassMetric(timing, habitTimingPass, "existingInstanceChecks");
         existingInstance = existingByHabitId.get(habit.id) ?? null;
       }
       if (existingInstance && daylightConstraint) {
@@ -10964,6 +11398,61 @@ async function scheduleHabitsForDay(params: {
         if (!allowScheduling) {
           continue;
         }
+        let placementNoFitCacheKey: string | null = null;
+        if (noFitCache) {
+          placementNoFitCacheKey = buildHabitPlacementNoFitCacheKey({
+            habitId: habit.id,
+            habitType: normalizedType,
+            dayKey,
+            offset,
+            timeZone: zone,
+            durationMinutes,
+            energyResolved,
+            practiceContextId: practiceContextId ?? null,
+            reuseInstanceId: existingInstance?.id ?? null,
+            window,
+            windowKey: target.key,
+            windowStartMs: isSyncHabit
+              ? startCandidate
+              : target.startLocal.getTime(),
+            windowEndMs: isSyncHabit
+              ? endCandidate
+              : target.endLocal.getTime(),
+            candidateStartMs: startCandidate,
+            candidateEndMs: endCandidate,
+            fromPrevDay: window.fromPrevDay ?? false,
+            blockers: placedSoFar,
+          });
+        } else {
+          if (noFitCacheStats) {
+            noFitCacheStats.bypass += 1;
+          }
+        }
+        if (
+          placementNoFitCacheKey !== null &&
+          noFitCache?.has(placementNoFitCacheKey)
+        ) {
+          if (noFitCacheStats) {
+            noFitCacheStats.hit += 1;
+          }
+          logHabitPlacementAudit(habit, "placement_rejection", {
+            reason: "placeItemInWindows NO_FIT",
+            cache: "hit",
+            day: formatDateKeyInTimeZone(day, zone),
+            dayStart: toAuditIso(dayStart),
+            offset,
+            candidateStart: candidateStartUTC,
+            candidateEnd: candidateEndUTC,
+            durationMinutes,
+            ...habitPlacementWindowAuditPayload({ target, window }),
+          });
+          continue;
+        }
+        if (placementNoFitCacheKey !== null) {
+          if (noFitCacheStats) {
+            noFitCacheStats.miss += 1;
+          }
+        }
         const placement = await placeItemInWindows({
           userId,
           item: {
@@ -11012,6 +11501,12 @@ async function scheduleHabitsForDay(params: {
 
         if (!("status" in placement)) {
           if (placement.error === "NO_FIT") {
+            if (placementNoFitCacheKey !== null) {
+              noFitCache?.set(placementNoFitCacheKey, true);
+              if (noFitCacheStats) {
+                noFitCacheStats.set += 1;
+              }
+            }
             logHabitPlacementAudit(habit, "placement_rejection", {
               reason: "placeItemInWindows NO_FIT",
               day: formatDateKeyInTimeZone(day, zone),
@@ -11078,10 +11573,16 @@ async function scheduleHabitsForDay(params: {
           existingByHabitId.delete(habit.id);
           practiceInstanceQueues.delete(habit.id);
           if (existingInstance?.id) {
-            const { error: missError } = await client
-              .from("schedule_instances")
-              .update({ status: "missed", missed_reason: "PERSIST_FAILED" })
-              .eq("id", existingInstance.id);
+            const { error: missError } = await recordHabitAsyncRead(
+              timing,
+              habitTimingPass,
+              "habitPersistFailureMiss",
+              () =>
+                client
+                  .from("schedule_instances")
+                  .update({ status: "missed", missed_reason: "PERSIST_FAILED" })
+                  .eq("id", existingInstance.id)
+            );
             if (missError) {
               result.failures.push({
                 itemId: habit.id,
@@ -11431,9 +11932,20 @@ async function upsertFixedHabitInstance(params: {
   timeZone: string;
   existingInstance?: ScheduleInstance | null;
   metadata?: ScheduleInstance["metadata"] | null;
+  timing?: SchedulerTiming | null;
+  habitTimingPass?: HabitPlacementPass;
 }): Promise<FixedHabitPersistResult> {
-  const { client, userId, habit, day, timeZone, existingInstance, metadata } =
-    params;
+  const {
+    client,
+    userId,
+    habit,
+    day,
+    timeZone,
+    existingInstance,
+    metadata,
+    timing = null,
+    habitTimingPass = null,
+  } = params;
   const range = buildFixedHabitRange(habit, day, timeZone);
   if (!range) {
     return {
@@ -11488,13 +12000,19 @@ async function upsertFixedHabitInstance(params: {
   }
 
   if (existingInstance?.id) {
-    const { data, error } = await client
-      .from("schedule_instances")
-      .update(updatePayload)
-      .eq("id", existingInstance.id)
-      .eq("user_id", userId)
-      .select("*")
-      .single();
+    const { data, error } = await recordHabitAsyncRead(
+      timing,
+      habitTimingPass,
+      "habitPersistUpdateExisting",
+      () =>
+        client
+          .from("schedule_instances")
+          .update(updatePayload)
+          .eq("id", existingInstance.id)
+          .eq("user_id", userId)
+          .select("*")
+          .single()
+    );
     return {
       instance: error ? null : ((data as ScheduleInstance | null) ?? null),
       decision: "rescheduled",
@@ -11510,11 +12028,17 @@ async function upsertFixedHabitInstance(params: {
     weight_snapshot: 0,
     ...updatePayload,
   } satisfies Database["public"]["Tables"]["schedule_instances"]["Insert"];
-  const { data, error } = await client
-    .from("schedule_instances")
-    .insert(insertPayload)
-    .select("*")
-    .single();
+  const { data, error } = await recordHabitAsyncRead(
+    timing,
+    habitTimingPass,
+    "habitPersistInsertNew",
+    () =>
+      client
+        .from("schedule_instances")
+        .insert(insertPayload)
+        .select("*")
+        .single()
+  );
   return {
     instance: error ? null : ((data as ScheduleInstance | null) ?? null),
     decision: "new",
@@ -11771,11 +12295,13 @@ export async function fetchCompatibleWindowsForItem(
     };
     auditZeroStageCallback?: (stage: string | null) => void;
     horizonEnd?: Date;
-  parity?: FetchWindowsParityOptions | null;
+    parity?: FetchWindowsParityOptions | null;
+    habitTimingPass?: HabitPlacementPass;
     timing?: SchedulerTiming | null;
   }
 ): Promise<FetchCompatibleWindowsResult> {
   const timing = options?.timing ?? null;
+  const habitTimingPass = options?.habitTimingPass ?? null;
   const startedAt = schedulerNowMs();
   const isProjectCall = item.isProject === true || item.sourceType === "PROJECT";
   const isHabitCall =
@@ -11786,6 +12312,9 @@ export async function fetchCompatibleWindowsForItem(
     timing.schedule.compatibleWindows.calls += 1;
     if (isProjectCall) timing.schedule.compatibleWindows.projectCalls += 1;
     if (isHabitCall) timing.schedule.compatibleWindows.habitCalls += 1;
+  }
+  if (isHabitCall) {
+    recordHabitPassMetric(timing, habitTimingPass, "compatibleWindowCalls");
   }
   try {
   // Debug pipeline tracking
@@ -11817,17 +12346,27 @@ export async function fetchCompatibleWindowsForItem(
     parity: options?.parity ?? undefined,
   };
 
-  const overlayBlocksPromise: Promise<OverlayWindowBlock[]> =
-    userId && userId.length > 0
-      ? getCachedOverlayWindowBlocksForDate(
-          supabase,
-          date,
-          timeZone,
-          userId,
-          options?.overlayBlockCache,
-          timing
-        )
-      : Promise.resolve([]);
+  let overlayBlocksPromise: Promise<OverlayWindowBlock[]> = Promise.resolve([]);
+  if (userId && userId.length > 0) {
+    const resolvedOverlayBlocks = getResolvedCachedOverlayWindowBlocksForDate(
+      date,
+      timeZone,
+      userId,
+      options?.overlayBlockCache
+    );
+    overlayBlocksPromise = resolvedOverlayBlocks
+      ? Promise.resolve(resolvedOverlayBlocks)
+      : recordHabitAsyncRead(timing, habitTimingPass, "overlayBlocks", () =>
+          getCachedOverlayWindowBlocksForDate(
+            supabase,
+            date,
+            timeZone,
+            userId,
+            options?.overlayBlockCache,
+            timing
+          )
+        );
+  }
   if (options?.horizonEnd && SCHEDULER_PROJECT_DEBUG_LOGGING) {
     // When horizonEnd is provided, expand windows into concrete occurrences with correct dates
     windowOccurrences = [];
@@ -11854,11 +12393,14 @@ export async function fetchCompatibleWindowsForItem(
       let currentDay = new Date(date);
       const endDate = new Date(options.horizonEnd);
       while (currentDay <= endDate) {
-        const dayWindows = await fetchWindowsForDate(
-          currentDay,
-          supabase,
-          timeZone,
-          { ...windowOptionsBase }
+        const dayWindows = await recordHabitAsyncRead(
+          timing,
+          habitTimingPass,
+          "horizonFetchWindows",
+          () =>
+            fetchWindowsForDate(currentDay, supabase, timeZone, {
+              ...windowOptionsBase,
+            })
         );
         for (const win of dayWindows) {
           windowOccurrences.push({
@@ -11880,9 +12422,15 @@ export async function fetchCompatibleWindowsForItem(
   } else if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? [];
   } else {
-    windows = await fetchWindowsForDate(date, supabase, timeZone, {
-      ...windowOptionsBase,
-    });
+    windows = await recordHabitAsyncRead(
+      timing,
+      habitTimingPass,
+      "fetchWindows",
+      () =>
+        fetchWindowsForDate(date, supabase, timeZone, {
+          ...windowOptionsBase,
+        })
+    );
     cache?.set(cacheKey, windows);
   }
 
@@ -11910,30 +12458,62 @@ export async function fetchCompatibleWindowsForItem(
         cursor = addDaysInTimeZone(cursor, 1, timeZone);
       }
       for (const occurrenceDate of occurrenceDays) {
-        const dynamicWindows = await getCachedDynamicOverlayWindowsForDate(
-          supabase,
-          occurrenceDate,
-          timeZone,
-          userId,
-          overlayNow,
-          options?.dynamicOverlayCache,
-          timing
-        );
+        const resolvedDynamicWindows =
+          getResolvedCachedDynamicOverlayWindowsForDate(
+            occurrenceDate,
+            timeZone,
+            userId,
+            overlayNow,
+            options?.dynamicOverlayCache
+          );
+        const dynamicWindows = resolvedDynamicWindows
+          ? resolvedDynamicWindows
+          : await recordHabitAsyncRead(
+              timing,
+              habitTimingPass,
+              "dynamicOverlayWindows",
+              () =>
+                getCachedDynamicOverlayWindowsForDate(
+                  supabase,
+                  occurrenceDate,
+                  timeZone,
+                  userId,
+                  overlayNow,
+                  options?.dynamicOverlayCache,
+                  timing
+                )
+            );
         for (const window of dynamicWindows) {
           windowOccurrences.push({ window, occurrenceDate });
         }
       }
       windows = windowOccurrences.map((occ) => occ.window);
     } else {
-      const dynamicWindows = await getCachedDynamicOverlayWindowsForDate(
-        supabase,
-        date,
-        timeZone,
-        userId,
-        overlayNow,
-        options?.dynamicOverlayCache,
-        timing
-      );
+      const resolvedDynamicWindows =
+        getResolvedCachedDynamicOverlayWindowsForDate(
+          date,
+          timeZone,
+          userId,
+          overlayNow,
+          options?.dynamicOverlayCache
+        );
+      const dynamicWindows = resolvedDynamicWindows
+        ? resolvedDynamicWindows
+        : await recordHabitAsyncRead(
+            timing,
+            habitTimingPass,
+            "dynamicOverlayWindows",
+            () =>
+              getCachedDynamicOverlayWindowsForDate(
+                supabase,
+                date,
+                timeZone,
+                userId,
+                overlayNow,
+                options?.dynamicOverlayCache,
+                timing
+              )
+          );
       if (dynamicWindows.length > 0) {
         windows = [...windows, ...dynamicWindows];
       }
@@ -12632,7 +13212,16 @@ export async function fetchCompatibleWindowsForItem(
   };
   } finally {
     if (timing) {
-      timing.schedule.compatibleWindows.totalMs += elapsedMs(startedAt);
+      const compatibleMs = elapsedMs(startedAt);
+      timing.schedule.compatibleWindows.totalMs += compatibleMs;
+      if (isHabitCall) {
+        recordHabitPassMetric(
+          timing,
+          habitTimingPass,
+          "compatibleWindowMs",
+          compatibleMs
+        );
+      }
     }
   }
 }
@@ -12792,6 +13381,10 @@ function getCachedOverlayWindowBlocksForDate(
   }
 
   const key = overlayWindowBlockCacheKey(userId, date, timeZone);
+  const resolved = cache.resolvedBlocksByKey.get(key);
+  if (resolved) {
+    return Promise.resolve(resolved);
+  }
   const cached = cache.blocksByKey.get(key);
   if (cached) {
     return cached;
@@ -12803,12 +13396,29 @@ function getCachedOverlayWindowBlocksForDate(
     timeZone,
     userId,
     timing
-  ).catch((error) => {
-    cache.blocksByKey.delete(key);
-    throw error;
-  });
+  )
+    .then((blocks) => {
+      cache.resolvedBlocksByKey.set(key, blocks);
+      return blocks;
+    })
+    .catch((error) => {
+      cache.blocksByKey.delete(key);
+      cache.resolvedBlocksByKey.delete(key);
+      throw error;
+    });
   cache.blocksByKey.set(key, pending);
   return pending;
+}
+
+function getResolvedCachedOverlayWindowBlocksForDate(
+  date: Date,
+  timeZone: string,
+  userId: string,
+  cache: OverlayWindowBlockCache | null | undefined
+): OverlayWindowBlock[] | null {
+  if (!cache) return null;
+  const key = overlayWindowBlockCacheKey(userId, date, timeZone);
+  return cache.resolvedBlocksByKey.get(key) ?? null;
 }
 
 function dynamicOverlayCacheKey(
@@ -12846,6 +13456,10 @@ function getCachedDynamicOverlayWindowsForDate(
   }
 
   const key = dynamicOverlayCacheKey(userId, date, timeZone, effectiveNow);
+  const resolved = cache.resolvedWindowsByKey.get(key);
+  if (resolved) {
+    return Promise.resolve(resolved);
+  }
   const cached = cache.windowsByKey.get(key);
   if (cached) {
     return cached;
@@ -12858,12 +13472,31 @@ function getCachedDynamicOverlayWindowsForDate(
     userId,
     effectiveNow,
     timing
-  ).catch((error) => {
-    cache.windowsByKey.delete(key);
-    throw error;
-  });
+  )
+    .then((windows) => {
+      cache.resolvedWindowsByKey.set(key, windows);
+      return windows;
+    })
+    .catch((error) => {
+      cache.windowsByKey.delete(key);
+      cache.resolvedWindowsByKey.delete(key);
+      throw error;
+    });
   cache.windowsByKey.set(key, pending);
   return pending;
+}
+
+function getResolvedCachedDynamicOverlayWindowsForDate(
+  date: Date,
+  timeZone: string,
+  userId: string,
+  now: Date | null | undefined,
+  cache: DynamicOverlayWindowCache | null | undefined
+): WindowLite[] | null {
+  if (!cache) return null;
+  const effectiveNow = now ?? cache.effectiveNow;
+  const key = dynamicOverlayCacheKey(userId, date, timeZone, effectiveNow);
+  return cache.resolvedWindowsByKey.get(key) ?? null;
 }
 
 async function loadDynamicOverlayWindowsForDate(
@@ -13372,6 +14005,87 @@ function cloneAvailabilityMap(source: Map<string, WindowAvailabilityBounds>) {
     });
   }
   return clone;
+}
+
+function formatCacheMs(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.floor(value).toString()
+    : "null";
+}
+
+function buildHabitPlacementNoFitCacheKey(params: {
+  habitId: string;
+  habitType: string;
+  dayKey: string;
+  offset: number;
+  timeZone: string;
+  durationMinutes: number;
+  energyResolved: string;
+  practiceContextId: string | null;
+  reuseInstanceId: string | null;
+  window: WindowLite;
+  windowKey: string;
+  windowStartMs: number;
+  windowEndMs: number;
+  candidateStartMs: number;
+  candidateEndMs: number;
+  fromPrevDay: boolean;
+  blockers: ScheduleInstance[];
+}) {
+  const blockerKey = params.blockers
+    .filter((inst) => inst?.status === "scheduled")
+    .map((inst) => {
+      const startMs = new Date(inst.start_utc ?? "").getTime();
+      const endMs = new Date(inst.end_utc ?? "").getTime();
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+      return [
+        inst.id ?? "",
+        inst.source_type ?? "",
+        inst.source_id ?? "",
+        formatCacheMs(startMs),
+        formatCacheMs(endMs),
+      ].join("@");
+    })
+    .filter((value): value is string => value !== null)
+    .sort()
+    .join(",");
+  const windowMetadata = params.window as WindowCacheKeyMetadata;
+  const dayTypeTimeBlockId =
+    windowMetadata.dayTypeTimeBlockId ??
+    windowMetadata.day_type_time_block_id ??
+    null;
+  const timeBlockId =
+    windowMetadata.time_block_id ??
+    windowMetadata.timeBlockId ??
+    windowMetadata.id ??
+    null;
+  const overlayWindowId =
+    windowMetadata.overlayWindowId ??
+    windowMetadata.overlay_window_id ??
+    null;
+
+  return [
+    params.habitId,
+    params.habitType,
+    params.dayKey,
+    params.offset,
+    params.timeZone,
+    params.durationMinutes,
+    params.energyResolved,
+    params.practiceContextId ?? "",
+    params.reuseInstanceId ?? "",
+    params.window.id,
+    params.windowKey,
+    dayTypeTimeBlockId ?? "",
+    timeBlockId ?? "",
+    overlayWindowId ?? "",
+    params.fromPrevDay ? "prev" : "same",
+    formatCacheMs(params.windowStartMs),
+    formatCacheMs(params.windowEndMs),
+    formatCacheMs(params.candidateStartMs),
+    formatCacheMs(params.candidateEndMs),
+    blockerKey,
+  ].join("|");
 }
 
 function adoptAvailabilityMap(

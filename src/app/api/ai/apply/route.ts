@@ -429,9 +429,6 @@ async function recordAppliedAction(
 const respondDryRun = (payload: PreviewResult) =>
   NextResponse.json({ ok: true, dry_run: true, preview: payload });
 
-const VALID_GOAL_OVERRIDE = "goal_id";
-const VALID_PROJECT_OVERRIDE = "project_id";
-
 const validateGoalOwnership = async (
   supabase: SupabaseClient,
   userId: string,

@@ -377,76 +377,6 @@ const formatMinutesToTime = (minutes: number): string => {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 };
 
-const KIND_LABELS: Record<string, string> = {
-  PROJECT: "Project",
-  TASK: "Task",
-  HABIT: "Habit",
-};
-
-const formatTimeInTimeZone = (ms: number, timeZone: string): string => {
-  if (!Number.isFinite(ms)) return "00:00";
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(ms));
-  } catch {
-    return "00:00";
-  }
-};
-
-const formatScheduleInstanceRange = (
-  instance: AutopilotScheduleInstance,
-  timeZone: string
-): string => {
-  const start = formatTimeInTimeZone(instance.start_utc_ms, timeZone);
-  const end = formatTimeInTimeZone(instance.end_utc_ms, timeZone);
-  return `${start}-${end}`;
-};
-
-const resolveInstanceTitle = (instance: AutopilotScheduleInstance): string => {
-  const trimmedTitle = instance.title?.trim();
-  if (trimmedTitle) return trimmedTitle;
-  const kind = instance.kind?.trim().toUpperCase();
-  if (kind && kind in KIND_LABELS) {
-    return KIND_LABELS[kind];
-  }
-  if (kind) return kind.toLowerCase();
-  return "Scheduled item";
-};
-
-const buildScheduleAssistantMessage = (
-  instances: AutopilotScheduleInstance[],
-  nowUtcMs: number,
-  timeZone: string
-): string | null => {
-  const active = instances.find(
-    (entry) =>
-      entry.start_utc_ms <= nowUtcMs && nowUtcMs < entry.end_utc_ms
-  );
-  if (active && active.completed_at == null) {
-    const title = resolveInstanceTitle(active);
-    return `Right now: ${title} (${formatScheduleInstanceRange(
-      active,
-      timeZone
-    )})`;
-  }
-  const next = instances.find(
-    (entry) =>
-      entry.start_utc_ms > nowUtcMs && entry.completed_at == null
-  );
-  if (next) {
-    const title = resolveInstanceTitle(next);
-    return `Next up: ${title} (${formatScheduleInstanceRange(
-      next,
-      timeZone
-    )})`;
-  }
-  return null;
-};
-
 type NormalizedSnapshotWindow = {
   label: string;
   startMinutes: number;
@@ -506,19 +436,6 @@ const normalizeSnapshotWindows = (
   return windows.sort((a, b) => a.startMinutes - b.startMinutes);
 };
 
-const windowSpansMidnight = (current: NormalizedSnapshotWindow) =>
-  current.endMinutes <= current.startMinutes;
-
-const isNowInWindow = (
-  nowMinutes: number,
-  current: NormalizedSnapshotWindow
-) => {
-  if (windowSpansMidnight(current)) {
-    return nowMinutes >= current.startMinutes || nowMinutes < current.endMinutes;
-  }
-  return nowMinutes >= current.startMinutes && nowMinutes < current.endMinutes;
-};
-
 const getNowMinutesFromTimeZone = (timeZone: string) => {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -532,20 +449,6 @@ const getNowMinutesFromTimeZone = (timeZone: string) => {
   const minute = getNumericPart(parts, "minute") ?? 0;
   const second = getNumericPart(parts, "second") ?? 0;
   return hour * 60 + minute + second / 60;
-};
-
-const determineNextWindow = (
-  windows: NormalizedSnapshotWindow[],
-  nowMinutes: number,
-  currentIndex: number | null
-): NormalizedSnapshotWindow | null => {
-  if (windows.length === 0) return null;
-  if (currentIndex !== null && currentIndex >= 0) {
-    const nextIndex = (currentIndex + 1) % windows.length;
-    return windows[nextIndex];
-  }
-  const upcoming = windows.find((entry) => entry.startMinutes > nowMinutes);
-  return upcoming ?? windows[0];
 };
 
 const createNoOpIntent = (message: string, confidence = 0.5): AiIntent => ({
@@ -789,19 +692,6 @@ const DAY_TYPE_ACTION_PATTERN =
 const DAY_TYPE_TEMPLATE_PATTERN =
   /(?:build|create|make|design|help me create|help me build|help me make)\s+(?:a|an|the)?\s*[\w\s]{0,40}?template/i;
 
-const CODING_PRIORITY_KEYWORDS = [
-  "code",
-  "coding",
-  "developer",
-  "dev",
-  "software",
-  "engineer",
-  "program",
-  "build",
-  "debug",
-  "development",
-];
-
 const normalizeForComparison = (value: string) =>
   value
     .toLowerCase()
@@ -833,11 +723,6 @@ const ensureUniqueDayTypeName = (
   existing.add(normalizeForComparison(attempt));
   return attempt;
 };
-
-const isCodingPriorityName = (value: string) =>
-  CODING_PRIORITY_KEYWORDS.some((keyword) =>
-    value.toLowerCase().includes(keyword)
-  );
 
 const addMinutesToTime = (time: string, minutes: number) => {
   const [hourPart, minutePart] = time.split(":");

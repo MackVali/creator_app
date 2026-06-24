@@ -657,6 +657,7 @@ type DragPointerInfo = {
   clientY: number;
   pointerId?: number | null;
   pointerType?: string | null;
+  width?: number | null;
 };
 type OverlaySortMode =
   | "recent"
@@ -8520,6 +8521,9 @@ export function Fab({
         creationSelectionTimeoutRef.current = null;
       }
       resetFabViewportState();
+      setOverlayOpen(false);
+      setOverlayPickerOpen(false);
+      setOverlayPickerSelected(null);
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
@@ -9566,7 +9570,11 @@ export function Fab({
   const menuContainerHeight = primary.length * 56;
   const compactFabPanelHeight = menuContainerHeight;
   const shouldRenderTimelineOverlayButton =
-    !expanded && isOpen && menuVariant === "timeline";
+    !expanded &&
+    isOpen &&
+    menuVariant === "timeline" &&
+    !overlayOpen &&
+    !overlayPickerOpen;
   const getOverlayPlacementDurationMinutes = useCallback(
     (result: FabSearchResult | null) =>
       Math.max(
@@ -16445,10 +16453,16 @@ export function Fab({
     pointer?: DragPointerInfo,
   ) => {
     if (result.type === "PROJECT" && result.isCompleted) return;
-    if (!result.scheduleInstanceId) {
+    const hasSourceMetadata =
+      (result.type === "PROJECT" ||
+        result.type === "HABIT" ||
+        result.type === "TASK") &&
+      typeof result.id === "string" &&
+      result.id.trim().length > 0;
+    if (!result.scheduleInstanceId && !hasSourceMetadata) {
       toast.error(
         "Manual placement unavailable",
-        "This item has no scheduled instance to move yet.",
+        "This item has no Event source to place.",
       );
       return;
     }
@@ -17485,20 +17499,13 @@ export function Fab({
     ],
   );
 
-  const hasPreviousFabPage = activeFabPage > 0;
-  const hasNextFabPage = activeFabPage < pageCount - 1;
-
   const handlePreviousFabPage = useCallback(() => {
-    const previousPage =
-      activeFabPage <= 0 ? FAB_PAGES.length - 1 : activeFabPage - 1;
-    animateToPage(previousPage);
-  }, [activeFabPage, animateToPage]);
+    animateToPage(getPrevIndex(activeFabPage), { direction: -1 });
+  }, [activeFabPage, animateToPage, getPrevIndex]);
 
   const handleNextFabPage = useCallback(() => {
-    const nextPage =
-      activeFabPage >= FAB_PAGES.length - 1 ? 0 : activeFabPage + 1;
-    animateToPage(nextPage);
-  }, [activeFabPage, animateToPage]);
+    animateToPage(getNextIndex(activeFabPage), { direction: 1 });
+  }, [activeFabPage, animateToPage, getNextIndex]);
 
   const handlePageDragStart = useCallback(() => {
     if (!isOpen) {
@@ -17740,6 +17747,9 @@ export function Fab({
         return;
       }
       setActiveFabPage(0);
+      setOverlayOpen(false);
+      setOverlayPickerOpen(false);
+      setOverlayPickerSelected(null);
       resetPageDragState();
       if (
         typeof document !== "undefined" &&
@@ -19857,6 +19867,9 @@ export function Fab({
       mobileCreationFocusTimeoutRef.current = null;
     }
     resetFabViewportState();
+    setOverlayOpen(false);
+    setOverlayPickerOpen(false);
+    setOverlayPickerSelected(null);
     setPressedCreationType(null);
     setCreationSpawnOrigin(null);
     setCreationRevealGeometry(null);
@@ -23372,6 +23385,7 @@ function FabNexus({
     dragging: boolean;
     longPressFired: boolean;
     result: FabSearchResult;
+    width: number;
   } | null>(null);
   const resultLongPressTimeoutRef = useRef<number | null>(null);
   const lastResultTapRef = useRef<{
@@ -24190,14 +24204,25 @@ function FabNexus({
               };
 
               const canManualPlaceResult = (res: FabSearchResult) =>
-                Boolean(onManualPlaceResult && res.scheduleInstanceId);
+                Boolean(
+                  onManualPlaceResult &&
+                    (res.scheduleInstanceId ||
+                      ((res.type === "PROJECT" ||
+                        res.type === "HABIT" ||
+                        res.type === "TASK") &&
+                        typeof res.id === "string" &&
+                        res.id.trim().length > 0 &&
+                        typeof res.durationMinutes === "number" &&
+                        Number.isFinite(res.durationMinutes) &&
+                        res.durationMinutes > 0)),
+                );
 
               const beginManualPlacement = (
                 res: FabSearchResult,
                 pointer: DragPointerInfo,
               ) => {
                 if (!onManualPlaceResult) return;
-                if (!res.scheduleInstanceId) return;
+                if (!canManualPlaceResult(res)) return;
                 onManualPlaceResult(res, pointer);
                 suppressTransientClick();
               };
@@ -24212,6 +24237,7 @@ function FabNexus({
                   clientY: event.clientY,
                   pointerId: event.pointerId ?? null,
                   pointerType: event.pointerType ?? null,
+                  width: event.currentTarget.getBoundingClientRect().width,
                 });
               };
 
@@ -24250,6 +24276,7 @@ function FabNexus({
                   dragging: false,
                   longPressFired: false,
                   result,
+                  width: event.currentTarget.getBoundingClientRect().width,
                 };
                 dragStateRef.current = pressState;
                 beginLongPressTimer(
@@ -24412,6 +24439,7 @@ function FabNexus({
                   dragging: false,
                   longPressFired: false,
                   result,
+                  width: event.currentTarget.getBoundingClientRect().width,
                 };
                 dragStateRef.current = pressState;
                 beginLongPressTimer(
@@ -24455,6 +24483,7 @@ function FabNexus({
                     clientY: touch.clientY,
                     pointerId: touch.identifier,
                     pointerType: "touch",
+                    width: state.width,
                   });
                   event.preventDefault();
                   event.stopPropagation();

@@ -277,6 +277,117 @@ function getTimelineHabitEventBackground(normalizedHabitType: string) {
   return TIMELINE_DARK_EVENT_BACKGROUND;
 }
 
+const TIMELINE_HABIT_SCHEDULED_SHADOW = [
+  "0 28px 58px rgba(3, 3, 6, 0.66)",
+  "0 10px 24px rgba(0, 0, 0, 0.45)",
+  "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+].join(", ");
+const TIMELINE_HABIT_CHORE_SHADOW = [
+  "0 18px 36px rgba(56, 16, 24, 0.38)",
+  "0 8px 18px rgba(76, 20, 32, 0.26)",
+  "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+].join(", ");
+const TIMELINE_HABIT_RELAXER_SHADOW = [
+  "0 20px 40px rgba(3, 47, 39, 0.52)",
+  "0 10px 22px rgba(2, 119, 84, 0.32)",
+  "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+].join(", ");
+const TIMELINE_HABIT_SYNC_SHADOW = [
+  "0 18px 36px rgba(58, 44, 14, 0.32)",
+  "0 8px 18px rgba(82, 62, 18, 0.24)",
+  "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+].join(", ");
+const TIMELINE_HABIT_PRACTICE_SHADOW = [
+  "0 30px 60px rgba(2, 2, 6, 0.72)",
+  "0 12px 28px rgba(0, 0, 0, 0.48)",
+  "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+].join(", ");
+
+function normalizeTimelineHabitType(value?: string | null) {
+  const normalized = normalizeHabitType(value ?? "HABIT");
+  return normalized === "ASYNC" ? "SYNC" : normalized;
+}
+
+function getTimelineHabitTypeClass(normalizedHabitType: string) {
+  if (normalizedHabitType === "MEMO") return "habit-card--type-memo";
+  if (normalizedHabitType === "CHORE") return "habit-card--type-chore";
+  if (normalizedHabitType === "RELAXER") return "habit-card--type-relaxer";
+  if (normalizedHabitType === "PRACTICE")
+    return "habit-card--type-practice";
+  if (normalizedHabitType === "SYNC") return "habit-card--type-sync";
+  return "habit-card--type-default";
+}
+
+function getScheduledHabitCardVisuals({
+  habitType,
+  completed,
+}: {
+  habitType?: string | null;
+  completed: boolean;
+}) {
+  const normalizedHabitType = normalizeTimelineHabitType(habitType);
+  if (completed) {
+    return {
+      normalizedHabitType,
+      typeClass: getTimelineHabitTypeClass(normalizedHabitType),
+      borderClass: "border-green-900/45",
+      shadow: FOCUS_POMO_COMPLETE_SHADOW,
+      outline: FOCUS_POMO_COMPLETE_OUTLINE,
+      background: FOCUS_POMO_COMPLETE_BACKGROUND,
+    };
+  }
+
+  if (normalizedHabitType === "CHORE") {
+    return {
+      normalizedHabitType,
+      typeClass: getTimelineHabitTypeClass(normalizedHabitType),
+      borderClass: "border-rose-200/45",
+      shadow: TIMELINE_HABIT_CHORE_SHADOW,
+      outline: "1px solid rgba(0, 0, 0, 0.85)",
+      background: getTimelineHabitEventBackground(normalizedHabitType),
+    };
+  }
+  if (normalizedHabitType === "RELAXER") {
+    return {
+      normalizedHabitType,
+      typeClass: getTimelineHabitTypeClass(normalizedHabitType),
+      borderClass: "border-emerald-200/60",
+      shadow: TIMELINE_HABIT_RELAXER_SHADOW,
+      outline: "1px solid rgba(52, 211, 153, 0.55)",
+      background: getTimelineHabitEventBackground(normalizedHabitType),
+    };
+  }
+  if (normalizedHabitType === "PRACTICE") {
+    return {
+      normalizedHabitType,
+      typeClass: getTimelineHabitTypeClass(normalizedHabitType),
+      borderClass: "border-slate-500/50",
+      shadow: TIMELINE_HABIT_PRACTICE_SHADOW,
+      outline: "1px solid rgba(8, 8, 12, 0.92)",
+      background: getTimelineHabitEventBackground(normalizedHabitType),
+    };
+  }
+  if (normalizedHabitType === "SYNC" || normalizedHabitType === "MEMO") {
+    return {
+      normalizedHabitType,
+      typeClass: getTimelineHabitTypeClass(normalizedHabitType),
+      borderClass: "border-amber-200/45",
+      shadow: TIMELINE_HABIT_SYNC_SHADOW,
+      outline: "1px solid rgba(0, 0, 0, 0.85)",
+      background: getTimelineHabitEventBackground(normalizedHabitType),
+    };
+  }
+
+  return {
+    normalizedHabitType,
+    typeClass: getTimelineHabitTypeClass(normalizedHabitType),
+    borderClass: "border-black/70",
+    shadow: TIMELINE_HABIT_SCHEDULED_SHADOW,
+    outline: "1px solid rgba(10, 10, 12, 0.85)",
+    background: getTimelineHabitEventBackground(normalizedHabitType),
+  };
+}
+
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   "--timeline-label-column": TIMELINE_LABEL_COLUMN_FALLBACK,
   "--timeline-right-gutter": TIMELINE_RIGHT_GUTTER_FALLBACK,
@@ -287,10 +398,11 @@ const TIMELINE_CSS_VARIABLES: CSSProperties = {
 };
 
 type ManualPlacementCandidate = {
-  instanceId: string;
+  instanceId?: string | null;
+  sourceId?: string | null;
   durationMinutes: number;
   title?: string | null;
-  sourceType?: "PROJECT" | "HABIT" | null;
+  sourceType?: "PROJECT" | "HABIT" | "TASK" | null;
   energy?: string | null;
   goalName?: string | null;
   habitType?: string | null;
@@ -300,7 +412,8 @@ type ManualPlacementCandidate = {
 
 type ManualPlacementRequestDetail = {
   result?: {
-    scheduleInstanceId?: string;
+    id?: string;
+    scheduleInstanceId?: string | null;
     durationMinutes?: number;
     nextScheduledAt?: string;
     name?: string;
@@ -308,6 +421,17 @@ type ManualPlacementRequestDetail = {
     energy?: string;
     goalName?: string;
     habitType?: string;
+    habit_type?: string;
+    scheduleHabitType?: string;
+    schedule_habit_type?: string;
+    scheduleInstanceHabitType?: string;
+    schedule_instance_habit_type?: string;
+    scheduleInstanceSourceHabitType?: string;
+    schedule_instance_source_habit_type?: string;
+    instanceHabitType?: string;
+    instance_habit_type?: string;
+    sourceHabitType?: string;
+    source_habit_type?: string;
     currentStreakDays?: number;
     global_rank?: number;
   };
@@ -315,6 +439,7 @@ type ManualPlacementRequestDetail = {
     clientX?: number;
     clientY?: number;
     pointerId?: number;
+    width?: number;
   };
 };
 
@@ -324,7 +449,86 @@ type ManualPlacementDragGhost = {
   label: string;
   mode: "pickup" | "placing";
   pointerId: number | null;
+  width: number;
 };
+
+type OptimisticManualPlacement = {
+  tempId: string | null;
+  previousInstances: ScheduleInstance[];
+  previousAllInstances: ScheduleInstance[];
+};
+
+function normalizeManualPlacementSourceType(
+  value: unknown
+): ManualPlacementCandidate["sourceType"] {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  return normalized === "PROJECT" ||
+    normalized === "HABIT" ||
+    normalized === "TASK"
+    ? normalized
+    : null;
+}
+
+function readManualPlacementHabitType(
+  result: ManualPlacementRequestDetail["result"]
+) {
+  if (!result) return null;
+  const fields = [
+    "habitType",
+    "habit_type",
+    "scheduleHabitType",
+    "schedule_habit_type",
+    "scheduleInstanceHabitType",
+    "schedule_instance_habit_type",
+    "scheduleInstanceSourceHabitType",
+    "schedule_instance_source_habit_type",
+    "instanceHabitType",
+    "instance_habit_type",
+    "sourceHabitType",
+    "source_habit_type",
+  ] as const;
+  for (const field of fields) {
+    const value = result[field];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+async function readScheduleApiError(response: Response): Promise<string> {
+  const fallback = `Schedule request failed (${response.status})`;
+  const contentType = response.headers.get("content-type") ?? "";
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => null)
+    : await response.text().catch(() => null);
+
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    for (const key of ["message", "details", "hint", "error"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+    const invalidFields = record.invalidFields;
+    if (Array.isArray(invalidFields) && invalidFields.length > 0) {
+      const fields = invalidFields.filter(
+        (field): field is string => typeof field === "string"
+      );
+      if (fields.length > 0) {
+        return `Invalid manual placement fields: ${fields.join(", ")}`;
+      }
+    }
+  }
+
+  if (typeof payload === "string" && payload.trim().length > 0) {
+    return payload.trim();
+  }
+
+  return fallback;
+}
 
 type ManualPlacementPreviewDisplacedInstance = {
   instanceId: string;
@@ -477,6 +681,7 @@ type OverlayWindowRecord = {
   start_utc: string | null;
   end_utc: string | null;
   label: string | null;
+  mode: string | null;
 };
 
 type CommandBlockRecord = {
@@ -505,6 +710,15 @@ type MinuteRange = {
   start: number;
   end: number;
 };
+
+function isTemporaryOverlayWindowMode(mode?: string | null) {
+  const normalized = typeof mode === "string" ? mode.trim().toUpperCase() : "";
+  return (
+    normalized === "" ||
+    normalized === "MANUAL" ||
+    normalized === "DYNAMIC"
+  );
+}
 
 const subtractOverlayRangesFromWindow = (
   baseRange: MinuteRange,
@@ -761,6 +975,112 @@ function ManualPlacementHabitCard({
         </span>
       ) : null}
     </>
+  );
+}
+
+function ManualPlacementTimelineCard({
+  candidate,
+  label,
+  mode,
+  heightPx,
+}: {
+  candidate: ManualPlacementCandidate;
+  label: string;
+  mode: ManualPlacementDragGhost["mode"];
+  heightPx: number;
+}) {
+  const title = candidate.title ?? label;
+  const wrapTitle = candidate.durationMinutes >= 30;
+  const opacityClass = mode === "placing" ? "opacity-100" : "opacity-90";
+  const useCompactShadow =
+    Number.isFinite(heightPx) &&
+    heightPx > 0 &&
+    heightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
+  const cardShadow = useCompactShadow
+    ? TIMELINE_COMPACT_CARD_SHADOW
+    : TIMELINE_RESTING_CARD_SHADOW;
+  const baseStyle: CSSProperties = {
+    ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+    boxShadow: cardShadow,
+    outline: "1px solid rgba(10, 10, 12, 0.85)",
+    outlineOffset: "-1px",
+  };
+  const isHabitGhost =
+    candidate.sourceType === "HABIT" || Boolean(candidate.habitType);
+
+  if (isHabitGhost) {
+    const habitVisuals = getScheduledHabitCardVisuals({
+      habitType: candidate.habitType,
+      completed: false,
+    });
+
+    return (
+      <div
+        className={clsx(
+          "habit-card relative flex h-full w-full items-center justify-between gap-3 border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+          getTimelineCardCornerClass("full"),
+          habitVisuals.borderClass,
+          habitVisuals.typeClass,
+          opacityClass
+        )}
+        style={{
+          ...baseStyle,
+          boxShadow: habitVisuals.shadow,
+          outline: habitVisuals.outline,
+          background: habitVisuals.background,
+          alignItems: "center",
+        }}
+      >
+        <ManualPlacementHabitCard
+          title={title}
+          streakDays={candidate.currentStreakDays}
+          wrapTitle={wrapTitle}
+        />
+      </div>
+    );
+  }
+
+  const goalName =
+    candidate.goalName && candidate.goalName.trim().length > 0
+      ? candidate.goalName
+      : null;
+  const rankDisplay =
+    typeof candidate.globalRank === "number" &&
+    Number.isFinite(candidate.globalRank) &&
+    candidate.globalRank > 0
+      ? `#${candidate.globalRank}`
+      : null;
+  const energyLevel = resolveEnergyLevel(candidate.energy) ?? "NO";
+  const collapsedCardPaddingClass = goalName ? "pt-4 pb-2" : "py-2";
+  const isTaskGhost = candidate.sourceType === "TASK";
+
+  return (
+    <div
+      className={clsx(
+        "relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white backdrop-blur-sm transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
+        getTimelineCardCornerClass("full"),
+        collapsedCardPaddingClass,
+        isTaskGhost ? "border-white/10" : "border-black/70",
+        opacityClass
+      )}
+      style={{
+        ...baseStyle,
+        outline: isTaskGhost
+          ? "1px solid var(--event-border)"
+          : baseStyle.outline,
+        background: isTaskGhost
+          ? TIMELINE_NEUTRAL_EVENT_BACKGROUND
+          : TIMELINE_DARK_EVENT_BACKGROUND,
+      }}
+    >
+      <ManualPlacementProjectCard
+        title={title}
+        goalName={goalName}
+        energyLevel={energyLevel}
+        rankDisplay={rankDisplay}
+        wrapTitle={wrapTitle}
+      />
+    </div>
   );
 }
 
@@ -3047,6 +3367,19 @@ export default function ScheduleTabContent({
 
   const [allInstances, setAllInstances] = useState<ScheduleInstance[]>([]);
   const [instances, setInstances] = useState<ScheduleInstance[]>([]);
+  const overlayWindowIdsWithEvents = useMemo(() => {
+    const ids = new Set<string>();
+    for (const instance of allInstances) {
+      const overlayWindowId = instance?.overlay_window_id;
+      if (typeof overlayWindowId === "string" && overlayWindowId.length > 0) {
+        ids.add(overlayWindowId);
+      }
+    }
+    return ids;
+  }, [allInstances]);
+  const [overlayVisibilityNowMs, setOverlayVisibilityNowMs] = useState(() =>
+    Date.now()
+  );
   const instanceStatusLogRef = useRef<Map<string, ScheduleInstance["status"]>>(
     new Map()
   );
@@ -3902,48 +4235,182 @@ export default function ScheduleTabContent({
     return new Date(snapped);
   }, []);
 
+  const applyOptimisticManualPlacement = useCallback(
+    (
+      candidate: ManualPlacementCandidate,
+      snappedStart: Date
+    ): OptimisticManualPlacement | null => {
+      if (!userId) return null;
+      const snappedEnd = new Date(
+        snappedStart.getTime() + candidate.durationMinutes * 60_000
+      );
+      const startUtc = snappedStart.toISOString();
+      const endUtc = snappedEnd.toISOString();
+      const nowIso = new Date().toISOString();
+      const tempId = candidate.instanceId
+        ? null
+        : `manual-placement-optimistic-${nowIso}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+      const previousInstances = instances;
+      const previousAllInstances = allInstances;
+
+      const updateExisting = (list: ScheduleInstance[]) =>
+        list.map((instance) =>
+          candidate.instanceId && instance.id === candidate.instanceId
+            ? {
+                ...instance,
+                start_utc: startUtc,
+                end_utc: endUtc,
+                duration_min: candidate.durationMinutes,
+                status: instance.status ?? "scheduled",
+                locked: true,
+                placement_source: "manual",
+                window_id: null,
+                day_type_time_block_id: null,
+                time_block_id: null,
+                overlay_window_id: null,
+              }
+            : instance
+        );
+
+      const appendCreated = (list: ScheduleInstance[]) => {
+        if (!tempId || !candidate.sourceType || !candidate.sourceId) {
+          return list;
+        }
+        if (list.some((instance) => instance.id === tempId)) return list;
+        const optimisticInstance = {
+          id: tempId,
+          user_id: userId,
+          source_type: candidate.sourceType,
+          source_id: candidate.sourceId,
+          start_utc: startUtc,
+          end_utc: endUtc,
+          duration_min: candidate.durationMinutes,
+          status: "scheduled",
+          weight_snapshot: 0,
+          energy_resolved: candidate.energy ?? "NO",
+          event_name: candidate.title ?? null,
+          locked: true,
+          placement_source: "manual",
+          window_id: null,
+          day_type_time_block_id: null,
+          time_block_id: null,
+          overlay_window_id: null,
+          practice_context_monument_id: null,
+          metadata: null,
+          canceled_reason: null,
+          completed_at: null,
+          updated_at: nowIso,
+        } as ScheduleInstance;
+        return [...list, optimisticInstance];
+      };
+
+      setInstances(
+        candidate.instanceId
+          ? updateExisting(previousInstances)
+          : appendCreated(previousInstances)
+      );
+      setAllInstances(
+        candidate.instanceId
+          ? updateExisting(previousAllInstances)
+          : appendCreated(previousAllInstances)
+      );
+
+      return {
+        tempId,
+        previousInstances,
+        previousAllInstances,
+      };
+    },
+    [allInstances, instances, userId]
+  );
+
+  const reconcileOptimisticManualPlacement = useCallback(
+    (optimistic: OptimisticManualPlacement | null, serverId: string | null) => {
+      if (!optimistic?.tempId || !serverId) return;
+      const replaceTempId = (list: ScheduleInstance[]) => {
+        const hasServerInstance = list.some(
+          (instance) => instance.id === serverId
+        );
+        if (hasServerInstance) {
+          return list.filter((instance) => instance.id !== optimistic.tempId);
+        }
+        return list
+          .map((instance) =>
+            instance.id === optimistic.tempId
+              ? { ...instance, id: serverId }
+              : instance
+          );
+      };
+      setInstances(replaceTempId);
+      setAllInstances(replaceTempId);
+    },
+    []
+  );
+
+  const rollbackOptimisticManualPlacement = useCallback(
+    (optimistic: OptimisticManualPlacement | null) => {
+      if (!optimistic) return;
+      setInstances(optimistic.previousInstances);
+      setAllInstances(optimistic.previousAllInstances);
+    },
+    []
+  );
+
   const commitManualPlacement = useCallback(
     async (candidate: ManualPlacementCandidate, previewStart: Date) => {
       const snappedStart = snapToFiveMinuteGrid(previewStart);
       const startUtc = snappedStart.toISOString();
+      const optimistic = applyOptimisticManualPlacement(candidate, snappedStart);
       try {
-        const response = await fetch(
-          `/api/schedule/instances/${candidate.instanceId}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              startUtc,
-              skipConflictResolution: true,
-            }),
-          }
-        );
+        const response = candidate.instanceId
+          ? await fetch(`/api/schedule/instances/${candidate.instanceId}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                startUtc,
+                skipConflictResolution: true,
+              }),
+            })
+          : await fetch("/api/schedule/instances", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                sourceType: candidate.sourceType,
+                sourceId: candidate.sourceId,
+                startUtc,
+                durationMin: candidate.durationMinutes,
+                energyResolved: candidate.energy,
+                eventName: candidate.title,
+              }),
+            });
         if (!response.ok) {
-          // Temporary debugging instrumentation for manual placement failures.
-          const errorPayload = await response
-            .json()
-            .catch(() => ({ error: "Unknown error" }));
+          const message = await readScheduleApiError(response);
           console.error("Manual placement update failed", {
             responseStatus: response.status,
-            errorPayload,
+            message,
           });
-          throw new Error(
-            errorPayload?.message ??
-              errorPayload?.details ??
-              errorPayload?.hint ??
-              errorPayload?.error ??
-              "Failed to update schedule"
-          );
+          throw new Error(message);
         }
         const successPayload = (await response.json().catch(() => null)) as
           | {
               success?: boolean;
               startUtc?: string;
+              instance?: { id?: string | null } | null;
               displacedProjectWarnings?: Array<unknown>;
             }
           | null;
+        const serverInstanceId =
+          typeof successPayload?.instance?.id === "string" &&
+          successPayload.instance.id.trim().length > 0
+            ? successPayload.instance.id.trim()
+            : null;
+        reconcileOptimisticManualPlacement(optimistic, serverInstanceId);
         setManualPlacementSession(null);
         manualPlacementSessionRef.current = null;
         manualPlacementPointerIdRef.current = null;
@@ -3960,23 +4427,41 @@ export default function ScheduleTabContent({
         await refreshScheduleData();
       } catch (error) {
         console.error("Manual placement failed", error);
+        rollbackOptimisticManualPlacement(optimistic);
         toast.error(
           "Manual placement failed",
           error instanceof Error ? error.message : "Please try again or pick another time."
         );
       }
     },
-    [refreshScheduleData, snapToFiveMinuteGrid, toast]
+    [
+      applyOptimisticManualPlacement,
+      reconcileOptimisticManualPlacement,
+      refreshScheduleData,
+      rollbackOptimisticManualPlacement,
+      snapToFiveMinuteGrid,
+      toast,
+    ]
   );
 
   useEffect(() => {
     const handleManualPlacementRequest = (event: Event) => {
       const detail = (event as CustomEvent<ManualPlacementRequestDetail>).detail;
       const result = detail?.result;
-      if (!result || !result.scheduleInstanceId) {
+      const sourceType = normalizeManualPlacementSourceType(result?.type);
+      const sourceId =
+        typeof result?.id === "string" && result.id.trim().length > 0
+          ? result.id.trim()
+          : null;
+      const instanceId =
+        typeof result?.scheduleInstanceId === "string" &&
+        result.scheduleInstanceId.trim().length > 0
+          ? result.scheduleInstanceId.trim()
+          : null;
+      if (!result || (!instanceId && (!sourceType || !sourceId))) {
         toast.error(
           "Manual placement unavailable",
-          "No schedulable instance was provided."
+          "No schedulable Event source was provided."
         );
         return;
       }
@@ -4007,21 +4492,24 @@ export default function ScheduleTabContent({
       const pointerId =
         typeof pointer?.pointerId === "number" ? pointer.pointerId : null;
       manualPlacementPointerIdRef.current = pointerId;
+      const initialWidth =
+        typeof pointer?.width === "number" &&
+        Number.isFinite(pointer.width) &&
+        pointer.width > 0
+          ? pointer.width
+          : Math.min(320, Math.max(240, window.innerWidth - 48));
 
       const candidate: ManualPlacementCandidate = {
-        instanceId: result.scheduleInstanceId,
+        instanceId,
+        sourceId,
         durationMinutes: safeDuration,
         title: result.name ?? null,
-        sourceType:
-          result.type === "PROJECT" || result.type === "HABIT"
-            ? result.type
-            : null,
+        sourceType,
         energy:
           typeof result.energy === "string" ? result.energy : null,
         goalName:
           typeof result.goalName === "string" ? result.goalName : null,
-        habitType:
-          typeof result.habitType === "string" ? result.habitType : null,
+        habitType: readManualPlacementHabitType(result),
         currentStreakDays:
           typeof result.currentStreakDays === "number" &&
           Number.isFinite(result.currentStreakDays)
@@ -4041,8 +4529,9 @@ export default function ScheduleTabContent({
           x: initialX,
           y: initialY,
           label: result.name ?? "Manual placement",
-          mode: "pickup",
+          mode: "pickup" as const,
           pointerId,
+          width: initialWidth,
         },
         previewTime: snappedPreview,
         pushPreview: computeManualPlacementPushPreview(
@@ -4377,7 +4866,7 @@ export default function ScheduleTabContent({
       try {
         const { data, error } = await supabase
           .from("overlay_windows" as never)
-          .select("id,created_at,updated_at,start_utc,end_utc,label")
+          .select("id,created_at,updated_at,start_utc,end_utc,label,mode")
           .eq("user_id", userId)
           .lt("start_utc", dayEndIso)
           .gt("end_utc", dayStartIso)
@@ -4410,6 +4899,18 @@ export default function ScheduleTabContent({
       );
     };
   }, [userId, currentDate, effectiveTimeZone]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (overlayWindows.length === 0) return;
+    setOverlayVisibilityNowMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setOverlayVisibilityNowMs(Date.now());
+    }, 60_000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [overlayWindows.length]);
 
   useEffect(() => {
     if (!userId) {
@@ -8071,11 +8572,21 @@ export default function ScheduleTabContent({
         .filter(
           (instance): instance is ProjectInstance => instance !== null
         );
+      const shouldHideTemporaryOverlayWindow = (
+        overlay: OverlayWindowRecord,
+        end: Date
+      ) => {
+        if (!isTemporaryOverlayWindowMode(overlay.mode)) return false;
+        if (overlayWindowIdsWithEvents.has(overlay.id)) return false;
+        const endMs = end.getTime();
+        return Number.isFinite(endMs) && endMs <= overlayVisibilityNowMs;
+      };
       const overlaySegments = [
         ...overlayWindows.map((overlay, sourceIndex) => {
           if (!overlay.start_utc || !overlay.end_utc) return null;
           const start = new Date(overlay.start_utc);
           const end = new Date(overlay.end_utc);
+          if (shouldHideTemporaryOverlayWindow(overlay, end)) return null;
           const clipped = clipSegmentToDay(
             start,
             end,
@@ -8323,6 +8834,51 @@ export default function ScheduleTabContent({
         }
       });
 
+      const manualTimelineGhost = (() => {
+        if (!manualPlacementSession?.previewTime) return null;
+        const previewStart = snapToFiveMinuteGrid(
+          manualPlacementSession.previewTime
+        );
+        const previewEnd = new Date(
+          previewStart.getTime() +
+            manualPlacementSession.candidate.durationMinutes * 60_000
+        );
+        const clipped = clipSegmentToDay(
+          previewStart,
+          previewEnd,
+          renderDayStart,
+          renderDayEnd
+        );
+        if (!clipped) return null;
+        const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+        const durationMinutes =
+          (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
+        if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+          return null;
+        }
+        const startOffsetMinutes = Math.max(
+          0,
+          startMin - modelStartHour * 60
+        );
+        const heightPx = Math.max(durationMinutes * modelPxPerMin, 1);
+        return {
+          top: toTimelinePosition(startOffsetMinutes),
+          height: toTimelinePosition(durationMinutes),
+          heightPx,
+        };
+      })();
+      const shouldHideManualPlacementInstance = (
+        instanceId?: string | null
+      ) => {
+        const draggedInstanceId =
+          manualPlacementSession?.candidate.instanceId;
+        return Boolean(
+          draggedInstanceId &&
+            instanceId &&
+            draggedInstanceId === instanceId
+        );
+      };
+
       return (
         <div
           className={containerClass}
@@ -8551,9 +9107,9 @@ export default function ScheduleTabContent({
             {dayHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;
-              const rawHabitType = placement.habitType || "HABIT";
-              const normalizedHabitType =
-                rawHabitType === "ASYNC" ? "SYNC" : rawHabitType;
+              const normalizedHabitType = normalizeTimelineHabitType(
+                placement.habitType
+              );
               const displayStart = placement.start;
               const displayEnd = placement.end;
               const startMin = getDayMinuteOffset(displayStart, renderDayStart);
@@ -8610,6 +9166,11 @@ export default function ScheduleTabContent({
               if (shouldHideHabit) {
                 return null;
               }
+              const isDraggedHabitInstance =
+                shouldHideManualPlacementInstance(placement.instanceId);
+              if (isDraggedHabitInstance) {
+                return null;
+              }
               const streakDays = Math.max(
                 0,
                 Math.round(placement.currentStreakDays ?? 0)
@@ -8634,84 +9195,14 @@ export default function ScheduleTabContent({
                   top: `${streakBadgeTopPx}px`,
                 };
               }
-              const scheduledShadow = [
-                "0 28px 58px rgba(3, 3, 6, 0.66)",
-                "0 10px 24px rgba(0, 0, 0, 0.45)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-              ].join(", ");
-              const choreShadow = [
-                "0 18px 36px rgba(56, 16, 24, 0.38)",
-                "0 8px 18px rgba(76, 20, 32, 0.26)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
-              ].join(", ");
-              const relaxerShadow = [
-                "0 20px 40px rgba(3, 47, 39, 0.52)",
-                "0 10px 22px rgba(2, 119, 84, 0.32)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
-              ].join(", ");
-              const syncShadow = [
-                "0 18px 36px rgba(58, 44, 14, 0.32)",
-                "0 8px 18px rgba(82, 62, 18, 0.24)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
-              ].join(", ");
-              const practiceShadow = [
-                "0 30px 60px rgba(2, 2, 6, 0.72)",
-                "0 12px 28px rgba(0, 0, 0, 0.48)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-              ].join(", ");
-              let cardShadow = scheduledShadow;
-              let cardOutline = "1px solid rgba(10, 10, 12, 0.85)";
-              let habitBorderClass = "border-black/70";
-              let habitTypeClass = "habit-card--type-default";
-
-              if (normalizedHabitType === "MEMO") {
-                habitTypeClass = "habit-card--type-memo";
-              } else if (normalizedHabitType === "CHORE") {
-                habitTypeClass = "habit-card--type-chore";
-              } else if (normalizedHabitType === "RELAXER") {
-                habitTypeClass = "habit-card--type-relaxer";
-              } else if (normalizedHabitType === "PRACTICE") {
-                habitTypeClass = "habit-card--type-practice";
-              } else if (normalizedHabitType === "SYNC") {
-                habitTypeClass = "habit-card--type-sync";
-              }
-
-              if (
-                (normalizedHabitType === "SYNC" ||
-                  normalizedHabitType === "MEMO") &&
-                isHabitCompleted
-              ) {
-                cardShadow = FOCUS_POMO_COMPLETE_SHADOW;
-                cardOutline = FOCUS_POMO_COMPLETE_OUTLINE;
-                habitBorderClass = "border-green-900/45";
-              } else if (normalizedHabitType === "CHORE" && isHabitCompleted) {
-                cardShadow = FOCUS_POMO_COMPLETE_SHADOW;
-                cardOutline = FOCUS_POMO_COMPLETE_OUTLINE;
-                habitBorderClass = "border-green-900/45";
-              } else if (isHabitCompleted) {
-                cardShadow = FOCUS_POMO_COMPLETE_SHADOW;
-                cardOutline = FOCUS_POMO_COMPLETE_OUTLINE;
-                habitBorderClass = "border-green-900/45";
-              } else if (normalizedHabitType === "CHORE") {
-                cardShadow = choreShadow;
-                cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
-                habitBorderClass = "border-rose-200/45";
-              } else if (normalizedHabitType === "RELAXER") {
-                cardShadow = relaxerShadow;
-                cardOutline = "1px solid rgba(52, 211, 153, 0.55)";
-                habitBorderClass = "border-emerald-200/60";
-              } else if (normalizedHabitType === "PRACTICE") {
-                cardShadow = practiceShadow;
-                cardOutline = "1px solid rgba(8, 8, 12, 0.92)";
-                habitBorderClass = "border-slate-500/50";
-              } else if (
-                normalizedHabitType === "SYNC" ||
-                normalizedHabitType === "MEMO"
-              ) {
-                cardShadow = syncShadow;
-                cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
-                habitBorderClass = "border-amber-200/45";
-              }
+              const habitVisuals = getScheduledHabitCardVisuals({
+                habitType: normalizedHabitType,
+                completed: isHabitCompleted,
+              });
+              const cardShadow = habitVisuals.shadow;
+              const cardOutline = habitVisuals.outline;
+              const habitBorderClass = habitVisuals.borderClass;
+              const habitTypeClass = habitVisuals.typeClass;
               const practiceContextIdForPlacement =
                 normalizedHabitType === "PRACTICE"
                   ? (placement.practiceContextId ?? null)
@@ -8767,10 +9258,7 @@ export default function ScheduleTabContent({
                 boxShadow: habitCardShadow,
                 outline: cardOutline,
                 outlineOffset: "-1px",
-                background:
-                  isHabitCompleted
-                    ? FOCUS_POMO_COMPLETE_BACKGROUND
-                    : getTimelineHabitEventBackground(normalizedHabitType),
+                background: habitVisuals.background,
               };
               const hasHabitInstance = Boolean(placement.habitId);
               const habitBounceActive =
@@ -9068,6 +9556,24 @@ export default function ScheduleTabContent({
                 </motion.div>
               );
             })}
+            {manualPlacementSession && manualTimelineGhost ? (
+              <div
+                className="pointer-events-none absolute"
+                style={{
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: manualTimelineGhost.top,
+                  height: manualTimelineGhost.height,
+                  zIndex: TIMELINE_STACK_BASE_Z_INDEX + 1000,
+                }}
+              >
+                <ManualPlacementTimelineCard
+                  candidate={manualPlacementSession.candidate}
+                  label={manualPlacementSession.ghost.label}
+                  mode={manualPlacementSession.ghost.mode}
+                  heightPx={manualTimelineGhost.heightPx}
+                />
+              </div>
+            ) : null}
             {dayProjectInstances.map(
               ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
@@ -9203,7 +9709,7 @@ export default function ScheduleTabContent({
                 const effectiveStatus =
                   pendingStatus ?? instance.status ?? "scheduled";
                 const isDraggedInstance =
-                  manualPlacementSession?.candidate.instanceId === instance.id;
+                  shouldHideManualPlacementInstance(instance.id);
                 const canToggle =
                   effectiveStatus === "completed" ||
                   effectiveStatus === "scheduled";
@@ -9748,6 +10254,11 @@ export default function ScheduleTabContent({
                                 if (hideForEdit) {
                                   return null;
                                 }
+                                if (
+                                  shouldHideManualPlacementInstance(instanceId)
+                                ) {
+                                  return null;
+                                }
 
                                 const nestedLayoutTokens =
                                   kind === "scheduled" && instanceId
@@ -10040,6 +10551,8 @@ export default function ScheduleTabContent({
                     longPressBounceId === instance.id;
                   const standaloneCompletionBounceActive =
                     completionBounceId === instance.id;
+                  const isDraggedStandaloneInstance =
+                    shouldHideManualPlacementInstance(instance.id);
 
                   const hideForEdit = Boolean(
                     editingSnapshot &&
@@ -10056,6 +10569,10 @@ export default function ScheduleTabContent({
                     scheduleInstanceLayoutTokens(instanceLayoutId);
 
                   if (hideForEdit) {
+                    return null;
+                  }
+
+                  if (isDraggedStandaloneInstance) {
                     return null;
                   }
 
@@ -10187,9 +10704,13 @@ export default function ScheduleTabContent({
       setProjectExpansion,
       expandedProjects,
       overlayWindows,
+      overlayWindowIdsWithEvents,
+      overlayVisibilityNowMs,
       commandBlocks,
       pendingInstanceStatuses,
       pendingBacklogTaskIds,
+      manualPlacementSession,
+      snapToFiveMinuteGrid,
       projectGoalRelations,
       getHabitCompletionStatus,
       handleToggleInstanceCompletion,
@@ -10309,218 +10830,6 @@ export default function ScheduleTabContent({
     });
     return () => cancelAnimationFrame(raf);
   }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
-
-  const manualGhostLayout = useMemo(() => {
-    if (!manualPlacementSession || !dayTimelineModel) return null;
-    const previewTime = manualPlacementSession.previewTime;
-    if (!previewTime) return null;
-    const previewStart = snapToFiveMinuteGrid(previewTime);
-    const previewEnd = new Date(
-      previewStart.getTime() +
-        manualPlacementSession.candidate.durationMinutes * 60_000
-    );
-    const clipped = clipSegmentToDay(
-      previewStart,
-      previewEnd,
-      renderDayStart,
-      renderDayEnd
-    );
-    if (!clipped) return null;
-    const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
-    const durationMin =
-      (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
-    if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
-    const startOffset = Math.max(0, startMin - (dayTimelineModel.startHour ?? 0) * 60);
-    const heightPx = durationMin * pxPerMin;
-    const timelineContent = dayTimelineContainerRef.current?.querySelector(
-      ".timeline-content"
-    ) as HTMLElement | null;
-    const timelineRect = timelineContent?.getBoundingClientRect() ?? null;
-    const useCompactShadow =
-      Number.isFinite(heightPx) &&
-      heightPx > 0 &&
-      heightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
-    const shadow = useCompactShadow
-      ? TIMELINE_COMPACT_CARD_SHADOW
-      : TIMELINE_RESTING_CARD_SHADOW;
-    return {
-      top: timelineRect
-        ? timelineRect.top + startOffset * pxPerMin
-        : manualPlacementSession.ghost.y,
-      height: heightPx,
-      shadow,
-    };
-  }, [
-    dayTimelineModel,
-    manualPlacementSession,
-    pxPerMin,
-    renderDayEnd,
-    renderDayStart,
-    snapToFiveMinuteGrid,
-  ]);
-
-  const manualPlacementGhostPortal =
-    manualPlacementSession?.ghost && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            className={clsx(
-              "pointer-events-none fixed inset-0 z-[2147483646]"
-            )}
-            style={TIMELINE_CSS_VARIABLES}
-          >
-            <div
-              className={clsx(
-                "absolute transition-transform duration-150 ease-out",
-                manualPlacementSession.ghost.mode === "placing"
-                  ? "scale-100"
-                  : "scale-[0.97]"
-              )}
-              style={
-                manualGhostLayout
-                  ? {
-                      ...TIMELINE_CARD_BOUNDS,
-                      top: `${manualGhostLayout.top}px`,
-                      height: `${manualGhostLayout.height}px`,
-                    }
-                  : {
-                      left: manualPlacementSession.ghost.x,
-                      top: manualPlacementSession.ghost.y,
-                      transform: "translate(-50%, -50%)",
-                    }
-              }
-            >
-              {(() => {
-                const candidate = manualPlacementSession.candidate;
-                const title = candidate.title ?? manualPlacementSession.ghost.label;
-                const wrapTitle = candidate.durationMinutes >= 30;
-                const energyLevel =
-                  resolveEnergyLevel(candidate.energy) ?? "NO";
-                const isHabitGhost =
-                  candidate.sourceType === "HABIT" ||
-                  Boolean(candidate.habitType);
-
-                if (isHabitGhost) {
-                const rawHabitType = candidate.habitType ?? "HABIT";
-                const normalizedHabitType =
-                    rawHabitType === "ASYNC" ? "SYNC" : rawHabitType;
-                  const ghostHeight = manualGhostLayout?.height ?? 0;
-                  let habitBorderClass = "border-black/70";
-                  let habitTypeClass = "habit-card--type-default";
-                  if (normalizedHabitType === "MEMO") {
-                    habitTypeClass = "habit-card--type-memo";
-                    habitBorderClass = "border-amber-200/45";
-                  } else if (normalizedHabitType === "CHORE") {
-                    habitTypeClass = "habit-card--type-chore";
-                    habitBorderClass = "border-rose-200/45";
-                  } else if (normalizedHabitType === "RELAXER") {
-                    habitTypeClass = "habit-card--type-relaxer";
-                    habitBorderClass = "border-emerald-200/60";
-                  } else if (normalizedHabitType === "PRACTICE") {
-                    habitTypeClass = "habit-card--type-practice";
-                    habitBorderClass = "border-slate-500/50";
-                  } else if (normalizedHabitType === "SYNC") {
-                    habitTypeClass = "habit-card--type-sync";
-                    habitBorderClass = "border-amber-200/45";
-                  }
-                  const useCompactShadow =
-                    Number.isFinite(ghostHeight) &&
-                    ghostHeight > 0 &&
-                    ghostHeight <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
-                  const habitCardShadow = useCompactShadow
-                    ? TIMELINE_COMPACT_CARD_SHADOW
-                    : TIMELINE_RESTING_CARD_SHADOW;
-                  const habitCornerClass = getTimelineCardCornerClass("full");
-                  const habitPaddingClass = "py-2";
-                  return (
-                    <div
-                    className={clsx(
-                      "habit-card relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
-                      habitCornerClass,
-                      habitPaddingClass,
-                      habitBorderClass,
-                      habitTypeClass,
-                      manualPlacementSession.ghost.mode === "placing"
-                        ? "opacity-100"
-                        : "opacity-90"
-                    )}
-                      style={{
-                        ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
-                        boxShadow: habitCardShadow,
-                        outline: "1px solid rgba(10, 10, 12, 0.85)",
-                        outlineOffset: "-1px",
-                        background:
-                          "linear-gradient(135deg, rgba(46,46,52,0.94) 0%, rgba(58,58,66,0.92) 45%, rgba(82,82,92,0.88) 100%)",
-                        height: manualGhostLayout ? "100%" : undefined,
-                        minHeight: manualGhostLayout ? undefined : 56,
-                        alignItems: "center",
-                      }}
-                    >
-                      <ManualPlacementHabitCard
-                        title={title}
-                        streakDays={candidate.currentStreakDays}
-                        wrapTitle={wrapTitle}
-                      />
-                    </div>
-                  );
-                }
-
-                const goalName =
-                  candidate.goalName && candidate.goalName.trim().length > 0
-                    ? candidate.goalName
-                    : null;
-                const rankDisplay =
-                  typeof candidate.globalRank === "number" &&
-                  Number.isFinite(candidate.globalRank) &&
-                  candidate.globalRank > 0
-                    ? `#${candidate.globalRank}`
-                    : null;
-                const ghostHeight = manualGhostLayout?.height ?? 0;
-                const useCompactShadow =
-                  Number.isFinite(ghostHeight) &&
-                  ghostHeight > 0 &&
-                  ghostHeight <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
-                const sharedCardShadow = useCompactShadow
-                  ? TIMELINE_COMPACT_CARD_SHADOW
-                  : TIMELINE_RESTING_CARD_SHADOW;
-                const projectCornerClass = getTimelineCardCornerClass("full");
-                const collapsedCardPaddingClass = goalName ? "pt-4 pb-2" : "py-2";
-                return (
-                  <div
-                    className={clsx(
-                      "relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white backdrop-blur-sm transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
-                      projectCornerClass,
-                      collapsedCardPaddingClass,
-                      "border-black/70",
-                      manualPlacementSession.ghost.mode === "placing"
-                        ? "opacity-100"
-                        : "opacity-90"
-                    )}
-                    style={{
-                      ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
-                      boxShadow: sharedCardShadow,
-                      outline: "1px solid rgba(10, 10, 12, 0.85)",
-                      outlineOffset: "-1px",
-                      background:
-                        "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)",
-                      height: manualGhostLayout ? "100%" : undefined,
-                      minHeight: manualGhostLayout ? undefined : 56,
-                    }}
-                  >
-                    <ManualPlacementProjectCard
-                      title={title}
-                      goalName={goalName}
-                      energyLevel={energyLevel}
-                      rankDisplay={rankDisplay}
-                      wrapTitle={wrapTitle}
-                    />
-                  </div>
-                );
-              })()}
-            </div>
-          </div>,
-          document.body
-        )
-      : null;
 
   const timeBlockConstraintsPortal =
     selectedTimeBlockForConstraints && typeof document !== "undefined"
@@ -11001,7 +11310,6 @@ export default function ScheduleTabContent({
 
   return (
     <LayoutGroup id="schedule-shared-layout">
-      {manualPlacementGhostPortal}
       {timeBlockConstraintsPortal}
       <ProtectedRoute>
         <ScheduleTopBar

@@ -2,7 +2,33 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  useLocalParticipant,
+  useRemoteParticipants,
+  useTracks,
+  VideoTrack,
+} from "@livekit/components-react";
+import { Track } from "livekit-client";
+import {
+  Loader2,
+  Mic,
+  MicOff,
+  Phone,
+  PhoneOff,
+  Video,
+  VideoOff,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useToastHelpers } from "@/components/ui/toast";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -25,12 +51,21 @@ type ThreadParticipant = {
   username: string | null;
   displayName: string;
   avatarUrl: string | null;
+  canStartVoiceCall: boolean;
 };
 
 type ThreadResponse = {
   currentUserId: string;
   participant: ThreadParticipant;
   messages: ThreadMessage[];
+};
+
+type CreatorCallType = "voice" | "video";
+
+type CreatorCallSession = {
+  serverUrl: string;
+  token: string;
+  callType: CreatorCallType;
 };
 
 const INBOX_REFRESH_REQUEST_KEY = "premium-app:inbox-refresh-requested";
@@ -76,6 +111,7 @@ function getInitials(label: string) {
 export default function InboxThreadPage() {
   const params = useParams<{ userId: string }>();
   const router = useRouter();
+  const toast = useToastHelpers();
   const participantId = params?.userId;
 
   const [participant, setParticipant] = useState<ThreadParticipant | null>(
@@ -88,6 +124,11 @@ export default function InboxThreadPage() {
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [callSession, setCallSession] = useState<CreatorCallSession | null>(
+    null
+  );
+  const [callStartingType, setCallStartingType] =
+    useState<CreatorCallType | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const composerEditVersionRef = useRef(0);
 
@@ -250,6 +291,60 @@ export default function InboxThreadPage() {
     }
   };
 
+  const handleStartCall = useCallback(async (callType: CreatorCallType) => {
+    if (
+      !participant?.canStartVoiceCall ||
+      !participant.userId ||
+      callStartingType
+    ) {
+      void hapticWarningPattern();
+      return;
+    }
+
+    const callLabel = callType === "video" ? "Video calls" : "Voice calls";
+
+    try {
+      setCallStartingType(callType);
+      const response = await fetch("/api/voice-calls/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: participant.userId, callType }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`${callLabel} are not configured yet.`);
+      }
+
+      const data = (await response.json()) as Partial<CreatorCallSession>;
+      if (!data.serverUrl || !data.token) {
+        throw new Error(`${callLabel} are not configured yet.`);
+      }
+
+      setCallSession({
+        serverUrl: data.serverUrl,
+        token: data.token,
+        callType,
+      });
+      void hapticComplete();
+    } catch {
+      void hapticWarningPattern();
+      toast.info(
+        `${callLabel} are not configured yet`,
+        "CREATOR app-to-app calling will turn on after LiveKit is configured."
+      );
+    } finally {
+      setCallStartingType(null);
+    }
+  }, [callStartingType, participant, toast]);
+
+  const handleStartVoiceCall = useCallback(() => {
+    void handleStartCall("voice");
+  }, [handleStartCall]);
+
+  const handleStartVideoCall = useCallback(() => {
+    void handleStartCall("video");
+  }, [handleStartCall]);
+
   const threadTitle = participant?.displayName ?? "Conversation";
   const threadSubtitle = participant?.username
     ? `@${participant.username}`
@@ -354,28 +449,66 @@ export default function InboxThreadPage() {
               </svg>
             </button>
             {participant ? (
-              <div className="flex min-w-0 items-center gap-2.5">
-                <Avatar className="h-8 w-8 bg-white/10">
-                  {participant.avatarUrl ? (
-                    <AvatarImage
-                      src={participant.avatarUrl}
-                      alt={`${participant.displayName} avatar`}
-                    />
-                  ) : null}
-                  <AvatarFallback className="bg-white/10 text-[0.6rem] font-semibold text-white/75">
-                    {getInitials(participant.displayName)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">
-                    {threadTitle}
-                  </p>
-                  {threadSubtitle ? (
-                    <p className="truncate text-[0.7rem] text-white/45">
-                      {threadSubtitle}
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2.5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Avatar className="h-8 w-8 bg-white/10">
+                    {participant.avatarUrl ? (
+                      <AvatarImage
+                        src={participant.avatarUrl}
+                        alt={`${participant.displayName} avatar`}
+                      />
+                    ) : null}
+                    <AvatarFallback className="bg-white/10 text-[0.6rem] font-semibold text-white/75">
+                      {getInitials(participant.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-white">
+                      {threadTitle}
                     </p>
-                  ) : null}
+                    {threadSubtitle ? (
+                      <p className="truncate text-[0.7rem] text-white/45">
+                        {threadSubtitle}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
+                {participant.canStartVoiceCall ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleStartVoiceCall}
+                      disabled={Boolean(callStartingType)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white/75 transition hover:bg-white/[0.14] hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`Start CREATOR voice call with ${threadTitle}`}
+                    >
+                      {callStartingType === "voice" ? (
+                        <Loader2
+                          className="h-4 w-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Phone className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartVideoCall}
+                      disabled={Boolean(callStartingType)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white/75 transition hover:bg-white/[0.14] hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`Start CREATOR video call with ${threadTitle}`}
+                    >
+                      {callStartingType === "video" ? (
+                        <Loader2
+                          className="h-4 w-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Video className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="text-sm font-semibold text-white">{threadTitle}</p>
@@ -465,6 +598,244 @@ export default function InboxThreadPage() {
             </p>
           ) : null}
         </form>
+      </div>
+      {participant && callSession ? (
+        <CreatorCallSheet
+          session={callSession}
+          participant={participant}
+          open={Boolean(callSession)}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setCallSession(null);
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type CreatorCallSheetProps = {
+  session: CreatorCallSession;
+  participant: ThreadParticipant;
+  open: boolean;
+  onOpenChange(nextOpen: boolean): void;
+};
+
+function CreatorCallSheet({
+  session,
+  participant,
+  open,
+  onOpenChange,
+}: CreatorCallSheetProps) {
+  const isVideoCall = session.callType === "video";
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        className={`mx-auto border-white/10 bg-[linear-gradient(180deg,rgba(30,30,34,0.98),rgba(5,5,6,0.99))] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5 text-white shadow-[0_-28px_80px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.08)] sm:rounded-t-[28px] sm:border ${
+          isVideoCall ? "sm:max-w-2xl" : "sm:max-w-md"
+        }`}
+      >
+        <SheetHeader className="px-0 pb-2 pt-0 text-center">
+          <div className={`mx-auto mb-2 ${isVideoCall ? "sm:hidden" : ""}`}>
+            <Avatar className="h-16 w-16 border border-white/10 bg-white/10">
+              {participant.avatarUrl ? (
+                <AvatarImage
+                  src={participant.avatarUrl}
+                  alt={`${participant.displayName} avatar`}
+                />
+              ) : null}
+              <AvatarFallback className="bg-white/10 text-base font-semibold text-white/75">
+                {getInitials(participant.displayName)}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+          <SheetTitle className="text-base font-semibold text-white">
+            {participant.displayName}
+          </SheetTitle>
+          <SheetDescription className="text-xs text-white/45">
+            {isVideoCall ? "CREATOR video call" : "CREATOR voice call"}
+          </SheetDescription>
+        </SheetHeader>
+        <LiveKitRoom
+          token={session.token}
+          serverUrl={session.serverUrl}
+          connect
+          audio
+          video={isVideoCall}
+          onDisconnected={() => onOpenChange(false)}
+          className="contents"
+        >
+          <RoomAudioRenderer />
+          {isVideoCall ? (
+            <VideoCallExperience
+              participant={participant}
+              onEnd={() => onOpenChange(false)}
+            />
+          ) : (
+            <VoiceCallControls onEnd={() => onOpenChange(false)} />
+          )}
+        </LiveKitRoom>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function VideoCallExperience({
+  participant,
+  onEnd,
+}: {
+  participant: ThreadParticipant;
+  onEnd(): void;
+}) {
+  const tracks = useTracks([Track.Source.Camera]);
+  const remoteParticipants = useRemoteParticipants();
+  const localTrack = tracks.find((track) => track.participant.isLocal);
+  const remoteTrack = tracks.find((track) => !track.participant.isLocal);
+  const remoteParticipant = remoteParticipants[0];
+
+  return (
+    <div className="flex flex-col gap-4 pb-1 pt-3">
+      <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-black/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="aspect-[4/5] sm:aspect-video">
+          {remoteTrack ? (
+            <VideoTrack
+              trackRef={remoteTrack}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#111113] px-6 text-center">
+              <Avatar className="h-20 w-20 border border-white/10 bg-white/10">
+                {participant.avatarUrl ? (
+                  <AvatarImage
+                    src={participant.avatarUrl}
+                    alt={`${participant.displayName} avatar`}
+                  />
+                ) : null}
+                <AvatarFallback className="bg-white/10 text-lg font-semibold text-white/75">
+                  {getInitials(participant.displayName)}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="text-sm font-medium text-white">
+                  {remoteParticipant
+                    ? "Waiting for camera"
+                    : `Calling ${participant.displayName}`}
+                </p>
+                <p className="mt-1 text-xs text-white/40">
+                  Remote video appears here when available.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="absolute bottom-3 right-3 h-28 w-20 overflow-hidden rounded-2xl border border-white/15 bg-black shadow-[0_14px_35px_rgba(0,0,0,0.45)] sm:h-32 sm:w-24">
+          {localTrack ? (
+            <VideoTrack
+              trackRef={localTrack}
+              className="h-full w-full scale-x-[-1] object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-white/[0.06] text-white/35">
+              <VideoOff className="h-5 w-5" aria-hidden="true" />
+            </div>
+          )}
+        </div>
+      </div>
+      <VideoCallControls onEnd={onEnd} />
+    </div>
+  );
+}
+
+function VideoCallControls({ onEnd }: { onEnd(): void }) {
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } =
+    useLocalParticipant();
+
+  const handleToggleMute = useCallback(() => {
+    void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+  }, [isMicrophoneEnabled, localParticipant]);
+
+  const handleToggleCamera = useCallback(() => {
+    void localParticipant.setCameraEnabled(!isCameraEnabled);
+  }, [isCameraEnabled, localParticipant]);
+
+  return (
+    <div className="flex items-center justify-center gap-4">
+      <button
+        type="button"
+        onClick={handleToggleMute}
+        className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white transition hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+        aria-label={
+          isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"
+        }
+      >
+        {isMicrophoneEnabled ? (
+          <Mic className="h-5 w-5" aria-hidden="true" />
+        ) : (
+          <MicOff className="h-5 w-5" aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={handleToggleCamera}
+        className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white transition hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+        aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
+      >
+        {isCameraEnabled ? (
+          <Video className="h-5 w-5" aria-hidden="true" />
+        ) : (
+          <VideoOff className="h-5 w-5" aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onEnd}
+        className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-rose-500 text-white shadow-[0_16px_35px_rgba(244,63,94,0.28)] transition hover:bg-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/60"
+        aria-label="End video call"
+      >
+        <PhoneOff className="h-5 w-5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function VoiceCallControls({ onEnd }: { onEnd(): void }) {
+  const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
+
+  const handleToggleMute = useCallback(() => {
+    void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+  }, [isMicrophoneEnabled, localParticipant]);
+
+  return (
+    <div className="flex flex-col items-center gap-5 pb-1 pt-4">
+      <div className="rounded-full border border-emerald-300/15 bg-emerald-300/10 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-emerald-100/80">
+        Audio only
+      </div>
+      <div className="flex items-center justify-center gap-4">
+        <button
+          type="button"
+          onClick={handleToggleMute}
+          className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white transition hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+          aria-label={
+            isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"
+          }
+        >
+          {isMicrophoneEnabled ? (
+            <Mic className="h-5 w-5" aria-hidden="true" />
+          ) : (
+            <MicOff className="h-5 w-5" aria-hidden="true" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onEnd}
+          className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-rose-500 text-white shadow-[0_16px_35px_rgba(244,63,94,0.28)] transition hover:bg-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/60"
+          aria-label="End voice call"
+        >
+          <PhoneOff className="h-5 w-5" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );

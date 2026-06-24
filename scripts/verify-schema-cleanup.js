@@ -88,7 +88,7 @@ async function verifySchema() {
     // 3. Check if profiles table has the expected columns
     console.log("\n🔍 Checking Profile Columns...");
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("profiles")
         .select("id, name, dob, city, bio, avatar_url, updated_at")
         .limit(1);
@@ -156,7 +156,7 @@ async function verifySchema() {
     // Test cats table insert/select
     try {
       const testCatName = `test_cat_${Date.now()}`;
-      const { data: insertData, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from("cats")
         .insert({
           name: testCatName,

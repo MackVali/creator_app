@@ -32,7 +32,6 @@ export interface BuildProfileModulesArgs {
 }
 
 export function buildProfileModules({
-  profile,
   contentCards,
 }: BuildProfileModulesArgs): ProfileModule[] {
   const modules: ProfileModule[] = [];
