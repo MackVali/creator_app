@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import {
   Bug,
   ChevronLeft,
   Calendar,
   RefreshCcw,
+  X,
 } from "lucide-react";
 interface ScheduleTopBarProps {
   year: number;
@@ -21,6 +21,8 @@ interface ScheduleTopBarProps {
   onReschedule?: () => void;
   canReschedule?: boolean;
   isRescheduling?: boolean;
+  onClearUncompletedScheduleInstances?: () => void | Promise<void>;
+  isClearingUncompletedScheduleInstances?: boolean;
   onHeightChange?: (height: number) => void;
 }
 
@@ -36,10 +38,13 @@ export function ScheduleTopBar({
   onReschedule,
   canReschedule = true,
   isRescheduling = false,
+  onClearUncompletedScheduleInstances,
+  isClearingUncompletedScheduleInstances = false,
   onHeightChange,
 }: ScheduleTopBarProps) {
-  const router = useRouter();
   const headerRef = useRef<HTMLElement | null>(null);
+  const debugMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isDebugMenuOpen, setIsDebugMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!onHeightChange) return;
@@ -76,6 +81,40 @@ export function ScheduleTopBar({
     return () => observer.disconnect();
   }, [onHeightChange]);
 
+  useEffect(() => {
+    if (!isDebugMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        debugMenuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsDebugMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsDebugMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isDebugMenuOpen]);
+
+  const handleClearUncompletedScheduleInstances = async () => {
+    if (!onClearUncompletedScheduleInstances) return;
+    await onClearUncompletedScheduleInstances();
+    setIsDebugMenuOpen(false);
+  };
+
   const iconButtonClass =
     "app-button inline-flex h-9 w-9 items-center justify-center rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_22px_rgba(0,0,0,0.12)] backdrop-blur-xl transition-colors hover:border-[var(--border)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30";
 
@@ -84,6 +123,9 @@ export function ScheduleTopBar({
 
   const debugButtonClass =
     "app-button hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.12)] backdrop-blur-xl transition hover:border-[var(--border)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
+
+  const debugMenuActionClass =
+    "inline-flex h-8 w-full items-center justify-center rounded-b-full rounded-t-none bg-black text-zinc-500 transition hover:bg-zinc-950 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70 disabled:pointer-events-none disabled:opacity-45";
 
   const safeAreaPadding: CSSProperties = {
     paddingTop: "calc(0.45rem + env(safe-area-inset-top, 0px))",
@@ -160,23 +202,58 @@ export function ScheduleTopBar({
             </button>
           </>
         ) : null}
-        <button
-          type="button"
-          onClick={() => router.push("/schedule/debug")}
-          aria-label="Open schedule debug"
-          className={debugButtonClass}
-        >
-          <Bug className="h-4 w-4 text-[var(--muted)]" />
-          <span>Schedule Debug</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => router.push("/schedule/debug")}
-          aria-label="Schedule Debug"
-          className={cn(iconButtonClass, "sm:hidden")}
-        >
-          <Bug className="h-5 w-5 text-[var(--muted)]" />
-        </button>
+        <div ref={debugMenuRef} className="relative flex items-center">
+          <button
+            type="button"
+            onClick={() => setIsDebugMenuOpen((open) => !open)}
+            aria-label="Toggle schedule debug menu"
+            aria-expanded={isDebugMenuOpen}
+            className={cn(
+              debugButtonClass,
+              isDebugMenuOpen &&
+                "relative z-[140] bg-black text-zinc-100 hover:bg-black hover:text-zinc-100"
+            )}
+          >
+            <Bug className="h-4 w-4 text-[var(--muted)]" />
+            <span>Schedule Debug</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDebugMenuOpen((open) => !open)}
+            aria-label="Toggle Schedule Debug menu"
+            aria-expanded={isDebugMenuOpen}
+            className={cn(
+              iconButtonClass,
+              "sm:hidden",
+              isDebugMenuOpen &&
+                "relative z-[140] bg-black hover:bg-black"
+            )}
+          >
+            <Bug className="h-5 w-5 text-[var(--muted)]" />
+          </button>
+          <div
+            className={cn(
+              "absolute left-0 top-[calc(100%-0.375rem)] z-[130] flex w-full origin-top overflow-hidden rounded-b-full rounded-t-none bg-black p-0 shadow-none transition-all duration-150 ease-out",
+              isDebugMenuOpen
+                ? "translate-y-0 scale-y-100 opacity-100"
+                : "pointer-events-none -translate-y-2 scale-y-75 opacity-0"
+            )}
+          >
+            <button
+              type="button"
+              onClick={handleClearUncompletedScheduleInstances}
+              disabled={
+                !onClearUncompletedScheduleInstances ||
+                isClearingUncompletedScheduleInstances
+              }
+              aria-label="Clear uncompleted schedule instances"
+              title="Clear uncompleted schedule instances"
+              className={debugMenuActionClass}
+            >
+              <X className="h-5 w-5" strokeWidth={2.4} />
+            </button>
+          </div>
+        </div>
       </div>
     </header>
   );

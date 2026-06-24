@@ -33,7 +33,10 @@ import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
-import { hapticLevelUp } from "@/lib/haptics/creatorHaptics";
+import {
+  hapticErrorPattern,
+  hapticLevelUp,
+} from "@/lib/haptics/creatorHaptics";
 import {
   addGoalToCampaign,
   listGoalCampaignCards,
@@ -91,6 +94,21 @@ function mapEnergy(
     default:
       return "No";
   }
+}
+
+function isGoalProjectCompleted(project: Project): boolean {
+  const projectWithCompletion = project as Project & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+
+  return (
+    Boolean(projectWithCompletion.completedAt) ||
+    Boolean(projectWithCompletion.completed_at) ||
+    project.status === "Done" ||
+    project.stage === "RELEASE" ||
+    Number(project.progress ?? 0) >= 100
+  );
 }
 
 function projectStageToStatus(stage: string): Project["status"] {
@@ -1490,6 +1508,11 @@ export default function GoalsPage() {
   };
 
   const handleManualGoalComplete = async (goal: Goal) => {
+    if (goal.projects.some((project) => !isGoalProjectCompleted(project))) {
+      void hapticErrorPattern();
+      return;
+    }
+
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
     const completedAt = new Date().toISOString();

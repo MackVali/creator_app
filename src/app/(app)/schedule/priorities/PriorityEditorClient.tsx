@@ -244,6 +244,13 @@ function updateRoadmapTask(
   });
 }
 
+function isRoadmapTaskComplete(task: RoadmapPriorityTask) {
+  return (
+    Boolean(task.completedAt) ||
+    task.stage?.trim().toUpperCase() === "PERFECT"
+  );
+}
+
 async function awardPriorityEditorTaskCompletion(task: RoadmapPriorityTask, completedAt: string) {
   const body: Record<string, unknown> = {
     kind: "task",
@@ -739,6 +746,15 @@ export default function PriorityEditorClient({
 
   const handleRoadmapProjectComplete = useCallback(
     async (project: RoadmapPriorityProject) => {
+      if (
+        (project.tasks?.length ?? 0) > 0 &&
+        project.tasks?.some((task) => !isRoadmapTaskComplete(task))
+      ) {
+        setGlobalPriorityError("Complete all Tasks first.");
+        void hapticErrorPattern();
+        return;
+      }
+
       const supabase = getSupabaseBrowser();
       if (!supabase) {
         setGlobalPriorityError("Unable to complete Project.");

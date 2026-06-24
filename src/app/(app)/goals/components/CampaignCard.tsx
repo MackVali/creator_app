@@ -36,6 +36,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import { hapticErrorPattern } from "@/lib/haptics/creatorHaptics";
 import { useToastHelpers } from "@/components/ui/toast";
 import { teardownFabViewportState } from "@/components/ui/fabViewportCleanup";
 
@@ -254,6 +255,15 @@ function getProjectCompletedTimestamp(project: Project) {
   );
 }
 
+function isCampaignDrawerProjectCompleted(project: Project): boolean {
+  return (
+    Boolean(getProjectCompletedTimestamp(project)) ||
+    project.status === "Done" ||
+    project.stage === "RELEASE" ||
+    Number(project.progress ?? 0) >= 100
+  );
+}
+
 function getFinitePriorityRank(goal: Goal): number | null {
   return typeof goal.priorityRank === "number" &&
     Number.isFinite(goal.priorityRank)
@@ -351,13 +361,8 @@ function DraggableGoalCard({
       ? (goal.emoji ?? goal.monumentEmoji)!.trim()
       : goal.title.slice(0, 2).toUpperCase();
   const allProjectsCompleted =
-    goal.projects.length > 0 &&
-    goal.projects.every(
-      (project) =>
-        project.status === "Done" ||
-        project.stage === "RELEASE" ||
-        Number(project.progress ?? 0) >= 100
-    );
+    goal.projects.length === 0 ||
+    goal.projects.every(isCampaignDrawerProjectCompleted);
   const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
   const isCompleted = normalizedStatus === "COMPLETED";
   const isReadyToComplete = allProjectsCompleted && !isCompleted;
@@ -433,7 +438,9 @@ function DraggableGoalCard({
       rejectTimerRef.current = null;
       setManualCompleteRejected(false);
     }, 460);
-  }, []);
+    void hapticErrorPattern();
+    toast.error("Complete all projects first");
+  }, [toast]);
 
   const handleManualCompleteAttempt = useCallback(() => {
     if (isReadyToComplete) {

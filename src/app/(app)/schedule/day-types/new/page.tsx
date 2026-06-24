@@ -268,6 +268,10 @@ function getAverageDayTypeName(dayKey: string): string {
   return `AVERAGE ${(DAY_KEY_TO_FULL_LABEL[dayKey] ?? dayKey).toUpperCase()}`;
 }
 
+function isBasicWeekdayDayType(dayType: DayType | null | undefined, dayKey: string): boolean {
+  return normalizeLabel(dayType?.name) === getAverageDayTypeName(dayKey);
+}
+
 function normalizeHabitTypeValue(value?: string | null): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim().toUpperCase();
@@ -451,6 +455,7 @@ export default function NewDayTypePage() {
   const [schedulerMode, setSchedulerMode] = useState<SchedulerModeType>("REGULAR");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingWeekdayKey, setSavingWeekdayKey] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [editingBlockContext, setEditingBlockContext] = useState<TimeBlockEditContext | null>(null);
@@ -1442,14 +1447,14 @@ export default function NewDayTypePage() {
     setAttachConflictBlockId(null);
   }, [focusedDayKey, selectedDayTypeId]);
 
-  const startCreateDayType = useCallback(() => {
+  const startCreateDayType = useCallback((dayKey = focusedDayKey) => {
     setIsCreatingDayType(true);
     setSelectedDayTypeId(makeId());
     setSelectedIds(new Set());
     setDayTypeName("");
     setSchedulerMode("REGULAR");
     setIsDefault(true);
-    setSelectedDays(new Set([focusedDayKey]));
+    setSelectedDays(new Set([dayKey]));
     setSaveMessage(null);
     setDayTypeCreateError(null);
     setIsEditingExisting(false);
@@ -1463,6 +1468,14 @@ export default function NewDayTypePage() {
     setConfirmingDeleteId(null);
     setMenuOpenId(null);
   }, [focusedDayKey]);
+
+  const startCreateDayTypeForWeekday = useCallback(
+    (dayKey: string) => {
+      setFocusedDayKey(dayKey);
+      startCreateDayType(dayKey);
+    },
+    [startCreateDayType]
+  );
 
   const availableDayKeys = useMemo(
     () =>
@@ -1674,6 +1687,235 @@ export default function NewDayTypePage() {
       setSaving(false);
     }
   }, [dayTypeName, dayTypes, selectedDays, supabase]);
+
+  const customDayTypes = useMemo(
+    () =>
+      dayTypes.filter(
+        (dayType) => !DAY_PREVIEWS.some((day) => isBasicWeekdayDayType(dayType, day.key))
+      ),
+    [dayTypes]
+  );
+
+  const handleResetWeekdayDayType = useCallback(
+    async (dayKey: string) => {
+      const dayIndex = DAY_KEY_TO_INDEX[dayKey];
+      if (typeof dayIndex !== "number") return;
+
+      const existingBasicDayType = dayTypes.find((dayType) =>
+        isBasicWeekdayDayType(dayType, dayKey)
+      );
+      const currentDayType = findDayTypeForWeekday(dayKey, dayTypes);
+      if (
+        existingBasicDayType &&
+        currentDayType?.id === existingBasicDayType.id &&
+        existingBasicDayType.is_default &&
+        existingBasicDayType.days.includes(dayIndex)
+      ) {
+        return;
+      }
+
+      setSavingWeekdayKey(dayKey);
+      setSaveMessage(null);
+
+      let basicDayType =
+        existingBasicDayType ??
+        ({
+          id: makeId(),
+          name: getAverageDayTypeName(dayKey),
+          is_default: true,
+          days: [dayIndex],
+          scheduler_mode: "REGULAR",
+        } satisfies DayType);
+
+      const buildNextDayTypes = (basic: DayType) => {
+        const next = dayTypes.map((dayType) => {
+          if (dayType.id === basic.id) {
+            return {
+              ...dayType,
+              is_default: true,
+              days: Array.from(new Set([...dayType.days, dayIndex])).sort((a, b) => a - b),
+            };
+          }
+
+          if (!dayType.days.includes(dayIndex)) {
+            return dayType;
+          }
+
+          const remainingDays = dayType.days.filter((candidate) => candidate !== dayIndex);
+          return {
+            ...dayType,
+            days: remainingDays,
+            is_default: dayType.is_default ? remainingDays.length > 0 : dayType.is_default,
+          };
+        });
+
+        return existingBasicDayType ? next : [...next, basic];
+      };
+
+      try {
+        if (supabase) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) {
+            setSaveMessage("You must be signed in to assign a Day Type.");
+            return;
+          }
+
+          if (!existingBasicDayType) {
+            const { data: inserted, error: insertError } = await supabase
+              .from("day_types")
+              .insert({
+                user_id: user.id,
+                name: basicDayType.name,
+                is_default: true,
+                days: [dayIndex],
+                scheduler_mode: "REGULAR",
+              })
+              .select("id,name,is_default,days,scheduler_mode")
+              .single();
+            if (insertError) throw insertError;
+            basicDayType = normalizeDayTypeRow(inserted as DayType);
+          }
+
+          const nextDayTypes = buildNextDayTypes(basicDayType);
+          const changedDayTypes = nextDayTypes.filter((next) => {
+            const current = dayTypes.find((dayType) => dayType.id === next.id);
+            if (!current) return false;
+            if (current.is_default !== next.is_default) return true;
+            if (current.days.length !== next.days.length) return true;
+            return current.days.some((candidate, index) => candidate !== next.days[index]);
+          });
+
+          for (const dayType of changedDayTypes) {
+            const { error: updateError } = await supabase
+              .from("day_types")
+              .update({
+                days: dayType.days,
+                is_default: dayType.is_default,
+              })
+              .eq("id", dayType.id)
+              .eq("user_id", user.id);
+            if (updateError) throw updateError;
+          }
+        }
+
+        const nextDayTypes = buildNextDayTypes(basicDayType);
+        setDayTypes(nextDayTypes);
+        setHasDefaultDayType(
+          nextDayTypes.some((dayType) => dayType.is_default && dayType.days.length > 0)
+        );
+        setDayTypeBlockMap((prev) => {
+          if (prev.has(basicDayType.id)) return prev;
+          const next = new Map(prev);
+          next.set(basicDayType.id, new Set());
+          return next;
+        });
+        setFocusedDayKey(dayKey);
+        loadDayTypeSelection({
+          ...basicDayType,
+          is_default: true,
+          days: Array.from(new Set([...basicDayType.days, dayIndex])).sort((a, b) => a - b),
+        });
+        setSaveMessage(`${DAY_KEY_TO_FULL_LABEL[dayKey] ?? "Day"} reset to Basic.`);
+      } catch (err) {
+        console.error(err);
+        setSaveMessage("Unable to update that weekday right now.");
+      } finally {
+        setSavingWeekdayKey(null);
+      }
+    },
+    [dayTypes, loadDayTypeSelection, supabase]
+  );
+
+  const handleAssignWeekdayDayType = useCallback(
+    async (dayKey: string, nextDayTypeId: string) => {
+      const dayIndex = DAY_KEY_TO_INDEX[dayKey];
+      if (typeof dayIndex !== "number") return;
+
+      const nextDayType = dayTypes.find((dayType) => dayType.id === nextDayTypeId);
+      if (!nextDayType) return;
+
+      const currentDayType = findDayTypeForWeekday(dayKey, dayTypes);
+      if (currentDayType?.id === nextDayTypeId) return;
+
+      setSavingWeekdayKey(dayKey);
+      setSaveMessage(null);
+
+      const nextDayTypes = dayTypes.map((dayType) => {
+        if (dayType.id === nextDayTypeId) {
+          return {
+            ...dayType,
+            is_default: true,
+            days: Array.from(new Set([...dayType.days, dayIndex])).sort((a, b) => a - b),
+          };
+        }
+
+        if (!dayType.is_default || !dayType.days.includes(dayIndex)) {
+          return dayType;
+        }
+
+        const remainingDays = dayType.days.filter((candidate) => candidate !== dayIndex);
+        return {
+          ...dayType,
+          days: remainingDays,
+          is_default: remainingDays.length > 0,
+        };
+      });
+
+      try {
+        if (supabase) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) {
+            setSaveMessage("You must be signed in to assign a Day Type.");
+            return;
+          }
+
+          const changedDayTypes = nextDayTypes.filter((next) => {
+            const current = dayTypes.find((dayType) => dayType.id === next.id);
+            if (!current) return false;
+            if (current.is_default !== next.is_default) return true;
+            if (current.days.length !== next.days.length) return true;
+            return current.days.some((candidate, index) => candidate !== next.days[index]);
+          });
+
+          for (const dayType of changedDayTypes) {
+            const { error: updateError } = await supabase
+              .from("day_types")
+              .update({
+                days: dayType.days,
+                is_default: dayType.is_default,
+              })
+              .eq("id", dayType.id)
+              .eq("user_id", user.id);
+            if (updateError) throw updateError;
+          }
+        }
+
+        setDayTypes(nextDayTypes);
+        setHasDefaultDayType(
+          nextDayTypes.some((dayType) => dayType.is_default && dayType.days.length > 0)
+        );
+        setFocusedDayKey(dayKey);
+        loadDayTypeSelection({
+          ...nextDayType,
+          is_default: true,
+          days: Array.from(new Set([...nextDayType.days, dayIndex])).sort((a, b) => a - b),
+        });
+        setSaveMessage(
+          `${DAY_KEY_TO_FULL_LABEL[dayKey] ?? "Day"} now uses ${nextDayType.name}.`
+        );
+      } catch (err) {
+        console.error(err);
+        setSaveMessage("Unable to update that weekday right now.");
+      } finally {
+        setSavingWeekdayKey(null);
+      }
+    },
+    [dayTypes, loadDayTypeSelection, supabase]
+  );
 
   const handleSubmitBlock = async () => {
     setCreateError(null);
@@ -2551,6 +2793,7 @@ export default function NewDayTypePage() {
       DAY_PREVIEWS.map((day) => {
         const ownerId = dayOwnership.get(day.key) ?? null;
         const assignedDayType = findDayTypeForWeekday(day.key, dayTypes);
+        const isBasicAssignedDayType = isBasicWeekdayDayType(assignedDayType, day.key);
         const patternName = assignedDayType?.name.trim() || null;
         const isFocused = day.key === focusedDayKey;
         const sourceDayTypeId = isFocused ? selectedDayTypeId : assignedDayType?.id ?? ownerId;
@@ -2615,6 +2858,9 @@ export default function NewDayTypePage() {
           blocks: previewBlocks,
           blockCount: previewBlocks.length,
           active: isFocused,
+          assignedDayTypeId: assignedDayType?.id ?? null,
+          assignedDayTypeName: assignedDayType?.name ?? null,
+          isBasicAssignedDayType,
           patternName,
           hasCreateConflict,
         };
@@ -3252,11 +3498,91 @@ export default function NewDayTypePage() {
                           : `${day.blockCount} ${day.blockCount === 1 ? "window" : "windows"}`}
                       </p>
                     </div>
-                    {day.patternName ? (
-                      <div className="max-w-[48%] text-right text-[10px] font-semibold uppercase leading-tight tracking-[0.14em] text-white/48">
-                        {day.patternName}
-                      </div>
-                    ) : null}
+                    <div
+                      className="max-w-[52%] shrink-0"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`Day Type for ${day.fullLabel}`}
+                            disabled={savingWeekdayKey === day.key}
+                            className="inline-flex h-6 w-auto max-w-[10rem] items-center justify-end gap-1 rounded-none border-0 border-b border-white/20 bg-transparent px-0 pb-0.5 text-right text-[10px] font-semibold uppercase leading-tight tracking-[0.14em] text-white/62 shadow-none transition hover:border-white/45 hover:bg-transparent hover:text-white focus:border-white/45 focus:outline-none focus:ring-0 disabled:opacity-45"
+                          >
+                            <span className="max-w-[8.5rem] truncate">
+                              {day.isBasicAssignedDayType || !day.assignedDayTypeName
+                                ? "Basic"
+                                : day.assignedDayTypeName}
+                            </span>
+                            <ChevronDown className="h-3 w-3 shrink-0 text-white/45" aria-hidden="true" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          sideOffset={8}
+                          className="w-56 border border-white/10 bg-[#0c0d11]/98 p-1 text-white shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <DropdownMenuItem
+                            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/78 focus:!bg-white/[0.08] focus:!text-white data-[highlighted]:!bg-white/[0.08] data-[highlighted]:!text-white"
+                            onSelect={() => {
+                              void handleResetWeekdayDayType(day.key);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "h-3.5 w-3.5 text-white/70",
+                                day.isBasicAssignedDayType || !day.assignedDayTypeId
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate">Basic</span>
+                              <span className="block truncate text-[9px] font-medium normal-case tracking-normal text-white/40">
+                                {day.fullLabel}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator className="bg-white/10" />
+                          {customDayTypes.map((dayType) => (
+                            <DropdownMenuItem
+                              key={dayType.id}
+                              className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/72 focus:!bg-white/[0.08] focus:!text-white data-[highlighted]:!bg-white/[0.08] data-[highlighted]:!text-white"
+                              onSelect={() => {
+                                void handleAssignWeekdayDayType(day.key, dayType.id);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "h-3.5 w-3.5 text-white/70",
+                                  day.assignedDayTypeId === dayType.id ? "opacity-100" : "opacity-0"
+                                )}
+                                aria-hidden="true"
+                              />
+                              <span className="min-w-0 flex-1 truncate">{dayType.name}</span>
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuSeparator className="bg-white/10" />
+                          <DropdownMenuItem
+                            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/78 focus:!bg-white/[0.08] focus:!text-white data-[highlighted]:!bg-white/[0.08] data-[highlighted]:!text-white"
+                            onSelect={() => startCreateDayTypeForWeekday(day.key)}
+                          >
+                            <Plus className="h-3.5 w-3.5 text-white/60" aria-hidden="true" />
+                            <span className="min-w-0 flex-1 truncate">Create new Day Type</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      {savingWeekdayKey === day.key ? (
+                        <div className="mt-1 text-right text-[9px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                          Saving…
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                   <DayType24hPreview blocks={day.blocks} />
                 </article>
