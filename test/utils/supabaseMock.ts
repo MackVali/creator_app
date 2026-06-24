@@ -20,6 +20,27 @@ type SupabaseMockResult = {
   updateCalls: UpdateCall[];
 };
 
+type SupabaseMockChain = {
+  select?: ReturnType<typeof vi.fn>;
+  eq?: ReturnType<typeof vi.fn>;
+  in?: ReturnType<typeof vi.fn>;
+  not?: ReturnType<typeof vi.fn>;
+  order?: ReturnType<typeof vi.fn>;
+  gte?: ReturnType<typeof vi.fn>;
+  lte?: ReturnType<typeof vi.fn>;
+  lt?: ReturnType<typeof vi.fn>;
+  gt?: ReturnType<typeof vi.fn>;
+  contains?: ReturnType<typeof vi.fn>;
+  is?: ReturnType<typeof vi.fn>;
+  or?: ReturnType<typeof vi.fn>;
+  single?: ReturnType<typeof vi.fn>;
+  limit?: ReturnType<typeof vi.fn>;
+  then?: (
+    onFulfilled?: (value: unknown) => unknown,
+    onRejected?: (reason: unknown) => unknown
+  ) => Promise<unknown>;
+};
+
 export const createSupabaseMock = (
   options?: SupabaseMockOptions
 ): SupabaseMockResult => {
@@ -49,7 +70,7 @@ export const createSupabaseMock = (
       status: 200,
       statusText: "OK",
     };
-    const chain: Record<string, any> = {};
+    const chain: SupabaseMockChain = {};
     chain.select = vi.fn(() => chain);
     chain.single = single;
     chain.lt = vi.fn(() => chain);
@@ -98,7 +119,7 @@ export const createSupabaseMock = (
       status: 200,
       statusText: "OK",
     };
-    const chain: Record<string, any> = {};
+    const chain: SupabaseMockChain = {};
     chain.select = vi.fn(() => chain);
     chain.eq = vi.fn(() => chain);
     chain.in = vi.fn(() => chain);
@@ -124,7 +145,7 @@ export const createSupabaseMock = (
       status: 200,
       statusText: "OK",
     };
-    const chain: Record<string, any> = {};
+    const chain: SupabaseMockChain = {};
     chain.select = vi.fn(() => chain);
     chain.eq = vi.fn(() => chain);
     chain.in = vi.fn(() => chain);
@@ -166,7 +187,7 @@ export const createSupabaseMock = (
         status: 200,
         statusText: "OK",
       };
-    const chain: Record<string, any> = {};
+    const chain: SupabaseMockChain = {};
     chain.select = vi.fn(() => chain);
     chain.eq = vi.fn(() => chain);
     chain.in = vi.fn(() => chain);

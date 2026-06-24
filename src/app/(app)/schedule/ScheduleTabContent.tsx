@@ -51,6 +51,14 @@ import { JumpToDateSheet } from "@/components/schedule/JumpToDateSheet";
 import { ScheduleSearchSheet } from "@/components/schedule/ScheduleSearchSheet";
 import { ProjectEditSheet } from "@/components/schedule/ProjectEditSheet";
 import { HabitEditSheet } from "@/components/schedule/HabitEditSheet";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { type ScheduleEditOrigin } from "@/components/schedule/ScheduleMorphDialog";
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
 import { SchedulerModeSheet } from "@/components/schedule/SchedulerModeSheet";
@@ -81,9 +89,7 @@ import { buildProjectItems } from "@/lib/scheduler/projects";
 import { windowRectMinutes } from "@/lib/scheduler/windowRect";
 import { ENERGY } from "@/lib/scheduler/config";
 import {
-  DAY_TYPE_BLOCK_EDIT_EVENT,
   DAY_TYPE_BLOCK_UPDATED_EVENT,
-  type DayTypeBlockEditEventDetail,
 } from "@/lib/scheduler/dayTypeBlockEvents";
 import {
   DEFAULT_HABIT_DURATION_MIN,
@@ -99,6 +105,7 @@ import {
   type TimelineCardLayoutMode,
 } from "@/lib/scheduler/syncLayout";
 import type { ScheduleEventDataset } from "@/lib/scheduler/dataset";
+import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import { formatLocalDateKey, toLocal, dayKeyFromUtc } from "@/lib/time/tz";
 import {
   GLOBAL_DAY_START_HOUR,
@@ -256,6 +263,8 @@ const SCHEDULE_SCHEDULER_RUNNING_EVENT =
   "schedule:scheduler-running-changed";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
+const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
+const TIMELINE_OVERLAY_STACK_STEP = 20;
 
 function getTimelineHabitEventBackground(normalizedHabitType: string) {
   if (normalizedHabitType === "CHORE") return TIMELINE_CHORE_EVENT_BACKGROUND;
@@ -350,6 +359,91 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
 };
 
 const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
+type TimeBlockConstraintKind = "FOCUS" | "BREAK" | "PRACTICE";
+
+type TimeBlockConstraintDraft = {
+  block: RepoWindow;
+  energy: FlameLevel;
+  windowKind: TimeBlockConstraintKind;
+  locationContextId: string | null;
+  allowAllHabitTypes: boolean;
+  allowedHabitTypes: Set<string>;
+  allowAllSkills: boolean;
+  allowedSkillIds: Set<string>;
+  allowAllMonuments: boolean;
+  allowedMonumentIds: Set<string>;
+};
+
+const TIME_BLOCK_CONSTRAINT_KINDS: TimeBlockConstraintKind[] = [
+  "FOCUS",
+  "BREAK",
+  "PRACTICE",
+];
+const TIME_BLOCK_CONSTRAINT_KIND_LABEL: Record<TimeBlockConstraintKind, string> = {
+  FOCUS: "Focus",
+  BREAK: "Break",
+  PRACTICE: "Practice",
+};
+const TIME_BLOCK_CONSTRAINT_FLAME_LEVELS = ENERGY.LIST as FlameLevel[];
+const TIME_BLOCK_HABIT_TYPE_OPTIONS = [
+  { label: "Habit", value: "HABIT" },
+  { label: "Relaxer", value: "RELAXER" },
+  { label: "Practice", value: "PRACTICE" },
+  { label: "Chore", value: "CHORE" },
+  { label: "Sync", value: "SYNC" },
+  { label: "Memo", value: "MEMO" },
+];
+const TIME_BLOCK_CONSTRAINT_PILL_BASE =
+  "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs";
+const TIME_BLOCK_CONSTRAINT_PILL_SELECTED =
+  "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]";
+const TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED =
+  "border-black/60 bg-black/30 text-zinc-400 hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200";
+const TIME_BLOCK_CONSTRAINT_CONTROL_PILL =
+  "inline-flex h-6 max-w-[11rem] shrink-0 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[9px] font-semibold tracking-[0.08em] text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-black/40 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35";
+const TIME_BLOCK_CONSTRAINT_OPTION_ICON =
+  "inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]";
+
+function normalizeTimeBlockConstraintKind(
+  value?: string | null
+): TimeBlockConstraintKind {
+  const normalized = (value ?? "").trim().toUpperCase();
+  if (normalized === "BREAK") return "BREAK";
+  if (normalized === "PRACTICE") return "PRACTICE";
+  return "FOCUS";
+}
+
+function getNextTimeBlockConstraintEnergy(current: FlameLevel): FlameLevel {
+  const index = TIME_BLOCK_CONSTRAINT_FLAME_LEVELS.indexOf(current);
+  const nextIndex =
+    index >= 0 ? (index + 1) % TIME_BLOCK_CONSTRAINT_FLAME_LEVELS.length : 0;
+  return TIME_BLOCK_CONSTRAINT_FLAME_LEVELS[nextIndex] ?? "NO";
+}
+
+function normalizeConstraintSet(values?: Iterable<string> | null) {
+  return new Set(
+    Array.from(values ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+  );
+}
+
+function formatTimeBlockConstraintSummary(
+  values: Set<string>,
+  options: Array<{ value: string; label: string }>,
+  allowAll: boolean
+) {
+  if (allowAll) return "Allow ALL";
+  if (values.size === 0) return "None";
+  const selectedLabels = Array.from(values)
+    .map((value) => options.find((option) => option.value === value)?.label)
+    .filter((label): label is string => Boolean(label));
+  if (selectedLabels.length === 0) return `${values.size} selected`;
+  const visibleLabels = selectedLabels.slice(0, 2).join(", ");
+  return selectedLabels.length > 2
+    ? `${visibleLabels} +${selectedLabels.length - 2}`
+    : visibleLabels;
+}
 
 function computeInlineJumpRevealHeight(viewportHeight: number) {
   if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
@@ -378,6 +472,8 @@ function computeInlineJumpMaxRevealHeight(viewportHeight: number) {
 
 type OverlayWindowRecord = {
   id: string;
+  created_at: string | null;
+  updated_at: string | null;
   start_utc: string | null;
   end_utc: string | null;
   label: string | null;
@@ -400,6 +496,9 @@ type OverlayWindowSegment = {
   label: string | null;
   icon: string | null;
   rangeLabel: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  sourceIndex: number;
 };
 
 type MinuteRange = {
@@ -1355,6 +1454,28 @@ function computeTimelineStackingIndex(startOffsetMinutes: number) {
   return Math.round(
     TIMELINE_STACK_BASE_Z_INDEX + safeOffset * TIMELINE_STACK_SCALE
   );
+}
+
+function compareIsoOrder(a: string | null, b: string | null) {
+  const aMs = a ? Date.parse(a) : Number.NaN;
+  const bMs = b ? Date.parse(b) : Number.NaN;
+  const aValid = Number.isFinite(aMs);
+  const bValid = Number.isFinite(bMs);
+  if (aValid && bValid && aMs !== bMs) return aMs - bMs;
+  if (aValid !== bValid) return aValid ? 1 : -1;
+  return 0;
+}
+
+function compareOverlaySegmentStackOrder(
+  a: OverlayWindowSegment,
+  b: OverlayWindowSegment
+) {
+  const createdOrder = compareIsoOrder(a.createdAt, b.createdAt);
+  if (createdOrder !== 0) return createdOrder;
+  const updatedOrder = compareIsoOrder(a.updatedAt, b.updatedAt);
+  if (updatedOrder !== 0) return updatedOrder;
+  if (a.sourceIndex !== b.sourceIndex) return a.sourceIndex - b.sourceIndex;
+  return a.id.localeCompare(b.id);
 }
 
 function isInstancePastDay(
@@ -2848,6 +2969,17 @@ export default function ScheduleTabContent({
   const [habitCompletionByDate, setHabitCompletionByDate] =
     useState<HabitCompletionByDate>({});
   const [windows, setWindows] = useState<RepoWindow[]>([]);
+  const [selectedTimeBlockForConstraints, setSelectedTimeBlockForConstraints] =
+    useState<TimeBlockConstraintDraft | null>(null);
+  const [isSavingTimeBlockConstraints, setIsSavingTimeBlockConstraints] =
+    useState(false);
+  const [timeBlockConstraintsError, setTimeBlockConstraintsError] = useState<
+    string | null
+  >(null);
+  const [timeBlockSkillSearch, setTimeBlockSkillSearch] = useState("");
+  const [timeBlockMonumentSearch, setTimeBlockMonumentSearch] = useState("");
+  const { options: timeBlockLocationOptions, loading: timeBlockLocationsLoading } =
+    useLocationContexts();
   const [overlayWindows, setOverlayWindows] =
     useState<OverlayWindowRecord[]>([]);
   const [commandBlocks, setCommandBlocks] = useState<CommandBlockRecord[]>([]);
@@ -2991,6 +3123,7 @@ export default function ScheduleTabContent({
     isClearingUncompletedScheduleInstances,
     setIsClearingUncompletedScheduleInstances,
   ] = useState(false);
+  const [isManualSchedulingMode, setIsManualSchedulingMode] = useState(false);
   const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null);
   const [dayTransitionDirection, setDayTransitionDirection] =
     useState<DayTransitionDirection>(0);
@@ -4244,7 +4377,7 @@ export default function ScheduleTabContent({
       try {
         const { data, error } = await supabase
           .from("overlay_windows" as never)
-          .select("id,start_utc,end_utc,label")
+          .select("id,created_at,updated_at,start_utc,end_utc,label")
           .eq("user_id", userId)
           .lt("start_utc", dayEndIso)
           .gt("end_utc", dayStartIso)
@@ -6299,6 +6432,11 @@ export default function ScheduleTabContent({
     toast,
   ]);
 
+  const handleToggleManualSchedulingMode = useCallback(() => {
+    setIsManualSchedulingMode((active) => !active);
+    void hapticPress();
+  }, []);
+
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
   const inlineJumpPanelRef = useRef<HTMLDivElement | null>(null);
@@ -7280,22 +7418,210 @@ export default function ScheduleTabContent({
   const handleOpenDayTypeBlockConstraints = useCallback(
     (block: RepoWindow) => {
       if (!block.dayTypeTimeBlockId) return;
-      setIsJumpToDateOpen(true);
-      if (typeof window === "undefined") return;
-      const detail: DayTypeBlockEditEventDetail = {
-        blockId: block.id,
-        dayTypeId: block.dayTypeId ?? null,
-        dateKey: currentDateKey,
-      };
-      window.dispatchEvent(
-        new CustomEvent<DayTypeBlockEditEventDetail>(
-          DAY_TYPE_BLOCK_EDIT_EVENT,
-          { detail }
-        )
-      );
+      setTimeBlockConstraintsError(null);
+      setSelectedTimeBlockForConstraints({
+        block,
+        energy: resolveEnergyLevel(block.energy) ?? "NO",
+        windowKind: normalizeTimeBlockConstraintKind(block.window_kind),
+        locationContextId: block.location_context_id ?? null,
+        allowAllHabitTypes: block.allowAllHabitTypes ?? true,
+        allowedHabitTypes: normalizeConstraintSet(
+          block.allowedHabitTypesSet ?? block.allowedHabitTypes
+        ),
+        allowAllSkills: block.allowAllSkills ?? true,
+        allowedSkillIds: normalizeConstraintSet(
+          block.allowedSkillIdsSet ?? block.allowedSkillIds
+        ),
+        allowAllMonuments: block.allowAllMonuments ?? true,
+        allowedMonumentIds: normalizeConstraintSet(
+          block.allowedMonumentIdsSet ?? block.allowedMonumentIds
+        ),
+      });
     },
-    [currentDateKey, setIsJumpToDateOpen]
+    []
   );
+
+  const handleSaveTimeBlockConstraints = useCallback(async () => {
+    const draft = selectedTimeBlockForConstraints;
+    if (!draft) return;
+    const dayTypeTimeBlockId = draft.block.dayTypeTimeBlockId;
+    if (!dayTypeTimeBlockId) {
+      setTimeBlockConstraintsError("This Time Block cannot be edited here.");
+      return;
+    }
+
+    setIsSavingTimeBlockConstraints(true);
+    setTimeBlockConstraintsError(null);
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase client not available");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const userId = user?.id ?? null;
+      if (!userId) throw new Error("User not found");
+
+      const { error: updateError } = await supabase
+        .from("day_type_time_blocks")
+        .update({
+          energy: draft.energy,
+          block_type: draft.windowKind,
+          location_context_id: draft.locationContextId,
+          allow_all_habit_types: draft.allowAllHabitTypes,
+          allow_all_skills: draft.allowAllSkills,
+          allow_all_monuments: draft.allowAllMonuments,
+        } as never)
+        .eq("id", dayTypeTimeBlockId)
+        .eq("user_id", userId);
+      if (updateError) throw updateError;
+
+      const allowedHabitTypes = Array.from(draft.allowedHabitTypes)
+        .map((value) => value.trim().toUpperCase())
+        .filter((value, index, array) => value && array.indexOf(value) === index);
+      const allowedSkillIds = Array.from(draft.allowedSkillIds)
+        .map((value) => value.trim())
+        .filter((value, index, array) => value && array.indexOf(value) === index);
+      const allowedMonumentIds = Array.from(draft.allowedMonumentIds)
+        .map((value) => value.trim())
+        .filter((value, index, array) => value && array.indexOf(value) === index);
+
+      const { error: habitDeleteError } = await supabase
+        .from("day_type_time_block_allowed_habit_types")
+        .delete()
+        .eq("day_type_time_block_id", dayTypeTimeBlockId);
+      if (habitDeleteError) throw habitDeleteError;
+      if (!draft.allowAllHabitTypes && allowedHabitTypes.length > 0) {
+        const { error: habitInsertError } = await supabase
+          .from("day_type_time_block_allowed_habit_types")
+          .insert(
+            allowedHabitTypes.map((habitType) => ({
+              user_id: userId,
+              day_type_time_block_id: dayTypeTimeBlockId,
+              habit_type: habitType,
+            })) as never
+          );
+        if (habitInsertError) throw habitInsertError;
+      }
+
+      const { error: skillDeleteError } = await supabase
+        .from("day_type_time_block_allowed_skills")
+        .delete()
+        .eq("day_type_time_block_id", dayTypeTimeBlockId);
+      if (skillDeleteError) throw skillDeleteError;
+      if (!draft.allowAllSkills && allowedSkillIds.length > 0) {
+        const { error: skillInsertError } = await supabase
+          .from("day_type_time_block_allowed_skills")
+          .insert(
+            allowedSkillIds.map((skillId) => ({
+              user_id: userId,
+              day_type_time_block_id: dayTypeTimeBlockId,
+              skill_id: skillId,
+            })) as never
+          );
+        if (skillInsertError) throw skillInsertError;
+      }
+
+      const { error: monumentDeleteError } = await supabase
+        .from("day_type_time_block_allowed_monuments")
+        .delete()
+        .eq("day_type_time_block_id", dayTypeTimeBlockId);
+      if (monumentDeleteError) throw monumentDeleteError;
+      if (!draft.allowAllMonuments && allowedMonumentIds.length > 0) {
+        const { error: monumentInsertError } = await supabase
+          .from("day_type_time_block_allowed_monuments")
+          .insert(
+            allowedMonumentIds.map((monumentId) => ({
+              user_id: userId,
+              day_type_time_block_id: dayTypeTimeBlockId,
+              monument_id: monumentId,
+            })) as never
+          );
+        if (monumentInsertError) throw monumentInsertError;
+      }
+
+      setSelectedTimeBlockForConstraints(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(DAY_TYPE_BLOCK_UPDATED_EVENT));
+      }
+      void refreshDayTypeWindows();
+      toast.success("Time Block updated", "Constraints saved.");
+    } catch (error: unknown) {
+      console.error("Unable to save Time Block constraints", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to save Time Block constraints.";
+      setTimeBlockConstraintsError(message);
+      toast.error("Unable to save Time Block", message);
+    } finally {
+      setIsSavingTimeBlockConstraints(false);
+    }
+  }, [refreshDayTypeWindows, selectedTimeBlockForConstraints, toast]);
+
+  const timeBlockConstraintSkillOptions = useMemo(
+    () =>
+      skills.map((skill) => ({
+        value: skill.id,
+        label: skill.name || "Untitled skill",
+      })),
+    [skills]
+  );
+  const timeBlockConstraintMonumentOptions = useMemo(
+    () =>
+      monuments.map((monument) => ({
+        value: monument.id,
+        label: monument.title || "Untitled monument",
+      })),
+    [monuments]
+  );
+  const sortedTimeBlockConstraintSkills = useMemo(
+    () =>
+      [...skills].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "")
+      ),
+    [skills]
+  );
+  const sortedTimeBlockConstraintMonuments = useMemo(
+    () =>
+      [...monuments].sort((a, b) =>
+        (a.title ?? "").localeCompare(b.title ?? "")
+      ),
+    [monuments]
+  );
+  const filteredTimeBlockConstraintSkills = useMemo(() => {
+    const term = timeBlockSkillSearch.trim().toLowerCase();
+    return sortedTimeBlockConstraintSkills.filter((skill) =>
+      (skill.name ?? "").toLowerCase().includes(term)
+    );
+  }, [sortedTimeBlockConstraintSkills, timeBlockSkillSearch]);
+  const filteredTimeBlockConstraintMonuments = useMemo(() => {
+    const term = timeBlockMonumentSearch.trim().toLowerCase();
+    return sortedTimeBlockConstraintMonuments.filter((monument) =>
+      (monument.title ?? "").toLowerCase().includes(term)
+    );
+  }, [sortedTimeBlockConstraintMonuments, timeBlockMonumentSearch]);
+  const selectedTimeBlockLocationOptions = useMemo(() => {
+    if (!selectedTimeBlockForConstraints?.locationContextId) {
+      return timeBlockLocationOptions ?? [];
+    }
+    const hasSelected = (timeBlockLocationOptions ?? []).some(
+      (option) => option.id === selectedTimeBlockForConstraints.locationContextId
+    );
+    if (hasSelected) return timeBlockLocationOptions ?? [];
+    return [
+      ...(timeBlockLocationOptions ?? []),
+      {
+        id: selectedTimeBlockForConstraints.locationContextId,
+        value:
+          selectedTimeBlockForConstraints.block.location_context_value ??
+          selectedTimeBlockForConstraints.locationContextId,
+        label:
+          selectedTimeBlockForConstraints.block.location_context_name ??
+          selectedTimeBlockForConstraints.block.location_context_value ??
+          "Location",
+      },
+    ];
+  }, [selectedTimeBlockForConstraints, timeBlockLocationOptions]);
 
   const dayTimelineModel = useMemo(() => {
     return buildDayTimelineModel({
@@ -7539,6 +7865,24 @@ export default function ScheduleTabContent({
 
   useEffect(() => {
     if (!manualPlacementSession) return;
+    const finishManualPlacementAt = (clientY: number) => {
+      const session = manualPlacementSessionRef.current;
+      if (!session) return;
+      const next = resolveManualPlacementTime(clientY);
+      const preview =
+        next ??
+        (session.previewTime
+          ? snapToFiveMinuteGrid(session.previewTime)
+          : null);
+      if (preview) {
+        void commitManualPlacement(session.candidate, preview);
+      }
+      setManualPlacementSession(null);
+      manualPlacementSessionRef.current = null;
+      manualPlacementPointerIdRef.current = null;
+      stopAutoScroll();
+    };
+
     const handlePointerMove = (event: PointerEvent) => {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
@@ -7561,21 +7905,7 @@ export default function ScheduleTabContent({
     const handlePointerUp = (event: PointerEvent) => {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
-      const session = manualPlacementSessionRef.current;
-      if (!session) return;
-      const next = resolveManualPlacementTime(event.clientY);
-      const preview =
-        next ??
-        (session.previewTime
-          ? snapToFiveMinuteGrid(session.previewTime)
-          : null);
-      if (preview) {
-        void commitManualPlacement(session.candidate, preview);
-      }
-      setManualPlacementSession(null);
-      manualPlacementSessionRef.current = null;
-      manualPlacementPointerIdRef.current = null;
-      stopAutoScroll();
+      finishManualPlacementAt(event.clientY);
     };
 
     const handlePointerCancel = (event: PointerEvent) => {
@@ -7618,6 +7948,31 @@ export default function ScheduleTabContent({
       updatePreviewAndScrollIntent(touch.clientY);
     };
 
+    const handleTouchEnd = (event: TouchEvent) => {
+      const pointerId = manualPlacementPointerIdRef.current;
+      const touches = Array.from(event.changedTouches);
+      const touch =
+        (pointerId !== null
+          ? touches.find((item) => item.identifier === pointerId)
+          : null) ?? (touches.length === 1 ? touches[0] : null);
+      if (!touch) return;
+      finishManualPlacementAt(touch.clientY);
+    };
+
+    const handleTouchCancel = (event: TouchEvent) => {
+      const pointerId = manualPlacementPointerIdRef.current;
+      if (pointerId !== null) {
+        const touch = Array.from(event.changedTouches).find(
+          (item) => item.identifier === pointerId
+        );
+        if (!touch) return;
+      }
+      setManualPlacementSession(null);
+      manualPlacementSessionRef.current = null;
+      manualPlacementPointerIdRef.current = null;
+      stopAutoScroll();
+    };
+
     window.addEventListener("pointermove", handlePointerMove, {
       passive: true,
     });
@@ -7626,11 +7981,15 @@ export default function ScheduleTabContent({
     window.addEventListener("touchmove", handleTouchMove, {
       passive: false,
     });
+    window.addEventListener("touchend", handleTouchEnd);
+    window.addEventListener("touchcancel", handleTouchCancel);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
       window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
     };
   }, [
     commitManualPlacement,
@@ -7713,7 +8072,7 @@ export default function ScheduleTabContent({
           (instance): instance is ProjectInstance => instance !== null
         );
       const overlaySegments = [
-        ...overlayWindows.map((overlay) => {
+        ...overlayWindows.map((overlay, sourceIndex) => {
           if (!overlay.start_utc || !overlay.end_utc) return null;
           const start = new Date(overlay.start_utc);
           const end = new Date(overlay.end_utc);
@@ -7736,9 +8095,12 @@ export default function ScheduleTabContent({
             label: null,
             icon: null,
             rangeLabel: null,
+            createdAt: overlay.created_at,
+            updatedAt: overlay.updated_at,
+            sourceIndex,
           };
         }),
-        ...commandBlocks.map((commandBlock) => {
+        ...commandBlocks.map((commandBlock, sourceIndex) => {
           if (!commandBlock.starts_at || !commandBlock.ends_at) return null;
           const start = new Date(commandBlock.starts_at);
           const end = new Date(commandBlock.ends_at);
@@ -7765,6 +8127,9 @@ export default function ScheduleTabContent({
               clipped.segStart,
               viewTimeZone
             )} - ${formatTimeForWindow(clipped.segEnd, viewTimeZone)}`,
+            createdAt: null,
+            updatedAt: null,
+            sourceIndex,
           };
         }),
       ]
@@ -7772,6 +8137,58 @@ export default function ScheduleTabContent({
           (segment): segment is OverlayWindowSegment => segment !== null
         )
         .sort((a, b) => a.startMin - b.startMin);
+      const overlayWindowSegments = overlaySegments.filter(
+        (segment) => segment.source === "overlay_window"
+      );
+      const overlayWindowLayerRankById = new Map<string, number>();
+      [...overlayWindowSegments]
+        .sort(compareOverlaySegmentStackOrder)
+        .forEach((segment, index) => {
+          overlayWindowLayerRankById.set(segment.id, index);
+        });
+      const getOverlayWindowBaseZIndex = (overlayWindowId: string | null) => {
+        if (!overlayWindowId) return null;
+        const rank = overlayWindowLayerRankById.get(overlayWindowId);
+        if (rank === undefined) return null;
+        return (
+          TIMELINE_OVERLAY_STACK_BASE_Z_INDEX +
+          rank * TIMELINE_OVERLAY_STACK_STEP
+        );
+      };
+      const getOverlayBackedCardZIndex = (
+        fallbackZIndex: number,
+        overlayWindowId: string | null | undefined
+      ) => {
+        const overlayBaseZIndex =
+          getOverlayWindowBaseZIndex(overlayWindowId ?? null);
+        if (overlayBaseZIndex === null) return fallbackZIndex;
+        return Math.max(fallbackZIndex, overlayBaseZIndex + 1);
+      };
+      const getNewerOverlayRanges = (segment: OverlayWindowSegment) => {
+        if (segment.source !== "overlay_window") return [];
+        return overlayWindowSegments
+          .filter(
+            (candidate) =>
+              candidate.id !== segment.id &&
+              compareOverlaySegmentStackOrder(segment, candidate) < 0
+          )
+          .map((candidate) => {
+            const start = candidate.startMin - modelStartHour * 60;
+            const end = start + candidate.durationMin;
+            const clampedStart = Math.max(0, start);
+            const clampedEnd = Math.max(clampedStart, end);
+            if (
+              !Number.isFinite(clampedStart) ||
+              !Number.isFinite(clampedEnd) ||
+              clampedEnd <= clampedStart
+            ) {
+              return null;
+            }
+            return { start: clampedStart, end: clampedEnd };
+          })
+          .filter((range): range is MinuteRange => range !== null)
+          .sort((a, b) => a.start - b.start);
+      };
       const overlayRanges = overlaySegments
         .map((segment) => {
           const start = segment.startMin - modelStartHour * 60;
@@ -8060,54 +8477,75 @@ export default function ScheduleTabContent({
                 const clampedEnd = Math.max(clampedStart, end);
                 const heightMin = clampedEnd - clampedStart;
                 if (!Number.isFinite(heightMin) || heightMin <= 0) return null;
-                const heightPx = heightMin * modelPxPerMin;
                 const isCommandBlock = segment.source === "command_block";
-                const showCommandLabel =
-                  isCommandBlock && segment.label && heightPx >= 24;
-                const showCommandRange =
-                  showCommandLabel && segment.rangeLabel && heightPx >= 42;
-                return (
-                  <div
-                    key={`${segment.source}-${segment.id}`}
-                    className={clsx(
-                      "pointer-events-none absolute overflow-hidden rounded-[var(--radius-lg)] bg-zinc-950",
-                      isCommandBlock
-                        ? "border border-white/10 shadow-[0_14px_30px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)]"
-                        : "border border-zinc-800"
-                    )}
-                    style={{
-                      ...TIMELINE_CARD_BOUNDS,
-                      top: toTimelinePosition(clampedStart),
-                      height: toTimelinePosition(heightMin),
-                      pointerEvents: "none",
-                      zIndex: overlayLayerZIndex,
-                    }}
-                    aria-label={segment.label ?? undefined}
-                  >
-                    {showCommandLabel ? (
-                      <div className="flex h-full min-h-0 flex-col justify-center px-3 py-1.5 text-white">
-                        <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-tight">
-                          {segment.icon ? (
-                            <span
-                              className="shrink-0 leading-none"
-                              aria-hidden="true"
-                            >
-                              {segment.icon}
+                const visibleSegments = isCommandBlock
+                  ? [{ start: clampedStart, end: clampedEnd }]
+                  : subtractOverlayRangesFromWindow(
+                      { start: clampedStart, end: clampedEnd },
+                      getNewerOverlayRanges(segment)
+                    );
+                const overlayBaseZIndex =
+                  segment.source === "overlay_window"
+                    ? getOverlayWindowBaseZIndex(segment.id)
+                    : null;
+                const segmentZIndex =
+                  overlayBaseZIndex ?? overlayLayerZIndex;
+                return visibleSegments.map((visibleSegment, index) => {
+                  const visibleHeightMin =
+                    visibleSegment.end - visibleSegment.start;
+                  if (
+                    !Number.isFinite(visibleHeightMin) ||
+                    visibleHeightMin <= 0
+                  ) {
+                    return null;
+                  }
+                  const heightPx = visibleHeightMin * modelPxPerMin;
+                  const showCommandLabel =
+                    isCommandBlock && segment.label && heightPx >= 24;
+                  const showCommandRange =
+                    showCommandLabel && segment.rangeLabel && heightPx >= 42;
+                  return (
+                    <div
+                      key={`${segment.source}-${segment.id}-${index}`}
+                      className={clsx(
+                        "absolute overflow-hidden rounded-[var(--radius-lg)] bg-zinc-950",
+                        isCommandBlock
+                          ? "pointer-events-none border border-white/10 shadow-[0_14px_30px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                          : "pointer-events-auto border border-zinc-800"
+                      )}
+                      style={{
+                        ...TIMELINE_CARD_BOUNDS,
+                        top: toTimelinePosition(visibleSegment.start),
+                        height: toTimelinePosition(visibleHeightMin),
+                        zIndex: segmentZIndex,
+                      }}
+                      aria-label={segment.label ?? undefined}
+                    >
+                      {showCommandLabel ? (
+                        <div className="flex h-full min-h-0 flex-col justify-center px-3 py-1.5 text-white">
+                          <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-tight">
+                            {segment.icon ? (
+                              <span
+                                className="shrink-0 leading-none"
+                                aria-hidden="true"
+                              >
+                                {segment.icon}
+                              </span>
+                            ) : null}
+                            <span className="min-w-0 truncate">
+                              {segment.label}
                             </span>
-                          ) : null}
-                          <span className="min-w-0 truncate">
-                            {segment.label}
-                          </span>
-                        </div>
-                        {showCommandRange ? (
-                          <div className="mt-0.5 truncate text-[10px] font-medium leading-tight text-white/60">
-                            {segment.rangeLabel}
                           </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                );
+                          {showCommandRange ? (
+                            <div className="mt-0.5 truncate text-[10px] font-medium leading-tight text-white/60">
+                              {segment.rangeLabel}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                });
               })}
             </div>
             {dayHabitPlacements.map((placement, index) => {
@@ -8503,9 +8941,13 @@ export default function ScheduleTabContent({
                 isSyncLikeHabitCard && layoutMode === "paired-right"
                   ? stackingZIndex + 1
                   : stackingZIndex;
+              const resolvedHabitLayerZIndex = getOverlayBackedCardZIndex(
+                habitLayerZIndex,
+                placementScheduleInstance?.overlay_window_id
+              );
               const layeredCardStyle = {
                 ...cardStyle,
-                zIndex: habitLayerZIndex,
+                zIndex: resolvedHabitLayerZIndex,
               };
 
               return (
@@ -8703,7 +9145,10 @@ export default function ScheduleTabContent({
                   computeTimelineStackingIndex(startOffsetMinutes);
                 const layeredPositionStyle = {
                   ...positionStyle,
-                  zIndex: stackingZIndex,
+                  zIndex: getOverlayBackedCardZIndex(
+                    stackingZIndex,
+                    instance.overlay_window_id
+                  ),
                 };
                 const useCompactProjectShadow =
                   projectHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
@@ -9564,7 +10009,13 @@ export default function ScheduleTabContent({
                   );
                   const stackingZIndex =
                     computeTimelineStackingIndex(startOffsetMinutes);
-                  const layeredStyle = { ...style, zIndex: stackingZIndex };
+                  const layeredStyle = {
+                    ...style,
+                    zIndex: getOverlayBackedCardZIndex(
+                      stackingZIndex,
+                      instance.overlay_window_id
+                    ),
+                  };
                   const shouldWrapStandaloneTitle =
                     Number(durationMinutes) >= 30;
                   const standaloneTitleClass = shouldWrapStandaloneTitle
@@ -10071,6 +10522,475 @@ export default function ScheduleTabContent({
         )
       : null;
 
+  const timeBlockConstraintsPortal =
+    selectedTimeBlockForConstraints && typeof document !== "undefined"
+      ? createPortal(
+          <div className="fixed inset-0 z-[2147483645] flex items-center justify-center bg-black/30 p-3 backdrop-blur-[2px] sm:p-4">
+            <button
+              type="button"
+              aria-label="Close Time Block constraints"
+              className="absolute inset-0 cursor-default"
+              onClick={() => {
+                if (!isSavingTimeBlockConstraints) {
+                  setSelectedTimeBlockForConstraints(null);
+                  setTimeBlockConstraintsError(null);
+                }
+              }}
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Time Block constraints"
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.98 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="relative w-full max-w-[min(100vw-1.5rem,720px)] overflow-hidden rounded-2xl border border-black/70 bg-[#101219] p-1 text-white shadow-[0_22px_70px_rgba(0,0,0,0.58)]"
+            >
+              <div className="max-h-[min(82vh,740px)] overflow-y-auto rounded-2xl border border-black/60 bg-[#0d0f14] px-4 py-3 text-sm text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.34)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="truncate text-sm font-semibold text-white/90">
+                      {selectedTimeBlockForConstraints.block.label || "Untitled Time Block"}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-white/45">
+                      Time Block · {selectedTimeBlockForConstraints.block.start_local} →{" "}
+                      {selectedTimeBlockForConstraints.block.end_local}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isSavingTimeBlockConstraints}
+                    aria-label={`Cycle Time Block energy from ${selectedTimeBlockForConstraints.energy}`}
+                    title={`Energy: ${selectedTimeBlockForConstraints.energy}`}
+                    onClick={() =>
+                      setSelectedTimeBlockForConstraints((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              energy: getNextTimeBlockConstraintEnergy(prev.energy),
+                            }
+                          : prev
+                      )
+                    }
+                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-black/70 bg-black/30 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-black/45 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-wait disabled:opacity-55"
+                  >
+                    <FlameEmber
+                      level={selectedTimeBlockForConstraints.energy}
+                      size="sm"
+                    />
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-white/60">
+                      <span>Block type</span>
+                    </div>
+                    <Select
+                      value={selectedTimeBlockForConstraints.windowKind}
+                      onValueChange={(value) =>
+                        setSelectedTimeBlockForConstraints((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                windowKind: normalizeTimeBlockConstraintKind(value),
+                              }
+                            : prev
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none focus:ring-0">
+                        <SelectValue placeholder="Block type" />
+                      </SelectTrigger>
+                      <SelectContent className="border border-white/10 bg-[#0f111a]/95 text-white shadow-xl backdrop-blur">
+                        {TIME_BLOCK_CONSTRAINT_KINDS.map((kind) => (
+                          <SelectItem
+                            key={kind}
+                            value={kind}
+                            label={TIME_BLOCK_CONSTRAINT_KIND_LABEL[kind]}
+                            className="text-white shadow-none hover:bg-white/10 hover:text-white aria-selected:bg-white/10 aria-selected:text-white aria-selected:shadow-none aria-selected:ring-1 aria-selected:ring-white/10"
+                          >
+                            {TIME_BLOCK_CONSTRAINT_KIND_LABEL[kind]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-white/60">
+                      <span>Location context</span>
+                    </div>
+                    <Select
+                      value={selectedTimeBlockForConstraints.locationContextId ?? "ANY"}
+                      onValueChange={(value) =>
+                        setSelectedTimeBlockForConstraints((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                locationContextId: value === "ANY" ? null : value,
+                              }
+                            : prev
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none">
+                        <SelectValue placeholder="Anywhere" />
+                      </SelectTrigger>
+                      <SelectContent className="border border-white/10 bg-[#0f111a]/95 text-white shadow-xl backdrop-blur">
+                        <SelectItem value="ANY" label="Anywhere">
+                          Anywhere
+                        </SelectItem>
+                        {selectedTimeBlockLocationOptions
+                          .filter((option) => option.value !== "ANY")
+                          .map((option) => (
+                            <SelectItem
+                              key={option.id}
+                              value={option.id}
+                              label={option.label ?? option.value ?? ""}
+                            >
+                              {option.label ?? option.value}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="text-xs text-white/55">
+                      {timeBlockLocationsLoading
+                        ? "Loading locations..."
+                        : "Match this block only when you're at the selected location."}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <details className="group grid gap-1">
+                    <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                      <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                        Instance Types
+                      </span>
+                      <span className={TIME_BLOCK_CONSTRAINT_CONTROL_PILL}>
+                        <span className="truncate group-open:hidden">
+                          {formatTimeBlockConstraintSummary(
+                            selectedTimeBlockForConstraints.allowedHabitTypes,
+                            TIME_BLOCK_HABIT_TYPE_OPTIONS,
+                            selectedTimeBlockForConstraints.allowAllHabitTypes
+                          )}
+                        </span>
+                        <span className="hidden truncate group-open:inline">Choose</span>
+                      </span>
+                    </summary>
+                    <div className="flex flex-wrap gap-1.5 pt-1 sm:gap-2">
+                      <button
+                        type="button"
+                        aria-pressed={selectedTimeBlockForConstraints.allowAllHabitTypes}
+                        onClick={() =>
+                          setSelectedTimeBlockForConstraints((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  allowAllHabitTypes: true,
+                                  allowedHabitTypes: new Set<string>(),
+                                }
+                              : prev
+                          )
+                        }
+                        className={clsx(
+                          TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                          selectedTimeBlockForConstraints.allowAllHabitTypes
+                            ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                            : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                        )}
+                      >
+                        Allow ALL
+                      </button>
+                      {TIME_BLOCK_HABIT_TYPE_OPTIONS.map((option) => {
+                        const selected =
+                          !selectedTimeBlockForConstraints.allowAllHabitTypes &&
+                          selectedTimeBlockForConstraints.allowedHabitTypes.has(option.value);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              setSelectedTimeBlockForConstraints((prev) => {
+                                if (!prev) return prev;
+                                const next = new Set(prev.allowedHabitTypes);
+                                if (next.has(option.value)) next.delete(option.value);
+                                else next.add(option.value);
+                                return {
+                                  ...prev,
+                                  allowAllHabitTypes: false,
+                                  allowedHabitTypes: next,
+                                };
+                              })
+                            }
+                            className={clsx(
+                              TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                              selected
+                                ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                                : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                            )}
+                          >
+                            <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                              {option.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!selectedTimeBlockForConstraints.allowAllHabitTypes &&
+                    selectedTimeBlockForConstraints.allowedHabitTypes.size === 0 ? (
+                      <div className="pt-1 text-[10px] text-white/35">
+                        No instance types allowed.
+                      </div>
+                    ) : null}
+                  </details>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <details className="group grid gap-1">
+                    <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                      <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                        Skills
+                      </span>
+                      <span className={TIME_BLOCK_CONSTRAINT_CONTROL_PILL}>
+                        <span className="truncate group-open:hidden">
+                          {formatTimeBlockConstraintSummary(
+                            selectedTimeBlockForConstraints.allowedSkillIds,
+                            timeBlockConstraintSkillOptions,
+                            selectedTimeBlockForConstraints.allowAllSkills
+                          )}
+                        </span>
+                        <span className="hidden truncate group-open:inline">Choose</span>
+                      </span>
+                    </summary>
+                    <div className="space-y-2 pt-1">
+                      <Input
+                        value={timeBlockSkillSearch}
+                        onChange={(event) => setTimeBlockSkillSearch(event.target.value)}
+                        placeholder="Search skills..."
+                        className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
+                      />
+                      <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                        <button
+                          type="button"
+                          aria-pressed={selectedTimeBlockForConstraints.allowAllSkills}
+                          onClick={() =>
+                            setSelectedTimeBlockForConstraints((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    allowAllSkills: true,
+                                    allowedSkillIds: new Set<string>(),
+                                  }
+                                : prev
+                            )
+                          }
+                          className={clsx(
+                            TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                            selectedTimeBlockForConstraints.allowAllSkills
+                              ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                              : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                          )}
+                        >
+                          Allow ALL
+                        </button>
+                        {filteredTimeBlockConstraintSkills.length === 0 ? (
+                          <p className="text-[10px] text-white/35">No skills found.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                            {filteredTimeBlockConstraintSkills.map((skill) => {
+                              const selected =
+                                !selectedTimeBlockForConstraints.allowAllSkills &&
+                                selectedTimeBlockForConstraints.allowedSkillIds.has(skill.id);
+                              return (
+                                <button
+                                  key={skill.id}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    setSelectedTimeBlockForConstraints((prev) => {
+                                      if (!prev) return prev;
+                                      const next = new Set(prev.allowedSkillIds);
+                                      if (next.has(skill.id)) next.delete(skill.id);
+                                      else next.add(skill.id);
+                                      return {
+                                        ...prev,
+                                        allowAllSkills: false,
+                                        allowedSkillIds: next,
+                                      };
+                                    })
+                                  }
+                                  className={clsx(
+                                    TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                                    selected
+                                      ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                                      : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                                  )}
+                                >
+                                  <span className={TIME_BLOCK_CONSTRAINT_OPTION_ICON}>
+                                    {(skill.icon ?? "*").trim() || "*"}
+                                  </span>
+                                  <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                    {skill.name}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      {!selectedTimeBlockForConstraints.allowAllSkills &&
+                      selectedTimeBlockForConstraints.allowedSkillIds.size === 0 ? (
+                        <div className="text-[10px] text-white/35">No skills allowed.</div>
+                      ) : null}
+                    </div>
+                  </details>
+
+                  <details className="group grid gap-1">
+                    <summary className="flex min-h-7 w-full cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                      <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-[0.26em] text-white/45">
+                        Monuments
+                      </span>
+                      <span className={TIME_BLOCK_CONSTRAINT_CONTROL_PILL}>
+                        <span className="truncate group-open:hidden">
+                          {formatTimeBlockConstraintSummary(
+                            selectedTimeBlockForConstraints.allowedMonumentIds,
+                            timeBlockConstraintMonumentOptions,
+                            selectedTimeBlockForConstraints.allowAllMonuments
+                          )}
+                        </span>
+                        <span className="hidden truncate group-open:inline">Choose</span>
+                      </span>
+                    </summary>
+                    <div className="space-y-2 pt-1">
+                      <Input
+                        value={timeBlockMonumentSearch}
+                        onChange={(event) => setTimeBlockMonumentSearch(event.target.value)}
+                        placeholder="Search monuments..."
+                        className="h-8 rounded-full border border-black/60 bg-black/30 px-3 text-xs text-white placeholder:text-white/35 focus-visible:ring-white/25"
+                      />
+                      <div className="max-h-40 overflow-y-auto pr-1">
+                        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                          <button
+                            type="button"
+                            aria-pressed={selectedTimeBlockForConstraints.allowAllMonuments}
+                            onClick={() =>
+                              setSelectedTimeBlockForConstraints((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      allowAllMonuments: true,
+                                      allowedMonumentIds: new Set<string>(),
+                                    }
+                                  : prev
+                              )
+                            }
+                            className={clsx(
+                              TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                              selectedTimeBlockForConstraints.allowAllMonuments
+                                ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                                : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                            )}
+                          >
+                            Allow ALL
+                          </button>
+                          {filteredTimeBlockConstraintMonuments.length === 0 ? (
+                            <p className="w-full text-[10px] text-white/35">
+                              No monuments found.
+                            </p>
+                          ) : (
+                            filteredTimeBlockConstraintMonuments.map((monument) => {
+                              const selected =
+                                !selectedTimeBlockForConstraints.allowAllMonuments &&
+                                selectedTimeBlockForConstraints.allowedMonumentIds.has(
+                                  monument.id
+                                );
+                              return (
+                                <button
+                                  key={monument.id}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    setSelectedTimeBlockForConstraints((prev) => {
+                                      if (!prev) return prev;
+                                      const next = new Set(prev.allowedMonumentIds);
+                                      if (next.has(monument.id)) next.delete(monument.id);
+                                      else next.add(monument.id);
+                                      return {
+                                        ...prev,
+                                        allowAllMonuments: false,
+                                        allowedMonumentIds: next,
+                                      };
+                                    })
+                                  }
+                                  className={clsx(
+                                    TIME_BLOCK_CONSTRAINT_PILL_BASE,
+                                    selected
+                                      ? TIME_BLOCK_CONSTRAINT_PILL_SELECTED
+                                      : TIME_BLOCK_CONSTRAINT_PILL_UNSELECTED
+                                  )}
+                                >
+                                  <span className={TIME_BLOCK_CONSTRAINT_OPTION_ICON}>
+                                    {(monument.emoji ?? "*").trim() || "*"}
+                                  </span>
+                                  <span className="max-w-[8rem] truncate sm:max-w-[10rem]">
+                                    {monument.title}
+                                  </span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                      {!selectedTimeBlockForConstraints.allowAllMonuments &&
+                      selectedTimeBlockForConstraints.allowedMonumentIds.size === 0 ? (
+                        <div className="text-[10px] text-white/35">
+                          No monuments allowed.
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+                </div>
+
+                {timeBlockConstraintsError ? (
+                  <div className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+                    {timeBlockConstraintsError}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingTimeBlockConstraints}
+                    onClick={() => {
+                      setSelectedTimeBlockForConstraints(null);
+                      setTimeBlockConstraintsError(null);
+                    }}
+                    className="rounded-full border border-black/70 bg-black/30 px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:border-black hover:bg-black/20 hover:text-white/90 disabled:opacity-55"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingTimeBlockConstraints}
+                    onClick={() => {
+                      void handleSaveTimeBlockConstraints();
+                    }}
+                    className="rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1.5 text-xs font-semibold text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_10px_24px_rgba(0,0,0,0.4)] transition hover:border-white/35 hover:from-white/22 hover:to-white/10 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isSavingTimeBlockConstraints ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>,
+          document.body
+        )
+      : null;
+
   if (!dayTimelineModel) {
     return (
       <div className="flex h-full w-full items-center justify-center text-[var(--muted)]">
@@ -10082,6 +11002,7 @@ export default function ScheduleTabContent({
   return (
     <LayoutGroup id="schedule-shared-layout">
       {manualPlacementGhostPortal}
+      {timeBlockConstraintsPortal}
       <ProtectedRoute>
         <ScheduleTopBar
           year={year}
@@ -10110,6 +11031,8 @@ export default function ScheduleTabContent({
           isClearingUncompletedScheduleInstances={
             isClearingUncompletedScheduleInstances
           }
+          isManualSchedulingMode={isManualSchedulingMode}
+          onToggleManualSchedulingMode={handleToggleManualSchedulingMode}
           onHeightChange={setTopBarHeight}
         />
         <div

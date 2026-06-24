@@ -5,6 +5,7 @@ import type { SchedulerModePayload } from "./modes";
 import type { GeoCoordinates } from "./sunlight";
 import {
   elapsedMs,
+  recordSchedulerPhase,
   schedulerNowMs,
   type SchedulerTiming,
 } from "./timing";
@@ -91,6 +92,7 @@ export async function resetUnlockedScheduledProjectInstances(
       window_id: null,
       day_type_time_block_id: null,
       time_block_id: null,
+      overlay_window_id: null,
       updated_at: now,
     })
     .in("id", instanceIds);
@@ -127,6 +129,13 @@ export async function runSchedulerForUser(
     client,
     timing
   );
+  if (timing) {
+    recordSchedulerPhase(
+      timing,
+      "scheduler.runner.unlocked_instance_reset",
+      timing.runner.resetUnlockedProjects.ms
+    );
+  }
 
   if (reset.error) {
     return { reset: { count: null, error: reset.error } };
@@ -137,6 +146,11 @@ export async function runSchedulerForUser(
   if (timing) {
     timing.runner.markMissed.ms += elapsedMs(markStartedAt);
     timing.runner.markMissed.affected = markResult.count ?? null;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.runner.mark_missed_and_queue",
+      timing.runner.markMissed.ms
+    );
   }
   if (markResult.error) {
     console.warn("[SCHEDULER] markMissedAndQueue failed", markResult.error);
@@ -155,7 +169,13 @@ export async function runSchedulerForUser(
     timing,
   });
   if (timing) {
-    timing.runner.scheduleBacklog.ms += elapsedMs(scheduleStartedAt);
+    const scheduleBacklogMs = elapsedMs(scheduleStartedAt);
+    timing.runner.scheduleBacklog.ms += scheduleBacklogMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.runner.schedule_backlog",
+      scheduleBacklogMs
+    );
   }
 
   return {

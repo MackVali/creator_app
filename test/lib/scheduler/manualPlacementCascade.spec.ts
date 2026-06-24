@@ -440,7 +440,8 @@ describe("persistManualPlacementCascade", () => {
     expect(updateMock).toHaveBeenCalledWith({
       start_utc: "2024-01-02T15:00:00.000Z",
       end_utc: "2024-01-02T16:00:00.000Z",
-      locked: true,
+      locked: false,
+      placement_source: "scheduler",
     });
   });
 

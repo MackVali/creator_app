@@ -3444,6 +3444,7 @@ export type Database = {
           missed_reason: string | null
           notes: string | null
           overlay_window_id: string | null
+          placement_source: Database["public"]["Enums"]["schedule_instance_placement_source"]
           practice_context_monument_id: string | null
           project_name: string | null
           scheduled_at: string
@@ -3471,6 +3472,7 @@ export type Database = {
           missed_reason?: string | null
           notes?: string | null
           overlay_window_id?: string | null
+          placement_source?: Database["public"]["Enums"]["schedule_instance_placement_source"]
           practice_context_monument_id?: string | null
           project_name?: string | null
           scheduled_at?: string
@@ -3498,6 +3500,7 @@ export type Database = {
           missed_reason?: string | null
           notes?: string | null
           overlay_window_id?: string | null
+          placement_source?: Database["public"]["Enums"]["schedule_instance_placement_source"]
           practice_context_monument_id?: string | null
           project_name?: string | null
           scheduled_at?: string
@@ -4855,6 +4858,7 @@ export type Database = {
         | "yearly"
         | "every x days"
         | "none"
+      schedule_instance_placement_source: "scheduler" | "manual"
       schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT"
       task_stage_enum: "PREPARE" | "PRODUCE" | "PERFECT"
       xp_kind: "task" | "habit" | "project" | "goal" | "manual"
@@ -5008,6 +5012,7 @@ export const Constants = {
         "every x days",
         "none",
       ],
+      schedule_instance_placement_source: ["scheduler", "manual"],
       schedule_instance_source_type: ["PROJECT", "TASK", "HABIT"],
       task_stage_enum: ["PREPARE", "PRODUCE", "PERFECT"],
       xp_kind: ["task", "habit", "project", "goal", "manual"],

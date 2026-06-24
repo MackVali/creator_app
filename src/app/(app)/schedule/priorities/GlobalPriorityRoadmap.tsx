@@ -608,6 +608,7 @@ export function GlobalPriorityRoadmap({
   sensors,
   isFiltered,
   appearance = "default",
+  hideNestedChildCountLabels = false,
   onGoalOpen,
   onGoalLongPressEdit,
   onProjectComplete,
@@ -622,6 +623,7 @@ export function GlobalPriorityRoadmap({
   sensors: PriorityRoadmapSensors;
   isFiltered: boolean;
   appearance?: GlobalPriorityRoadmapAppearance;
+  hideNestedChildCountLabels?: boolean;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit?: GlobalPriorityGoalLongPressEditHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
@@ -823,6 +825,7 @@ export function GlobalPriorityRoadmap({
                     isTopLevelDragDisabled={false}
                     isCampaignGoalDragDisabled={false}
                     appearance={appearance}
+                    hideNestedChildCountLabels={hideNestedChildCountLabels}
                     onGoalOpen={onGoalOpen}
                     onGoalLongPressEdit={handleGoalLongPressEdit}
                     onProjectComplete={onProjectComplete}
@@ -881,6 +884,7 @@ function GlobalPriorityBucket({
   isTopLevelDragDisabled,
   isCampaignGoalDragDisabled,
   appearance,
+  hideNestedChildCountLabels,
   onGoalOpen,
   onGoalLongPressEdit,
   onProjectComplete,
@@ -901,6 +905,7 @@ function GlobalPriorityBucket({
   isTopLevelDragDisabled: boolean;
   isCampaignGoalDragDisabled: boolean;
   appearance: GlobalPriorityRoadmapAppearance;
+  hideNestedChildCountLabels: boolean;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
@@ -961,6 +966,7 @@ function GlobalPriorityBucket({
                 isTopLevelDragDisabled={isTopLevelDragDisabled}
                 isCampaignGoalDragDisabled={isCampaignGoalDragDisabled}
                 appearance={appearance}
+                hideNestedChildCountLabels={hideNestedChildCountLabels}
                 onGoalOpen={onGoalOpen}
                 onGoalLongPressEdit={onGoalLongPressEdit}
                 onProjectComplete={onProjectComplete}
@@ -995,6 +1001,7 @@ function SortableGlobalPriorityItem({
   isTopLevelDragDisabled,
   isCampaignGoalDragDisabled,
   appearance,
+  hideNestedChildCountLabels,
   onGoalOpen,
   onGoalLongPressEdit,
   onProjectComplete,
@@ -1016,6 +1023,7 @@ function SortableGlobalPriorityItem({
   isTopLevelDragDisabled: boolean;
   isCampaignGoalDragDisabled: boolean;
   appearance: GlobalPriorityRoadmapAppearance;
+  hideNestedChildCountLabels: boolean;
   onGoalOpen?: (goalId: string) => void;
   onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
@@ -1227,13 +1235,18 @@ function SortableGlobalPriorityItem({
               <button
                 type="button"
                 aria-expanded={isGoalOpen}
+                aria-label={
+                  isGoalOpen ? "Collapse Goal Projects" : "Expand Goal Projects"
+                }
                 onClick={handleGoalToggle}
                 className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[10px] font-semibold leading-none text-zinc-600 outline-none transition hover:bg-white/[0.025] hover:text-zinc-400 focus-visible:ring-1 focus-visible:ring-white/15"
               >
-                <span>
-                  {goalProjects.length} Project
-                  {goalProjects.length === 1 ? "" : "s"}
-                </span>
+                {hideNestedChildCountLabels ? null : (
+                  <span>
+                    {goalProjects.length} Project
+                    {goalProjects.length === 1 ? "" : "s"}
+                  </span>
+                )}
                 <ChevronDown
                   className={cn(
                     "size-3.5 shrink-0 transition-transform",
@@ -1256,6 +1269,7 @@ function SortableGlobalPriorityItem({
           onProjectBlocked={onProjectBlocked}
           onProjectComplete={onProjectComplete}
           onTaskComplete={onTaskComplete}
+          hideNestedChildCountLabels={hideNestedChildCountLabels}
         />
       ) : null}
       {isCampaign && isOpen ? (
@@ -1284,6 +1298,7 @@ function SortableGlobalPriorityItem({
                   onToggleProject={onToggleProject}
                   onProjectBlocked={onProjectBlocked}
                   appearance={appearance}
+                  hideNestedChildCountLabels={hideNestedChildCountLabels}
                   onProjectComplete={onProjectComplete}
                   onTaskComplete={onTaskComplete}
                 />
@@ -1388,6 +1403,7 @@ function CampaignGoalPriorityBucket({
   onProjectBlocked,
   onProjectComplete,
   onTaskComplete,
+  hideNestedChildCountLabels,
 }: {
   campaignId: string;
   bucket: { priority: PriorityBucketId; goals: RoadmapPriorityGoal[] };
@@ -1403,6 +1419,7 @@ function CampaignGoalPriorityBucket({
   onProjectBlocked: (projectRowKey: string) => void;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+  hideNestedChildCountLabels: boolean;
 }) {
   const bucketId = getCampaignGoalBucketId(campaignId, bucket.priority);
   const { setNodeRef, isOver } = useDroppable({
@@ -1456,6 +1473,7 @@ function CampaignGoalPriorityBucket({
                 onGoalLongPressEdit={onGoalLongPressEdit}
                 onProjectComplete={onProjectComplete}
                 onTaskComplete={onTaskComplete}
+                hideNestedChildCountLabels={hideNestedChildCountLabels}
               />
             ))}
           </div>
@@ -1480,6 +1498,7 @@ function GlobalCampaignGoalRow({
   onGoalLongPressEdit,
   onProjectComplete,
   onTaskComplete,
+  hideNestedChildCountLabels,
 }: {
   campaignId: string;
   goal: RoadmapPriorityGoal;
@@ -1495,6 +1514,7 @@ function GlobalCampaignGoalRow({
   onGoalLongPressEdit: GlobalPriorityGoalLongPressEditHandler;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+  hideNestedChildCountLabels: boolean;
 }) {
   const {
     attributes,
@@ -1650,12 +1670,15 @@ function GlobalCampaignGoalRow({
           <button
             type="button"
             aria-expanded={isOpen}
+            aria-label={isOpen ? "Collapse Goal Projects" : "Expand Goal Projects"}
             onClick={handleToggle}
             className="flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-[9px] font-semibold leading-none text-zinc-700 outline-none transition hover:bg-white/[0.025] hover:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/15"
           >
-            <span>
-              {projects.length} Project{projects.length === 1 ? "" : "s"}
-            </span>
+            {hideNestedChildCountLabels ? null : (
+              <span>
+                {projects.length} Project{projects.length === 1 ? "" : "s"}
+              </span>
+            )}
             <ChevronDown
               className={cn(
                 "size-3 shrink-0 transition-transform",
@@ -1676,6 +1699,7 @@ function GlobalCampaignGoalRow({
           onProjectBlocked={onProjectBlocked}
           onProjectComplete={onProjectComplete}
           onTaskComplete={onTaskComplete}
+          hideNestedChildCountLabels={hideNestedChildCountLabels}
           nested
         />
       ) : null}
@@ -1910,6 +1934,7 @@ function GoalProjectRows({
   onProjectBlocked,
   onProjectComplete,
   onTaskComplete,
+  hideNestedChildCountLabels,
   nested = false,
 }: {
   projects: RoadmapPriorityProject[];
@@ -1920,6 +1945,7 @@ function GoalProjectRows({
   onProjectBlocked: (projectRowKey: string) => void;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+  hideNestedChildCountLabels: boolean;
   nested?: boolean;
 }) {
   return (
@@ -1942,6 +1968,7 @@ function GoalProjectRows({
               onBlocked={() => onProjectBlocked(projectRowKey)}
               onProjectComplete={onProjectComplete}
               onTaskComplete={onTaskComplete}
+              hideNestedChildCountLabels={hideNestedChildCountLabels}
             />
           );
         })}
@@ -1958,6 +1985,7 @@ function GoalProjectRow({
   onBlocked,
   onProjectComplete,
   onTaskComplete,
+  hideNestedChildCountLabels,
 }: {
   project: RoadmapPriorityProject;
   isOpen: boolean;
@@ -1966,6 +1994,7 @@ function GoalProjectRow({
   onBlocked: () => void;
   onProjectComplete?: GlobalPriorityProjectCompleteHandler;
   onTaskComplete?: GlobalPriorityTaskCompleteHandler;
+  hideNestedChildCountLabels: boolean;
 }) {
   const fabCreation = useFabCreation();
   const tasks = project.tasks ?? [];
@@ -2066,15 +2095,20 @@ function GoalProjectRow({
           <button
             type="button"
             aria-expanded={isOpen}
+            aria-label={
+              isOpen ? "Collapse Project Tasks" : "Expand Project Tasks"
+            }
             onClick={handleToggle}
             className={cn(
               "flex shrink-0 items-center gap-1 rounded-md px-1 py-0.5 text-[9px] font-semibold leading-none text-zinc-700 outline-none transition hover:bg-white/[0.025] hover:text-zinc-500 focus-visible:ring-1 focus-visible:ring-white/15",
               isCompleted ? "text-emerald-50/72 hover:text-emerald-50" : ""
             )}
           >
-            <span>
-              {tasks.length} Task{tasks.length === 1 ? "" : "s"}
-            </span>
+            {hideNestedChildCountLabels ? null : (
+              <span>
+                {tasks.length} Task{tasks.length === 1 ? "" : "s"}
+              </span>
+            )}
             <ChevronDown
               className={cn(
                 "size-3 shrink-0 transition-transform",

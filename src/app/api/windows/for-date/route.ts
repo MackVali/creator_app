@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchWindowsForDate, type WindowLite } from "@/lib/scheduler/repo";
+import { fetchWindowsForDate } from "@/lib/scheduler/repo";
 import { makeDateInTimeZone } from "@/lib/scheduler/timezone";
+import { visibleCalendarWindowsForDay } from "./visibleCalendarDay";
 
 export const runtime = "nodejs";
 
@@ -85,18 +86,42 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Create the date in the specified timezone at 4am to align with GLOBAL_DAY_START_HOUR
-    // This ensures day_type_assignments lookup uses the correct date_key for the requested day
-    const date = makeDateInTimeZone(
+    const visibleStart = makeDateInTimeZone(
+      { year, month, day, hour: 0, minute: 0 },
+      timeZone
+    );
+    const visibleEnd = makeDateInTimeZone(
+      { year, month, day: day + 1, hour: 0, minute: 0 },
+      timeZone
+    );
+    const previousSchedulerDate = makeDateInTimeZone(
+      { year, month, day: day - 1, hour: 4, minute: 0 },
+      timeZone
+    );
+    const currentSchedulerDate = makeDateInTimeZone(
       { year, month, day, hour: 4, minute: 0 },
       timeZone
     );
 
-    // Fetch windows for this date using day-type-aware method
-    // fetchWindowsForDate will automatically use getWindowsForDate_v2 when day types are available
-    const windows = await fetchWindowsForDate(date, supabase, timeZone, {
-      userId: user.id,
-      useDayTypes: true, // Explicitly enable day-type awareness
+    const [previousSchedulerWindows, currentSchedulerWindows] =
+      await Promise.all([
+        fetchWindowsForDate(previousSchedulerDate, supabase, timeZone, {
+          userId: user.id,
+          useDayTypes: true,
+        }),
+        fetchWindowsForDate(currentSchedulerDate, supabase, timeZone, {
+          userId: user.id,
+          useDayTypes: true,
+        }),
+      ]);
+
+    const windows = visibleCalendarWindowsForDay({
+      dayKey,
+      timeZone,
+      visibleStart,
+      visibleEnd,
+      previousSchedulerWindows,
+      currentSchedulerWindows,
     });
 
     return NextResponse.json({ windows });

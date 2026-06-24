@@ -57,7 +57,7 @@ const TermsPage = () => (
     <section className="space-y-3">
       <h2 className="text-xl font-medium">Limitation of liability & termination</h2>
       <p>
-        CREATOR is provided "as is" without warranties beyond what the law requires. We do not guarantee the accuracy, completeness, or fitness of the AI-generated guidance. You agree that we are not liable for lost profits, missed opportunities, or any incidental damages arising from your use.
+        CREATOR is provided &quot;as is&quot; without warranties beyond what the law requires. We do not guarantee the accuracy, completeness, or fitness of the AI-generated guidance. You agree that we are not liable for lost profits, missed opportunities, or any incidental damages arising from your use.
       </p>
       <p>
         We may limit, suspend, or terminate access at any time if you violate these terms, fail to meet payment obligations, or if the service changes in a way that requires updated terms.

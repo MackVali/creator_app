@@ -119,15 +119,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       start_utc: nextStartIso,
       end_utc: nextEndIso,
       locked: true,
-      ...(skipConflictResolution
-        ? {}
-        : {
-            // Explicit reschedules are the only path that should shed the old
-            // slot bindings before localized cleanup revalidates the move.
-            window_id: null,
-            day_type_time_block_id: null,
-            time_block_id: null,
-          }),
+      placement_source: "manual",
+      // Manual placement and explicit reschedules both make the exact interval
+      // authoritative, so stale scheduler slot ownership must not follow.
+      window_id: null,
+      day_type_time_block_id: null,
+      time_block_id: null,
+      overlay_window_id: null,
     })
     .eq("id", instance.id)
     .eq("user_id", user.id);

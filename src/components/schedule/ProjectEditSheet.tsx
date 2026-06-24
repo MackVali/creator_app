@@ -709,9 +709,11 @@ export function ProjectEditSheet({
           duration_min: durationMin,
           status: "scheduled",
           locked: true,
+          placement_source: "manual",
           window_id: null,
           day_type_time_block_id: null,
           time_block_id: null,
+          overlay_window_id: null,
           weight_snapshot: 0,
           energy_resolved: energy,
         })
@@ -777,6 +779,8 @@ export function ProjectEditSheet({
           start_utc: startDate.toISOString(),
           end_utc: endDate.toISOString(),
           duration_min: durationMin,
+          locked: true,
+          placement_source: "manual",
         })
         .eq("id", lockedInstance.id);
 

@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { needsSkillStack } from "@/lib/onboarding/needsSkillStack";
 
-export async function GET(_: NextRequest) {
+export async function GET() {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
