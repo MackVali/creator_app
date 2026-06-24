@@ -27,6 +27,7 @@ import type { TaskLite, ProjectLite } from "./weight";
 import { ENERGY } from "./config";
 import type { SkillRow } from "@/lib/types/skill";
 import type { Monument } from "@/lib/queries/monuments";
+import { elapsedMs, schedulerNowMs, type SchedulerTiming } from "./timing";
 import { log } from "@/lib/utils/logGate";
 
 type Client = SupabaseClient<Database>;
@@ -173,11 +174,13 @@ async function fetchSyncPairingsForInstances({
   instances,
   habits,
   client,
+  timing,
 }: {
   userId: string;
   instances: ScheduleInstance[];
   habits: HabitScheduleItem[];
   client: Client;
+  timing?: SchedulerTiming | null;
 }): Promise<SyncPairingsByInstanceId> {
   if (instances.length === 0 || habits.length === 0) return {};
 
@@ -224,6 +227,7 @@ async function fetchSyncPairingsForInstances({
   for (const syncInstanceId of syncInstanceIds) {
     if ((pairings[syncInstanceId]?.length ?? 0) > 0) continue;
 
+    const fallbackStartedAt = schedulerNowMs();
     const syncInstance = instanceById.get(syncInstanceId);
     if (!syncInstance) continue;
 
@@ -267,14 +271,11 @@ async function fetchSyncPairingsForInstances({
 
     pairings[syncInstanceId] = fallbackPartners.map((partner) => partner.id);
 
-    if (
-      process.env.NODE_ENV !== "production" &&
-      fallbackPartners.length > 0
-    ) {
-      log("debug", "[SYNC_PAIRINGS_FALLBACK]", {
-        syncInstanceId,
-        fallbackPartnerCount: fallbackPartners.length,
-      });
+    const fallbackMs = elapsedMs(fallbackStartedAt);
+    if (timing && fallbackPartners.length > 0) {
+      timing.schedule.syncPairings.fallbackLookups += 1;
+      timing.schedule.syncPairings.fallbackLookupMs += fallbackMs;
+      timing.schedule.syncPairings.fallbackPartners += fallbackPartners.length;
     }
   }
 
@@ -287,12 +288,14 @@ export async function buildScheduleEventDataset({
   baseDate,
   timeZone,
   lookaheadDays = DEFAULT_SCHEDULE_LOOKAHEAD_DAYS,
+  timing,
 }: {
   userId: string;
   client: Client;
   baseDate: Date;
   timeZone?: string | null;
   lookaheadDays?: number;
+  timing?: SchedulerTiming | null;
 }): Promise<ScheduleEventDataset> {
   const normalizedTz = normalizeTimeZone(timeZone);
   const futureRangeAnchor = startOfDayInTimeZone(baseDate, normalizedTz);
@@ -516,6 +519,7 @@ export async function buildScheduleEventDataset({
         instances: preparedInstances,
         habits,
         client,
+        timing,
       });
     } catch (error) {
       throw datasetSectionError("sync pairings fetch", error);

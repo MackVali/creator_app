@@ -8,6 +8,7 @@ import {
   rescheduleInstance,
   markProjectMissed,
   type ScheduleInstance,
+  type ScheduleInstanceCreateBatcher,
 } from "./instanceRepo";
 import { addMin } from "./placer";
 import {
@@ -26,12 +27,42 @@ import { log } from "@/lib/utils/logGate";
 import { getAvailabilityWindowKey } from "./windowKey";
 import {
   elapsedMs,
+  recordSchedulerPhase,
   recordSchedulerDbWrite,
   schedulerNowMs,
   type SchedulerTiming,
 } from "./timing";
 
 type Client = SupabaseClient<Database>;
+type WindowRow = Database["public"]["Tables"]["windows"]["Row"];
+type LocationContextRow =
+  Database["public"]["Tables"]["location_contexts"]["Row"];
+
+type WindowRangeRecord = Pick<
+  WindowRow,
+  | "id"
+  | "label"
+  | "energy"
+  | "start_local"
+  | "end_local"
+  | "days"
+  | "location_context_id"
+> & {
+  window_kind?: WindowLite["window_kind"] | null;
+  location_context?: Pick<LocationContextRow, "value" | "label"> | null;
+};
+
+type WindowReferenceRecord = {
+  id?: string | null;
+  isOverlayCandidate?: boolean;
+  overlayWindowId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  day_type_time_block_id?: string | null;
+  timeBlockId?: string | null;
+  time_block_id?: string | null;
+  window?: WindowReferenceRecord;
+  baseWindow?: WindowReferenceRecord;
+};
 
 export type PlacementFailureStage =
   | "availabilityBounds"
@@ -109,7 +140,7 @@ export async function fetchWindowsForRange(
     return [];
   }
 
-  return ((data ?? []) as any[]).map((record: any) => ({
+  return ((data ?? []) as WindowRangeRecord[]).map((record) => ({
     id: record.id,
     label: record.label ?? "",
     energy: record.energy ?? "",
@@ -395,6 +426,7 @@ type PlaceParams = {
   blockerCache?: BlockerCache;
   debugEnabled?: boolean;
   debugOnFailure?: (info: PlacementDebugTrace) => void;
+  createBatcher?: ScheduleInstanceCreateBatcher;
   timing?: SchedulerTiming | null;
 };
 
@@ -778,6 +810,7 @@ export async function placeItemInWindows(
     blockerCache,
     debugEnabled,
     debugOnFailure,
+    createBatcher,
   } = params;
   const cache = blockerCache ?? null;
   let best: null | {
@@ -971,7 +1004,7 @@ export async function placeItemInWindows(
       new Date(rangeStartMs).toISOString(),
       new Date(rangeEndMs).toISOString(),
       client,
-      { suppressQueryLog: Boolean(debugEnabled) }
+      { suppressQueryLog: Boolean(debugEnabled), timing }
     );
     if (error) {
       throw error;
@@ -1547,10 +1580,11 @@ export async function placeItemInWindows(
   }
 
   // Helper function to extract window references from window-like objects
-  function extractWindowRefs(winLike: any): {
+  function extractWindowRefs(winLike: WindowReferenceRecord): {
     legacyWindowId: string | null;
     dayTypeTimeBlockId: string | null;
     timeBlockId: string | null;
+    overlayWindowId: string | null;
   } {
     // Try to find the WindowLite object at common locations
     const w = winLike.window ?? winLike.baseWindow ?? winLike;
@@ -1563,13 +1597,13 @@ export async function placeItemInWindows(
         legacyWindowId: null,
         dayTypeTimeBlockId: null,
         timeBlockId: null,
+        overlayWindowId: w.overlayWindowId ?? null,
       };
     }
 
     // Read the dayTypeTimeBlockId (try both camelCase and snake_case)
     const dttbId = w.dayTypeTimeBlockId ?? w.day_type_time_block_id ?? null;
-    const timeBlockId =
-      (w as any).timeBlockId ?? w.time_block_id ?? w.id ?? null;
+    const timeBlockId = w.timeBlockId ?? w.time_block_id ?? w.id ?? null;
 
     // Determine legacy vs day-type window
     if (dttbId !== null && dttbId !== undefined) {
@@ -1578,6 +1612,7 @@ export async function placeItemInWindows(
         legacyWindowId: timeBlockId,
         dayTypeTimeBlockId: dttbId,
         timeBlockId: timeBlockId,
+        overlayWindowId: null,
       };
     } else {
       // Legacy window
@@ -1585,6 +1620,7 @@ export async function placeItemInWindows(
         legacyWindowId: timeBlockId, // The legacy windows.id
         dayTypeTimeBlockId: null,
         timeBlockId: null,
+        overlayWindowId: null,
       };
     }
   }
@@ -1615,6 +1651,7 @@ export async function placeItemInWindows(
   }
 
   const persistStartedAt = schedulerNowMs();
+  const persistCreateBatcher = candidateIsSync ? undefined : createBatcher;
   const persisted = await persistPlacement(
     {
       userId,
@@ -1622,6 +1659,7 @@ export async function placeItemInWindows(
       windowId: windowRefs.legacyWindowId,
       dayTypeTimeBlockId: windowRefs.dayTypeTimeBlockId,
       timeBlockId: windowRefs.timeBlockId,
+      overlayWindowId: windowRefs.overlayWindowId,
       startUTC: startUtc.toISOString(),
       endUTC: endUtc.toISOString(),
       durationMin,
@@ -1629,10 +1667,19 @@ export async function placeItemInWindows(
       eventName: item.eventName,
       metadata,
     },
-    client
+    client,
+    persistCreateBatcher
   );
   if (timing) {
-    timing.schedule.placeItem.persistWriteMs += elapsedMs(persistStartedAt);
+    const persistWriteMs = elapsedMs(persistStartedAt);
+    timing.schedule.placeItem.persistWriteMs += persistWriteMs;
+    recordSchedulerPhase(
+      timing,
+      reuseInstanceId
+        ? "scheduler.schedule.schedule_instance_update_writes"
+        : "scheduler.schedule.schedule_instance_create_writes",
+      persistWriteMs
+    );
     if (persisted.error) {
       outcome = "error";
     } else {
@@ -1700,6 +1747,7 @@ async function persistPlacement(
     windowId: string | null;
     dayTypeTimeBlockId?: string | null;
     timeBlockId?: string | null;
+    overlayWindowId?: string | null;
     startUTC: string;
     endUTC: string;
     durationMin: number;
@@ -1707,7 +1755,8 @@ async function persistPlacement(
     eventName: string;
     metadata?: ScheduleInstance["metadata"];
   },
-  client?: Client
+  client?: Client,
+  createBatcher?: ScheduleInstanceCreateBatcher
 ) {
   const {
     userId,
@@ -1715,6 +1764,7 @@ async function persistPlacement(
     windowId,
     dayTypeTimeBlockId,
     timeBlockId,
+    overlayWindowId,
     startUTC,
     endUTC,
     reuseInstanceId,
@@ -1739,6 +1789,7 @@ async function persistPlacement(
         windowId,
         dayTypeTimeBlockId,
         timeBlockId,
+        overlayWindowId,
         startUTC,
         endUTC,
         durationMin: computedDurationMin,
@@ -1751,6 +1802,32 @@ async function persistPlacement(
       client
     );
   }
+  if (createBatcher) {
+    const created = createBatcher.enqueue({
+      userId,
+      sourceId: item.id,
+      sourceType: item.sourceType,
+      windowId,
+      dayTypeTimeBlockId,
+      timeBlockId,
+      overlayWindowId,
+      startUTC,
+      endUTC,
+      durationMin: computedDurationMin,
+      weightSnapshot: item.weight,
+      energyResolved: resolvedEnergy,
+      eventName,
+      practiceContextId: item.practiceContextId,
+      metadata,
+    });
+    return {
+      data: created,
+      error: null,
+      status: 201,
+      statusText: "Created",
+      count: null,
+    };
+  }
   try {
     const created = await createInstance(
       {
@@ -1760,6 +1837,7 @@ async function persistPlacement(
         windowId,
         dayTypeTimeBlockId,
         timeBlockId,
+        overlayWindowId,
         startUTC,
         endUTC,
         durationMin: computedDurationMin,

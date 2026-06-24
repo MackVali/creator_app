@@ -75,6 +75,8 @@ import {
   type PriorityBucketId,
   type RoadmapHabitItem,
   type RoadmapPriorityGoal,
+  type RoadmapPriorityProject,
+  type RoadmapPriorityTask,
 } from "@/app/(app)/schedule/priorities/utils";
 import {
   GlobalPriorityRoadmap,
@@ -1040,6 +1042,67 @@ function finalizeMonumentPriorityRoadmapItems(
   ).filter((goal) => !visibleCampaignGoalIds.has(goal.id));
 
   return sortGlobalPriorityItems([...visibleCampaignItems, ...standaloneGoalItems]);
+}
+
+function mapGoalProjectToRoadmapPriorityProject(
+  project: Project
+): RoadmapPriorityProject {
+  const tasks: RoadmapPriorityTask[] = project.tasks.map((task) => ({
+    id: task.id,
+    name: task.name?.trim() || "Untitled Task",
+    skillId: task.skillId ?? null,
+    skillIcon: task.skillIcon ?? null,
+    priority: normalizePriority(task.priorityCode),
+    energy: task.energyCode ?? null,
+    stage: task.stage ?? null,
+    completedAt: task.completedAt ?? null,
+  }));
+  const taskSkillIds = tasks.map((task) => task.skillId ?? null);
+
+  return {
+    id: project.id,
+    name: project.name?.trim() || "Untitled Project",
+    emoji: project.emoji ?? null,
+    skillId: project.skillIds?.[0] ?? taskSkillIds.find(Boolean) ?? null,
+    skillIcon:
+      project.emoji ?? tasks.find((task) => task.skillIcon)?.skillIcon ?? null,
+    skillIds: project.skillIds ?? [],
+    taskSkillIds,
+    priority: normalizePriority(project.priorityCode),
+    energy: project.energyCode ?? project.energy ?? null,
+    stage: project.status === "Done" ? "RELEASE" : project.stage ?? null,
+    completedAt: null,
+    globalRank: project.globalRank ?? undefined,
+    tasks,
+  };
+}
+
+function enrichMonumentPriorityItemsWithGoalRelations(
+  items: GlobalPriorityRoadmapItem[],
+  goals: Goal[]
+): GlobalPriorityRoadmapItem[] {
+  if (goals.length === 0) return items;
+
+  const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
+  const mapGoalProjects = (goalId: string) =>
+    goalsById.get(goalId)?.projects.map(mapGoalProjectToRoadmapPriorityProject);
+
+  return items.map((item) => {
+    if (item.type === "campaign") {
+      return {
+        ...item,
+        goals: item.goals?.map((goal) => ({
+          ...goal,
+          projects: mapGoalProjects(goal.id) ?? goal.projects,
+        })),
+      };
+    }
+
+    return {
+      ...item,
+      projects: mapGoalProjects(item.id) ?? item.projects,
+    };
+  });
 }
 
 async function fetchMonumentPriorityRoadmapItems(
@@ -2159,16 +2222,22 @@ export function MonumentGoalsList({
     setMonumentPriorityRoadmapItems,
   ] = useState<GlobalPriorityRoadmapItem[]>([]);
   const visibleMonumentPriorityRoadmapItems = useMemo(
-    () =>
-      resolvedSourceType === "monument"
-        ? finalizeMonumentPriorityRoadmapItems(
-            monumentPriorityRoadmapItems,
-            resolvedSourceId
-          )
+    () => {
+      const enrichedItems =
+        resolvedSourceType === "monument"
+          ? enrichMonumentPriorityItemsWithGoalRelations(
+              monumentPriorityRoadmapItems,
+              goals
+            )
+          : monumentPriorityRoadmapItems;
+
+      return resolvedSourceType === "monument"
+        ? finalizeMonumentPriorityRoadmapItems(enrichedItems, resolvedSourceId)
         : resolvedSourceType === "circle"
-          ? sortGlobalPriorityItems(monumentPriorityRoadmapItems)
-        : [],
-    [monumentPriorityRoadmapItems, resolvedSourceId, resolvedSourceType]
+          ? sortGlobalPriorityItems(enrichedItems)
+          : [];
+    },
+    [goals, monumentPriorityRoadmapItems, resolvedSourceId, resolvedSourceType]
   );
   const [monumentPriorityRoadmapError, setMonumentPriorityRoadmapError] =
     useState<string | null>(null);
@@ -2234,6 +2303,8 @@ export function MonumentGoalsList({
   const readyGoalsToastSignatureRef = useRef<string | null>(null);
   const hydratedGoalIdsRef = useRef<Set<string>>(new Set());
   const loadedGoalsSourceKeyRef = useRef<string | null>(null);
+  const sourceHierarchyMountedRef = useRef(false);
+  const sourceHierarchyRefreshRequestRef = useRef(0);
   const goalPanelWheelLockedRef = useRef(false);
   const goalPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -3182,6 +3253,126 @@ export function MonumentGoalsList({
     }
   }, [resolvedSourceId, resolvedSourceType]);
 
+  const refreshSourceHierarchy = useCallback(async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase || !resolvedSourceId) {
+      return;
+    }
+
+    const requestId = sourceHierarchyRefreshRequestRef.current + 1;
+    sourceHierarchyRefreshRequestRef.current = requestId;
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (
+        !user ||
+        !sourceHierarchyMountedRef.current ||
+        sourceHierarchyRefreshRequestRef.current !== requestId
+      ) {
+        return;
+      }
+
+      setUserId(user.id);
+
+      const [
+        trueRoadmaps,
+        campaignCards,
+        priorityRoadmapItems,
+        circleHabitItemsResult,
+        skills,
+        fullGoalRows,
+      ] = await Promise.all([
+        resolvedSourceType === "circle"
+          ? fetchTrueRoadmapsForCircle(user.id, resolvedSourceId)
+          : fetchTrueRoadmapsForMonument(user.id, resolvedSourceId, {
+              reconcile: true,
+            }),
+        resolvedSourceType === "circle"
+          ? listGoalCampaignCards(user.id).catch((err) => {
+              console.error("Error refreshing Circle campaign cards", err);
+              return [] as GoalCampaignCardData[];
+            })
+          : Promise.resolve([] as GoalCampaignCardData[]),
+        resolvedSourceType === "monument"
+          ? fetchMonumentPriorityRoadmapItems(user.id).catch((err) => {
+              console.error("Error refreshing Monument priority roadmap", err);
+              return [] as GlobalPriorityRoadmapItem[];
+            })
+          : resolvedSourceType === "circle"
+            ? fetchCirclePriorityRoadmapItems(user.id, resolvedSourceId).catch(
+                (err) => {
+                  console.error("Error refreshing Circle priority roadmap", err);
+                  return [] as GlobalPriorityRoadmapItem[];
+                }
+              )
+            : Promise.resolve([] as GlobalPriorityRoadmapItem[]),
+        resolvedSourceType === "circle"
+          ? fetchCircleHabitRoadmapItems(user.id, resolvedSourceId)
+              .then((items) => ({ items, error: null as unknown }))
+              .catch((err) => {
+                console.error("Error refreshing Circle Habit roadmap", err);
+                return {
+                  items: [] as RoadmapHabitItem[],
+                  error: err as unknown,
+                };
+              })
+          : Promise.resolve({
+              items: [] as RoadmapHabitItem[],
+              error: null as unknown,
+            }),
+        getSkillsForUser(user.id).catch(() => []),
+        fetchGoalsFullRelationsForSource(
+          resolvedSourceType,
+          resolvedSourceId,
+          user.id
+        ),
+      ]);
+
+      if (
+        !sourceHierarchyMountedRef.current ||
+        sourceHierarchyRefreshRequestRef.current !== requestId
+      ) {
+        return;
+      }
+
+      const skillIconLookup = new Map(
+        skills.map((skill) => [skill.id, skill.icon ?? null])
+      );
+      const hydratedGoals = sortGoalsForDisplay(
+        fullGoalRows.map((goalRow) =>
+          mapGoalRowToDisplayGoal(goalRow, skillIconLookup)
+        )
+      );
+
+      setGoals(hydratedGoals);
+      hydratedGoalIdsRef.current = new Set(
+        fullGoalRows.map((goalRow) => goalRow.id)
+      );
+      loadedGoalsSourceKeyRef.current = goalsSourceKey;
+      setMonumentRoadmapsWithItems(trueRoadmaps);
+      setGoalCampaignCards(campaignCards);
+      setMonumentPriorityRoadmapItems(priorityRoadmapItems);
+      setMonumentPriorityRoadmapError(null);
+      setCircleHabitRoadmapItems(circleHabitItemsResult.items);
+      setCircleHabitRoadmapError(
+        circleHabitItemsResult.error ? "Unable to load Circle Habits." : null
+      );
+      setGoalsDisplayReadyKey(goalsDisplayKey);
+      setRoadmapsDisplayReadyKey(goalsDisplayKey);
+      setLoading(false);
+    } catch (err) {
+      console.error(`Error refreshing ${resolvedSourceType} source hierarchy`, err);
+    }
+  }, [
+    goalsDisplayKey,
+    goalsSourceKey,
+    mapGoalRowToDisplayGoal,
+    resolvedSourceId,
+    resolvedSourceType,
+  ]);
+
   const isGoalLinkedToCurrentSource = useCallback(
     (goal: { monumentId?: string | null; circleId?: string | null }) => {
       if (!resolvedSourceId) return false;
@@ -3203,6 +3394,14 @@ export function MonumentGoalsList({
   );
 
   useEffect(() => {
+    sourceHierarchyMountedRef.current = true;
+    return () => {
+      sourceHierarchyMountedRef.current = false;
+      sourceHierarchyRefreshRequestRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -3217,6 +3416,7 @@ export function MonumentGoalsList({
           circleId?: string | null;
           campaignId?: string | null;
           goalId?: string | null;
+          projectId?: string | null;
           preserveDrawer?: {
             type?: string;
             id?: string;
@@ -3342,6 +3542,15 @@ export function MonumentGoalsList({
         }
       }
 
+      if (
+        detail?.action === "created" &&
+        (entityType === "GOAL" ||
+          entityType === "PROJECT" ||
+          entityType === "TASK")
+      ) {
+        void refreshSourceHierarchy();
+      }
+
       setRefreshVersion((current) => current + 1);
     };
 
@@ -3355,7 +3564,7 @@ export function MonumentGoalsList({
         handleCreatorEntitySaved
       );
     };
-  }, [goals, isGoalLinkedToCurrentSource]);
+  }, [goals, isGoalLinkedToCurrentSource, refreshSourceHierarchy]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4911,6 +5120,7 @@ export function MonumentGoalsList({
               isSaving={isSavingMonumentPriorityOrder}
               sensors={monumentPriorityRoadmapSensors}
               isFiltered={true}
+              hideNestedChildCountLabels={resolvedSourceType === "monument"}
               onGoalOpen={handleRoadmapGoalOpen}
               onGoalLongPressEdit={handleMonumentPriorityGoalLongPressEdit}
               onDragEnd={handleMonumentPriorityDragEnd}

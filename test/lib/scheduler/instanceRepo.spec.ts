@@ -40,6 +40,7 @@ describe("instanceRepo day-type guard", () => {
     expect(insertPayload.window_id).toBeNull();
     expect(insertPayload.day_type_time_block_id).toBe(dayTypeTimeBlockId);
     expect(insertPayload.time_block_id).toBe(timeBlockId);
+    expect(insertPayload.placement_source).toBe("scheduler");
   });
 
   it("clears window_id for day-type rescheduleInstance calls", async () => {
@@ -68,5 +69,6 @@ describe("instanceRepo day-type guard", () => {
     expect(updatePayload.window_id).toBeNull();
     expect(updatePayload.day_type_time_block_id).toBe(dayTypeTimeBlockId);
     expect(updatePayload.time_block_id).toBe(timeBlockId);
+    expect(updatePayload.placement_source).toBe("scheduler");
   });
 });

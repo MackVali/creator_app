@@ -44,7 +44,7 @@ export async function GET() {
         .order("sort_order", { ascending: true, nullsFirst: false }),
     ]);
 
-  let [skillsResponse, catsResponse] = await fetchCatsAndSkills();
+  const [skillsResponse, catsResponse] = await fetchCatsAndSkills();
 
   // Debug logging for development
   // (commented out to avoid noisy production logs)

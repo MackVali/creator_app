@@ -233,6 +233,12 @@ type Candidate = {
   score: number;
 };
 
+type CandidateRecord = {
+  id: string;
+  name?: string | null;
+  title?: string | null;
+};
+
 type PreviewResult = {
   warnings: string[];
   candidates?: {
@@ -379,7 +385,7 @@ async function fetchCandidates(
     console.error(`Failed to load ${table}`, error);
     return [];
   }
-  return (data ?? []) as { id: string; [key: string]: any }[];
+  return (data ?? []) as CandidateRecord[];
 }
 
 async function findAppliedAction(
@@ -1215,7 +1221,7 @@ const derivePreviewCandidates = async (
               const matches = dayTypeNameMap.get(normalizedDayType) ?? [];
               const overrideDayType =
                 dayTypeOverrideId && dayTypesById.get(dayTypeOverrideId);
-              let selectedDayType =
+              const selectedDayType =
                 overrideDayType ?? (matches.length === 1 ? matches[0] : null);
               if (!selectedDayType) {
                 if (matches.length > 1) {
@@ -1523,7 +1529,7 @@ const derivePreviewCandidates = async (
                 overrideBlock && dayTypesById.get(overrideBlock.dayTypeId);
               const overrideDayType =
                 dayTypeOverrideId && dayTypesById.get(dayTypeOverrideId);
-              let selectedDayType =
+              const selectedDayType =
                 overrideDayType ??
                 overrideBlockDayType ??
                 (dayTypeMatches.length === 1 ? dayTypeMatches[0] : null);

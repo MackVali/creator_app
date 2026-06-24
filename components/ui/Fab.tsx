@@ -337,6 +337,7 @@ type CreatorEntitySavedEventDetail = {
   circleId?: string | null;
   campaignId?: string | null;
   goalId?: string | null;
+  projectId?: string | null;
   routineId?: string | null;
   preserveDrawer?: FabCreationRequest["preserveDrawer"];
 };
@@ -1626,7 +1627,6 @@ const getDynamicOverlaySchedulerWriteThroughDays = (
   return Math.min(MAX_SCHEDULER_WRITE_DAYS, Math.max(1, requiredDays));
 };
 
-const DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS = 25000;
 const SCHEDULE_SCHEDULER_RUNNING_EVENT =
   "schedule:scheduler-running-changed";
 
@@ -6835,6 +6835,84 @@ export function Fab({
   }, [editTarget?.entityId, editTarget?.entityType]);
 
   useEffect(() => {
+    const stackedProjectId =
+      goalProjectStack?.parentMode === "edit" &&
+      goalProjectStack.projectMode === "edit-existing"
+        ? (goalProjectStack.projectId ?? null)
+        : null;
+
+    if (!stackedProjectId) {
+      return;
+    }
+
+    let cancelled = false;
+    const loadStackedProjectTasks = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: taskRows, error: taskRowsError } = await supabase
+          .from("tasks")
+          .select(
+            "id, name, priority, energy, stage, completed_at, duration_min, skill_id",
+          )
+          .eq("user_id", user.id)
+          .eq("project_id", stackedProjectId);
+        if (cancelled) return;
+        if (taskRowsError) {
+          console.error(
+            "Failed to load stacked project child tasks",
+            taskRowsError,
+          );
+          setEditProjectTasks([]);
+          return;
+        }
+        setEditProjectTasks(
+          Array.isArray(taskRows)
+            ? taskRows.map((task) => ({
+                id: task.id,
+                name: task.name ?? "Untitled task",
+                priority: task.priority ?? null,
+                energy: task.energy ?? null,
+                stage: task.stage ?? null,
+                completedAt:
+                  typeof task.completed_at === "string"
+                    ? task.completed_at
+                    : null,
+                durationMin:
+                  typeof task.duration_min === "number" &&
+                  Number.isFinite(task.duration_min)
+                    ? task.duration_min
+                    : null,
+                skillId: task.skill_id ?? null,
+                dueDate: null,
+              }))
+            : [],
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to hydrate stacked project tasks", error);
+          setEditProjectTasks([]);
+        }
+      }
+    };
+
+    void loadStackedProjectTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    goalProjectStack?.parentMode,
+    goalProjectStack?.projectId,
+    goalProjectStack?.projectMode,
+  ]);
+
+  useEffect(() => {
     const entityType = editTarget?.entityType;
     const entityId = editTarget?.entityId;
     const instanceId =
@@ -9216,11 +9294,6 @@ export function Fab({
         dynamicOverlayEndTime,
         localNow,
       );
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(
-        () => controller.abort(),
-        DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS,
-      );
       const payload = {
         localTimeIso: localNow.toISOString(),
         timeZone,
@@ -9237,7 +9310,6 @@ export function Fab({
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-          signal: controller.signal,
         });
 
         console.info("Dynamic overlay scheduler response", {
@@ -9252,25 +9324,9 @@ export function Fab({
 
         return writeThroughDays;
       } catch (error) {
-        if (
-          error &&
-          typeof error === "object" &&
-          "name" in error &&
-          error.name === "AbortError"
-        ) {
-          console.error("Dynamic overlay scheduler timed out", {
-            timeoutMs: DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS,
-          });
-          throw new Error(
-            `Scheduler request timed out after ${Math.round(
-              DYNAMIC_OVERLAY_SCHEDULER_TIMEOUT_MS / 1000,
-            )} seconds.`,
-          );
-        }
         console.error("Dynamic overlay scheduler request failed", error);
         throw error;
       } finally {
-        window.clearTimeout(timeoutId);
         dispatchScheduleSchedulerRunningChange(false);
       }
     },
@@ -11194,14 +11250,6 @@ export function Fab({
     );
   };
 
-  const associatedEditBlankStyle: React.CSSProperties = {
-    boxShadow:
-      "0 10px 24px -22px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.035)",
-    outline: "1px solid rgba(0, 0, 0, 0.82)",
-    outlineOffset: "-1px",
-    background:
-      "radial-gradient(circle at 0% 0%, rgba(161, 161, 170, 0.08), transparent 54%), linear-gradient(140deg, rgba(3, 4, 7, 0.72) 0%, rgba(10, 11, 15, 0.66) 48%, rgba(21, 23, 29, 0.42) 100%)",
-  };
   const associatedEditCardClass =
     "group relative grid h-[92px] min-h-[82px] max-h-[96px] w-full min-w-0 grid-cols-[2.35rem_minmax(0,1fr)_2.25rem] overflow-hidden rounded-md border border-black/80 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30";
   const associatedCompletedEditCardClass =
@@ -11212,8 +11260,8 @@ export function Fab({
     "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90";
   const associatedCompletedIdentityClass =
     "border-emerald-50/28 bg-emerald-950/18 text-emerald-50";
-  const associatedEditBlankClass =
-    "group relative flex h-[92px] min-h-[82px] max-h-[96px] w-full items-center justify-center overflow-hidden rounded-md border border-black/75 text-white backdrop-blur-sm transition-[background,border-color,transform] duration-200 hover:-translate-y-px hover:border-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25";
+  const associatedPhantomAddRowClass =
+    "group flex items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/25";
   const associatedEditGridClass =
     "grid content-start gap-[0.5px] auto-rows-[92px]";
   const associatedEditViewportClass =
@@ -11221,7 +11269,7 @@ export function Fab({
   const projectTaskEditViewportClass =
     "h-[277px] max-h-[277px] overflow-y-auto overscroll-contain pr-1";
   const renderAssociatedEnergyFlame = (energy?: string | null) => (
-    <span className="relative z-[2] flex min-h-full items-center justify-center border-l border-white/[0.045] bg-black/10">
+    <span className="pointer-events-none absolute inset-y-0 right-0 z-[2] flex w-8 items-center justify-center">
       <FlameEmber
         level={normalizeFlameLevel(energy)}
         size="sm"
@@ -11249,17 +11297,16 @@ export function Fab({
     key: string,
     label: string,
     onClick: () => void,
-    className = associatedEditBlankClass,
+    className = "h-full min-h-0",
   ) => (
     <button
       key={key}
       type="button"
       onClick={onClick}
-      className={className}
-      style={associatedEditBlankStyle}
+      className={cn(associatedPhantomAddRowClass, className)}
       aria-label={label}
     >
-      <span className="flex size-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.055] text-white/64 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05),_0_5px_12px_rgba(0,0,0,0.28)] transition group-hover:border-white/16 group-hover:bg-white/[0.08] group-hover:text-white/82">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/78">
         <Plus className="h-4 w-4" aria-hidden="true" />
       </span>
     </button>
@@ -11277,6 +11324,15 @@ export function Fab({
     const goalProjectDraftCardClass = goalProjectListShouldScroll
       ? "min-h-[72px]"
       : "h-full min-h-0";
+    const renderGoalProjectCreationPhantomRow = (key: string) =>
+      renderAssociatedGhostAddRow(
+        key,
+        "Add draft project",
+        () => {
+          openGoalProjectStack({ mode: "create" });
+        },
+        goalProjectDraftCardClass,
+      );
     const goalProjectNexusCardStyle: React.CSSProperties = {
       background: NEXUS_TIMELINE_DARK_EVENT_BACKGROUND,
       borderColor: NEXUS_TIMELINE_DEFAULT_BORDER_COLOR,
@@ -11348,7 +11404,7 @@ export function Fab({
         hasFabCompletionTimestamp(project.completedAt);
 
       return (
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.85rem] items-stretch gap-2">
+        <div className="min-w-0 pr-7">
           <div className="flex min-w-0 flex-col justify-center gap-1">
             <div className="flex min-w-0 items-center gap-2">
               <span
@@ -11373,14 +11429,16 @@ export function Fab({
               >
                 {project.name}
               </span>
-              <span
-                className={cn(
-                  "shrink-0 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-white/62",
-                  isCompleted && associatedCompletedBadgeClass,
-                )}
-              >
-                {isCompleted ? "Done" : "Project"}
-              </span>
+              {isCompleted ? (
+                <span
+                  className={cn(
+                    "shrink-0 rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-white/62",
+                    associatedCompletedBadgeClass,
+                  )}
+                >
+                  Done
+                </span>
+              ) : null}
             </div>
             <div
               className={cn(
@@ -11460,8 +11518,8 @@ export function Fab({
             ),
           ];
         })()
-      : goalDraftProjects.length > 0
-        ? goalDraftProjects.map((project) => {
+      : (() => {
+          const draftCards = goalDraftProjects.map((project) => {
             return (
               <div
                 key={project.tempId}
@@ -11501,25 +11559,17 @@ export function Fab({
                 </div>
               </div>
             );
-          })
-        : Array.from({ length: 3 }, (_, index) => (
-            <button
-              key={`goal-project-empty-${index}`}
-              type="button"
-              onClick={() => {
-                openGoalProjectStack({ mode: "create" });
-              }}
-              className={cn(
-                "flex items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08]",
-                goalProjectDraftCardClass,
-              )}
-              aria-label="Add draft project"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/78">
-                <Plus className="h-4 w-4" />
-              </span>
-            </button>
-          ));
+          });
+          const blankCount = Math.max(0, 3 - goalDraftProjects.length);
+          return [
+            ...draftCards,
+            ...Array.from({ length: blankCount }, (_, index) =>
+              renderGoalProjectCreationPhantomRow(
+                `goal-project-empty-${index}`,
+              ),
+            ),
+          ];
+        })();
 
     if (nestedDraftPanel === "goal-project" && !isEditingGoal) {
       return (
@@ -11869,18 +11919,6 @@ export function Fab({
           <h3 className="truncate text-sm font-semibold leading-none text-white">
             Goal Projects
           </h3>
-          {!isEditingGoal ? (
-            <button
-              type="button"
-              onClick={() => {
-                openGoalProjectStack({ mode: "create" });
-              }}
-              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Add</span>
-            </button>
-          ) : null}
         </div>
         <div
           className={cn(
@@ -11908,8 +11946,14 @@ export function Fab({
   };
 
   const renderProjectTasksPanel = () => {
+    const isStackedExistingProject = Boolean(
+      goalProjectStack?.parentMode === "edit" &&
+        goalProjectStack.projectMode === "edit-existing" &&
+        goalProjectStack.projectId,
+    );
     const isEditingProject = Boolean(
-      editTarget?.entityType === "PROJECT" && editTarget.entityId,
+      (editTarget?.entityType === "PROJECT" && editTarget.entityId) ||
+        isStackedExistingProject,
     );
     const visibleEditTasks = isEditingProject ? editProjectTasks : null;
     const visibleTaskCount = visibleEditTasks
@@ -11939,16 +11983,10 @@ export function Fab({
       return { label, visual };
     };
     const getProjectTaskMetaItems = (task: {
-      stage: string | null;
       durationMin: number | null;
       dueDate: string | null;
     }) =>
       [
-        task.stage
-          ? (TASK_STAGE_OPTIONS_LOCAL.find(
-              (option) => option.value === task.stage,
-            )?.label ?? task.stage)
-          : null,
         typeof task.durationMin === "number" &&
         Number.isFinite(task.durationMin) &&
         task.durationMin > 0
@@ -11977,7 +12015,7 @@ export function Fab({
         hasFabCompletionTimestamp(task.completedAt);
 
       return (
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.85rem] items-stretch gap-2">
+        <div className="min-w-0 pr-7">
           <div className="flex min-w-0 flex-col justify-center gap-1">
             <div className="flex min-w-0 items-center gap-2">
               <span
@@ -12074,6 +12112,7 @@ export function Fab({
                 () => {
                   void openProjectTaskStack({ mode: "create" });
                 },
+                "h-full min-h-0",
               ),
             ),
           ];
@@ -18111,6 +18150,7 @@ export function Fab({
         let createdEntityId: string | null = null;
         let createdCampaignId: string | null = null;
         let createdGoalId: string | null = null;
+        let createdProjectId: string | null = null;
         let createdRoutineId: string | null = null;
         let tagAttachmentFailed = false;
         let childDraftFailureMessage: string | null = null;
@@ -18579,6 +18619,7 @@ export function Fab({
                 ? "updated"
                 : "created",
             monumentId: null,
+            projectId: parentProjectId,
           });
           restoreProjectTaskStack();
           void hapticComplete();
@@ -19095,6 +19136,7 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = taskData?.id ?? null;
+          createdProjectId = taskProjectId || null;
           if (taskData?.id && exactSchedule) {
             await upsertLockedScheduleInstance({
               supabase,
@@ -19368,6 +19410,7 @@ export function Fab({
                 : null,
             campaignId: createdCampaignId,
             goalId: createdGoalId,
+            projectId: createdProjectId,
             routineId: createdRoutineId,
             preserveDrawer:
               activeCreationRequest?.type === createdType
@@ -19904,6 +19947,11 @@ export function Fab({
       : null;
   const editPresentationOriginRect = editTarget?.originRect ?? null;
   const shouldUseCenteredEditModal = expanded && Boolean(editTarget);
+  const shouldUseProjectTasksCenteredSizing =
+    shouldUseCenteredEditModal &&
+    selected === "PROJECT" &&
+    activeCreationMode === "tasks" &&
+    (editTarget?.entityType === "PROJECT" || Boolean(goalProjectStack));
   const isGoalCreationExpanded = expanded && selected === "GOAL";
   const isProjectCreationExpanded = expanded && selected === "PROJECT";
   const isTaskCreationExpanded = expanded && selected === "TASK";
@@ -19966,9 +20014,7 @@ export function Fab({
     selected === "GOAL"
       ? goalCenteredEditMinHeight
       : selected === "PROJECT"
-        ? shouldUseCenteredEditModal &&
-          editTarget?.entityType === "PROJECT" &&
-          activeCreationMode === "tasks"
+        ? shouldUseProjectTasksCenteredSizing
           ? projectTasksCenteredEditMinHeight
           : projectCenteredEditMinHeight
         : selected === "TASK"
@@ -20091,9 +20137,7 @@ export function Fab({
   ]);
   const secondaryCreationPanelMinHeight =
     expanded && isContentSizedCreationExpanded && activeCreationMode !== "main"
-      ? shouldUseCenteredEditModal &&
-        editTarget?.entityType === "PROJECT" &&
-        activeCreationMode === "tasks"
+      ? shouldUseProjectTasksCenteredSizing
         ? undefined
         : selectedCreationShellHeight ?? selectedCreationTypeMinHeight
       : undefined;
@@ -23337,7 +23381,7 @@ function FabNexus({
   const suppressClickRef = useRef(false);
   const RESULT_CARD_DRAG_THRESHOLD_PX = 12;
   const RESULT_CARD_DOUBLE_TAP_THRESHOLD_MS = 360;
-  const RESULT_CARD_LONG_PRESS_THRESHOLD_MS = 550;
+  const RESULT_CARD_LONG_PRESS_THRESHOLD_MS = 650;
   const RESULT_CARD_LONG_PRESS_CANCEL_PX = 14;
   const RESULT_CARD_PAGE_SWIPE_DOMINANCE = 1.25;
   const RESULT_CARD_VERTICAL_SCROLL_DOMINANCE = 1.15;
@@ -24145,20 +24189,30 @@ function FabNexus({
                 }
               };
 
-              const beginDrag = (
-                event: React.PointerEvent,
+              const canManualPlaceResult = (res: FabSearchResult) =>
+                Boolean(onManualPlaceResult && res.scheduleInstanceId);
+
+              const beginManualPlacement = (
                 res: FabSearchResult,
+                pointer: DragPointerInfo,
               ) => {
                 if (!onManualPlaceResult) return;
                 if (!res.scheduleInstanceId) return;
+                onManualPlaceResult(res, pointer);
+                suppressTransientClick();
+              };
+
+              const beginPointerDrag = (
+                event: React.PointerEvent,
+                res: FabSearchResult,
+              ) => {
                 releaseCardPointer(event);
-                onManualPlaceResult(res, {
+                beginManualPlacement(res, {
                   clientX: event.clientX,
                   clientY: event.clientY,
                   pointerId: event.pointerId ?? null,
                   pointerType: event.pointerType ?? null,
                 });
-                suppressTransientClick();
               };
 
               const beginLongPressTimer = (
@@ -24234,6 +24288,20 @@ function FabNexus({
                 }
 
                 if (
+                  canManualPlaceResult(state.result) &&
+                  (absX >= RESULT_CARD_DRAG_THRESHOLD_PX ||
+                    absY >= RESULT_CARD_DRAG_THRESHOLD_PX)
+                ) {
+                  clearResultLongPressTimer();
+                  lastResultTapRef.current = null;
+                  state.dragging = true;
+                  beginPointerDrag(event, state.result);
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+
+                if (
                   absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
                   absY > absX * 1.1
                 ) {
@@ -24272,7 +24340,7 @@ function FabNexus({
 
                 clearResultLongPressTimer();
                 state.dragging = true;
-                beginDrag(event, state.result);
+                beginPointerDrag(event, state.result);
                 event.preventDefault();
               };
 
@@ -24375,6 +24443,25 @@ function FabNexus({
                 }
 
                 if (
+                  canManualPlaceResult(state.result) &&
+                  (absX >= RESULT_CARD_DRAG_THRESHOLD_PX ||
+                    absY >= RESULT_CARD_DRAG_THRESHOLD_PX)
+                ) {
+                  clearResultLongPressTimer();
+                  lastResultTapRef.current = null;
+                  state.dragging = true;
+                  beginManualPlacement(state.result, {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    pointerId: touch.identifier,
+                    pointerType: "touch",
+                  });
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+
+                if (
                   absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
                   absY > absX * 1.1
                 ) {
@@ -24398,10 +24485,11 @@ function FabNexus({
                 const state = dragStateRef.current;
                 if (!state || state.id !== result.id) return;
                 if (state.inputType !== "touch") return;
+                const wasDragging = state.dragging;
                 const wasLongPress = state.longPressFired;
                 clearResultLongPressTimer();
                 dragStateRef.current = null;
-                if (wasLongPress) {
+                if (wasDragging || wasLongPress) {
                   event.preventDefault();
                   event.stopPropagation();
                   return;

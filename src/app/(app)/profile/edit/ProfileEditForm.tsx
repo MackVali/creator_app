@@ -109,7 +109,7 @@ export default function ProfileEditForm({
         } else {
           setUsernameAvailable(true);
         }
-      } catch (error) {
+      } catch {
         setUsernameAvailable(false);
       } finally {
         setUsernameChecking(false);
@@ -185,7 +185,7 @@ export default function ProfileEditForm({
       const fileExt = file.name.split(".").pop();
       const fileName = `${userId}-${Date.now()}.${fileExt}`;
 
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from("avatars")
         .upload(fileName, file);
 
@@ -198,7 +198,7 @@ export default function ProfileEditForm({
       } = supabase.storage.from("avatars").getPublicUrl(fileName);
 
       return { success: true, url: publicUrl };
-    } catch (error) {
+    } catch {
       return { success: false, error: "Failed to upload avatar" };
     }
   };
@@ -213,8 +213,6 @@ export default function ProfileEditForm({
 
     setSaving(true);
     try {
-      let avatarUrl = profile.avatar_url;
-
       // Upload avatar if changed
       if (avatarFile) {
         const uploadResult = await uploadAvatar(avatarFile);
@@ -223,7 +221,6 @@ export default function ProfileEditForm({
           setSaving(false);
           return;
         }
-        avatarUrl = uploadResult.url;
       }
 
       // Update profile using server action

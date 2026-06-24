@@ -605,6 +605,7 @@ async function persistDisplacedProjectInstance(params: {
       start_utc: params.startUtc.toISOString(),
       end_utc: params.endUtc.toISOString(),
       locked: false,
+      placement_source: "scheduler",
     })
     .eq("id", params.instanceId)
     .eq("user_id", params.userId);

@@ -1,4 +1,3 @@
-import { ReactNode } from "react";
 import { Sparkline } from "@/components/visuals/Sparkline";
 
 interface MetricBadgeProps {

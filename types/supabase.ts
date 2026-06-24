@@ -2028,6 +2028,7 @@ export interface Database {
           canceled_reason: string | null;
           completed_at: string | null;
           locked: boolean;
+          placement_source: Database["public"]["Enums"]["schedule_instance_placement_source"];
           event_name: string | null;
           practice_context_monument_id: string | null;
           overlay_window_id: string | null;
@@ -2051,6 +2052,7 @@ export interface Database {
           canceled_reason?: string | null;
           completed_at?: string | null;
           locked?: boolean;
+          placement_source?: Database["public"]["Enums"]["schedule_instance_placement_source"];
           event_name?: string | null;
           practice_context_monument_id?: string | null;
           overlay_window_id?: string | null;
@@ -2074,6 +2076,7 @@ export interface Database {
           canceled_reason?: string | null;
           completed_at?: string | null;
           locked?: boolean;
+          placement_source?: Database["public"]["Enums"]["schedule_instance_placement_source"];
           event_name?: string | null;
           practice_context_monument_id?: string | null;
           overlay_window_id?: string | null;
@@ -2450,6 +2453,7 @@ export interface Database {
       };
     };
     Enums: {
+      schedule_instance_placement_source: "scheduler" | "manual";
       schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT";
       schedule_instance_status:
         | "scheduled"

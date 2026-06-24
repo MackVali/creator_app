@@ -7,8 +7,10 @@ import {
   fetchInstancesForRange,
   computeDurationMin,
   createInstance,
+  createScheduleInstanceCreateBatcher,
   markProjectMissed,
   type ScheduleInstance,
+  type ScheduleInstanceCreateBatcher,
 } from "./instanceRepo";
 import {
   buildProjectItems,
@@ -108,6 +110,7 @@ import { log, type ThrottleOptions } from "@/lib/utils/logGate";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "./limits";
 import {
   elapsedMs,
+  recordSchedulerPhase,
   recordSchedulerDbWrite,
   schedulerNowMs,
   type SchedulerTiming,
@@ -140,9 +143,20 @@ type CompatibleWindowRecord = {
 };
 
 type OverlayWindowBlock = {
+  id: string | null;
   startMs: number;
   endMs: number;
 };
+
+type OverlayWindowBlockCache = {
+  blocksByKey: Map<string, Promise<OverlayWindowBlock[]>>;
+};
+
+function createOverlayWindowBlockCache(): OverlayWindowBlockCache {
+  return {
+    blocksByKey: new Map<string, Promise<OverlayWindowBlock[]>>(),
+  };
+}
 
 export type DynamicOverlayWindowCache = {
   effectiveNow: Date;
@@ -204,8 +218,6 @@ type ResolvedWindowEntry = {
   endMs: number;
   key: string;
 };
-
-const overlayWindowCache = new Map<string, OverlayWindowBlock[]>();
 
 const START_GRACE_MIN = 1;
 const BASE_LOOKAHEAD_DAYS = 14;
@@ -2018,9 +2030,17 @@ function createScheduleInstanceInsertBatcher(
           index,
           index + SCHEDULER_DIRECT_WRITE_BATCH_SIZE
         );
+        const flushStartedAt = schedulerNowMs();
         const { error } = await supabase
           .from("schedule_instances")
           .insert(batch.map((entry) => entry.row));
+        if (timing) {
+          recordSchedulerPhase(
+            timing,
+            "scheduler.schedule.missed_instance_create_writes",
+            elapsedMs(flushStartedAt)
+          );
+        }
         if (error) {
           for (const entry of batch) {
             entry.onError?.(error);
@@ -2490,7 +2510,13 @@ async function normalizeProjectInstances(
   }
   } finally {
     if (timing) {
-      timing.schedule.normalizeProjectInstances.ms += elapsedMs(startedAt);
+      const normalizeProjectInstancesMs = elapsedMs(startedAt);
+      timing.schedule.normalizeProjectInstances.ms += normalizeProjectInstancesMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.normalize_project_instances",
+        normalizeProjectInstancesMs
+      );
       timing.schedule.normalizeProjectInstances.loaded =
         Object.keys(projectsMap).length;
       timing.schedule.normalizeProjectInstances.insertedMissed += insertedMissed;
@@ -2518,9 +2544,21 @@ export async function scheduleBacklog(
 ): Promise<ScheduleBacklogResult> {
   const timing = options?.timing ?? null;
   const scheduleStartedAt = schedulerNowMs();
+  const recordPhaseSince = (label: string, startedAt: number) => {
+    if (!timing) return;
+    recordSchedulerPhase(timing, label, elapsedMs(startedAt));
+  };
   try {
   const supabase = await ensureClient(client);
+  const overlayReconcileStartedAt = schedulerNowMs();
   await reconcileExpiredOverlayWindows(supabase, userId);
+  if (timing) {
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.overlay_reconcile_expired",
+      elapsedMs(overlayReconcileStartedAt)
+    );
+  }
   const parityEnabled = options?.parity === true;
   const paritySummary: ParitySummary | null = parityEnabled
     ? {
@@ -2649,12 +2687,22 @@ export async function scheduleBacklog(
   const canceledHabitIds: string[] = [];
 
   // Clear all existing missed habit instances before starting fresh
+  const missedHabitDeleteStartedAt = schedulerNowMs();
   await supabase
     .from("schedule_instances")
     .delete()
     .eq("user_id", userId)
     .eq("source_type", "HABIT")
     .eq("status", "missed");
+  if (timing) {
+    const missedHabitDeleteMs = elapsedMs(missedHabitDeleteStartedAt);
+    recordSchedulerDbWrite(timing, "deletes");
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.schedule_instance_delete_writes",
+      missedHabitDeleteMs
+    );
+  }
 
   const timeZone = options?.timeZone ?? "UTC"; // timezone already validated upstream; no normalization helper required.
   const location = normalizeCoordinates(options?.location ?? null);
@@ -2696,7 +2744,13 @@ export async function scheduleBacklog(
   const goals = await fetchGoalsForUser(userId, supabase);
   const habits = await fetchHabitsForSchedule(userId, supabase);
   if (timing) {
-    timing.schedule.loadData.ms += elapsedMs(loadDataStartedAt);
+    const loadDataMs = elapsedMs(loadDataStartedAt);
+    timing.schedule.loadData.ms += loadDataMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.input_loading",
+      loadDataMs
+    );
     timing.schedule.loadData.counts = {
       missed: missed.data?.length ?? 0,
       tasks: tasks.length,
@@ -2709,6 +2763,7 @@ export async function scheduleBacklog(
     timing.schedule.backlog.habits = habits.length;
     timing.schedule.backlog.projects = Object.keys(fetchedProjectsMap).length;
   }
+  const queueBuildStartedAt = schedulerNowMs();
   const habitAllowsOverlap = new Map<string, boolean>();
   const habitById = new Map<string, HabitScheduleItem>();
   const habitTypeById = new Map<string, string>();
@@ -2819,11 +2874,17 @@ export async function scheduleBacklog(
   }
   let practiceHistory = new Map<string, Date>();
   if (process.env.NODE_ENV !== "test") {
+    const practiceHistoryStartedAt = schedulerNowMs();
     try {
       practiceHistory = await fetchPracticeContextHistory(userId, supabase);
     } catch (error) {
       log("error", "Failed to load practice context history", error);
       practiceHistory = new Map();
+    } finally {
+      recordPhaseSince(
+        "scheduler.schedule.practice_history_loading",
+        practiceHistoryStartedAt
+      );
     }
   }
   const createdThisRun = new Set<string>();
@@ -2951,7 +3012,12 @@ export async function scheduleBacklog(
     excludedByGoalStatus: ineligibleProjectCountsByGoalStatus,
   });
 
+  const rankRecalculationStartedAt = schedulerNowMs();
   await recalculateGlobalRanks(projectsMap, supabase);
+  recordPhaseSince(
+    "scheduler.schedule.project_rank_recalculation",
+    rankRecalculationStartedAt
+  );
 
   async function recalculateGlobalRanks(
     projectsMap: Record<string, CanonicalProjectRecord>,
@@ -3034,6 +3100,7 @@ export async function scheduleBacklog(
   }
 
   let projectSkillsMap: Record<string, string[]> = {};
+  const projectSkillLoadingStartedAt = schedulerNowMs();
   try {
     const projectIds = Object.keys(projectsMap);
     if (projectIds.length > 0) {
@@ -3045,6 +3112,11 @@ export async function scheduleBacklog(
   } catch (error) {
     log("error", "Failed to fetch project skill links for scheduler mode", error);
     projectSkillsMap = {};
+  } finally {
+    recordPhaseSince(
+      "scheduler.schedule.project_skill_loading",
+      projectSkillLoadingStartedAt
+    );
   }
 
   const projectSkillIdsCache = new Map<string, string[]>();
@@ -3199,6 +3271,8 @@ export async function scheduleBacklog(
 
   const allProjectIds = new Set(projectQueue.map((p) => p.id));
   const finalQueueProjectIds = new Set(queuedProjectIds);
+  const writeThroughResolutionStartedAt = schedulerNowMs();
+  recordPhaseSince("scheduler.schedule.queue_building", queueBuildStartedAt);
   const lookaheadDays = Math.min(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS
@@ -3239,6 +3313,13 @@ export async function scheduleBacklog(
     effectiveDayLimit
   );
   if (timing) {
+    const writeThroughResolutionMs = elapsedMs(writeThroughResolutionStartedAt);
+    timing.schedule.writeThroughResolutionMs += writeThroughResolutionMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.write_through_days_resolution",
+      writeThroughResolutionMs
+    );
     timing.schedule.lookaheadDays = lookaheadDays;
     timing.schedule.effectiveDayLimit = effectiveDayLimit;
     timing.schedule.effectiveHorizonDays = effectiveHorizonDays;
@@ -3255,6 +3336,7 @@ export async function scheduleBacklog(
   const cleanupDedupeStartedAt = schedulerNowMs();
 
   if (writeThroughEnd.getTime() > baseStartMs) {
+    const rebuildCancelStartedAt = schedulerNowMs();
     const { error } = await supabase
       .from("schedule_instances")
       .update({
@@ -3271,6 +3353,10 @@ export async function scheduleBacklog(
       return result;
     }
     recordSchedulerDbWrite(timing, "cancels");
+    recordPhaseSince(
+      "scheduler.schedule.reschedule_rebuild_cancel_writes",
+      rebuildCancelStartedAt
+    );
   }
 
   const futureOverridePauses: Array<{
@@ -3285,6 +3371,7 @@ export async function scheduleBacklog(
     futureOverridePauses.push({ habitId: habit.id, overrideStart });
   }
   if (futureOverridePauses.length > 0) {
+    const nextDueOverrideCancelStartedAt = schedulerNowMs();
     for (const { habitId, overrideStart } of futureOverridePauses) {
       const { error } = await supabase
         .from("schedule_instances")
@@ -3308,16 +3395,33 @@ export async function scheduleBacklog(
         recordSchedulerDbWrite(timing, "cancels");
       }
     }
+    recordPhaseSince(
+      "scheduler.schedule.next_due_override_cancel_writes",
+      nextDueOverrideCancelStartedAt
+    );
   }
 
   const isRescheduleRebuild = true;
 
   // Assign canonical instance IDs to all queue items for proper reuse
+  const canonicalInstancesStartedAt = schedulerNowMs();
   const { data: canonicalInstances } = await supabase
     .from("schedule_instances")
     .select("id, source_id")
     .eq("user_id", userId)
     .eq("source_type", "PROJECT");
+  if (timing) {
+    const canonicalInstancesMs = elapsedMs(canonicalInstancesStartedAt);
+    timing.schedule.scheduleInstanceQueries.calls += 1;
+    timing.schedule.scheduleInstanceQueries.totalMs += canonicalInstancesMs;
+    timing.schedule.scheduleInstanceQueries.rows +=
+      Array.isArray(canonicalInstances) ? canonicalInstances.length : 0;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.existing_schedule_instance_load",
+      canonicalInstancesMs
+    );
+  }
 
   const projectToInstanceId = new Map<string, string>();
   for (const inst of (canonicalInstances as
@@ -3414,7 +3518,8 @@ export async function scheduleBacklog(
     rangeEnd,
     allProjectIds,
     writeThroughEnd,
-    debugEnabled
+    debugEnabled,
+    timing
   );
   if (timing) {
     timing.schedule.cleanupDedupe.dedupeFetched = dedupe.allInstances.length;
@@ -3488,6 +3593,7 @@ export async function scheduleBacklog(
   }
   const pendingOverlapRemovalIds = new Set<string>();
   if (overlapHabitInstanceIds.length > 0) {
+    const overlapHabitMissedStartedAt = schedulerNowMs();
     await invalidateInstancesAsMissed(
       supabase,
       overlapHabitInstanceIds,
@@ -3500,6 +3606,10 @@ export async function scheduleBacklog(
           }
         },
       }
+    );
+    recordPhaseSince(
+      "scheduler.schedule.overlap_habit_mark_missed",
+      overlapHabitMissedStartedAt
     );
   }
   const overlapInvalidatedHabitsByOffset = new Map<
@@ -3578,9 +3688,14 @@ export async function scheduleBacklog(
   }
 
   if (rebuildCanceledInstanceIds.size > 0) {
+    const rebuildCancelStartedAt = schedulerNowMs();
     await cancelInstancesAsRescheduleRebuild(
       supabase,
       Array.from(rebuildCanceledInstanceIds)
+    );
+    recordPhaseSince(
+      "scheduler.schedule.reschedule_rebuild_cancel_writes",
+      rebuildCancelStartedAt
     );
     if (timing) {
       timing.schedule.cleanupDedupe.canceled += rebuildCanceledInstanceIds.size;
@@ -3604,7 +3719,13 @@ export async function scheduleBacklog(
     }
   }
   if (timing) {
-    timing.schedule.cleanupDedupe.ms += elapsedMs(cleanupDedupeStartedAt);
+    const cleanupDedupeMs = elapsedMs(cleanupDedupeStartedAt);
+    timing.schedule.cleanupDedupe.ms += cleanupDedupeMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.cleanup_dedupe_reconcile",
+      cleanupDedupeMs
+    );
   }
 
   const keptInstancesByProject = new Map<string, ScheduleInstance>();
@@ -4052,6 +4173,7 @@ export async function scheduleBacklog(
     Map<string, HabitReservation>
   >();
   const windowCache = new Map<string, WindowLite[]>();
+  const overlayBlockCache = createOverlayWindowBlockCache();
   const dynamicOverlayCache = createDynamicOverlayWindowCache(baseDate);
   const dayMaxGapCache = new Map<string, number>();
   const projectDayWindowsCache = new Map<string, WindowLite[]>();
@@ -4168,6 +4290,7 @@ export async function scheduleBacklog(
     await prepareWindowsForDay(day);
     const existingInstances = getDayInstances(offset);
 
+    const habitPlacementStartedAt = schedulerNowMs();
     const dayResult = await scheduleHabitsForDay({
       userId,
       habits: dailyHabits,
@@ -4178,9 +4301,11 @@ export async function scheduleBacklog(
       availability,
       baseDate,
       windowCache,
+      overlayBlockCache,
       dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
+      createBatcher: scheduleInstanceCreateBatch,
       client: supabase,
       sunlightLocation: location,
       timeZoneOffsetMinutes,
@@ -4208,7 +4333,15 @@ export async function scheduleBacklog(
       isRescheduleRebuild,
       timing,
     });
-
+    if (timing) {
+      const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
+      timing.schedule.habitPasses.placementMs += habitPlacementMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.habit_placement",
+        habitPlacementMs
+      );
+    }
     if (dayResult.placements.length > 0) {
       result.timeline.push(...dayResult.placements);
     }
@@ -4230,6 +4363,27 @@ export async function scheduleBacklog(
     supabase,
     timing
   );
+  const scheduleInstanceCreateBatch = createScheduleInstanceCreateBatcher(
+    supabase,
+    {
+      onFlushMs: (ms) => {
+        if (!timing || ms <= 0) return;
+        recordSchedulerPhase(
+          timing,
+          "scheduler.schedule.schedule_instance_create_writes",
+          ms
+        );
+      },
+    }
+  );
+  const flushScheduleInstanceCreates = async () => {
+    await scheduleInstanceCreateBatch.flush();
+  };
+  const flushMissedInstanceCreates = async () => {
+    const flushStartedAt = schedulerNowMs();
+    await safeMissedInsertBatch.flush();
+    recordPhaseSince("scheduler.schedule.missed_instance_flush", flushStartedAt);
+  };
   const missedHabitIds = new Set<string>();
   for (const inst of dedupe.allInstances) {
     if (!inst || inst.source_type !== "HABIT") continue;
@@ -4678,6 +4832,7 @@ export async function scheduleBacklog(
                   ? baseDate
                   : undefined,
               cache: windowCache,
+              overlayBlockCache,
               dynamicOverlayCache,
               restMode: isRestMode,
             userId,
@@ -4724,6 +4879,7 @@ export async function scheduleBacklog(
           windowEdgePreference: habit.windowEdgePreference,
           maxGapCache: dayMaxGapCache,
           blockerCache,
+          createBatcher: scheduleInstanceCreateBatch,
           metadata: mergeNonDailyMetadata(params.reuseInstance?.metadata, {
             role: params.role,
             dueAtUtc: params.dueAtUtc,
@@ -4910,9 +5066,16 @@ export async function scheduleBacklog(
     return nonDailyReplacementInstanceIds;
   };
   const initialHabitPassStartedAt = schedulerNowMs();
+  const nonDailyHabitPassStartedAt = schedulerNowMs();
   nonDailyReplacementInstanceIds =
     await scheduleNonDailyHabitsAcrossHorizon(nonDailyHabits);
-  await safeMissedInsertBatch.flush();
+  recordPhaseSince(
+    "scheduler.schedule.non_daily_habit_pass",
+    nonDailyHabitPassStartedAt
+  );
+  await flushMissedInstanceCreates();
+  await flushScheduleInstanceCreates();
+  const syncPostPassStartedAt = schedulerNowMs();
   const scheduleSyncHabitsAcrossHorizon = async () => {
     logSchedulerDebug("[SCHEDULER_ORDER] SYNC_PAIRING_POST_PASS_START");
 
@@ -4937,6 +5100,10 @@ export async function scheduleBacklog(
         registerSyncCandidate(inst);
       }
     }
+    recordPhaseSince(
+      "scheduler.schedule.sync_candidate_building",
+      syncPostPassStartedAt
+    );
 
     const allScheduledInstances = Array.from(scheduledInstanceLookup.values());
     const syncHabitsDue: Map<
@@ -4944,6 +5111,7 @@ export async function scheduleBacklog(
       { habit: HabitScheduleItem; minOffset: number }
     > = new Map();
 
+    const syncDueEvaluationStartedAt = schedulerNowMs();
     for (let offset = 0; offset < effectiveDayLimit; offset += 1) {
       const day =
         offset === 0
@@ -4973,8 +5141,18 @@ export async function scheduleBacklog(
         }
       }
     }
+    if (timing) {
+      const syncDueEvaluationMs = elapsedMs(syncDueEvaluationStartedAt);
+      timing.schedule.habitPasses.dueEvaluationMs += syncDueEvaluationMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.habit_due_evaluation",
+        syncDueEvaluationMs
+      );
+    }
 
     const uniqueSyncHabits = Array.from(syncHabitsDue.values());
+    const syncCandidatePairingStartedAt = schedulerNowMs();
     for (const syncEntry of uniqueSyncHabits) {
       const habit = syncEntry.habit;
       const syncWindow = {
@@ -5057,6 +5235,7 @@ export async function scheduleBacklog(
       const endUtc = new Date(
         syncResult.finalStart.getTime() + durationMin * 60000
       ).toISOString();
+      const syncInstanceCreateStartedAt = schedulerNowMs();
       const syncInstance = await createInstance(
         {
           userId,
@@ -5073,6 +5252,10 @@ export async function scheduleBacklog(
           practiceContextId: habit.skillMonumentId ?? null,
         },
         supabase
+      );
+      recordPhaseSince(
+        "scheduler.schedule.sync_instance_create_writes",
+        syncInstanceCreateStartedAt
       );
 
       if (!syncInstance?.id) {
@@ -5127,6 +5310,10 @@ export async function scheduleBacklog(
       registerInstanceForOffsets(syncInstance);
       addHabitBlocker(syncInstance);
     }
+    recordPhaseSince(
+      "scheduler.schedule.sync_candidate_pairing",
+      syncCandidatePairingStartedAt
+    );
 
     if (syncInstancesCreated.length > 0) {
       const pairingRows = syncInstancesCreated
@@ -5150,9 +5337,11 @@ export async function scheduleBacklog(
         );
 
       if (pairingRows.length > 0) {
+        const syncPairingPersistStartedAt = schedulerNowMs();
         const { error: pairingError } = await supabase
           .from("schedule_sync_pairings")
           .upsert(pairingRows, { onConflict: "sync_instance_id" });
+        const syncPairingPersistMs = elapsedMs(syncPairingPersistStartedAt);
         if (pairingError) {
           result.failures.push({
             itemId: "sync-pairings-persist",
@@ -5161,6 +5350,20 @@ export async function scheduleBacklog(
           });
         } else {
           recordSchedulerDbWrite(timing, "upserts", pairingRows.length);
+          if (timing) {
+            timing.schedule.syncPairings.persistedRows += pairingRows.length;
+            timing.schedule.syncPairings.lookupMs += syncPairingPersistMs;
+            recordSchedulerPhase(
+              timing,
+              "scheduler.schedule.sync_pairing_lookup",
+              syncPairingPersistMs
+            );
+            recordSchedulerPhase(
+              timing,
+              "scheduler.schedule.schedule_instance_upsert_writes",
+              syncPairingPersistMs
+            );
+          }
         }
       }
     }
@@ -5172,6 +5375,7 @@ export async function scheduleBacklog(
     return syncPairingsByInstanceId;
   };
   result.syncPairings = await scheduleSyncHabitsAcrossHorizon();
+  recordPhaseSince("scheduler.schedule.sync_post_pass", syncPostPassStartedAt);
   if (timing) {
     timing.schedule.habitPasses.totalMs += elapsedMs(initialHabitPassStartedAt);
   }
@@ -5189,6 +5393,7 @@ export async function scheduleBacklog(
   const invalidLockedProjectInstanceIds: string[] = [];
   const invalidLockedProjectIds = new Set<string>();
   if (keptLockedProjects.length > 0) {
+    const lockedProjectRevalidationStartedAt = schedulerNowMs();
     const validatedLockedProjects: ScheduleInstance[] = [];
     for (const instance of keptLockedProjects) {
       const instanceId = instance.id ?? null;
@@ -5252,9 +5457,14 @@ export async function scheduleBacklog(
     keptLockedProjects = validatedLockedProjects;
     if (invalidLockedProjectInstanceIds.length > 0) {
       const invalidInstanceIdSet = new Set(invalidLockedProjectInstanceIds);
+      const invalidLockedCancelStartedAt = schedulerNowMs();
       await cancelInstancesAsRescheduleRebuild(
         supabase,
         invalidLockedProjectInstanceIds
+      );
+      recordPhaseSince(
+        "scheduler.schedule.reschedule_rebuild_cancel_writes",
+        invalidLockedCancelStartedAt
       );
       keptLockedInstances = keptLockedInstances.filter(
         (inst) => !invalidInstanceIdSet.has(inst.id ?? "")
@@ -5270,11 +5480,16 @@ export async function scheduleBacklog(
         }
       }
     }
+    recordPhaseSince(
+      "scheduler.schedule.locked_project_revalidation",
+      lockedProjectRevalidationStartedAt
+    );
   }
   baseBlockers = [...keptLockedInstances];
 
   const dedupedProjectQueue = queue;
 
+  const habitReservationPassStartedAt = schedulerNowMs();
   for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
     const allowSchedulingToday = offset < effectiveDayLimit;
     const shouldScheduleHabits =
@@ -5293,6 +5508,7 @@ export async function scheduleBacklog(
       offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
     await prepareWindowsForDay(day);
 
+    const reservationStartedAt = schedulerNowMs();
     const reservedPlacements = await reserveMandatoryHabitsForDay({
       userId,
       habits: dailyHabits,
@@ -5303,6 +5519,7 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      overlayBlockCache,
       dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       client: supabase,
@@ -5318,6 +5535,15 @@ export async function scheduleBacklog(
       isRescheduleRebuild,
       timing,
     });
+    if (timing) {
+      const reservationMs = elapsedMs(reservationStartedAt);
+      timing.schedule.habitPasses.reservationMs += reservationMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.habit_reservation",
+        reservationMs
+      );
+    }
 
     const overlapInvalidated = overlapInvalidatedHabitsByOffset.get(offset);
     if (overlapInvalidated && overlapInvalidated.length > 0) {
@@ -5340,7 +5566,12 @@ export async function scheduleBacklog(
 
     reservedHabitPlacementsByOffset.set(offset, reservedPlacements);
   }
+  recordPhaseSince(
+    "scheduler.schedule.habit_reservation_pass",
+    habitReservationPassStartedAt
+  );
 
+  const initialDailyHabitPassStartedAt = schedulerNowMs();
   for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
     const allowSchedulingToday = offset < effectiveDayLimit;
     const shouldScheduleHabits =
@@ -5363,6 +5594,10 @@ export async function scheduleBacklog(
       reservedHabitPlacementsByOffset.get(offset)
     );
   }
+  recordPhaseSince(
+    "scheduler.schedule.initial_daily_habit_pass",
+    initialDailyHabitPassStartedAt
+  );
 
   const isScheduledTimedProjectBlocker = (
     instance: ScheduleInstance | null | undefined
@@ -5660,6 +5895,7 @@ export async function scheduleBacklog(
           forceDayScopedAvailabilityKey: true,
           now: dayOffset === 0 ? baseDate : undefined, // Only apply "now" constraint on first day
           cache: projectPassState.dayWindowsCache,
+          overlayBlockCache,
           dynamicOverlayCache,
           restMode: isRestMode,
           userId,
@@ -5815,6 +6051,7 @@ export async function scheduleBacklog(
         habitTypeById,
         maxGapCache: dayMaxGapCache,
         blockerCache,
+        createBatcher: scheduleInstanceCreateBatch,
         windowEdgePreference: null,
         debugEnabled,
         timing,
@@ -6032,10 +6269,15 @@ export async function scheduleBacklog(
         );
       } else {
         // Update existing instance with detailed reason
+        const missedReasonUpdateStartedAt = schedulerNowMs();
         const { error: updateError } = await supabase
           .from("schedule_instances")
           .update({ missed_reason: debugInfo })
           .eq("id", item.instanceId);
+        recordPhaseSince(
+          "scheduler.schedule.missed_instance_update_writes",
+          missedReasonUpdateStartedAt
+        );
         if (updateError) {
           log("error", "Failed to update missed reason:", updateError);
         } else {
@@ -6146,14 +6388,20 @@ export async function scheduleBacklog(
 
   logSchedulerDebug("[SCHEDULER] EXIT project placement pass");
   if (timing) {
-    timing.schedule.projectPass.ms += elapsedMs(projectPassStartedAt);
+    const projectPassMs = elapsedMs(projectPassStartedAt);
+    timing.schedule.projectPass.ms += projectPassMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.project_task_placement",
+      projectPassMs
+    );
     timing.schedule.projectPass.placed = scheduledProjectIds.size;
     timing.schedule.projectPass.failed = Math.max(
       0,
       projectPassState.queue.length - scheduledProjectIds.size
     );
   }
-  await safeMissedInsertBatch.flush();
+  await flushMissedInstanceCreates();
   // ==========================================
 
   const postProjectHabitPassStartedAt = schedulerNowMs();
@@ -6182,9 +6430,11 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      overlayBlockCache,
       dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
+      createBatcher: scheduleInstanceCreateBatch,
       client: supabase,
       sunlightLocation: location,
       timeZoneOffsetMinutes,
@@ -6227,8 +6477,12 @@ export async function scheduleBacklog(
     }
   }
   if (timing) {
-    timing.schedule.habitPasses.totalMs += elapsedMs(
-      postProjectHabitPassStartedAt
+    const postProjectHabitPassMs = elapsedMs(postProjectHabitPassStartedAt);
+    timing.schedule.habitPasses.totalMs += postProjectHabitPassMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.post_project_habit_pass",
+      postProjectHabitPassMs
     );
   }
 
@@ -6317,6 +6571,7 @@ export async function scheduleBacklog(
         (inst) => inst?.source_type === "HABIT" && inst.status === "scheduled"
       );
       if (hasHabitInstances) {
+        const habitPlacementStartedAt = schedulerNowMs();
     const cleanupResult = await scheduleHabitsForDay({
       userId,
       habits: dailyHabits,
@@ -6327,9 +6582,11 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      overlayBlockCache,
       dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
+      createBatcher: scheduleInstanceCreateBatch,
       client: supabase,
           sunlightLocation: location,
           timeZoneOffsetMinutes,
@@ -6358,6 +6615,15 @@ export async function scheduleBacklog(
         isRescheduleRebuild,
         timing,
       });
+        if (timing) {
+          const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
+          timing.schedule.habitPasses.placementMs += habitPlacementMs;
+          recordSchedulerPhase(
+            timing,
+            "scheduler.schedule.habit_placement",
+            habitPlacementMs
+          );
+        }
         if (cleanupResult.failures.length > 0) {
           result.failures.push(...cleanupResult.failures);
         }
@@ -6365,7 +6631,13 @@ export async function scheduleBacklog(
     }
   }
   if (timing) {
-    timing.schedule.habitPasses.totalMs += elapsedMs(cleanupHabitPassStartedAt);
+    const cleanupHabitPassMs = elapsedMs(cleanupHabitPassStartedAt);
+    timing.schedule.habitPasses.totalMs += cleanupHabitPassMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.cleanup_habit_pass",
+      cleanupHabitPassMs
+    );
   }
 
   const runFinalSyncRetryForDay = async (offset: number, day: Date) => {
@@ -6467,6 +6739,7 @@ export async function scheduleBacklog(
         )
       );
 
+    const habitPlacementStartedAt = schedulerNowMs();
     const finalResult = await scheduleHabitsForDay({
       userId,
       habits: finalSyncHabits,
@@ -6477,9 +6750,11 @@ export async function scheduleBacklog(
       availability: windowAvailability,
       baseDate,
       windowCache,
+      overlayBlockCache,
       dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
+      createBatcher: scheduleInstanceCreateBatch,
       client: supabase,
       sunlightLocation: location,
       timeZoneOffsetMinutes,
@@ -6507,6 +6782,15 @@ export async function scheduleBacklog(
       postAnchorSyncRetry: true,
       timing,
     });
+    if (timing) {
+      const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
+      timing.schedule.habitPasses.placementMs += habitPlacementMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.habit_placement",
+        habitPlacementMs
+      );
+    }
 
     if (finalResult.placements.length > 0) {
       result.timeline.push(...finalResult.placements);
@@ -6534,11 +6818,16 @@ export async function scheduleBacklog(
     await runFinalSyncRetryForDay(offset, day);
   }
   if (timing) {
-    timing.schedule.habitPasses.totalMs += elapsedMs(
-      finalSyncHabitPassStartedAt
+    const finalSyncHabitPassMs = elapsedMs(finalSyncHabitPassStartedAt);
+    timing.schedule.habitPasses.totalMs += finalSyncHabitPassMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.final_sync_retry_pass",
+      finalSyncHabitPassMs
     );
   }
 
+  const postPlacementReconcileStartedAt = schedulerNowMs();
   for (const [projectId, inst] of keptInstancesByProject) {
     scheduledProjectIds.add(projectId);
     result.timeline.push({
@@ -6572,10 +6861,15 @@ export async function scheduleBacklog(
       }
     }
     if (unscheduledOverlapIds.length > 0) {
+      const overlapProjectMissedStartedAt = schedulerNowMs();
       await invalidateInstancesAsMissed(
         supabase,
         unscheduledOverlapIds,
         result
+      );
+      recordPhaseSince(
+        "scheduler.schedule.overlap_project_mark_missed",
+        overlapProjectMissedStartedAt
       );
     }
   }
@@ -6606,15 +6900,20 @@ export async function scheduleBacklog(
       });
     }
   }
+  recordPhaseSince(
+    "scheduler.schedule.post_placement_reconciliation",
+    postPlacementReconcileStartedAt
+  );
 
-  await safeMissedInsertBatch.flush();
+  await flushMissedInstanceCreates();
+  await flushScheduleInstanceCreates();
   const finalInvariantStartedAt = schedulerNowMs();
   const finalRangeResponse = await fetchInstancesForRange(
     userId,
     baseStart.toISOString(),
     rangeEnd.toISOString(),
     supabase,
-    { suppressQueryLog: debugEnabled }
+    { suppressQueryLog: debugEnabled, timing }
   );
   if (finalRangeResponse.error) {
     throw finalRangeResponse.error;
@@ -6654,7 +6953,12 @@ export async function scheduleBacklog(
         finalInstanceById.get(id) ?? null
       );
     }
+    const finalInvariantCancelStartedAt = schedulerNowMs();
     await cancelInstancesAsIllegalOverlap(supabase, Array.from(cancelIdSet));
+    recordPhaseSince(
+      "scheduler.schedule.final_invariant_cancel_writes",
+      finalInvariantCancelStartedAt
+    );
     if (timing) {
       timing.schedule.finalInvariant.canceled += cancelIdSet.size;
       recordSchedulerDbWrite(timing, "cancels", cancelIdSet.size);
@@ -6746,6 +7050,7 @@ export async function scheduleBacklog(
     }
 
     // Cancel non-PROJECT instances and continue
+    const remainingCancelStartedAt = schedulerNowMs();
     for (const id of remainingCancels) {
       logCancel("FINAL_INVARIANT_CANCEL", finalInstanceById.get(id) ?? null);
       await cancelScheduleInstance(id, {
@@ -6754,21 +7059,33 @@ export async function scheduleBacklog(
       });
       removeInstanceFromBuckets(id);
     }
+    recordPhaseSince(
+      "scheduler.schedule.final_invariant_cancel_writes",
+      remainingCancelStartedAt
+    );
     if (timing) {
       timing.schedule.finalInvariant.canceled += remainingCancels.size;
       recordSchedulerDbWrite(timing, "cancels", remainingCancels.size);
     }
   }
   if (timing) {
-    timing.schedule.finalInvariant.ms += elapsedMs(finalInvariantStartedAt);
+    const finalInvariantMs = elapsedMs(finalInvariantStartedAt);
+    timing.schedule.finalInvariant.ms += finalInvariantMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.final_invariant_scan_cancel",
+      finalInvariantMs
+    );
   }
 
   // Always clean up old missed HABIT instances so accumulation doesn't depend on a perfect run
+  const finalCleanupStartedAt = schedulerNowMs();
   const missedCleanupCutoff = addDaysInTimeZone(
     baseStart,
     -HABIT_MISSED_RETENTION_DAYS,
     timeZone
   );
+  const missedCleanupDeleteStartedAt = schedulerNowMs();
   const { error: missedCleanupError } = await supabase
     .from("schedule_instances")
     .delete()
@@ -6786,11 +7103,20 @@ export async function scheduleBacklog(
   } else {
     recordSchedulerDbWrite(timing, "deletes");
   }
+  recordPhaseSince(
+    "scheduler.schedule.missed_instance_delete_writes",
+    missedCleanupDeleteStartedAt
+  );
 
   if (typeof supabase.from === "function") {
+    const transientCleanupStartedAt = schedulerNowMs();
     const cleanupResult = await cleanupTransientInstances(userId, supabase, {
       debug: debugEnabled,
     });
+    recordPhaseSince(
+      "scheduler.schedule.transient_instance_cleanup",
+      transientCleanupStartedAt
+    );
     if (cleanupResult.error) {
       result.failures.push({
         itemId: "cleanup-transient-instances",
@@ -6799,6 +7125,7 @@ export async function scheduleBacklog(
       });
     }
   }
+  recordPhaseSince("scheduler.schedule.final_cleanup", finalCleanupStartedAt);
 
   if (cancelLogCounts.size > 0) {
     const summary = Array.from(cancelLogCounts.entries()).reduce<
@@ -6965,14 +7292,15 @@ async function dedupeScheduledProjects(
   rangeEnd: Date,
   projectsToReset: Set<string>,
   writeThroughEnd: Date,
-  debugEnabled: boolean
+  debugEnabled: boolean,
+  timing?: SchedulerTiming | null
 ): Promise<DedupeResult> {
   const response = await fetchInstancesForRange(
     userId,
     baseStart.toISOString(),
     rangeEnd.toISOString(),
     supabase,
-    { suppressQueryLog: debugEnabled }
+    { suppressQueryLog: debugEnabled, timing }
   );
 
   if (response.error) {
@@ -7126,6 +7454,7 @@ async function reserveMandatoryHabitsForDay(params: {
   availability: Map<string, WindowAvailabilityBounds>;
   baseDate: Date;
   windowCache: Map<string, WindowLite[]>;
+  overlayBlockCache?: OverlayWindowBlockCache;
   dynamicOverlayCache?: DynamicOverlayWindowCache;
   maxGapCache: Map<string, number>;
   client: Client;
@@ -7151,6 +7480,7 @@ async function reserveMandatoryHabitsForDay(params: {
     availability,
     baseDate,
     windowCache,
+    overlayBlockCache,
     dynamicOverlayCache,
     maxGapCache,
     client,
@@ -7852,6 +8182,7 @@ async function reserveMandatoryHabitsForDay(params: {
         {
           availability: clonedAvailability,
           cache: windowCache,
+          overlayBlockCache,
           dynamicOverlayCache,
           now: offset === 0 ? baseDate : undefined,
           locationContextId: attempt.locationId,
@@ -8256,9 +8587,11 @@ async function scheduleHabitsForDay(params: {
   availability: Map<string, WindowAvailabilityBounds>;
   baseDate: Date;
   windowCache: Map<string, WindowLite[]>;
+  overlayBlockCache?: OverlayWindowBlockCache;
   dynamicOverlayCache?: DynamicOverlayWindowCache;
   maxGapCache?: Map<string, number>;
   blockerCache?: BlockerCache;
+  createBatcher?: ScheduleInstanceCreateBatcher;
   client: Client;
   sunlightLocation?: GeoCoordinates | null;
   timeZoneOffsetMinutes?: number | null;
@@ -8306,9 +8639,11 @@ async function scheduleHabitsForDay(params: {
     availability,
     baseDate,
     windowCache,
+    overlayBlockCache,
     dynamicOverlayCache,
     maxGapCache,
     blockerCache,
+    createBatcher,
     client,
     sunlightLocation,
     timeZoneOffsetMinutes = null,
@@ -9938,6 +10273,7 @@ async function scheduleHabitsForDay(params: {
           {
             availability: clonedAvailability,
             cache: windowCache,
+            overlayBlockCache,
             dynamicOverlayCache,
             now: offset === 0 ? baseDate : undefined,
             locationContextId: attempt.locationId,
@@ -10664,6 +11000,7 @@ async function scheduleHabitsForDay(params: {
           client,
           maxGapCache,
           blockerCache,
+          createBatcher,
           reuseInstanceId: existingInstance?.id,
           existingInstances: placedSoFar,
           allowHabitOverlap: allowsHabitOverlap,
@@ -11119,6 +11456,7 @@ async function upsertFixedHabitInstance(params: {
     duration_min: range.durationMin,
     status: "scheduled",
     locked: true,
+    placement_source: "scheduler",
     window_id: null,
     day_type_time_block_id: null,
     time_block_id: null,
@@ -11409,6 +11747,7 @@ export async function fetchCompatibleWindowsForItem(
     cloneAvailabilityBeforeMutating?: boolean;
     forceDayScopedAvailabilityKey?: boolean;
     cache?: Map<string, WindowLite[]>;
+    overlayBlockCache?: OverlayWindowBlockCache;
     dynamicOverlayCache?: DynamicOverlayWindowCache;
     locationContextId?: string | null;
     locationContextValue?: string | null;
@@ -11480,7 +11819,14 @@ export async function fetchCompatibleWindowsForItem(
 
   const overlayBlocksPromise: Promise<OverlayWindowBlock[]> =
     userId && userId.length > 0
-      ? loadOverlayWindowBlocksForDate(supabase, date, timeZone, userId)
+      ? getCachedOverlayWindowBlocksForDate(
+          supabase,
+          date,
+          timeZone,
+          userId,
+          options?.overlayBlockCache,
+          timing
+        )
       : Promise.resolve([]);
   if (options?.horizonEnd && SCHEDULER_PROJECT_DEBUG_LOGGING) {
     // When horizonEnd is provided, expand windows into concrete occurrences with correct dates
@@ -11570,7 +11916,8 @@ export async function fetchCompatibleWindowsForItem(
           timeZone,
           userId,
           overlayNow,
-          options?.dynamicOverlayCache
+          options?.dynamicOverlayCache,
+          timing
         );
         for (const window of dynamicWindows) {
           windowOccurrences.push({ window, occurrenceDate });
@@ -11584,7 +11931,8 @@ export async function fetchCompatibleWindowsForItem(
         timeZone,
         userId,
         overlayNow,
-        options?.dynamicOverlayCache
+        options?.dynamicOverlayCache,
+        timing
       );
       if (dynamicWindows.length > 0) {
         windows = [...windows, ...dynamicWindows];
@@ -12347,14 +12695,11 @@ async function loadOverlayWindowBlocksForDate(
   supabase: Client,
   date: Date,
   timeZone: string,
-  userId: string
+  userId: string,
+  timing?: SchedulerTiming | null
 ): Promise<OverlayWindowBlock[]> {
+  const startedAt = schedulerNowMs();
   const tz = timeZone || "UTC";
-  const cacheKey = `${userId}:${formatDateKeyInTimeZone(date, tz)}:${tz}`;
-  const cached = overlayWindowCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
   const dayStart = startOfDayInTimeZone(date, tz);
   const dayEnd = addDaysInTimeZone(dayStart, 1, tz);
   const isoStart = dayStart.toISOString();
@@ -12363,14 +12708,14 @@ async function loadOverlayWindowBlocksForDate(
   const { data, error } = await supabase
     .from("overlay_windows" as any)
     .select<{
+      id: string | null;
       start_utc: string | null;
       end_utc: string | null;
       mode?: string | null;
     }>(
-      "start_utc,end_utc,mode"
+      "id,start_utc,end_utc,mode"
     )
     .eq("user_id", userId)
-    .or("mode.is.null,mode.eq.MANUAL")
     .lt("start_utc", isoEnd)
     .gt("end_utc", isoStart);
 
@@ -12381,7 +12726,6 @@ async function loadOverlayWindowBlocksForDate(
       timeZone: tz,
       error,
     });
-    overlayWindowCache.set(cacheKey, []);
     return [];
   }
 
@@ -12389,7 +12733,7 @@ async function loadOverlayWindowBlocksForDate(
   for (const row of data ?? []) {
     const mode =
       typeof row.mode === "string" ? row.mode.toUpperCase().trim() : null;
-    if (mode && mode !== "MANUAL") continue;
+    if (mode && mode !== "MANUAL" && mode !== "DYNAMIC") continue;
     const start = safeDate(row.start_utc ?? null);
     const end = safeDate(row.end_utc ?? null);
     if (!start || !end) continue;
@@ -12402,12 +12746,69 @@ async function loadOverlayWindowBlocksForDate(
     ) {
       continue;
     }
-    blocks.push({ startMs, endMs });
+    blocks.push({ id: row.id ?? null, startMs, endMs });
   }
 
   blocks.sort((a, b) => a.startMs - b.startMs);
-  overlayWindowCache.set(cacheKey, blocks);
+  if (timing) {
+    const ms = elapsedMs(startedAt);
+    timing.schedule.overlaySpanLoading.calls += 1;
+    timing.schedule.overlaySpanLoading.totalMs += ms;
+    timing.schedule.overlaySpanLoading.rows += blocks.length;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.overlay_span_loading",
+      ms
+    );
+  }
   return blocks;
+}
+
+function overlayWindowBlockCacheKey(
+  userId: string,
+  date: Date,
+  timeZone: string
+) {
+  const tz = timeZone || "UTC";
+  return `${userId}:${formatDateKeyInTimeZone(date, tz)}:${tz}`;
+}
+
+function getCachedOverlayWindowBlocksForDate(
+  supabase: Client,
+  date: Date,
+  timeZone: string,
+  userId: string,
+  cache: OverlayWindowBlockCache | null | undefined,
+  timing?: SchedulerTiming | null
+): Promise<OverlayWindowBlock[]> {
+  if (!cache) {
+    return loadOverlayWindowBlocksForDate(
+      supabase,
+      date,
+      timeZone,
+      userId,
+      timing
+    );
+  }
+
+  const key = overlayWindowBlockCacheKey(userId, date, timeZone);
+  const cached = cache.blocksByKey.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = loadOverlayWindowBlocksForDate(
+    supabase,
+    date,
+    timeZone,
+    userId,
+    timing
+  ).catch((error) => {
+    cache.blocksByKey.delete(key);
+    throw error;
+  });
+  cache.blocksByKey.set(key, pending);
+  return pending;
 }
 
 function dynamicOverlayCacheKey(
@@ -12429,7 +12830,8 @@ function getCachedDynamicOverlayWindowsForDate(
   timeZone: string,
   userId: string,
   now: Date | null | undefined,
-  cache: DynamicOverlayWindowCache | null | undefined
+  cache: DynamicOverlayWindowCache | null | undefined,
+  timing?: SchedulerTiming | null
 ): Promise<WindowLite[]> {
   const effectiveNow = now ?? cache?.effectiveNow ?? new Date();
   if (!cache) {
@@ -12438,7 +12840,8 @@ function getCachedDynamicOverlayWindowsForDate(
       date,
       timeZone,
       userId,
-      effectiveNow
+      effectiveNow,
+      timing
     );
   }
 
@@ -12453,7 +12856,8 @@ function getCachedDynamicOverlayWindowsForDate(
     date,
     timeZone,
     userId,
-    effectiveNow
+    effectiveNow,
+    timing
   ).catch((error) => {
     cache.windowsByKey.delete(key);
     throw error;
@@ -12467,8 +12871,10 @@ async function loadDynamicOverlayWindowsForDate(
   date: Date,
   timeZone: string,
   userId: string,
-  now: Date
+  now: Date,
+  timing?: SchedulerTiming | null
 ): Promise<WindowLite[]> {
+  const startedAt = schedulerNowMs();
   const tz = timeZone || "UTC";
   const dayStart = startOfDayInTimeZone(date, tz);
   const dayEnd = addDaysInTimeZone(dayStart, 1, tz);
@@ -12658,12 +13064,24 @@ async function loadDynamicOverlayWindowsForDate(
     });
   }
 
-  return windows.sort((a, b) => {
+  const sortedWindows = windows.sort((a, b) => {
     const startDiff =
       (a.dayTypeStartUtcMs ?? 0) - (b.dayTypeStartUtcMs ?? 0);
     if (startDiff !== 0) return startDiff;
     return a.id.localeCompare(b.id);
   });
+  if (timing) {
+    const ms = elapsedMs(startedAt);
+    timing.schedule.overlaySpanLoading.dynamicCalls += 1;
+    timing.schedule.overlaySpanLoading.dynamicMs += ms;
+    timing.schedule.overlaySpanLoading.dynamicRows += sortedWindows.length;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.overlay_span_loading",
+      ms
+    );
+  }
+  return sortedWindows;
 }
 
 function applyOverlayBlocks(
@@ -12684,6 +13102,8 @@ function subtractBlockedRangesFromWindow(
   blockedRanges: OverlayWindowBlock[],
   durationMs: number
 ): CompatibleWindowRecord[] {
+  const windowOverlayId =
+    window.isOverlayCandidate === true ? (window.overlayWindowId ?? null) : null;
   let segments: Array<{ start: number; end: number }> = [
     {
       start: window.availableStartLocal.getTime(),
@@ -12692,6 +13112,7 @@ function subtractBlockedRangesFromWindow(
   ];
 
   for (const block of blockedRanges) {
+    if (windowOverlayId && block.id === windowOverlayId) continue;
     if (segments.length === 0) break;
     const nextSegments: Array<{ start: number; end: number }> = [];
     for (const segment of segments) {

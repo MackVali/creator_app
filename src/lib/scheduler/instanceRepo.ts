@@ -1,10 +1,16 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "../../../types/supabase";
 import type { FlameLevel } from "@/components/FlameEmber";
 import type { WindowLite as RepoWindow } from "@/lib/scheduler/repo";
 import { safeDate } from "@/lib/scheduler/safeDate";
 import { log } from "@/lib/utils/logGate";
+import {
+  elapsedMs,
+  recordSchedulerPhase,
+  schedulerNowMs,
+  type SchedulerTiming,
+} from "@/lib/scheduler/timing";
 
 export type ScheduleInstance =
   Database["public"]["Tables"]["schedule_instances"]["Row"];
@@ -55,16 +61,134 @@ const SCHEDULER_INSTANCE_WRITE_PROJECTION = [
   "canceled_reason",
   "completed_at",
   "locked",
+  "placement_source",
   "event_name",
   "practice_context_monument_id",
   "overlay_window_id",
   "metadata",
 ].join(", ");
 
+const SCHEDULER_INSTANCE_CREATE_BATCH_SIZE = 500;
+
+type CreateInstanceInput = {
+  userId: string;
+  sourceId: string;
+  sourceType: ScheduleInstance["source_type"];
+  windowId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  timeBlockId?: string | null;
+  overlayWindowId?: string | null;
+  startUTC: string;
+  endUTC: string;
+  durationMin: number;
+  weightSnapshot?: number;
+  energyResolved: string;
+  eventName?: string | null;
+  locked?: boolean;
+  placementSource?: ScheduleInstance["placement_source"];
+  practiceContextId?: string | null;
+  metadata?: ScheduleInstance["metadata"];
+};
+
+type ScheduleInstanceInsert =
+  Database["public"]["Tables"]["schedule_instances"]["Insert"];
+
+type PendingCreate = {
+  row: ScheduleInstanceInsert & { id: string };
+  placeholder: ScheduleInstance;
+};
+
+export type ScheduleInstanceCreateBatcher = {
+  enqueue(input: CreateInstanceInput): ScheduleInstance;
+  flush(): Promise<void>;
+  readonly size: number;
+};
+
 export function computeDurationMin(start: Date, end: Date): number {
   const ms = end.getTime() - start.getTime();
   if (!Number.isFinite(ms) || ms <= 0) return 0;
   return Math.floor(ms / 60000);
+}
+
+function validateCreateInstanceInput(input: CreateInstanceInput) {
+  const hasStart =
+    typeof input.startUTC === "string" && input.startUTC.length > 0;
+  const hasEnd = typeof input.endUTC === "string" && input.endUTC.length > 0;
+  const hasDuration =
+    typeof input.durationMin === "number" && Number.isFinite(input.durationMin);
+  if (
+    (hasStart || hasEnd || hasDuration) &&
+    !(hasStart && hasEnd && hasDuration)
+  ) {
+    throw new Error(
+      "createInstance payload missing startUTC/endUTC/durationMin"
+    );
+  }
+}
+
+function buildCreateInstanceInsert(
+  input: CreateInstanceInput,
+  id?: string
+): ScheduleInstanceInsert & { id?: string } {
+  validateCreateInstanceInput(input);
+  const isDayTypeScheduling = Boolean(input.dayTypeTimeBlockId);
+  const windowIdValue = input.windowId ?? null;
+  const dayTypeTimeBlockIdValue = isDayTypeScheduling
+    ? input.dayTypeTimeBlockId ?? null
+    : null;
+  const timeBlockIdValue = isDayTypeScheduling
+    ? input.timeBlockId ?? input.windowId ?? null
+    : null;
+  const overlayWindowIdValue = input.overlayWindowId ?? null;
+  return {
+    ...(id ? { id } : {}),
+    user_id: input.userId,
+    source_type: input.sourceType,
+    source_id: input.sourceId,
+    window_id: windowIdValue,
+    day_type_time_block_id: dayTypeTimeBlockIdValue,
+    time_block_id: timeBlockIdValue,
+    overlay_window_id: overlayWindowIdValue,
+    start_utc: input.startUTC,
+    end_utc: input.endUTC,
+    duration_min: input.durationMin,
+    status: "scheduled",
+    weight_snapshot: input.weightSnapshot ?? 0,
+    energy_resolved: input.energyResolved,
+    locked: input.locked ?? false,
+    placement_source: input.placementSource ?? "scheduler",
+    event_name: input.eventName ?? null,
+    practice_context_monument_id: input.practiceContextId ?? null,
+    metadata: input.metadata ?? null,
+  };
+}
+
+function buildCreateInstanceFailurePayload(input: CreateInstanceInput) {
+  return {
+    user_id: input.userId,
+    source_type: input.sourceType,
+    source_id: input.sourceId,
+    start_utc: input.startUTC,
+    end_utc: input.endUTC,
+    duration_min: input.durationMin,
+    status: "scheduled",
+    weight_snapshot: input.weightSnapshot ?? 0,
+    energy_resolved: input.energyResolved,
+    locked: input.locked ?? false,
+    placement_source: input.placementSource ?? "scheduler",
+    scheduled_at: null,
+  };
+}
+
+function createPlaceholderScheduleInstance(
+  row: ScheduleInstanceInsert & { id: string }
+): ScheduleInstance {
+  return {
+    ...row,
+    updated_at: null,
+    canceled_reason: null,
+    completed_at: null,
+  } as ScheduleInstance;
 }
 
 async function ensureClient(client?: Client): Promise<Client> {
@@ -80,8 +204,9 @@ export async function fetchInstancesForRange(
   startUTC: string,
   endUTC: string,
   client?: Client,
-  options?: { suppressQueryLog?: boolean }
+  options?: { suppressQueryLog?: boolean; timing?: SchedulerTiming | null }
 ) {
+  const startedAt = schedulerNowMs();
   const supabase = await ensureClient(client);
   const safeStart = safeDate(startUTC);
   const safeEnd = safeDate(endUTC);
@@ -113,7 +238,20 @@ export async function fetchInstancesForRange(
 
   const query = base.or(overlapClause).order("start_utc", { ascending: true });
 
-  return await query;
+  const response = await query;
+  if (options?.timing) {
+    const ms = elapsedMs(startedAt);
+    options.timing.schedule.scheduleInstanceQueries.calls += 1;
+    options.timing.schedule.scheduleInstanceQueries.totalMs += ms;
+    options.timing.schedule.scheduleInstanceQueries.rows +=
+      Array.isArray(response.data) ? response.data.length : 0;
+    recordSchedulerPhase(
+      options.timing,
+      "scheduler.schedule.existing_schedule_instance_load",
+      ms
+    );
+  }
+  return response;
 }
 
 export async function fetchScheduledProjectIds(
@@ -140,85 +278,19 @@ export async function fetchScheduledProjectIds(
 }
 
 export async function createInstance(
-  input: {
-    userId: string;
-    sourceId: string;
-    sourceType: ScheduleInstance["source_type"];
-    windowId?: string | null;
-    dayTypeTimeBlockId?: string | null;
-    timeBlockId?: string | null;
-    startUTC: string;
-    endUTC: string;
-    durationMin: number;
-    weightSnapshot?: number;
-    energyResolved: string;
-    eventName?: string | null;
-    locked?: boolean;
-    practiceContextId?: string | null;
-    metadata?: ScheduleInstance["metadata"];
-  },
+  input: CreateInstanceInput,
   client?: Client
 ) {
-  const hasStart =
-    typeof input.startUTC === "string" && input.startUTC.length > 0;
-  const hasEnd = typeof input.endUTC === "string" && input.endUTC.length > 0;
-  const hasDuration =
-    typeof input.durationMin === "number" && Number.isFinite(input.durationMin);
-  if (
-    (hasStart || hasEnd || hasDuration) &&
-    !(hasStart && hasEnd && hasDuration)
-  ) {
-    throw new Error(
-      "createInstance payload missing startUTC/endUTC/durationMin"
-    );
-  }
   const supabase = await ensureClient(client);
-  const isDayTypeScheduling = Boolean(input.dayTypeTimeBlockId);
-  const windowIdValue = input.windowId ?? null;
-  const dayTypeTimeBlockIdValue = isDayTypeScheduling
-    ? input.dayTypeTimeBlockId ?? null
-    : null;
-  const timeBlockIdValue = isDayTypeScheduling
-    ? input.timeBlockId ?? input.windowId ?? null
-    : null;
+  const insertPayload = buildCreateInstanceInsert(input);
   const { data, error } = await supabase
     .from("schedule_instances")
-    .insert({
-      user_id: input.userId,
-      source_type: input.sourceType,
-      source_id: input.sourceId,
-      window_id: windowIdValue,
-      day_type_time_block_id: dayTypeTimeBlockIdValue,
-      time_block_id: timeBlockIdValue,
-      start_utc: input.startUTC,
-      end_utc: input.endUTC,
-      duration_min: input.durationMin,
-      status: "scheduled",
-      weight_snapshot: input.weightSnapshot ?? 0,
-      energy_resolved: input.energyResolved,
-      locked: input.locked ?? false,
-      event_name: input.eventName ?? null,
-      practice_context_monument_id: input.practiceContextId ?? null,
-      metadata: input.metadata ?? null,
-    })
+    .insert(insertPayload)
     .select(SCHEDULER_INSTANCE_WRITE_PROJECTION)
     .single();
   if (error) {
-    const payload = {
-      user_id: input.userId,
-      source_type: input.sourceType,
-      source_id: input.sourceId,
-      start_utc: input.startUTC,
-      end_utc: input.endUTC,
-      duration_min: input.durationMin,
-      status: "scheduled",
-      weight_snapshot: input.weightSnapshot ?? 0,
-      energy_resolved: input.energyResolved,
-      locked: input.locked ?? false,
-      scheduled_at: null,
-    };
     log("debug", "[CREATE_INSTANCE_FAIL]", {
-      payload,
+      payload: buildCreateInstanceFailurePayload(input),
       error: {
         message: error.message,
         details: error.details,
@@ -231,12 +303,101 @@ export async function createInstance(
   return data;
 }
 
+export function createScheduleInstanceCreateBatcher(
+  client: Client,
+  options?: {
+    onFlushMs?: (ms: number) => void;
+  }
+): ScheduleInstanceCreateBatcher {
+  const pending: PendingCreate[] = [];
+
+  return {
+    get size() {
+      return pending.length;
+    },
+    enqueue(input: CreateInstanceInput) {
+      const id = crypto.randomUUID();
+      const row = buildCreateInstanceInsert(
+        input,
+        id
+      ) as ScheduleInstanceInsert & {
+        id: string;
+      };
+      const placeholder = createPlaceholderScheduleInstance(row);
+      pending.push({ row, placeholder });
+      return placeholder;
+    },
+    async flush() {
+      if (pending.length === 0) return;
+      const entries = pending.splice(0, pending.length);
+      const startedAt = schedulerNowMs();
+      try {
+        for (
+          let index = 0;
+          index < entries.length;
+          index += SCHEDULER_INSTANCE_CREATE_BATCH_SIZE
+        ) {
+          const batch = entries.slice(
+            index,
+            index + SCHEDULER_INSTANCE_CREATE_BATCH_SIZE
+          );
+          const { data, error } = await client
+            .from("schedule_instances")
+            .insert(batch.map((entry) => entry.row))
+            .select(SCHEDULER_INSTANCE_WRITE_PROJECTION);
+          if (error) {
+            logCreateBatchFailure(error, batch);
+            throw error;
+          }
+          const persistedById = new Map(
+            ((data ?? []) as ScheduleInstance[]).map((row) => [row.id, row])
+          );
+          for (const entry of batch) {
+            const persisted = persistedById.get(entry.row.id);
+            if (persisted) {
+              Object.assign(entry.placeholder, persisted);
+            }
+          }
+        }
+      } finally {
+        options?.onFlushMs?.(elapsedMs(startedAt));
+      }
+    },
+  };
+}
+
+function logCreateBatchFailure(
+  error: PostgrestError,
+  batch: PendingCreate[]
+) {
+  log("debug", "[CREATE_INSTANCE_BATCH_FAIL]", {
+    count: batch.length,
+    first: batch[0]
+      ? {
+          id: batch[0].row.id,
+          user_id: batch[0].row.user_id,
+          source_type: batch[0].row.source_type,
+          source_id: batch[0].row.source_id,
+          start_utc: batch[0].row.start_utc,
+          end_utc: batch[0].row.end_utc,
+        }
+      : null,
+    error: {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    },
+  });
+}
+
 export async function rescheduleInstance(
   id: string,
   input: {
     windowId?: string | null;
     dayTypeTimeBlockId?: string | null;
     timeBlockId?: string | null;
+    overlayWindowId?: string | null;
     startUTC: string;
     endUTC: string;
     durationMin: number;
@@ -244,6 +405,7 @@ export async function rescheduleInstance(
     energyResolved: string;
     eventName?: string | null;
     locked?: boolean;
+    placementSource?: ScheduleInstance["placement_source"];
     practiceContextId?: string | null;
     metadata?: ScheduleInstance["metadata"];
   },
@@ -258,8 +420,10 @@ export async function rescheduleInstance(
   const timeBlockIdValue = isDayTypeScheduling
     ? input.timeBlockId ?? input.windowId ?? null
     : null;
+  const overlayWindowIdValue = input.overlayWindowId ?? null;
   const payload: Partial<ScheduleInstance> & {
     window_id?: string | null;
+    overlay_window_id?: string | null;
     start_utc: string;
     end_utc: string;
     duration_min: number;
@@ -271,6 +435,7 @@ export async function rescheduleInstance(
     window_id: windowIdValue,
     day_type_time_block_id: dayTypeTimeBlockIdValue,
     time_block_id: timeBlockIdValue,
+    overlay_window_id: overlayWindowIdValue,
     start_utc: input.startUTC,
     end_utc: input.endUTC,
     duration_min: input.durationMin,
@@ -279,6 +444,7 @@ export async function rescheduleInstance(
     energy_resolved: input.energyResolved,
     completed_at: null,
     event_name: input.eventName ?? null,
+    placement_source: input.placementSource ?? "scheduler",
   };
   if (typeof input.metadata !== "undefined") {
     payload.metadata = input.metadata ?? null;

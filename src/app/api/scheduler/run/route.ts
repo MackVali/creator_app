@@ -22,10 +22,11 @@ import {
 import type { Database } from "@/types/supabase";
 import type { SchedulerDebugDisplay } from "@/lib/scheduler/debugDisplay";
 import {
+  buildSchedulerTimingSummary,
   createSchedulerTiming,
   elapsedMs,
+  recordSchedulerPhase,
   schedulerNowMs,
-  shouldLogSchedulerTiming,
 } from "@/lib/scheduler/timing";
 
 export const runtime = "nodejs";
@@ -42,226 +43,267 @@ export async function POST(request: NextRequest) {
   const routeStartedAt = schedulerNowMs();
   const requestUrl = request.nextUrl;
   const includeDebugSummary = requestUrl.searchParams.get("debug") === "1";
-  const timing = shouldLogSchedulerTiming(includeDebugSummary)
-    ? createSchedulerTiming()
-    : null;
-  let routeStatus = 500;
-  try {
-  const {
-    localNow,
-    timeZone: requestTimeZone,
-    utcOffsetMinutes,
-    mode,
-    writeThroughDays,
-  } = await readRunRequestContext(request);
-  // Debug diagnostics should not imply the legacy parity path.
-  const enableParity = requestUrl.searchParams.get("parity") === "1";
   const writeThroughDaysOverride = parseWriteThroughDaysQueryParam(
     requestUrl.searchParams.get("writeThroughDays")
   );
-  if (timing) {
+  const timing = createSchedulerTiming();
+  if (typeof writeThroughDaysOverride === "number") {
+    timing.route.writeThroughDays = writeThroughDaysOverride;
+  }
+  let routeStatus = 500;
+  let routeError: SchedulerFatalPayload | null = null;
+
+  try {
+    const requestContextStartedAt = schedulerNowMs();
+    const {
+      localNow,
+      timeZone: requestTimeZone,
+      utcOffsetMinutes,
+      mode,
+      writeThroughDays,
+    } = await readRunRequestContext(request);
+    const requestContextMs = elapsedMs(requestContextStartedAt);
+    timing.route.requestContextMs += requestContextMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.route.read_request_context",
+      requestContextMs
+    );
+
+    // Debug diagnostics should not imply the legacy parity path.
+    const enableParity = requestUrl.searchParams.get("parity") === "1";
     timing.route.modeType = mode.type;
     timing.route.writeThroughDays =
       writeThroughDaysOverride ?? writeThroughDays ?? null;
-  }
-  const retryingFetch =
-    typeof globalThis.fetch === "function"
-      ? createTransientRetryFetch(globalThis.fetch)
-      : undefined;
-  const supabase = await createClient(
-    retryingFetch ? { fetch: retryingFetch } : undefined
-  );
-  if (!supabase) {
-    routeStatus = 500;
-    const responseStartedAt = schedulerNowMs();
-    const response = NextResponse.json(
-      { error: "supabase client unavailable" },
-      { status: 500 }
+
+    const retryingFetch =
+      typeof globalThis.fetch === "function"
+        ? createTransientRetryFetch(globalThis.fetch)
+        : undefined;
+
+    const clientCreateStartedAt = schedulerNowMs();
+    const supabase = await createClient(
+      retryingFetch ? { fetch: retryingFetch } : undefined
     );
-    if (timing) timing.route.responseMs += elapsedMs(responseStartedAt);
-    return response;
-  }
-
-  const authStartedAt = schedulerNowMs();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-  if (timing) timing.route.authMs += elapsedMs(authStartedAt);
-
-  if (authError) {
-    routeStatus = 500;
-    const responseStartedAt = schedulerNowMs();
-    const response = NextResponse.json(
-      { error: authError.message },
-      { status: 500 }
+    const clientCreateMs = elapsedMs(clientCreateStartedAt);
+    timing.route.clientCreateMs += clientCreateMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.route.create_clients",
+      clientCreateMs
     );
-    if (timing) timing.route.responseMs += elapsedMs(responseStartedAt);
-    return response;
-  }
 
-  if (!user) {
-    routeStatus = 401;
-    const responseStartedAt = schedulerNowMs();
-    const response = NextResponse.json(
-      { error: "not authenticated" },
-      { status: 401 }
-    );
-    if (timing) timing.route.responseMs += elapsedMs(responseStartedAt);
-    return response;
-  }
-
-  const now = localNow ?? new Date();
-
-  const adminSupabase = createAdminClient(
-    retryingFetch ? { fetch: retryingFetch } : undefined
-  );
-  const schedulingClient = adminSupabase ?? supabase;
-
-  if (!adminSupabase && process.env.NODE_ENV !== "production") {
-    console.warn(
-      "Falling back to user-scoped Supabase client for scheduler run"
-    );
-  }
-
-  const profileTimeZoneStartedAt = schedulerNowMs();
-  const profileTimeZone = await resolveProfileTimeZone(
-    schedulingClient,
-    user.id
-  );
-  if (timing) {
-    timing.route.profileTimeZoneMs += elapsedMs(profileTimeZoneStartedAt);
-  }
-  const metadataTimeZone = extractUserTimeZone(user);
-  const userTimeZone = requestTimeZone ?? profileTimeZone ?? metadataTimeZone;
-  const coordinates = extractUserCoordinates(user);
-  let runResult: RunSchedulerResult | undefined;
-  try {
-    const schedulerStartedAt = schedulerNowMs();
-    runResult =
-      mode.type === "OVERLAY"
-        ? await runSchedulerOverlayForUser(user.id, now, schedulingClient, {
-            timeZone: userTimeZone,
-            location: coordinates,
-            utcOffsetMinutes,
-            mode,
-            overlayWindowId: mode.overlayWindowId,
-            writeThroughDays,
-            writeThroughDaysOverride,
-            debug: includeDebugSummary,
-            parity: enableParity,
-            timing: timing ?? undefined,
-          })
-        : await runSchedulerForUser(user.id, now, schedulingClient, {
-            timeZone: userTimeZone,
-            location: coordinates,
-            utcOffsetMinutes,
-            mode,
-            writeThroughDays,
-            writeThroughDaysOverride,
-            debug: includeDebugSummary,
-            parity: enableParity,
-            timing: timing ?? undefined,
-          });
-    if (timing) timing.route.schedulerMs += elapsedMs(schedulerStartedAt);
-
-    if (runResult.reset.error) {
+    if (!supabase) {
       routeStatus = 500;
       const responseStartedAt = schedulerNowMs();
       const response = NextResponse.json(
-        { error: runResult.reset.error.message },
+        { error: "supabase client unavailable" },
         { status: 500 }
       );
-      if (timing) timing.route.responseMs += elapsedMs(responseStartedAt);
+      timing.route.responseMs += elapsedMs(responseStartedAt);
       return response;
     }
 
-    if (includeDebugSummary) {
-      console.log("[SCHEDULER_HABIT_AUDIT_RESPONSE]", {
-        dueEvaluation: runResult.schedule.debugSummary?.habitAudit?.dueEvaluation,
-        scheduling: runResult.schedule.debugSummary?.habitAudit?.scheduling,
-        windowCompatibility:
-          runResult.schedule.debugSummary?.habitAudit?.windowCompatibility,
-        samples: runResult.schedule.debugSummary?.habitAudit?.samples,
-      });
+    const authStartedAt = schedulerNowMs();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    const authMs = elapsedMs(authStartedAt);
+    timing.route.authMs += authMs;
+    recordSchedulerPhase(timing, "scheduler.route.auth_user_load", authMs);
+
+    if (authError) {
+      routeStatus = 500;
+      const responseStartedAt = schedulerNowMs();
+      const response = NextResponse.json(
+        { error: authError.message },
+        { status: 500 }
+      );
+      timing.route.responseMs += elapsedMs(responseStartedAt);
+      return response;
     }
 
-    const scheduleResult = runResult.schedule;
-    // 🚫 DISABLED: project overlap cancellation is illegal during rebuild
-    // Overlaps are resolved by strict rank + greedy placement
-    // Habit overlap handling already happens earlier — do NOT rely on this filter
-    const status = scheduleResult.error ? 500 : 200;
-    routeStatus = status;
-
-    const responseStartedAt = schedulerNowMs();
-    let debugDisplay: SchedulerDebugDisplay | null = null;
-    if (includeDebugSummary) {
-      debugDisplay = await buildSchedulerDebugDisplay(schedulingClient, user.id);
+    if (!user) {
+      routeStatus = 401;
+      const responseStartedAt = schedulerNowMs();
+      const response = NextResponse.json(
+        { error: "not authenticated" },
+        { status: 401 }
+      );
+      timing.route.responseMs += elapsedMs(responseStartedAt);
+      return response;
     }
 
-    const responsePayload: Record<string, unknown> = {
-      reset: runResult.reset,
-      marked: runResult.marked,
-      schedule: scheduleResult,
-    };
-    if (includeDebugSummary && scheduleResult.projectDebugSummary) {
-      responsePayload.debugProjectSummary = scheduleResult.projectDebugSummary;
-    }
-    if (includeDebugSummary && scheduleResult.debugSummary) {
-      responsePayload.debugSummary = scheduleResult.debugSummary;
-    }
-    if (includeDebugSummary) {
-      responsePayload.debug = {
-        placementTrace: scheduleResult.placementTrace ?? null,
-        display: debugDisplay ?? undefined,
-      };
-    }
-    if (includeDebugSummary) {
-      responsePayload.failures = (scheduleResult.failures ?? []).map(
-        ({ itemId, reason, detail }) => ({
-          itemId,
-          reason,
-          detail: formatFailureDetail(detail),
-        })
+    const now = localNow ?? new Date();
+
+    const adminSupabase = createAdminClient(
+      retryingFetch ? { fetch: retryingFetch } : undefined
+    );
+    const schedulingClient = adminSupabase ?? supabase;
+
+    if (!adminSupabase && process.env.NODE_ENV !== "production") {
+      console.warn(
+        "Falling back to user-scoped Supabase client for scheduler run"
       );
     }
-    if (enableParity && scheduleResult.paritySummary) {
-      responsePayload.paritySummary = scheduleResult.paritySummary;
-    }
 
-    const response = NextResponse.json(responsePayload, { status });
-    if (timing) timing.route.responseMs += elapsedMs(responseStartedAt);
-    return response;
-  } catch (err) {
-    const fatalPayload = buildSchedulerFatalPayload(err);
-    console.error("SCHEDULER_FATAL", fatalPayload);
-    routeStatus = 500;
-    const responseStartedAt = schedulerNowMs();
-    const responsePayload: Record<string, unknown> = {
-      error: fatalPayload.shortMessage,
-    };
-    if (includeDebugSummary) {
-      responsePayload.debug = {
-        fatal: {
-          errorMessage: fatalPayload.shortMessage,
-          errorStack: String(
-            ((err as { stack?: string | undefined })?.stack) ?? ""
-          ),
-          status: fatalPayload.status,
-          rayId: fatalPayload.rayId,
-        },
+    const profileTimeZoneStartedAt = schedulerNowMs();
+    const profileTimeZone = await resolveProfileTimeZone(
+      schedulingClient,
+      user.id
+    );
+    const profileTimeZoneMs = elapsedMs(profileTimeZoneStartedAt);
+    timing.route.profileTimeZoneMs += profileTimeZoneMs;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.route.profile_load",
+      profileTimeZoneMs
+    );
+    recordSchedulerPhase(
+      timing,
+      "scheduler.route.auth_user_profile_load",
+      timing.route.authMs + timing.route.profileTimeZoneMs
+    );
+
+    const metadataTimeZone = extractUserTimeZone(user);
+    const userTimeZone = requestTimeZone ?? profileTimeZone ?? metadataTimeZone;
+    const coordinates = extractUserCoordinates(user);
+    let runResult: RunSchedulerResult | undefined;
+
+    try {
+      const schedulerStartedAt = schedulerNowMs();
+      runResult =
+        mode.type === "OVERLAY"
+          ? await runSchedulerOverlayForUser(user.id, now, schedulingClient, {
+              timeZone: userTimeZone,
+              location: coordinates,
+              utcOffsetMinutes,
+              mode,
+              overlayWindowId: mode.overlayWindowId,
+              writeThroughDays,
+              writeThroughDaysOverride,
+              debug: includeDebugSummary,
+              parity: enableParity,
+              timing,
+            })
+          : await runSchedulerForUser(user.id, now, schedulingClient, {
+              timeZone: userTimeZone,
+              location: coordinates,
+              utcOffsetMinutes,
+              mode,
+              writeThroughDays,
+              writeThroughDaysOverride,
+              debug: includeDebugSummary,
+              parity: enableParity,
+              timing,
+            });
+
+      const schedulerMs = elapsedMs(schedulerStartedAt);
+      timing.route.schedulerMs += schedulerMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.route.scheduler_run",
+        schedulerMs
+      );
+
+      if (runResult.reset.error) {
+        routeStatus = 500;
+        const responseStartedAt = schedulerNowMs();
+        const response = NextResponse.json(
+          { error: runResult.reset.error.message },
+          { status: 500 }
+        );
+        timing.route.responseMs += elapsedMs(responseStartedAt);
+        return response;
+      }
+
+      if (includeDebugSummary) {
+        console.log("[SCHEDULER_HABIT_AUDIT_RESPONSE]", {
+          dueEvaluation:
+            runResult.schedule.debugSummary?.habitAudit?.dueEvaluation,
+          scheduling: runResult.schedule.debugSummary?.habitAudit?.scheduling,
+          windowCompatibility:
+            runResult.schedule.debugSummary?.habitAudit?.windowCompatibility,
+          samples: runResult.schedule.debugSummary?.habitAudit?.samples,
+        });
+      }
+
+      const scheduleResult = runResult.schedule;
+      // 🚫 DISABLED: project overlap cancellation is illegal during rebuild
+      // Overlaps are resolved by strict rank + greedy placement
+      // Habit overlap handling already happens earlier — do NOT rely on this filter
+      const status = scheduleResult.error ? 500 : 200;
+      routeStatus = status;
+
+      const responseStartedAt = schedulerNowMs();
+      let debugDisplay: SchedulerDebugDisplay | null = null;
+      if (includeDebugSummary) {
+        debugDisplay = await buildSchedulerDebugDisplay(
+          schedulingClient,
+          user.id
+        );
+      }
+
+      const responsePayload: Record<string, unknown> = {
+        reset: runResult.reset,
+        marked: runResult.marked,
+        schedule: scheduleResult,
       };
+      if (includeDebugSummary && scheduleResult.projectDebugSummary) {
+        responsePayload.debugProjectSummary = scheduleResult.projectDebugSummary;
+      }
+      if (includeDebugSummary && scheduleResult.debugSummary) {
+        responsePayload.debugSummary = scheduleResult.debugSummary;
+      }
+      if (includeDebugSummary) {
+        responsePayload.debug = {
+          placementTrace: scheduleResult.placementTrace ?? null,
+          display: debugDisplay ?? undefined,
+        };
+      }
+      if (includeDebugSummary) {
+        responsePayload.failures = (scheduleResult.failures ?? []).map(
+          ({ itemId, reason, detail }) => ({
+            itemId,
+            reason,
+            detail: formatFailureDetail(detail),
+          })
+        );
+      }
+      if (enableParity && scheduleResult.paritySummary) {
+        responsePayload.paritySummary = scheduleResult.paritySummary;
+      }
+
+      const response = NextResponse.json(responsePayload, { status });
+      const responseMs = elapsedMs(responseStartedAt);
+      timing.route.responseMs += responseMs;
+      recordSchedulerPhase(
+        timing,
+        "scheduler.route.response_build",
+        responseMs
+      );
+      return response;
+    } catch (err) {
+      const fatalPayload = buildSchedulerFatalPayload(err);
+      routeError = fatalPayload;
+      routeStatus = 500;
+      throw err;
     }
-    const response = NextResponse.json(responsePayload, { status: 500 });
-    if (timing) timing.route.responseMs += elapsedMs(responseStartedAt);
-    return response;
-  }
   } finally {
-    if (timing) {
-      timing.route.totalMs = elapsedMs(routeStartedAt);
-      timing.route.status = routeStatus;
-      console.log(timing);
+    timing.route.totalMs = elapsedMs(routeStartedAt);
+    timing.route.status = routeStatus;
+    recordSchedulerPhase(
+      timing,
+      "scheduler.route.total",
+      timing.route.totalMs
+    );
+    const summary: Record<string, unknown> = buildSchedulerTimingSummary(timing);
+    summary.status = routeStatus;
+    if (routeError) {
+      summary.error = routeError;
     }
+    console.log(`[SCHEDULER_TIMING_SUMMARY] ${JSON.stringify(summary)}`);
   }
 }
 

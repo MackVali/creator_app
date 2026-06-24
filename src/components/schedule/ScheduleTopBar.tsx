@@ -6,7 +6,9 @@ import {
   Bug,
   ChevronLeft,
   Calendar,
+  MousePointerClick,
   RefreshCcw,
+  Recycle,
   X,
 } from "lucide-react";
 interface ScheduleTopBarProps {
@@ -23,6 +25,8 @@ interface ScheduleTopBarProps {
   isRescheduling?: boolean;
   onClearUncompletedScheduleInstances?: () => void | Promise<void>;
   isClearingUncompletedScheduleInstances?: boolean;
+  isManualSchedulingMode?: boolean;
+  onToggleManualSchedulingMode?: () => void;
   onHeightChange?: (height: number) => void;
 }
 
@@ -40,6 +44,8 @@ export function ScheduleTopBar({
   isRescheduling = false,
   onClearUncompletedScheduleInstances,
   isClearingUncompletedScheduleInstances = false,
+  isManualSchedulingMode = false,
+  onToggleManualSchedulingMode,
   onHeightChange,
 }: ScheduleTopBarProps) {
   const headerRef = useRef<HTMLElement | null>(null);
@@ -125,7 +131,7 @@ export function ScheduleTopBar({
     "app-button hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.12)] backdrop-blur-xl transition hover:border-[var(--border)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
 
   const debugMenuActionClass =
-    "inline-flex h-8 w-full items-center justify-center rounded-b-full rounded-t-none bg-black text-zinc-500 transition hover:bg-zinc-950 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70 disabled:pointer-events-none disabled:opacity-45";
+    "inline-flex h-8 w-8 flex-none items-center justify-center bg-black text-zinc-500 transition hover:bg-zinc-950 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70 disabled:pointer-events-none disabled:opacity-45";
 
   const safeAreaPadding: CSSProperties = {
     paddingTop: "calc(0.45rem + env(safe-area-inset-top, 0px))",
@@ -233,7 +239,7 @@ export function ScheduleTopBar({
           </button>
           <div
             className={cn(
-              "absolute left-0 top-[calc(100%-0.375rem)] z-[130] flex w-full origin-top overflow-hidden rounded-b-full rounded-t-none bg-black p-0 shadow-none transition-all duration-150 ease-out",
+              "absolute right-0 top-[calc(100%-0.375rem)] z-[130] flex w-8 origin-top flex-col overflow-hidden rounded-b-full rounded-t-none bg-black p-0 shadow-none transition-all duration-150 ease-out",
               isDebugMenuOpen
                 ? "translate-y-0 scale-y-100 opacity-100"
                 : "pointer-events-none -translate-y-2 scale-y-75 opacity-0"
@@ -246,11 +252,35 @@ export function ScheduleTopBar({
                 !onClearUncompletedScheduleInstances ||
                 isClearingUncompletedScheduleInstances
               }
-              aria-label="Clear uncompleted schedule instances"
-              title="Clear uncompleted schedule instances"
+              aria-label="Clear uncompleted Events"
+              title="Clear uncompleted Events"
               className={debugMenuActionClass}
             >
               <X className="h-5 w-5" strokeWidth={2.4} />
+            </button>
+            <button
+              type="button"
+              disabled
+              aria-label="Recycle manual Events"
+              title="Recycle manual Events"
+              className={debugMenuActionClass}
+            >
+              <Recycle className="h-[18px] w-[18px]" strokeWidth={2.4} />
+            </button>
+            <button
+              type="button"
+              onClick={onToggleManualSchedulingMode}
+              disabled={!onToggleManualSchedulingMode}
+              aria-label="Manual scheduling"
+              title="Manual scheduling"
+              aria-pressed={isManualSchedulingMode}
+              className={cn(
+                debugMenuActionClass,
+                isManualSchedulingMode &&
+                  "text-white hover:text-white focus-visible:ring-white/80"
+              )}
+            >
+              <MousePointerClick className="h-[18px] w-[18px]" strokeWidth={2.4} />
             </button>
           </div>
         </div>

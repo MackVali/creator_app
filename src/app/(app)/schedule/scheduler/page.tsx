@@ -83,7 +83,7 @@ export default function SchedulerPage() {
   const [error, setError] = useState<string | null>(null);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
-  const [debugSummary, setDebugSummary] = useState<any>(null);
+  const [debugSummary, setDebugSummary] = useState<unknown>(null);
   const [debugError, setDebugError] = useState<string | null>(null);
 
   const { tasks, projects, windowMap, status: metaStatus, error: metaError } =
