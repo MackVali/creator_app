@@ -131,23 +131,6 @@ const energyToDbValue = (energy: Project["energy"]): string => {
   }
 };
 
-const formatEnergyLabel = (code: string): Project["energy"] => {
-  switch (code) {
-    case "LOW":
-      return "Low";
-    case "MEDIUM":
-      return "Medium";
-    case "HIGH":
-      return "High";
-    case "ULTRA":
-      return "Ultra";
-    case "EXTREME":
-      return "Extreme";
-    default:
-      return "No";
-  }
-};
-
 export function ProjectQuickEditDialog({
   project,
   goalId,

@@ -173,7 +173,7 @@ export default function EditHabitPage() {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
-  const [monumentLookup, setMonumentLookup] = useState<Map<string, Monument>>(
+  const [, setMonumentLookup] = useState<Map<string, Monument>>(
     () => new Map()
   );
   const [skillId, setSkillId] = useState<string>("none");

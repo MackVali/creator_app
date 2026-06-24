@@ -219,20 +219,6 @@ async function getAuthoritativeLastCompletedAt(
   return pickMax(fromDays, fromItems);
 }
 
-function pickLatestTimestamp(
-  a?: string | null,
-  b?: string | null
-): string | null {
-  const first = a ? Date.parse(a) : Number.NaN;
-  const second = b ? Date.parse(b) : Number.NaN;
-  if (!Number.isFinite(first) && !Number.isFinite(second)) {
-    return a ?? b ?? null;
-  }
-  if (!Number.isFinite(first)) return b ?? null;
-  if (!Number.isFinite(second)) return a ?? null;
-  return first >= second ? a ?? null : b ?? null;
-}
-
 type HabitRecord = {
   id: string;
   name?: string | null;

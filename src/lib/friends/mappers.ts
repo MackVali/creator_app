@@ -18,7 +18,7 @@ type FriendDiscoveryProfileRow =
 type FriendContactImportRow =
   Database["public"]["Tables"]["friend_contact_imports"]["Row"];
 
-function fallbackAvatar(_seedSource?: string | null) {
+function fallbackAvatar() {
   return DEFAULT_AVATAR_URL;
 }
 
@@ -114,7 +114,7 @@ export function mapDiscoveryProfile(
     id: row.id,
     username: row.username,
     displayName: row.display_name,
-    avatarUrl: row.avatar_url ?? fallbackAvatar(row.display_name),
+    avatarUrl: row.avatar_url ?? fallbackAvatar(),
 
     mutualFriends: row.mutual_friends ?? 0,
     highlight:
@@ -131,7 +131,7 @@ export function mapSuggestedFriend(
     id: row.id,
     username: row.username,
     displayName: row.display_name,
-    avatarUrl: row.avatar_url ?? fallbackAvatar(row.display_name),
+    avatarUrl: row.avatar_url ?? fallbackAvatar(),
 
     mutualFriends: row.mutual_friends ?? 0,
     reason:
@@ -150,8 +150,8 @@ export function mapFriendRequest(
     ? row.requester_display_name ?? row.requester_username
     : row.target_display_name ?? row.target_username;
   const avatarUrl = isIncoming
-    ? row.requester_avatar_url ?? fallbackAvatar(row.requester_display_name ?? row.requester_username)
-    : row.target_avatar_url ?? fallbackAvatar(row.target_display_name ?? row.target_username);
+    ? row.requester_avatar_url ?? fallbackAvatar()
+    : row.target_avatar_url ?? fallbackAvatar();
   return {
     id: row.id,
     username: isIncoming ? row.requester_username : row.target_username,

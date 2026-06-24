@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
+import { hapticSoftTick } from "@/lib/haptics/creatorHaptics";
 import {
   Bug,
   ChevronLeft,
@@ -20,7 +21,7 @@ interface ScheduleTopBarProps {
   canGoBack?: boolean;
   onOpenJumpToDate?: () => void;
   onOpenSearch?: () => void;
-  onReschedule?: () => void;
+  onReschedule?: () => void | Promise<void>;
   canReschedule?: boolean;
   isRescheduling?: boolean;
   onClearUncompletedScheduleInstances?: () => void | Promise<void>;
@@ -115,10 +116,39 @@ export function ScheduleTopBar({
     };
   }, [isDebugMenuOpen]);
 
+  const triggerTopBarHaptic = () => {
+    void hapticSoftTick();
+  };
+
+  const handleBackClick = () => {
+    if (!canGoBack) return;
+    triggerTopBarHaptic();
+    onBack();
+  };
+
+  const handleRescheduleClick = () => {
+    if (!onReschedule || !canReschedule || isRescheduling) return;
+    triggerTopBarHaptic();
+    void onReschedule();
+  };
+
+  const handleDebugMenuTriggerClick = () => {
+    triggerTopBarHaptic();
+    setIsDebugMenuOpen((open) => !open);
+  };
+
   const handleClearUncompletedScheduleInstances = async () => {
     if (!onClearUncompletedScheduleInstances) return;
+    if (isClearingUncompletedScheduleInstances) return;
+    triggerTopBarHaptic();
     await onClearUncompletedScheduleInstances();
     setIsDebugMenuOpen(false);
+  };
+
+  const handleToggleManualSchedulingModeClick = () => {
+    if (!onToggleManualSchedulingMode) return;
+    triggerTopBarHaptic();
+    onToggleManualSchedulingMode();
   };
 
   const iconButtonClass =
@@ -147,7 +177,7 @@ export function ScheduleTopBar({
       ref={headerRef}
     >
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
+        <button type="button" onClick={handleBackClick} disabled={!canGoBack} className={iconButtonClass}>
           <ChevronLeft className="h-5 w-5 text-[var(--muted)]" />
         </button>
         <button
@@ -180,7 +210,7 @@ export function ScheduleTopBar({
           <>
             <button
               type="button"
-              onClick={onReschedule}
+              onClick={handleRescheduleClick}
               disabled={!canReschedule || isRescheduling}
               aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
               className={rescheduleButtonClass}
@@ -195,7 +225,7 @@ export function ScheduleTopBar({
             </button>
             <button
               type="button"
-              onClick={onReschedule}
+              onClick={handleRescheduleClick}
               disabled={!canReschedule || isRescheduling}
               aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
               className={`sm:hidden ${iconButtonClass}`}
@@ -211,7 +241,7 @@ export function ScheduleTopBar({
         <div ref={debugMenuRef} className="relative flex items-center">
           <button
             type="button"
-            onClick={() => setIsDebugMenuOpen((open) => !open)}
+            onClick={handleDebugMenuTriggerClick}
             aria-label="Toggle schedule debug menu"
             aria-expanded={isDebugMenuOpen}
             className={cn(
@@ -225,7 +255,7 @@ export function ScheduleTopBar({
           </button>
           <button
             type="button"
-            onClick={() => setIsDebugMenuOpen((open) => !open)}
+            onClick={handleDebugMenuTriggerClick}
             aria-label="Toggle Schedule Debug menu"
             aria-expanded={isDebugMenuOpen}
             className={cn(
@@ -269,7 +299,7 @@ export function ScheduleTopBar({
             </button>
             <button
               type="button"
-              onClick={onToggleManualSchedulingMode}
+              onClick={handleToggleManualSchedulingModeClick}
               disabled={!onToggleManualSchedulingMode}
               aria-label="Manual scheduling"
               title="Manual scheduling"

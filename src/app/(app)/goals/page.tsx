@@ -25,7 +25,6 @@ import {
   persistGoalUpdate,
   LimitReachedError,
   isGoalCodeColumnMissingError,
-  type LimitErrorCode,
 } from "@/lib/goals/persistGoalUpdate";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 import { normalizeGoalStatus } from "@/lib/goals/status";
@@ -168,22 +167,12 @@ function energyToDbValue(energy: Goal["energy"]): string {
   }
 }
 
-const DAY_IN_MS = 86_400_000;
 const GOAL_PAYWALL_FEATURES = [
   "More room for goals, projects, tasks, and habits.",
   "Bigger roadmaps for bigger life systems.",
   "The full CREATOR Pro planning and execution layer.",
 ];
 const GOAL_BATCH_SIZE = 6;
-
-const GOAL_PRIORITY_WEIGHT: Record<string, number> = {
-  NO: 0,
-  LOW: 10,
-  MEDIUM: 200,
-  HIGH: 300,
-  CRITICAL: 500,
-  "ULTRA-CRITICAL": 1000,
-};
 
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   NO: "NO",
@@ -1192,13 +1181,10 @@ export default function GoalsPage() {
     [router]
   );
 
-  const handleGoalLimitReached = useCallback(
-    (_limitCode: LimitErrorCode) => {
-      setSaveDisabled(true);
-      setPaywallOpen(true);
-    },
-    []
-  );
+  const handleGoalLimitReached = useCallback(() => {
+    setSaveDisabled(true);
+    setPaywallOpen(true);
+  }, []);
 
   const handlePaywallOpenChange = useCallback((next: boolean) => {
     setPaywallOpen(next);

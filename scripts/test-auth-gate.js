@@ -10,8 +10,6 @@
 
 const http = require("http");
 
-const BASE_URL = "http://localhost:3000";
-
 // Test cases based on PRD acceptance criteria
 const testCases = [
   {
@@ -159,7 +157,7 @@ async function checkServer() {
   try {
     await makeRequest("/api/health");
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }

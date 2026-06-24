@@ -72,7 +72,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   if (fetchError) {
     console.error("Reschedule fetch error", fetchError);
-    return NextResponse.json({ error: "Unable to load scheduled event" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Unable to load scheduled event",
+        message: fetchError.message,
+        details: fetchError.details,
+        hint: fetchError.hint,
+        code: fetchError.code,
+      },
+      { status: 500 }
+    );
   }
 
   if (!instance || instance.user_id !== user.id) {
@@ -188,6 +197,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   return NextResponse.json({
     success: true,
     startUtc: nextStartIso,
+    instance: {
+      id: instance.id,
+      start_utc: nextStartIso,
+      end_utc: nextEndIso,
+      duration_min: validDuration,
+      locked: true,
+      placement_source: "manual",
+    },
     ...(displacedProjectWarnings.length > 0
       ? { displacedProjectWarnings }
       : {}),

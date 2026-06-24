@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { normalizeHabitType } from "@/lib/scheduler/habits";
+import {
+  DEFAULT_HABIT_DURATION_MIN,
+  normalizeHabitType,
+} from "@/lib/scheduler/habits";
 import { PROJECT_PRIORITY_WEIGHT } from "@/lib/scheduler/config";
+import { DEFAULT_PROJECT_DURATION_MIN } from "@/lib/scheduler/projects";
 
 const PAGE_SIZE = 25;
 const SORT_OPTIONS = [
@@ -44,6 +48,7 @@ type SearchResult = {
 type ProjectSearchRecord = {
   id: string;
   name?: string | null;
+  duration_min?: number | null;
   completed_at?: string | null;
   global_rank?: number | null;
   goal_id?: string | null;
@@ -56,6 +61,7 @@ type ProjectSearchRecord = {
 type HabitSearchRecord = {
   id: string;
   name?: string | null;
+  duration_minutes?: number | null;
   habit_type?: string | null;
   skill_id?: string | null;
   current_streak_days?: number | null;
@@ -170,6 +176,15 @@ function normalizeGlobalRank(value?: number | null): number {
   return Number.POSITIVE_INFINITY;
 }
 
+function normalizePositiveDuration(
+  value: number | null | undefined,
+  fallback: number
+): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
+}
+
 function getPriorityWeight(record: SearchResult): number {
   if (record.type === "HABIT") {
     return -1;
@@ -269,13 +284,13 @@ export async function GET(request: NextRequest) {
   let projectQuery = supabase
     .from("projects")
     .select(
-      "id,name,completed_at,global_rank,goal_id,energy,priority,updated_at,created_at"
+      "id,name,duration_min,completed_at,global_rank,goal_id,energy,priority,updated_at,created_at"
     )
     .eq("user_id", user.id);
   let habitQuery = supabase
     .from("habits")
     .select(
-      "id,name,habit_type,skill_id,current_streak_days,updated_at,created_at"
+      "id,name,duration_minutes,habit_type,skill_id,current_streak_days,updated_at,created_at"
     )
     .eq("user_id", user.id)
     .is("circle_id", null);
@@ -399,7 +414,11 @@ export async function GET(request: NextRequest) {
 
   const scheduleMap = new Map<string, ScheduleInstanceRow>();
   if (allSourceIds.length > 0) {
-    const scheduleNow = new Date().toISOString();
+    const scheduleNowDate = new Date();
+    const scheduleNow = scheduleNowDate.toISOString();
+    const scheduleLookback = new Date(
+      scheduleNowDate.getTime() - 24 * 60 * 60 * 1000
+    ).toISOString();
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from("schedule_instances")
       .select("id,source_id,source_type,start_utc,duration_min")
@@ -407,7 +426,7 @@ export async function GET(request: NextRequest) {
       .in("source_type", ["PROJECT", "HABIT"])
       .in("source_id", allSourceIds)
       .eq("status", "scheduled")
-      .gte("start_utc", scheduleNow)
+      .gte("start_utc", scheduleLookback)
       .order("start_utc", { ascending: true });
     if (scheduleError) {
       console.error("FAB search schedule lookup failed", scheduleError);
@@ -421,8 +440,27 @@ export async function GET(request: NextRequest) {
       const { source_id: sourceId, source_type: sourceType } = row;
       if (!sourceId || !sourceType || !row.start_utc) continue;
       const key = `${sourceType}:${sourceId}`;
-      if (scheduleMap.has(key)) continue;
-      scheduleMap.set(key, row);
+      const existing = scheduleMap.get(key);
+      if (!existing?.start_utc) {
+        scheduleMap.set(key, row);
+        continue;
+      }
+      const rowIsUpcoming = row.start_utc >= scheduleNow;
+      const existingIsUpcoming = existing.start_utc >= scheduleNow;
+      if (existingIsUpcoming && rowIsUpcoming) {
+        continue;
+      }
+      if (!existingIsUpcoming && rowIsUpcoming) {
+        scheduleMap.set(key, row);
+        continue;
+      }
+      if (
+        !existingIsUpcoming &&
+        !rowIsUpcoming &&
+        row.start_utc > existing.start_utc
+      ) {
+        scheduleMap.set(key, row);
+      }
     }
   }
 
@@ -452,6 +490,10 @@ export async function GET(request: NextRequest) {
         ? project.created_at
         : null;
     const priorityValue = project.priority ?? null;
+    const projectDurationMinutes = normalizePositiveDuration(
+      project.duration_min,
+      DEFAULT_PROJECT_DURATION_MIN
+    );
     results.push({
       id: project.id,
       name: project.name?.trim() || "Untitled project",
@@ -462,7 +504,7 @@ export async function GET(request: NextRequest) {
         typeof schedule?.duration_min === "number" &&
         Number.isFinite(schedule.duration_min)
           ? schedule.duration_min
-          : null,
+          : projectDurationMinutes,
       nextDueAt: null,
       completedAt,
       isCompleted: typeof completedAt === "string",
@@ -493,6 +535,10 @@ export async function GET(request: NextRequest) {
         ? habit.created_at
         : null;
     const normalizedHabitType = normalizeHabitType(habit.habit_type);
+    const habitDurationMinutes = normalizePositiveDuration(
+      habit.duration_minutes,
+      DEFAULT_HABIT_DURATION_MIN
+    );
     const habitSkillId = habit.skill_id ?? null;
     const habitMonumentId = habitSkillId
       ? skillMonumentLookup.get(habitSkillId) ?? null
@@ -507,7 +553,7 @@ export async function GET(request: NextRequest) {
         typeof schedule?.duration_min === "number" &&
         Number.isFinite(schedule.duration_min)
           ? schedule.duration_min
-          : null,
+          : habitDurationMinutes,
       nextDueAt: null,
       completedAt: null,
       isCompleted: false,

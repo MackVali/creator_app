@@ -40,6 +40,7 @@ import {
   hapticErrorPattern,
   hapticPress,
   hapticSnap,
+  hapticSoftTick,
 } from "@/lib/haptics/creatorHaptics";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
@@ -325,6 +326,23 @@ export function globalPriorityOrdersMatch(
   });
 }
 
+function getGlobalPriorityItemPositionKey(
+  items: GlobalPriorityRoadmapItem[],
+  targetItem: Pick<GlobalPriorityRoadmapItem, "id" | "type">
+) {
+  const bucketIndexes = new Map<PriorityBucketId, number>();
+
+  for (const item of sortGlobalPriorityItems(items)) {
+    const priorityIndex = bucketIndexes.get(item.priority) ?? 0;
+    if (isSameGlobalPriorityItem(item, targetItem)) {
+      return `${item.priority}:${priorityIndex}`;
+    }
+    bucketIndexes.set(item.priority, priorityIndex + 1);
+  }
+
+  return null;
+}
+
 function compareText(a?: string | null, b?: string | null) {
   return (a ?? "").localeCompare(b ?? "");
 }
@@ -460,6 +478,20 @@ export function moveCampaignGoal(
   return assignCampaignGoalPriorityOrders(
     PRIORITY_ORDER.flatMap((priority) => buckets.get(priority) ?? [])
   );
+}
+
+function getCampaignGoalPositionKey(
+  goals: RoadmapPriorityGoal[],
+  targetGoal: Pick<RoadmapPriorityGoal, "id">
+) {
+  for (const bucket of groupCampaignGoalsByPriority(goals)) {
+    const index = bucket.goals.findIndex((goal) => goal.id === targetGoal.id);
+    if (index >= 0) {
+      return `${bucket.priority}:${index}`;
+    }
+  }
+
+  return null;
 }
 
 export function mergeVisibleCampaignGoalOrder(
@@ -649,6 +681,7 @@ export function GlobalPriorityRoadmap({
   const [previewPriorityItems, setPreviewPriorityItems] = useState<
     GlobalPriorityRoadmapItem[] | null
   >(null);
+  const lastPriorityDragHapticTargetRef = useRef<string | null>(null);
   const {
     start: startEdgeAutoscroll,
     stop: stopEdgeAutoscroll,
@@ -713,6 +746,10 @@ export function GlobalPriorityRoadmap({
 
       setActivePriorityItem(activeData.item);
       setPreviewPriorityItems(items);
+      lastPriorityDragHapticTargetRef.current = getGlobalPriorityItemPositionKey(
+        items,
+        activeData.item
+      );
       startEdgeAutoscroll(event.activatorEvent);
     },
     [items, startEdgeAutoscroll]
@@ -745,19 +782,32 @@ export function GlobalPriorityRoadmap({
           overBucket,
           overData?.item
         );
+        const nextTargetKey = getGlobalPriorityItemPositionKey(
+          nextPreviewItems,
+          draggedItem
+        );
+        if (
+          appearance === "priorityEditor" &&
+          nextTargetKey &&
+          nextTargetKey !== lastPriorityDragHapticTargetRef.current
+        ) {
+          lastPriorityDragHapticTargetRef.current = nextTargetKey;
+          void hapticSoftTick();
+        }
 
         return globalPriorityOrdersMatch(previousItems, nextPreviewItems)
           ? currentPreviewItems
           : nextPreviewItems;
       });
     },
-    [items]
+    [appearance, items]
   );
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const previewItemsOnDrop = previewPriorityItems;
       setActivePriorityItem(null);
       setPreviewPriorityItems(null);
+      lastPriorityDragHapticTargetRef.current = null;
       stopEdgeAutoscroll();
       if (!event.over || !event.active.data.current) return;
       onDragEnd(event, isFiltered ? null : previewItemsOnDrop);
@@ -767,6 +817,7 @@ export function GlobalPriorityRoadmap({
   const handleDragCancel = useCallback(() => {
     setActivePriorityItem(null);
     setPreviewPriorityItems(null);
+    lastPriorityDragHapticTargetRef.current = null;
     stopEdgeAutoscroll();
   }, [stopEdgeAutoscroll]);
   const handleDefaultGoalLongPressEdit = useCallback(
@@ -1057,6 +1108,7 @@ function SortableGlobalPriorityItem({
   );
   const [activeCampaignGoal, setActiveCampaignGoal] =
     useState<RoadmapPriorityGoal | null>(null);
+  const lastCampaignGoalDragHapticTargetRef = useRef<string | null>(null);
   const {
     start: startCampaignGoalEdgeAutoscroll,
     stop: stopCampaignGoalEdgeAutoscroll,
@@ -1075,13 +1127,74 @@ function SortableGlobalPriorityItem({
       }
 
       setActiveCampaignGoal(activeData.goal);
+      lastCampaignGoalDragHapticTargetRef.current = getCampaignGoalPositionKey(
+        item.goals ?? [],
+        activeData.goal
+      );
       startCampaignGoalEdgeAutoscroll(event.activatorEvent);
     },
-    [isCampaignGoalDragDisabled, item.id, startCampaignGoalEdgeAutoscroll]
+    [
+      isCampaignGoalDragDisabled,
+      item.goals,
+      item.id,
+      startCampaignGoalEdgeAutoscroll,
+    ]
+  );
+  const handleCampaignGoalDragOver = useCallback(
+    (event: DragOverEvent) => {
+      if (isCampaignGoalDragDisabled || appearance !== "priorityEditor") return;
+
+      const { active, over } = event;
+      if (!over) return;
+
+      const activeData = active.data.current as
+        | { campaignId?: string; goal?: RoadmapPriorityGoal }
+        | undefined;
+      const draggedGoal = activeData?.goal;
+      if (!draggedGoal || activeData?.campaignId !== item.id) return;
+
+      const overData = over.data.current as
+        | {
+            campaignId?: string;
+            bucket?: PriorityBucketId;
+            goal?: RoadmapPriorityGoal;
+          }
+        | undefined;
+      if (overData?.campaignId && overData.campaignId !== item.id) return;
+
+      const targetPriority =
+        overData?.bucket ??
+        (overData?.goal ? normalizePriority(overData.goal.priority) : null) ??
+        parseCampaignGoalBucketId(String(over.id), item.id);
+      if (!targetPriority) return;
+
+      const visibleGoals = item.goals ?? [];
+      if (!visibleGoals.some((goal) => goal.id === draggedGoal.id)) return;
+
+      const nextVisibleGoals = moveCampaignGoal(
+        visibleGoals,
+        draggedGoal,
+        targetPriority,
+        overData?.goal
+      );
+      const nextTargetKey = getCampaignGoalPositionKey(
+        nextVisibleGoals,
+        draggedGoal
+      );
+      if (
+        nextTargetKey &&
+        nextTargetKey !== lastCampaignGoalDragHapticTargetRef.current
+      ) {
+        lastCampaignGoalDragHapticTargetRef.current = nextTargetKey;
+        void hapticSoftTick();
+      }
+    },
+    [appearance, isCampaignGoalDragDisabled, item.goals, item.id]
   );
   const handleCampaignGoalDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveCampaignGoal(null);
+      lastCampaignGoalDragHapticTargetRef.current = null;
       stopCampaignGoalEdgeAutoscroll();
       if (isCampaignGoalDragDisabled) return;
       if (!event.over || !event.active.data.current) return;
@@ -1096,6 +1209,7 @@ function SortableGlobalPriorityItem({
   );
   const handleCampaignGoalDragCancel = useCallback(() => {
     setActiveCampaignGoal(null);
+    lastCampaignGoalDragHapticTargetRef.current = null;
     stopCampaignGoalEdgeAutoscroll();
   }, [stopCampaignGoalEdgeAutoscroll]);
   const dragHandleListeners = listeners as DragHandleListenerMap | undefined;
@@ -1279,6 +1393,7 @@ function SortableGlobalPriorityItem({
             collisionDetection={closestCenter}
             autoScroll={PRIORITY_DND_AUTO_SCROLL}
             onDragStart={handleCampaignGoalDragStart}
+            onDragOver={handleCampaignGoalDragOver}
             onDragEnd={handleCampaignGoalDragEnd}
             onDragCancel={handleCampaignGoalDragCancel}
           >

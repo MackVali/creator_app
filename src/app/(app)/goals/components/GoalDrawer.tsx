@@ -7,7 +7,6 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -306,7 +305,6 @@ export function GoalDrawer({
   const formId = useId();
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
-  const [hasCustomEmoji, setHasCustomEmoji] = useState(false);
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
   const [energy, setEnergy] = useState<Goal["energy"]>("No");
   const [active, setActive] = useState(true);
@@ -353,9 +351,6 @@ export function GoalDrawer({
       const initialEmojiValue = initialGoal.emoji || monumentDefaultEmoji || "";
       setTitle(initialGoal.title);
       setEmoji(initialEmojiValue);
-      setHasCustomEmoji(
-        Boolean(initialGoal.emoji && initialGoal.emoji !== monumentDefaultEmoji)
-      );
       setPriority(resolvedPriority);
       const resolvedEnergy = energyLabelFromCode(
         initialGoal.energyCode,
@@ -396,7 +391,6 @@ export function GoalDrawer({
     } else {
       setTitle("");
       setEmoji("");
-      setHasCustomEmoji(false);
       setPriority("Low");
       setEnergy("No");
       setActive(true);
@@ -422,13 +416,11 @@ export function GoalDrawer({
     monumentSelectionRef.current = monumentId;
     if (!monumentId) {
       setEmoji("");
-      setHasCustomEmoji(false);
       return;
     }
     const defaultEmoji = getMonumentEmojiById(monumentId);
     if (defaultEmoji) {
       setEmoji(defaultEmoji);
-      setHasCustomEmoji(false);
     }
   }, [monumentId, getMonumentEmojiById]);
 
@@ -880,7 +872,6 @@ export function GoalDrawer({
                     onChange={(e) => {
                       const value = e.target.value;
                       setEmoji(value);
-                      setHasCustomEmoji(value.trim().length > 0);
                     }}
                     maxLength={2}
                     placeholder="✨"

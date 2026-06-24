@@ -14,10 +14,8 @@ import type { MouseEvent, PointerEvent, TouchEvent, WheelEvent } from "react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import {
-  CalendarDays,
   Grid2x2,
   Grid3x3,
-  Target,
   Timer,
   MoreVertical,
   User,
@@ -33,7 +31,6 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
-import { Button } from "@/components/ui/button";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { useToastHelpers } from "@/components/ui/toast";
@@ -2424,33 +2421,6 @@ export function SkillDetail({
       </main>
     );
   }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const createdAt = skill.created_at ? new Date(skill.created_at) : null;
-  const hasValidDate = createdAt && !Number.isNaN(createdAt.getTime());
-  const formattedCreatedAt = hasValidDate ? formatDate(skill.created_at) : null;
-  const daysTracked = hasValidDate
-    ? Math.max(
-        0,
-        Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
-      )
-    : null;
-  const createdRelativeText = hasValidDate
-    ? daysTracked === 0
-      ? "Added today."
-      : `Added ${daysTracked} day${daysTracked === 1 ? "" : "s"} ago.`
-    : "Creation date unavailable.";
 
   const skillBadges = progress?.badges ?? [];
 

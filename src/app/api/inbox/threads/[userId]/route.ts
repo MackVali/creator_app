@@ -61,10 +61,31 @@ export async function GET(
       .eq("user_id", participantId)
       .single();
 
+    const viewerFriendQuery = supabase
+      .from("friend_connections")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("friend_user_id", participantId)
+      .maybeSingle();
+
+    const participantFriendQuery = supabase
+      .from("friend_connections")
+      .select("id")
+      .eq("user_id", participantId)
+      .eq("friend_user_id", user.id)
+      .maybeSingle();
+
     const [
       { data: messages, error: messagesError },
       { data: profile, error: profileError },
-    ] = await Promise.all([messagesQuery, profileQuery]);
+      { data: viewerFriend, error: viewerFriendError },
+      { data: participantFriend, error: participantFriendError },
+    ] = await Promise.all([
+      messagesQuery,
+      profileQuery,
+      viewerFriendQuery,
+      participantFriendQuery,
+    ]);
 
     if (messagesError) {
       console.error("Failed to load inbox thread messages", messagesError);
@@ -78,7 +99,22 @@ export async function GET(
       console.error("Failed to load thread participant profile", profileError);
     }
 
+    if (viewerFriendError) {
+      console.error(
+        "Failed to verify viewer friend connection",
+        viewerFriendError
+      );
+    }
+
+    if (participantFriendError) {
+      console.error(
+        "Failed to verify participant friend connection",
+        participantFriendError
+      );
+    }
+
     const participantProfile = profile as ThreadProfile | null;
+    const isMutualFriend = Boolean(viewerFriend && participantFriend);
     const fallbackLabel = `User ${participantId.slice(0, 6)}`;
     const displayName =
       participantProfile?.name?.trim() ||
@@ -116,6 +152,7 @@ export async function GET(
         username: participantProfile?.username ?? null,
         displayName,
         avatarUrl: participantProfile?.avatar_url ?? null,
+        canStartVoiceCall: isMutualFriend,
       },
       messages:
         threadMessages.map((message) => ({
