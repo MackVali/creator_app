@@ -3456,6 +3456,8 @@ export default function ScheduleTabContent({
     isClearingUncompletedScheduleInstances,
     setIsClearingUncompletedScheduleInstances,
   ] = useState(false);
+  const [isRecyclingManualEvents, setIsRecyclingManualEvents] =
+    useState(false);
   const [isManualSchedulingMode, setIsManualSchedulingMode] = useState(false);
   const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null);
   const [dayTransitionDirection, setDayTransitionDirection] =
@@ -4750,7 +4752,7 @@ export default function ScheduleTabContent({
       try {
         const params = new URLSearchParams();
         params.set("lookaheadDays", String(FULL_WRITE_WINDOW_DAYS));
-        params.set("timeZone", effectiveTimeZone);
+        params.set("timeZone", effectiveTimeZone || "UTC");
         const response = await fetch(
           `/api/schedule/events?${params.toString()}`,
           {
@@ -4788,7 +4790,7 @@ export default function ScheduleTabContent({
     };
   }, [
     userId,
-    localTimeZone,
+    effectiveTimeZone,
     clearScheduleData,
     FULL_WRITE_WINDOW_DAYS,
     logInstanceStatusChange,
@@ -6900,7 +6902,11 @@ export default function ScheduleTabContent({
         }
       );
       const payload = (await response.json().catch(() => null)) as
-        | { deleted?: number; error?: string }
+        | {
+            deleted?: number;
+            preservedLockedFuture?: number | null;
+            error?: string;
+          }
         | null;
       if (!response.ok) {
         throw new Error(
@@ -6911,9 +6917,16 @@ export default function ScheduleTabContent({
       await refreshScheduleData();
       await refreshScheduledProjectIds();
       void hapticComplete();
+      const preservedLockedFuture =
+        typeof payload?.preservedLockedFuture === "number" &&
+        Number.isFinite(payload.preservedLockedFuture)
+          ? payload.preservedLockedFuture
+          : 0;
       toast.success(
-        "Schedule cleared",
-        "Uncompleted schedule instances were removed. Completed instances were preserved."
+        "Clear uncompleted Events",
+        preservedLockedFuture > 0
+          ? "Cleared uncompleted Events; kept locked future Events."
+          : "Cleared uncompleted Events."
       );
     } catch (error) {
       console.error("Failed to clear uncompleted schedule instances", error);
@@ -6928,6 +6941,64 @@ export default function ScheduleTabContent({
   }, [
     userId,
     isClearingUncompletedScheduleInstances,
+    refreshScheduleData,
+    refreshScheduledProjectIds,
+    toast,
+  ]);
+
+  const handleRecycleManualEvents = useCallback(async () => {
+    if (!userId || isRecyclingManualEvents) return;
+
+    setIsRecyclingManualEvents(true);
+    try {
+      const response = await fetch(
+        "/api/schedule/instances/recycle-manual",
+        {
+          method: "POST",
+          cache: "no-store",
+        }
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            recycled?: number;
+            placed?: number;
+            failed?: number;
+            skipped?: number;
+            message?: string;
+            error?: string;
+          }
+        | null;
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ?? "Unable to recycle stale manual Events"
+        );
+      }
+
+      await refreshScheduleData();
+      await refreshScheduledProjectIds();
+      void hapticComplete();
+      const recycled = payload?.recycled ?? 0;
+      const placed = payload?.placed ?? 0;
+      const failed = payload?.failed ?? 0;
+      const skipped = payload?.skipped ?? 0;
+      toast.success(
+        recycled > 0 ? "Manual Events recycled" : "No manual Events recycled",
+        payload?.message ??
+          `${recycled} recycled, ${placed} placed, ${failed} failed, ${skipped} skipped.`
+      );
+    } catch (error) {
+      console.error("Failed to recycle manual Events", error);
+      void hapticErrorPattern();
+      toast.error(
+        "Recycle failed",
+        error instanceof Error ? error.message : "Try again in a moment."
+      );
+    } finally {
+      setIsRecyclingManualEvents(false);
+    }
+  }, [
+    userId,
+    isRecyclingManualEvents,
     refreshScheduleData,
     refreshScheduledProjectIds,
     toast,
@@ -11339,6 +11410,8 @@ export default function ScheduleTabContent({
           isClearingUncompletedScheduleInstances={
             isClearingUncompletedScheduleInstances
           }
+          onRecycleManualEvents={handleRecycleManualEvents}
+          isRecyclingManualEvents={isRecyclingManualEvents}
           isManualSchedulingMode={isManualSchedulingMode}
           onToggleManualSchedulingMode={handleToggleManualSchedulingMode}
           onHeightChange={setTopBarHeight}

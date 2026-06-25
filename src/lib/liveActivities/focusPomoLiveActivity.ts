@@ -5,15 +5,20 @@ export type FocusPomoLiveActivityMode = "pomo" | "stopwatch";
 
 export type FocusPomoLiveActivityStatus =
   | "running"
+  | "paused"
   | "completed"
   | "canceled";
 
 export type FocusPomoLiveActivityPayload = {
+  sessionId: string;
   title: string;
-  sourceType: string;
-  sourceId: string;
+  sourceLabel?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
   mode: FocusPomoLiveActivityMode;
   startedAt: string;
+  pausedAt?: string | null;
+  targetEndAt?: string | null;
   plannedDurationSeconds: number;
   remainingSeconds?: number;
   elapsedSeconds?: number;
@@ -23,6 +28,7 @@ export type FocusPomoLiveActivityPayload = {
 export type EndFocusPomoLiveActivityPayload = {
   status: Extract<FocusPomoLiveActivityStatus, "completed" | "canceled">;
   title?: string;
+  sessionId?: string;
 };
 
 const FOCUS_POMO_ACTIVITY_ID = "focus-pomo-current";
@@ -59,8 +65,9 @@ function buildFocusPomoAttributes(
 ): Record<string, string> {
   return {
     id: FOCUS_POMO_ACTIVITY_ID,
-    sourceType: payload.sourceType,
-    sourceId: payload.sourceId,
+    sessionId: payload.sessionId,
+    sourceType: payload.sourceType ?? "",
+    sourceId: payload.sourceId ?? "",
     mode: payload.mode,
   };
 }
@@ -69,9 +76,14 @@ function buildFocusPomoContentState(
   payload: FocusPomoLiveActivityPayload
 ): Record<string, string> {
   return {
+    sessionId: payload.sessionId,
     title: payload.title,
+    sourceLabel: payload.sourceLabel ?? "",
+    mode: payload.mode,
     status: payload.status,
     startedAt: payload.startedAt,
+    pausedAt: payload.pausedAt ?? "",
+    targetEndAt: payload.targetEndAt ?? "",
     plannedDurationSeconds: String(payload.plannedDurationSeconds),
     ...(payload.remainingSeconds != null
       ? { remainingSeconds: String(payload.remainingSeconds) }
@@ -86,7 +98,8 @@ function buildEndFocusPomoContentState(
   payload?: EndFocusPomoLiveActivityPayload
 ): Record<string, string> {
   return {
-    title: payload?.title ?? "FocusPomo",
+    sessionId: payload?.sessionId ?? "",
+    title: payload?.title ?? "Focus Pomo",
     status: payload?.status ?? "canceled",
   };
 }
@@ -96,6 +109,13 @@ export async function startFocusPomoLiveActivity(
 ): Promise<void> {
   try {
     if (!(await canUseLiveActivity())) return;
+
+    await LiveActivity.endActivity({
+      id: FOCUS_POMO_ACTIVITY_ID,
+      contentState: buildEndFocusPomoContentState({ status: "canceled" }),
+      timestamp: nowLiveActivityTimestamp(),
+      dismissalPolicy: "immediate",
+    }).catch(() => undefined);
 
     await LiveActivity.startActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
@@ -134,6 +154,7 @@ export async function endFocusPomoLiveActivity(
       id: FOCUS_POMO_ACTIVITY_ID,
       contentState: buildEndFocusPomoContentState(payload),
       timestamp: nowLiveActivityTimestamp(),
+      dismissalPolicy: "immediate",
     });
   } catch (error) {
     warnInDevelopment("Unable to end FocusPomo Live Activity.", error);

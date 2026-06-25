@@ -58,6 +58,14 @@ import type { CatRow } from "@/lib/types/cat";
 import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
+  endFocusPomoLiveActivity,
+  startFocusPomoLiveActivity,
+} from "@/lib/liveActivities/focusPomoLiveActivity";
+import {
+  cancelFocusPomoCompletionNotification,
+  scheduleFocusPomoCompletionNotification,
+} from "@/lib/notifications/focusPomoLocalNotifications";
+import {
   hapticComplete,
   hapticErrorPattern,
   hapticLongPress,
@@ -114,6 +122,12 @@ type FocusPomoRunResult = {
   completedAt: string;
   timeZone: string;
   resultTone: "under" | "over" | "skipped";
+};
+
+type ActiveFocusPomoLiveActivitySession = {
+  sessionId: string;
+  itemKey: string;
+  title: string;
 };
 
 type ScopeOption = {
@@ -3646,6 +3660,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
   const completionRequestsRef = useRef(new Map<string, Promise<void>>());
+  const focusPomoLiveActivityRef =
+    useRef<ActiveFocusPomoLiveActivitySession | null>(null);
   const previousActiveIndexRef = useRef(activeIndex);
   const queueSourceSignatureRef = useRef("");
   const suppressQueueClickRef = useRef(false);
@@ -4756,6 +4772,94 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
             tone: "empty",
           };
 
+  const endActiveFocusPomoLiveActivity = (
+    status: "completed" | "canceled",
+    title?: string
+  ): Promise<void> => {
+    const activeSession = focusPomoLiveActivityRef.current;
+    focusPomoLiveActivityRef.current = null;
+
+    return Promise.all([
+      cancelFocusPomoCompletionNotification(),
+      endFocusPomoLiveActivity({
+        status,
+        title: title ?? activeSession?.title,
+        sessionId: activeSession?.sessionId,
+      }),
+    ]).then(() => undefined);
+  };
+
+  const startLiveActivityForItem = (
+    item: FocusPomoQueueItem,
+    durationMs: number,
+    options: {
+      remainingMsSnapshot?: number;
+      elapsedMsSnapshot?: number;
+    } = {}
+  ) => {
+    const sessionId = createLocalSessionId();
+    const itemKey = getFocusPomoQueueItemKey(item);
+    const title = item.title.trim() || "Focus Pomo";
+    const startedAtDate = new Date();
+    const safeRemainingMs = Math.max(
+      0,
+      options.remainingMsSnapshot ?? durationMs
+    );
+    const safeElapsedMs = Math.max(0, options.elapsedMsSnapshot ?? 0);
+    const targetEndAtDate =
+      mode === "pomo"
+        ? new Date(startedAtDate.getTime() + safeRemainingMs)
+        : null;
+
+    focusPomoLiveActivityRef.current = {
+      sessionId,
+      itemKey,
+      title,
+    };
+
+    void startFocusPomoLiveActivity({
+      sessionId,
+      title,
+      sourceLabel: displaySource?.title ?? null,
+      sourceType: displaySource?.sourceType ?? null,
+      sourceId: displaySource?.sourceId ?? null,
+      mode,
+      status: "running",
+      startedAt: startedAtDate.toISOString(),
+      targetEndAt: targetEndAtDate?.toISOString() ?? null,
+      plannedDurationSeconds: Math.max(0, Math.round(durationMs / 1000)),
+      remainingSeconds:
+        mode === "pomo"
+          ? Math.max(0, Math.ceil(safeRemainingMs / 1000))
+          : undefined,
+      elapsedSeconds:
+        mode === "stopwatch"
+          ? Math.max(0, Math.floor(safeElapsedMs / 1000))
+          : undefined,
+    });
+
+    if (mode === "pomo" && targetEndAtDate) {
+      void scheduleFocusPomoCompletionNotification({
+        sessionId,
+        title,
+        targetEndAt: targetEndAtDate.toISOString(),
+      });
+    } else {
+      void cancelFocusPomoCompletionNotification();
+    }
+  };
+
+  const transitionLiveActivityToNextItem = (
+    status: "completed" | "canceled",
+    completedTitle: string,
+    nextItem: FocusPomoQueueItem,
+    nextDurationMs: number
+  ) => {
+    void endActiveFocusPomoLiveActivity(status, completedTitle).then(() => {
+      startLiveActivityForItem(nextItem, nextDurationMs);
+    });
+  };
+
   useEffect(() => {
     if (queueSourceSignatureRef.current === sourceQueueSignature) return;
 
@@ -4836,6 +4940,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     previousStopwatchSecondInMinuteRef.current =
       mode === "stopwatch" ? stopwatchSecondInMinute : null;
   }, [mode, stopwatchSecondInMinute]);
+
+  useEffect(() => {
+    if (isRunning || !focusPomoLiveActivityRef.current) return;
+
+    void endActiveFocusPomoLiveActivity("canceled");
+  }, [isRunning]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -5273,6 +5383,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
   const handlePrimaryAction = () => {
     if (isRunning) {
+      void endActiveFocusPomoLiveActivity("canceled", currentItem?.title);
       void hapticSnap();
       setIsRunning(false);
       resetCurrentTimer();
@@ -5285,6 +5396,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     void hapticPress();
     setHasRunStarted(true);
+    startLiveActivityForItem(currentItem, currentTimerDurationMs, {
+      remainingMsSnapshot:
+        mode === "pomo"
+          ? remainingMsRef.current || currentTimerDurationMs
+          : undefined,
+      elapsedMsSnapshot: mode === "stopwatch" ? elapsedMsRef.current : undefined,
+    });
     setIsRunning(true);
     console.info("Focus pomo start requested", { mode, source });
   };
@@ -5331,7 +5449,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         itemKey: nextPendingItem.item.id,
         durationMs: nextDurationMs,
       };
+      transitionLiveActivityToNextItem(
+        "canceled",
+        currentItem.title,
+        nextPendingItem.item,
+        nextDurationMs
+      );
     } else {
+      void endActiveFocusPomoLiveActivity("canceled", currentItem.title);
       setIsRunning(false);
       resetCurrentTimer();
     }
@@ -5383,7 +5508,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         itemKey: nextPendingItem.item.id,
         durationMs: nextDurationMs,
       };
+      transitionLiveActivityToNextItem(
+        "completed",
+        currentItem.title,
+        nextPendingItem.item,
+        nextDurationMs
+      );
     } else {
+      void endActiveFocusPomoLiveActivity("completed", currentItem.title);
       setIsRunning(false);
       resetCurrentTimer();
     }

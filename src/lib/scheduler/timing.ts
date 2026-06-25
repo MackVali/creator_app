@@ -154,6 +154,39 @@ export type SchedulerTiming = {
       prePlacementMsCleanup: number;
       prePlacementMsNonDaily: number;
       prePlacementMsFinalSyncRetry: number;
+      nonDailyPreloadMs: number;
+      nonDailyRoleLoopMs: number;
+      nonDailyDayLoopMs: number;
+      nonDailyExistingInstanceScanMs: number;
+      nonDailyCandidateBuildMs: number;
+      nonDailyPrepareWindowsForDayMs: number;
+      nonDailyGetDayInstancesMs: number;
+      nonDailySunlightResolveMs: number;
+      nonDailyFetchCompatibleWindowsOuterMs: number;
+      nonDailyCompatibilityCacheHit: number;
+      nonDailyCompatibilityCacheMiss: number;
+      nonDailyCompatibilityCacheSet: number;
+      nonDailyCompatibilityCacheBypass: number;
+      nonDailyCompatibilityCacheBypassDebug: number;
+      nonDailyCompatibilityCacheBypassTiming: number;
+      nonDailyCompatibilityCacheBypassParity: number;
+      nonDailyCompatibilityCacheEnabled: number;
+      nonDailyCompatibilityCacheDisabled: number;
+      nonDailySunlightCacheHit: number;
+      nonDailySunlightCacheMiss: number;
+      nonDailySunlightCacheSet: number;
+      nonDailyAllDaySunlightSkipCount: number;
+      nonDailyCandidateBuildOtherMs: number;
+      nonDailyPlaceRoleMs: number;
+      nonDailyPlaceItemInWindowsMs: number;
+      nonDailyPersistMs: number;
+      nonDailyMetadataUpdateMs: number;
+      nonDailyPruneCancelMs: number;
+      nonDailyOverrideClearMs: number;
+      nonDailySortDedupeMs: number;
+      nonDailySkippedRoleCount: number;
+      nonDailyPlacedRoleCount: number;
+      nonDailyFailedRoleCount: number;
     };
     habitAsyncReadSources: Record<
       string,
@@ -377,6 +410,39 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         prePlacementMsCleanup: 0,
         prePlacementMsNonDaily: 0,
         prePlacementMsFinalSyncRetry: 0,
+        nonDailyPreloadMs: 0,
+        nonDailyRoleLoopMs: 0,
+        nonDailyDayLoopMs: 0,
+        nonDailyExistingInstanceScanMs: 0,
+        nonDailyCandidateBuildMs: 0,
+        nonDailyPrepareWindowsForDayMs: 0,
+        nonDailyGetDayInstancesMs: 0,
+        nonDailySunlightResolveMs: 0,
+        nonDailyFetchCompatibleWindowsOuterMs: 0,
+        nonDailyCompatibilityCacheHit: 0,
+        nonDailyCompatibilityCacheMiss: 0,
+        nonDailyCompatibilityCacheSet: 0,
+        nonDailyCompatibilityCacheBypass: 0,
+        nonDailyCompatibilityCacheBypassDebug: 0,
+        nonDailyCompatibilityCacheBypassTiming: 0,
+        nonDailyCompatibilityCacheBypassParity: 0,
+        nonDailyCompatibilityCacheEnabled: 0,
+        nonDailyCompatibilityCacheDisabled: 0,
+        nonDailySunlightCacheHit: 0,
+        nonDailySunlightCacheMiss: 0,
+        nonDailySunlightCacheSet: 0,
+        nonDailyAllDaySunlightSkipCount: 0,
+        nonDailyCandidateBuildOtherMs: 0,
+        nonDailyPlaceRoleMs: 0,
+        nonDailyPlaceItemInWindowsMs: 0,
+        nonDailyPersistMs: 0,
+        nonDailyMetadataUpdateMs: 0,
+        nonDailyPruneCancelMs: 0,
+        nonDailyOverrideClearMs: 0,
+        nonDailySortDedupeMs: 0,
+        nonDailySkippedRoleCount: 0,
+        nonDailyPlacedRoleCount: 0,
+        nonDailyFailedRoleCount: 0,
       },
       habitAsyncReadSources: {},
       syncPairings: {
@@ -566,6 +632,44 @@ export function buildSchedulerTimingSummary(
         habitInstrumentation[field]
       );
     }
+  }
+  const nonDailyMetricNames = [
+    "nonDailyPreloadMs",
+    "nonDailyRoleLoopMs",
+    "nonDailyDayLoopMs",
+    "nonDailyExistingInstanceScanMs",
+    "nonDailyCandidateBuildMs",
+    "nonDailyPrepareWindowsForDayMs",
+    "nonDailyGetDayInstancesMs",
+    "nonDailySunlightResolveMs",
+    "nonDailyFetchCompatibleWindowsOuterMs",
+    "nonDailyCompatibilityCacheHit",
+    "nonDailyCompatibilityCacheMiss",
+    "nonDailyCompatibilityCacheSet",
+    "nonDailyCompatibilityCacheBypass",
+    "nonDailyCompatibilityCacheBypassDebug",
+    "nonDailyCompatibilityCacheBypassTiming",
+    "nonDailyCompatibilityCacheBypassParity",
+    "nonDailyCompatibilityCacheEnabled",
+    "nonDailyCompatibilityCacheDisabled",
+    "nonDailySunlightCacheHit",
+    "nonDailySunlightCacheMiss",
+    "nonDailySunlightCacheSet",
+    "nonDailyAllDaySunlightSkipCount",
+    "nonDailyCandidateBuildOtherMs",
+    "nonDailyPlaceRoleMs",
+    "nonDailyPlaceItemInWindowsMs",
+    "nonDailyPersistMs",
+    "nonDailyMetadataUpdateMs",
+    "nonDailyPruneCancelMs",
+    "nonDailyOverrideClearMs",
+    "nonDailySortDedupeMs",
+    "nonDailySkippedRoleCount",
+    "nonDailyPlacedRoleCount",
+    "nonDailyFailedRoleCount",
+  ] as const;
+  for (const metricName of nonDailyMetricNames) {
+    addCounter(metricName, habitInstrumentation[metricName]);
   }
   for (const [sourcePassKey, sourceTiming] of Object.entries(
     timing.schedule.habitAsyncReadSources
