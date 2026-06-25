@@ -21,6 +21,8 @@ export type ScheduleBlockLocalNotificationInstance = {
   id: string;
   event_name: string | null;
   project_name: string | null;
+  skillIcon?: string | null;
+  skillName?: string | null;
   source_type: string;
   source_id: string;
   start_utc: string | null;
@@ -433,18 +435,21 @@ function resolveBlockLabel(
 function buildNotificationBody(
   instances: ScheduleBlockLocalNotificationInstance[],
 ) {
-  const names = instances.map(eventName);
-  const count = names.length;
+  const count = instances.length;
+  const previews = instances.slice(0, 3).map(formatEventPreview);
+  const remaining = count - previews.length;
 
-  if (count === 1) {
-    return `1 Event: ${names[0]}`;
+  if (remaining > 0) {
+    previews.push(`+${remaining} more`);
   }
 
-  if (count <= 3) {
-    return `${count} Events: ${names.join(" · ")}`;
-  }
+  return [`${count} scheduled`, previews.join(", ")].join("\n");
+}
 
-  return `${count} Events: ${names[0]} · ${names[1]} · +${count - 2} more`;
+function formatEventPreview(instance: ScheduleBlockLocalNotificationInstance) {
+  const name = eventName(instance);
+  const prefix = eventSkillPrefix(instance);
+  return prefix ? `${prefix} ${name}` : name;
 }
 
 function eventName(instance: ScheduleBlockLocalNotificationInstance) {
@@ -453,6 +458,10 @@ function eventName(instance: ScheduleBlockLocalNotificationInstance) {
     pickText(instance.project_name) ??
     FALLBACK_EVENT_NAME
   );
+}
+
+function eventSkillPrefix(instance: ScheduleBlockLocalNotificationInstance) {
+  return pickText(instance.skillIcon) ?? pickText(instance.skillName);
 }
 
 function pickText(value: string | null | undefined) {
