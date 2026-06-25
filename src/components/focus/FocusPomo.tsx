@@ -3609,7 +3609,7 @@ function FocusPomoFilterSection({
             : "grid -translate-y-1 grid-rows-[0fr] overflow-hidden opacity-0 transition-[grid-template-rows,opacity,transform] duration-300 ease-out mt-0"
         }
       >
-        <div className="min-h-0 max-h-[min(32dvh,16rem)] overflow-y-auto overflow-x-hidden pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
+        <div className="min-h-0 overflow-hidden">
           {children}
         </div>
       </div>
@@ -5639,8 +5639,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
               <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0">
                 {!hasRunStarted ? (
-                  <section className="relative mx-auto w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
-                    <div className="overflow-clip rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
+                  <section className="relative mx-auto min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                    <div className="min-h-0 overflow-clip rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
                       <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
                         <button
                           type="button"
@@ -5687,7 +5687,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           },
                         }}
                       >
-                        <div className="grid max-h-[inherit] min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden px-3 pt-3 sm:flex sm:max-h-[min(68dvh,42rem)] sm:flex-col sm:px-4 sm:py-4">
+                        <div className="grid h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] max-h-[inherit] min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden px-3 pt-3 sm:flex sm:h-auto sm:max-h-[min(68dvh,42rem)] sm:flex-col sm:px-4 sm:py-4">
                           <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-5 pr-1 sm:flex-1 sm:space-y-4 sm:pb-0">
                             <div className="flex items-center justify-between gap-2 sm:gap-3">
                               <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">

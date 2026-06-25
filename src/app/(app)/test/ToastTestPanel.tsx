@@ -10,6 +10,7 @@ import {
   cancelPendingScheduleBlockLocalNotifications,
   listPendingScheduleBlockLocalNotifications,
   scheduleScheduleBlockBriefTestNotification,
+  type ScheduleBlockBriefTestNotificationPayload,
   type ScheduleBlockLocalNotificationPendingSummary,
 } from "@/lib/notifications/scheduleBlockLocalNotifications";
 import {
@@ -34,6 +35,17 @@ const buttonClass =
   "rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1] focus:outline-none focus:ring-2 focus:ring-white/30";
 
 const TEST_LOCAL_NOTIFICATION_ID = 2_147_483_647;
+
+type CurrentTimeBlockBriefTestResponse =
+  | {
+      ok: true;
+      notification: ScheduleBlockBriefTestNotificationPayload;
+    }
+  | {
+      ok: false;
+      reason?: string;
+      message?: string;
+    };
 
 export default function ToastTestPanel() {
   const toast = useToastHelpers();
@@ -212,10 +224,33 @@ export default function ToastTestPanel() {
     setIsRunningScheduleBriefDiagnostic(true);
 
     try {
-      await scheduleScheduleBlockBriefTestNotification();
+      const response = await fetch("/api/test/schedule-block-brief-local", {
+        cache: "no-store",
+      });
+      const payload =
+        (await response.json().catch(() => null)) as CurrentTimeBlockBriefTestResponse | null;
+
+      if (!response.ok || !payload?.ok) {
+        if (payload?.reason === "no_current_time_block") {
+          toast.info("No current Time Block found.");
+          return;
+        }
+
+        if (payload?.reason === "current_time_block_empty") {
+          toast.info(
+            "Current Time Block has no scheduled Events.",
+            "Production schedule brief notifications skip empty Time Blocks."
+          );
+          return;
+        }
+
+        throw new Error(payload?.message ?? "Unable to build current Time Block brief");
+      }
+
+      await scheduleScheduleBlockBriefTestNotification(payload.notification);
       toast.success(
-        "Schedule brief test scheduled",
-        "You should receive a schedule-brief-style notification in about 10 seconds."
+        "Current Time Block brief scheduled",
+        "You should receive the current Time Block brief in about 10 seconds."
       );
       const summary = await listPendingScheduleBlockLocalNotifications();
       setPendingScheduleBriefSummary(summary);
@@ -341,7 +376,7 @@ export default function ToastTestPanel() {
                 void handleScheduleScheduleBriefTest();
               }}
             >
-              Test schedule brief
+              Test current Time Block brief
             </button>
             <button
               type="button"
