@@ -3685,6 +3685,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const remainingMsRef = useRef(0);
   const previousStopwatchSecondInMinuteRef = useRef<number | null>(null);
   const [scopeOpen, setScopeOpen] = useState(false);
+  const [useMobileScopeSheet, setUseMobileScopeSheet] = useState(false);
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
   const [selectedMonumentIds, setSelectedMonumentIds] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -3729,6 +3730,22 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const mediaQuery = window.matchMedia("(max-width: 639px)");
+    const syncMobileScopeSheet = () => {
+      setUseMobileScopeSheet(mediaQuery.matches);
+    };
+
+    syncMobileScopeSheet();
+    mediaQuery.addEventListener("change", syncMobileScopeSheet);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncMobileScopeSheet);
+    };
+  }, [mounted]);
 
   useEffect(() => {
     if (open && source) {
@@ -5653,42 +5670,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         </button>
                       </div>
                   <AnimatePresence initial={false}>
-                    {scopeOpen ? (
-                      <motion.div
-                        id={executionScopePanelId}
-                        className="flex max-h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] min-h-0 flex-col overflow-hidden border-b border-black/40 bg-black/25 sm:block sm:max-h-none"
-                        initial={
-                          prefersReducedMotion
-                            ? { opacity: 0 }
-                            : { height: 0, opacity: 0, y: -6 }
-                        }
-                        animate={
-                          prefersReducedMotion
-                            ? { opacity: 1 }
-                            : { height: "auto", opacity: 1, y: 0 }
-                        }
-                        exit={
-                          prefersReducedMotion
-                            ? { opacity: 0 }
-                            : { height: 0, opacity: 0, y: -6 }
-                        }
-                        transition={{
-                          height: {
-                            duration: prefersReducedMotion ? 0.01 : 0.24,
-                            ease: [0.22, 1, 0.36, 1],
-                          },
-                          opacity: {
-                            duration: prefersReducedMotion ? 0.01 : 0.18,
-                            ease: "easeOut",
-                          },
-                          y: {
-                            duration: prefersReducedMotion ? 0.01 : 0.24,
-                            ease: [0.22, 1, 0.36, 1],
-                          },
-                        }}
-                      >
-                        <div className="grid h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] max-h-[inherit] min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden px-3 pt-3 sm:flex sm:h-auto sm:max-h-[min(68dvh,42rem)] sm:flex-col sm:px-4 sm:py-4">
-                          <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-5 pr-1 sm:flex-1 sm:space-y-4 sm:pb-0">
+                    {scopeOpen
+                      ? (() => {
+                          const scopeEditorContent = (
+                            <>
+                              <div
+                                className={
+                                  useMobileScopeSheet
+                                    ? "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 pb-6 pr-2 pt-3 [WebkitOverflowScrolling:touch]"
+                                    : "min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-5 pr-1 sm:flex-1 sm:space-y-4 sm:pb-0"
+                                }
+                              >
                             <div className="flex items-center justify-between gap-2 sm:gap-3">
                               <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
                                 Focus Scope
@@ -5921,8 +5913,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                           {group.name}
                                         </span>
                                       </div>
-                                      <div className="mt-1.5 overflow-x-auto overflow-y-hidden pb-1 sm:mt-2">
-                                        <div className="inline-flex max-h-28 flex-col flex-wrap content-start gap-1.5 pr-3 sm:max-h-32 sm:gap-2 sm:pr-4">
+                                      <div className="mt-1.5 pb-1 sm:mt-2 sm:overflow-x-auto sm:overflow-y-hidden">
+                                        <div className="flex flex-wrap gap-1.5 sm:inline-flex sm:max-h-32 sm:flex-col sm:content-start sm:gap-2 sm:pr-4">
                                           {group.options.map((option) => {
                                             const selected =
                                               selectedGoalIds.includes(
@@ -6064,7 +6056,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </FocusPomoFilterSection>
                           ) : null}
                         </div>
-                        <div className="sticky bottom-0 z-10 shrink-0 border-t border-black/40 bg-black/90 px-0 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:static sm:bg-black/35 sm:py-3 sm:shadow-none sm:backdrop-blur-0">
+                              <div
+                                className={
+                                  useMobileScopeSheet
+                                    ? "shrink-0 border-t border-black/40 bg-black/90 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md"
+                                    : "sticky bottom-0 z-10 shrink-0 border-t border-black/40 bg-black/90 px-0 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:static sm:bg-black/35 sm:py-3 sm:shadow-none sm:backdrop-blur-0"
+                                }
+                              >
                           <button
                             type="button"
                             onClick={commitScopeEditor}
@@ -6073,10 +6071,84 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           >
                             Done
                           </button>
-                        </div>
-                        </div>
-                      </motion.div>
-                    ) : null}
+                              </div>
+                            </>
+                          );
+
+                          if (useMobileScopeSheet) {
+                            return createPortal(
+                              <motion.div
+                                id={executionScopePanelId}
+                                className="fixed inset-0 z-[120] flex items-stretch justify-center overflow-hidden bg-black/60 px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] text-white backdrop-blur-md"
+                                initial={
+                                  prefersReducedMotion
+                                    ? { opacity: 0 }
+                                    : { opacity: 0, y: 16 }
+                                }
+                                animate={
+                                  prefersReducedMotion
+                                    ? { opacity: 1 }
+                                    : { opacity: 1, y: 0 }
+                                }
+                                exit={
+                                  prefersReducedMotion
+                                    ? { opacity: 0 }
+                                    : { opacity: 0, y: 12 }
+                                }
+                                transition={{
+                                  duration: prefersReducedMotion ? 0.01 : 0.2,
+                                  ease: [0.22, 1, 0.36, 1],
+                                }}
+                              >
+                                <div className="flex h-full min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[18px] border border-black/70 bg-zinc-950/95 shadow-[0_28px_80px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.05)]">
+                                  {scopeEditorContent}
+                                </div>
+                              </motion.div>,
+                              document.body
+                            );
+                          }
+
+                          return (
+                            <motion.div
+                              id={executionScopePanelId}
+                              className="flex max-h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] min-h-0 flex-col overflow-hidden border-b border-black/40 bg-black/25 sm:block sm:max-h-none"
+                              initial={
+                                prefersReducedMotion
+                                  ? { opacity: 0 }
+                                  : { height: 0, opacity: 0, y: -6 }
+                              }
+                              animate={
+                                prefersReducedMotion
+                                  ? { opacity: 1 }
+                                  : { height: "auto", opacity: 1, y: 0 }
+                              }
+                              exit={
+                                prefersReducedMotion
+                                  ? { opacity: 0 }
+                                  : { height: 0, opacity: 0, y: -6 }
+                              }
+                              transition={{
+                                height: {
+                                  duration: prefersReducedMotion ? 0.01 : 0.24,
+                                  ease: [0.22, 1, 0.36, 1],
+                                },
+                                opacity: {
+                                  duration: prefersReducedMotion ? 0.01 : 0.18,
+                                  ease: "easeOut",
+                                },
+                                y: {
+                                  duration: prefersReducedMotion ? 0.01 : 0.24,
+                                  ease: [0.22, 1, 0.36, 1],
+                                },
+                              }}
+                            >
+                              <div className="grid h-[calc(100dvh_-_9.5rem_-_env(safe-area-inset-top,0px)_-_env(safe-area-inset-bottom,0px))] max-h-[inherit] min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden px-3 pt-3 sm:flex sm:h-auto sm:max-h-[min(68dvh,42rem)] sm:flex-col sm:px-4 sm:py-4">
+                                {scopeEditorContent}
+                              </div>
+                            </motion.div>
+                          );
+                        })()
+                      : null}
                   </AnimatePresence>
                       <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
