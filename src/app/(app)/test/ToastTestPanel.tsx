@@ -7,6 +7,12 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { RotateCcw } from "lucide-react";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
+  cancelPendingScheduleBlockLocalNotifications,
+  listPendingScheduleBlockLocalNotifications,
+  scheduleScheduleBlockBriefTestNotification,
+  type ScheduleBlockLocalNotificationPendingSummary,
+} from "@/lib/notifications/scheduleBlockLocalNotifications";
+import {
   hapticComplete,
   hapticError,
   hapticErrorPattern,
@@ -33,6 +39,12 @@ export default function ToastTestPanel() {
   const toast = useToastHelpers();
   const [isSchedulingLocalNotification, setIsSchedulingLocalNotification] =
     useState(false);
+  const [
+    isRunningScheduleBriefDiagnostic,
+    setIsRunningScheduleBriefDiagnostic,
+  ] = useState(false);
+  const [pendingScheduleBriefSummary, setPendingScheduleBriefSummary] =
+    useState<ScheduleBlockLocalNotificationPendingSummary | null>(null);
   const hapticTests = [
     { label: "Light impact", action: hapticLightImpact },
     { label: "Medium impact", action: hapticMediumImpact },
@@ -130,6 +142,93 @@ export default function ToastTestPanel() {
     }
   };
 
+  const handleListPendingScheduleBriefs = async () => {
+    if (isRunningScheduleBriefDiagnostic) return;
+
+    setIsRunningScheduleBriefDiagnostic(true);
+
+    try {
+      const summary = await listPendingScheduleBlockLocalNotifications();
+
+      if (!summary) {
+        toast.warning(
+          "Native device required",
+          "Pending local notifications can only be inspected in the native app."
+        );
+        return;
+      }
+
+      setPendingScheduleBriefSummary(summary);
+      toast.info(
+        "Pending notifications checked",
+        `${summary.scheduleBriefCount} schedule brief of ${summary.totalCount} total pending.`
+      );
+    } catch {
+      toast.error(
+        "Pending check failed",
+        "CREATOR could not read pending local notifications."
+      );
+    } finally {
+      setIsRunningScheduleBriefDiagnostic(false);
+    }
+  };
+
+  const handleCancelPendingScheduleBriefs = async () => {
+    if (isRunningScheduleBriefDiagnostic) return;
+
+    setIsRunningScheduleBriefDiagnostic(true);
+
+    try {
+      const canceledCount = await cancelPendingScheduleBlockLocalNotifications();
+
+      if (canceledCount === null) {
+        toast.warning(
+          "Native device required",
+          "Schedule brief notifications can only be canceled in the native app."
+        );
+        return;
+      }
+
+      setPendingScheduleBriefSummary(null);
+      toast.success(
+        "Schedule briefs canceled",
+        `${canceledCount} pending schedule brief notification${
+          canceledCount === 1 ? "" : "s"
+        } canceled.`
+      );
+    } catch {
+      toast.error(
+        "Cancel failed",
+        "CREATOR could not cancel pending schedule brief notifications."
+      );
+    } finally {
+      setIsRunningScheduleBriefDiagnostic(false);
+    }
+  };
+
+  const handleScheduleScheduleBriefTest = async () => {
+    if (isRunningScheduleBriefDiagnostic) return;
+
+    setIsRunningScheduleBriefDiagnostic(true);
+
+    try {
+      await scheduleScheduleBlockBriefTestNotification();
+      toast.success(
+        "Schedule brief test scheduled",
+        "You should receive a schedule-brief-style notification in about 10 seconds."
+      );
+      const summary = await listPendingScheduleBlockLocalNotifications();
+      setPendingScheduleBriefSummary(summary);
+    } catch {
+      toast.error(
+        "Schedule brief test failed",
+        "CREATOR could not schedule the schedule brief test notification."
+      );
+    } finally {
+      setIsRunningScheduleBriefDiagnostic(false);
+    }
+  };
+
   return (
     <main className="min-h-[calc(100vh-9rem)] bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -223,6 +322,53 @@ export default function ToastTestPanel() {
               ? "Scheduling local notification..."
               : "Test local notification"}
           </button>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={isRunningScheduleBriefDiagnostic}
+              onClick={() => {
+                void handleListPendingScheduleBriefs();
+              }}
+            >
+              List schedule briefs
+            </button>
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={isRunningScheduleBriefDiagnostic}
+              onClick={() => {
+                void handleScheduleScheduleBriefTest();
+              }}
+            >
+              Test schedule brief
+            </button>
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={isRunningScheduleBriefDiagnostic}
+              onClick={() => {
+                void handleCancelPendingScheduleBriefs();
+              }}
+            >
+              Cancel schedule briefs
+            </button>
+          </div>
+          {pendingScheduleBriefSummary ? (
+            <div className="mt-3 rounded-md border border-white/10 bg-black/30 p-3 text-xs leading-5 text-white/60">
+              <div>
+                Pending: {pendingScheduleBriefSummary.totalCount} total,{" "}
+                {pendingScheduleBriefSummary.scheduleBriefCount} schedule brief
+              </div>
+              {pendingScheduleBriefSummary.scheduleBriefNotifications
+                .slice(0, 5)
+                .map((notification) => (
+                  <div key={notification.id} className="mt-2 text-white/50">
+                    #{notification.id} · {notification.title}
+                  </div>
+                ))}
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">

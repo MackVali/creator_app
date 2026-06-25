@@ -3,15 +3,19 @@ import type { PermissionState } from "@capacitor/core";
 import {
   LocalNotifications,
   type LocalNotificationSchema,
+  type PendingLocalNotificationSchema,
 } from "@capacitor/local-notifications";
 
-const NOTIFICATION_TYPE = "schedule_block_brief";
-const FALLBACK_BLOCK_LABEL = "Scheduled block";
-const FALLBACK_EVENT_NAME = "Scheduled event";
+export const SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE = "schedule_block_brief";
+
+const FALLBACK_TIME_BLOCK_LABEL = "Time Block";
+const FALLBACK_EVENT_NAME = "Scheduled Event";
 const REMINDER_LEAD_MS = 5 * 60 * 1000;
 const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 const MAX_NOTIFICATIONS = 64;
-const MAX_NOTIFICATION_ID = 2_147_483_647;
+const SCHEDULE_BRIEF_ID_OFFSET = 1_000_000_000;
+const SCHEDULE_BRIEF_ID_RANGE = 1_000_000_000;
+const SCHEDULE_BRIEF_TEST_NOTIFICATION_ID = 2_147_483_646;
 
 const SKIPPED_STATUSES = new Set(["canceled", "cancelled", "missed", "completed"]);
 
@@ -39,6 +43,7 @@ export type ScheduleBlockLocalNotificationResult =
       ok: true;
       scheduledCount: number;
       canceledCount: number;
+      candidateCount: number;
       permission: PermissionState;
     }
   | {
@@ -52,6 +57,12 @@ export type ScheduleBlockLocalNotificationResult =
         | "cancel_failed"
         | "schedule_failed";
     };
+
+export type ScheduleBlockLocalNotificationPendingSummary = {
+  totalCount: number;
+  scheduleBriefCount: number;
+  scheduleBriefNotifications: PendingLocalNotificationSchema[];
+};
 
 type GroupedBlock = {
   blockKey: string;
@@ -86,6 +97,7 @@ export async function syncScheduleBlockLocalNotifications(
       ok: true,
       scheduledCount: 0,
       canceledCount: 0,
+      candidateCount: 0,
       permission,
     };
   }
@@ -121,8 +133,85 @@ export async function syncScheduleBlockLocalNotifications(
     ok: true,
     scheduledCount: notifications.length,
     canceledCount: staleNotifications.length,
+    candidateCount: countScheduleBlockNotificationCandidates(instances, options),
     permission,
   };
+}
+
+export async function listPendingScheduleBlockLocalNotifications(): Promise<ScheduleBlockLocalNotificationPendingSummary | null> {
+  if (!canUseLocalNotifications()) return null;
+
+  const pending = await LocalNotifications.getPending();
+  const scheduleBriefNotifications = pending.notifications.filter(
+    (notification) => isScheduleBlockBriefExtra(notification.extra)
+  );
+
+  return {
+    totalCount: pending.notifications.length,
+    scheduleBriefCount: scheduleBriefNotifications.length,
+    scheduleBriefNotifications,
+  };
+}
+
+export async function cancelPendingScheduleBlockLocalNotifications(): Promise<
+  number | null
+> {
+  const summary = await listPendingScheduleBlockLocalNotifications();
+  if (!summary) return null;
+  if (summary.scheduleBriefNotifications.length === 0) return 0;
+
+  await LocalNotifications.cancel({
+    notifications: summary.scheduleBriefNotifications.map((notification) => ({
+      id: notification.id,
+    })),
+  });
+
+  return summary.scheduleBriefNotifications.length;
+}
+
+export async function scheduleScheduleBlockBriefTestNotification(): Promise<void> {
+  if (!canUseLocalNotifications()) {
+    throw new Error("Local notifications are unavailable.");
+  }
+
+  const permission = await resolveNotificationPermission();
+  if (permission !== "granted") {
+    throw new Error("Local notification permission is not granted.");
+  }
+
+  await LocalNotifications.cancel({
+    notifications: [{ id: SCHEDULE_BRIEF_TEST_NOTIFICATION_ID }],
+  });
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: SCHEDULE_BRIEF_TEST_NOTIFICATION_ID,
+        title: "Time Block starts in 5 min",
+        body: "1 Event: Schedule brief test",
+        schedule: {
+          at: new Date(Date.now() + 10_000),
+          allowWhileIdle: true,
+        },
+        extra: {
+          type: SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
+          blockKey: "admin-test",
+          anchorInstanceId: "admin-test",
+          startUtc: new Date(
+            Date.now() + REMINDER_LEAD_MS + 10_000
+          ).toISOString(),
+          test: true,
+        },
+      },
+    ],
+  });
+}
+
+function canUseLocalNotifications() {
+  return (
+    typeof window !== "undefined" &&
+    Capacitor.isNativePlatform() &&
+    Capacitor.isPluginAvailable("LocalNotifications")
+  );
 }
 
 async function resolveNotificationPermission(): Promise<PermissionState | null> {
@@ -152,25 +241,39 @@ function buildScheduleBlockNotifications(
     .sort((a, b) => a.anchorStartMs - b.anchorStartMs)
     .slice(0, MAX_NOTIFICATIONS)
     .map((group) => {
-      const label = resolveBlockLabel(group.blockKey, options.blockLabelByKey);
+      const label =
+        resolveBlockLabel(group.blockKey, options.blockLabelByKey) ??
+        FALLBACK_TIME_BLOCK_LABEL;
       const startUtc = new Date(group.anchorStartMs).toISOString();
+      const fireAt = new Date(group.anchorStartMs - REMINDER_LEAD_MS);
 
       return {
         id: stableNotificationId(group.blockKey, startUtc),
-        title: `${label ?? FALLBACK_BLOCK_LABEL} starts in 5 min`,
+        title: `${label} starts in 5 min`,
         body: buildNotificationBody(group.instances),
         schedule: {
-          at: new Date(group.anchorStartMs - REMINDER_LEAD_MS),
+          at: fireAt,
           allowWhileIdle: true,
         },
+        sound: "default",
+        threadIdentifier: "creator-schedule-briefs",
         extra: {
-          type: NOTIFICATION_TYPE,
+          type: SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
           blockKey: group.blockKey,
           anchorInstanceId: group.anchor.id,
           startUtc,
         },
       };
     });
+}
+
+function countScheduleBlockNotificationCandidates(
+  instances: ScheduleBlockLocalNotificationInstance[],
+  options: ScheduleBlockLocalNotificationOptions,
+) {
+  const nowMs = options.now?.getTime() ?? Date.now();
+  const horizonMs = nowMs + LOOKAHEAD_MS;
+  return groupUpcomingInstances(instances, nowMs, horizonMs).size;
 }
 
 function groupUpcomingInstances(
@@ -270,14 +373,14 @@ function buildNotificationBody(
   const count = names.length;
 
   if (count === 1) {
-    return `1 scheduled: ${names[0]}`;
+    return `1 Event: ${names[0]}`;
   }
 
   if (count <= 3) {
-    return `${count} scheduled: ${names.join(" · ")}`;
+    return `${count} Events: ${names.join(" · ")}`;
   }
 
-  return `${count} scheduled: ${names[0]} · ${names[1]} · +${count - 2} more`;
+  return `${count} Events: ${names[0]} · ${names[1]} · +${count - 2} more`;
 }
 
 function eventName(instance: ScheduleBlockLocalNotificationInstance) {
@@ -302,11 +405,13 @@ function stableNotificationId(blockKey: string, startUtc: string) {
     hash = Math.imul(hash, 0x01000193);
   }
 
-  return (hash >>> 0) % MAX_NOTIFICATION_ID || 1;
+  return SCHEDULE_BRIEF_ID_OFFSET + ((hash >>> 0) % SCHEDULE_BRIEF_ID_RANGE);
 }
 
 function isScheduleBlockBriefExtra(extra: unknown) {
   if (!extra || typeof extra !== "object") return false;
 
-  return (extra as { type?: unknown }).type === NOTIFICATION_TYPE;
+  return (
+    (extra as { type?: unknown }).type === SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE
+  );
 }

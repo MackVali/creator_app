@@ -6,7 +6,6 @@ import {
   computeDurationMin,
   createInstance,
   rescheduleInstance,
-  markProjectMissed,
   type ScheduleInstance,
   type ScheduleInstanceCreateBatcher,
 } from "./instanceRepo";
@@ -121,12 +120,113 @@ function buildBlockerCacheKey(dayKey: string, timeZone?: string | null) {
   return `${dayKey}|${resolvedZone}`;
 }
 
+export type BlockerDayIndex = {
+  byDay: Map<string, ScheduleInstance[]>;
+  orderById: Map<string, number>;
+  orderByInstance: WeakMap<ScheduleInstance, number>;
+  nextOrder: number;
+};
+
+export function createBlockerDayIndex(): BlockerDayIndex {
+  return {
+    byDay: new Map<string, ScheduleInstance[]>(),
+    orderById: new Map<string, number>(),
+    orderByInstance: new WeakMap<ScheduleInstance, number>(),
+    nextOrder: 0,
+  };
+}
+
+function getBlockerOrder(
+  index: BlockerDayIndex,
+  inst: ScheduleInstance
+): number {
+  const id = inst.id ?? null;
+  if (id) {
+    const existingOrder = index.orderById.get(id);
+    if (typeof existingOrder === "number") return existingOrder;
+  }
+  const existingInstanceOrder = index.orderByInstance.get(inst);
+  if (typeof existingInstanceOrder === "number") {
+    return existingInstanceOrder;
+  }
+  const order = index.nextOrder;
+  index.nextOrder += 1;
+  if (id) {
+    index.orderById.set(id, order);
+  }
+  index.orderByInstance.set(inst, order);
+  return order;
+}
+
+function buildBlockerDayIndexKeysForRange(
+  startMs: number,
+  endMs: number,
+  timeZone?: string | null
+) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return [];
+  }
+  const resolvedZone =
+    typeof timeZone === "string" && timeZone.trim() ? timeZone.trim() : "UTC";
+  const keys: string[] = [];
+  const startDay = startOfDayInTimeZone(new Date(startMs), resolvedZone);
+  const finalDay = startOfDayInTimeZone(new Date(endMs - 1), resolvedZone);
+  for (
+    let cursor = startDay;
+    cursor.getTime() <= finalDay.getTime();
+    cursor = addDaysInTimeZone(cursor, 1, resolvedZone)
+  ) {
+    keys.push(
+      buildBlockerCacheKey(
+        formatDateKeyInTimeZone(cursor, resolvedZone),
+        resolvedZone
+      )
+    );
+  }
+  return keys;
+}
+
+export function addInstanceToBlockerDayIndex(
+  index: BlockerDayIndex,
+  inst: ScheduleInstance | null | undefined,
+  timeZone?: string | null
+) {
+  if (!inst || inst.status !== "scheduled" || !hasValidInstanceBounds(inst)) {
+    return;
+  }
+  const start = safeDate(inst.start_utc);
+  const end = safeDate(inst.end_utc);
+  if (!start || !end) return;
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  const order = getBlockerOrder(index, inst);
+  const keys = buildBlockerDayIndexKeysForRange(startMs, endMs, timeZone);
+  for (const key of keys) {
+    let bucket = index.byDay.get(key);
+    if (!bucket) {
+      bucket = [];
+      index.byDay.set(key, bucket);
+    }
+    const alreadyPresent = inst.id
+      ? bucket.some((existing) => existing.id === inst.id)
+      : bucket.includes(inst);
+    if (!alreadyPresent) {
+      bucket.push(inst);
+    }
+  }
+  if (inst.id && !index.orderById.has(inst.id)) {
+    index.orderById.set(inst.id, order);
+  }
+}
+
 export async function fetchWindowsForRange(
   supabase: Client,
   userId: string,
-  rangeStartUtc: Date,
-  rangeEndUtc: Date
+  _rangeStartUtc: Date,
+  _rangeEndUtc: Date
 ): Promise<WindowLite[]> {
+  void _rangeStartUtc;
+  void _rangeEndUtc;
   const contextJoin = "location_context:location_contexts(id, value, label)";
   const { data, error } = await supabase
     .from("windows")
@@ -424,6 +524,7 @@ type PlaceParams = {
   metadata?: ScheduleInstance["metadata"];
   maxGapCache?: Map<string, number>;
   blockerCache?: BlockerCache;
+  blockerDayIndex?: BlockerDayIndex;
   debugEnabled?: boolean;
   debugOnFailure?: (info: PlacementDebugTrace) => void;
   createBatcher?: ScheduleInstanceCreateBatcher;
@@ -574,42 +675,6 @@ function logPlacementFailure(params: {
   });
 }
 
-function rankOrInf(
-  p: { globalRank?: number | null } | null | undefined
-): number {
-  const r = p?.globalRank ?? null;
-  return r === null ? Number.POSITIVE_INFINITY : r;
-}
-
-function compareProjectPriorityForEviction(
-  a: ScheduleInstanceLite,
-  b: ScheduleInstanceLite
-): number {
-  const ar = rankOrInf(a.project);
-  const br = rankOrInf(b.project);
-  if (ar !== br) return ar - br;
-  const aw = a.weight_snapshot ?? 0;
-  const bw = b.weight_snapshot ?? 0;
-  if (aw !== bw) return bw - aw;
-  return a.id.localeCompare(b.id);
-}
-
-function pickEvictionLoser(
-  existing: ScheduleInstanceLite,
-  incoming: PlaceParams["item"]
-): "existing" | "incoming" {
-  const incomingRank = rankOrInf(incoming);
-  const existingRank = rankOrInf(existing.project);
-  if (incomingRank !== existingRank) {
-    return incomingRank < existingRank ? "existing" : "incoming";
-  }
-  const existingW = existing.weight_snapshot ?? 0;
-  const incomingW = incoming.weight ?? 0;
-  if (incomingW !== existingW)
-    return incomingW > existingW ? "existing" : "incoming";
-  return incoming.id.localeCompare(existing.id) < 0 ? "existing" : "incoming";
-}
-
 function determinePlacementFailureStage(params: {
   durationMs: number;
   longestWindowMs: number;
@@ -657,15 +722,6 @@ function determinePlacementFailureStage(params: {
   return "other";
 }
 
-type ScheduleInstanceLite = {
-  id: string;
-  source_type: ScheduleInstance["source_type"];
-  source_id: string | null;
-  weight_snapshot: number | null;
-  globalRank?: number | null;
-  project?: { globalRank?: number | null } | null;
-};
-
 type HighSlot = {
   startMs: number;
   endMs: number;
@@ -681,8 +737,9 @@ export async function findEarliestHighSlot(
   client?: Client,
   existingInstances?: ScheduleInstance[],
   notBefore?: Date,
-  sourceType?: string
+  _sourceType?: string
 ): Promise<HighSlot | null> {
+  void _sourceType;
   const windows = await fetchWindowsForDate(date, timeZone, client, { userId });
   const highWindows = windows.filter((win) => win.energy === "HIGH");
 
@@ -788,14 +845,9 @@ export async function placeItemInWindows(
 ): Promise<PlacementResult> {
   const timing = params.timing ?? null;
   const startedAt = schedulerNowMs();
-  const isProjectPlacementTiming =
-    timing !== null && params.placementTimingScope === "project";
   let outcome: "success" | "noFit" | "error" = "error";
   if (timing) {
     timing.schedule.placeItem.calls += 1;
-    if (isProjectPlacementTiming) {
-      timing.schedule.projectPlacement.placeCalls += 1;
-    }
   }
   try {
   const {
@@ -811,11 +863,11 @@ export async function placeItemInWindows(
     existingInstances,
     habitTypeById,
     allowSyncCreateBatching = false,
-    projectGlobalRankMap,
     windowEdgePreference,
     metadata,
     maxGapCache,
     blockerCache,
+    blockerDayIndex,
     debugEnabled,
     debugOnFailure,
     createBatcher,
@@ -973,7 +1025,37 @@ export async function placeItemInWindows(
       if (!rangeValid) {
         return [];
       }
-      return existingInstances.filter(
+      let candidateInstances = existingInstances;
+      if (blockerDayIndex) {
+        const dayKeys = buildBlockerDayIndexKeysForRange(
+          rangeStartMs,
+          rangeEndMs,
+          resolvedTimeZone
+        );
+        if (dayKeys.length > 0) {
+          const seenIds = new Set<string>();
+          const seenInstances = new WeakSet<ScheduleInstance>();
+          candidateInstances = dayKeys.flatMap(
+            (key) => blockerDayIndex.byDay.get(key) ?? []
+          ).filter((inst) => {
+            if (!inst) return false;
+            if (inst.id) {
+              if (seenIds.has(inst.id)) return false;
+              seenIds.add(inst.id);
+            } else {
+              if (seenInstances.has(inst)) return false;
+              seenInstances.add(inst);
+            }
+            return true;
+          });
+          candidateInstances.sort(
+            (a, b) =>
+              getBlockerOrder(blockerDayIndex, a) -
+              getBlockerOrder(blockerDayIndex, b)
+          );
+        }
+      }
+      return candidateInstances.filter(
         (inst): inst is ScheduleInstance => {
           if (
             !inst ||
@@ -1035,14 +1117,8 @@ export async function placeItemInWindows(
 
   let dayBlockingInstances: ScheduleInstance[];
   try {
-    const blockerBuildStartedAt = schedulerNowMs();
     dayBlockingInstances = await loadDayBlockingInstances(cache, cacheKey);
     if (timing) {
-      if (isProjectPlacementTiming) {
-        timing.schedule.projectPlacement.blockerBuildMs += elapsedMs(
-          blockerBuildStartedAt
-        );
-      }
       timing.schedule.placeItem.blockersScanned += dayBlockingInstances.length;
     }
   } catch (error) {
@@ -1078,15 +1154,9 @@ export async function placeItemInWindows(
       return true;
     });
 
-  const windowScopedBlockersStartedAt = schedulerNowMs();
   const windowScopedBlockersByWindow = windowRecordsByWindow.map((record) =>
     record ? filterBlockersForWindow(record.startMs, record.endMs) : []
   );
-  if (isProjectPlacementTiming) {
-    timing.schedule.projectPlacement.blockerBuildMs += elapsedMs(
-      windowScopedBlockersStartedAt
-    );
-  }
 
   const shouldEvaluateMaxGap =
     !candidateIsSync && windowRecords.length > 0 && durationMs > 0;
@@ -1139,8 +1209,7 @@ export async function placeItemInWindows(
         ? Math.max(effectiveWindowStartMs, notBeforeMs)
         : effectiveWindowStartMs;
 
-    const windowBlockerBuildStartedAt = schedulerNowMs();
-    const taken = filterBlockersForWindow(windowStartMs, windowEndMs);
+    const taken = windowScopedBlockersByWindow[index] ?? [];
     const windowBlockId = w.key ?? w.id;
     const freeSegmentMs = computeLargestGapMs(
       windowStartMs,
@@ -1190,11 +1259,6 @@ export async function placeItemInWindows(
         new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     );
     const hardBlockers = candidateIsSync ? [] : capacityBlockers;
-    if (isProjectPlacementTiming) {
-      timing.schedule.projectPlacement.blockerBuildMs += elapsedMs(
-        windowBlockerBuildStartedAt
-      );
-    }
 
     const hasSyncOverlapLimit = (
       startMs: number,
@@ -1682,8 +1746,6 @@ export async function placeItemInWindows(
   const isCreateWrite = !reuseInstanceId;
   const isSyncImmediateCreate =
     isCreateWrite && candidateIsSync && !persistCreateBatcher;
-  const isNonSyncBatchedCreate =
-    isCreateWrite && !candidateIsSync && Boolean(persistCreateBatcher);
   const persisted = await persistPlacement(
     {
       userId,
@@ -1705,23 +1767,10 @@ export async function placeItemInWindows(
   if (timing) {
     const persistWriteMs = elapsedMs(persistStartedAt);
     timing.schedule.placeItem.persistWriteMs += persistWriteMs;
-    if (isProjectPlacementTiming) {
-      timing.schedule.projectPlacement.persistMs += persistWriteMs;
-      if (reuseInstanceId) {
-        timing.schedule.projectPlacement.reuseUpdateMs += persistWriteMs;
-        timing.schedule.projectPlacement.reuseUpdateCount += 1;
-      } else if (isNonSyncBatchedCreate) {
-        timing.schedule.projectPlacement.batchedCreateMs += persistWriteMs;
-        timing.schedule.projectPlacement.batchedCreateCount += 1;
-      }
-    }
     if (!persisted.error) {
       if (isSyncImmediateCreate) {
         timing.schedule.createWrites.syncImmediateCreateCount += 1;
         timing.schedule.createWrites.syncImmediateCreateMs += persistWriteMs;
-      } else if (isNonSyncBatchedCreate) {
-        timing.schedule.createWrites.nonSyncBatchedCreateCount += 1;
-        timing.schedule.createWrites.nonSyncBatchedCreateMs += persistWriteMs;
       }
     }
     recordSchedulerPhase(
@@ -1749,19 +1798,10 @@ export async function placeItemInWindows(
     if (timing) {
       const placeItemMs = elapsedMs(startedAt);
       timing.schedule.placeItem.totalMs += placeItemMs;
-      if (isProjectPlacementTiming) {
-        timing.schedule.projectPlacement.placeItemMs += placeItemMs;
-      }
       if (outcome === "success") {
         timing.schedule.placeItem.success += 1;
-        if (isProjectPlacementTiming) {
-          timing.schedule.projectPlacement.success += 1;
-        }
       } else if (outcome === "noFit") {
         timing.schedule.placeItem.noFit += 1;
-        if (isProjectPlacementTiming) {
-          timing.schedule.projectPlacement.noFit += 1;
-        }
       } else {
         timing.schedule.placeItem.errors += 1;
       }

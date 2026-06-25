@@ -80,141 +80,6 @@ export type SchedulerTiming = {
       reservationMs: number;
       placementMs: number;
     };
-    habitPlacementInstrumentation: {
-      habitPlacementInitialDailyMs: number;
-      habitPlacementPostProjectMs: number;
-      habitPlacementCleanupMs: number;
-      habitPlacementNonDailyMs: number;
-      habitPlacementFinalSyncRetryMs: number;
-      finalSyncRetryCandidateBuildMs: number;
-      finalSyncRetryScheduleHabitsForDayMs: number;
-      finalSyncRetryCreateWritesMs: number;
-      finalSyncRetryDaysConsidered: number;
-      finalSyncRetryEligibleHabitCount: number;
-      noFitCacheHit: number;
-      noFitCacheMiss: number;
-      noFitCacheSet: number;
-      noFitCacheBypass: number;
-      placeCallsInitialDaily: number;
-      placeCallsPostProject: number;
-      placeCallsCleanup: number;
-      placeCallsNonDaily: number;
-      placeCallsFinalSyncRetry: number;
-      placeNoFitInitialDaily: number;
-      placeNoFitPostProject: number;
-      placeNoFitCleanup: number;
-      placeNoFitNonDaily: number;
-      placeNoFitFinalSyncRetry: number;
-      compatibleWindowCallsInitialDaily: number;
-      compatibleWindowCallsPostProject: number;
-      compatibleWindowCallsCleanup: number;
-      compatibleWindowCallsNonDaily: number;
-      compatibleWindowCallsFinalSyncRetry: number;
-      compatibleWindowMsInitialDaily: number;
-      compatibleWindowMsPostProject: number;
-      compatibleWindowMsCleanup: number;
-      compatibleWindowMsNonDaily: number;
-      compatibleWindowMsFinalSyncRetry: number;
-      candidateWindowsConsideredInitialDaily: number;
-      candidateWindowsConsideredPostProject: number;
-      candidateWindowsConsideredCleanup: number;
-      candidateWindowsConsideredNonDaily: number;
-      candidateWindowsConsideredFinalSyncRetry: number;
-      daysConsideredInitialDaily: number;
-      daysConsideredPostProject: number;
-      daysConsideredCleanup: number;
-      daysConsideredNonDaily: number;
-      daysConsideredFinalSyncRetry: number;
-      eligibilitySkipsInitialDaily: number;
-      eligibilitySkipsPostProject: number;
-      eligibilitySkipsCleanup: number;
-      eligibilitySkipsNonDaily: number;
-      eligibilitySkipsFinalSyncRetry: number;
-      existingInstanceChecksInitialDaily: number;
-      existingInstanceChecksPostProject: number;
-      existingInstanceChecksCleanup: number;
-      existingInstanceChecksNonDaily: number;
-      existingInstanceChecksFinalSyncRetry: number;
-      asyncReadsInitialDaily: number;
-      asyncReadsPostProject: number;
-      asyncReadsCleanup: number;
-      asyncReadsNonDaily: number;
-      asyncReadsFinalSyncRetry: number;
-      asyncReadMsInitialDaily: number;
-      asyncReadMsPostProject: number;
-      asyncReadMsCleanup: number;
-      asyncReadMsNonDaily: number;
-      asyncReadMsFinalSyncRetry: number;
-      reservationChecksInitialDaily: number;
-      reservationChecksPostProject: number;
-      reservationChecksCleanup: number;
-      reservationChecksNonDaily: number;
-      reservationChecksFinalSyncRetry: number;
-      practiceHistoryChecksInitialDaily: number;
-      practiceHistoryChecksPostProject: number;
-      practiceHistoryChecksCleanup: number;
-      practiceHistoryChecksNonDaily: number;
-      practiceHistoryChecksFinalSyncRetry: number;
-      sortDedupeMsInitialDaily: number;
-      sortDedupeMsPostProject: number;
-      sortDedupeMsCleanup: number;
-      sortDedupeMsNonDaily: number;
-      sortDedupeMsFinalSyncRetry: number;
-      dueEvaluationMsInitialDaily: number;
-      dueEvaluationMsPostProject: number;
-      dueEvaluationMsCleanup: number;
-      dueEvaluationMsNonDaily: number;
-      dueEvaluationMsFinalSyncRetry: number;
-      prePlacementMsInitialDaily: number;
-      prePlacementMsPostProject: number;
-      prePlacementMsCleanup: number;
-      prePlacementMsNonDaily: number;
-      prePlacementMsFinalSyncRetry: number;
-      nonDailyPreloadMs: number;
-      nonDailyRoleLoopMs: number;
-      nonDailyDayLoopMs: number;
-      nonDailyExistingInstanceScanMs: number;
-      nonDailyCandidateBuildMs: number;
-      nonDailyPrepareWindowsForDayMs: number;
-      nonDailyPrepareWindowsForDayPreloadMs: number;
-      nonDailyPrepareWindowsForDayCacheHit: number;
-      nonDailyPrepareWindowsForDayCacheMiss: number;
-      nonDailyPrepareWindowsForDayCacheSet: number;
-      nonDailyGetDayInstancesMs: number;
-      nonDailySunlightResolveMs: number;
-      nonDailyFetchCompatibleWindowsOuterMs: number;
-      nonDailyCompatibilityCacheHit: number;
-      nonDailyCompatibilityCacheMiss: number;
-      nonDailyCompatibilityCacheSet: number;
-      nonDailyCompatibilityCacheBypass: number;
-      nonDailyCompatibilityCacheBypassDebug: number;
-      nonDailyCompatibilityCacheBypassTiming: number;
-      nonDailyCompatibilityCacheBypassParity: number;
-      nonDailyCompatibilityCacheEnabled: number;
-      nonDailyCompatibilityCacheDisabled: number;
-      nonDailySunlightCacheHit: number;
-      nonDailySunlightCacheMiss: number;
-      nonDailySunlightCacheSet: number;
-      nonDailyAllDaySunlightSkipCount: number;
-      nonDailyCandidateBuildOtherMs: number;
-      nonDailyPlaceRoleMs: number;
-      nonDailyPlaceItemInWindowsMs: number;
-      nonDailyPersistMs: number;
-      nonDailyMetadataUpdateMs: number;
-      nonDailyPruneCancelMs: number;
-      nonDailyOverrideClearMs: number;
-      nonDailySortDedupeMs: number;
-      nonDailySkippedRoleCount: number;
-      nonDailyPlacedRoleCount: number;
-      nonDailyFailedRoleCount: number;
-    };
-    habitAsyncReadSources: Record<
-      string,
-      {
-        count: number;
-        ms: number;
-      }
-    >;
     syncPairings: {
       lookupMs: number;
       fallbackLookupMs: number;
@@ -223,28 +88,6 @@ export type SchedulerTiming = {
       persistedRows: number;
     };
     projectPass: { ms: number; queued: number; placed: number; failed: number };
-    projectPlacement: {
-      dayScanMs: number;
-      prepareWindowsMs: number;
-      prepareWindowsCacheHit: number;
-      prepareWindowsCacheMiss: number;
-      prepareWindowsCacheSet: number;
-      compatibleWindowMs: number;
-      blockerBuildMs: number;
-      placeItemMs: number;
-      persistMs: number;
-      queueCount: number;
-      daysConsidered: number;
-      candidateWindowsConsidered: number;
-      placeCalls: number;
-      noFit: number;
-      success: number;
-      skippedCount: number;
-      reuseUpdateMs: number;
-      reuseUpdateCount: number;
-      batchedCreateMs: number;
-      batchedCreateCount: number;
-    };
     compatibleWindows: {
       calls: number;
       totalMs: number;
@@ -268,15 +111,11 @@ export type SchedulerTiming = {
       batchFlushCount: number;
       batchRowsTotal: number;
       batchMaxRows: number;
-      batchSelectMs: number;
-      batchInsertMs: number;
       batchFlushMs: number;
       syncImmediateCreateCount: number;
       syncImmediateCreateMs: number;
       finalSyncRetryBatchedCreateCount: number;
       finalSyncRetryBatchedCreateMs: number;
-      nonSyncBatchedCreateCount: number;
-      nonSyncBatchedCreateMs: number;
     };
     dbWrites: {
       inserts: number;
@@ -293,6 +132,7 @@ export type SchedulerTiming = {
 export type SchedulerTimingSummary = {
   totalMs: number;
   writeThroughDays?: number;
+  status?: number;
   topPhases: Array<{ label: string; ms: number }>;
   phaseCount: number;
   counters: Record<string, number>;
@@ -392,135 +232,6 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         reservationMs: 0,
         placementMs: 0,
       },
-      habitPlacementInstrumentation: {
-        habitPlacementInitialDailyMs: 0,
-        habitPlacementPostProjectMs: 0,
-        habitPlacementCleanupMs: 0,
-        habitPlacementNonDailyMs: 0,
-        habitPlacementFinalSyncRetryMs: 0,
-        finalSyncRetryCandidateBuildMs: 0,
-        finalSyncRetryScheduleHabitsForDayMs: 0,
-        finalSyncRetryCreateWritesMs: 0,
-        finalSyncRetryDaysConsidered: 0,
-        finalSyncRetryEligibleHabitCount: 0,
-        noFitCacheHit: 0,
-        noFitCacheMiss: 0,
-        noFitCacheSet: 0,
-        noFitCacheBypass: 0,
-        placeCallsInitialDaily: 0,
-        placeCallsPostProject: 0,
-        placeCallsCleanup: 0,
-        placeCallsNonDaily: 0,
-        placeCallsFinalSyncRetry: 0,
-        placeNoFitInitialDaily: 0,
-        placeNoFitPostProject: 0,
-        placeNoFitCleanup: 0,
-        placeNoFitNonDaily: 0,
-        placeNoFitFinalSyncRetry: 0,
-        compatibleWindowCallsInitialDaily: 0,
-        compatibleWindowCallsPostProject: 0,
-        compatibleWindowCallsCleanup: 0,
-        compatibleWindowCallsNonDaily: 0,
-        compatibleWindowCallsFinalSyncRetry: 0,
-        compatibleWindowMsInitialDaily: 0,
-        compatibleWindowMsPostProject: 0,
-        compatibleWindowMsCleanup: 0,
-        compatibleWindowMsNonDaily: 0,
-        compatibleWindowMsFinalSyncRetry: 0,
-        candidateWindowsConsideredInitialDaily: 0,
-        candidateWindowsConsideredPostProject: 0,
-        candidateWindowsConsideredCleanup: 0,
-        candidateWindowsConsideredNonDaily: 0,
-        candidateWindowsConsideredFinalSyncRetry: 0,
-        daysConsideredInitialDaily: 0,
-        daysConsideredPostProject: 0,
-        daysConsideredCleanup: 0,
-        daysConsideredNonDaily: 0,
-        daysConsideredFinalSyncRetry: 0,
-        eligibilitySkipsInitialDaily: 0,
-        eligibilitySkipsPostProject: 0,
-        eligibilitySkipsCleanup: 0,
-        eligibilitySkipsNonDaily: 0,
-        eligibilitySkipsFinalSyncRetry: 0,
-        existingInstanceChecksInitialDaily: 0,
-        existingInstanceChecksPostProject: 0,
-        existingInstanceChecksCleanup: 0,
-        existingInstanceChecksNonDaily: 0,
-        existingInstanceChecksFinalSyncRetry: 0,
-        asyncReadsInitialDaily: 0,
-        asyncReadsPostProject: 0,
-        asyncReadsCleanup: 0,
-        asyncReadsNonDaily: 0,
-        asyncReadsFinalSyncRetry: 0,
-        asyncReadMsInitialDaily: 0,
-        asyncReadMsPostProject: 0,
-        asyncReadMsCleanup: 0,
-        asyncReadMsNonDaily: 0,
-        asyncReadMsFinalSyncRetry: 0,
-        reservationChecksInitialDaily: 0,
-        reservationChecksPostProject: 0,
-        reservationChecksCleanup: 0,
-        reservationChecksNonDaily: 0,
-        reservationChecksFinalSyncRetry: 0,
-        practiceHistoryChecksInitialDaily: 0,
-        practiceHistoryChecksPostProject: 0,
-        practiceHistoryChecksCleanup: 0,
-        practiceHistoryChecksNonDaily: 0,
-        practiceHistoryChecksFinalSyncRetry: 0,
-        sortDedupeMsInitialDaily: 0,
-        sortDedupeMsPostProject: 0,
-        sortDedupeMsCleanup: 0,
-        sortDedupeMsNonDaily: 0,
-        sortDedupeMsFinalSyncRetry: 0,
-        dueEvaluationMsInitialDaily: 0,
-        dueEvaluationMsPostProject: 0,
-        dueEvaluationMsCleanup: 0,
-        dueEvaluationMsNonDaily: 0,
-        dueEvaluationMsFinalSyncRetry: 0,
-        prePlacementMsInitialDaily: 0,
-        prePlacementMsPostProject: 0,
-        prePlacementMsCleanup: 0,
-        prePlacementMsNonDaily: 0,
-        prePlacementMsFinalSyncRetry: 0,
-        nonDailyPreloadMs: 0,
-        nonDailyRoleLoopMs: 0,
-        nonDailyDayLoopMs: 0,
-        nonDailyExistingInstanceScanMs: 0,
-        nonDailyCandidateBuildMs: 0,
-        nonDailyPrepareWindowsForDayMs: 0,
-        nonDailyPrepareWindowsForDayPreloadMs: 0,
-        nonDailyPrepareWindowsForDayCacheHit: 0,
-        nonDailyPrepareWindowsForDayCacheMiss: 0,
-        nonDailyPrepareWindowsForDayCacheSet: 0,
-        nonDailyGetDayInstancesMs: 0,
-        nonDailySunlightResolveMs: 0,
-        nonDailyFetchCompatibleWindowsOuterMs: 0,
-        nonDailyCompatibilityCacheHit: 0,
-        nonDailyCompatibilityCacheMiss: 0,
-        nonDailyCompatibilityCacheSet: 0,
-        nonDailyCompatibilityCacheBypass: 0,
-        nonDailyCompatibilityCacheBypassDebug: 0,
-        nonDailyCompatibilityCacheBypassTiming: 0,
-        nonDailyCompatibilityCacheBypassParity: 0,
-        nonDailyCompatibilityCacheEnabled: 0,
-        nonDailyCompatibilityCacheDisabled: 0,
-        nonDailySunlightCacheHit: 0,
-        nonDailySunlightCacheMiss: 0,
-        nonDailySunlightCacheSet: 0,
-        nonDailyAllDaySunlightSkipCount: 0,
-        nonDailyCandidateBuildOtherMs: 0,
-        nonDailyPlaceRoleMs: 0,
-        nonDailyPlaceItemInWindowsMs: 0,
-        nonDailyPersistMs: 0,
-        nonDailyMetadataUpdateMs: 0,
-        nonDailyPruneCancelMs: 0,
-        nonDailyOverrideClearMs: 0,
-        nonDailySortDedupeMs: 0,
-        nonDailySkippedRoleCount: 0,
-        nonDailyPlacedRoleCount: 0,
-        nonDailyFailedRoleCount: 0,
-      },
-      habitAsyncReadSources: {},
       syncPairings: {
         lookupMs: 0,
         fallbackLookupMs: 0,
@@ -529,28 +240,6 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         persistedRows: 0,
       },
       projectPass: { ms: 0, queued: 0, placed: 0, failed: 0 },
-      projectPlacement: {
-        dayScanMs: 0,
-        prepareWindowsMs: 0,
-        prepareWindowsCacheHit: 0,
-        prepareWindowsCacheMiss: 0,
-        prepareWindowsCacheSet: 0,
-        compatibleWindowMs: 0,
-        blockerBuildMs: 0,
-        placeItemMs: 0,
-        persistMs: 0,
-        queueCount: 0,
-        daysConsidered: 0,
-        candidateWindowsConsidered: 0,
-        placeCalls: 0,
-        noFit: 0,
-        success: 0,
-        skippedCount: 0,
-        reuseUpdateMs: 0,
-        reuseUpdateCount: 0,
-        batchedCreateMs: 0,
-        batchedCreateCount: 0,
-      },
       compatibleWindows: {
         calls: 0,
         totalMs: 0,
@@ -574,15 +263,11 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         batchFlushCount: 0,
         batchRowsTotal: 0,
         batchMaxRows: 0,
-        batchSelectMs: 0,
-        batchInsertMs: 0,
         batchFlushMs: 0,
         syncImmediateCreateCount: 0,
         syncImmediateCreateMs: 0,
         finalSyncRetryBatchedCreateCount: 0,
         finalSyncRetryBatchedCreateMs: 0,
-        nonSyncBatchedCreateCount: 0,
-        nonSyncBatchedCreateMs: 0,
       },
       dbWrites: {
         inserts: 0,
@@ -626,7 +311,6 @@ export function buildSchedulerTimingSummary(
 
   addCounter("resetFetched", timing.runner.resetUnlockedProjects.fetched);
   addCounter("resetUpdated", timing.runner.resetUnlockedProjects.updated);
-  addCounter("markedAffected", timing.runner.markMissed.affected);
   addCounter("missedCount", timing.schedule.loadData.counts.missed);
   addCounter("taskCount", timing.schedule.backlog.tasks);
   addCounter("projectCount", timing.schedule.backlog.projects);
@@ -648,273 +332,19 @@ export function buildSchedulerTimingSummary(
     timing.schedule.overlaySpanLoading.rangePreloadMs
   );
   addCounter(
-    "overlayRangeBlockRows",
-    timing.schedule.overlaySpanLoading.rangeBlockRows
-  );
-  addCounter(
-    "overlayRangeDynamicRows",
-    timing.schedule.overlaySpanLoading.rangeDynamicRows
-  );
-  addCounter(
-    "overlayRangeWhitelistRows",
-    timing.schedule.overlaySpanLoading.rangeWhitelistRows
-  );
-  addCounter(
-    "overlayRangeCacheSetDays",
-    timing.schedule.overlaySpanLoading.rangeCacheSetDays
-  );
-  addCounter(
     "overlayDemandFallbackCount",
     timing.schedule.overlaySpanLoading.demandFallbackCount
   );
-  addCounter("syncFallbackCount", timing.schedule.syncPairings.fallbackLookups);
-  addCounter("syncFallbackTotalMs", timing.schedule.syncPairings.fallbackLookupMs);
-  addCounter(
-    "syncFallbackPartnerCount",
-    timing.schedule.syncPairings.fallbackPartners
-  );
-  addCounter("syncPairingUpserted", timing.schedule.syncPairings.persistedRows);
   addCounter("projectQueued", timing.schedule.projectPass.queued);
   addCounter("projectPlaced", timing.schedule.projectPass.placed);
   addCounter("projectFailed", timing.schedule.projectPass.failed);
-  const projectPlacement = timing.schedule.projectPlacement;
-  addCounter("projectPlacementDayScanMs", projectPlacement.dayScanMs);
-  addCounter("projectPlacementPrepareWindowsMs", projectPlacement.prepareWindowsMs);
-  addCounter(
-    "projectPlacementPrepareWindowsCacheHit",
-    projectPlacement.prepareWindowsCacheHit
-  );
-  addCounter(
-    "projectPlacementPrepareWindowsCacheMiss",
-    projectPlacement.prepareWindowsCacheMiss
-  );
-  addCounter(
-    "projectPlacementPrepareWindowsCacheSet",
-    projectPlacement.prepareWindowsCacheSet
-  );
-  addCounter(
-    "projectPlacementCompatibleWindowMs",
-    projectPlacement.compatibleWindowMs
-  );
-  addCounter("projectPlacementBlockerBuildMs", projectPlacement.blockerBuildMs);
-  addCounter("projectPlacementPlaceItemMs", projectPlacement.placeItemMs);
-  addCounter("projectPlacementPersistMs", projectPlacement.persistMs);
-  addCounter("projectPlacementQueueCount", projectPlacement.queueCount);
-  addCounter("projectPlacementDaysConsidered", projectPlacement.daysConsidered);
-  addCounter(
-    "projectPlacementCandidateWindowsConsidered",
-    projectPlacement.candidateWindowsConsidered
-  );
-  addCounter("projectPlacementPlaceCalls", projectPlacement.placeCalls);
-  addCounter("projectPlacementNoFit", projectPlacement.noFit);
-  addCounter("projectPlacementSuccess", projectPlacement.success);
-  addCounter("projectPlacementSkippedCount", projectPlacement.skippedCount);
-  addCounter("projectPlacementReuseUpdateMs", projectPlacement.reuseUpdateMs);
-  addCounter("projectPlacementReuseUpdateCount", projectPlacement.reuseUpdateCount);
-  addCounter("projectPlacementBatchedCreateMs", projectPlacement.batchedCreateMs);
-  addCounter(
-    "projectPlacementBatchedCreateCount",
-    projectPlacement.batchedCreateCount
-  );
   addCounter("placeCalls", timing.schedule.placeItem.calls);
   addCounter("placeSuccess", timing.schedule.placeItem.success);
   addCounter("placeNoFit", timing.schedule.placeItem.noFit);
-  addCounter(
-    "habitNoFitCacheHit",
-    timing.schedule.habitPlacementInstrumentation.noFitCacheHit
-  );
-  addCounter(
-    "habitNoFitCacheMiss",
-    timing.schedule.habitPlacementInstrumentation.noFitCacheMiss
-  );
-  addCounter(
-    "habitNoFitCacheSet",
-    timing.schedule.habitPlacementInstrumentation.noFitCacheSet
-  );
-  addCounter(
-    "habitNoFitCacheBypass",
-    timing.schedule.habitPlacementInstrumentation.noFitCacheBypass
-  );
-  addCounter(
-    "habitPlaceCallsInitialDaily",
-    timing.schedule.habitPlacementInstrumentation.placeCallsInitialDaily
-  );
-  addCounter(
-    "habitPlaceCallsPostProject",
-    timing.schedule.habitPlacementInstrumentation.placeCallsPostProject
-  );
-  addCounter(
-    "habitPlaceCallsCleanup",
-    timing.schedule.habitPlacementInstrumentation.placeCallsCleanup
-  );
-  addCounter(
-    "habitPlaceCallsNonDaily",
-    timing.schedule.habitPlacementInstrumentation.placeCallsNonDaily
-  );
-  addCounter(
-    "habitPlaceCallsFinalSyncRetry",
-    timing.schedule.habitPlacementInstrumentation.placeCallsFinalSyncRetry
-  );
-  addCounter(
-    "habitPlaceNoFitInitialDaily",
-    timing.schedule.habitPlacementInstrumentation.placeNoFitInitialDaily
-  );
-  addCounter(
-    "habitPlaceNoFitPostProject",
-    timing.schedule.habitPlacementInstrumentation.placeNoFitPostProject
-  );
-  addCounter(
-    "habitPlaceNoFitCleanup",
-    timing.schedule.habitPlacementInstrumentation.placeNoFitCleanup
-  );
-  addCounter(
-    "habitPlaceNoFitNonDaily",
-    timing.schedule.habitPlacementInstrumentation.placeNoFitNonDaily
-  );
-  addCounter(
-    "habitPlaceNoFitFinalSyncRetry",
-    timing.schedule.habitPlacementInstrumentation.placeNoFitFinalSyncRetry
-  );
-  const habitInstrumentation = timing.schedule.habitPlacementInstrumentation;
-  addCounter(
-    "habitPlacementInitialDailyMs",
-    habitInstrumentation.habitPlacementInitialDailyMs
-  );
-  addCounter(
-    "habitPlacementPostProjectMs",
-    habitInstrumentation.habitPlacementPostProjectMs
-  );
-  addCounter(
-    "habitPlacementCleanupMs",
-    habitInstrumentation.habitPlacementCleanupMs
-  );
-  addCounter(
-    "habitPlacementNonDailyMs",
-    habitInstrumentation.habitPlacementNonDailyMs
-  );
-  addCounter(
-    "habitPlacementFinalSyncRetryMs",
-    habitInstrumentation.habitPlacementFinalSyncRetryMs
-  );
-  addCounter(
-    "finalSyncRetryCandidateBuildMs",
-    habitInstrumentation.finalSyncRetryCandidateBuildMs
-  );
-  addCounter(
-    "finalSyncRetryScheduleHabitsForDayMs",
-    habitInstrumentation.finalSyncRetryScheduleHabitsForDayMs
-  );
-  addCounter(
-    "finalSyncRetryPlaceCalls",
-    habitInstrumentation.placeCallsFinalSyncRetry
-  );
-  addCounter(
-    "finalSyncRetryCreateWritesMs",
-    habitInstrumentation.finalSyncRetryCreateWritesMs
-  );
-  addCounter(
-    "finalSyncRetryDaysConsidered",
-    habitInstrumentation.finalSyncRetryDaysConsidered
-  );
-  addCounter(
-    "finalSyncRetryEligibleHabitCount",
-    habitInstrumentation.finalSyncRetryEligibleHabitCount
-  );
-  const habitPassMetricGroups = [
-    ["habitCompatibleWindowCalls", "compatibleWindowCalls"],
-    ["habitCompatibleWindowMs", "compatibleWindowMs"],
-    ["habitCandidateWindowsConsidered", "candidateWindowsConsidered"],
-    ["habitDaysConsidered", "daysConsidered"],
-    ["habitEligibilitySkips", "eligibilitySkips"],
-    ["habitExistingInstanceChecks", "existingInstanceChecks"],
-    ["habitAsyncReads", "asyncReads"],
-    ["habitAsyncReadMs", "asyncReadMs"],
-    ["habitReservationChecks", "reservationChecks"],
-    ["habitPracticeHistoryChecks", "practiceHistoryChecks"],
-    ["habitSortDedupeMs", "sortDedupeMs"],
-    ["habitDueEvaluationMs", "dueEvaluationMs"],
-    ["habitPrePlacementMs", "prePlacementMs"],
-  ] as const;
-  const habitPassSuffixes = [
-    "InitialDaily",
-    "PostProject",
-    "Cleanup",
-    "NonDaily",
-    "FinalSyncRetry",
-  ] as const;
-  for (const [summaryPrefix, fieldPrefix] of habitPassMetricGroups) {
-    for (const suffix of habitPassSuffixes) {
-      const field =
-        `${fieldPrefix}${suffix}` as keyof typeof habitInstrumentation;
-      addCounter(
-        `${summaryPrefix}${suffix}`,
-        habitInstrumentation[field]
-      );
-    }
-  }
-  const nonDailyMetricNames = [
-    "nonDailyPreloadMs",
-    "nonDailyRoleLoopMs",
-    "nonDailyDayLoopMs",
-    "nonDailyExistingInstanceScanMs",
-    "nonDailyCandidateBuildMs",
-    "nonDailyPrepareWindowsForDayMs",
-    "nonDailyPrepareWindowsForDayPreloadMs",
-    "nonDailyPrepareWindowsForDayCacheHit",
-    "nonDailyPrepareWindowsForDayCacheMiss",
-    "nonDailyPrepareWindowsForDayCacheSet",
-    "nonDailyGetDayInstancesMs",
-    "nonDailySunlightResolveMs",
-    "nonDailyFetchCompatibleWindowsOuterMs",
-    "nonDailyCompatibilityCacheHit",
-    "nonDailyCompatibilityCacheMiss",
-    "nonDailyCompatibilityCacheSet",
-    "nonDailyCompatibilityCacheBypass",
-    "nonDailyCompatibilityCacheBypassDebug",
-    "nonDailyCompatibilityCacheBypassTiming",
-    "nonDailyCompatibilityCacheBypassParity",
-    "nonDailyCompatibilityCacheEnabled",
-    "nonDailyCompatibilityCacheDisabled",
-    "nonDailySunlightCacheHit",
-    "nonDailySunlightCacheMiss",
-    "nonDailySunlightCacheSet",
-    "nonDailyAllDaySunlightSkipCount",
-    "nonDailyCandidateBuildOtherMs",
-    "nonDailyPlaceRoleMs",
-    "nonDailyPlaceItemInWindowsMs",
-    "nonDailyPersistMs",
-    "nonDailyMetadataUpdateMs",
-    "nonDailyPruneCancelMs",
-    "nonDailyOverrideClearMs",
-    "nonDailySortDedupeMs",
-    "nonDailySkippedRoleCount",
-    "nonDailyPlacedRoleCount",
-    "nonDailyFailedRoleCount",
-  ] as const;
-  for (const metricName of nonDailyMetricNames) {
-    addCounter(metricName, habitInstrumentation[metricName]);
-  }
-  for (const [sourcePassKey, sourceTiming] of Object.entries(
-    timing.schedule.habitAsyncReadSources
-  )) {
-    const passSuffix =
-      habitPassSuffixes.find((suffix) => sourcePassKey.endsWith(suffix)) ??
-      "";
-    const sourceKey = passSuffix
-      ? sourcePassKey.slice(0, -passSuffix.length)
-      : sourcePassKey;
-    addCounter(
-      `habitAsyncRead${sourceKey}Count${passSuffix}`,
-      sourceTiming.count
-    );
-    addCounter(`habitAsyncRead${sourceKey}Ms${passSuffix}`, sourceTiming.ms);
-  }
   addCounter("created", timing.schedule.dbWrites.inserts);
   addCounter("createBatchFlushCount", timing.schedule.createWrites.batchFlushCount);
   addCounter("createBatchRowsTotal", timing.schedule.createWrites.batchRowsTotal);
   addCounter("createBatchMaxRows", timing.schedule.createWrites.batchMaxRows);
-  addCounter("createBatchSelectMs", timing.schedule.createWrites.batchSelectMs);
-  addCounter("createBatchInsertMs", timing.schedule.createWrites.batchInsertMs);
   addCounter("createBatchFlushMs", timing.schedule.createWrites.batchFlushMs);
   addCounter(
     "syncImmediateCreateCount",
@@ -931,14 +361,6 @@ export function buildSchedulerTimingSummary(
   addCounter(
     "finalSyncRetryBatchedCreateMs",
     timing.schedule.createWrites.finalSyncRetryBatchedCreateMs
-  );
-  addCounter(
-    "nonSyncBatchedCreateCount",
-    timing.schedule.createWrites.nonSyncBatchedCreateCount
-  );
-  addCounter(
-    "nonSyncBatchedCreateMs",
-    timing.schedule.createWrites.nonSyncBatchedCreateMs
   );
   addCounter("updated", timing.schedule.dbWrites.updates);
   addCounter("deleted", timing.schedule.dbWrites.deletes);
@@ -961,6 +383,9 @@ export function buildSchedulerTimingSummary(
 
   if (typeof timing.route.writeThroughDays === "number") {
     summary.writeThroughDays = timing.route.writeThroughDays;
+  }
+  if (typeof timing.route.status === "number") {
+    summary.status = timing.route.status;
   }
 
   return summary;
