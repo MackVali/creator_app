@@ -206,20 +206,15 @@ function formatEventPreview(event: Pick<PreviewEvent, "name" | "skillIcon">) {
 
 function buildBriefBody(events: PreviewEvent[]) {
   const count = events.length;
+  const previewLines = events.slice(0, 3).map(formatEventPreview);
+  const remaining = count - previewLines.length;
+  const lines = [`${count} scheduled`, ...previewLines];
 
-  if (count === 1) {
-    return `1 scheduled: ${formatEventPreview(events[0])}`;
+  if (remaining > 0) {
+    lines.push(`+${remaining} more`);
   }
 
-  if (count <= 3) {
-    return `${count} scheduled: ${events.map(formatEventPreview).join(" · ")}`;
-  }
-
-  const remaining = count - 2;
-  return `${count} scheduled: ${events
-    .slice(0, 2)
-    .map(formatEventPreview)
-    .join(" · ")} · +${remaining} more`;
+  return lines.join("\n");
 }
 
 function buildBriefTitle({
