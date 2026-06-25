@@ -83,7 +83,10 @@ import {
   type ScheduleInstance,
   type ScheduleContext,
 } from "@/lib/scheduler/instanceRepo";
-import { syncScheduleBlockLocalNotifications } from "@/lib/notifications/scheduleBlockLocalNotifications";
+import {
+  syncScheduleBlockLocalNotifications,
+  type ScheduleBlockLocalNotificationInstance,
+} from "@/lib/notifications/scheduleBlockLocalNotifications";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
 import { windowRectMinutes } from "@/lib/scheduler/windowRect";
@@ -1448,6 +1451,69 @@ type ProjectTaskCard = {
   instanceId?: string;
   displayDurationMinutes: number;
 };
+
+function buildScheduleBlockNotificationInstances(
+  instances: ScheduleInstance[],
+  dataset: Pick<
+    ScheduleEventDataset,
+    "habits" | "projectSkillIds" | "skills" | "tasks"
+  >
+): ScheduleBlockLocalNotificationInstance[] {
+  const skillById = new Map(dataset.skills.map((skill) => [skill.id, skill]));
+  const taskById = new Map(dataset.tasks.map((task) => [task.id, task]));
+  const habitById = new Map(dataset.habits.map((habit) => [habit.id, habit]));
+
+  const resolveSkill = (skillId: string | null | undefined) => {
+    const id = skillId?.trim();
+    return id ? skillById.get(id) ?? null : null;
+  };
+
+  const resolveProjectSkill = (projectId: string | null | undefined) => {
+    const ids = projectId ? dataset.projectSkillIds[projectId] ?? [] : [];
+    for (const skillId of ids) {
+      const skill = resolveSkill(skillId);
+      if (skill?.icon?.trim()) return skill;
+    }
+    return ids.length > 0 ? resolveSkill(ids[0]) : null;
+  };
+
+  return instances.map((instance) => {
+    let skillIcon: string | null = null;
+    let skillName: string | null = null;
+
+    if (instance.source_type === "TASK") {
+      const task = taskById.get(instance.source_id ?? "");
+      const skill = resolveSkill(task?.skill_id);
+      skillIcon = task?.skill_icon?.trim() || skill?.icon?.trim() || null;
+      skillName = skill?.name?.trim() || null;
+    } else if (instance.source_type === "HABIT") {
+      const habit = habitById.get(instance.source_id ?? "");
+      const skill = resolveSkill(habit?.skillId);
+      skillIcon = skill?.icon?.trim() || null;
+      skillName = skill?.name?.trim() || null;
+    } else if (instance.source_type === "PROJECT") {
+      const skill = resolveProjectSkill(instance.source_id);
+      skillIcon = skill?.icon?.trim() || null;
+      skillName = skill?.name?.trim() || null;
+    }
+
+    return {
+      id: instance.id,
+      event_name: instance.event_name,
+      project_name: instance.project_name,
+      skillIcon,
+      skillName,
+      source_type: instance.source_type,
+      source_id: instance.source_id,
+      start_utc: instance.start_utc,
+      end_utc: instance.end_utc,
+      status: instance.status,
+      time_block_id: instance.time_block_id,
+      day_type_time_block_id: instance.day_type_time_block_id,
+      window_id: instance.window_id,
+    };
+  });
+}
 
 type HabitTimelinePlacement = {
   habitId: string;
@@ -4788,7 +4854,11 @@ export default function ScheduleTabContent({
       setHabits(payload.habits);
       setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
-      void syncScheduleBlockLocalNotifications(nextInstances, {
+      const notificationInstances = buildScheduleBlockNotificationInstances(
+        nextInstances,
+        payload
+      );
+      void syncScheduleBlockLocalNotifications(notificationInstances, {
         blockLabelByKey: buildScheduleBlockLabelMap(
           nextInstances,
           windowsRef.current
