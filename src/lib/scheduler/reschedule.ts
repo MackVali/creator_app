@@ -3001,18 +3001,57 @@ export async function scheduleBacklog(
       : null;
 
   const loadDataStartedAt = schedulerNowMs();
-  const missed = await fetchBacklogNeedingSchedule(userId, supabase);
+  const missedPromise = fetchBacklogNeedingSchedule(userId, supabase);
+  const tasksPromise = fetchReadyTasks(supabase);
+  const allProjectsMapPromise = fetchAllProjectsMap(supabase);
+  const fetchedProjectsMapPromise = fetchProjectsMap(supabase);
+  const goalsPromise = fetchGoalsForUser(userId, supabase);
+  const fetchedHabitsPromise = fetchHabitsForSchedule(userId, supabase);
+  const [
+    missedResult,
+    tasksResult,
+    allProjectsMapResult,
+    fetchedProjectsMapResult,
+    goalsResult,
+    fetchedHabitsResult,
+  ] = await Promise.allSettled([
+    missedPromise,
+    tasksPromise,
+    allProjectsMapPromise,
+    fetchedProjectsMapPromise,
+    goalsPromise,
+    fetchedHabitsPromise,
+  ]);
+  if (missedResult.status === "rejected") {
+    throw missedResult.reason;
+  }
+  const missed = missedResult.value;
   if (missed.error) {
     result.error = missed.error;
     return result;
   }
 
-  const tasks = await fetchReadyTasks(supabase);
-  const allProjectsMap = await fetchAllProjectsMap(supabase);
-  const fetchedProjectsMap = await fetchProjectsMap(supabase);
+  if (tasksResult.status === "rejected") {
+    throw tasksResult.reason;
+  }
+  const tasks = tasksResult.value;
+  if (allProjectsMapResult.status === "rejected") {
+    throw allProjectsMapResult.reason;
+  }
+  const allProjectsMap = allProjectsMapResult.value;
+  if (fetchedProjectsMapResult.status === "rejected") {
+    throw fetchedProjectsMapResult.reason;
+  }
+  const fetchedProjectsMap = fetchedProjectsMapResult.value;
   await normalizeProjectInstances(userId, allProjectsMap, supabase, timing);
-  const goals = await fetchGoalsForUser(userId, supabase);
-  const fetchedHabits = await fetchHabitsForSchedule(userId, supabase);
+  if (goalsResult.status === "rejected") {
+    throw goalsResult.reason;
+  }
+  const goals = goalsResult.value;
+  if (fetchedHabitsResult.status === "rejected") {
+    throw fetchedHabitsResult.reason;
+  }
+  const fetchedHabits = fetchedHabitsResult.value;
   const habits = isTargetedSourceRun
     ? fetchedHabits.filter((habit) => targetHabitIds.has(habit.id))
     : fetchedHabits;
@@ -4962,22 +5001,80 @@ export async function scheduleBacklog(
       return bucket;
     };
 
-    const shouldPreloadOverlayCaches = nonDailyHabits.some((habit) => {
-      const normalizedType =
-        habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
-      return normalizedType !== "SYNC" && !hasFixedHabitLocalTime(habit);
-    });
+    const buildFullNonDailyPreloadDates = () => {
+      const dates: Date[] = [];
+      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+        dates.push(addDaysInTimeZone(horizonStartLocalDay, offset, timeZone));
+      }
+      return dates;
+    };
+    const localDayCacheKey = (day: Date) =>
+      formatDateKeyInTimeZone(startOfDayInTimeZone(day, timeZone), timeZone);
+    const computeNonDailyPreloadDates = () => {
+      const datesByKey = new Map<string, Date>();
+      const addDateRange = (startDay: Date, endDay: Date) => {
+        let cursorDay = startOfDayInTimeZone(startDay, timeZone);
+        const endMs = endDay.getTime();
+        while (cursorDay.getTime() <= endMs) {
+          datesByKey.set(localDayCacheKey(cursorDay), cursorDay);
+          cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+        }
+      };
+      const addFullHorizon = () => {
+        for (const day of buildFullNonDailyPreloadDates()) {
+          datesByKey.set(localDayCacheKey(day), day);
+        }
+      };
+
+      for (const habit of nonDailyHabits) {
+        const normalizedType =
+          habitTypeById.get(habit.id) ??
+          normalizeHabitTypeValue(habit.habitType);
+        if (normalizedType === "SYNC" || hasFixedHabitLocalTime(habit)) {
+          continue;
+        }
+        const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+        if (nextDueOverride) {
+          const overrideDayStart = startOfDayInTimeZone(
+            nextDueOverride,
+            timeZone
+          );
+          if (baseStart.getTime() < overrideDayStart.getTime()) {
+            continue;
+          }
+        }
+        const plan = computeNonDailyChainPlan(
+          habit,
+          baseDate.toISOString(),
+          timeZone
+        );
+        const minStartDate = new Date(plan.primary.minStartUtc);
+        if (Number.isNaN(minStartDate.getTime())) {
+          addFullHorizon();
+          continue;
+        }
+        const minStartLocalDay = startOfDayInTimeZone(minStartDate, timeZone);
+        if (minStartLocalDay.getTime() <= horizonStartLocalDay.getTime()) {
+          addFullHorizon();
+          continue;
+        }
+        if (minStartLocalDay.getTime() > horizonEndLocalDay.getTime()) {
+          continue;
+        }
+        addDateRange(minStartLocalDay, horizonEndLocalDay);
+      }
+
+      return Array.from(datesByKey.values()).sort(
+        (a, b) => a.getTime() - b.getTime()
+      );
+    };
+    const nonDailyPreloadDates = computeNonDailyPreloadDates();
+    const shouldPreloadOverlayCaches = nonDailyPreloadDates.length > 0;
     if (shouldPreloadOverlayCaches) {
       const preloadStartedAt = schedulerNowMs();
-      const preloadDates: Date[] = [];
-      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
-        preloadDates.push(
-          addDaysInTimeZone(horizonStartLocalDay, offset, timeZone)
-        );
-      }
       await preloadOverlayWindowCachesForDates({
         supabase,
-        dates: preloadDates,
+        dates: nonDailyPreloadDates,
         timeZone,
         userId,
         overlayBlockCache,
@@ -4991,8 +5088,6 @@ export async function scheduleBacklog(
       );
     }
 
-    const localDayCacheKey = (day: Date) =>
-      formatDateKeyInTimeZone(startOfDayInTimeZone(day, timeZone), timeZone);
     const prepareNonDailyWindowsForDay = async (
       day: Date,
       options?: { recordElapsedMs?: boolean }
@@ -5024,14 +5119,8 @@ export async function scheduleBacklog(
     };
     if (shouldPreloadOverlayCaches) {
       const preloadPreparedWindowsStartedAt = schedulerNowMs();
-      const preloadPreparedWindowDates: Date[] = [];
-      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
-        preloadPreparedWindowDates.push(
-          addDaysInTimeZone(horizonStartLocalDay, offset, timeZone)
-        );
-      }
       await Promise.allSettled(
-        preloadPreparedWindowDates.map((day) =>
+        nonDailyPreloadDates.map((day) =>
           prepareNonDailyWindowsForDay(day, { recordElapsedMs: false })
         )
       );
