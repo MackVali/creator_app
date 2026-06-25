@@ -3719,6 +3719,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const prefersReducedMotion = useReducedMotion();
   const titleId = useId();
   const executionScopePanelId = useId();
+  const mobileExecutionScopePanelId = useId();
   const queueListId = useId();
   const activeSourceId = source?.sourceId;
   const activeSourceType = source?.sourceType;
@@ -5560,6 +5561,405 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       });
   };
 
+  const scopeEditorBody = (
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 pb-5 pr-2 pt-3 [-webkit-overflow-scrolling:touch] sm:space-y-4 sm:px-0 sm:pb-0 sm:pr-1">
+    <div className="flex items-center justify-between gap-2 sm:gap-3">
+      <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
+        Focus Scope
+      </h3>
+      {hasDraftSelectedScope || hasCustomExecutionFilters ? (
+        <button
+          type="button"
+          onClick={resetScopeEditorFilters}
+          className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
+        >
+          Reset filters
+        </button>
+      ) : null}
+    </div>
+
+                              <FocusPomoFilterSection
+    label="Monuments"
+    hasSelectedFilters={
+      draftSelectedMonumentIds.length > 0
+    }
+    onClear={clearDraftMonumentScope}
+                              >
+    {monumentOptions.length > 0 ? (
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        {monumentOptions.map((option) => {
+          const selected =
+            draftSelectedMonumentIds.includes(option.id);
+
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() =>
+                toggleMonumentScope(option.id)
+              }
+              className={
+                selected
+                  ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                  : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+              }
+            >
+              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                {option.icon ??
+                  scopeOptionFallback(
+                    "monument",
+                    option.name
+                  )}
+              </span>
+              <span>{option.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    ) : (
+      <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+        No monuments available.
+      </p>
+    )}
+                              </FocusPomoFilterSection>
+
+                              <FocusPomoFilterSection
+    label="Skills"
+    hasSelectedFilters={draftSelectedSkillIds.length > 0}
+    onClear={clearDraftSkillScope}
+                              >
+    {skillOptions.length > 0 ? (
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        {sortedSkillOptions.map((option) => {
+          const selected =
+            draftSelectedSkillIds.includes(option.id);
+
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => toggleSkillScope(option.id)}
+              className={
+                selected
+                  ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                  : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+              }
+            >
+              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                {option.icon ??
+                  scopeOptionFallback(
+                    "skill",
+                    option.name
+                  )}
+              </span>
+              <span>{option.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    ) : (
+      <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+        No skills available.
+      </p>
+    )}
+                              </FocusPomoFilterSection>
+
+                              <FocusPomoFilterSection
+    label="INSTANCE TYPES"
+    hasSelectedFilters={
+      hasCustomWorkTypeFilters ||
+      hasCustomHabitTypeFilters
+    }
+    onClear={clearInstanceTypeFilters}
+                              >
+    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+      {workTypeOptions.map((option) => {
+        const selected = enabledItemTypes.includes(
+          option.value
+        );
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => toggleItemType(option.value)}
+            className={
+              selected
+                ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+            }
+          >
+            {option.label}
+          </button>
+        );
+      })}
+
+      {showHabitTypeSection
+        ? habitTypePillOptions.map((option) => {
+            const lockedOff = isLockedOffHabitTypeKey(
+              option.key
+            );
+            const selected =
+              !lockedOff &&
+              selectedHabitTypeKeys.includes(option.key);
+
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-pressed={selected}
+                aria-disabled={lockedOff}
+                disabled={lockedOff}
+                onClick={() =>
+                  toggleHabitType(option.key)
+                }
+                className={
+                  lockedOff
+                    ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-black/50 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
+                    : selected
+                      ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                      : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                }
+              >
+                {option.label}
+              </button>
+            );
+          })
+        : null}
+    </div>
+                              </FocusPomoFilterSection>
+
+                              {showTagsSection ? (
+    <FocusPomoFilterSection
+      label="Tags"
+      hasSelectedFilters={selectedTagIds.length > 0}
+      onClear={clearTagFilters}
+    >
+      {tagOptions.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {tagOptions.map((option) => {
+            const selected = selectedTagIds.includes(
+              option.id
+            );
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() =>
+                  toggleSelectedId(
+                    setSelectedTagIds,
+                    option.id
+                  )
+                }
+                className={
+                  selected
+                    ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                    : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+              }
+            >
+              {option.name}
+            </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+          No tags available.
+        </p>
+      )}
+    </FocusPomoFilterSection>
+                              ) : null}
+
+                              {showGoalsSection ? (
+    <FocusPomoFilterSection
+      label="Goals"
+      hasSelectedFilters={selectedGoalIds.length > 0}
+      onClear={clearGoalFilters}
+    >
+      {goalOptions.length > 0 ? (
+        <div className="space-y-2 sm:space-y-3">
+          {groupedGoalOptions.map((group) => (
+            <div key={group.key}>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 sm:gap-2 sm:text-[11px]">
+                {group.icon ? (
+                  <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] text-zinc-200 sm:size-5 sm:text-[10px]">
+                    {group.icon}
+                  </span>
+                ) : null}
+                <span className="min-w-0 truncate">
+                  {group.name}
+                </span>
+              </div>
+              <div className="mt-1.5 pb-1 sm:mt-2 sm:overflow-x-auto sm:overflow-y-hidden">
+                <div className="flex flex-wrap gap-1.5 sm:inline-flex sm:max-h-32 sm:flex-col sm:content-start sm:gap-2 sm:pr-4">
+                  {group.options.map((option) => {
+                    const selected =
+                      selectedGoalIds.includes(
+                        option.id
+                      );
+
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() =>
+                          toggleSelectedId(
+                            setSelectedGoalIds,
+                            option.id
+                          )
+                        }
+                        className={
+                          selected
+                            ? "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                            : "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                        }
+                      >
+                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                          {option.icon ??
+                            initialsFallback(
+                              option.name,
+                              "G"
+                            )}
+                        </span>
+                        <span className="min-w-0 truncate">
+                          {option.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+          No goals available.
+        </p>
+      )}
+    </FocusPomoFilterSection>
+                              ) : null}
+
+                              {showCampaignsSection ? (
+    <FocusPomoFilterSection
+      label="Campaigns"
+      hasSelectedFilters={
+        selectedCampaignIds.length > 0
+      }
+      onClear={clearCampaignFilters}
+    >
+      {campaignOptions.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {campaignOptions.map((option) => {
+            const selected =
+              selectedCampaignIds.includes(option.id);
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() =>
+                  toggleSelectedId(
+                    setSelectedCampaignIds,
+                    option.id
+                  )
+                }
+                className={
+                  selected
+                    ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                    : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                }
+              >
+                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                  {option.icon ?? "C"}
+                </span>
+                <span>{option.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+          No campaigns available.
+        </p>
+      )}
+    </FocusPomoFilterSection>
+                              ) : null}
+
+                              {showRoutinesSection ? (
+    <FocusPomoFilterSection
+      label="Routines"
+      hasSelectedFilters={selectedRoutineIds.length > 0}
+      onClear={clearRoutineFilters}
+    >
+      {routineOptions.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {routineOptions.map((option) => {
+            const selected =
+              selectedRoutineIds.includes(option.id);
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() =>
+                  toggleSelectedId(
+                    setSelectedRoutineIds,
+                    option.id
+                  )
+                }
+                className={
+                  selected
+                    ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                    : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                }
+              >
+                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                  {option.icon ?? "R"}
+                </span>
+                <span>{option.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+          No routines available.
+        </p>
+      )}
+    </FocusPomoFilterSection>
+                              ) : null}
+                            </div>
+  );
+
+  const scopeEditorFooter = (
+    <div className="shrink-0 border-t border-black/40 bg-black/90 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:bg-black/35 sm:px-0 sm:py-3 sm:shadow-none sm:backdrop-blur-0">
+                              <button
+    type="button"
+    onClick={commitScopeEditor}
+    aria-controls={executionScopePanelId}
+    className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
+                              >
+    Done
+                              </button>
+      </div>
+  );
+
+  const scopeEditorContent = (
+    <>
+      {scopeEditorBody}
+      {scopeEditorFooter}
+    </>
+  );
+
   return createPortal(
     <AnimatePresence
       initial={false}
@@ -5650,16 +6050,40 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 </div>
               </header>
 
-              <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0">
+              <main
+                className={
+                  scopeOpen && !hasRunStarted
+                    ? "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pb-0 sm:gap-5 sm:overflow-y-auto sm:pb-0"
+                    : "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0"
+                }
+              >
+                {!hasRunStarted && scopeOpen ? (
+                  <section
+                    id={mobileExecutionScopePanelId}
+                    className="flex min-h-0 flex-1 flex-col overflow-hidden sm:hidden"
+                  >
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-black/70 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)]">
+                      {scopeEditorBody}
+                      {scopeEditorFooter}
+                    </div>
+                  </section>
+                ) : null}
+
                 {!hasRunStarted ? (
-                  <section className="relative mx-auto min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                  <section
+                    className={
+                      scopeOpen
+                        ? "relative mx-auto hidden min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:block sm:rounded-[22px]"
+                        : "relative mx-auto min-h-0 w-full max-w-3xl overflow-clip rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]"
+                    }
+                  >
                     <div className="min-h-0 overflow-clip rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
                       <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
                         <button
                           type="button"
                           onClick={toggleScopeEditor}
                           aria-expanded={scopeOpen}
-                          aria-controls={executionScopePanelId}
+                          aria-controls={`${executionScopePanelId} ${mobileExecutionScopePanelId}`}
                           className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
                         >
                           Adjust
@@ -5668,397 +6092,6 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                   <AnimatePresence initial={false}>
                     {scopeOpen
                       ? (() => {
-                          const scopeEditorContent = (
-                            <>
-                              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 pb-5 pr-2 pt-3 [-webkit-overflow-scrolling:touch] sm:space-y-4 sm:px-0 sm:pb-0 sm:pr-1">
-                            <div className="flex items-center justify-between gap-2 sm:gap-3">
-                              <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
-                                Focus Scope
-                              </h3>
-                              {hasDraftSelectedScope || hasCustomExecutionFilters ? (
-                                <button
-                                  type="button"
-                                  onClick={resetScopeEditorFilters}
-                                  className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
-                                >
-                                  Reset filters
-                                </button>
-                              ) : null}
-                            </div>
-
-                          <FocusPomoFilterSection
-                            label="Monuments"
-                            hasSelectedFilters={
-                              draftSelectedMonumentIds.length > 0
-                            }
-                            onClear={clearDraftMonumentScope}
-                          >
-                            {monumentOptions.length > 0 ? (
-                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                {monumentOptions.map((option) => {
-                                  const selected =
-                                    draftSelectedMonumentIds.includes(option.id);
-
-                                  return (
-                                    <button
-                                      key={option.id}
-                                      type="button"
-                                      aria-pressed={selected}
-                                      onClick={() =>
-                                        toggleMonumentScope(option.id)
-                                      }
-                                      className={
-                                        selected
-                                          ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                          : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                      }
-                                    >
-                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                        {option.icon ??
-                                          scopeOptionFallback(
-                                            "monument",
-                                            option.name
-                                          )}
-                                      </span>
-                                      <span>{option.name}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
-                                No monuments available.
-                              </p>
-                            )}
-                          </FocusPomoFilterSection>
-
-                          <FocusPomoFilterSection
-                            label="Skills"
-                            hasSelectedFilters={draftSelectedSkillIds.length > 0}
-                            onClear={clearDraftSkillScope}
-                          >
-                            {skillOptions.length > 0 ? (
-                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                {sortedSkillOptions.map((option) => {
-                                  const selected =
-                                    draftSelectedSkillIds.includes(option.id);
-
-                                  return (
-                                    <button
-                                      key={option.id}
-                                      type="button"
-                                      aria-pressed={selected}
-                                      onClick={() => toggleSkillScope(option.id)}
-                                      className={
-                                        selected
-                                          ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                          : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                      }
-                                    >
-                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                        {option.icon ??
-                                          scopeOptionFallback(
-                                            "skill",
-                                            option.name
-                                          )}
-                                      </span>
-                                      <span>{option.name}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
-                                No skills available.
-                              </p>
-                            )}
-                          </FocusPomoFilterSection>
-
-                          <FocusPomoFilterSection
-                            label="INSTANCE TYPES"
-                            hasSelectedFilters={
-                              hasCustomWorkTypeFilters ||
-                              hasCustomHabitTypeFilters
-                            }
-                            onClear={clearInstanceTypeFilters}
-                          >
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                              {workTypeOptions.map((option) => {
-                                const selected = enabledItemTypes.includes(
-                                  option.value
-                                );
-
-                                return (
-                                  <button
-                                    key={option.value}
-                                    type="button"
-                                    aria-pressed={selected}
-                                    onClick={() => toggleItemType(option.value)}
-                                    className={
-                                      selected
-                                        ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                        : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                    }
-                                  >
-                                    {option.label}
-                                  </button>
-                                );
-                              })}
-
-                              {showHabitTypeSection
-                                ? habitTypePillOptions.map((option) => {
-                                    const lockedOff = isLockedOffHabitTypeKey(
-                                      option.key
-                                    );
-                                    const selected =
-                                      !lockedOff &&
-                                      selectedHabitTypeKeys.includes(option.key);
-
-                                    return (
-                                      <button
-                                        key={option.key}
-                                        type="button"
-                                        aria-pressed={selected}
-                                        aria-disabled={lockedOff}
-                                        disabled={lockedOff}
-                                        onClick={() =>
-                                          toggleHabitType(option.key)
-                                        }
-                                        className={
-                                          lockedOff
-                                            ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-black/50 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
-                                            : selected
-                                              ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                              : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                        }
-                                      >
-                                        {option.label}
-                                      </button>
-                                    );
-                                  })
-                                : null}
-                            </div>
-                          </FocusPomoFilterSection>
-
-                          {showTagsSection ? (
-                            <FocusPomoFilterSection
-                              label="Tags"
-                              hasSelectedFilters={selectedTagIds.length > 0}
-                              onClear={clearTagFilters}
-                            >
-                              {tagOptions.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                  {tagOptions.map((option) => {
-                                    const selected = selectedTagIds.includes(
-                                      option.id
-                                    );
-
-                                    return (
-                                      <button
-                                        key={option.id}
-                                        type="button"
-                                        aria-pressed={selected}
-                                        onClick={() =>
-                                          toggleSelectedId(
-                                            setSelectedTagIds,
-                                            option.id
-                                          )
-                                        }
-                                        className={
-                                          selected
-                                            ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                            : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                      }
-                                    >
-                                      {option.name}
-                                    </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
-                                  No tags available.
-                                </p>
-                              )}
-                            </FocusPomoFilterSection>
-                          ) : null}
-
-                          {showGoalsSection ? (
-                            <FocusPomoFilterSection
-                              label="Goals"
-                              hasSelectedFilters={selectedGoalIds.length > 0}
-                              onClear={clearGoalFilters}
-                            >
-                              {goalOptions.length > 0 ? (
-                                <div className="space-y-2 sm:space-y-3">
-                                  {groupedGoalOptions.map((group) => (
-                                    <div key={group.key}>
-                                      <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 sm:gap-2 sm:text-[11px]">
-                                        {group.icon ? (
-                                          <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] text-zinc-200 sm:size-5 sm:text-[10px]">
-                                            {group.icon}
-                                          </span>
-                                        ) : null}
-                                        <span className="min-w-0 truncate">
-                                          {group.name}
-                                        </span>
-                                      </div>
-                                      <div className="mt-1.5 pb-1 sm:mt-2 sm:overflow-x-auto sm:overflow-y-hidden">
-                                        <div className="flex flex-wrap gap-1.5 sm:inline-flex sm:max-h-32 sm:flex-col sm:content-start sm:gap-2 sm:pr-4">
-                                          {group.options.map((option) => {
-                                            const selected =
-                                              selectedGoalIds.includes(
-                                                option.id
-                                              );
-
-                                            return (
-                                              <button
-                                                key={option.id}
-                                                type="button"
-                                                aria-pressed={selected}
-                                                onClick={() =>
-                                                  toggleSelectedId(
-                                                    setSelectedGoalIds,
-                                                    option.id
-                                                  )
-                                                }
-                                                className={
-                                                  selected
-                                                    ? "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                                    : "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                                }
-                                              >
-                                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                                  {option.icon ??
-                                                    initialsFallback(
-                                                      option.name,
-                                                      "G"
-                                                    )}
-                                                </span>
-                                                <span className="min-w-0 truncate">
-                                                  {option.name}
-                                                </span>
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
-                                  No goals available.
-                                </p>
-                              )}
-                            </FocusPomoFilterSection>
-                          ) : null}
-
-                          {showCampaignsSection ? (
-                            <FocusPomoFilterSection
-                              label="Campaigns"
-                              hasSelectedFilters={
-                                selectedCampaignIds.length > 0
-                              }
-                              onClear={clearCampaignFilters}
-                            >
-                              {campaignOptions.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                  {campaignOptions.map((option) => {
-                                    const selected =
-                                      selectedCampaignIds.includes(option.id);
-
-                                    return (
-                                      <button
-                                        key={option.id}
-                                        type="button"
-                                        aria-pressed={selected}
-                                        onClick={() =>
-                                          toggleSelectedId(
-                                            setSelectedCampaignIds,
-                                            option.id
-                                          )
-                                        }
-                                        className={
-                                          selected
-                                            ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                            : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                        }
-                                      >
-                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                          {option.icon ?? "C"}
-                                        </span>
-                                        <span>{option.name}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
-                                  No campaigns available.
-                                </p>
-                              )}
-                            </FocusPomoFilterSection>
-                          ) : null}
-
-                          {showRoutinesSection ? (
-                            <FocusPomoFilterSection
-                              label="Routines"
-                              hasSelectedFilters={selectedRoutineIds.length > 0}
-                              onClear={clearRoutineFilters}
-                            >
-                              {routineOptions.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                  {routineOptions.map((option) => {
-                                    const selected =
-                                      selectedRoutineIds.includes(option.id);
-
-                                    return (
-                                      <button
-                                        key={option.id}
-                                        type="button"
-                                        aria-pressed={selected}
-                                        onClick={() =>
-                                          toggleSelectedId(
-                                            setSelectedRoutineIds,
-                                            option.id
-                                          )
-                                        }
-                                        className={
-                                          selected
-                                            ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                            : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                        }
-                                      >
-                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                          {option.icon ?? "R"}
-                                        </span>
-                                        <span>{option.name}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
-                                  No routines available.
-                                </p>
-                              )}
-                            </FocusPomoFilterSection>
-                          ) : null}
-                        </div>
-                              <div className="shrink-0 border-t border-black/40 bg-black/90 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:bg-black/35 sm:px-0 sm:py-3 sm:shadow-none sm:backdrop-blur-0">
-                          <button
-                            type="button"
-                            onClick={commitScopeEditor}
-                            aria-controls={executionScopePanelId}
-                            className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
-                          >
-                            Done
-                          </button>
-                              </div>
-                            </>
-                          );
-
                           return (
                             <motion.div
                               id={executionScopePanelId}

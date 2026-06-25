@@ -8,6 +8,12 @@ import {
 } from "../../../src/lib/scheduler/repo";
 import * as repoModule from "../../../src/lib/scheduler/repo";
 
+type WindowQueryBuilder = {
+  contains: ReturnType<typeof vi.fn>;
+  is: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+};
+
 describe("fetchWindowsForDate", () => {
   it("includes recurring windows without day restrictions and their prior-day carryover", async () => {
     const date = new Date("2024-01-02T00:00:00Z");
@@ -61,7 +67,7 @@ describe("fetchWindowsForDate", () => {
     ]);
 
     const select = vi.fn(() => {
-      const builder: any = {
+      const builder: WindowQueryBuilder = {
         contains: vi.fn(async (_column: string, value: number[]) => {
           const key = JSON.stringify(value);
           const data = containsResponses.get(key) ?? [];
@@ -109,8 +115,11 @@ describe("fetchWindowsForDate", () => {
     } as const));
     const isMock = vi.fn(async () => ({ data: [], error: null } as const));
     const select = vi.fn(() => {
-      const builder: any = { contains: containsMock, is: isMock };
-      builder.eq = vi.fn(() => builder);
+      const builder: WindowQueryBuilder = {
+        contains: containsMock,
+        is: isMock,
+        eq: vi.fn(() => builder),
+      };
       return builder;
     });
     const client = { from: vi.fn(() => ({ select })) } as const;
@@ -138,7 +147,7 @@ describe("fetchWindowsForDate", () => {
     ];
 
     const select = vi.fn(() => {
-      const builder: any = {
+      const builder: WindowQueryBuilder = {
         contains: vi.fn(async (_column: string, value: number[]) => {
           const isToday = value.length === 1 && value[0] === weekday;
           return { data: isToday ? legacyWindows : [], error: null } as const;
@@ -579,13 +588,12 @@ describe("buildWindowsForDateFromDayTypeBlocks (v2 parity)", () => {
   it("filters window queries by user when a user id is provided", async () => {
     const eqMocks: Array<ReturnType<typeof vi.fn>> = [];
     const select = vi.fn(() => {
-      const builder: any = {
+      const builder: WindowQueryBuilder = {
         contains: vi.fn(async () => ({ data: [], error: null } as const)),
         is: vi.fn(async () => ({ data: [], error: null } as const)),
+        eq: vi.fn(() => builder),
       };
-      const eq = vi.fn(() => builder);
-      builder.eq = eq;
-      eqMocks.push(eq);
+      eqMocks.push(builder.eq);
       return builder;
     });
     const client = { from: vi.fn(() => ({ select })) } as const;

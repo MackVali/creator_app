@@ -22,9 +22,10 @@ const FRIEND_MESSAGE_TTL_HOURS = 24;
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
+    const { userId: participantId } = await params;
     const supabase = await createSupabaseServerClient();
     if (!supabase) {
       return NextResponse.json(
@@ -42,7 +43,6 @@ export async function GET(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const participantId = params.userId;
     const messageCutoffIso = getFriendMessageCutoffIso();
 
     const messagesQuery = supabase

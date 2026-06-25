@@ -51,6 +51,25 @@ type OverlayWindowRowForTest = {
   allow_all_monuments?: boolean | null;
 };
 
+type TestRowsResponse<T> = {
+  data: T[];
+  error: null;
+  count: null;
+  status: number;
+  statusText: string;
+};
+
+type TestRowsChain<T> = {
+  eq: ReturnType<typeof vi.fn>;
+  lt: ReturnType<typeof vi.fn>;
+  gt: ReturnType<typeof vi.fn>;
+  gte: ReturnType<typeof vi.fn>;
+  lte: ReturnType<typeof vi.fn>;
+  in: ReturnType<typeof vi.fn>;
+  or: ReturnType<typeof vi.fn>;
+  then: Promise<TestRowsResponse<T>>["then"];
+};
+
 const createOverlayWindowOnlySupabaseMock = (
   overlayWindows: OverlayWindowRowForTest[],
   options?: {
@@ -68,7 +87,7 @@ const createOverlayWindowOnlySupabaseMock = (
   const mock = createSupabaseMock();
   const baseFrom = mock.client.from as ReturnType<typeof vi.fn>;
   const buildRowsChain = <T,>(rows: T[]) => {
-    const chain: Record<string, any> = {};
+    const chain = {} as TestRowsChain<T>;
     chain.eq = vi.fn(() => chain);
     chain.lt = vi.fn(() => chain);
     chain.gt = vi.fn(() => chain);
@@ -144,19 +163,30 @@ const createOverlayWindowOnlySupabaseMock = (
 };
 
 describe("scheduleBacklog", () => {
-  const failDiag = (label: string, payload: any) => {
+  const failDiag = (label: string, payload: unknown) => {
     throw new Error(label + " " + JSON.stringify(payload));
   };
 
+  type CompatibleWindowsArgs = Parameters<typeof fetchCompatibleWindowsForItem>;
+  type GateTraceCompared = Partial<{
+    windowDays: number[] | null;
+    dayOfWeek: number;
+    itemEnergy: string | null;
+    windowEnergy: string | null;
+    itemDuration: number;
+    windowDuration: number;
+  }>;
+
   // Test-only helpers for gate tracing
   const captureFirstCompatibleCall = () => {
+    const realFetchCompatibleWindowsForItem = fetchCompatibleWindowsForItem;
     const spy = vi.spyOn(reschedule, "fetchCompatibleWindowsForItem");
-    let firstArgs: any = null;
-    spy.mockImplementation((...args: any[]) => {
+    let firstArgs: CompatibleWindowsArgs | null = null;
+    spy.mockImplementation((...args: CompatibleWindowsArgs) => {
       if (firstArgs === null) {
         firstArgs = args;
       }
-      return spy.getMockImplementation()?.(...args) ?? [];
+      return realFetchCompatibleWindowsForItem(...args);
     });
     return {
       firstArgs: () => firstArgs,
@@ -166,14 +196,14 @@ describe("scheduleBacklog", () => {
     };
   };
 
-  const replayGateTrace = (args: any, baseDate: Date) => {
+  const replayGateTrace = (args: CompatibleWindowsArgs | null, baseDate: Date) => {
     if (!args) return null;
     const [userId, date, item, tz, options] = args;
     const dayStart = startOfDayInTimeZone(date, tz);
     const dayParts = getDatePartsInTimeZone(dayStart, tz);
     const dayOfWeekInTz = dayParts.dayOfWeek;
 
-    const windows = options.windows || [];
+    const windows = options?.preloadedWindows || [];
     const firstWindow = windows[0];
     if (!firstWindow) return { error: "no windows" };
 
@@ -182,7 +212,7 @@ describe("scheduleBacklog", () => {
     let firstGateFailed = "";
 
     // allowedWindowKinds
-    const allowedKinds = options.allowedWindowKinds || ["DEFAULT"];
+    const allowedKinds = options?.allowedWindowKinds || ["DEFAULT"];
     if (!allowedKinds.includes(firstWindow.window_kind)) {
       firstGateFailed = "allowedWindowKinds";
     } else {
@@ -195,7 +225,7 @@ describe("scheduleBacklog", () => {
         passedGates.push("days");
 
         // energy
-        if (item.resolvedEnergy !== firstWindow.energy) {
+        if (item.energy !== firstWindow.energy) {
           firstGateFailed = "energy";
         } else {
           passedGates.push("energy");
@@ -233,12 +263,12 @@ describe("scheduleBacklog", () => {
       }
     }
 
-    const compared: any = {};
+    const compared: GateTraceCompared = {};
     if (firstGateFailed === "days") {
       compared.windowDays = firstWindow.days;
       compared.dayOfWeek = dayOfWeekInTz;
     } else if (firstGateFailed === "energy") {
-      compared.itemEnergy = item.resolvedEnergy;
+      compared.itemEnergy = item.energy;
       compared.windowEnergy = firstWindow.energy;
     } else if (firstGateFailed === "durationFit") {
       compared.itemDuration = item.duration_min;
@@ -257,15 +287,15 @@ describe("scheduleBacklog", () => {
         id: item.id,
         sourceType: item.sourceType,
         duration_min: item.duration_min,
-        resolvedEnergy: item.resolvedEnergy,
+        resolvedEnergy: item.energy,
         itemIdx: item.itemIdx || 0,
       },
       options: {
-        allowedWindowKinds: options.allowedWindowKinds || ["DEFAULT"],
+        allowedWindowKinds: options?.allowedWindowKinds || ["DEFAULT"],
         requireLocationContextMatch:
-          options.requireLocationContextMatch || false,
-        ignoreAvailability: options.ignoreAvailability || false,
-        nowProvided: options.nowMs !== undefined,
+          options?.requireLocationContextMatch || false,
+        ignoreAvailability: options?.ignoreAvailability || false,
+        nowProvided: options?.now !== undefined,
       },
       window: {
         id: firstWindow.id,
@@ -295,6 +325,7 @@ describe("scheduleBacklog", () => {
     ReturnType<typeof instanceRepo.fetchInstancesForRange>
   >;
   type ScheduleBacklogClient = Parameters<typeof scheduleBacklog>[2];
+  type CompatibleWindowsClient = Parameters<typeof fetchCompatibleWindowsForItem>[0];
   type ProjectPlacementCall = {
     id: string;
     reuseInstanceId: string | null;
@@ -8272,7 +8303,7 @@ describe("scheduleBacklog", () => {
     });
 
     const nullLocationSpecificBlock = await fetchCompatibleWindowsForItem(
-      client as any,
+      client as CompatibleWindowsClient,
       day,
       syncHabitItem,
       "UTC",
@@ -8286,7 +8317,7 @@ describe("scheduleBacklog", () => {
     expect(nullLocationSpecificBlock.windows).toHaveLength(0);
 
     const matchingLocationSpecificBlock = await fetchCompatibleWindowsForItem(
-      client as any,
+      client as CompatibleWindowsClient,
       day,
       syncHabitItem,
       "UTC",
@@ -8305,7 +8336,7 @@ describe("scheduleBacklog", () => {
     ]);
 
     const nullLocationOpenBlock = await fetchCompatibleWindowsForItem(
-      client as any,
+      client as CompatibleWindowsClient,
       day,
       syncHabitItem,
       "UTC",
@@ -10326,6 +10357,9 @@ describe("scheduleBacklog", () => {
     const placementCalls: ScheduleInstance[] = [];
     (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
       async (params) => {
+        const itemWithResolvedEnergy = params.item as typeof params.item & {
+          resolvedEnergy?: string;
+        };
         const isHabit = params.item.sourceType === "HABIT";
         const start = new Date(
           isHabit ? "2024-01-02T09:00:00Z" : "2024-01-02T10:00:00Z"
@@ -10347,7 +10381,7 @@ describe("scheduleBacklog", () => {
           energy_resolved:
             typeof params.item.energy === "string"
               ? params.item.energy
-              : (params.item as any).resolvedEnergy ?? "LOW",
+              : itemWithResolvedEnergy.resolvedEnergy ?? "LOW",
         });
         placementCalls.push(instance);
         return {
@@ -10424,7 +10458,7 @@ describe("fetchCompatibleWindowsForItem", () => {
       new Date("2026-01-30T00:00:00Z"),
       "UTC"
     );
-    const chillWindow: repo.WindowLite = {
+    const chillWindow: repo.WindowLite & { block_type: string } = {
       id: "win-daytype-chill",
       label: "Chill",
       energy: "LOW",
@@ -10439,8 +10473,8 @@ describe("fetchCompatibleWindowsForItem", () => {
       allowAllSkills: true,
       allowAllMonuments: true,
       dayTypeTimeBlockId: "dttb-chill",
+      block_type: "FOCUS",
     };
-    (chillWindow as any).block_type = "FOCUS";
 
     expect(
       placement.getWindowsForDateFromAll([chillWindow], dayStart, "UTC")
@@ -10822,8 +10856,11 @@ describe("fetchCompatibleWindowsForItem", () => {
       "data" in result ? result.data?.day_type_time_block_id : "NO_DATA"
     ).toBeNull();
     expect("data" in result ? result.data?.time_block_id : "NO_DATA").toBeNull();
+    const instanceWithOverlay = "data" in result
+      ? (result.data as ScheduleInstance & { overlay_window_id?: string | null })
+      : null;
     expect(
-      "data" in result ? (result.data as any)?.overlay_window_id : "NO_DATA"
+      instanceWithOverlay ? instanceWithOverlay.overlay_window_id : "NO_DATA"
     ).toBeUndefined();
   });
 });

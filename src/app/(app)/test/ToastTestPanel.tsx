@@ -16,6 +16,8 @@ import {
 import {
   endFocusPomoLiveActivity,
   startFocusPomoLiveActivity,
+  updateFocusPomoLiveActivity,
+  type StartFocusPomoLiveActivityResult,
 } from "@/lib/liveActivities/focusPomoLiveActivity";
 import {
   hapticComplete,
@@ -51,6 +53,16 @@ type CurrentTimeBlockBriefTestResponse =
       message?: string;
     };
 
+type FocusPomoLiveActivityDiagnostic = {
+  action: "start" | "update" | "end";
+  result: string;
+  isRunning: string;
+  hasCurrentActivity: string;
+  activityCount: string;
+  activityId: string;
+  currentActivityId: string;
+};
+
 export default function ToastTestPanel() {
   const toast = useToastHelpers();
   const [isSchedulingLocalNotification, setIsSchedulingLocalNotification] =
@@ -65,6 +77,10 @@ export default function ToastTestPanel() {
     isRunningFocusPomoLiveActivityDiagnostic,
     setIsRunningFocusPomoLiveActivityDiagnostic,
   ] = useState(false);
+  const [
+    focusPomoLiveActivityDiagnostic,
+    setFocusPomoLiveActivityDiagnostic,
+  ] = useState<FocusPomoLiveActivityDiagnostic | null>(null);
   const hapticTests = [
     { label: "Light impact", action: hapticLightImpact },
     { label: "Medium impact", action: hapticMediumImpact },
@@ -291,15 +307,71 @@ export default function ToastTestPanel() {
         plannedDurationSeconds: 120,
         remainingSeconds: 120,
       });
+      const diagnostic = buildFocusPomoLiveActivityDiagnostic("start", result);
+
+      setFocusPomoLiveActivityDiagnostic(diagnostic);
 
       if (result.ok) {
-        toast.success("Focus Pomo Live Activity started");
+        toast.success(
+          result.isRunning
+            ? "Live Activity running in iOS, but no UI visible"
+            : "Focus Pomo Live Activity started",
+          formatFocusPomoLiveActivityToastDescription(diagnostic)
+        );
         return;
       }
 
-      toast.error(`Live Activity failed: ${result.reason}`);
+      toast.error(
+        result.reason,
+        formatFocusPomoLiveActivityToastDescription(diagnostic)
+      );
     } catch (error) {
       toast.error(`Live Activity failed: ${readErrorMessage(error)}`);
+    } finally {
+      setIsRunningFocusPomoLiveActivityDiagnostic(false);
+    }
+  };
+
+  const handleUpdateFocusPomoLiveActivity = async () => {
+    if (isRunningFocusPomoLiveActivityDiagnostic) return;
+
+    setIsRunningFocusPomoLiveActivityDiagnostic(true);
+
+    try {
+      const startedAt = new Date(Date.now() - 30_000);
+      const targetEndAt = new Date(startedAt.getTime() + 120_000);
+      const result = await updateFocusPomoLiveActivity({
+        sessionId: "test-focus-pomo-live-activity",
+        mode: "pomo",
+        title: "Updated Test Focus Pomo",
+        sourceLabel: "Live Activity update test",
+        status: "paused",
+        startedAt: startedAt.toISOString(),
+        pausedAt: new Date().toISOString(),
+        targetEndAt: targetEndAt.toISOString(),
+        plannedDurationSeconds: 120,
+        remainingSeconds: 90,
+      });
+      const diagnostic = buildFocusPomoLiveActivityDiagnostic("update", result);
+
+      setFocusPomoLiveActivityDiagnostic(diagnostic);
+
+      if (result.ok) {
+        toast.success(
+          result.isRunning
+            ? "Live Activity running in iOS, but no UI visible"
+            : "Focus Pomo Live Activity updated",
+          formatFocusPomoLiveActivityToastDescription(diagnostic)
+        );
+        return;
+      }
+
+      toast.error(
+        `Live Activity update failed: ${result.reason}`,
+        formatFocusPomoLiveActivityToastDescription(diagnostic)
+      );
+    } catch (error) {
+      toast.error(`Live Activity update failed: ${readErrorMessage(error)}`);
     } finally {
       setIsRunningFocusPomoLiveActivityDiagnostic(false);
     }
@@ -316,13 +388,30 @@ export default function ToastTestPanel() {
         title: "Test Focus Pomo",
         sessionId: "test-focus-pomo-live-activity",
       });
+      const diagnostic: FocusPomoLiveActivityDiagnostic = {
+        action: "end",
+        result: result.ok ? "ok" : `failed: ${result.reason}`,
+        isRunning: "not checked",
+        hasCurrentActivity: "not checked",
+        activityCount: "not checked",
+        activityId: "focus-pomo-current",
+        currentActivityId: "none",
+      };
+
+      setFocusPomoLiveActivityDiagnostic(diagnostic);
 
       if (result.ok) {
-        toast.success("Focus Pomo Live Activity ended");
+        toast.success(
+          "Focus Pomo Live Activity ended",
+          formatFocusPomoLiveActivityToastDescription(diagnostic)
+        );
         return;
       }
 
-      toast.error(`Live Activity end failed: ${result.reason}`);
+      toast.error(
+        `Live Activity end failed: ${result.reason}`,
+        formatFocusPomoLiveActivityToastDescription(diagnostic)
+      );
     } catch (error) {
       toast.error(`Live Activity end failed: ${readErrorMessage(error)}`);
     } finally {
@@ -474,7 +563,7 @@ export default function ToastTestPanel() {
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
               Focus Pomo Live Activity
             </h3>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="button"
                 className={buttonClass}
@@ -490,12 +579,47 @@ export default function ToastTestPanel() {
                 className={buttonClass}
                 disabled={isRunningFocusPomoLiveActivityDiagnostic}
                 onClick={() => {
+                  void handleUpdateFocusPomoLiveActivity();
+                }}
+              >
+                Update Focus Pomo Live Activity
+              </button>
+              <button
+                type="button"
+                className={buttonClass}
+                disabled={isRunningFocusPomoLiveActivityDiagnostic}
+                onClick={() => {
                   void handleEndFocusPomoLiveActivity();
                 }}
               >
                 End Focus Pomo Live Activity
               </button>
             </div>
+            {focusPomoLiveActivityDiagnostic ? (
+              <div className="mt-3 rounded-md border border-white/10 bg-black/30 p-3 text-xs leading-5 text-white/60">
+                <div>Action: {focusPomoLiveActivityDiagnostic.action}</div>
+                <div>
+                  {focusPomoLiveActivityDiagnostic.action === "start"
+                    ? "Start call result"
+                    : "Call result"}
+                  : {focusPomoLiveActivityDiagnostic.result}
+                </div>
+                <div>isRunning: {focusPomoLiveActivityDiagnostic.isRunning}</div>
+                <div>
+                  getCurrentActivity returned anything:{" "}
+                  {focusPomoLiveActivityDiagnostic.hasCurrentActivity}
+                </div>
+                <div>
+                  listActivities count:{" "}
+                  {focusPomoLiveActivityDiagnostic.activityCount}
+                </div>
+                <div>logical id: {focusPomoLiveActivityDiagnostic.activityId}</div>
+                <div>
+                  current activity id:{" "}
+                  {focusPomoLiveActivityDiagnostic.currentActivityId}
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -626,4 +750,38 @@ function readErrorMessage(error: unknown): string {
   }
 
   return "unknown error";
+}
+
+function buildFocusPomoLiveActivityDiagnostic(
+  action: FocusPomoLiveActivityDiagnostic["action"],
+  result: StartFocusPomoLiveActivityResult
+): FocusPomoLiveActivityDiagnostic {
+  return {
+    action,
+    result: result.ok ? "ok" : `failed: ${result.reason}`,
+    isRunning: formatNullableBoolean(result.isRunning),
+    hasCurrentActivity: formatNullableBoolean(result.hasCurrentActivity),
+    activityCount:
+      result.activityCount == null ? "unavailable" : String(result.activityCount),
+    activityId: result.activityId,
+    currentActivityId: result.currentActivity?.id ?? "none",
+  };
+}
+
+function formatNullableBoolean(value: boolean | null | undefined): string {
+  if (value == null) return "unavailable";
+
+  return value ? "true" : "false";
+}
+
+function formatFocusPomoLiveActivityToastDescription(
+  diagnostic: FocusPomoLiveActivityDiagnostic
+): string {
+  return [
+    `result: ${diagnostic.result}`,
+    `isRunning: ${diagnostic.isRunning}`,
+    `getCurrentActivity: ${diagnostic.hasCurrentActivity}`,
+    `listActivities: ${diagnostic.activityCount}`,
+    `id: ${diagnostic.activityId}`,
+  ].join(" | ");
 }
