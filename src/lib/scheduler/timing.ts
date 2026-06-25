@@ -46,6 +46,12 @@ export type SchedulerTiming = {
       dynamicCalls: number;
       dynamicMs: number;
       dynamicRows: number;
+      rangePreloadMs: number;
+      rangeBlockRows: number;
+      rangeDynamicRows: number;
+      rangeWhitelistRows: number;
+      rangeCacheSetDays: number;
+      demandFallbackCount: number;
     };
     normalizeProjectInstances: {
       ms: number;
@@ -75,6 +81,16 @@ export type SchedulerTiming = {
       placementMs: number;
     };
     habitPlacementInstrumentation: {
+      habitPlacementInitialDailyMs: number;
+      habitPlacementPostProjectMs: number;
+      habitPlacementCleanupMs: number;
+      habitPlacementNonDailyMs: number;
+      habitPlacementFinalSyncRetryMs: number;
+      finalSyncRetryCandidateBuildMs: number;
+      finalSyncRetryScheduleHabitsForDayMs: number;
+      finalSyncRetryCreateWritesMs: number;
+      finalSyncRetryDaysConsidered: number;
+      finalSyncRetryEligibleHabitCount: number;
       noFitCacheHit: number;
       noFitCacheMiss: number;
       noFitCacheSet: number;
@@ -160,6 +176,10 @@ export type SchedulerTiming = {
       nonDailyExistingInstanceScanMs: number;
       nonDailyCandidateBuildMs: number;
       nonDailyPrepareWindowsForDayMs: number;
+      nonDailyPrepareWindowsForDayPreloadMs: number;
+      nonDailyPrepareWindowsForDayCacheHit: number;
+      nonDailyPrepareWindowsForDayCacheMiss: number;
+      nonDailyPrepareWindowsForDayCacheSet: number;
       nonDailyGetDayInstancesMs: number;
       nonDailySunlightResolveMs: number;
       nonDailyFetchCompatibleWindowsOuterMs: number;
@@ -221,6 +241,18 @@ export type SchedulerTiming = {
       errors: number;
       blockersScanned: number;
       persistWriteMs: number;
+    };
+    createWrites: {
+      batchFlushCount: number;
+      batchRowsTotal: number;
+      batchMaxRows: number;
+      batchSelectMs: number;
+      batchInsertMs: number;
+      batchFlushMs: number;
+      syncImmediateCreateCount: number;
+      syncImmediateCreateMs: number;
+      nonSyncBatchedCreateCount: number;
+      nonSyncBatchedCreateMs: number;
     };
     dbWrites: {
       inserts: number;
@@ -302,6 +334,12 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         dynamicCalls: 0,
         dynamicMs: 0,
         dynamicRows: 0,
+        rangePreloadMs: 0,
+        rangeBlockRows: 0,
+        rangeDynamicRows: 0,
+        rangeWhitelistRows: 0,
+        rangeCacheSetDays: 0,
+        demandFallbackCount: 0,
       },
       normalizeProjectInstances: {
         ms: 0,
@@ -331,6 +369,16 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         placementMs: 0,
       },
       habitPlacementInstrumentation: {
+        habitPlacementInitialDailyMs: 0,
+        habitPlacementPostProjectMs: 0,
+        habitPlacementCleanupMs: 0,
+        habitPlacementNonDailyMs: 0,
+        habitPlacementFinalSyncRetryMs: 0,
+        finalSyncRetryCandidateBuildMs: 0,
+        finalSyncRetryScheduleHabitsForDayMs: 0,
+        finalSyncRetryCreateWritesMs: 0,
+        finalSyncRetryDaysConsidered: 0,
+        finalSyncRetryEligibleHabitCount: 0,
         noFitCacheHit: 0,
         noFitCacheMiss: 0,
         noFitCacheSet: 0,
@@ -416,6 +464,10 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         nonDailyExistingInstanceScanMs: 0,
         nonDailyCandidateBuildMs: 0,
         nonDailyPrepareWindowsForDayMs: 0,
+        nonDailyPrepareWindowsForDayPreloadMs: 0,
+        nonDailyPrepareWindowsForDayCacheHit: 0,
+        nonDailyPrepareWindowsForDayCacheMiss: 0,
+        nonDailyPrepareWindowsForDayCacheSet: 0,
         nonDailyGetDayInstancesMs: 0,
         nonDailySunlightResolveMs: 0,
         nonDailyFetchCompatibleWindowsOuterMs: 0,
@@ -471,6 +523,18 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         errors: 0,
         blockersScanned: 0,
         persistWriteMs: 0,
+      },
+      createWrites: {
+        batchFlushCount: 0,
+        batchRowsTotal: 0,
+        batchMaxRows: 0,
+        batchSelectMs: 0,
+        batchInsertMs: 0,
+        batchFlushMs: 0,
+        syncImmediateCreateCount: 0,
+        syncImmediateCreateMs: 0,
+        nonSyncBatchedCreateCount: 0,
+        nonSyncBatchedCreateMs: 0,
       },
       dbWrites: {
         inserts: 0,
@@ -530,6 +594,30 @@ export function buildSchedulerTimingSummary(
   addCounter(
     "dynamicOverlaySpanCount",
     timing.schedule.overlaySpanLoading.dynamicRows
+  );
+  addCounter(
+    "overlayRangePreloadMs",
+    timing.schedule.overlaySpanLoading.rangePreloadMs
+  );
+  addCounter(
+    "overlayRangeBlockRows",
+    timing.schedule.overlaySpanLoading.rangeBlockRows
+  );
+  addCounter(
+    "overlayRangeDynamicRows",
+    timing.schedule.overlaySpanLoading.rangeDynamicRows
+  );
+  addCounter(
+    "overlayRangeWhitelistRows",
+    timing.schedule.overlaySpanLoading.rangeWhitelistRows
+  );
+  addCounter(
+    "overlayRangeCacheSetDays",
+    timing.schedule.overlaySpanLoading.rangeCacheSetDays
+  );
+  addCounter(
+    "overlayDemandFallbackCount",
+    timing.schedule.overlaySpanLoading.demandFallbackCount
   );
   addCounter("syncFallbackCount", timing.schedule.syncPairings.fallbackLookups);
   addCounter("syncFallbackTotalMs", timing.schedule.syncPairings.fallbackLookupMs);
@@ -601,6 +689,50 @@ export function buildSchedulerTimingSummary(
     timing.schedule.habitPlacementInstrumentation.placeNoFitFinalSyncRetry
   );
   const habitInstrumentation = timing.schedule.habitPlacementInstrumentation;
+  addCounter(
+    "habitPlacementInitialDailyMs",
+    habitInstrumentation.habitPlacementInitialDailyMs
+  );
+  addCounter(
+    "habitPlacementPostProjectMs",
+    habitInstrumentation.habitPlacementPostProjectMs
+  );
+  addCounter(
+    "habitPlacementCleanupMs",
+    habitInstrumentation.habitPlacementCleanupMs
+  );
+  addCounter(
+    "habitPlacementNonDailyMs",
+    habitInstrumentation.habitPlacementNonDailyMs
+  );
+  addCounter(
+    "habitPlacementFinalSyncRetryMs",
+    habitInstrumentation.habitPlacementFinalSyncRetryMs
+  );
+  addCounter(
+    "finalSyncRetryCandidateBuildMs",
+    habitInstrumentation.finalSyncRetryCandidateBuildMs
+  );
+  addCounter(
+    "finalSyncRetryScheduleHabitsForDayMs",
+    habitInstrumentation.finalSyncRetryScheduleHabitsForDayMs
+  );
+  addCounter(
+    "finalSyncRetryPlaceCalls",
+    habitInstrumentation.placeCallsFinalSyncRetry
+  );
+  addCounter(
+    "finalSyncRetryCreateWritesMs",
+    habitInstrumentation.finalSyncRetryCreateWritesMs
+  );
+  addCounter(
+    "finalSyncRetryDaysConsidered",
+    habitInstrumentation.finalSyncRetryDaysConsidered
+  );
+  addCounter(
+    "finalSyncRetryEligibleHabitCount",
+    habitInstrumentation.finalSyncRetryEligibleHabitCount
+  );
   const habitPassMetricGroups = [
     ["habitCompatibleWindowCalls", "compatibleWindowCalls"],
     ["habitCompatibleWindowMs", "compatibleWindowMs"],
@@ -640,6 +772,10 @@ export function buildSchedulerTimingSummary(
     "nonDailyExistingInstanceScanMs",
     "nonDailyCandidateBuildMs",
     "nonDailyPrepareWindowsForDayMs",
+    "nonDailyPrepareWindowsForDayPreloadMs",
+    "nonDailyPrepareWindowsForDayCacheHit",
+    "nonDailyPrepareWindowsForDayCacheMiss",
+    "nonDailyPrepareWindowsForDayCacheSet",
     "nonDailyGetDayInstancesMs",
     "nonDailySunlightResolveMs",
     "nonDailyFetchCompatibleWindowsOuterMs",
@@ -687,6 +823,28 @@ export function buildSchedulerTimingSummary(
     addCounter(`habitAsyncRead${sourceKey}Ms${passSuffix}`, sourceTiming.ms);
   }
   addCounter("created", timing.schedule.dbWrites.inserts);
+  addCounter("createBatchFlushCount", timing.schedule.createWrites.batchFlushCount);
+  addCounter("createBatchRowsTotal", timing.schedule.createWrites.batchRowsTotal);
+  addCounter("createBatchMaxRows", timing.schedule.createWrites.batchMaxRows);
+  addCounter("createBatchSelectMs", timing.schedule.createWrites.batchSelectMs);
+  addCounter("createBatchInsertMs", timing.schedule.createWrites.batchInsertMs);
+  addCounter("createBatchFlushMs", timing.schedule.createWrites.batchFlushMs);
+  addCounter(
+    "syncImmediateCreateCount",
+    timing.schedule.createWrites.syncImmediateCreateCount
+  );
+  addCounter(
+    "syncImmediateCreateMs",
+    timing.schedule.createWrites.syncImmediateCreateMs
+  );
+  addCounter(
+    "nonSyncBatchedCreateCount",
+    timing.schedule.createWrites.nonSyncBatchedCreateCount
+  );
+  addCounter(
+    "nonSyncBatchedCreateMs",
+    timing.schedule.createWrites.nonSyncBatchedCreateMs
+  );
   addCounter("updated", timing.schedule.dbWrites.updates);
   addCounter("deleted", timing.schedule.dbWrites.deletes);
   addCounter("canceled", timing.schedule.dbWrites.cancels);

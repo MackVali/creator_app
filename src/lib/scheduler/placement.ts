@@ -1652,6 +1652,10 @@ export async function placeItemInWindows(
 
   const persistStartedAt = schedulerNowMs();
   const persistCreateBatcher = candidateIsSync ? undefined : createBatcher;
+  const isCreateWrite = !reuseInstanceId;
+  const isSyncImmediateCreate = isCreateWrite && candidateIsSync;
+  const isNonSyncBatchedCreate =
+    isCreateWrite && !candidateIsSync && Boolean(persistCreateBatcher);
   const persisted = await persistPlacement(
     {
       userId,
@@ -1673,6 +1677,15 @@ export async function placeItemInWindows(
   if (timing) {
     const persistWriteMs = elapsedMs(persistStartedAt);
     timing.schedule.placeItem.persistWriteMs += persistWriteMs;
+    if (!persisted.error) {
+      if (isSyncImmediateCreate) {
+        timing.schedule.createWrites.syncImmediateCreateCount += 1;
+        timing.schedule.createWrites.syncImmediateCreateMs += persistWriteMs;
+      } else if (isNonSyncBatchedCreate) {
+        timing.schedule.createWrites.nonSyncBatchedCreateCount += 1;
+        timing.schedule.createWrites.nonSyncBatchedCreateMs += persistWriteMs;
+      }
+    }
     recordSchedulerPhase(
       timing,
       reuseInstanceId
