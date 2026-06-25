@@ -5941,7 +5941,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   );
 
   const scopeEditorFooter = (
-    <div className="shrink-0 border-t border-black/40 bg-black/90 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:bg-black/35 sm:px-0 sm:py-3 sm:shadow-none sm:backdrop-blur-0">
+    <div className="shrink-0 border-t border-black/40 bg-black/90 px-3 pb-2 pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:bg-black/35 sm:px-0 sm:py-3 sm:shadow-none sm:backdrop-blur-0">
                               <button
     type="button"
     onClick={commitScopeEditor}

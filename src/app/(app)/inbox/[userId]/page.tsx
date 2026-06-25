@@ -786,14 +786,12 @@ function VideoCallExperience({
   const localTrack = tracks.find((track) => track.participant.isLocal);
   const remoteTrack = tracks.find((track) => !track.participant.isLocal);
   const heroTrack = remoteTrack ?? localTrack;
-  const hasCameraError = Boolean(cameraError && !localTrack);
+  const cameraFallbackMessage = localTrack ? null : cameraError;
   const callStatus = remoteTrack
     ? "Connected"
     : localTrack
       ? "Calling..."
-      : hasCameraError
-        ? CAMERA_UNAVAILABLE_MESSAGE
-        : "Calling...";
+      : "Camera starting...";
 
   useEffect(() => {
     setCameraError(null);
@@ -842,9 +840,9 @@ function VideoCallExperience({
           />
         </div>
       ) : null}
-      {hasCameraError ? (
+      {cameraFallbackMessage ? (
         <p className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+6.25rem)] z-30 px-6 text-center text-sm font-medium text-white/55 sm:bottom-[calc(env(safe-area-inset-bottom,0px)+7rem)]">
-          {cameraError}
+          {cameraFallbackMessage}
         </p>
       ) : null}
       <VideoCallControls onEnd={onEnd} onCameraError={setCameraError} />

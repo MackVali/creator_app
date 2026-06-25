@@ -8,7 +8,6 @@ import {
   makeDateInTimeZone,
   makeZonedDate,
   normalizeTimeZone,
-  startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { formatLocalDateKey } from "@/lib/time/tz";
 import type { FlameLevel } from "@/components/FlameEmber";

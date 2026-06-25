@@ -111,7 +111,7 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
 
     private static func taskTitle(_ title: String?) -> String {
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedTitle.isEmpty ? "Focus session" : trimmedTitle
+        return trimmedTitle.isEmpty ? "Live Activity running" : trimmedTitle
     }
 
     private static func sourceLabel(_ sourceLabel: String?) -> String? {
@@ -128,7 +128,7 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
         case "canceled", "cancelled", "cancel":
             return "Canceled"
         default:
-            return "Focus running"
+            return "Live Activity running"
         }
     }
 
@@ -269,7 +269,7 @@ private struct FocusPomoLockScreenView: View {
 
     private var taskTitle: String {
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedTitle.isEmpty ? "Focus session" : trimmedTitle
+        return trimmedTitle.isEmpty ? "Live Activity running" : trimmedTitle
     }
 
     private var sourceDisplayLabel: String? {
@@ -295,7 +295,7 @@ private struct FocusPomoLockScreenView: View {
         case "canceled", "cancelled", "cancel":
             return "Canceled"
         default:
-            return "Focus running"
+            return "Live Activity running"
         }
     }
 
@@ -453,7 +453,7 @@ private extension ISO8601DateFormatter {
     }()
 }
 
-@available(iOS 16.2, *)
+@available(iOS 17.0, *)
 #Preview("Notification", as: .content, using: GenericAttributes(
     id: "focuspomo-preview",
     staticValues: ["mode": "focus"]

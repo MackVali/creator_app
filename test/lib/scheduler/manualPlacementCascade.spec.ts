@@ -169,7 +169,7 @@ describe("persistManualPlacementCascade", () => {
     placement = await import("../../../src/lib/scheduler/placement");
 
     vi.mocked(instanceRepo.fetchInstancesForRange).mockImplementation(
-      async (_userId, _startUtc, _endUtc) => ({
+      async () => ({
         data: instances,
         error: null,
         count: instances.length,

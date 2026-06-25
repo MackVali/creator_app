@@ -34,7 +34,6 @@ import { cn } from "@/lib/utils";
 import { ENERGY } from "@/lib/scheduler/config";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
-  ArrowLeft,
   Filter as FilterIcon,
   Loader2,
   Search as SearchIcon,
@@ -527,9 +526,6 @@ export default function NexusPage() {
         setGoals(normalizedGoals);
         const monumentLookup = new Map(
           (monumentRows ?? []).map((monument) => [monument.id, monument])
-        );
-        const skillLookup = new Map(
-          (skillRows ?? []).map((skill) => [skill.id, skill])
         );
         const priorityLookup = buildPriorityLookup();
 

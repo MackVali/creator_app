@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
-  CalendarDays,
   Paintbrush,
   Droplet,
   MapPin,
@@ -32,7 +31,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { WindowLite } from "@/lib/scheduler/repo";
 
 import {
   Sheet,
@@ -279,14 +277,10 @@ export function JumpToDateSheet({
   const [assignmentDayTypeId, setAssignmentDayTypeId] = useState<string | null>(
     null
   );
-  const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(
     null
   );
   const [hasPendingAssignment, setHasPendingAssignment] = useState(false);
-  const [isLoadingAssignment, setIsLoadingAssignment] = useState(false);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
-  const [savingBlockId, setSavingBlockId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isOverlayModalOpen, setIsOverlayModalOpen] = useState(false);
   const [overlayStartReference, setOverlayStartReference] = useState<Date | null>(
@@ -978,8 +972,6 @@ export function JumpToDateSheet({
 
   const formatHours = (value?: number) =>
     Number.isFinite(value ?? NaN) ? `${(value as number).toFixed(1)}h` : "—";
-  const formatWindowHours = (value?: number) =>
-    Number.isFinite(value ?? NaN) ? `${(value as number).toFixed(1)}h` : "0h";
   const normalizeFlameLevel = (value?: string | null): FlameLevel => {
     const upper = String(value ?? "MEDIUM")
       .trim()
@@ -1009,15 +1001,6 @@ export function JumpToDateSheet({
     const h = Math.floor(clamped / 60);
     const m = clamped % 60;
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  };
-  const windowDurationHours = (
-    window?: { start_local?: string | null; end_local?: string | null } | null
-  ) => {
-    if (!window) return 0;
-    const start = timeStringToMinutes(window.start_local);
-    const end = timeStringToMinutes(window.end_local);
-    const durationMin = end < start ? 1440 - start + end : end - start;
-    return Math.max(durationMin, 0) / 60;
   };
   const isVisibleLevel = (level: (typeof ENERGY_LEVELS)[number]) => {
     const epsilon = 0.0001;
@@ -1143,7 +1126,6 @@ export function JumpToDateSheet({
   useEffect(() => {
     if (!open || !isPaintMode || !paintSelectionKey || dayTypes.length === 0) {
       setAssignmentDayTypeId(null);
-      setAssignmentError(null);
       setSelectedDayTypeId(null);
       setHasPendingAssignment(false);
       return;
@@ -1154,8 +1136,6 @@ export function JumpToDateSheet({
     }
     let cancelled = false;
     const loadAssignment = async () => {
-      setIsLoadingAssignment(true);
-      setAssignmentError(null);
       try {
         const supabase = getSupabaseBrowser();
         if (!supabase) throw new Error("Supabase client not available");
@@ -1184,13 +1164,6 @@ export function JumpToDateSheet({
         setHasPendingAssignment(false);
       } catch (error) {
         console.warn("Unable to ensure day type assignment", error);
-        if (!cancelled) {
-          setAssignmentError("Unable to prepare this date.");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingAssignment(false);
-        }
       }
     };
     void loadAssignment();
@@ -1800,7 +1773,6 @@ export function JumpToDateSheet({
         }
       );
       if (error) throw error;
-      setAssignmentError(null);
       setAssignmentDayTypeId(dayTypeId);
       setSelectedDayTypeId(dayTypeId);
       setHasPendingAssignment(false);
@@ -2089,7 +2061,6 @@ export function JumpToDateSheet({
         setSaveError("Select a date in paint mode first.");
         return;
       }
-      setSavingBlockId(blockId);
       setSaveError(null);
       try {
         const supabase = getSupabaseBrowser();
@@ -2311,8 +2282,6 @@ export function JumpToDateSheet({
           (typeof error === "string" ? error : null) ??
           "Unable to save changes right now.";
         setSaveError(message);
-      } finally {
-        setSavingBlockId(null);
       }
     },
     [
@@ -2323,31 +2292,6 @@ export function JumpToDateSheet({
       paintDayType?.id,
       selectedDayTypeId,
     ]
-  );
-
-  const cycleEnergy = useCallback(
-    async (blockId: string) => {
-      const levels = FLAME_LEVELS;
-      const key = `${paintDayType?.id}:${blockId}`;
-      const current = key ? (blockEnergy.get(key) ?? "NO") : "NO";
-      const nextLevel = levels[(levels.indexOf(current) + 1) % levels.length];
-      setSaveError(null);
-      await saveBlockSettings(blockId, { energy: nextLevel });
-    },
-    [blockEnergy, paintDayType?.id, saveBlockSettings]
-  );
-
-  const cycleBlockType = useCallback(
-    async (blockId: string) => {
-      const sequence: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
-      const key = `${paintDayType?.id}:${blockId}`;
-      const current = key ? (blockTypeMap.get(key) ?? "FOCUS") : "FOCUS";
-      const nextType =
-        sequence[(sequence.indexOf(current) + 1) % sequence.length];
-      setSaveError(null);
-      await saveBlockSettings(blockId, { blockType: nextType });
-    },
-    [blockTypeMap, paintDayType?.id, saveBlockSettings]
   );
 
   const handleSelect = (date: Date, dateKey?: string) => {
@@ -2403,7 +2347,6 @@ export function JumpToDateSheet({
   const handleChangeDayType = useCallback(
     async (nextDayTypeId: string) => {
       if (!paintSelectionKey || !nextDayTypeId) return;
-      setAssignmentError(null);
       try {
         const supabase = getSupabaseBrowser();
         if (!supabase) throw new Error("Supabase client not available");
@@ -2419,7 +2362,6 @@ export function JumpToDateSheet({
         setSelectedDayTypeId(nextDayTypeId);
       } catch (error) {
         console.warn("Unable to change day type", error);
-        setAssignmentError("Unable to change day type right now.");
       }
     },
     [assignDayTypeToSelection, paintSelectionKey]
@@ -2795,7 +2737,6 @@ export function JumpToDateSheet({
                             type="button"
                             className="rounded-full border border-emerald-200/40 bg-emerald-200/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-50 hover:bg-emerald-200/25"
                             onClick={async () => {
-                              setAssignmentError(null);
                               setSaveError(null);
                               if (!paintSelectionKey) return;
                               try {
@@ -2827,9 +2768,6 @@ export function JumpToDateSheet({
                                 });
                               } catch (error) {
                                 console.warn("Unable to apply day type", error);
-                                setAssignmentError(
-                                  "Unable to save this date right now."
-                                );
                               }
                             }}
                           >

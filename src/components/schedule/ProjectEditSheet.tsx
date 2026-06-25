@@ -45,7 +45,6 @@ import {
 import {
   type ScheduleInstance,
   type ScheduleContext,
-  updateInstanceStatus,
 } from "@/lib/scheduler/instanceRepo";
 
 const toDatetimeLocalValue = (value?: string | null) => {
@@ -95,29 +94,6 @@ const resolvePriorityOption = (
   }
   const normalized = (candidate ?? "NO").toUpperCase();
   return PRIORITY_OPTION_LOOKUP[normalized] ?? PRIORITY_OPTIONS[0].value;
-};
-
-const resolveEnergyValue = (
-  raw: unknown,
-  lookup: Record<string, string> = {}
-): (typeof ENERGY.LIST)[number] => {
-  let candidate: string | null = null;
-  if (typeof raw === "number") {
-    candidate = lookup[String(raw)] ?? null;
-  } else if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (trimmed) {
-      if (PRIORITY_NUMERIC_PATTERN.test(trimmed)) {
-        candidate = lookup[trimmed] ?? null;
-      } else {
-        candidate = trimmed;
-      }
-    }
-  }
-  const normalized = (candidate ?? "NO").toUpperCase();
-  return ENERGY.LIST.includes(normalized as (typeof ENERGY.LIST)[number])
-    ? (normalized as (typeof ENERGY.LIST)[number])
-    : "NO";
 };
 
 const priorityToDbValue = (value: string): string => {
@@ -185,11 +161,6 @@ console.log("[ProjectEditSheet] MODULE LOADED");
 type GoalOption = {
   value: string;
   label: string;
-};
-
-type LookupRow = {
-  id?: number | null;
-  name?: string | null;
 };
 
 type ProjectEditSheetProps = {

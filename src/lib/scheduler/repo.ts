@@ -581,27 +581,6 @@ function parseLocalTimeParts(value?: string | null) {
   };
 }
 
-const MIDNIGHT_LOCAL = "00:00";
-const DAY_END_LOCAL = "24:00";
-const NEXT_DAY_WINDOW_SUFFIX = "::next-day";
-
-const splitCrossMidnightWindow = (window: WindowLite) => {
-  const nextId = `${window.id}${NEXT_DAY_WINDOW_SUFFIX}`;
-  return {
-    dayPortion: {
-      ...window,
-      end_local: DAY_END_LOCAL,
-      fromPrevDay: false,
-    },
-    nextDayPortion: {
-      ...window,
-      id: nextId,
-      start_local: MIDNIGHT_LOCAL,
-      fromPrevDay: true,
-    },
-  };
-};
-
 function buildWindowsForDateFromSnapshot(
   snapshot: WindowLite[],
   date: Date,

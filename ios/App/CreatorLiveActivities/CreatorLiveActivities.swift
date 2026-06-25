@@ -76,6 +76,7 @@ struct CreatorLiveActivities: Widget {
     }
 }
 
+@available(iOS 17.0, *)
 #Preview(as: .systemSmall) {
     CreatorLiveActivities()
 } timeline: {
