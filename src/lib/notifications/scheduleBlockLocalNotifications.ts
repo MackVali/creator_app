@@ -64,6 +64,16 @@ export type ScheduleBlockLocalNotificationPendingSummary = {
   scheduleBriefNotifications: PendingLocalNotificationSchema[];
 };
 
+export type ScheduleBlockBriefTestNotificationPayload = {
+  title: string;
+  body: string;
+  blockKey: string;
+  anchorInstanceId: string;
+  startUtc: string;
+  blockLabel: string;
+  blockEventCount: number;
+};
+
 type GroupedBlock = {
   blockKey: string;
   anchor: ScheduleBlockLocalNotificationInstance;
@@ -169,7 +179,9 @@ export async function cancelPendingScheduleBlockLocalNotifications(): Promise<
   return summary.scheduleBriefNotifications.length;
 }
 
-export async function scheduleScheduleBlockBriefTestNotification(): Promise<void> {
+export async function scheduleScheduleBlockBriefTestNotification(
+  payload: ScheduleBlockBriefTestNotificationPayload,
+): Promise<void> {
   if (!canUseLocalNotifications()) {
     throw new Error("Local notifications are unavailable.");
   }
@@ -186,19 +198,21 @@ export async function scheduleScheduleBlockBriefTestNotification(): Promise<void
     notifications: [
       {
         id: SCHEDULE_BRIEF_TEST_NOTIFICATION_ID,
-        title: "Time Block starts in 5 min",
-        body: "1 Event: Schedule brief test",
+        title: payload.title,
+        body: payload.body,
         schedule: {
           at: new Date(Date.now() + 10_000),
           allowWhileIdle: true,
         },
+        sound: "default",
+        threadIdentifier: "creator-schedule-briefs",
         extra: {
           type: SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
-          blockKey: "admin-test",
-          anchorInstanceId: "admin-test",
-          startUtc: new Date(
-            Date.now() + REMINDER_LEAD_MS + 10_000
-          ).toISOString(),
+          blockKey: payload.blockKey,
+          anchorInstanceId: payload.anchorInstanceId,
+          startUtc: payload.startUtc,
+          blockLabel: payload.blockLabel,
+          blockEventCount: payload.blockEventCount,
           test: true,
         },
       },
