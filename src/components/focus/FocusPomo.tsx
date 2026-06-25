@@ -76,6 +76,7 @@ import {
 } from "@/lib/haptics/creatorHaptics";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
+import { useToastHelpers } from "@/components/ui/toast";
 
 export type FocusPomoSourceType = "monument" | "skill";
 
@@ -3616,6 +3617,7 @@ function FocusPomoFilterSection({
 
 export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const fabCreation = useFabCreation();
+  const toast = useToastHelpers();
   const [mounted, setMounted] = useState(false);
   const [lastSource, setLastSource] = useState<FocusPomoSource | null>(null);
   const [mode, setMode] = useState<FocusPomoMode>("pomo");
@@ -4836,6 +4838,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         mode === "stopwatch"
           ? Math.max(0, Math.floor(safeElapsedMs / 1000))
           : undefined,
+    }).then((result) => {
+      if (!result.ok && result.attemptedNativeIos) {
+        toast.error(`Live Activity failed: ${result.reason}`);
+      }
     });
 
     if (mode === "pomo" && targetEndAtDate) {
@@ -5683,8 +5689,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           },
                         }}
                       >
-                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pt-3 sm:max-h-[min(68dvh,42rem)] sm:px-4 sm:py-4">
-                          <div className="min-h-0 flex-1 basis-0 space-y-3 overflow-y-auto overscroll-contain pb-2 pr-1 sm:space-y-4 sm:pb-0">
+                        <div className="grid max-h-[inherit] min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden px-3 pt-3 sm:flex sm:max-h-[min(68dvh,42rem)] sm:flex-col sm:px-4 sm:py-4">
+                          <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-2 pr-1 sm:flex-1 sm:space-y-4 sm:pb-0">
                             <div className="flex items-center justify-between gap-2 sm:gap-3">
                               <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
                                 Focus Scope

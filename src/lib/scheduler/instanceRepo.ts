@@ -307,6 +307,13 @@ export function createScheduleInstanceCreateBatcher(
   client: Client,
   options?: {
     onFlushMs?: (ms: number) => void;
+    onFlushStats?: (stats: {
+      rows: number;
+      maxRows: number;
+      insertMs: number;
+      selectMs: number;
+      flushMs: number;
+    }) => void;
   }
 ): ScheduleInstanceCreateBatcher {
   const pending: PendingCreate[] = [];
@@ -331,6 +338,8 @@ export function createScheduleInstanceCreateBatcher(
       if (pending.length === 0) return;
       const entries = pending.splice(0, pending.length);
       const startedAt = schedulerNowMs();
+      let insertMs = 0;
+      let maxRows = 0;
       try {
         for (
           let index = 0;
@@ -341,10 +350,13 @@ export function createScheduleInstanceCreateBatcher(
             index,
             index + SCHEDULER_INSTANCE_CREATE_BATCH_SIZE
           );
+          maxRows = Math.max(maxRows, batch.length);
+          const queryStartedAt = schedulerNowMs();
           const { data, error } = await client
             .from("schedule_instances")
             .insert(batch.map((entry) => entry.row))
             .select(SCHEDULER_INSTANCE_WRITE_PROJECTION);
+          insertMs += elapsedMs(queryStartedAt);
           if (error) {
             logCreateBatchFailure(error, batch);
             throw error;
@@ -360,7 +372,15 @@ export function createScheduleInstanceCreateBatcher(
           }
         }
       } finally {
-        options?.onFlushMs?.(elapsedMs(startedAt));
+        const flushMs = elapsedMs(startedAt);
+        options?.onFlushMs?.(flushMs);
+        options?.onFlushStats?.({
+          rows: entries.length,
+          maxRows,
+          insertMs,
+          selectMs: 0,
+          flushMs,
+        });
       }
     },
   };

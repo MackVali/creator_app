@@ -197,6 +197,21 @@ type DynamicOverlayWindowRow = {
   } | null;
 };
 
+type OverlayWindowInstanceTypeWhitelistRow = {
+  overlay_window_id: string | null;
+  instance_type: string | null;
+};
+
+type OverlayWindowSkillWhitelistRow = {
+  overlay_window_id: string | null;
+  skill_id: string | null;
+};
+
+type OverlayWindowMonumentWhitelistRow = {
+  overlay_window_id: string | null;
+  monument_id: string | null;
+};
+
 type ScheduleSegment = {
   start: number;
   end: number;
@@ -236,7 +251,6 @@ const COMPLETED_RETENTION_DAYS = 3;
 const PRACTICE_LOOKAHEAD_DAYS = 7;
 const HABIT_MISSED_RETENTION_DAYS = 7;
 const LOCATION_MISMATCH_REVALIDATION = "LOCATION_MISMATCH_REVALIDATION";
-const OVERLAY_CACHE_PRELOAD_CONCURRENCY = 4;
 
 const SCHEDULER_DEBUG_LOGGING = process.env.SCHEDULER_DEBUG === "true";
 const SCHEDULER_PROJECT_DEBUG_LOGGING =
@@ -1331,6 +1345,22 @@ function recordNonDailyHabitMetric(
     number
   >;
   counters[metric] = Math.round(((counters[metric] ?? 0) + value) * 100) / 100;
+}
+
+function recordHabitPlacementWallTime(
+  timing: SchedulerTiming | null | undefined,
+  pass: HabitPlacementPass,
+  ms: number
+) {
+  if (!timing || !Number.isFinite(ms) || ms <= 0) return;
+  const metricByPass: Record<HabitPlacementPass, string> = {
+    initialDaily: "habitPlacementInitialDailyMs",
+    postProject: "habitPlacementPostProjectMs",
+    cleanup: "habitPlacementCleanupMs",
+    nonDaily: "habitPlacementNonDailyMs",
+    finalSyncRetry: "habitPlacementFinalSyncRetryMs",
+  };
+  recordNonDailyHabitMetric(timing, metricByPass[pass], ms);
 }
 
 function recordHabitAsyncReadSource(
@@ -4623,6 +4653,7 @@ export async function scheduleBacklog(
     if (timing) {
       const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
       timing.schedule.habitPasses.placementMs += habitPlacementMs;
+      recordHabitPlacementWallTime(timing, "initialDaily", habitPlacementMs);
       recordSchedulerPhase(
         timing,
         "scheduler.schedule.habit_placement",
@@ -4660,6 +4691,18 @@ export async function scheduleBacklog(
           "scheduler.schedule.schedule_instance_create_writes",
           ms
         );
+      },
+      onFlushStats: (stats) => {
+        if (!timing) return;
+        timing.schedule.createWrites.batchFlushCount += 1;
+        timing.schedule.createWrites.batchRowsTotal += stats.rows;
+        timing.schedule.createWrites.batchMaxRows = Math.max(
+          timing.schedule.createWrites.batchMaxRows,
+          stats.maxRows
+        );
+        timing.schedule.createWrites.batchInsertMs += stats.insertMs;
+        timing.schedule.createWrites.batchSelectMs += stats.selectMs;
+        timing.schedule.createWrites.batchFlushMs += stats.flushMs;
       },
     }
   );
@@ -4928,6 +4971,54 @@ export async function scheduleBacklog(
 
     const localDayCacheKey = (day: Date) =>
       formatDateKeyInTimeZone(startOfDayInTimeZone(day, timeZone), timeZone);
+    const prepareNonDailyWindowsForDay = async (
+      day: Date,
+      options?: { recordElapsedMs?: boolean }
+    ) => {
+      const recordElapsedMs = options?.recordElapsedMs !== false;
+      const startedAt = schedulerNowMs();
+      const cacheKey = dateCacheKey(day);
+      const hadPreparedWindows = windowCache.has(cacheKey);
+      recordNonDailyHabitMetric(
+        timing,
+        hadPreparedWindows
+          ? "nonDailyPrepareWindowsForDayCacheHit"
+          : "nonDailyPrepareWindowsForDayCacheMiss"
+      );
+      await prepareWindowsForDay(day);
+      if (!hadPreparedWindows && windowCache.has(cacheKey)) {
+        recordNonDailyHabitMetric(
+          timing,
+          "nonDailyPrepareWindowsForDayCacheSet"
+        );
+      }
+      if (recordElapsedMs) {
+        recordNonDailyHabitMetric(
+          timing,
+          "nonDailyPrepareWindowsForDayMs",
+          elapsedMs(startedAt)
+        );
+      }
+    };
+    if (shouldPreloadOverlayCaches) {
+      const preloadPreparedWindowsStartedAt = schedulerNowMs();
+      const preloadPreparedWindowDates: Date[] = [];
+      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+        preloadPreparedWindowDates.push(
+          addDaysInTimeZone(horizonStartLocalDay, offset, timeZone)
+        );
+      }
+      await Promise.allSettled(
+        preloadPreparedWindowDates.map((day) =>
+          prepareNonDailyWindowsForDay(day, { recordElapsedMs: false })
+        )
+      );
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailyPrepareWindowsForDayPreloadMs",
+        elapsedMs(preloadPreparedWindowsStartedAt)
+      );
+    }
     const nonDailySunlightByDay = new Map<
       string,
       {
@@ -5300,14 +5391,9 @@ export async function scheduleBacklog(
             const candidateBuildStartedAt = schedulerNowMs();
             let candidateBuildAccountedMs = 0;
             const prepareWindowsStartedAt = schedulerNowMs();
-            await prepareWindowsForDay(cursorDay);
+            await prepareNonDailyWindowsForDay(cursorDay);
             const prepareWindowsMs = elapsedMs(prepareWindowsStartedAt);
             candidateBuildAccountedMs += prepareWindowsMs;
-            recordNonDailyHabitMetric(
-              timing,
-              "nonDailyPrepareWindowsForDayMs",
-              prepareWindowsMs
-            );
             const getDayInstancesStartedAt = schedulerNowMs();
             const existingInstancesForDay = getDayInstances(offset);
             const getDayInstancesMs = elapsedMs(getDayInstancesStartedAt);
@@ -5799,10 +5885,15 @@ export async function scheduleBacklog(
   nonDailyReplacementInstanceIds =
     await scheduleNonDailyHabitsAcrossHorizon(nonDailyHabits);
   recordHabitPlaceItemDelta(timing, "nonDaily", nonDailyPlaceItemBefore);
-  recordPhaseSince(
-    "scheduler.schedule.non_daily_habit_pass",
-    nonDailyHabitPassStartedAt
-  );
+  const nonDailyHabitPassMs = elapsedMs(nonDailyHabitPassStartedAt);
+  recordHabitPlacementWallTime(timing, "nonDaily", nonDailyHabitPassMs);
+  if (timing) {
+    recordSchedulerPhase(
+      timing,
+      "scheduler.schedule.non_daily_habit_pass",
+      nonDailyHabitPassMs
+    );
+  }
   await flushMissedInstanceCreates();
   await flushScheduleInstanceCreates();
   const syncPostPassStartedAt = schedulerNowMs();
@@ -7150,6 +7241,7 @@ export async function scheduleBacklog(
     const day =
       offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
     await prepareWindowsForDay(day);
+    const habitPlacementStartedAt = schedulerNowMs();
     const placeItemBefore = snapshotPlaceItemCounters(timing);
     const dayResult = await scheduleHabitsForDay({
       userId,
@@ -7198,6 +7290,16 @@ export async function scheduleBacklog(
       timing,
     });
     recordHabitPlaceItemDelta(timing, "postProject", placeItemBefore);
+    if (timing) {
+      const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
+      timing.schedule.habitPasses.placementMs += habitPlacementMs;
+      recordHabitPlacementWallTime(timing, "postProject", habitPlacementMs);
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.habit_placement",
+        habitPlacementMs
+      );
+    }
 
     if (dayResult.placements.length > 0) {
       result.timeline.push(...dayResult.placements);
@@ -7362,6 +7464,7 @@ export async function scheduleBacklog(
         if (timing) {
           const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
           timing.schedule.habitPasses.placementMs += habitPlacementMs;
+          recordHabitPlacementWallTime(timing, "cleanup", habitPlacementMs);
           recordSchedulerPhase(
             timing,
             "scheduler.schedule.habit_placement",
@@ -7385,6 +7488,7 @@ export async function scheduleBacklog(
   }
 
   const runFinalSyncRetryForDay = async (offset: number, day: Date) => {
+    recordNonDailyHabitMetric(timing, "finalSyncRetryDaysConsidered");
     let windowAvailability = windowAvailabilityByDay.get(offset);
     if (!windowAvailability) {
       windowAvailability = new Map<string, WindowAvailabilityBounds>();
@@ -7445,6 +7549,7 @@ export async function scheduleBacklog(
       return null;
     };
 
+    const finalSyncCandidateBuildStartedAt = schedulerNowMs();
     const finalSyncHabits = dailyHabits
       .filter((habit) => {
         const normalizedType =
@@ -7482,12 +7587,25 @@ export async function scheduleBacklog(
           finalDayStartMs
         )
       );
+    recordNonDailyHabitMetric(
+      timing,
+      "finalSyncRetryCandidateBuildMs",
+      elapsedMs(finalSyncCandidateBuildStartedAt)
+    );
+    recordNonDailyHabitMetric(
+      timing,
+      "finalSyncRetryEligibleHabitCount",
+      finalSyncHabits.length
+    );
     if (finalSyncHabits.length === 0) {
       return;
     }
 
     const habitPlacementStartedAt = schedulerNowMs();
     const placeItemBefore = snapshotPlaceItemCounters(timing);
+    const createWritesBefore =
+      (timing?.schedule.createWrites.syncImmediateCreateMs ?? 0) +
+      (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0);
     const finalResult = await scheduleHabitsForDay({
       userId,
       habits: finalSyncHabits,
@@ -7534,10 +7652,24 @@ export async function scheduleBacklog(
       habitTimingPass: "finalSyncRetry",
       timing,
     });
+    recordNonDailyHabitMetric(
+      timing,
+      "finalSyncRetryScheduleHabitsForDayMs",
+      elapsedMs(habitPlacementStartedAt)
+    );
+    const createWritesAfter =
+      (timing?.schedule.createWrites.syncImmediateCreateMs ?? 0) +
+      (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0);
+    recordNonDailyHabitMetric(
+      timing,
+      "finalSyncRetryCreateWritesMs",
+      Math.max(0, createWritesAfter - createWritesBefore)
+    );
     recordHabitPlaceItemDelta(timing, "finalSyncRetry", placeItemBefore);
     if (timing) {
       const habitPlacementMs = elapsedMs(habitPlacementStartedAt);
       timing.schedule.habitPasses.placementMs += habitPlacementMs;
+      recordHabitPlacementWallTime(timing, "finalSyncRetry", habitPlacementMs);
       recordSchedulerPhase(
         timing,
         "scheduler.schedule.habit_placement",
@@ -13893,6 +14025,9 @@ function getCachedOverlayWindowBlocksForDate(
     return cached;
   }
 
+  if (timing) {
+    timing.schedule.overlaySpanLoading.demandFallbackCount += 1;
+  }
   const pending = loadOverlayWindowBlocksForDate(
     supabase,
     date,
@@ -13968,6 +14103,9 @@ function getCachedDynamicOverlayWindowsForDate(
     return cached;
   }
 
+  if (timing) {
+    timing.schedule.overlaySpanLoading.demandFallbackCount += 1;
+  }
   const pending = loadDynamicOverlayWindowsForDate(
     supabase,
     date,
@@ -14010,52 +14148,340 @@ async function preloadOverlayWindowCachesForDates(params: {
   overlayBlockCache: OverlayWindowBlockCache;
   dynamicOverlayCache: DynamicOverlayWindowCache;
   timing?: SchedulerTiming | null;
-  concurrency?: number;
 }) {
+  const startedAt = schedulerNowMs();
   const userId = params.userId.trim();
   if (!userId || params.dates.length === 0) return;
 
   const tz = params.timeZone || "UTC";
-  const datesByKey = new Map<string, Date>();
+  const daysByKey = new Map<
+    string,
+    { date: Date; start: Date; end: Date; startMs: number; endMs: number }
+  >();
   for (const date of params.dates) {
-    datesByKey.set(formatDateKeyInTimeZone(date, tz), date);
+    const start = startOfDayInTimeZone(date, tz);
+    const end = addDaysInTimeZone(start, 1, tz);
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+    daysByKey.set(formatDateKeyInTimeZone(start, tz), {
+      date: start,
+      start,
+      end,
+      startMs,
+      endMs,
+    });
   }
-  const dates = Array.from(datesByKey.values());
-  if (dates.length === 0) return;
-
-  let nextIndex = 0;
-  const workerCount = Math.min(
-    Math.max(1, params.concurrency ?? OVERLAY_CACHE_PRELOAD_CONCURRENCY),
-    dates.length
+  const days = Array.from(daysByKey.values()).sort(
+    (a, b) => a.startMs - b.startMs
   );
-  const worker = async () => {
-    while (nextIndex < dates.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      const date = dates[index];
-      await Promise.all([
-        getCachedOverlayWindowBlocksForDate(
-          params.supabase,
-          date,
-          tz,
-          userId,
-          params.overlayBlockCache,
-          params.timing
-        ),
-        getCachedDynamicOverlayWindowsForDate(
-          params.supabase,
-          date,
-          tz,
-          userId,
-          params.dynamicOverlayCache.effectiveNow,
-          params.dynamicOverlayCache,
-          params.timing
-        ),
-      ]).catch(() => undefined);
-    }
-  };
+  if (days.length === 0) return;
 
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const rangeStart = days[0].start;
+  const rangeEnd = days[days.length - 1].end;
+  const isoStart = rangeStart.toISOString();
+  const isoEnd = rangeEnd.toISOString();
+  const effectiveNow = params.dynamicOverlayCache.effectiveNow;
+  const nowMs = effectiveNow.getTime();
+  const isoNow = Number.isFinite(nowMs)
+    ? effectiveNow.toISOString()
+    : new Date().toISOString();
+
+  let blockCacheSet = false;
+  try {
+    const { data, error } = await params.supabase
+      .from("overlay_windows" as any)
+      .select<{
+        id: string | null;
+        start_utc: string | null;
+        end_utc: string | null;
+        mode?: string | null;
+      }>("id,start_utc,end_utc,mode")
+      .eq("user_id", userId)
+      .lt("start_utc", isoEnd)
+      .gt("end_utc", isoStart);
+
+    if (!error) {
+      const blocksByDayKey = new Map<string, OverlayWindowBlock[]>();
+      let rangeBlockRows = 0;
+      for (const row of data ?? []) {
+        const mode =
+          typeof row.mode === "string" ? row.mode.toUpperCase().trim() : null;
+        if (mode && mode !== "MANUAL" && mode !== "DYNAMIC") continue;
+        const start = safeDate(row.start_utc ?? null);
+        const end = safeDate(row.end_utc ?? null);
+        if (!start || !end) continue;
+        const startMs = start.getTime();
+        const endMs = end.getTime();
+        if (
+          !Number.isFinite(startMs) ||
+          !Number.isFinite(endMs) ||
+          startMs >= endMs
+        ) {
+          continue;
+        }
+        rangeBlockRows += 1;
+        for (const day of days) {
+          if (startMs >= day.endMs || endMs <= day.startMs) continue;
+          const key = overlayWindowBlockCacheKey(userId, day.date, tz);
+          const list = blocksByDayKey.get(key) ?? [];
+          list.push({
+            id: row.id ?? null,
+            startMs: Math.max(startMs, day.startMs),
+            endMs: Math.min(endMs, day.endMs),
+          });
+          blocksByDayKey.set(key, list);
+        }
+      }
+
+      let rowCount = 0;
+      for (const day of days) {
+        const key = overlayWindowBlockCacheKey(userId, day.date, tz);
+        const blocks = blocksByDayKey.get(key) ?? [];
+        blocks.sort((a, b) => a.startMs - b.startMs);
+        params.overlayBlockCache.resolvedBlocksByKey.set(key, blocks);
+        params.overlayBlockCache.blocksByKey.delete(key);
+        rowCount += blocks.length;
+      }
+      blockCacheSet = true;
+      if (params.timing) {
+        params.timing.schedule.overlaySpanLoading.calls += 1;
+        params.timing.schedule.overlaySpanLoading.rows += rowCount;
+        params.timing.schedule.overlaySpanLoading.rangeBlockRows +=
+          rangeBlockRows;
+      }
+    }
+  } catch {
+    blockCacheSet = false;
+  }
+
+  let dynamicCacheSet = false;
+  try {
+    const contextJoin = "location_context:location_contexts(id, value, label)";
+    const { data, error } = await params.supabase
+      .from("overlay_windows" as any)
+      .select<DynamicOverlayWindowRow>(
+        `id,label,start_utc,end_utc,mode,block_type,energy,location_context_id,allow_all_instance_types,allow_all_skills,allow_all_monuments,${contextJoin}`
+      )
+      .eq("user_id", userId)
+      .eq("mode", "DYNAMIC")
+      .lt("start_utc", isoEnd)
+      .gt("end_utc", isoStart)
+      .gt("end_utc", isoNow);
+
+    if (!error) {
+      const rows = (data ?? []).filter((row) => {
+        const mode =
+          typeof row.mode === "string" ? row.mode.toUpperCase().trim() : null;
+        if (mode !== "DYNAMIC") return false;
+        const start = safeDate(row.start_utc ?? null);
+        const end = safeDate(row.end_utc ?? null);
+        if (!start || !end) return false;
+        const startMs = start.getTime();
+        const endMs = end.getTime();
+        return (
+          Number.isFinite(startMs) &&
+          Number.isFinite(endMs) &&
+          startMs < rangeEnd.getTime() &&
+          endMs > rangeStart.getTime() &&
+          endMs > nowMs &&
+          startMs < endMs
+        );
+      });
+
+      const overlayIds = rows
+        .map((row) => row.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+      const [instanceWhitelist, skillWhitelist, monumentWhitelist] =
+        overlayIds.length > 0
+          ? await Promise.all([
+              params.supabase
+                .from("overlay_window_allowed_instance_types" as any)
+                .select("overlay_window_id,instance_type")
+                .in("overlay_window_id", overlayIds),
+              params.supabase
+                .from("overlay_window_allowed_skills" as any)
+                .select("overlay_window_id,skill_id")
+                .in("overlay_window_id", overlayIds),
+              params.supabase
+                .from("overlay_window_allowed_monuments" as any)
+                .select("overlay_window_id,monument_id")
+                .in("overlay_window_id", overlayIds),
+            ])
+          : [
+              {
+                data: [] as OverlayWindowInstanceTypeWhitelistRow[] | null,
+                error: null,
+              },
+              {
+                data: [] as OverlayWindowSkillWhitelistRow[] | null,
+                error: null,
+              },
+              {
+                data: [] as OverlayWindowMonumentWhitelistRow[] | null,
+                error: null,
+              },
+            ];
+
+      if (instanceWhitelist.error) throw instanceWhitelist.error;
+      if (skillWhitelist.error) throw skillWhitelist.error;
+      if (monumentWhitelist.error) throw monumentWhitelist.error;
+
+      const instanceAllowMap = new Map<string, Set<string>>();
+      for (const row of (instanceWhitelist.data ??
+        []) as OverlayWindowInstanceTypeWhitelistRow[]) {
+        const key = row.overlay_window_id ?? "";
+        if (!key || !row.instance_type) continue;
+        const normalized = row.instance_type.toUpperCase().trim();
+        if (!normalized) continue;
+        const existing = instanceAllowMap.get(key) ?? new Set<string>();
+        existing.add(normalized);
+        instanceAllowMap.set(key, existing);
+      }
+
+      const skillAllowMap = new Map<string, Set<string>>();
+      for (const row of (skillWhitelist.data ??
+        []) as OverlayWindowSkillWhitelistRow[]) {
+        const key = row.overlay_window_id ?? "";
+        if (!key || !row.skill_id) continue;
+        const normalized = row.skill_id.trim();
+        if (!normalized) continue;
+        const existing = skillAllowMap.get(key) ?? new Set<string>();
+        existing.add(normalized);
+        skillAllowMap.set(key, existing);
+      }
+
+      const monumentAllowMap = new Map<string, Set<string>>();
+      for (const row of (monumentWhitelist.data ??
+        []) as OverlayWindowMonumentWhitelistRow[]) {
+        const key = row.overlay_window_id ?? "";
+        if (!key || !row.monument_id) continue;
+        const normalized = row.monument_id.trim();
+        if (!normalized) continue;
+        const existing = monumentAllowMap.get(key) ?? new Set<string>();
+        existing.add(normalized);
+        monumentAllowMap.set(key, existing);
+      }
+
+      const normalizeAllowAllFlag = (
+        flag: boolean | null | undefined,
+        whitelistSize: number
+      ): boolean => flag === true || (flag == null && whitelistSize === 0);
+
+      const localTimeLabel = (value: Date) => {
+        const parts = getDateTimeParts(value, tz);
+        return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+      };
+
+      const windowsByDayKey = new Map<string, WindowLite[]>();
+      for (const row of rows) {
+        if (!row.id) continue;
+        const start = safeDate(row.start_utc ?? null);
+        const end = safeDate(row.end_utc ?? null);
+        if (!start || !end) continue;
+        const startMs = start.getTime();
+        const endMs = end.getTime();
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+        const overlayId = row.id;
+        const instanceWhitelist = instanceAllowMap.get(overlayId);
+        const skillWhitelist = skillAllowMap.get(overlayId);
+        const monumentWhitelist = monumentAllowMap.get(overlayId);
+        const locationValue =
+          row.location_context_id && row.location_context?.value
+            ? String(row.location_context.value).toUpperCase().trim()
+            : null;
+        const locationLabel =
+          row.location_context?.label ?? (locationValue ? locationValue : null);
+        const window: WindowLite = {
+          id: `overlay:${overlayId}`,
+          label: row.label ?? "Dynamic Overlay",
+          energy:
+            typeof row.energy === "string" && row.energy.trim().length > 0
+              ? row.energy.trim().toUpperCase()
+              : "",
+          start_local: localTimeLabel(start),
+          end_local: localTimeLabel(end),
+          days: null,
+          location_context_id: row.location_context_id ?? null,
+          location_context_value: locationValue,
+          location_context_name: locationLabel,
+          window_kind: normalizeBlockType(row.block_type),
+          dayTypeStartUtcMs: startMs,
+          dayTypeEndUtcMs: endMs,
+          isOverlayCandidate: true,
+          overlayWindowId: overlayId,
+          allowAllInstanceTypes: normalizeAllowAllFlag(
+            row.allow_all_instance_types,
+            instanceWhitelist?.size ?? 0
+          ),
+          allowAllHabitTypes: true,
+          allowAllSkills: normalizeAllowAllFlag(
+            row.allow_all_skills,
+            skillWhitelist?.size ?? 0
+          ),
+          allowAllMonuments: normalizeAllowAllFlag(
+            row.allow_all_monuments,
+            monumentWhitelist?.size ?? 0
+          ),
+          allowedInstanceTypes: Array.from(instanceWhitelist ?? []),
+          allowedSkillIds: Array.from(skillWhitelist ?? []),
+          allowedMonumentIds: Array.from(monumentWhitelist ?? []),
+        };
+
+        for (const day of days) {
+          if (startMs >= day.endMs || endMs <= day.startMs) continue;
+          const key = dynamicOverlayCacheKey(userId, day.date, tz, effectiveNow);
+          const list = windowsByDayKey.get(key) ?? [];
+          list.push({ ...window });
+          windowsByDayKey.set(key, list);
+        }
+      }
+
+      let rowCount = 0;
+      for (const day of days) {
+        const key = dynamicOverlayCacheKey(userId, day.date, tz, effectiveNow);
+        const windows = windowsByDayKey.get(key) ?? [];
+        windows.sort((a, b) => {
+          const startDiff =
+            (a.dayTypeStartUtcMs ?? 0) - (b.dayTypeStartUtcMs ?? 0);
+          if (startDiff !== 0) return startDiff;
+          return a.id.localeCompare(b.id);
+        });
+        params.dynamicOverlayCache.resolvedWindowsByKey.set(key, windows);
+        params.dynamicOverlayCache.windowsByKey.delete(key);
+        rowCount += windows.length;
+      }
+      dynamicCacheSet = true;
+      if (params.timing) {
+        const whitelistRows =
+          ((instanceWhitelist.data ?? []) as unknown[]).length +
+          ((skillWhitelist.data ?? []) as unknown[]).length +
+          ((monumentWhitelist.data ?? []) as unknown[]).length;
+        params.timing.schedule.overlaySpanLoading.dynamicCalls += 1;
+        params.timing.schedule.overlaySpanLoading.dynamicRows += rowCount;
+        params.timing.schedule.overlaySpanLoading.rangeDynamicRows +=
+          rows.length;
+        params.timing.schedule.overlaySpanLoading.rangeWhitelistRows +=
+          whitelistRows;
+      }
+    }
+  } catch {
+    dynamicCacheSet = false;
+  } finally {
+    if (params.timing) {
+      const ms = elapsedMs(startedAt);
+      params.timing.schedule.overlaySpanLoading.rangePreloadMs += ms;
+      params.timing.schedule.overlaySpanLoading.totalMs += ms;
+      params.timing.schedule.overlaySpanLoading.rangeCacheSetDays +=
+        blockCacheSet || dynamicCacheSet ? days.length : 0;
+      recordSchedulerPhase(
+        params.timing,
+        "scheduler.schedule.overlay_span_loading",
+        ms
+      );
+    }
+  }
 }
 
 async function loadDynamicOverlayWindowsForDate(
