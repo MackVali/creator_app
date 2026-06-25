@@ -6612,6 +6612,7 @@ export async function scheduleBacklog(
   const projectPassStartedAt = schedulerNowMs();
   if (timing) {
     timing.schedule.projectPass.queued = projectPassState.queue.length;
+    timing.schedule.projectPlacement.queueCount = projectPassState.queue.length;
     timing.schedule.backlog.blockers = projectPassState.blockingInstances.length;
   }
 
@@ -6628,6 +6629,9 @@ export async function scheduleBacklog(
     const nextAttempt = (projectAttemptCounts.get(item.id) ?? 0) + 1;
     projectAttemptCounts.set(item.id, nextAttempt);
     if (nextAttempt > projectAttemptLimit) {
+      if (timing) {
+        timing.schedule.projectPlacement.skippedCount += 1;
+      }
       schedulerDebugSummary.fail.other += 1;
       result.failures.push({
         itemId: item.id,
@@ -6644,6 +6648,9 @@ export async function scheduleBacklog(
     const canonicalProject = projectItemMap[item.id];
     const durationMin = Number(canonicalProject?.duration_min ?? 0);
     if (!Number.isFinite(durationMin) || durationMin <= 0) {
+      if (timing) {
+        timing.schedule.projectPlacement.skippedCount += 1;
+      }
       if (item.instanceId) {
         const { error } = await markProjectMissed(
           item.instanceId,
@@ -6791,13 +6798,25 @@ export async function scheduleBacklog(
 
     // Search across each day in the horizon
     for (let dayOffset = 0; dayOffset < effectiveHorizonDays; dayOffset++) {
+      const dayScanStartedAt = schedulerNowMs();
       const currentDay =
         dayOffset === 0
           ? baseStart
           : addDaysInTimeZone(baseStart, dayOffset, timeZone);
       const dayCacheKey = dateCacheKey(currentDay);
+      const hadPreparedWindows = windowCache.has(dayCacheKey);
+      const hadProjectDayWindows = projectPassState.dayWindowsCache.has(dayCacheKey);
+      if (timing) {
+        timing.schedule.projectPlacement.daysConsidered += 1;
+        if (hadPreparedWindows) {
+          timing.schedule.projectPlacement.prepareWindowsCacheHit += 1;
+        } else {
+          timing.schedule.projectPlacement.prepareWindowsCacheMiss += 1;
+        }
+        timing.schedule.projectPlacement.dayScanMs += elapsedMs(dayScanStartedAt);
+      }
       if (debugEnabled) {
-        if (projectPassState.dayWindowsCache.has(dayCacheKey)) {
+        if (hadProjectDayWindows) {
           schedulerDebugSummary.probe.dayWindowsCacheHits += 1;
         } else {
           schedulerDebugSummary.probe.dayWindowsCacheMisses += 1;
@@ -6805,10 +6824,19 @@ export async function scheduleBacklog(
       }
 
       // Get windows for this specific day
+      const prepareWindowsStartedAt = schedulerNowMs();
       await prepareWindowsForDay(currentDay);
+      if (timing) {
+        const prepareWindowsMs = elapsedMs(prepareWindowsStartedAt);
+        timing.schedule.projectPlacement.prepareWindowsMs += prepareWindowsMs;
+        if (!hadPreparedWindows && windowCache.has(dayCacheKey)) {
+          timing.schedule.projectPlacement.prepareWindowsCacheSet += 1;
+        }
+      }
       const preloadedDayWindows = getWindowsForDay(currentDay);
       const preloadedDayWindowCount = preloadedDayWindows.length;
       const projectSkillIds = getProjectSkillIds(item.id);
+      const compatibleWindowStartedAt = schedulerNowMs();
       const compatibleDayResult = await fetchCompatibleWindowsForItem(
         supabase,
         currentDay,
@@ -6839,7 +6867,16 @@ export async function scheduleBacklog(
           // Don't use horizonEnd here - we're searching day by day
         }
         );
+        if (timing) {
+          timing.schedule.projectPlacement.compatibleWindowMs += elapsedMs(
+            compatibleWindowStartedAt
+          );
+        }
         const compatibleWindows = compatibleDayResult.windows;
+        if (timing) {
+          timing.schedule.projectPlacement.candidateWindowsConsidered +=
+            compatibleWindows.length;
+        }
         const compatibleFilterCounters = compatibleDayResult.filterCounters;
         placementDebugCollector?.recordDayScan(item.id, {
           dayOffset,
@@ -6939,7 +6976,12 @@ export async function scheduleBacklog(
         };
       }
 
-      if (compatibleWindows.length === 0) continue;
+      if (compatibleWindows.length === 0) {
+        if (timing) {
+          timing.schedule.projectPlacement.skippedCount += 1;
+        }
+        continue;
+      }
       if (isSmallProjectProbe && smallProjectFirstAttemptDayOffset === null) {
         smallProjectFirstAttemptDayOffset = dayOffset;
       }
@@ -6986,6 +7028,7 @@ export async function scheduleBacklog(
         createBatcher: scheduleInstanceCreateBatch,
         windowEdgePreference: null,
         debugEnabled,
+        placementTimingScope: "project",
         timing,
         debugOnFailure: debugEnabled
           ? (info) => {

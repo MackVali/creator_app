@@ -429,6 +429,7 @@ type PlaceParams = {
   createBatcher?: ScheduleInstanceCreateBatcher;
   allowSyncCreateBatching?: boolean;
   timing?: SchedulerTiming | null;
+  placementTimingScope?: "project";
 };
 
 type PlaceWindow = PlaceParams["windows"][number];
@@ -787,9 +788,14 @@ export async function placeItemInWindows(
 ): Promise<PlacementResult> {
   const timing = params.timing ?? null;
   const startedAt = schedulerNowMs();
+  const isProjectPlacementTiming =
+    timing !== null && params.placementTimingScope === "project";
   let outcome: "success" | "noFit" | "error" = "error";
   if (timing) {
     timing.schedule.placeItem.calls += 1;
+    if (isProjectPlacementTiming) {
+      timing.schedule.projectPlacement.placeCalls += 1;
+    }
   }
   try {
   const {
@@ -1029,8 +1035,14 @@ export async function placeItemInWindows(
 
   let dayBlockingInstances: ScheduleInstance[];
   try {
+    const blockerBuildStartedAt = schedulerNowMs();
     dayBlockingInstances = await loadDayBlockingInstances(cache, cacheKey);
     if (timing) {
+      if (isProjectPlacementTiming) {
+        timing.schedule.projectPlacement.blockerBuildMs += elapsedMs(
+          blockerBuildStartedAt
+        );
+      }
       timing.schedule.placeItem.blockersScanned += dayBlockingInstances.length;
     }
   } catch (error) {
@@ -1066,9 +1078,15 @@ export async function placeItemInWindows(
       return true;
     });
 
+  const windowScopedBlockersStartedAt = schedulerNowMs();
   const windowScopedBlockersByWindow = windowRecordsByWindow.map((record) =>
     record ? filterBlockersForWindow(record.startMs, record.endMs) : []
   );
+  if (isProjectPlacementTiming) {
+    timing.schedule.projectPlacement.blockerBuildMs += elapsedMs(
+      windowScopedBlockersStartedAt
+    );
+  }
 
   const shouldEvaluateMaxGap =
     !candidateIsSync && windowRecords.length > 0 && durationMs > 0;
@@ -1121,6 +1139,7 @@ export async function placeItemInWindows(
         ? Math.max(effectiveWindowStartMs, notBeforeMs)
         : effectiveWindowStartMs;
 
+    const windowBlockerBuildStartedAt = schedulerNowMs();
     const taken = filterBlockersForWindow(windowStartMs, windowEndMs);
     const windowBlockId = w.key ?? w.id;
     const freeSegmentMs = computeLargestGapMs(
@@ -1171,6 +1190,11 @@ export async function placeItemInWindows(
         new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     );
     const hardBlockers = candidateIsSync ? [] : capacityBlockers;
+    if (isProjectPlacementTiming) {
+      timing.schedule.projectPlacement.blockerBuildMs += elapsedMs(
+        windowBlockerBuildStartedAt
+      );
+    }
 
     const hasSyncOverlapLimit = (
       startMs: number,
@@ -1681,6 +1705,16 @@ export async function placeItemInWindows(
   if (timing) {
     const persistWriteMs = elapsedMs(persistStartedAt);
     timing.schedule.placeItem.persistWriteMs += persistWriteMs;
+    if (isProjectPlacementTiming) {
+      timing.schedule.projectPlacement.persistMs += persistWriteMs;
+      if (reuseInstanceId) {
+        timing.schedule.projectPlacement.reuseUpdateMs += persistWriteMs;
+        timing.schedule.projectPlacement.reuseUpdateCount += 1;
+      } else if (isNonSyncBatchedCreate) {
+        timing.schedule.projectPlacement.batchedCreateMs += persistWriteMs;
+        timing.schedule.projectPlacement.batchedCreateCount += 1;
+      }
+    }
     if (!persisted.error) {
       if (isSyncImmediateCreate) {
         timing.schedule.createWrites.syncImmediateCreateCount += 1;
@@ -1713,11 +1747,21 @@ export async function placeItemInWindows(
   return persisted;
   } finally {
     if (timing) {
-      timing.schedule.placeItem.totalMs += elapsedMs(startedAt);
+      const placeItemMs = elapsedMs(startedAt);
+      timing.schedule.placeItem.totalMs += placeItemMs;
+      if (isProjectPlacementTiming) {
+        timing.schedule.projectPlacement.placeItemMs += placeItemMs;
+      }
       if (outcome === "success") {
         timing.schedule.placeItem.success += 1;
+        if (isProjectPlacementTiming) {
+          timing.schedule.projectPlacement.success += 1;
+        }
       } else if (outcome === "noFit") {
         timing.schedule.placeItem.noFit += 1;
+        if (isProjectPlacementTiming) {
+          timing.schedule.projectPlacement.noFit += 1;
+        }
       } else {
         timing.schedule.placeItem.errors += 1;
       }

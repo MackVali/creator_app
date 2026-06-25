@@ -223,6 +223,28 @@ export type SchedulerTiming = {
       persistedRows: number;
     };
     projectPass: { ms: number; queued: number; placed: number; failed: number };
+    projectPlacement: {
+      dayScanMs: number;
+      prepareWindowsMs: number;
+      prepareWindowsCacheHit: number;
+      prepareWindowsCacheMiss: number;
+      prepareWindowsCacheSet: number;
+      compatibleWindowMs: number;
+      blockerBuildMs: number;
+      placeItemMs: number;
+      persistMs: number;
+      queueCount: number;
+      daysConsidered: number;
+      candidateWindowsConsidered: number;
+      placeCalls: number;
+      noFit: number;
+      success: number;
+      skippedCount: number;
+      reuseUpdateMs: number;
+      reuseUpdateCount: number;
+      batchedCreateMs: number;
+      batchedCreateCount: number;
+    };
     compatibleWindows: {
       calls: number;
       totalMs: number;
@@ -507,6 +529,28 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         persistedRows: 0,
       },
       projectPass: { ms: 0, queued: 0, placed: 0, failed: 0 },
+      projectPlacement: {
+        dayScanMs: 0,
+        prepareWindowsMs: 0,
+        prepareWindowsCacheHit: 0,
+        prepareWindowsCacheMiss: 0,
+        prepareWindowsCacheSet: 0,
+        compatibleWindowMs: 0,
+        blockerBuildMs: 0,
+        placeItemMs: 0,
+        persistMs: 0,
+        queueCount: 0,
+        daysConsidered: 0,
+        candidateWindowsConsidered: 0,
+        placeCalls: 0,
+        noFit: 0,
+        success: 0,
+        skippedCount: 0,
+        reuseUpdateMs: 0,
+        reuseUpdateCount: 0,
+        batchedCreateMs: 0,
+        batchedCreateCount: 0,
+      },
       compatibleWindows: {
         calls: 0,
         totalMs: 0,
@@ -633,6 +677,45 @@ export function buildSchedulerTimingSummary(
   addCounter("projectQueued", timing.schedule.projectPass.queued);
   addCounter("projectPlaced", timing.schedule.projectPass.placed);
   addCounter("projectFailed", timing.schedule.projectPass.failed);
+  const projectPlacement = timing.schedule.projectPlacement;
+  addCounter("projectPlacementDayScanMs", projectPlacement.dayScanMs);
+  addCounter("projectPlacementPrepareWindowsMs", projectPlacement.prepareWindowsMs);
+  addCounter(
+    "projectPlacementPrepareWindowsCacheHit",
+    projectPlacement.prepareWindowsCacheHit
+  );
+  addCounter(
+    "projectPlacementPrepareWindowsCacheMiss",
+    projectPlacement.prepareWindowsCacheMiss
+  );
+  addCounter(
+    "projectPlacementPrepareWindowsCacheSet",
+    projectPlacement.prepareWindowsCacheSet
+  );
+  addCounter(
+    "projectPlacementCompatibleWindowMs",
+    projectPlacement.compatibleWindowMs
+  );
+  addCounter("projectPlacementBlockerBuildMs", projectPlacement.blockerBuildMs);
+  addCounter("projectPlacementPlaceItemMs", projectPlacement.placeItemMs);
+  addCounter("projectPlacementPersistMs", projectPlacement.persistMs);
+  addCounter("projectPlacementQueueCount", projectPlacement.queueCount);
+  addCounter("projectPlacementDaysConsidered", projectPlacement.daysConsidered);
+  addCounter(
+    "projectPlacementCandidateWindowsConsidered",
+    projectPlacement.candidateWindowsConsidered
+  );
+  addCounter("projectPlacementPlaceCalls", projectPlacement.placeCalls);
+  addCounter("projectPlacementNoFit", projectPlacement.noFit);
+  addCounter("projectPlacementSuccess", projectPlacement.success);
+  addCounter("projectPlacementSkippedCount", projectPlacement.skippedCount);
+  addCounter("projectPlacementReuseUpdateMs", projectPlacement.reuseUpdateMs);
+  addCounter("projectPlacementReuseUpdateCount", projectPlacement.reuseUpdateCount);
+  addCounter("projectPlacementBatchedCreateMs", projectPlacement.batchedCreateMs);
+  addCounter(
+    "projectPlacementBatchedCreateCount",
+    projectPlacement.batchedCreateCount
+  );
   addCounter("placeCalls", timing.schedule.placeItem.calls);
   addCounter("placeSuccess", timing.schedule.placeItem.success);
   addCounter("placeNoFit", timing.schedule.placeItem.noFit);
