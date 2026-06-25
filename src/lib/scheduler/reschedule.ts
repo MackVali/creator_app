@@ -4706,8 +4706,30 @@ export async function scheduleBacklog(
       },
     }
   );
+  const finalSyncRetryCreateBatch = createScheduleInstanceCreateBatcher(
+    supabase,
+    {
+      onFlushMs: (ms) => {
+        if (!timing || ms <= 0) return;
+        timing.schedule.createWrites.finalSyncRetryBatchedCreateMs += ms;
+        recordSchedulerPhase(
+          timing,
+          "scheduler.schedule.schedule_instance_create_writes",
+          ms
+        );
+      },
+      onFlushStats: (stats) => {
+        if (!timing) return;
+        timing.schedule.createWrites.finalSyncRetryBatchedCreateCount +=
+          stats.rows;
+      },
+    }
+  );
   const flushScheduleInstanceCreates = async () => {
     await scheduleInstanceCreateBatch.flush();
+  };
+  const flushFinalSyncRetryCreates = async () => {
+    await finalSyncRetryCreateBatch.flush();
   };
   const flushMissedInstanceCreates = async () => {
     const flushStartedAt = schedulerNowMs();
@@ -7605,7 +7627,8 @@ export async function scheduleBacklog(
     const placeItemBefore = snapshotPlaceItemCounters(timing);
     const createWritesBefore =
       (timing?.schedule.createWrites.syncImmediateCreateMs ?? 0) +
-      (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0);
+      (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0) +
+      (timing?.schedule.createWrites.finalSyncRetryBatchedCreateMs ?? 0);
     const finalResult = await scheduleHabitsForDay({
       userId,
       habits: finalSyncHabits,
@@ -7620,7 +7643,7 @@ export async function scheduleBacklog(
       dynamicOverlayCache,
       maxGapCache: dayMaxGapCache,
       blockerCache,
-      createBatcher: scheduleInstanceCreateBatch,
+      createBatcher: finalSyncRetryCreateBatch,
       client: supabase,
       sunlightLocation: location,
       timeZoneOffsetMinutes,
@@ -7659,7 +7682,8 @@ export async function scheduleBacklog(
     );
     const createWritesAfter =
       (timing?.schedule.createWrites.syncImmediateCreateMs ?? 0) +
-      (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0);
+      (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0) +
+      (timing?.schedule.createWrites.finalSyncRetryBatchedCreateMs ?? 0);
     recordNonDailyHabitMetric(
       timing,
       "finalSyncRetryCreateWritesMs",
@@ -7702,6 +7726,23 @@ export async function scheduleBacklog(
       offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
     await runFinalSyncRetryForDay(offset, day);
   }
+  const finalSyncRetryCreateWritesBefore =
+    (timing?.schedule.createWrites.syncImmediateCreateMs ?? 0) +
+    (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0) +
+    (timing?.schedule.createWrites.finalSyncRetryBatchedCreateMs ?? 0);
+  await flushFinalSyncRetryCreates();
+  const finalSyncRetryCreateWritesAfter =
+    (timing?.schedule.createWrites.syncImmediateCreateMs ?? 0) +
+    (timing?.schedule.createWrites.nonSyncBatchedCreateMs ?? 0) +
+    (timing?.schedule.createWrites.finalSyncRetryBatchedCreateMs ?? 0);
+  recordNonDailyHabitMetric(
+    timing,
+    "finalSyncRetryCreateWritesMs",
+    Math.max(
+      0,
+      finalSyncRetryCreateWritesAfter - finalSyncRetryCreateWritesBefore
+    )
+  );
   if (timing) {
     const finalSyncHabitPassMs = elapsedMs(finalSyncHabitPassStartedAt);
     timing.schedule.habitPasses.totalMs += finalSyncHabitPassMs;
@@ -9682,6 +9723,11 @@ async function scheduleHabitsForDay(params: {
     for (const instance of instances) {
       const id = instance?.id ?? null;
       if (!id) continue;
+      if (createBatcher?.discard(id)) {
+        canceled.add(id);
+        recordHabitRevalidationCancelSuccess(instance);
+        continue;
+      }
       if (canceledInstanceIds.has(id) || runCanceledInstanceIds.has(id)) {
         canceled.add(id);
         recordHabitRevalidationCancelSuccess(instance);
@@ -12125,6 +12171,7 @@ async function scheduleHabitsForDay(params: {
           maxGapCache,
           blockerCache,
           createBatcher,
+          allowSyncCreateBatching: postAnchorSyncRetry,
           reuseInstanceId: existingInstance?.id,
           existingInstances: placedSoFar,
           allowHabitOverlap: allowsHabitOverlap,

@@ -251,6 +251,8 @@ export type SchedulerTiming = {
       batchFlushMs: number;
       syncImmediateCreateCount: number;
       syncImmediateCreateMs: number;
+      finalSyncRetryBatchedCreateCount: number;
+      finalSyncRetryBatchedCreateMs: number;
       nonSyncBatchedCreateCount: number;
       nonSyncBatchedCreateMs: number;
     };
@@ -533,6 +535,8 @@ export function createSchedulerTiming(runId = createRunId()): SchedulerTiming {
         batchFlushMs: 0,
         syncImmediateCreateCount: 0,
         syncImmediateCreateMs: 0,
+        finalSyncRetryBatchedCreateCount: 0,
+        finalSyncRetryBatchedCreateMs: 0,
         nonSyncBatchedCreateCount: 0,
         nonSyncBatchedCreateMs: 0,
       },
@@ -836,6 +840,14 @@ export function buildSchedulerTimingSummary(
   addCounter(
     "syncImmediateCreateMs",
     timing.schedule.createWrites.syncImmediateCreateMs
+  );
+  addCounter(
+    "finalSyncRetryBatchedCreateCount",
+    timing.schedule.createWrites.finalSyncRetryBatchedCreateCount
+  );
+  addCounter(
+    "finalSyncRetryBatchedCreateMs",
+    timing.schedule.createWrites.finalSyncRetryBatchedCreateMs
   );
   addCounter(
     "nonSyncBatchedCreateCount",

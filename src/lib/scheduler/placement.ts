@@ -427,6 +427,7 @@ type PlaceParams = {
   debugEnabled?: boolean;
   debugOnFailure?: (info: PlacementDebugTrace) => void;
   createBatcher?: ScheduleInstanceCreateBatcher;
+  allowSyncCreateBatching?: boolean;
   timing?: SchedulerTiming | null;
 };
 
@@ -803,6 +804,7 @@ export async function placeItemInWindows(
     notBefore,
     existingInstances,
     habitTypeById,
+    allowSyncCreateBatching = false,
     projectGlobalRankMap,
     windowEdgePreference,
     metadata,
@@ -1651,9 +1653,11 @@ export async function placeItemInWindows(
   }
 
   const persistStartedAt = schedulerNowMs();
-  const persistCreateBatcher = candidateIsSync ? undefined : createBatcher;
+  const persistCreateBatcher =
+    candidateIsSync && !allowSyncCreateBatching ? undefined : createBatcher;
   const isCreateWrite = !reuseInstanceId;
-  const isSyncImmediateCreate = isCreateWrite && candidateIsSync;
+  const isSyncImmediateCreate =
+    isCreateWrite && candidateIsSync && !persistCreateBatcher;
   const isNonSyncBatchedCreate =
     isCreateWrite && !candidateIsSync && Boolean(persistCreateBatcher);
   const persisted = await persistPlacement(
