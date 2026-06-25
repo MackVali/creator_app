@@ -14,6 +14,10 @@ import {
   type ScheduleBlockLocalNotificationPendingSummary,
 } from "@/lib/notifications/scheduleBlockLocalNotifications";
 import {
+  endFocusPomoLiveActivity,
+  startFocusPomoLiveActivity,
+} from "@/lib/liveActivities/focusPomoLiveActivity";
+import {
   hapticComplete,
   hapticError,
   hapticErrorPattern,
@@ -57,6 +61,10 @@ export default function ToastTestPanel() {
   ] = useState(false);
   const [pendingScheduleBriefSummary, setPendingScheduleBriefSummary] =
     useState<ScheduleBlockLocalNotificationPendingSummary | null>(null);
+  const [
+    isRunningFocusPomoLiveActivityDiagnostic,
+    setIsRunningFocusPomoLiveActivityDiagnostic,
+  ] = useState(false);
   const hapticTests = [
     { label: "Light impact", action: hapticLightImpact },
     { label: "Medium impact", action: hapticMediumImpact },
@@ -264,6 +272,64 @@ export default function ToastTestPanel() {
     }
   };
 
+  const handleTestFocusPomoLiveActivity = async () => {
+    if (isRunningFocusPomoLiveActivityDiagnostic) return;
+
+    setIsRunningFocusPomoLiveActivityDiagnostic(true);
+
+    try {
+      const startedAt = new Date();
+      const targetEndAt = new Date(startedAt.getTime() + 120_000);
+      const result = await startFocusPomoLiveActivity({
+        sessionId: "test-focus-pomo-live-activity",
+        mode: "pomo",
+        title: "Test Focus Pomo",
+        sourceLabel: "Live Activity test",
+        status: "running",
+        startedAt: startedAt.toISOString(),
+        targetEndAt: targetEndAt.toISOString(),
+        plannedDurationSeconds: 120,
+        remainingSeconds: 120,
+      });
+
+      if (result.ok) {
+        toast.success("Focus Pomo Live Activity started");
+        return;
+      }
+
+      toast.error(`Live Activity failed: ${result.reason}`);
+    } catch (error) {
+      toast.error(`Live Activity failed: ${readErrorMessage(error)}`);
+    } finally {
+      setIsRunningFocusPomoLiveActivityDiagnostic(false);
+    }
+  };
+
+  const handleEndFocusPomoLiveActivity = async () => {
+    if (isRunningFocusPomoLiveActivityDiagnostic) return;
+
+    setIsRunningFocusPomoLiveActivityDiagnostic(true);
+
+    try {
+      const result = await endFocusPomoLiveActivity({
+        status: "canceled",
+        title: "Test Focus Pomo",
+        sessionId: "test-focus-pomo-live-activity",
+      });
+
+      if (result.ok) {
+        toast.success("Focus Pomo Live Activity ended");
+        return;
+      }
+
+      toast.error(`Live Activity end failed: ${result.reason}`);
+    } catch (error) {
+      toast.error(`Live Activity end failed: ${readErrorMessage(error)}`);
+    } finally {
+      setIsRunningFocusPomoLiveActivityDiagnostic(false);
+    }
+  };
+
   return (
     <main className="min-h-[calc(100vh-9rem)] bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -404,6 +470,33 @@ export default function ToastTestPanel() {
                 ))}
             </div>
           ) : null}
+          <div className="mt-5 border-t border-white/10 pt-4">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+              Focus Pomo Live Activity
+            </h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                className={buttonClass}
+                disabled={isRunningFocusPomoLiveActivityDiagnostic}
+                onClick={() => {
+                  void handleTestFocusPomoLiveActivity();
+                }}
+              >
+                Test Focus Pomo Live Activity
+              </button>
+              <button
+                type="button"
+                className={buttonClass}
+                disabled={isRunningFocusPomoLiveActivityDiagnostic}
+                onClick={() => {
+                  void handleEndFocusPomoLiveActivity();
+                }}
+              >
+                End Focus Pomo Live Activity
+              </button>
+            </div>
+          </div>
         </section>
 
         <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">
@@ -521,4 +614,16 @@ async function resolveLocalNotificationPermission(): Promise<PermissionState | n
   } catch {
     return null;
   }
+}
+
+function readErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  return "unknown error";
 }
