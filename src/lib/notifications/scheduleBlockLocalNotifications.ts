@@ -17,8 +17,6 @@ const SCHEDULE_BRIEF_ID_OFFSET = 1_000_000_000;
 const SCHEDULE_BRIEF_ID_RANGE = 1_000_000_000;
 const SCHEDULE_BRIEF_TEST_NOTIFICATION_ID = 2_147_483_646;
 
-const SKIPPED_STATUSES = new Set(["canceled", "cancelled", "missed", "completed"]);
-
 export type ScheduleBlockLocalNotificationInstance = {
   id: string;
   event_name: string | null;
@@ -34,7 +32,10 @@ export type ScheduleBlockLocalNotificationInstance = {
 };
 
 export type ScheduleBlockLocalNotificationOptions = {
-  blockLabelByKey?: Map<string, string> | Record<string, string | null | undefined>;
+  blockLabelByKey?:
+    | Map<string, string>
+    | Record<string, string | null | undefined>;
+  timeZone?: string | null;
   now?: Date;
 };
 
@@ -118,7 +119,9 @@ export async function syncScheduleBlockLocalNotifications(
   }
 
   const staleNotifications = pending.notifications
-    .filter((notification) => isScheduleBlockBriefExtra(notification.extra))
+    .filter((notification) =>
+      isProductionScheduleBlockBriefExtra(notification.extra)
+    )
     .map((notification) => ({ id: notification.id }));
 
   if (staleNotifications.length > 0) {
@@ -251,7 +254,14 @@ function buildScheduleBlockNotifications(
   const nowMs = options.now?.getTime() ?? Date.now();
   const horizonMs = nowMs + LOOKAHEAD_MS;
 
-  return Array.from(groupUpcomingInstances(instances, nowMs, horizonMs).values())
+  return Array.from(
+    groupUpcomingInstances(
+      instances,
+      nowMs,
+      horizonMs,
+      options.timeZone
+    ).values()
+  )
     .sort((a, b) => a.anchorStartMs - b.anchorStartMs)
     .slice(0, MAX_NOTIFICATIONS)
     .map((group) => {
@@ -273,9 +283,17 @@ function buildScheduleBlockNotifications(
         threadIdentifier: "creator-schedule-briefs",
         extra: {
           type: SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
+          test: false,
           blockKey: group.blockKey,
+          blockLabel: label,
+          blockEventCount: group.instances.length,
           anchorInstanceId: group.anchor.id,
+          sourceType: group.anchor.source_type,
+          sourceId: group.anchor.source_id,
           startUtc,
+          timeBlockId: group.anchor.time_block_id,
+          dayTypeTimeBlockId: group.anchor.day_type_time_block_id,
+          windowId: group.anchor.window_id,
         },
       };
     });
@@ -287,13 +305,15 @@ function countScheduleBlockNotificationCandidates(
 ) {
   const nowMs = options.now?.getTime() ?? Date.now();
   const horizonMs = nowMs + LOOKAHEAD_MS;
-  return groupUpcomingInstances(instances, nowMs, horizonMs).size;
+  return groupUpcomingInstances(instances, nowMs, horizonMs, options.timeZone)
+    .size;
 }
 
 function groupUpcomingInstances(
   instances: ScheduleBlockLocalNotificationInstance[],
   nowMs: number,
   horizonMs: number,
+  timeZone?: string | null,
 ) {
   const groups = new Map<string, GroupedBlock>();
 
@@ -308,7 +328,11 @@ function groupUpcomingInstances(
     if (notificationMs <= nowMs) continue;
 
     const blockKey = blockKeyForInstance(instance);
-    const occurrenceKey = blockOccurrenceKeyForInstance(instance, startMs);
+    const occurrenceKey = blockOccurrenceKeyForInstance(
+      instance,
+      startMs,
+      timeZone
+    );
     const existing = groups.get(occurrenceKey);
 
     if (!existing) {
@@ -341,7 +365,7 @@ function groupUpcomingInstances(
 }
 
 function shouldSkipInstance(instance: ScheduleBlockLocalNotificationInstance) {
-  return SKIPPED_STATUSES.has(instance.status?.trim().toLowerCase() ?? "");
+  return instance.status?.trim().toLowerCase() !== "scheduled";
 }
 
 function parseUtcMs(value: string | null) {
@@ -363,9 +387,35 @@ function blockKeyForInstance(instance: ScheduleBlockLocalNotificationInstance) {
 function blockOccurrenceKeyForInstance(
   instance: ScheduleBlockLocalNotificationInstance,
   startMs: number,
+  timeZone?: string | null,
 ) {
-  const occurrenceDate = new Date(startMs).toISOString().slice(0, 10);
+  const occurrenceDate = localDateKeyForMs(startMs, timeZone);
   return `${blockKeyForInstance(instance)}:${occurrenceDate}`;
+}
+
+function localDateKeyForMs(startMs: number, timeZone?: string | null) {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date(startMs));
+      const year = parts.find((part) => part.type === "year")?.value;
+      const month = parts.find((part) => part.type === "month")?.value;
+      const day = parts.find((part) => part.type === "day")?.value;
+      if (year && month && day) return `${year}-${month}-${day}`;
+    } catch {
+      // Fall through to the browser-local day instead of grouping by raw UTC.
+    }
+  }
+
+  const date = new Date(startMs);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function resolveBlockLabel(
@@ -428,4 +478,10 @@ function isScheduleBlockBriefExtra(extra: unknown) {
   return (
     (extra as { type?: unknown }).type === SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE
   );
+}
+
+function isProductionScheduleBlockBriefExtra(extra: unknown) {
+  if (!isScheduleBlockBriefExtra(extra)) return false;
+
+  return (extra as { test?: unknown }).test !== true;
 }
