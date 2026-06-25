@@ -1925,6 +1925,61 @@ function buildWindowMap(windows: RepoWindow[]) {
   return map;
 }
 
+function buildScheduleBlockLabelMap(
+  instances: ScheduleInstance[],
+  windows: RepoWindow[]
+) {
+  const labels = new Map<string, string>();
+  const addLabel = (
+    key: string | null | undefined,
+    label: string | null | undefined
+  ) => {
+    const trimmedKey = key?.trim();
+    const trimmedLabel = label?.trim();
+    if (trimmedKey && trimmedLabel) {
+      labels.set(trimmedKey, trimmedLabel);
+    }
+  };
+
+  for (const window of windows) {
+    const compatibleWindow = window as RepoWindow & {
+      time_block_id?: string | null;
+      timeBlockId?: string | null;
+      day_type_time_block_id?: string | null;
+    };
+    addLabel(window.id, window.label);
+    addLabel(window.dayTypeTimeBlockId, window.label);
+    addLabel(compatibleWindow.day_type_time_block_id, window.label);
+    addLabel(compatibleWindow.timeBlockId, window.label);
+    addLabel(compatibleWindow.time_block_id, window.label);
+  }
+
+  for (const instance of instances) {
+    const compatibleInstance = instance as ScheduleInstance & {
+      blockLabel?: string | null;
+      block_label?: string | null;
+      windowLabel?: string | null;
+      window_label?: string | null;
+      timeBlockLabel?: string | null;
+      time_block_label?: string | null;
+    };
+    const label =
+      compatibleInstance.blockLabel ??
+      compatibleInstance.block_label ??
+      compatibleInstance.windowLabel ??
+      compatibleInstance.window_label ??
+      compatibleInstance.timeBlockLabel ??
+      compatibleInstance.time_block_label ??
+      null;
+
+    addLabel(instance.time_block_id, label);
+    addLabel(instance.day_type_time_block_id, label);
+    addLabel(instance.window_id, label);
+  }
+
+  return labels;
+}
+
 function computeProjectInstances(
   instances: ScheduleInstance[],
   projectMap: Record<string, ProjectItem>,
@@ -3367,6 +3422,10 @@ export default function ScheduleTabContent({
 
   const [allInstances, setAllInstances] = useState<ScheduleInstance[]>([]);
   const [instances, setInstances] = useState<ScheduleInstance[]>([]);
+  const windowsRef = useRef<RepoWindow[]>(windows);
+  useEffect(() => {
+    windowsRef.current = windows;
+  }, [windows]);
   const overlayWindowIdsWithEvents = useMemo(() => {
     const ids = new Set<string>();
     for (const instance of allInstances) {
@@ -4729,7 +4788,13 @@ export default function ScheduleTabContent({
       setHabits(payload.habits);
       setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
-      void syncScheduleBlockLocalNotifications(nextInstances)
+      void syncScheduleBlockLocalNotifications(nextInstances, {
+        blockLabelByKey: buildScheduleBlockLabelMap(
+          nextInstances,
+          windowsRef.current
+        ),
+        timeZone: effectiveTimeZone ?? localTimeZone ?? null,
+      })
         .then((result) => {
           if (process.env.NODE_ENV !== "production") {
             console.info("[schedule.local_notifications.sync]", {
@@ -4800,6 +4865,7 @@ export default function ScheduleTabContent({
   }, [
     userId,
     effectiveTimeZone,
+    localTimeZone,
     clearScheduleData,
     FULL_WRITE_WINDOW_DAYS,
     logInstanceStatusChange,
