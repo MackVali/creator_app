@@ -32,11 +32,6 @@ const atSchedDayHour = (iso: string, tz: string, hour: number, minute = 0) => {
   return new Date(d.getTime() + (hour * 60 + minute) * 60_000);
 };
 
-// Convenience: "safe now" when tests previously used 00:00Z but wanted "some time today"
-const schedNoon = (iso: string, tz: string) => atSchedDayHour(iso, tz, 8);
-// 8 hours after scheduler-day start = noon-ish; adjust if you prefer
-// Why: some tests actually care about "partially elapsed windows" — for those you want a non-midnight time but still on the same scheduler day.
-
 type OverlayWindowRowForTest = {
   id?: string;
   start_utc?: string | null;
@@ -163,10 +158,6 @@ const createOverlayWindowOnlySupabaseMock = (
 };
 
 describe("scheduleBacklog", () => {
-  const failDiag = (label: string, payload: unknown) => {
-    throw new Error(label + " " + JSON.stringify(payload));
-  };
-
   type CompatibleWindowsArgs = Parameters<typeof fetchCompatibleWindowsForItem>;
   type GateTraceCompared = Partial<{
     windowDays: number[] | null;
@@ -198,7 +189,7 @@ describe("scheduleBacklog", () => {
 
   const replayGateTrace = (args: CompatibleWindowsArgs | null, baseDate: Date) => {
     if (!args) return null;
-    const [userId, date, item, tz, options] = args;
+    const [, date, item, tz, options] = args;
     const dayStart = startOfDayInTimeZone(date, tz);
     const dayParts = getDatePartsInTimeZone(dayStart, tz);
     const dayOfWeekInTz = dayParts.dayOfWeek;
@@ -326,12 +317,6 @@ describe("scheduleBacklog", () => {
   >;
   type ScheduleBacklogClient = Parameters<typeof scheduleBacklog>[2];
   type CompatibleWindowsClient = Parameters<typeof fetchCompatibleWindowsForItem>[0];
-  type ProjectPlacementCall = {
-    id: string;
-    reuseInstanceId: string | null;
-    ignoreIds: string[];
-  };
-
   const createInstanceRecord = (
     overrides: Partial<ScheduleInstance> = {}
   ): ScheduleInstance =>
@@ -8192,7 +8177,7 @@ describe("scheduleBacklog", () => {
     });
 
     const { client: supabase } = createSupabaseMock();
-    const { firstArgs, restore } = captureFirstCompatibleCall();
+    const { restore } = captureFirstCompatibleCall();
     try {
       const result = await scheduleBacklog(userId, baseDate, supabase);
 
@@ -9805,7 +9790,7 @@ describe("scheduleBacklog", () => {
     ]);
 
     (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
-      async (params) => {
+      async () => {
         // Higher-ranked project should be rejected due to overlap
         return { error: "NO_FIT" as const };
       }
@@ -10062,7 +10047,6 @@ describe("scheduleBacklog", () => {
 
     fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
 
-    const originalPlaceItemInWindows = placement.placeItemInWindows;
     const placeSpy = vi.spyOn(placement, "placeItemInWindows");
 
     try {

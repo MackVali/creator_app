@@ -17,8 +17,6 @@ interface YearViewProps {
  * similar to the iOS calendar year view.
  */
 export function YearView({
-  events: _events,
-  energies: _energies,
   selectedDate,
   onSelectDate,
 }: YearViewProps) {
@@ -77,4 +75,3 @@ export function YearView({
     </div>
   );
 }
-

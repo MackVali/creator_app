@@ -5,13 +5,6 @@ dotenv.config({ path: ".env.local" });
 
 type CountTarget = "goals" | "projects" | "day_type_time_blocks";
 
-function ensureEnv(variable: string | undefined, name: string): string {
-  if (!variable) {
-    throw new Error(`Missing ${name} environment variable`);
-  }
-  return variable;
-}
-
 async function main() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||

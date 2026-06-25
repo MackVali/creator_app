@@ -68,12 +68,14 @@ describe("fetchWindowsForDate", () => {
 
     const select = vi.fn(() => {
       const builder: WindowQueryBuilder = {
-        contains: vi.fn(async (_column: string, value: number[]) => {
+        contains: vi.fn(async (...args: [string, number[]]) => {
+          const value = args[1];
           const key = JSON.stringify(value);
           const data = containsResponses.get(key) ?? [];
           return { data, error: null } as const;
         }),
-        is: vi.fn(async (_column: string, value: number[] | null) => {
+        is: vi.fn(async (...args: [string, number[] | null]) => {
+          const value = args[1];
           if (value === null) {
             return { data: recurringWindows, error: null } as const;
           }
@@ -109,7 +111,7 @@ describe("fetchWindowsForDate", () => {
 
   it("derives the weekday using the provided timezone", async () => {
     const date = new Date("2024-01-01T11:00:00Z");
-    const containsMock = vi.fn(async (_column: string, value: number[]) => ({
+    const containsMock = vi.fn(async () => ({
       data: [],
       error: null,
     } as const));
@@ -148,7 +150,8 @@ describe("fetchWindowsForDate", () => {
 
     const select = vi.fn(() => {
       const builder: WindowQueryBuilder = {
-        contains: vi.fn(async (_column: string, value: number[]) => {
+        contains: vi.fn(async (...args: [string, number[]]) => {
+          const value = args[1];
           const isToday = value.length === 1 && value[0] === weekday;
           return { data: isToday ? legacyWindows : [], error: null } as const;
         }),
