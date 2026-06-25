@@ -26,6 +26,8 @@ interface ScheduleTopBarProps {
   isRescheduling?: boolean;
   onClearUncompletedScheduleInstances?: () => void | Promise<void>;
   isClearingUncompletedScheduleInstances?: boolean;
+  onRecycleManualEvents?: () => void | Promise<void>;
+  isRecyclingManualEvents?: boolean;
   isManualSchedulingMode?: boolean;
   onToggleManualSchedulingMode?: () => void;
   onHeightChange?: (height: number) => void;
@@ -45,6 +47,8 @@ export function ScheduleTopBar({
   isRescheduling = false,
   onClearUncompletedScheduleInstances,
   isClearingUncompletedScheduleInstances = false,
+  onRecycleManualEvents,
+  isRecyclingManualEvents = false,
   isManualSchedulingMode = false,
   onToggleManualSchedulingMode,
   onHeightChange,
@@ -142,6 +146,14 @@ export function ScheduleTopBar({
     if (isClearingUncompletedScheduleInstances) return;
     triggerTopBarHaptic();
     await onClearUncompletedScheduleInstances();
+    setIsDebugMenuOpen(false);
+  };
+
+  const handleRecycleManualEvents = async () => {
+    if (!onRecycleManualEvents) return;
+    if (isRecyclingManualEvents) return;
+    triggerTopBarHaptic();
+    await onRecycleManualEvents();
     setIsDebugMenuOpen(false);
   };
 
@@ -290,12 +302,19 @@ export function ScheduleTopBar({
             </button>
             <button
               type="button"
-              disabled
+              onClick={handleRecycleManualEvents}
+              disabled={!onRecycleManualEvents || isRecyclingManualEvents}
               aria-label="Recycle manual Events"
               title="Recycle manual Events"
               className={debugMenuActionClass}
             >
-              <Recycle className="h-[18px] w-[18px]" strokeWidth={2.4} />
+              <Recycle
+                className={cn(
+                  "h-[18px] w-[18px]",
+                  isRecyclingManualEvents && "animate-spin"
+                )}
+                strokeWidth={2.4}
+              />
             </button>
             <button
               type="button"

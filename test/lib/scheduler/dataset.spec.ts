@@ -62,6 +62,18 @@ const createSupabaseMock = (options?: {
           }),
         };
       }
+      if (table === "roadmaps") {
+        return {
+          select: () => ({
+            eq: () => ({
+              not: () => ({
+                data: [],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
       if (table === "priority") {
         return {
           select: () => ({
@@ -267,6 +279,72 @@ describe("buildScheduleEventDataset", () => {
     ]);
     expect(dataset.rangeStartUTC).toBe("2024-01-01T04:00:00.000Z");
     expect(dataset.rangeEndUTC).toBe("2024-01-11T04:00:00.000Z");
+  });
+
+  it("returns an empty dataset when fetched rows are all before today and retention filtering removes them", async () => {
+    vi.spyOn(instanceRepo, "fetchInstancesForRange").mockResolvedValue({
+      data: [
+        buildInstance({
+          id: "old-completed-1",
+          status: "completed",
+          start_utc: "2023-12-30T09:00:00Z",
+          end_utc: "2023-12-30T10:00:00Z",
+          completed_at: "2023-12-30T10:00:00Z",
+        }),
+        buildInstance({
+          id: "old-completed-2",
+          status: "completed",
+          start_utc: "2023-12-31T09:00:00Z",
+          end_utc: "2023-12-31T10:00:00Z",
+          completed_at: "2023-12-31T10:00:00Z",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    });
+
+    const dataset = await buildScheduleEventDataset({
+      userId,
+      client,
+      baseDate,
+      timeZone: "UTC",
+      lookaheadDays: 7,
+    });
+
+    expect(dataset.instances).toEqual([]);
+    expect(dataset.syncPairings).toEqual({});
+  });
+
+  it("keeps past-only rows that are still inside the schedule lookback window", async () => {
+    vi.spyOn(instanceRepo, "fetchInstancesForRange").mockResolvedValue({
+      data: [
+        buildInstance({
+          id: "completed-yesterday",
+          status: "completed",
+          start_utc: "2024-01-03T09:00:00Z",
+          end_utc: "2024-01-03T10:00:00Z",
+          completed_at: "2024-01-03T10:00:00Z",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    });
+
+    const dataset = await buildScheduleEventDataset({
+      userId,
+      client,
+      baseDate,
+      timeZone: "UTC",
+      lookaheadDays: 7,
+    });
+
+    expect(dataset.instances.map((instance) => instance.id)).toEqual([
+      "completed-yesterday",
+    ]);
   });
 
   it("keeps past completed HABIT instances even without end/duration and with sync pairings", async () => {

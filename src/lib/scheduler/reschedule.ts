@@ -123,6 +123,7 @@ type ScheduleInstanceUpdate =
   Database["public"]["Tables"]["schedule_instances"]["Update"];
 
 const SCHEDULER_DIRECT_WRITE_BATCH_SIZE = 500;
+const HABIT_REVALIDATION_CANCEL_BATCH_SIZE = 100;
 const PROJECT_RANK_WRITE_BATCH_SIZE = 25;
 
 type CompatibleWindowRecord = {
@@ -235,6 +236,7 @@ const COMPLETED_RETENTION_DAYS = 3;
 const PRACTICE_LOOKAHEAD_DAYS = 7;
 const HABIT_MISSED_RETENTION_DAYS = 7;
 const LOCATION_MISMATCH_REVALIDATION = "LOCATION_MISMATCH_REVALIDATION";
+const OVERLAY_CACHE_PRELOAD_CONCURRENCY = 4;
 
 const SCHEDULER_DEBUG_LOGGING = process.env.SCHEDULER_DEBUG === "true";
 const SCHEDULER_PROJECT_DEBUG_LOGGING =
@@ -1316,6 +1318,19 @@ function recordHabitPassMetric(
     number
   >;
   counters[key] = Math.round(((counters[key] ?? 0) + value) * 100) / 100;
+}
+
+function recordNonDailyHabitMetric(
+  timing: SchedulerTiming | null | undefined,
+  metric: string,
+  value = 1
+) {
+  if (!timing || !Number.isFinite(value) || value === 0) return;
+  const counters = timing.schedule.habitPlacementInstrumentation as Record<
+    string,
+    number
+  >;
+  counters[metric] = Math.round(((counters[metric] ?? 0) + value) * 100) / 100;
 }
 
 function recordHabitAsyncReadSource(
@@ -2739,6 +2754,10 @@ export async function scheduleBacklog(
     debug?: boolean | null;
     parity?: boolean | null;
     timing?: SchedulerTiming | null;
+    targetSourceIds?: {
+      PROJECT?: string[];
+      HABIT?: string[];
+    } | null;
   }
 ): Promise<ScheduleBacklogResult> {
   const timing = options?.timing ?? null;
@@ -2755,6 +2774,18 @@ export async function scheduleBacklog(
   };
   try {
   const supabase = await ensureClient(client);
+  const targetProjectIds = new Set(
+    (options?.targetSourceIds?.PROJECT ?? []).filter(
+      (id): id is string => typeof id === "string" && id.trim().length > 0
+    )
+  );
+  const targetHabitIds = new Set(
+    (options?.targetSourceIds?.HABIT ?? []).filter(
+      (id): id is string => typeof id === "string" && id.trim().length > 0
+    )
+  );
+  const isTargetedSourceRun =
+    targetProjectIds.size > 0 || targetHabitIds.size > 0;
   const overlayReconcileStartedAt = schedulerNowMs();
   await reconcileExpiredOverlayWindows(supabase, userId);
   if (timing) {
@@ -2796,6 +2827,7 @@ export async function scheduleBacklog(
   };
   const blockerCache: BlockerCache = new Map<string, ScheduleInstance[]>();
   const habitPlacementNoFitCache: HabitPlacementNoFitCache = new Map();
+  const habitRevalidationCanceledInstanceIds = new Set<string>();
   const result: ScheduleBacklogResult = {
     placed: [],
     failures: [],
@@ -2892,22 +2924,24 @@ export async function scheduleBacklog(
   const cancelLogCounts = new Map<string, number>();
   const canceledHabitIds: string[] = [];
 
-  // Clear all existing missed habit instances before starting fresh
-  const missedHabitDeleteStartedAt = schedulerNowMs();
-  await supabase
-    .from("schedule_instances")
-    .delete()
-    .eq("user_id", userId)
-    .eq("source_type", "HABIT")
-    .eq("status", "missed");
-  if (timing) {
-    const missedHabitDeleteMs = elapsedMs(missedHabitDeleteStartedAt);
-    recordSchedulerDbWrite(timing, "deletes");
-    recordSchedulerPhase(
-      timing,
-      "scheduler.schedule.schedule_instance_delete_writes",
-      missedHabitDeleteMs
-    );
+  if (!isTargetedSourceRun) {
+    // Clear all existing missed habit instances before starting fresh.
+    const missedHabitDeleteStartedAt = schedulerNowMs();
+    await supabase
+      .from("schedule_instances")
+      .delete()
+      .eq("user_id", userId)
+      .eq("source_type", "HABIT")
+      .eq("status", "missed");
+    if (timing) {
+      const missedHabitDeleteMs = elapsedMs(missedHabitDeleteStartedAt);
+      recordSchedulerDbWrite(timing, "deletes");
+      recordSchedulerPhase(
+        timing,
+        "scheduler.schedule.schedule_instance_delete_writes",
+        missedHabitDeleteMs
+      );
+    }
   }
 
   const timeZone = options?.timeZone ?? "UTC"; // timezone already validated upstream; no normalization helper required.
@@ -2948,7 +2982,10 @@ export async function scheduleBacklog(
   const fetchedProjectsMap = await fetchProjectsMap(supabase);
   await normalizeProjectInstances(userId, allProjectsMap, supabase, timing);
   const goals = await fetchGoalsForUser(userId, supabase);
-  const habits = await fetchHabitsForSchedule(userId, supabase);
+  const fetchedHabits = await fetchHabitsForSchedule(userId, supabase);
+  const habits = isTargetedSourceRun
+    ? fetchedHabits.filter((habit) => targetHabitIds.has(habit.id))
+    : fetchedHabits;
   if (timing) {
     const loadDataMs = elapsedMs(loadDataStartedAt);
     timing.schedule.loadData.ms += loadDataMs;
@@ -3505,6 +3542,7 @@ export async function scheduleBacklog(
   };
 
   for (const project of projectQueue) {
+    if (isTargetedSourceRun && !targetProjectIds.has(project.id)) continue;
     enqueue(project);
   }
   if (debugEnabled) {
@@ -3577,7 +3615,7 @@ export async function scheduleBacklog(
       : baseStart;
   const cleanupDedupeStartedAt = schedulerNowMs();
 
-  if (writeThroughEnd.getTime() > baseStartMs) {
+  if (!isTargetedSourceRun && writeThroughEnd.getTime() > baseStartMs) {
     const rebuildCancelStartedAt = schedulerNowMs();
     const { error } = await supabase
       .from("schedule_instances")
@@ -3761,7 +3799,8 @@ export async function scheduleBacklog(
     allProjectIds,
     writeThroughEnd,
     debugEnabled,
-    timing
+    timing,
+    { cancelExtras: !isTargetedSourceRun }
   );
   if (timing) {
     timing.schedule.cleanupDedupe.dedupeFetched = dedupe.allInstances.length;
@@ -3929,7 +3968,7 @@ export async function scheduleBacklog(
     }
   }
 
-  if (rebuildCanceledInstanceIds.size > 0) {
+  if (!isTargetedSourceRun && rebuildCanceledInstanceIds.size > 0) {
     const rebuildCancelStartedAt = schedulerNowMs();
     await cancelInstancesAsRescheduleRebuild(
       supabase,
@@ -4576,6 +4615,7 @@ export async function scheduleBacklog(
       isRescheduleRebuild,
       noFitCache: habitPlacementNoFitCache,
       noFitCacheStats: habitPlacementNoFitCacheStats,
+      habitRevalidationCanceledInstanceIds,
       habitTimingPass: "initialDaily",
       timing,
     });
@@ -4763,6 +4803,7 @@ export async function scheduleBacklog(
       if (!instance?.id) return instance ?? null;
       const merged = mergeNonDailyMetadata(instance.metadata, payload);
       instance.metadata = merged as any;
+      const metadataUpdateStartedAt = schedulerNowMs();
       const { data, error } = await recordHabitAsyncRead(
         timing,
         "nonDaily",
@@ -4774,6 +4815,11 @@ export async function scheduleBacklog(
             .eq("id", instance.id)
             .select("*")
             .single()
+      );
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailyMetadataUpdateMs",
+        elapsedMs(metadataUpdateStartedAt)
       );
       if (error) {
         result.failures.push({
@@ -4790,6 +4836,7 @@ export async function scheduleBacklog(
     };
     const collectHabitInstances = (habitId: string): ScheduleInstance[] => {
       const startedAt = schedulerNowMs();
+      const scanStartedAt = schedulerNowMs();
       const seen = new Set<string>();
       const bucket: ScheduleInstance[] = [];
       const consider = (inst: ScheduleInstance | null | undefined) => {
@@ -4825,11 +4872,22 @@ export async function scheduleBacklog(
       for (const inst of dedupe.allInstances) {
         consider(inst);
       }
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailyExistingInstanceScanMs",
+        elapsedMs(scanStartedAt)
+      );
+      const sortStartedAt = schedulerNowMs();
       bucket.sort((a, b) => {
         const diff = startValueForInstance(a) - startValueForInstance(b);
         if (diff !== 0) return diff;
         return (a.id ?? "").localeCompare(b.id ?? "");
       });
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailySortDedupeMs",
+        elapsedMs(sortStartedAt)
+      );
       recordHabitPassMetric(
         timing,
         "nonDaily",
@@ -4838,6 +4896,137 @@ export async function scheduleBacklog(
       );
       return bucket;
     };
+
+    const shouldPreloadOverlayCaches = nonDailyHabits.some((habit) => {
+      const normalizedType =
+        habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+      return normalizedType !== "SYNC" && !hasFixedHabitLocalTime(habit);
+    });
+    if (shouldPreloadOverlayCaches) {
+      const preloadStartedAt = schedulerNowMs();
+      const preloadDates: Date[] = [];
+      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+        preloadDates.push(
+          addDaysInTimeZone(horizonStartLocalDay, offset, timeZone)
+        );
+      }
+      await preloadOverlayWindowCachesForDates({
+        supabase,
+        dates: preloadDates,
+        timeZone,
+        userId,
+        overlayBlockCache,
+        dynamicOverlayCache,
+        timing,
+      });
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailyPreloadMs",
+        elapsedMs(preloadStartedAt)
+      );
+    }
+
+    const localDayCacheKey = (day: Date) =>
+      formatDateKeyInTimeZone(startOfDayInTimeZone(day, timeZone), timeZone);
+    const nonDailySunlightByDay = new Map<
+      string,
+      {
+        today: SunlightBounds;
+        previous: SunlightBounds;
+        next: SunlightBounds;
+      }
+    >();
+    const getNonDailySunlightForDay = (day: Date) => {
+      const key = localDayCacheKey(day);
+      const cached = nonDailySunlightByDay.get(key);
+      if (cached) {
+        recordNonDailyHabitMetric(timing, "nonDailySunlightCacheHit");
+        return cached;
+      }
+      recordNonDailyHabitMetric(timing, "nonDailySunlightCacheMiss");
+      const sunlightOptions =
+        typeof timeZoneOffsetMinutes === "number"
+          ? { offsetMinutes: timeZoneOffsetMinutes }
+          : undefined;
+      const bundle = {
+        today: resolveSunlightBounds(day, timeZone, location, sunlightOptions),
+        previous: resolveSunlightBounds(
+          addDaysInTimeZone(day, -1, timeZone),
+          timeZone,
+          location,
+          sunlightOptions
+        ),
+        next: resolveSunlightBounds(
+          addDaysInTimeZone(day, 1, timeZone),
+          timeZone,
+          location,
+          sunlightOptions
+        ),
+      };
+      nonDailySunlightByDay.set(key, bundle);
+      recordNonDailyHabitMetric(timing, "nonDailySunlightCacheSet");
+      return bundle;
+    };
+    const nonDailyCompatibleWindowCache = new Map<
+      string,
+      FetchCompatibleWindowsResult
+    >();
+    const canCacheNonDailyCompatibleWindows =
+      !debugEnabled && parityOptions?.enabled !== true;
+    recordNonDailyHabitMetric(
+      timing,
+      canCacheNonDailyCompatibleWindows
+        ? "nonDailyCompatibilityCacheEnabled"
+        : "nonDailyCompatibilityCacheDisabled"
+    );
+    const cloneCompatibleWindowResult = (
+      value: FetchCompatibleWindowsResult
+    ): FetchCompatibleWindowsResult => ({
+      ...value,
+      windows: value.windows.map((win) => ({
+        ...win,
+        startLocal: new Date(win.startLocal),
+        endLocal: new Date(win.endLocal),
+        availableStartLocal: new Date(win.availableStartLocal),
+      })),
+      filterCounters: value.filterCounters
+        ? { ...value.filterCounters }
+        : undefined,
+    });
+    const nonDailyCompatibleWindowCacheKey = (params: {
+      day: Date;
+      now?: Date;
+      energy: string;
+      durationMin: number;
+      habitType?: string | null;
+      skillId?: string | null;
+      skillMonumentId?: string | null;
+      locationContextId?: string | null;
+      locationContextValue?: string | null;
+      daylightPreference: "ALL_DAY" | "DAY" | "NIGHT";
+      anchorPreference: "FRONT" | "BACK";
+      requireLocationContextMatch: boolean;
+      hasExplicitLocationContext: boolean;
+    }) =>
+      JSON.stringify({
+        day: localDayCacheKey(params.day),
+        timeZone,
+        now: params.now?.toISOString() ?? null,
+        energy: params.energy,
+        durationMin: params.durationMin,
+        habitType: params.habitType ?? null,
+        skillId: params.skillId ?? null,
+        skillMonumentId: params.skillMonumentId ?? null,
+        locationContextId: params.locationContextId ?? null,
+        locationContextValue: params.locationContextValue ?? null,
+        daylightPreference: params.daylightPreference,
+        anchorPreference: params.anchorPreference,
+        requireLocationContextMatch: params.requireLocationContextMatch,
+        hasExplicitLocationContext: params.hasExplicitLocationContext,
+        restMode: isRestMode,
+        userId,
+        parityEnabled: parityOptions?.enabled === true,
+      });
 
     for (const habit of nonDailyHabits) {
       const nonDailyHabitStartedAt = schedulerNowMs();
@@ -4930,14 +5119,15 @@ export async function scheduleBacklog(
       const daylightRaw = habit.daylightPreference
         ? String(habit.daylightPreference).toUpperCase().trim()
         : "ALL_DAY";
-      const daylightPreference =
+      const daylightPreference: "ALL_DAY" | "DAY" | "NIGHT" =
         daylightRaw === "DAY" || daylightRaw === "NIGHT"
           ? daylightRaw
           : "ALL_DAY";
       const anchorRaw = habit.windowEdgePreference
         ? String(habit.windowEdgePreference).toUpperCase().trim()
         : "FRONT";
-      const anchorPreference = anchorRaw === "BACK" ? "BACK" : "FRONT";
+      const anchorPreference: "FRONT" | "BACK" =
+        anchorRaw === "BACK" ? "BACK" : "FRONT";
       const practiceContextId =
         normalizedType === "PRACTICE" ? (habit.skillMonumentId ?? null) : null;
       const blockLocalDays = new Set<number>();
@@ -4951,194 +5141,368 @@ export async function scheduleBacklog(
         instance: ScheduleInstance | null;
         startLocalDay?: Date | null;
       }> => {
-        const minStartDate = new Date(params.minStartUtc);
-        if (Number.isNaN(minStartDate.getTime())) {
-          return { instance: null, startLocalDay: null };
-        }
-        let cursorDay = startOfDayInTimeZone(minStartDate, timeZone);
-        let firstDay = true;
-        while (cursorDay.getTime() <= horizonEndLocalDay.getTime()) {
-          recordHabitPassMetric(timing, "nonDaily", "daysConsidered");
-          const offset = differenceInCalendarDaysInTimeZone(
-            horizonStartLocalDay,
-            cursorDay,
-            timeZone
-          );
-          if (
-            !Number.isFinite(offset) ||
-            offset < 0 ||
-            offset >= habitWriteLookaheadDays
-          ) {
-            recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
-            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
-            firstDay = false;
-            continue;
+        const placeRoleStartedAt = schedulerNowMs();
+        try {
+          const minStartDate = new Date(params.minStartUtc);
+          if (Number.isNaN(minStartDate.getTime())) {
+            recordNonDailyHabitMetric(timing, "nonDailySkippedRoleCount");
+            return { instance: null, startLocalDay: null };
           }
-          const localDayMs = cursorDay.getTime();
-          if (blockLocalDays.has(localDayMs)) {
-            recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
-            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
-            firstDay = false;
-            continue;
-          }
-          if (hasFixedHabitLocalTime(habit)) {
-            const fixedRange = buildFixedHabitRange(habit, cursorDay, timeZone);
-            if (!fixedRange) {
-              return { instance: null, startLocalDay: null };
-            }
-            if (firstDay && fixedRange.end.getTime() <= minStartDate.getTime()) {
-              recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
-              cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
-              firstDay = false;
-              continue;
-            }
-            const fixedMetadata = mergeNonDailyMetadata(
-              params.reuseInstance?.metadata,
-              {
-                role: params.role,
-                dueAtUtc: params.dueAtUtc,
-                anchorCompletedAtUtc: plan.anchor.completedAtUtc,
-                chainKey,
-              }
+          let cursorDay = startOfDayInTimeZone(minStartDate, timeZone);
+          let firstDay = true;
+          while (cursorDay.getTime() <= horizonEndLocalDay.getTime()) {
+            const dayLoopStartedAt = schedulerNowMs();
+            recordHabitPassMetric(timing, "nonDaily", "daysConsidered");
+            const offset = differenceInCalendarDaysInTimeZone(
+              horizonStartLocalDay,
+              cursorDay,
+              timeZone
             );
-            const fixedResult = await upsertFixedHabitInstance({
-              client: supabase,
-              userId,
-              habit,
-              day: cursorDay,
-              timeZone,
-              existingInstance: params.reuseInstance ?? null,
-              metadata: fixedMetadata,
-              timing,
-              habitTimingPass: "nonDaily",
-            });
-            if (fixedResult.error || !fixedResult.instance || !fixedResult.range) {
-              if (fixedResult.error) {
-                result.failures.push({
-                  itemId: habit.id,
-                  reason: "error",
-                  detail: fixedResult.error,
-                });
-              }
+            if (
+              !Number.isFinite(offset) ||
+              offset < 0 ||
+              offset >= habitWriteLookaheadDays
+            ) {
+              recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyDayLoopMs",
+                elapsedMs(dayLoopStartedAt)
+              );
               cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
               firstDay = false;
               continue;
             }
-            const persisted = fixedResult.instance;
-            if (persisted?.id) {
-              createdThisRun.add(persisted.id);
-              nonDailyReplacementInstanceIds.add(persisted.id);
+            const localDayMs = cursorDay.getTime();
+            if (blockLocalDays.has(localDayMs)) {
+              recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyDayLoopMs",
+                elapsedMs(dayLoopStartedAt)
+              );
+              cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+              firstDay = false;
+              continue;
             }
-            registerInstanceForOffsets(persisted);
-            recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
-            addHabitBlocker(persisted);
-            result.placed.push(persisted);
-            result.timeline.push({
-              type: "HABIT",
-              habit: {
-                id: habit.id,
-                name: habit.name,
-                windowId: null,
-                windowLabel: null,
-                startUTC:
-                  persisted.start_utc ?? fixedResult.range.start.toISOString(),
-                endUTC:
-                  persisted.end_utc ?? fixedResult.range.end.toISOString(),
-                durationMin: fixedResult.range.durationMin,
-                energyResolved: persisted.energy_resolved ?? null,
-              },
-              decision: fixedResult.decision,
-              scheduledDayOffset: offset,
-            });
-            return { instance: persisted, startLocalDay: cursorDay };
-          }
-          await prepareWindowsForDay(cursorDay);
-          const existingInstancesForDay = getDayInstances(offset);
-          const sunlightOptions =
-            typeof timeZoneOffsetMinutes === "number"
-              ? { offsetMinutes: timeZoneOffsetMinutes }
-              : undefined;
-          const sunlightToday = resolveSunlightBounds(
-            cursorDay,
-            timeZone,
-            location,
-            sunlightOptions
-          );
-          const sunlightPrevious = resolveSunlightBounds(
-            addDaysInTimeZone(cursorDay, -1, timeZone),
-            timeZone,
-            location,
-            sunlightOptions
-          );
-          const sunlightNext = resolveSunlightBounds(
-            addDaysInTimeZone(cursorDay, 1, timeZone),
-            timeZone,
-            location,
-            sunlightOptions
-          );
-          const daylightConstraint =
-            daylightPreference === "ALL_DAY"
-              ? null
-              : {
-                  preference: daylightPreference as "DAY" | "NIGHT",
-                  sunrise: sunlightToday.sunrise ?? null,
-                  sunset: sunlightToday.sunset ?? null,
-                  dawn: sunlightToday.dawn ?? null,
-                  dusk: sunlightToday.dusk ?? null,
-                  previousSunset: sunlightPrevious.sunset ?? null,
-                  previousDusk: sunlightPrevious.dusk ?? null,
-                  nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
-                  nextSunrise: sunlightNext.sunrise ?? null,
-                };
-          const nightSunlightBundle =
-            daylightConstraint?.preference === "NIGHT"
-              ? {
-                  today: sunlightToday,
-                  previous: sunlightPrevious,
-                  next: sunlightNext,
+            if (hasFixedHabitLocalTime(habit)) {
+              const fixedRange = buildFixedHabitRange(habit, cursorDay, timeZone);
+              if (!fixedRange) {
+                recordNonDailyHabitMetric(timing, "nonDailyFailedRoleCount");
+                recordNonDailyHabitMetric(
+                  timing,
+                  "nonDailyDayLoopMs",
+                  elapsedMs(dayLoopStartedAt)
+                );
+                return { instance: null, startLocalDay: null };
+              }
+              if (
+                firstDay &&
+                fixedRange.end.getTime() <= minStartDate.getTime()
+              ) {
+                recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
+                recordNonDailyHabitMetric(
+                  timing,
+                  "nonDailyDayLoopMs",
+                  elapsedMs(dayLoopStartedAt)
+                );
+                cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+                firstDay = false;
+                continue;
+              }
+              const fixedMetadata = mergeNonDailyMetadata(
+                params.reuseInstance?.metadata,
+                {
+                  role: params.role,
+                  dueAtUtc: params.dueAtUtc,
+                  anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+                  chainKey,
                 }
-              : null;
-          const compatibleDayResult = await fetchCompatibleWindowsForItem(
-            supabase,
-            cursorDay,
-            {
+              );
+              const fixedPlacementStartedAt = schedulerNowMs();
+              const fixedResult = await upsertFixedHabitInstance({
+                client: supabase,
+                userId,
+                habit,
+                day: cursorDay,
+                timeZone,
+                existingInstance: params.reuseInstance ?? null,
+                metadata: fixedMetadata,
+                timing,
+                habitTimingPass: "nonDaily",
+              });
+              const fixedPlacementMs = elapsedMs(fixedPlacementStartedAt);
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyPlaceItemInWindowsMs",
+                fixedPlacementMs
+              );
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyPersistMs",
+                fixedPlacementMs
+              );
+              if (
+                fixedResult.error ||
+                !fixedResult.instance ||
+                !fixedResult.range
+              ) {
+                if (fixedResult.error) {
+                  result.failures.push({
+                    itemId: habit.id,
+                    reason: "error",
+                    detail: fixedResult.error,
+                  });
+                }
+                recordNonDailyHabitMetric(
+                  timing,
+                  "nonDailyDayLoopMs",
+                  elapsedMs(dayLoopStartedAt)
+                );
+                cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+                firstDay = false;
+                continue;
+              }
+              const persisted = fixedResult.instance;
+              if (persisted?.id) {
+                createdThisRun.add(persisted.id);
+                nonDailyReplacementInstanceIds.add(persisted.id);
+              }
+              registerInstanceForOffsets(persisted);
+              recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
+              addHabitBlocker(persisted);
+              result.placed.push(persisted);
+              result.timeline.push({
+                type: "HABIT",
+                habit: {
+                  id: habit.id,
+                  name: habit.name,
+                  windowId: null,
+                  windowLabel: null,
+                  startUTC:
+                    persisted.start_utc ?? fixedResult.range.start.toISOString(),
+                  endUTC:
+                    persisted.end_utc ?? fixedResult.range.end.toISOString(),
+                  durationMin: fixedResult.range.durationMin,
+                  energyResolved: persisted.energy_resolved ?? null,
+                },
+                decision: fixedResult.decision,
+                scheduledDayOffset: offset,
+              });
+              recordNonDailyHabitMetric(timing, "nonDailyPlacedRoleCount");
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyDayLoopMs",
+                elapsedMs(dayLoopStartedAt)
+              );
+              return { instance: persisted, startLocalDay: cursorDay };
+            }
+            const candidateBuildStartedAt = schedulerNowMs();
+            let candidateBuildAccountedMs = 0;
+            const prepareWindowsStartedAt = schedulerNowMs();
+            await prepareWindowsForDay(cursorDay);
+            const prepareWindowsMs = elapsedMs(prepareWindowsStartedAt);
+            candidateBuildAccountedMs += prepareWindowsMs;
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyPrepareWindowsForDayMs",
+              prepareWindowsMs
+            );
+            const getDayInstancesStartedAt = schedulerNowMs();
+            const existingInstancesForDay = getDayInstances(offset);
+            const getDayInstancesMs = elapsedMs(getDayInstancesStartedAt);
+            candidateBuildAccountedMs += getDayInstancesMs;
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyGetDayInstancesMs",
+              getDayInstancesMs
+            );
+            let sunlightBundle: ReturnType<
+              typeof getNonDailySunlightForDay
+            > | null = null;
+            const sunlightStartedAt = schedulerNowMs();
+            if (daylightPreference === "ALL_DAY") {
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyAllDaySunlightSkipCount"
+              );
+            } else {
+              sunlightBundle = getNonDailySunlightForDay(cursorDay);
+            }
+            const sunlightMs = elapsedMs(sunlightStartedAt);
+            candidateBuildAccountedMs += sunlightMs;
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailySunlightResolveMs",
+              sunlightMs
+            );
+            const daylightConstraint =
+              daylightPreference === "ALL_DAY"
+                ? null
+                : {
+                    preference: daylightPreference as "DAY" | "NIGHT",
+                    sunrise: sunlightBundle?.today.sunrise ?? null,
+                    sunset: sunlightBundle?.today.sunset ?? null,
+                    dawn: sunlightBundle?.today.dawn ?? null,
+                    dusk: sunlightBundle?.today.dusk ?? null,
+                    previousSunset: sunlightBundle?.previous.sunset ?? null,
+                    previousDusk: sunlightBundle?.previous.dusk ?? null,
+                    nextDawn:
+                      sunlightBundle?.next.dawn ??
+                      sunlightBundle?.next.sunrise ??
+                      null,
+                    nextSunrise: sunlightBundle?.next.sunrise ?? null,
+                  };
+            const nightSunlightBundle =
+              daylightConstraint?.preference === "NIGHT"
+                ? {
+                    today: sunlightBundle?.today ?? {
+                      sunrise: null,
+                      sunset: null,
+                      dawn: null,
+                      dusk: null,
+                    },
+                    previous: sunlightBundle?.previous ?? {
+                      sunrise: null,
+                      sunset: null,
+                      dawn: null,
+                      dusk: null,
+                    },
+                    next: sunlightBundle?.next ?? {
+                      sunrise: null,
+                      sunset: null,
+                      dawn: null,
+                      dusk: null,
+                    },
+                  }
+                : null;
+            const compatibleNow =
+              horizonStartLocalDay.getTime() === cursorDay.getTime()
+                ? baseDate
+                : undefined;
+            const hasExplicitLocationContext =
+              Boolean(locationContextId) || Boolean(locationContextValue);
+            const compatibleFetchOuterStartedAt = schedulerNowMs();
+            const compatibleCacheKey = nonDailyCompatibleWindowCacheKey({
+              day: cursorDay,
+              now: compatibleNow,
               energy: resolvedEnergy,
-              duration_min: durationMin,
+              durationMin,
               habitType: habit.habitType,
               skillId: habit.skillId ?? null,
               skillMonumentId: habit.skillMonumentId ?? null,
-            },
-            timeZone,
-            {
-              availability: new Map(),
-              now:
-                startOfDayInTimeZone(baseStart, timeZone).getTime() ===
-                startOfDayInTimeZone(cursorDay, timeZone).getTime()
-                  ? baseDate
-                  : undefined,
-              cache: windowCache,
-              overlayBlockCache,
-              dynamicOverlayCache,
-              restMode: isRestMode,
-              userId,
-              parity: parityOptions,
               locationContextId,
               locationContextValue,
-              daylight: daylightConstraint,
-              enforceNightSpan: daylightConstraint?.preference === "NIGHT",
-              nightSunlight: nightSunlightBundle,
-              anchor: anchorPreference,
+              daylightPreference,
+              anchorPreference,
               requireLocationContextMatch: true,
-              hasExplicitLocationContext:
-                Boolean(locationContextId) || Boolean(locationContextValue),
-              locationDebugContext,
-              timing,
-              habitTimingPass: "nonDaily",
+              hasExplicitLocationContext,
+            });
+            const cachedCompatibleDayResult = canCacheNonDailyCompatibleWindows
+              ? nonDailyCompatibleWindowCache.get(compatibleCacheKey)
+              : undefined;
+            if (canCacheNonDailyCompatibleWindows) {
+              recordNonDailyHabitMetric(
+                timing,
+                cachedCompatibleDayResult
+                  ? "nonDailyCompatibilityCacheHit"
+                  : "nonDailyCompatibilityCacheMiss"
+              );
+            } else {
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyCompatibilityCacheBypass"
+              );
+              if (debugEnabled) {
+                recordNonDailyHabitMetric(
+                  timing,
+                  "nonDailyCompatibilityCacheBypassDebug"
+                );
+              }
+              if (parityOptions?.enabled === true) {
+                recordNonDailyHabitMetric(
+                  timing,
+                  "nonDailyCompatibilityCacheBypassParity"
+                );
+              }
             }
-          );
-          const compatibleWindows = compatibleDayResult.windows;
+            const compatibleDayResult = cachedCompatibleDayResult
+              ? cloneCompatibleWindowResult(cachedCompatibleDayResult)
+              : await fetchCompatibleWindowsForItem(
+                  supabase,
+                  cursorDay,
+                  {
+                    energy: resolvedEnergy,
+                    duration_min: durationMin,
+                    habitType: habit.habitType,
+                    skillId: habit.skillId ?? null,
+                    skillMonumentId: habit.skillMonumentId ?? null,
+                  },
+                  timeZone,
+                  {
+                    availability: new Map(),
+                    now: compatibleNow,
+                    cache: windowCache,
+                    overlayBlockCache,
+                    dynamicOverlayCache,
+                    restMode: isRestMode,
+                    userId,
+                    parity: parityOptions,
+                    locationContextId,
+                    locationContextValue,
+                    daylight: daylightConstraint,
+                    enforceNightSpan:
+                      daylightConstraint?.preference === "NIGHT",
+                    nightSunlight: nightSunlightBundle,
+                    anchor: anchorPreference,
+                    requireLocationContextMatch: true,
+                    hasExplicitLocationContext,
+                    locationDebugContext,
+                    timing,
+                    habitTimingPass: "nonDaily",
+                  }
+                );
+            if (
+              canCacheNonDailyCompatibleWindows &&
+              !cachedCompatibleDayResult
+            ) {
+              nonDailyCompatibleWindowCache.set(
+                compatibleCacheKey,
+                cloneCompatibleWindowResult(compatibleDayResult)
+              );
+              recordNonDailyHabitMetric(
+                timing,
+                "nonDailyCompatibilityCacheSet"
+              );
+            }
+            const compatibleFetchOuterMs = elapsedMs(
+              compatibleFetchOuterStartedAt
+            );
+            candidateBuildAccountedMs += compatibleFetchOuterMs;
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyFetchCompatibleWindowsOuterMs",
+              compatibleFetchOuterMs
+            );
+            const candidateBuildMs = elapsedMs(candidateBuildStartedAt);
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyCandidateBuildMs",
+              candidateBuildMs
+            );
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyCandidateBuildOtherMs",
+              Math.max(0, candidateBuildMs - candidateBuildAccountedMs)
+            );
+            const compatibleWindows = compatibleDayResult.windows;
           if (compatibleWindows.length === 0) {
             recordHabitPassMetric(timing, "nonDaily", "eligibilitySkips");
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyDayLoopMs",
+              elapsedMs(dayLoopStartedAt)
+            );
             cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
             firstDay = false;
             continue;
@@ -5149,6 +5513,9 @@ export async function scheduleBacklog(
             "candidateWindowsConsidered",
             compatibleWindows.length
           );
+          const placementStartedAt = schedulerNowMs();
+          const persistWriteBefore =
+            timing?.schedule.placeItem.persistWriteMs ?? 0;
           const placement = await placeItemInWindows({
             userId,
             item: {
@@ -5168,20 +5535,34 @@ export async function scheduleBacklog(
             notBefore: firstDay ? minStartDate : cursorDay,
             existingInstances: existingInstancesForDay,
             allowHabitOverlap: habitAllowsOverlap.get(habit.id) ?? false,
-          habitTypeById,
-          windowEdgePreference: habit.windowEdgePreference,
-          maxGapCache: dayMaxGapCache,
-          blockerCache,
-          createBatcher: scheduleInstanceCreateBatch,
-          metadata: mergeNonDailyMetadata(params.reuseInstance?.metadata, {
-            role: params.role,
-            dueAtUtc: params.dueAtUtc,
-            anchorCompletedAtUtc: plan.anchor.completedAtUtc,
-            chainKey,
+            habitTypeById,
+            windowEdgePreference: habit.windowEdgePreference,
+            maxGapCache: dayMaxGapCache,
+            blockerCache,
+            createBatcher: scheduleInstanceCreateBatch,
+            metadata: mergeNonDailyMetadata(params.reuseInstance?.metadata, {
+              role: params.role,
+              dueAtUtc: params.dueAtUtc,
+              anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+              chainKey,
             }),
-          debugEnabled,
-          timing,
+            debugEnabled,
+            timing,
           });
+          recordNonDailyHabitMetric(
+            timing,
+            "nonDailyPlaceItemInWindowsMs",
+            elapsedMs(placementStartedAt)
+          );
+          recordNonDailyHabitMetric(
+            timing,
+            "nonDailyPersistMs",
+            Math.max(
+              0,
+              (timing?.schedule.placeItem.persistWriteMs ?? 0) -
+                persistWriteBefore
+            )
+          );
           if (!("status" in placement)) {
             if (placement.error && placement.error !== "NO_FIT") {
               result.failures.push({
@@ -5190,6 +5571,11 @@ export async function scheduleBacklog(
                 detail: placement.error,
               });
             }
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyDayLoopMs",
+              elapsedMs(dayLoopStartedAt)
+            );
             cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
             firstDay = false;
             continue;
@@ -5202,6 +5588,11 @@ export async function scheduleBacklog(
                 detail: placement.error,
               });
             }
+            recordNonDailyHabitMetric(
+              timing,
+              "nonDailyDayLoopMs",
+              elapsedMs(dayLoopStartedAt)
+            );
             cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
             firstDay = false;
             continue;
@@ -5234,11 +5625,26 @@ export async function scheduleBacklog(
             decision: params.reuseInstance ? "rescheduled" : "new",
             scheduledDayOffset: offset,
           });
+          recordNonDailyHabitMetric(timing, "nonDailyPlacedRoleCount");
+          recordNonDailyHabitMetric(
+            timing,
+            "nonDailyDayLoopMs",
+            elapsedMs(dayLoopStartedAt)
+          );
           return { instance: persisted, startLocalDay: cursorDay };
         }
-        return { instance: null, startLocalDay: null };
+          recordNonDailyHabitMetric(timing, "nonDailyFailedRoleCount");
+          return { instance: null, startLocalDay: null };
+        } finally {
+          recordNonDailyHabitMetric(
+            timing,
+            "nonDailyPlaceRoleMs",
+            elapsedMs(placeRoleStartedAt)
+          );
+        }
       };
 
+      const nonDailyRoleLoopStartedAt = schedulerNowMs();
       const primaryPlacement = await placeRole({
         role: "PRIMARY",
         dueAtUtc: plan.primary.dueAtUtc,
@@ -5308,6 +5714,11 @@ export async function scheduleBacklog(
           }
         }
       }
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailyRoleLoopMs",
+        elapsedMs(nonDailyRoleLoopStartedAt)
+      );
 
       const keepIds = new Set<string>();
       if (primaryInstance?.id) {
@@ -5322,6 +5733,7 @@ export async function scheduleBacklog(
       for (const inst of existingInstances) {
         if (!inst?.id) continue;
         if (keepIds.has(inst.id)) continue;
+        const pruneCancelStartedAt = schedulerNowMs();
         await recordHabitAsyncRead(
           timing,
           "nonDaily",
@@ -5330,6 +5742,11 @@ export async function scheduleBacklog(
             cancelScheduleInstance(inst.id, {
               reason: "NON_DAILY_CHAIN_PRUNE",
             })
+        );
+        recordNonDailyHabitMetric(
+          timing,
+          "nonDailyPruneCancelMs",
+          elapsedMs(pruneCancelStartedAt)
         );
         removeInstanceFromBuckets(inst.id);
       }
@@ -5349,6 +5766,7 @@ export async function scheduleBacklog(
     }
 
     if (overrideClears.size > 0) {
+      const overrideClearStartedAt = schedulerNowMs();
       const { error } = await recordHabitAsyncRead(
         timing,
         "nonDaily",
@@ -5359,6 +5777,11 @@ export async function scheduleBacklog(
             .update({ next_due_override: null })
             .eq("user_id", userId)
             .in("id", Array.from(overrideClears))
+      );
+      recordNonDailyHabitMetric(
+        timing,
+        "nonDailyOverrideClearMs",
+        elapsedMs(overrideClearStartedAt)
       );
       if (error) {
         log("error", "[HABIT_OVERRIDE_CLEAR]", {
@@ -6770,6 +7193,7 @@ export async function scheduleBacklog(
       isRescheduleRebuild,
       noFitCache: habitPlacementNoFitCache,
       noFitCacheStats: habitPlacementNoFitCacheStats,
+      habitRevalidationCanceledInstanceIds,
       habitTimingPass: "postProject",
       timing,
     });
@@ -6798,23 +7222,25 @@ export async function scheduleBacklog(
     );
   }
 
-  const habitPassRemovedInstanceIds = new Set<string>();
-  for (const bucket of dayInstancesByOffset.values()) {
-    for (let index = bucket.length - 1; index >= 0; index -= 1) {
-      const inst = bucket[index];
-      if (!inst) continue;
-      if (inst.status !== "scheduled") continue;
-      if (inst.locked === true) continue;
-      if (inst.source_type !== "PROJECT" && inst.source_type !== "HABIT") {
-        continue;
+  if (!isTargetedSourceRun) {
+    const habitPassRemovedInstanceIds = new Set<string>();
+    for (const bucket of dayInstancesByOffset.values()) {
+      for (let index = bucket.length - 1; index >= 0; index -= 1) {
+        const inst = bucket[index];
+        if (!inst) continue;
+        if (inst.status !== "scheduled") continue;
+        if (inst.locked === true) continue;
+        if (inst.source_type !== "PROJECT" && inst.source_type !== "HABIT") {
+          continue;
+        }
+        if (inst.id) {
+          habitPassRemovedInstanceIds.add(inst.id);
+        }
+        bucket.splice(index, 1);
       }
-      if (inst.id) {
-        habitPassRemovedInstanceIds.add(inst.id);
-      }
-      bucket.splice(index, 1);
     }
+    removeInstancesFromBlockerCache(habitPassRemovedInstanceIds);
   }
-  removeInstancesFromBlockerCache(habitPassRemovedInstanceIds);
 
   const cleanupHabitPassStartedAt = schedulerNowMs();
   for (let offset = 0; offset < cleanupOffsetLimit; offset += 1) {
@@ -6928,6 +7354,7 @@ export async function scheduleBacklog(
         isRescheduleRebuild,
         noFitCache: habitPlacementNoFitCache,
         noFitCacheStats: habitPlacementNoFitCacheStats,
+        habitRevalidationCanceledInstanceIds,
         habitTimingPass: "cleanup",
         timing,
       });
@@ -7103,6 +7530,7 @@ export async function scheduleBacklog(
       postAnchorSyncRetry: true,
       noFitCache: habitPlacementNoFitCache,
       noFitCacheStats: habitPlacementNoFitCacheStats,
+      habitRevalidationCanceledInstanceIds,
       habitTimingPass: "finalSyncRetry",
       timing,
     });
@@ -7271,7 +7699,7 @@ export async function scheduleBacklog(
       replacementInstanceIds: nonDailyReplacementInstanceIds,
     }
   );
-  if (cancelIdSet.size > 0) {
+  if (!isTargetedSourceRun && cancelIdSet.size > 0) {
     for (const id of cancelIdSet) {
       logCancel(
         "FINAL_INVARIANT_CANCEL_BULK",
@@ -7619,7 +8047,8 @@ async function dedupeScheduledProjects(
   projectsToReset: Set<string>,
   writeThroughEnd: Date,
   debugEnabled: boolean,
-  timing?: SchedulerTiming | null
+  timing?: SchedulerTiming | null,
+  options?: { cancelExtras?: boolean }
 ): Promise<DedupeResult> {
   const response = await fetchInstancesForRange(
     userId,
@@ -7723,8 +8152,10 @@ async function dedupeScheduledProjects(
   const failures: ScheduleFailure[] = [];
 
   const canceledByProject = new Map<string, string[]>();
+  const cancelExtras = options?.cancelExtras !== false;
 
   for (const extra of extras) {
+    if (!cancelExtras) continue;
     const cancel = await supabase
       .from("schedule_instances")
       .update({ status: "canceled" })
@@ -8956,6 +9387,7 @@ async function scheduleHabitsForDay(params: {
   postAnchorSyncRetry?: boolean;
   noFitCache?: HabitPlacementNoFitCache;
   noFitCacheStats?: HabitPlacementNoFitCacheStats;
+  habitRevalidationCanceledInstanceIds?: Set<string>;
   habitTimingPass?: HabitPlacementPass;
   timing?: SchedulerTiming | null;
 }): Promise<HabitScheduleDayResult> {
@@ -9004,6 +9436,7 @@ async function scheduleHabitsForDay(params: {
     postAnchorSyncRetry = false,
     noFitCache,
     noFitCacheStats,
+    habitRevalidationCanceledInstanceIds,
     habitTimingPass,
     timing = null,
   } = params;
@@ -9092,45 +9525,111 @@ async function scheduleHabitsForDay(params: {
   };
 
   const canceledInstanceIds = new Set<string>();
+  const runCanceledInstanceIds =
+    habitRevalidationCanceledInstanceIds ?? new Set<string>();
+  const recordHabitRevalidationCancelSuccess = (instance: ScheduleInstance) => {
+    if (!instance?.id) return;
+    canceledInstanceIds.add(instance.id);
+    runCanceledInstanceIds.add(instance.id);
+    restoreAvailabilityForInstance(instance.id);
+  };
+  const recordHabitRevalidationCancelFailure = (
+    instance: ScheduleInstance,
+    detail: unknown
+  ) => {
+    result.failures.push({
+      itemId: instance.source_id ?? instance.id ?? "unknown",
+      reason: "error",
+      detail,
+    });
+  };
+  const cancelScheduledInstances = async (instances: ScheduleInstance[]) => {
+    const canceled = new Set<string>();
+    const uniqueInstances: ScheduleInstance[] = [];
+    const instanceById = new Map<string, ScheduleInstance>();
+    for (const instance of instances) {
+      const id = instance?.id ?? null;
+      if (!id) continue;
+      if (canceledInstanceIds.has(id) || runCanceledInstanceIds.has(id)) {
+        canceled.add(id);
+        recordHabitRevalidationCancelSuccess(instance);
+        continue;
+      }
+      if (instanceById.has(id)) continue;
+      instanceById.set(id, instance);
+      uniqueInstances.push(instance);
+    }
+    if (uniqueInstances.length === 0) {
+      return canceled;
+    }
+
+    for (
+      let start = 0;
+      start < uniqueInstances.length;
+      start += HABIT_REVALIDATION_CANCEL_BATCH_SIZE
+    ) {
+      const batch = uniqueInstances.slice(
+        start,
+        start + HABIT_REVALIDATION_CANCEL_BATCH_SIZE
+      );
+      const ids = batch
+        .map((instance) => instance.id)
+        .filter((id): id is string => Boolean(id));
+      if (ids.length === 0) continue;
+      try {
+        const cancel = await recordHabitAsyncRead(
+          timing,
+          habitTimingPass,
+          "habitRevalidationCancel",
+          () =>
+            client
+              .from("schedule_instances")
+              .update({ status: "canceled" })
+              .in("id", ids)
+              .select("id")
+        );
+        if (cancel.error) {
+          for (const instance of batch) {
+            recordHabitRevalidationCancelFailure(instance, cancel.error);
+          }
+          continue;
+        }
+        const updatedIds = new Set(
+          ((cancel.data ?? []) as Array<{ id?: string | null }>)
+            .map((row) => row.id)
+            .filter((id): id is string => Boolean(id))
+        );
+        for (const instance of batch) {
+          const id = instance.id ?? null;
+          if (!id) continue;
+          if (updatedIds.has(id)) {
+            canceled.add(id);
+            recordHabitRevalidationCancelSuccess(instance);
+          } else {
+            recordHabitRevalidationCancelFailure(
+              instance,
+              new Error("Habit revalidation cancel matched no rows")
+            );
+          }
+        }
+      } catch (error) {
+        log(
+          "error",
+          "Failed to cancel habit instances during revalidation",
+          error
+        );
+        for (const instance of batch) {
+          recordHabitRevalidationCancelFailure(instance, error);
+        }
+      }
+    }
+
+    return canceled;
+  };
   const cancelScheduledInstance = async (instance: ScheduleInstance) => {
     if (!instance?.id) return false;
-    try {
-      const cancel = await recordHabitAsyncRead(
-        timing,
-        habitTimingPass,
-        "habitRevalidationCancel",
-        () =>
-          client
-            .from("schedule_instances")
-            .update({ status: "canceled" })
-            .eq("id", instance.id)
-            .select("id")
-            .single()
-      );
-      if (cancel.error) {
-        result.failures.push({
-          itemId: instance.source_id ?? instance.id,
-          reason: "error",
-          detail: cancel.error,
-        });
-        return false;
-      }
-      canceledInstanceIds.add(instance.id);
-      restoreAvailabilityForInstance(instance.id);
-      return true;
-    } catch (error) {
-      log(
-        "error",
-        "Failed to cancel habit instance during revalidation",
-        error
-      );
-      result.failures.push({
-        itemId: instance.source_id ?? instance.id,
-        reason: "error",
-        detail: error,
-      });
-      return false;
-    }
+    const canceled = await cancelScheduledInstances([instance]);
+    return canceled.has(instance.id);
   };
   const missScheduledInstance = async (
     instance: ScheduleInstance,
@@ -9863,7 +10362,11 @@ async function scheduleHabitsForDay(params: {
         });
       }
       logCancelOnce("REVALIDATION_DUPLICATE_CANCEL", duplicate);
-      if (await cancelScheduledInstance(duplicate)) {
+    }
+    const canceledDuplicates =
+      await cancelScheduledInstances(duplicatesToCancel);
+    for (const duplicate of duplicatesToCancel) {
+      if (duplicate?.id && canceledDuplicates.has(duplicate.id)) {
         cleanupCanceledHabitInstance(duplicate);
       }
     }
@@ -13497,6 +14000,62 @@ function getResolvedCachedDynamicOverlayWindowsForDate(
   const effectiveNow = now ?? cache.effectiveNow;
   const key = dynamicOverlayCacheKey(userId, date, timeZone, effectiveNow);
   return cache.resolvedWindowsByKey.get(key) ?? null;
+}
+
+async function preloadOverlayWindowCachesForDates(params: {
+  supabase: Client;
+  dates: Date[];
+  timeZone: string;
+  userId: string;
+  overlayBlockCache: OverlayWindowBlockCache;
+  dynamicOverlayCache: DynamicOverlayWindowCache;
+  timing?: SchedulerTiming | null;
+  concurrency?: number;
+}) {
+  const userId = params.userId.trim();
+  if (!userId || params.dates.length === 0) return;
+
+  const tz = params.timeZone || "UTC";
+  const datesByKey = new Map<string, Date>();
+  for (const date of params.dates) {
+    datesByKey.set(formatDateKeyInTimeZone(date, tz), date);
+  }
+  const dates = Array.from(datesByKey.values());
+  if (dates.length === 0) return;
+
+  let nextIndex = 0;
+  const workerCount = Math.min(
+    Math.max(1, params.concurrency ?? OVERLAY_CACHE_PRELOAD_CONCURRENCY),
+    dates.length
+  );
+  const worker = async () => {
+    while (nextIndex < dates.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const date = dates[index];
+      await Promise.all([
+        getCachedOverlayWindowBlocksForDate(
+          params.supabase,
+          date,
+          tz,
+          userId,
+          params.overlayBlockCache,
+          params.timing
+        ),
+        getCachedDynamicOverlayWindowsForDate(
+          params.supabase,
+          date,
+          tz,
+          userId,
+          params.dynamicOverlayCache.effectiveNow,
+          params.dynamicOverlayCache,
+          params.timing
+        ),
+      ]).catch(() => undefined);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
 async function loadDynamicOverlayWindowsForDate(

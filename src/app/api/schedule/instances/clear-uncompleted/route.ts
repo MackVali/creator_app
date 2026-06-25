@@ -19,11 +19,43 @@ export async function DELETE() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const nowIso = new Date().toISOString();
+  const lockedFuturePredicate = [
+    `end_utc.gte.${nowIso}`,
+    `and(end_utc.is.null,start_utc.gte.${nowIso})`,
+  ].join(",");
+  const clearablePredicate = [
+    "locked.is.false",
+    "locked.is.null",
+    `end_utc.lt.${nowIso}`,
+    `and(end_utc.is.null,start_utc.lt.${nowIso})`,
+    "and(end_utc.is.null,start_utc.is.null)",
+  ].join(",");
+
+  const {
+    count: preservedLockedFuture,
+    error: preservedLockedFutureError,
+  } = await supabase
+    .from("schedule_instances")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .neq("status", "completed")
+    .eq("locked", true)
+    .or(lockedFuturePredicate);
+
+  if (preservedLockedFutureError) {
+    console.warn(
+      "Failed to count preserved locked future schedule instances",
+      preservedLockedFutureError
+    );
+  }
+
   const { data, error } = await supabase
     .from("schedule_instances")
     .delete()
     .eq("user_id", user.id)
     .neq("status", "completed")
+    .or(clearablePredicate)
     .select("id");
 
   if (error) {
@@ -37,5 +69,8 @@ export async function DELETE() {
   return NextResponse.json({
     ok: true,
     deleted: data?.length ?? 0,
+    preservedLockedFuture: preservedLockedFutureError
+      ? null
+      : preservedLockedFuture ?? 0,
   });
 }

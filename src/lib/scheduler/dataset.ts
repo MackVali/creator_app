@@ -164,6 +164,42 @@ function sample(
   });
 }
 
+function getInstanceUtcBounds(instance: ScheduleInstance): {
+  startMs: number;
+  endMs: number;
+} {
+  const startMs = Date.parse(instance.start_utc ?? "");
+  const endMs = Date.parse(instance.end_utc ?? instance.start_utc ?? "");
+  return { startMs, endMs };
+}
+
+function findInstancesOutsideFetchedRange(
+  instances: ScheduleInstance[],
+  rangeStart: Date,
+  rangeEnd: Date
+): ScheduleInstance[] {
+  const startMs = rangeStart.getTime();
+  const endMs = rangeEnd.getTime();
+  return instances.filter((instance) => {
+    const { startMs: instanceStartMs, endMs: instanceEndMs } =
+      getInstanceUtcBounds(instance);
+    if (!Number.isFinite(instanceStartMs) || !Number.isFinite(instanceEndMs)) {
+      return true;
+    }
+    return instanceEndMs <= startMs || instanceStartMs >= endMs;
+  });
+}
+
+function areAllInstancesBeforeDayKey(
+  instances: ScheduleInstance[],
+  dayKey: string,
+  tz: string
+): boolean {
+  return instances.every(
+    (instance) => dayKeyFromUtc(instance.start_utc ?? "", tz) < dayKey
+  );
+}
+
 function normalizeHabitType(value?: string | null) {
   const raw = (value ?? "HABIT").toUpperCase();
   return raw === "ASYNC" ? "SYNC" : raw;
@@ -431,27 +467,6 @@ export async function buildScheduleEventDataset({
     }
 
     const todayKey = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
-    const fetchedTodayCount = instanceRows.filter(
-      (i) => dayKeyFromUtc(i.start_utc ?? "", normalizedTz) === todayKey
-    ).length;
-    if (fetchedTodayCount === 0) {
-      const fetchedByLocalDayKey = groupCountByDayKey(
-        instanceRows,
-        normalizedTz
-      );
-      const sampleFetched = sample(instanceRows, normalizedTz);
-      throwDatasetViolation("FETCH", {
-        tz: normalizedTz,
-        rangeStartUtc: rangeStart.toISOString(),
-        rangeEndUtc: rangeEnd.toISOString(),
-        todayDateKey: todayKey,
-        totalFetched: instanceRows.length,
-        totalFiltered: 0, // not yet computed
-        fetchedByLocalDayKey,
-        sampleFetched,
-      });
-    }
-
     const filteredInstances = instanceRows.filter((instance) => {
       if (instance.status !== "completed") return true;
       const startMs = Date.parse(
@@ -473,11 +488,48 @@ export async function buildScheduleEventDataset({
       }
       return true;
     });
-    const todayInstanceCount = filteredInstances.filter(
-      (instance) =>
-        dayKeyFromUtc(instance.start_utc ?? "", normalizedTz) === todayKey
-    ).length;
-    if (todayInstanceCount === 0) {
+
+    if (filteredInstances.length === 0) {
+      if (!areAllInstancesBeforeDayKey(instanceRows, todayKey, normalizedTz)) {
+        const fetchedByLocalDayKey = groupCountByDayKey(
+          instanceRows,
+          normalizedTz
+        );
+        const sampleFetched = sample(instanceRows, normalizedTz);
+        throwDatasetViolation("CONTRACT", {
+          tz: normalizedTz,
+          rangeStartUtc: rangeStart.toISOString(),
+          rangeEndUtc: rangeEnd.toISOString(),
+          todayDateKey: todayKey,
+          totalFetched: instanceRows.length,
+          totalFiltered: filteredInstances.length,
+          fetchedByLocalDayKey,
+          sampleFetched,
+        });
+      }
+      return buildEmptyScheduleEventDataset({
+        lookaheadDays,
+        rangeStartUTC: rangeStart.toISOString(),
+        rangeEndUTC: rangeEnd.toISOString(),
+        tasks,
+        projects: projectList,
+        projectSkillIds,
+        projectGoalRelations,
+        habits,
+        skills,
+        monuments,
+        scheduledProjectIds: resolvedScheduledProjectIds,
+        energyLookup,
+        priorityLookup,
+      });
+    }
+
+    const outOfRangeFetched = findInstancesOutsideFetchedRange(
+      filteredInstances,
+      effectiveRangeStart,
+      effectiveRangeEnd
+    );
+    if (outOfRangeFetched.length > 0) {
       const fetchedByLocalDayKey = groupCountByDayKey(
         instanceRows,
         normalizedTz
@@ -486,19 +538,18 @@ export async function buildScheduleEventDataset({
         filteredInstances,
         normalizedTz
       );
-      const sampleFetched = sample(instanceRows, normalizedTz);
-      const sampleFiltered = sample(filteredInstances, normalizedTz);
-      throwDatasetViolation("CONTRACT", {
+      const sampleFetched = sample(outOfRangeFetched, normalizedTz);
+      throwDatasetViolation("FETCH", {
         tz: normalizedTz,
-        rangeStartUtc: rangeStart.toISOString(),
-        rangeEndUtc: rangeEnd.toISOString(),
+        rangeStartUtc: effectiveRangeStart.toISOString(),
+        rangeEndUtc: effectiveRangeEnd.toISOString(),
         todayDateKey: todayKey,
         totalFetched: instanceRows.length,
         totalFiltered: filteredInstances.length,
+        outOfRangeFetched: outOfRangeFetched.length,
         fetchedByLocalDayKey,
         filteredByLocalDayKey,
         sampleFetched,
-        sampleFiltered,
       });
     }
 

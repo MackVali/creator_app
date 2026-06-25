@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
+	<string>1.0.3</string>
 	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<string>10</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
@@ -32,9 +32,11 @@
 		<false/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>CREATOR needs camera access so you can scan nutrition barcodes and take a new profile photo.</string>
+	<string>CREATOR uses your camera for video calls with friends, scanning nutrition barcodes, and taking a new profile photo.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>CREATOR uses contacts to help you find friends and invite collaborators.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CREATOR uses your microphone for voice and video calls with friends.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>

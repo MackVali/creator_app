@@ -66,7 +66,6 @@ import type {
   IntegrationsResponse,
   ListingsResponse,
   OrdersResponse,
-  PublishResult,
   ProductOrderFulfillmentStatus,
   SourceIntegration,
   SourceListing,
@@ -275,26 +274,6 @@ const getValidatedProductAvailabilityMetadata = (
     ...metadata,
     inventory: String(inventoryCount),
   }
-}
-
-const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
-type PostMediaType = (typeof POST_MEDIA_TYPES)[number]
-type PostMedia = { url: string; type: PostMediaType }
-type PostMetadata = {
-  title: string | null
-  content: string | null
-  media: PostMedia[]
-  mediaTypes: PostMediaType[]
-  selectedIntegrationIds: string[] | null
-  deliveredIntegrationIds: string[] | null
-  missingIntegrationIds: string[] | null
-}
-
-const POST_MEDIA_LABELS: Record<PostMediaType, string> = {
-  text: "Text",
-  image: "Image",
-  video: "Video",
-  link: "Link",
 }
 
 type IntegrationFormState = {
@@ -1543,9 +1522,9 @@ const socialConnectorOptions: {
 export default function Source() {
   const queryClient = useQueryClient()
   const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
-  const [listingForm, setListingForm] = useState(defaultListingForm)
+  const [, setListingForm] = useState(defaultListingForm)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
-  const [listingError, setListingError] = useState<string | null>(null)
+  const [, setListingError] = useState<string | null>(null)
   const [isProductSheetOpen, setIsProductSheetOpen] = useState(false)
   const [productSheetForm, setProductSheetForm] = useState<ProductSheetFormState>(
     defaultProductSheetForm
@@ -2550,12 +2529,6 @@ export default function Source() {
     ? orderRows.find((order) => order.id === selectedOrderId) ?? null
     : null
 
-  const activeIntegrationCount = integrations.filter(
-    (integration) =>
-      integration.status === "active" &&
-      (integration.auth_mode !== "oauth2" || integration.oauth?.connected)
-  ).length
-
   const integrationAdvancedForced = integrationForm.authMode === "oauth2"
   const integrationAdvancedVisible = integrationAdvancedForced || showIntegrationAdvanced
 
@@ -3134,7 +3107,7 @@ export default function Source() {
       const previewUrl = URL.createObjectURL(blob)
       await uploadListingImage({ target: cropTarget, file: croppedFile, previewUrl })
       handleCropCancel()
-    } catch (error) {
+    } catch {
       setIsCropSaving(false)
     }
   }
@@ -3170,7 +3143,7 @@ export default function Source() {
     cropDragState.current.pointerId = null
     try {
       event.currentTarget.releasePointerCapture(event.pointerId)
-    } catch (error) {
+    } catch {
       // no-op
     }
   }
@@ -5395,122 +5368,6 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
   )
 }
 
-type ListingCardProps = {
-  listing: SourceListing
-}
-
-function ListingCard({ listing }: ListingCardProps) {
-  const status = listing.status
-  const postMetadata = parsePostMetadata(listing.metadata)
-  const isPost = listing.type === "post" || Boolean(postMetadata)
-  const description = isPost
-    ? postMetadata?.content?.trim() || "No message included."
-    : listing.description || "No description"
-
-  return (
-    <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-5">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold text-white">{listing.title}</h3>
-            <Badge className="bg-zinc-800 text-zinc-200">
-              {listingTypeLabels[listing.type]}
-            </Badge>
-          </div>
-          <p className={cn("text-sm text-zinc-300", isPost && "whitespace-pre-wrap break-words")}>{description}</p>
-        </div>
-        <div className="flex flex-col items-end gap-2 text-right">
-          <Badge className={cn("border", statusAccent[status])}>
-            {listingStatuses[status]}
-          </Badge>
-          {listing.type !== "post" && listing.price !== null && (
-            <p className="font-mono text-sm text-zinc-200">
-              {formatCurrency(listing.price, listing.currency)}
-            </p>
-          )}
-          <p className="text-xs text-zinc-400">
-            Updated {formatRelativeTime(listing.updated_at)}
-          </p>
-        </div>
-      </div>
-
-      {postMetadata ? (
-        <PostDetails metadata={postMetadata} />
-      ) : null}
-    </div>
-  )
-}
-
-type PostDetailsProps = {
-  metadata: PostMetadata
-}
-
-function PostDetails({ metadata }: PostDetailsProps) {
-  const deliveredCount = metadata.deliveredIntegrationIds?.length ?? 0
-  const selectedCount = metadata.selectedIntegrationIds?.length ?? 0
-  const missingCount = metadata.missingIntegrationIds?.length ?? 0
-  const showSelectedSummary = selectedCount > 0 && selectedCount !== deliveredCount
-
-  return (
-    <div className="mt-4 space-y-4 rounded-lg border border-zinc-900/60 bg-zinc-950/80 p-3 text-xs text-zinc-300">
-      {metadata.mediaTypes.length > 0 ? (
-        <div className="space-y-2">
-          <p className="font-semibold text-zinc-200">Media focus</p>
-          <div className="flex flex-wrap gap-2">
-            {metadata.mediaTypes.map((type) => (
-              <Badge key={type} className="bg-zinc-900 text-zinc-200 capitalize">
-                {formatPostMediaType(type)}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="space-y-2">
-        <p className="font-semibold text-zinc-200">Attachments</p>
-        {metadata.media.length > 0 ? (
-          <ul className="space-y-2">
-            {metadata.media.map((media) => (
-              <li
-                key={`${media.type}-${media.url}`}
-                className="flex flex-col gap-2 rounded-md border border-zinc-900/60 bg-zinc-950/70 p-3 text-[11px] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
-              >
-                <Badge className="w-fit bg-zinc-900 text-zinc-200 capitalize">
-                  {formatPostMediaType(media.type)}
-                </Badge>
-                <a
-                  href={media.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 break-all text-zinc-300 hover:text-zinc-200"
-                >
-                  {media.url}
-                  <ExternalLink className="size-3" />
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[11px] text-zinc-400">No attachments were included.</p>
-        )}
-      </div>
-
-      <div className="space-y-1 text-[11px] text-zinc-400">
-        <p>
-          Delivered to <span className="text-zinc-200">{deliveredCount}</span> connection
-          {deliveredCount === 1 ? "" : "s"}.
-          {showSelectedSummary ? ` Requested ${selectedCount}.` : ""}
-        </p>
-        {missingCount > 0 ? (
-          <p className="text-zinc-300">
-            {missingCount} connection{missingCount === 1 ? " was" : "s were"} unavailable when posting.
-          </p>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
 type OrderRowData = {
   id: string
   checkoutId: string
@@ -5912,126 +5769,6 @@ function DetailField({
       <p className={cn("mt-1 text-sm text-zinc-100", mono && "font-mono text-[12px]")}>{value}</p>
     </div>
   )
-}
-
-type PublishRowProps = {
-  result: PublishResult
-}
-
-function PublishRow({ result }: PublishRowProps) {
-  const ok = result.status === "synced"
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-2 rounded-lg border p-3 text-xs transition",
-        ok
-          ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-200"
-          : "border-zinc-500/40 bg-zinc-500/10 text-zinc-100"
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Plug className="size-3" />
-          <span className="font-semibold">
-            {result.integrationName || result.integrationId}
-          </span>
-        </div>
-        <span className="font-mono">
-          {ok ? "Synced" : "Failed"}
-          {result.responseCode ? ` · ${result.responseCode}` : ""}
-        </span>
-      </div>
-      {result.error && <p className="text-[11px]">{result.error}</p>}
-      {result.responseBody && (
-        <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">
-          {JSON.stringify(result.responseBody, null, 2)}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-function parsePostMetadata(metadata: Record<string, unknown> | null): PostMetadata | null {
-  if (!isRecord(metadata)) {
-    return null
-  }
-
-  const kind = typeof metadata.kind === "string" ? metadata.kind : null
-  if (kind && kind !== "post") {
-    return null
-  }
-
-  const rawPost = metadata.post
-  if (!isRecord(rawPost)) {
-    return null
-  }
-
-  const title = typeof rawPost.title === "string" ? rawPost.title : null
-  const content = typeof rawPost.content === "string" ? rawPost.content : null
-
-  const media: PostMedia[] = Array.isArray(rawPost.media)
-    ? (rawPost.media as unknown[])
-        .map((entry) => {
-          if (!isRecord(entry)) return null
-          const url = typeof entry.url === "string" ? entry.url.trim() : ""
-          if (!url) return null
-          const typeCandidate =
-            typeof entry.type === "string" ? entry.type.toLowerCase().trim() : ""
-          const type = isPostMediaType(typeCandidate) ? typeCandidate : "link"
-          return { url, type }
-        })
-        .filter(Boolean) as PostMedia[]
-    : []
-
-  const mediaTypes = Array.from(
-    new Set(
-      (Array.isArray(rawPost.mediaTypes) ? rawPost.mediaTypes : [])
-        .map((value) => (typeof value === "string" ? value.toLowerCase().trim() : ""))
-        .filter((value): value is PostMediaType => isPostMediaType(value))
-    )
-  )
-
-  const selectedIntegrationIds = normalizeIntegrationIds(rawPost.selectedIntegrationIds)
-  const deliveredIntegrationIds = normalizeIntegrationIds(rawPost.deliveredIntegrationIds)
-  const missingIntegrationIds = normalizeIntegrationIds(rawPost.missingIntegrationIds)
-
-  return {
-    title,
-    content,
-    media,
-    mediaTypes,
-    selectedIntegrationIds,
-    deliveredIntegrationIds,
-    missingIntegrationIds,
-  }
-}
-
-function normalizeIntegrationIds(value: unknown): string[] | null {
-  if (!Array.isArray(value)) {
-    return null
-  }
-
-  const ids = Array.from(
-    new Set(
-      value
-        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-        .filter((entry) => entry.length > 0)
-    )
-  )
-
-  return ids.length > 0 ? ids : null
-}
-
-function isPostMediaType(value: unknown): value is PostMediaType {
-  return typeof value === "string" && POST_MEDIA_TYPES.includes(value as PostMediaType)
-}
-
-function formatPostMediaType(type: PostMediaType) {
-  return POST_MEDIA_LABELS[type]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function formatCurrency(value: number, currency: string) {
