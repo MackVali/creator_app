@@ -2209,10 +2209,11 @@ function getScopeSummary(
   customHabitTypeFilters: boolean
 ): string {
   const activeGroups = groups.filter((group) => group.count > 0);
+  const customInstanceTypeFilters =
+    customWorkTypeFilters || customHabitTypeFilters;
   const selectedCount =
     activeGroups.reduce((total, group) => total + group.count, 0) +
-    (customWorkTypeFilters ? 1 : 0) +
-    (customHabitTypeFilters ? 1 : 0);
+    (customInstanceTypeFilters ? 1 : 0);
 
   if (selectedCount === 0) return "All scheduled work";
   if (selectedCount === 1 && activeGroups.length === 1 && activeGroups[0].option) {
@@ -2223,8 +2224,7 @@ function getScopeSummary(
     ...activeGroups.map((group) =>
       pluralizeScopeLabel(group.count, group.singular)
     ),
-    customWorkTypeFilters ? "Work Type" : null,
-    customHabitTypeFilters ? "Habit Type" : null,
+    customInstanceTypeFilters ? "Instance Types" : null,
   ]
     .filter(Boolean)
     .join(" • ");
@@ -5123,12 +5123,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setDraftSelectedSkillIds([]);
   };
 
-  const clearWorkTypeFilters = () => {
+  const clearInstanceTypeFilters = () => {
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
-    resetScopeRunState();
-  };
-
-  const clearHabitTypeFilters = () => {
     setEnabledHabitTypes(null);
     resetScopeRunState();
   };
@@ -5795,9 +5791,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           </FocusPomoFilterSection>
 
                           <FocusPomoFilterSection
-                            label="Work Type"
-                            hasSelectedFilters={hasCustomWorkTypeFilters}
-                            onClear={clearWorkTypeFilters}
+                            label="INSTANCE TYPES"
+                            hasSelectedFilters={
+                              hasCustomWorkTypeFilters ||
+                              hasCustomHabitTypeFilters
+                            }
+                            onClear={clearInstanceTypeFilters}
                           >
                             <div className="flex flex-wrap gap-1.5 sm:gap-2">
                               {workTypeOptions.map((option) => {
@@ -5821,49 +5820,41 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   </button>
                                 );
                               })}
+
+                              {showHabitTypeSection
+                                ? habitTypePillOptions.map((option) => {
+                                    const lockedOff = isLockedOffHabitTypeKey(
+                                      option.key
+                                    );
+                                    const selected =
+                                      !lockedOff &&
+                                      selectedHabitTypeKeys.includes(option.key);
+
+                                    return (
+                                      <button
+                                        key={option.key}
+                                        type="button"
+                                        aria-pressed={selected}
+                                        aria-disabled={lockedOff}
+                                        disabled={lockedOff}
+                                        onClick={() =>
+                                          toggleHabitType(option.key)
+                                        }
+                                        className={
+                                          lockedOff
+                                            ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-black/50 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            : selected
+                                              ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                              : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                        }
+                                      >
+                                        {option.label}
+                                      </button>
+                                    );
+                                  })
+                                : null}
                             </div>
                           </FocusPomoFilterSection>
-
-                          {showHabitTypeSection ? (
-                            <FocusPomoFilterSection
-                              label="Habit Type"
-                              hasSelectedFilters={hasCustomHabitTypeFilters}
-                              onClear={clearHabitTypeFilters}
-                            >
-                              <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                {habitTypePillOptions.map((option) => {
-                                  const lockedOff = isLockedOffHabitTypeKey(
-                                    option.key
-                                  );
-                                  const selected =
-                                    !lockedOff &&
-                                    selectedHabitTypeKeys.includes(option.key);
-
-                                  return (
-                                    <button
-                                      key={option.key}
-                                      type="button"
-                                      aria-pressed={selected}
-                                      aria-disabled={lockedOff}
-                                      disabled={lockedOff}
-                                      onClick={() =>
-                                        toggleHabitType(option.key)
-                                      }
-                                      className={
-                                        lockedOff
-                                          ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-black/50 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
-                                          : selected
-                                            ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                            : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                      }
-                                    >
-                                      {option.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </FocusPomoFilterSection>
-                          ) : null}
 
                           {showTagsSection ? (
                             <FocusPomoFilterSection

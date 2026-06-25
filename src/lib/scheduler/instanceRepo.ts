@@ -100,6 +100,7 @@ type PendingCreate = {
 
 export type ScheduleInstanceCreateBatcher = {
   enqueue(input: CreateInstanceInput): ScheduleInstance;
+  discard(id: string | null | undefined): boolean;
   flush(): Promise<void>;
   readonly size: number;
 };
@@ -333,6 +334,13 @@ export function createScheduleInstanceCreateBatcher(
       const placeholder = createPlaceholderScheduleInstance(row);
       pending.push({ row, placeholder });
       return placeholder;
+    },
+    discard(id: string | null | undefined) {
+      if (!id) return false;
+      const index = pending.findIndex((entry) => entry.row.id === id);
+      if (index < 0) return false;
+      pending.splice(index, 1);
+      return true;
     },
     async flush() {
       if (pending.length === 0) return;

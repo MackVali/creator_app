@@ -1,5 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import type { PermissionState } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { RotateCcw } from "lucide-react";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
@@ -23,8 +27,12 @@ import {
 const buttonClass =
   "rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1] focus:outline-none focus:ring-2 focus:ring-white/30";
 
+const TEST_LOCAL_NOTIFICATION_ID = 2_147_483_647;
+
 export default function ToastTestPanel() {
   const toast = useToastHelpers();
+  const [isSchedulingLocalNotification, setIsSchedulingLocalNotification] =
+    useState(false);
   const hapticTests = [
     { label: "Light impact", action: hapticLightImpact },
     { label: "Medium impact", action: hapticMediumImpact },
@@ -47,6 +55,80 @@ export default function ToastTestPanel() {
     { label: "Warning pattern", action: hapticWarningPattern },
     { label: "Error pattern", action: hapticErrorPattern },
   ];
+
+  const handleTestLocalNotification = async () => {
+    if (isSchedulingLocalNotification) return;
+
+    setIsSchedulingLocalNotification(true);
+
+    try {
+      if (typeof window === "undefined" || !Capacitor.isNativePlatform()) {
+        toast.warning(
+          "Native device required",
+          "Local notifications can only be tested in the native app."
+        );
+        return;
+      }
+
+      if (!Capacitor.isPluginAvailable("LocalNotifications")) {
+        toast.error(
+          "Local notifications unavailable",
+          "The native Local Notifications plugin is not available in this build."
+        );
+        return;
+      }
+
+      const permission = await resolveLocalNotificationPermission();
+
+      if (!permission) {
+        toast.error(
+          "Permission check failed",
+          "CREATOR could not check local notification permissions."
+        );
+        return;
+      }
+
+      if (permission !== "granted") {
+        toast.warning(
+          "Notifications disabled",
+          "Enable notifications for CREATOR in iOS Settings, then try again."
+        );
+        return;
+      }
+
+      await LocalNotifications.cancel({
+        notifications: [{ id: TEST_LOCAL_NOTIFICATION_ID }],
+      });
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: TEST_LOCAL_NOTIFICATION_ID,
+            title: "CREATOR",
+            body: "Local notifications are working.",
+            schedule: {
+              at: new Date(Date.now() + 10_000),
+              allowWhileIdle: true,
+            },
+            extra: {
+              type: "admin_test_local_notification",
+            },
+          },
+        ],
+      });
+
+      toast.success(
+        "Local notification scheduled",
+        "You should receive a CREATOR notification in about 10 seconds."
+      );
+    } catch {
+      toast.error(
+        "Local notification failed",
+        "CREATOR could not schedule the test notification."
+      );
+    } finally {
+      setIsSchedulingLocalNotification(false);
+    }
+  };
 
   return (
     <main className="min-h-[calc(100vh-9rem)] bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
@@ -118,6 +200,29 @@ export default function ToastTestPanel() {
               </div>
             </div>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              Notifications
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-white/60">
+              Local notifications only fire on supported native devices.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={isSchedulingLocalNotification}
+            onClick={() => {
+              void handleTestLocalNotification();
+            }}
+          >
+            {isSchedulingLocalNotification
+              ? "Scheduling local notification..."
+              : "Test local notification"}
+          </button>
         </section>
 
         <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">
@@ -219,4 +324,20 @@ export default function ToastTestPanel() {
       </div>
     </main>
   );
+}
+
+async function resolveLocalNotificationPermission(): Promise<PermissionState | null> {
+  try {
+    const checked = await LocalNotifications.checkPermissions();
+    let permission = checked.display;
+
+    if (permission === "prompt" || permission === "prompt-with-rationale") {
+      const requested = await LocalNotifications.requestPermissions();
+      permission = requested.display;
+    }
+
+    return permission;
+  } catch {
+    return null;
+  }
 }
