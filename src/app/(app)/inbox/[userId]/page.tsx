@@ -72,6 +72,7 @@ type CreatorCallSession = {
 };
 
 const INBOX_REFRESH_REQUEST_KEY = "premium-app:inbox-refresh-requested";
+const CAMERA_UNAVAILABLE_MESSAGE = "Camera unavailable";
 
 function formatRelativeTime(value: string | null | undefined) {
   if (!value) return "";
@@ -109,6 +110,36 @@ function getInitials(label: string) {
   if (parts.length === 0) return "U";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function getCameraUnavailableMessage(error: unknown) {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError") {
+      return "Camera permission is blocked.";
+    }
+
+    if (
+      error.name === "OverconstrainedError" ||
+      error.name === "NotReadableError"
+    ) {
+      return CAMERA_UNAVAILABLE_MESSAGE;
+    }
+  }
+
+  if (error instanceof Error) {
+    if (error.name === "NotAllowedError") {
+      return "Camera permission is blocked.";
+    }
+
+    if (
+      error.name === "OverconstrainedError" ||
+      error.name === "NotReadableError"
+    ) {
+      return CAMERA_UNAVAILABLE_MESSAGE;
+    }
+  }
+
+  return CAMERA_UNAVAILABLE_MESSAGE;
 }
 
 export default function InboxThreadPage() {
@@ -657,6 +688,7 @@ function CreatorCallSheet({
           <RoomAudioRenderer />
           {isVideoCall ? (
             <VideoCallExperience
+              sessionKey={session.token}
               participant={participant}
               onEnd={() => onOpenChange(false)}
             />
@@ -715,7 +747,7 @@ function CallDismissButton({ onEnd }: { onEnd(): void }) {
 
 function CallControlDock({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] pointer-events-none sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)]">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)]">
       <div className="pointer-events-auto mx-auto flex h-[88px] w-full max-w-[430px] items-center justify-between rounded-full border border-white/[0.08] bg-zinc-950/85 px-4 shadow-[0_18px_54px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl sm:h-24 sm:max-w-[480px] sm:px-5">
         {children}
       </div>
@@ -733,7 +765,7 @@ function callControlClassName(active: boolean) {
 }
 
 function disabledCallControlClassName() {
-  return "inline-flex h-12 w-12 items-center justify-center rounded-full border border-transparent bg-transparent text-white/35 focus-visible:outline-none sm:h-14 sm:w-14";
+  return "inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full border border-transparent bg-transparent text-white/35 focus-visible:outline-none sm:h-14 sm:w-14";
 }
 
 function endCallControlClassName() {
@@ -741,77 +773,92 @@ function endCallControlClassName() {
 }
 
 function VideoCallExperience({
+  sessionKey,
   participant,
   onEnd,
 }: {
+  sessionKey: string;
   participant: ThreadParticipant;
   onEnd(): void;
 }) {
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const tracks = useTracks([Track.Source.Camera]);
-  const remoteParticipants = useRemoteParticipants();
   const localTrack = tracks.find((track) => track.participant.isLocal);
   const remoteTrack = tracks.find((track) => !track.participant.isLocal);
-  const remoteParticipant = remoteParticipants[0];
+  const heroTrack = remoteTrack ?? localTrack;
+  const hasCameraError = Boolean(cameraError && !localTrack);
+  const callStatus = remoteTrack
+    ? "Connected"
+    : localTrack
+      ? "Calling..."
+      : hasCameraError
+        ? CAMERA_UNAVAILABLE_MESSAGE
+        : "Calling...";
+
+  useEffect(() => {
+    setCameraError(null);
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (localTrack) {
+      setCameraError(null);
+    }
+  }, [localTrack]);
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#1c1d20]">
+    <div className="fixed inset-0 h-[100dvh] w-screen overflow-hidden bg-[#17181b] text-white">
+      {heroTrack ? (
+        <VideoTrack
+          trackRef={heroTrack}
+          className={`absolute inset-0 h-full w-full object-cover ${
+            heroTrack.participant.isLocal ? "scale-x-[-1]" : ""
+          }`}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-[#17181b]" />
+      )}
+      <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.08)_38%,rgba(0,0,0,0.10)_58%,rgba(0,0,0,0.46)_100%)]" />
       <CallDismissButton onEnd={onEnd} />
-      <div className="relative h-full min-h-0">
-        <div className="relative h-full min-h-0 overflow-hidden bg-[#1c1d20]">
-          {remoteTrack ? (
-            <VideoTrack
-              trackRef={remoteTrack}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full flex-col items-center px-7 pt-[calc(env(safe-area-inset-top,0px)+8.25rem)] text-center sm:pt-[calc(env(safe-area-inset-top,0px)+9.5rem)]">
-              <div className="flex flex-col items-center">
-                <CallParticipantAvatar
-                  participant={participant}
-                  sizeClassName="h-28 w-28 sm:h-32 sm:w-32"
-                  fallbackClassName="text-3xl"
-                />
-                <p className="mt-7 max-w-[18rem] text-4xl font-bold leading-tight tracking-normal text-white sm:text-5xl">
-                  {remoteParticipant
-                    ? participant.displayName
-                    : `Calling ${participant.displayName}`}
-                </p>
-                <p className="mt-3 text-base font-medium text-white/45">
-                  {remoteParticipant ? "Camera paused" : "Calling..."}
-                </p>
-              </div>
-            </div>
-          )}
-          {remoteTrack ? (
-            <div className="pointer-events-none absolute left-0 right-0 top-[calc(env(safe-area-inset-top,0px)+4.25rem)] px-6 text-center">
-              <p className="truncate text-lg font-semibold text-white">
-                {participant.displayName}
-              </p>
-              <p className="mt-1 text-sm text-white/45">
-                {remoteParticipant ? "Connected" : "Calling..."}
-              </p>
-            </div>
-          ) : null}
-          <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+7.25rem)] right-5 h-36 w-24 overflow-hidden rounded-[20px] border border-white/10 bg-zinc-950 shadow-[0_14px_40px_rgba(0,0,0,0.45)] sm:bottom-[calc(env(safe-area-inset-bottom,0px)+8rem)] sm:right-7 sm:h-44 sm:w-32">
-            {localTrack ? (
-              <VideoTrack
-                trackRef={localTrack}
-                className="h-full w-full scale-x-[-1] object-cover"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-white/[0.06] text-white/35">
-                <VideoOff className="h-5 w-5" aria-hidden="true" />
-              </div>
-            )}
-          </div>
+      <div className="pointer-events-none absolute inset-x-0 top-[calc(env(safe-area-inset-top,0px)+6.5rem)] z-20 flex justify-center px-6 text-center sm:top-[calc(env(safe-area-inset-top,0px)+7.5rem)]">
+        <div className="flex max-w-[20rem] flex-col items-center">
+          <CallParticipantAvatar
+            participant={participant}
+            sizeClassName="h-[112px] w-[112px] sm:h-32 sm:w-32"
+            fallbackClassName="text-3xl sm:text-4xl"
+          />
+          <p className="mt-6 max-w-full truncate text-4xl font-bold leading-tight tracking-normal text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.45)] sm:text-5xl">
+            {participant.displayName}
+          </p>
+          <p className="mt-3 text-base font-medium text-white/70 drop-shadow-[0_1px_10px_rgba(0,0,0,0.4)]">
+            {callStatus}
+          </p>
         </div>
       </div>
-      <VideoCallControls onEnd={onEnd} />
+      {remoteTrack && localTrack ? (
+        <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+7.25rem)] right-5 z-20 h-36 w-24 overflow-hidden rounded-[22px] border border-white/15 bg-zinc-950 shadow-[0_14px_40px_rgba(0,0,0,0.45)] sm:bottom-[calc(env(safe-area-inset-bottom,0px)+8rem)] sm:right-7 sm:h-44 sm:w-32">
+          <VideoTrack
+            trackRef={localTrack}
+            className="h-full w-full scale-x-[-1] object-cover"
+          />
+        </div>
+      ) : null}
+      {hasCameraError ? (
+        <p className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+6.25rem)] z-30 px-6 text-center text-sm font-medium text-white/55 sm:bottom-[calc(env(safe-area-inset-bottom,0px)+7rem)]">
+          {cameraError}
+        </p>
+      ) : null}
+      <VideoCallControls onEnd={onEnd} onCameraError={setCameraError} />
     </div>
   );
 }
 
-function VideoCallControls({ onEnd }: { onEnd(): void }) {
+function VideoCallControls({
+  onEnd,
+  onCameraError,
+}: {
+  onEnd(): void;
+  onCameraError(message: string | null): void;
+}) {
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } =
     useLocalParticipant();
 
@@ -820,8 +867,16 @@ function VideoCallControls({ onEnd }: { onEnd(): void }) {
   }, [isMicrophoneEnabled, localParticipant]);
 
   const handleToggleCamera = useCallback(() => {
-    void localParticipant.setCameraEnabled(!isCameraEnabled);
-  }, [isCameraEnabled, localParticipant]);
+    localParticipant
+      .setCameraEnabled(!isCameraEnabled)
+      .then(() => {
+        onCameraError(null);
+      })
+      .catch((error: unknown) => {
+        console.warn("Failed to toggle video call camera", error);
+        onCameraError(getCameraUnavailableMessage(error));
+      });
+  }, [isCameraEnabled, localParticipant, onCameraError]);
 
   return (
     <CallControlDock>
@@ -886,80 +941,87 @@ function VoiceCallExperience({
   participant: ThreadParticipant;
   onEnd(): void;
 }) {
-  const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
   const remoteParticipants = useRemoteParticipants();
   const callStatus = remoteParticipants.length > 0 ? "Connected" : "Calling...";
+
+  return (
+    <div className="fixed inset-0 h-[100dvh] w-screen overflow-hidden bg-[#18191b] px-6 text-center text-white">
+      <CallDismissButton onEnd={onEnd} />
+      <div className="flex h-full min-h-0 items-center justify-center pb-[calc(env(safe-area-inset-bottom,0px)+8.75rem)] pt-[calc(env(safe-area-inset-top,0px)+4.75rem)] sm:pb-[calc(env(safe-area-inset-bottom,0px)+10rem)] sm:pt-[calc(env(safe-area-inset-top,0px)+5.5rem)]">
+        <div className="flex max-w-[20rem] flex-col items-center">
+          <CallParticipantAvatar
+            participant={participant}
+            sizeClassName="h-[120px] w-[120px] sm:h-32 sm:w-32"
+            fallbackClassName="text-3xl sm:text-4xl"
+          />
+          <p className="mt-7 max-w-full truncate text-4xl font-bold leading-tight tracking-normal text-white sm:text-5xl">
+            {participant.displayName}
+          </p>
+          <p className="mt-3 text-base font-medium text-white/45 sm:text-lg">
+            {callStatus}
+          </p>
+        </div>
+      </div>
+      <VoiceCallControls onEnd={onEnd} />
+    </div>
+  );
+}
+
+function VoiceCallControls({ onEnd }: { onEnd(): void }) {
+  const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
 
   const handleToggleMute = useCallback(() => {
     void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
   }, [isMicrophoneEnabled, localParticipant]);
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden bg-[#1c1d20] px-6 text-center">
-      <CallDismissButton onEnd={onEnd} />
-      <div className="flex h-full min-h-0 flex-col items-center pt-[calc(env(safe-area-inset-top,0px)+8.25rem)] sm:pt-[calc(env(safe-area-inset-top,0px)+9.5rem)]">
-        <div className="flex flex-col items-center">
-          <CallParticipantAvatar
-            participant={participant}
-            sizeClassName="h-28 w-28 sm:h-32 sm:w-32"
-            fallbackClassName="text-3xl sm:text-4xl"
-          />
-          <p className="mt-7 max-w-[18rem] text-4xl font-bold leading-tight tracking-normal text-white sm:text-5xl">
-            {participant.displayName}
-          </p>
-          <p className="mt-3 text-base font-medium text-white/45">
-            {callStatus}
-          </p>
-        </div>
-      </div>
-      <CallControlDock>
-        <button
-          type="button"
-          onClick={handleToggleMute}
-          className={callControlClassName(isMicrophoneEnabled)}
-          aria-label={
-            isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"
-          }
-        >
-          {isMicrophoneEnabled ? (
-            <Mic className="h-5 w-5" aria-hidden="true" />
-          ) : (
-            <MicOff className="h-5 w-5" aria-hidden="true" />
-          )}
-        </button>
-        <button
-          type="button"
-          disabled
-          className={disabledCallControlClassName()}
-          aria-label="Video controls unavailable in voice call"
-        >
-          <VideoOff className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          disabled
-          className={disabledCallControlClassName()}
-          aria-label="Speaker controls unavailable"
-        >
-          <Volume2 className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          disabled
-          className={disabledCallControlClassName()}
-          aria-label="More call options unavailable"
-        >
-          <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={onEnd}
-          className={endCallControlClassName()}
-          aria-label="End voice call"
-        >
-          <PhoneOff className="h-5 w-5" aria-hidden="true" />
-        </button>
-      </CallControlDock>
-    </div>
+    <CallControlDock>
+      <button
+        type="button"
+        onClick={handleToggleMute}
+        className={callControlClassName(isMicrophoneEnabled)}
+        aria-label={
+          isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"
+        }
+      >
+        {isMicrophoneEnabled ? (
+          <Mic className="h-5 w-5" aria-hidden="true" />
+        ) : (
+          <MicOff className="h-5 w-5" aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        disabled
+        className={disabledCallControlClassName()}
+        aria-label="Video controls unavailable in voice call"
+      >
+        <VideoOff className="h-5 w-5" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        disabled
+        className={disabledCallControlClassName()}
+        aria-label="Speaker controls unavailable"
+      >
+        <Volume2 className="h-5 w-5" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        disabled
+        className={disabledCallControlClassName()}
+        aria-label="More call options unavailable"
+      >
+        <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onClick={onEnd}
+        className={endCallControlClassName()}
+        aria-label="End voice call"
+      >
+        <PhoneOff className="h-5 w-5" aria-hidden="true" />
+      </button>
+    </CallControlDock>
   );
 }

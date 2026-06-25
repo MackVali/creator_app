@@ -24,6 +24,16 @@ type NonDailyDebugMetadata = {
   } | null;
 };
 
+const getNonDailyMetadata = (
+  metadata: ScheduleInstance["metadata"]
+): NonDailyDebugMetadata["nonDaily"] | null => {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+  const candidate = metadata as NonDailyDebugMetadata;
+  return candidate.nonDaily ?? null;
+};
+
 const buildHabit = (overrides: Partial<HabitScheduleItem> = {}) =>
   ({
     id: "habit-weekly",
@@ -141,19 +151,18 @@ describe("non-daily chain orchestration", () => {
           new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
       );
     const payload = scheduled.map((inst) => {
-      const metadata = inst.metadata as NonDailyDebugMetadata | null;
+      const metadata = getNonDailyMetadata(inst.metadata);
       return {
         id: inst.id,
-        role: metadata?.nonDaily?.role ?? null,
+        role: metadata?.role ?? null,
         start_utc: inst.start_utc,
         local_day: toISODate(new Date(inst.start_utc)),
-        dueAtUtc: metadata?.nonDaily?.dueAtUtc ?? null,
+        dueAtUtc: metadata?.dueAtUtc ?? null,
         anchorCompletedAtUtc:
-          metadata?.nonDaily?.anchorCompletedAtUtc ?? null,
+          metadata?.anchorCompletedAtUtc ?? null,
         status: inst.status,
       };
     });
-    // eslint-disable-next-line no-console
     console.log(`[${label}] non-daily chain`, payload);
   };
 
@@ -307,7 +316,7 @@ describe("non-daily chain orchestration", () => {
           new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
       );
     const roles = scheduled.map(
-      (inst) => (inst.metadata as any)?.nonDaily?.role ?? null
+      (inst) => getNonDailyMetadata(inst.metadata)?.role ?? null
     );
 
     expectWithDebug(() => expect(scheduled).toHaveLength(2), "on-track");
@@ -317,15 +326,15 @@ describe("non-daily chain orchestration", () => {
     );
 
     const primary = scheduled.find(
-      (inst) => (inst.metadata as any)?.nonDaily?.role === "PRIMARY"
+      (inst) => getNonDailyMetadata(inst.metadata)?.role === "PRIMARY"
     )!;
     const forecast = scheduled.find(
-      (inst) => (inst.metadata as any)?.nonDaily?.role === "FORECAST"
+      (inst) => getNonDailyMetadata(inst.metadata)?.role === "FORECAST"
     )!;
     const primaryStart = new Date(primary.start_utc);
     const forecastStart = new Date(forecast.start_utc);
     const forecastDue = new Date(
-      (forecast.metadata as any)?.nonDaily?.dueAtUtc ?? ""
+      getNonDailyMetadata(forecast.metadata)?.dueAtUtc ?? ""
     );
     const expectedForecastDue = new Date(primaryStart);
     expectedForecastDue.setUTCDate(expectedForecastDue.getUTCDate() + 7);
@@ -343,14 +352,16 @@ describe("non-daily chain orchestration", () => {
     );
     expectWithDebug(
       () =>
-        expect((primary.metadata as any)?.nonDaily?.dueAtUtc).toBe(
+        expect(getNonDailyMetadata(primary.metadata)?.dueAtUtc).toBe(
           expectedPrimaryDue.toISOString()
         ),
       "on-track"
     );
     expectWithDebug(
       () =>
-        expect((primary.metadata as any)?.nonDaily?.anchorCompletedAtUtc).toBe(
+        expect(
+          getNonDailyMetadata(primary.metadata)?.anchorCompletedAtUtc
+        ).toBe(
           new Date(habit.lastCompletedAt ?? "").toISOString()
         ),
       "on-track"
@@ -402,16 +413,20 @@ describe("non-daily chain orchestration", () => {
 
     expectWithDebug(() => expect(scheduled).toHaveLength(2), "overdue");
     const primary = scheduled.find(
-      (inst) => (inst.metadata as any)?.nonDaily?.role === "PRIMARY"
+      (inst) => getNonDailyMetadata(inst.metadata)?.role === "PRIMARY"
     )!;
     const forecast = scheduled.find(
-      (inst) => (inst.metadata as any)?.nonDaily?.role === "FORECAST"
+      (inst) => getNonDailyMetadata(inst.metadata)?.role === "FORECAST"
     )!;
 
     const primaryStart = new Date(primary.start_utc);
     const forecastStart = new Date(forecast.start_utc);
-    const primaryDue = new Date((primary.metadata as any)?.nonDaily?.dueAtUtc ?? "");
-    const forecastDue = new Date((forecast.metadata as any)?.nonDaily?.dueAtUtc ?? "");
+    const primaryDue = new Date(
+      getNonDailyMetadata(primary.metadata)?.dueAtUtc ?? ""
+    );
+    const forecastDue = new Date(
+      getNonDailyMetadata(forecast.metadata)?.dueAtUtc ?? ""
+    );
     const expectedForecastDue = new Date(primaryStart);
     expectedForecastDue.setUTCDate(expectedForecastDue.getUTCDate() + 7);
     const expectedPrimaryDue = new Date("2024-02-01T15:00:00Z");
@@ -440,7 +455,9 @@ describe("non-daily chain orchestration", () => {
     );
     expectWithDebug(
       () =>
-        expect((primary.metadata as any)?.nonDaily?.anchorCompletedAtUtc).toBe(
+        expect(
+          getNonDailyMetadata(primary.metadata)?.anchorCompletedAtUtc
+        ).toBe(
           new Date(habit.lastCompletedAt ?? "").toISOString()
         ),
       "overdue"
