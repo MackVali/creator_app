@@ -53,65 +53,42 @@ export async function resetUnlockedScheduledProjectInstances(
   timing?: SchedulerTiming | null
 ): Promise<ResetResult> {
   const startedAt = schedulerNowMs();
-  const { data: instancesToMiss, error: fetchError } = await client
+  const { count, error: updateError } = await client
     .from("schedule_instances")
-    .select("id")
+    .update(
+      {
+        status: "unscheduled",
+        start_utc: null,
+        end_utc: null,
+        window_id: null,
+        day_type_time_block_id: null,
+        time_block_id: null,
+        overlay_window_id: null,
+        updated_at: now,
+      },
+      { count: "exact" }
+    )
     .eq("user_id", userId)
     .eq("source_type", "PROJECT")
     .eq("status", "scheduled")
     .eq("locked", false);
 
-  if (fetchError) {
-    if (timing) {
-      timing.runner.resetUnlockedProjects.ms += elapsedMs(startedAt);
-    }
-    return { count: null, error: fetchError };
-  }
-
-  const instanceIds = (instancesToMiss ?? [])
-    .map((instance) => instance.id)
-    .filter(
-      (id): id is string => typeof id === "string" && id.length > 0
-    );
-
-  if (instanceIds.length === 0) {
-    if (timing) {
-      timing.runner.resetUnlockedProjects.ms += elapsedMs(startedAt);
-      timing.runner.resetUnlockedProjects.fetched = 0;
-      timing.runner.resetUnlockedProjects.updated = 0;
-    }
-    return { count: 0, error: null };
-  }
-
-  const { error: updateError } = await client
-    .from("schedule_instances")
-    .update({
-      status: "unscheduled",
-      start_utc: null,
-      end_utc: null,
-      window_id: null,
-      day_type_time_block_id: null,
-      time_block_id: null,
-      overlay_window_id: null,
-      updated_at: now,
-    })
-    .in("id", instanceIds);
-
   if (updateError) {
     if (timing) {
       timing.runner.resetUnlockedProjects.ms += elapsedMs(startedAt);
-      timing.runner.resetUnlockedProjects.fetched = instanceIds.length;
+      timing.runner.resetUnlockedProjects.fetched = count ?? 0;
       timing.runner.resetUnlockedProjects.updated = null;
     }
     return { count: null, error: updateError };
   }
 
+  const resetCount = count ?? 0;
   if (timing) {
     timing.runner.resetUnlockedProjects.ms += elapsedMs(startedAt);
-    timing.runner.resetUnlockedProjects.fetched = instanceIds.length;
-    timing.runner.resetUnlockedProjects.updated = instanceIds.length;
+    timing.runner.resetUnlockedProjects.fetched = resetCount;
+    timing.runner.resetUnlockedProjects.updated = resetCount;
   }
-  return { count: instanceIds.length, error: null };
+  return { count: resetCount, error: null };
 }
 
 export async function runSchedulerForUser(

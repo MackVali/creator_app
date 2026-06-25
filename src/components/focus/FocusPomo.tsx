@@ -3609,7 +3609,9 @@ function FocusPomoFilterSection({
             : "grid -translate-y-1 grid-rows-[0fr] overflow-hidden opacity-0 transition-[grid-template-rows,opacity,transform] duration-300 ease-out mt-0"
         }
       >
-        <div className="min-h-0 overflow-hidden">{children}</div>
+        <div className="min-h-0 max-h-[min(32dvh,16rem)] overflow-y-auto overflow-x-hidden pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
+          {children}
+        </div>
       </div>
     </section>
   );
@@ -5686,7 +5688,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         }}
                       >
                         <div className="grid max-h-[inherit] min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden px-3 pt-3 sm:flex sm:max-h-[min(68dvh,42rem)] sm:flex-col sm:px-4 sm:py-4">
-                          <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-2 pr-1 sm:flex-1 sm:space-y-4 sm:pb-0">
+                          <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain pb-5 pr-1 sm:flex-1 sm:space-y-4 sm:pb-0">
                             <div className="flex items-center justify-between gap-2 sm:gap-3">
                               <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
                                 Focus Scope
@@ -6062,7 +6064,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </FocusPomoFilterSection>
                           ) : null}
                         </div>
-                        <div className="shrink-0 border-t border-black/40 bg-black/35 px-0 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2 sm:py-3">
+                        <div className="sticky bottom-0 z-10 shrink-0 border-t border-black/40 bg-black/90 px-0 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2 shadow-[0_-18px_28px_rgba(0,0,0,0.32)] backdrop-blur-md sm:static sm:bg-black/35 sm:py-3 sm:shadow-none sm:backdrop-blur-0">
                           <button
                             type="button"
                             onClick={commitScopeEditor}

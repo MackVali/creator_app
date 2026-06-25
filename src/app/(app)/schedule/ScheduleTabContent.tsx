@@ -4729,11 +4729,20 @@ export default function ScheduleTabContent({
       setHabits(payload.habits);
       setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
-      void syncScheduleBlockLocalNotifications(nextInstances).catch((error) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[schedule.local_notifications.sync_failed]", error);
-        }
-      });
+      void syncScheduleBlockLocalNotifications(nextInstances)
+        .then((result) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[schedule.local_notifications.sync]", {
+              inputInstances: nextInstances.length,
+              result,
+            });
+          }
+        })
+        .catch((error) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("[schedule.local_notifications.sync_failed]", error);
+          }
+        });
       setAllInstances(nextInstances);
       setInstances(nextInstances);
       nextInstances.forEach((instance) => {

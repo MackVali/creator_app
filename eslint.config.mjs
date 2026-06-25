@@ -18,6 +18,7 @@ const eslintConfig = [
       ".vercel/**",
       "out/**",
       "build/**",
+      "ios/App/build/**",
       "ios/App/App/public/**",
       "next-env.d.ts",
     ],
