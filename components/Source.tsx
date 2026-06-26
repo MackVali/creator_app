@@ -4244,9 +4244,12 @@ export default function Source() {
               ref={cropFrameRef}
               className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/70"
             >
-              <img
+              <Image
                 src={cropSourceUrl}
                 alt="Crop preview"
+                width={cropImageSize?.width ?? 1}
+                height={cropImageSize?.height ?? 1}
+                unoptimized
                 className="absolute left-1/2 top-1/2 max-w-none select-none touch-none"
                 style={{ transform: cropImageTransform }}
                 onPointerDown={handleCropPointerDown}

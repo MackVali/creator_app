@@ -180,6 +180,40 @@ function formatConstraintSummary(
 const JUMP_TO_DATE_MIN_YEAR = 2025;
 const JUMP_TO_DATE_FUTURE_YEARS = 10;
 
+const normalizeFlameLevel = (value?: string | null): FlameLevel => {
+  const upper = String(value ?? "MEDIUM")
+    .trim()
+    .toUpperCase();
+  return (
+    ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"] as const
+  ).includes(upper as FlameLevel)
+    ? (upper as FlameLevel)
+    : "MEDIUM";
+};
+
+const normalizeBlockLabel = (value?: string | null) => {
+  const trimmed = (value ?? "").trim();
+  return trimmed.length > 0 ? trimmed.toUpperCase() : null;
+};
+
+const timeStringToMinutes = (time?: string | null) => {
+  const [h, m] = String(time ?? "")
+    .split(":")
+    .map(Number);
+  const hh = Number.isFinite(h) ? Math.min(Math.max(h, 0), 24) : 0;
+  const mm = Number.isFinite(m) ? Math.min(Math.max(m, 0), 59) : 0;
+  const clampedHour = hh === 24 && mm > 0 ? 23 : hh;
+  return clampedHour * 60 + mm;
+};
+
+const normalizeTimeLabel = (value?: string | null) => {
+  const minutes = timeStringToMinutes(value);
+  const clamped = Math.min(Math.max(minutes, 0), 1439);
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+};
+
 export function JumpToDateSheet({
   variant = "sheet",
   open,
@@ -972,36 +1006,6 @@ export function JumpToDateSheet({
 
   const formatHours = (value?: number) =>
     Number.isFinite(value ?? NaN) ? `${(value as number).toFixed(1)}h` : "—";
-  const normalizeFlameLevel = (value?: string | null): FlameLevel => {
-    const upper = String(value ?? "MEDIUM")
-      .trim()
-      .toUpperCase();
-    return (
-      ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"] as const
-    ).includes(upper as FlameLevel)
-      ? (upper as FlameLevel)
-      : "MEDIUM";
-  };
-  const normalizeBlockLabel = (value?: string | null) => {
-    const trimmed = (value ?? "").trim();
-    return trimmed.length > 0 ? trimmed.toUpperCase() : null;
-  };
-  const timeStringToMinutes = (time?: string | null) => {
-    const [h, m] = String(time ?? "")
-      .split(":")
-      .map(Number);
-    const hh = Number.isFinite(h) ? Math.min(Math.max(h, 0), 24) : 0;
-    const mm = Number.isFinite(m) ? Math.min(Math.max(m, 0), 59) : 0;
-    const clampedHour = hh === 24 && mm > 0 ? 23 : hh;
-    return clampedHour * 60 + mm;
-  };
-  const normalizeTimeLabel = (value?: string | null) => {
-    const minutes = timeStringToMinutes(value);
-    const clamped = Math.min(Math.max(minutes, 0), 1439);
-    const h = Math.floor(clamped / 60);
-    const m = clamped % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  };
   const isVisibleLevel = (level: (typeof ENERGY_LEVELS)[number]) => {
     const epsilon = 0.0001;
     const d = energyHours.day?.[level] ?? 0;
@@ -1174,7 +1178,6 @@ export function JumpToDateSheet({
     dayTypes,
     hasPendingAssignment,
     isPaintMode,
-    normalizeFlameLevel,
     open,
     paintSelectionKey,
     selectedDayTypeId,
@@ -1337,7 +1340,7 @@ export function JumpToDateSheet({
       );
       setIsOverlayModalOpen(true);
     },
-    [computeOverlayStartDate, OVERLAY_DURATION_MS]
+    [computeOverlayStartDate]
   );
 
   const overlayModalStart =
@@ -2036,8 +2039,6 @@ export function JumpToDateSheet({
       assignDayTypeToSelection,
       dayTypes,
       defaultDayTypeForSelection?.id,
-      normalizeFlameLevel,
-      paintDayType?.id,
       paintSelectionKey,
       selectedDayTypeId,
     ]
@@ -2288,9 +2289,8 @@ export function JumpToDateSheet({
       assignmentDayTypeId,
       assignDayTypeToSelection,
       ensureCustomDayTypeForDate,
-      normalizeFlameLevel,
       paintDayType?.id,
-      selectedDayTypeId,
+      paintSelectionKey,
     ]
   );
 

@@ -546,7 +546,7 @@ function isBreakTimeBlock(
 function formatEventPreview(instance: ScheduleBlockLocalNotificationInstance) {
   const name = eventName(instance);
   const prefix = eventSkillPrefix(instance);
-  return prefix ? `${prefix} ${name}` : name;
+  return prefix ? `${prefix}\u00A0${name}` : name;
 }
 
 function eventName(instance: ScheduleBlockLocalNotificationInstance) {
