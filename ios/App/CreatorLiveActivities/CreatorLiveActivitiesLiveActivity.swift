@@ -6,6 +6,7 @@
 //
 
 import ActivityKit
+import AppIntents
 import WidgetKit
 import SwiftUI
 
@@ -46,7 +47,7 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 8) {
                         FocusPomoEventTitleView(
                             model: model,
                             font: .headline.weight(.bold),
@@ -59,6 +60,8 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                                 .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
                                 .lineLimit(1)
                         }
+
+                        FocusPomoActionButtonsView(model: model, compact: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 2)
@@ -68,13 +71,10 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(FocusPomoLiveActivityTheme.green)
             } compactTrailing: {
-                Text(model.shortTimerText)
+                FocusPomoTimerTextView(model: model)
                     .font(.caption2.weight(.bold))
-                    .monospacedDigit()
                     .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .frame(maxWidth: 42, alignment: .trailing)
+                    .frame(maxWidth: 46, alignment: .trailing)
             } minimal: {
                 Image(systemName: "timer")
                     .font(.caption2.weight(.semibold))
@@ -132,6 +132,8 @@ private struct FocusPomoLockScreenView: View {
             }
 
             FocusPomoBottomAccentView(model: model)
+
+            FocusPomoActionButtonsView(model: model, compact: false)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
@@ -197,14 +199,7 @@ private struct FocusPomoTimerView: View {
 
     @ViewBuilder
     private var timerText: some View {
-        switch model.timerDisplay {
-        case .countdown(let endDate):
-            Text(timerInterval: Date.now...endDate, countsDown: true)
-        case .elapsed(let startDate):
-            Text(timerInterval: startDate...Date.distantFuture, countsDown: false)
-        case .staticText(let text):
-            Text(text)
-        }
+        FocusPomoTimerTextView(model: model)
     }
 
     private var timerFont: Font {
@@ -218,11 +213,42 @@ private struct FocusPomoTimerView: View {
 }
 
 @available(iOS 16.2, *)
+private struct FocusPomoTimerTextView: View {
+    let model: FocusPomoLiveActivityModel
+
+    var body: some View {
+        Group {
+            switch model.timerDisplay {
+            case .countdown(let startDate, let endDate):
+                Text(timerInterval: startDate...endDate, countsDown: true, showsHours: true)
+            case .elapsed(let startDate):
+                Text(startDate, style: .timer)
+            case .staticText(let text):
+                Text(text)
+            }
+        }
+        .monospacedDigit()
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+    }
+}
+
+@available(iOS 16.2, *)
 private struct FocusPomoBottomAccentView: View {
     let model: FocusPomoLiveActivityModel
 
     var body: some View {
-        if let progress = model.progress {
+        if let interval = model.countdownInterval {
+            ProgressView(timerInterval: interval, countsDown: false) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .progressViewStyle(.linear)
+            .tint(FocusPomoLiveActivityTheme.green)
+            .frame(height: 3)
+            .accessibilityHidden(true)
+        } else if let progress = model.progress {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -244,9 +270,78 @@ private struct FocusPomoBottomAccentView: View {
 }
 
 @available(iOS 16.2, *)
+private struct FocusPomoActionButtonsView: View {
+    let model: FocusPomoLiveActivityModel
+    let compact: Bool
+
+    var body: some View {
+        if #available(iOS 17.0, *), model.canShowActions {
+            HStack(spacing: 8) {
+                Button(intent: FocusPomoSkipLiveActivityIntent(
+                    sessionId: model.sessionId,
+                    title: model.title,
+                    scheduleInstanceId: model.scheduleInstanceId
+                )) {
+                    Text("Skip")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(FocusPomoActionButtonStyle(tone: .secondary, compact: compact))
+
+                Button(intent: FocusPomoCompleteLiveActivityIntent(
+                    sessionId: model.sessionId,
+                    title: model.title,
+                    scheduleInstanceId: model.scheduleInstanceId
+                )) {
+                    Text("Complete")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(FocusPomoActionButtonStyle(tone: .primary, compact: compact))
+            }
+            .frame(maxWidth: compact ? 280 : .infinity)
+            .padding(.top, compact ? 1 : 2)
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+private struct FocusPomoActionButtonStyle: ButtonStyle {
+    enum Tone {
+        case primary
+        case secondary
+    }
+
+    let tone: Tone
+    let compact: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption2.weight(.bold))
+            .textCase(.uppercase)
+            .foregroundStyle(tone == .primary ? .black : .white.opacity(0.82))
+            .padding(.vertical, compact ? 6 : 8)
+            .padding(.horizontal, compact ? 10 : 12)
+            .background(background(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(tone == .primary ? Color.clear : Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.82 : 1)
+    }
+
+    private func background(isPressed: Bool) -> Color {
+        switch tone {
+        case .primary:
+            return FocusPomoLiveActivityTheme.green.opacity(isPressed ? 0.82 : 0.95)
+        case .secondary:
+            return Color.white.opacity(isPressed ? 0.10 : 0.065)
+        }
+    }
+}
+
+@available(iOS 16.2, *)
 private struct FocusPomoLiveActivityModel {
     enum TimerDisplay {
-        case countdown(Date)
+        case countdown(Date, Date)
         case elapsed(Date)
         case staticText(String)
     }
@@ -257,6 +352,18 @@ private struct FocusPomoLiveActivityModel {
         values = context.attributes.values.merging(context.state.values) { _, stateValue in
             stateValue
         }
+    }
+
+    var sessionId: String {
+        sanitized("sessionId") ?? ""
+    }
+
+    var scheduleInstanceId: String {
+        sanitized("scheduleInstanceId") ?? ""
+    }
+
+    var canShowActions: Bool {
+        !sessionId.isEmpty && isRunning
     }
 
     var title: String {
@@ -296,19 +403,15 @@ private struct FocusPomoLiveActivityModel {
             return .staticText(formatDuration(secondsValue("elapsedSeconds")))
         }
 
-        if let targetEndDate = dateValue("targetEndAt"), targetEndDate > Date.now {
-            return .countdown(targetEndDate)
+        if
+            let startedAt = dateValue("startedAt"),
+            let targetEndDate = dateValue("endsAt") ?? dateValue("targetEndAt"),
+            targetEndDate > startedAt
+        {
+            return .countdown(startedAt, targetEndDate)
         }
 
         return .staticText(formatDuration(secondsValue("remainingSeconds")))
-    }
-
-    var shortTimerText: String {
-        if isStopwatch {
-            return formatDuration(secondsValue("elapsedSeconds"), compact: true)
-        }
-
-        return formatDuration(secondsValue("remainingSeconds"), compact: true)
     }
 
     var progress: Double? {
@@ -331,7 +434,7 @@ private struct FocusPomoLiveActivityModel {
 
         if
             let startedAt = dateValue("startedAt"),
-            let targetEndAt = dateValue("targetEndAt"),
+            let targetEndAt = dateValue("endsAt") ?? dateValue("targetEndAt"),
             targetEndAt > startedAt
         {
             let elapsed = Date.now.timeIntervalSince(startedAt)
@@ -341,19 +444,36 @@ private struct FocusPomoLiveActivityModel {
         return nil
     }
 
+    var countdownInterval: ClosedRange<Date>? {
+        guard
+            !isStopwatch,
+            let startedAt = dateValue("startedAt"),
+            let targetEndAt = dateValue("endsAt") ?? dateValue("targetEndAt"),
+            targetEndAt > startedAt
+        else {
+            return nil
+        }
+
+        return startedAt...targetEndAt
+    }
+
     private var isStopwatch: Bool {
         let mode = sanitized("mode")?.lowercased() ?? ""
         return mode.contains("stopwatch") || mode.contains("countup")
     }
 
     private var hasPomoCountdownData: Bool {
-        dateValue("targetEndAt") != nil || secondsValue("remainingSeconds") != nil
+        dateValue("endsAt") != nil || dateValue("targetEndAt") != nil || secondsValue("remainingSeconds") != nil
+    }
+
+    private var isRunning: Bool {
+        (sanitized("status") ?? "running").lowercased() == "running"
     }
 
     private var durationFromDates: Int? {
         guard
             let startedAt = dateValue("startedAt"),
-            let targetEndAt = dateValue("targetEndAt"),
+            let targetEndAt = dateValue("endsAt") ?? dateValue("targetEndAt"),
             targetEndAt > startedAt
         else {
             return nil

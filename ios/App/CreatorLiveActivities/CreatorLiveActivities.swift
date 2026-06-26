@@ -9,8 +9,10 @@ import WidgetKit
 import SwiftUI
 
 private let creatorScheduleWidgetKind = "CreatorScheduleWidget"
+private let creatorFocusPomoWidgetKind = "CreatorFocusPomoWidget"
 private let creatorWidgetAppGroup = "group.app.trycreator.creator"
 private let creatorSchedulePayloadKey = "creator.schedule.widget.payload"
+private let creatorFocusPomoPayloadKey = "creator.focuspomo.widget.payload"
 
 struct CreatorScheduleCounts: Codable, Hashable {
     let scheduled: Int
@@ -516,6 +518,389 @@ struct CreatorScheduleStateView: View {
     }
 }
 
+struct CreatorFocusPomoPayload: Codable, Hashable {
+    let generatedAt: String
+    let isActive: Bool
+    let mode: String
+    let title: String?
+    let sourceTitle: String?
+    let skillIcon: String?
+    let sourceIcon: String?
+    let startedAt: String?
+    let endsAt: String?
+    let statusLabel: String?
+    let deepLink: String
+}
+
+struct CreatorFocusPomoEntry: TimelineEntry {
+    let date: Date
+    let payload: CreatorFocusPomoPayload?
+}
+
+struct CreatorFocusPomoProvider: TimelineProvider {
+    func placeholder(in context: Context) -> CreatorFocusPomoEntry {
+        CreatorFocusPomoEntry(date: Date(), payload: CreatorFocusPomoPayload.sample)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (CreatorFocusPomoEntry) -> Void) {
+        completion(CreatorFocusPomoEntry(date: Date(), payload: readPayload() ?? .sample))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<CreatorFocusPomoEntry>) -> Void) {
+        let entry = CreatorFocusPomoEntry(date: Date(), payload: readPayload())
+        let refreshDate = Calendar.current.date(byAdding: .minute, value: 5, to: Date()) ?? Date()
+        completion(Timeline(entries: [entry], policy: .after(refreshDate)))
+    }
+
+    private func readPayload() -> CreatorFocusPomoPayload? {
+        guard let defaults = UserDefaults(suiteName: creatorWidgetAppGroup) else {
+            NSLog("[CREATOR_FOCUS_WIDGET] widget_read_app_group_open_failed group=\(creatorWidgetAppGroup)")
+            return nil
+        }
+
+        guard let payload = defaults.string(forKey: creatorFocusPomoPayloadKey) else {
+            NSLog("[CREATOR_FOCUS_WIDGET] widget_read_missing group=\(creatorWidgetAppGroup) key=\(creatorFocusPomoPayloadKey)")
+            return nil
+        }
+
+        guard let data = payload.data(using: .utf8) else {
+            NSLog("[CREATOR_FOCUS_WIDGET] widget_read_invalid_utf8 bytes=\(payload.utf8.count)")
+            return nil
+        }
+
+        do {
+            let decoded = try JSONDecoder().decode(CreatorFocusPomoPayload.self, from: data)
+            NSLog("[CREATOR_FOCUS_WIDGET] widget_read_succeeded group=\(creatorWidgetAppGroup) key=\(creatorFocusPomoPayloadKey) active=\(decoded.isActive ? "true" : "false") mode=\(decoded.mode)")
+            return decoded
+        } catch {
+            NSLog("[CREATOR_FOCUS_WIDGET] widget_read_decode_failed bytes=\(payload.utf8.count) error=\(error.localizedDescription)")
+            return nil
+        }
+    }
+}
+
+struct CreatorFocusPomoWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+
+    let entry: CreatorFocusPomoEntry
+
+    var body: some View {
+        ZStack {
+            CreatorWidgetTheme.background
+            CreatorWidgetTheme.surfaceGlow
+
+            switch family {
+            case .systemSmall:
+                CreatorFocusPomoSmallView(payload: entry.payload)
+            case .systemMedium:
+                CreatorFocusPomoMediumView(payload: entry.payload)
+            case .systemLarge:
+                CreatorFocusPomoLargeView(payload: entry.payload)
+            default:
+                CreatorFocusPomoMediumView(payload: entry.payload)
+            }
+        }
+        .widgetURL(creatorFocusPomoWidgetUrl(entry.payload))
+    }
+}
+
+struct CreatorFocusPomoSmallView: View {
+    let payload: CreatorFocusPomoPayload?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CreatorFocusPomoHeader(compact: true)
+            Spacer(minLength: 0)
+
+            if payload?.isActive == true {
+                CreatorFocusPomoActiveSummary(payload: payload, titleFont: .headline.weight(.bold), compact: true)
+            } else {
+                CreatorFocusPomoReadyState(payload: payload, compact: true)
+            }
+
+            Spacer(minLength: 0)
+            CreatorFocusPomoCue(isActive: payload?.isActive == true)
+        }
+        .padding(14)
+    }
+}
+
+struct CreatorFocusPomoMediumView: View {
+    let payload: CreatorFocusPomoPayload?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CreatorFocusPomoHeader(compact: false)
+
+            if payload?.isActive == true {
+                CreatorFocusPomoActiveCard(payload: payload, showDetails: false)
+            } else {
+                Spacer(minLength: 0)
+                CreatorFocusPomoReadyState(payload: payload, compact: false)
+                Spacer(minLength: 0)
+            }
+
+            CreatorFocusPomoCue(isActive: payload?.isActive == true)
+        }
+        .padding(14)
+    }
+}
+
+struct CreatorFocusPomoLargeView: View {
+    let payload: CreatorFocusPomoPayload?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            CreatorFocusPomoHeader(compact: false)
+
+            if payload?.isActive == true {
+                CreatorFocusPomoActiveCard(payload: payload, showDetails: true)
+                Spacer(minLength: 0)
+                CreatorFocusPomoSessionDetails(payload: payload)
+            } else {
+                Spacer(minLength: 0)
+                CreatorFocusPomoReadyState(payload: payload, compact: false)
+                Spacer(minLength: 0)
+            }
+
+            CreatorFocusPomoCue(isActive: payload?.isActive == true)
+        }
+        .padding(16)
+    }
+}
+
+struct CreatorFocusPomoHeader: View {
+    let compact: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("CREATOR")
+                    .font(.caption2.weight(.heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(.white)
+                Text("Focus Pomo")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(CreatorWidgetTheme.green)
+            }
+            Spacer(minLength: 8)
+            if !compact {
+                Text("EXECUTE")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+struct CreatorFocusPomoActiveCard: View {
+    let payload: CreatorFocusPomoPayload?
+    let showDetails: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: showDetails ? 12 : 10) {
+            CreatorFocusPomoActiveSummary(payload: payload, titleFont: .title3.weight(.bold), compact: false)
+
+            HStack(spacing: 8) {
+                CreatorFocusPomoModePill(mode: payload?.mode)
+                CreatorFocusPomoTimerText(payload: payload)
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+        )
+    }
+}
+
+struct CreatorFocusPomoActiveSummary: View {
+    let payload: CreatorFocusPomoPayload?
+    let titleFont: Font
+    let compact: Bool
+
+    private var title: String {
+        normalizedCreatorWidgetText(payload?.title) ?? normalizedCreatorWidgetText(payload?.sourceTitle) ?? "Focus Pomo"
+    }
+
+    private var icon: String? {
+        normalizedCreatorWidgetText(payload?.skillIcon) ?? normalizedCreatorWidgetText(payload?.sourceIcon)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 9) {
+            if let icon {
+                Text(icon)
+                    .font(.system(size: compact ? 18 : 22, weight: .semibold))
+                    .frame(width: compact ? 26 : 34, height: compact ? 26 : 34)
+                    .foregroundStyle(.white)
+                    .background(CreatorWidgetTheme.iconBackground, in: Circle())
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(titleFont)
+                    .lineLimit(compact ? 2 : 1)
+                    .minimumScaleFactor(0.78)
+                    .foregroundStyle(.white)
+
+                if let sourceTitle = normalizedCreatorWidgetText(payload?.sourceTitle), sourceTitle != title {
+                    Text(sourceTitle)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                        .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                } else {
+                    Text("Active focus")
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                        .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CreatorFocusPomoReadyState: View {
+    let payload: CreatorFocusPomoPayload?
+    let compact: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 5 : 7) {
+            Text("Enter Focus")
+                .font((compact ? Font.headline : Font.title2).weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            if let sourceTitle = normalizedCreatorWidgetText(payload?.sourceTitle) {
+                Text("Last focused: \(sourceTitle)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(2)
+            } else {
+                Text("Open Focus Pomo and start execution.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CreatorFocusPomoModePill: View {
+    let mode: String?
+
+    var body: some View {
+        Text(creatorFocusPomoModeLabel(mode))
+            .font(.caption2.weight(.heavy))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .foregroundStyle(.black)
+            .background(CreatorWidgetTheme.green, in: Capsule())
+    }
+}
+
+struct CreatorFocusPomoTimerText: View {
+    let payload: CreatorFocusPomoPayload?
+
+    var body: some View {
+        Group {
+            if creatorFocusPomoModeLabel(payload?.mode) == "POMO", let endsAt = parseCreatorWidgetDate(payload?.endsAt), endsAt > Date() {
+                Text(timerInterval: Date.now...endsAt, countsDown: true)
+            } else if creatorFocusPomoModeLabel(payload?.mode) == "STOPWATCH", let startedAt = parseCreatorWidgetDate(payload?.startedAt) {
+                Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
+            } else {
+                Text(normalizedCreatorWidgetText(payload?.statusLabel) ?? "Running")
+            }
+        }
+        .font(.caption.weight(.bold))
+        .monospacedDigit()
+        .lineLimit(1)
+        .minimumScaleFactor(0.76)
+        .foregroundStyle(.white)
+    }
+}
+
+struct CreatorFocusPomoSessionDetails: View {
+    let payload: CreatorFocusPomoPayload?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            CreatorFocusPomoDetailRow(label: "Mode", value: creatorFocusPomoModeLabel(payload?.mode))
+            CreatorFocusPomoDetailRow(label: "Status", value: normalizedCreatorWidgetText(payload?.statusLabel) ?? "Running")
+            if let startedAt = parseCreatorWidgetDate(payload?.startedAt) {
+                CreatorFocusPomoDetailRow(label: "Started", value: startedAt.formatted(date: .omitted, time: .shortened))
+            }
+        }
+    }
+}
+
+struct CreatorFocusPomoDetailRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+        )
+    }
+}
+
+struct CreatorFocusPomoCue: View {
+    let isActive: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(isActive ? CreatorWidgetTheme.green : CreatorWidgetTheme.mutedText)
+                .frame(width: 6, height: 6)
+            Text(isActive ? "Tap to resume" : "Tap to enter")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                .lineLimit(1)
+        }
+    }
+}
+
+struct CreatorFocusPomoWidget: Widget {
+    let kind: String = creatorFocusPomoWidgetKind
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: CreatorFocusPomoProvider()) { entry in
+            if #available(iOS 17.0, *) {
+                CreatorFocusPomoWidgetView(entry: entry)
+                    .containerBackground(CreatorWidgetTheme.background, for: .widget)
+            } else {
+                CreatorFocusPomoWidgetView(entry: entry)
+            }
+        }
+        .configurationDisplayName("CREATOR Focus Pomo")
+        .description("See your active focus and get back into execution.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
 struct CreatorCountPill: View {
     let label: String
     let value: Int
@@ -728,6 +1113,22 @@ private func statusLabel(_ status: String) -> String {
     }
 }
 
+private func normalizedCreatorWidgetText(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+private func creatorFocusPomoModeLabel(_ value: String?) -> String {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    return normalized == "STOPWATCH" ? "STOPWATCH" : "POMO"
+}
+
+private func creatorFocusPomoWidgetUrl(_ payload: CreatorFocusPomoPayload?) -> URL? {
+    let route = normalizedCreatorWidgetText(payload?.deepLink) ?? "/focus-pomo"
+    let normalizedRoute = route.hasPrefix("/") ? String(route.dropFirst()) : route
+    return URL(string: "creator://\(normalizedRoute)")
+}
+
 extension CreatorSchedulePayload {
     static let emptyToday = CreatorSchedulePayload(
         generatedAt: ISO8601DateFormatter().string(from: Date()),
@@ -789,6 +1190,22 @@ extension CreatorSchedulePayload {
                 windowId: nil
             )
         ]
+    )
+}
+
+extension CreatorFocusPomoPayload {
+    static let sample = CreatorFocusPomoPayload(
+        generatedAt: ISO8601DateFormatter().string(from: Date()),
+        isActive: true,
+        mode: "POMO",
+        title: "Ship Focus Pomo widget",
+        sourceTitle: "CREATOR",
+        skillIcon: "*",
+        sourceIcon: "*",
+        startedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-420)),
+        endsAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(1080)),
+        statusLabel: "Focus running",
+        deepLink: "/focus-pomo"
     )
 }
 
