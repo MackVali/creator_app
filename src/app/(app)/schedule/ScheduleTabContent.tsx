@@ -3954,7 +3954,7 @@ export default function ScheduleTabContent({
     }
 
     // ... rest of the useEffect remains the same ...
-  }, [userId]);
+  }, [userId, clearScheduleData]);
 
   useEffect(() => {
     if (modeType !== "MONUMENTAL") return;
@@ -4438,6 +4438,14 @@ export default function ScheduleTabContent({
   }, [view, prefersReducedMotion]);
 
   const navLock = useRef(false);
+  const navigate = useCallback((next: ScheduleView) => {
+    if (navLock.current) return;
+    navLock.current = true;
+    setView(next);
+    setTimeout(() => {
+      navLock.current = false;
+    }, 300);
+  }, []);
   const loadReqIdRef = useRef(0);
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {});
   const refreshScheduleData = useCallback(async () => {
@@ -4921,7 +4929,7 @@ export default function ScheduleTabContent({
 
     if (!userId) {
     }
-  }, [userId]);
+  }, [userId, clearScheduleData]);
 
   useEffect(() => {
     if (!userId) {
@@ -5533,11 +5541,6 @@ export default function ScheduleTabContent({
     currentDate,
     effectiveTimeZone,
     filterInstancesForDate,
-    allInstances,
-    refreshScheduledProjectIds,
-    localTimeZone,
-    resolvedModePayload,
-    loadInstancesRef,
   ]);
 
   useEffect(() => {
@@ -6026,6 +6029,7 @@ export default function ScheduleTabContent({
     timeZoneShortName,
     friendlyTimeZone,
     pxPerMin,
+    canonicalTodayDateKey,
   ]);
 
   useEffect(() => {
@@ -6478,7 +6482,6 @@ export default function ScheduleTabContent({
       stableTimeZone,
       effectiveTimeZone,
       canonicalTodayDateKey,
-      applyStatusTargets,
     ]
   );
 
@@ -6804,15 +6807,6 @@ export default function ScheduleTabContent({
       effectiveTimeZone,
     ]
   );
-  function navigate(next: ScheduleView) {
-    if (navLock.current) return;
-    navLock.current = true;
-    setView(next);
-    setTimeout(() => {
-      navLock.current = false;
-    }, 300);
-  }
-
   function handleBack() {
     router.push("/dashboard");
   }
@@ -6995,9 +6989,8 @@ export default function ScheduleTabContent({
     [
       userId,
       refreshScheduledProjectIds,
-      localTimeZone,
+      effectiveTimeZone,
       resolvedModePayload,
-      loadInstancesRef,
       syncSchedulingState,
     ]
   );
@@ -7097,10 +7090,10 @@ export default function ScheduleTabContent({
     userId,
     runScheduler,
     persistAutoRunDate,
-    refreshScheduledProjectIds,
-    loadInstancesRef,
     canonicalTodayDateKey,
     effectiveTimeZone,
+    ENABLE_BACKGROUND_SCHEDULER,
+    FULL_WRITE_WINDOW_DAYS,
   ]);
 
   const handleClearUncompletedScheduleInstances = useCallback(async () => {
@@ -7723,7 +7716,7 @@ export default function ScheduleTabContent({
       updateCurrentDate(date, { animate: false });
       navigate("day");
     },
-    [jumpPullControls, updateCurrentDate]
+    [jumpPullControls, navigate, updateCurrentDate]
   );
 
   const handleSearchResultSelect = ({
@@ -8168,7 +8161,7 @@ export default function ScheduleTabContent({
         pending.shortPress();
       }
     },
-    [cancelLongPress, openInstanceEditor]
+    [cancelLongPress, instances, openInstanceEditor]
   );
 
   const handleInstancePointerCancel = useCallback(
@@ -8515,7 +8508,7 @@ export default function ScheduleTabContent({
       dayTimelineModel
         ? computeDayTimelineHeightPx(dayTimelineModel.startHour, pxPerMin)
         : 0,
-    [dayTimelineModel?.startHour, pxPerMin]
+    [dayTimelineModel, pxPerMin]
   );
 
   const measuredTimelineContainerHeight =
@@ -11002,9 +10995,15 @@ export default function ScheduleTabContent({
       completionBounceId,
       triggerCompletionBounce,
       editingInstance,
+      editingSnapshot,
       editingProjectId,
       editingHabitId,
       habitMap,
+      handleOpenDayTypeBlockConstraints,
+      instances,
+      instancesById,
+      practiceContextDisplayById,
+      syncPairings,
     ]
   );
 

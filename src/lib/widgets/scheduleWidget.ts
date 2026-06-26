@@ -127,6 +127,19 @@ function instanceOverlapsDay(
   return startMs < dayEnd.getTime() && endMs > dayStart.getTime();
 }
 
+function instanceHasNotEnded(
+  instance: ScheduleBlockLocalNotificationInstance,
+  now: Date
+) {
+  const endMs = instance.end_utc
+    ? Date.parse(instance.end_utc)
+    : instance.start_utc
+      ? Date.parse(instance.start_utc)
+      : NaN;
+
+  return Number.isFinite(endMs) && endMs >= now.getTime();
+}
+
 function toWidgetEvent(
   instance: ScheduleBlockLocalNotificationInstance,
   timeZone: string
@@ -169,11 +182,10 @@ export function buildScheduleWidgetPayload(
     { scheduled: 0, completed: 0, missed: 0 }
   );
 
-  const upcomingEvents = instances
+  const upcomingEvents = todayInstances
     .filter((instance) => {
       if (readStatus(instance.status) !== "scheduled") return false;
-      const startMs = instance.start_utc ? Date.parse(instance.start_utc) : NaN;
-      return Number.isFinite(startMs) && startMs >= now.getTime();
+      return instanceHasNotEnded(instance, now);
     })
     .sort((left, right) => {
       const leftMs = left.start_utc ? Date.parse(left.start_utc) : 0;

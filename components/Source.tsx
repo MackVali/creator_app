@@ -1830,22 +1830,22 @@ export default function Source() {
     setIsServiceImageUploading(false)
   }
 
-  const clearProductDetailImagePreview = () => {
+  const clearProductDetailImagePreview = useCallback(() => {
     setProductDetailImagePreview((previous) => {
       if (previous && typeof window !== "undefined") {
         URL.revokeObjectURL(previous)
       }
       return null
     })
-  }
+  }, [])
 
-  const resetProductDetailImageState = () => {
+  const resetProductDetailImageState = useCallback(() => {
     clearProductDetailImagePreview()
     setProductDetailImageUrl(null)
     setProductDetailImageUploadError(null)
     setIsProductDetailImageUploading(false)
     setProductDetailImageDirty(false)
-  }
+  }, [clearProductDetailImagePreview])
 
   const removeProductDetailImageSelection = () => {
     clearProductDetailImagePreview()
@@ -1855,22 +1855,22 @@ export default function Source() {
     setIsProductDetailImageUploading(false)
   }
 
-  const clearServiceDetailImagePreview = () => {
+  const clearServiceDetailImagePreview = useCallback(() => {
     setServiceDetailImagePreview((previous) => {
       if (previous && typeof window !== "undefined") {
         URL.revokeObjectURL(previous)
       }
       return null
     })
-  }
+  }, [])
 
-  const resetServiceDetailImageState = () => {
+  const resetServiceDetailImageState = useCallback(() => {
     clearServiceDetailImagePreview()
     setServiceDetailImageUrl(null)
     setServiceDetailImageUploadError(null)
     setIsServiceDetailImageUploading(false)
     setServiceDetailImageDirty(false)
-  }
+  }, [clearServiceDetailImagePreview])
 
   const removeServiceDetailImageSelection = () => {
     clearServiceDetailImagePreview()
@@ -2417,7 +2417,12 @@ export default function Source() {
     clearProductDetailImagePreview()
 
     productDetailListingIdRef.current = currentProductDetailListing.id
-  }, [selectedProductId, currentProductDetailListing])
+  }, [
+    selectedProductId,
+    currentProductDetailListing,
+    clearProductDetailImagePreview,
+    resetProductDetailImageState,
+  ])
   useEffect(() => {
     if (!selectedServiceId) {
       setServiceDetailForm(defaultServiceSheetForm)
@@ -2483,7 +2488,12 @@ export default function Source() {
     clearServiceDetailImagePreview()
 
     serviceDetailListingIdRef.current = currentServiceDetailListing.id
-  }, [selectedServiceId, currentServiceDetailListing])
+  }, [
+    selectedServiceId,
+    currentServiceDetailListing,
+    clearServiceDetailImagePreview,
+    resetServiceDetailImageState,
+  ])
   const orders = ordersQuery.data?.orders ?? []
   const orderRows: OrderRowData[] = orders.map((order) => {
     const summaryItems = order.items

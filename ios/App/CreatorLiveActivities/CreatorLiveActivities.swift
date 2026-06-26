@@ -37,7 +37,7 @@ struct CreatorSchedulePayload: Codable, Hashable {
 
 struct CreatorScheduleEntry: TimelineEntry {
     let date: Date
-    let payload: CreatorSchedulePayload
+    let payload: CreatorSchedulePayload?
 }
 
 struct CreatorScheduleProvider: TimelineProvider {
@@ -50,7 +50,7 @@ struct CreatorScheduleProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<CreatorScheduleEntry>) -> Void) {
-        let entry = CreatorScheduleEntry(date: Date(), payload: readPayload() ?? .emptyToday)
+        let entry = CreatorScheduleEntry(date: Date(), payload: readPayload())
         let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
         completion(Timeline(entries: [entry], policy: .after(refreshDate)))
     }
@@ -76,6 +76,7 @@ struct CreatorScheduleWidgetView: View {
     var body: some View {
         ZStack {
             CreatorWidgetTheme.background
+            CreatorWidgetTheme.surfaceGlow
 
             switch family {
             case .systemSmall:
@@ -92,34 +93,39 @@ struct CreatorScheduleWidgetView: View {
 }
 
 struct CreatorScheduleSmallView: View {
-    let payload: CreatorSchedulePayload
+    let payload: CreatorSchedulePayload?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            CreatorWidgetHeader(dateLabel: payload.dateLabel)
+        VStack(alignment: .leading, spacing: 10) {
+            CreatorWidgetHeader(dateLabel: payload?.dateLabel)
 
-            if let event = payload.events.first {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(eventTimeRange(event))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(CreatorWidgetTheme.gold)
+            if let event = payload?.events.first {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Next Event")
+                        .font(.caption2.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(CreatorWidgetTheme.mutedText)
                     Text(event.title)
-                        .font(.headline.weight(.semibold))
+                        .font(.headline.weight(.bold))
                         .lineLimit(3)
                         .foregroundStyle(.white)
-                    Text(statusLabel(event.status))
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    HStack(spacing: 6) {
+                        Text(eventTimeRange(event))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(CreatorWidgetTheme.green)
+                        Text(event.sourceType)
+                            .font(.caption2.weight(.medium))
+                            .lineLimit(1)
+                            .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    }
                 }
             } else {
                 Spacer(minLength: 0)
-                Text("No Events scheduled")
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(2)
-                    .foregroundStyle(.white)
-                Text("Today is clear")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                CreatorScheduleStateView(
+                    title: payload == nil ? "Open CREATOR" : "No Events scheduled",
+                    subtitle: payload == nil ? "Sync Schedule" : "Today is clear",
+                    compact: true
+                )
             }
 
             Spacer(minLength: 0)
@@ -129,24 +135,23 @@ struct CreatorScheduleSmallView: View {
 }
 
 struct CreatorScheduleMediumView: View {
-    let payload: CreatorSchedulePayload
+    let payload: CreatorSchedulePayload?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CreatorWidgetHeader(dateLabel: payload.dateLabel)
+        VStack(alignment: .leading, spacing: 12) {
+            CreatorWidgetHeader(dateLabel: payload?.dateLabel)
 
-            if payload.events.isEmpty {
+            if payload?.events.isEmpty ?? true {
                 Spacer(minLength: 0)
-                Text("No Events scheduled")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                Text("Today is clear")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                CreatorScheduleStateView(
+                    title: payload == nil ? "Open CREATOR to sync Schedule" : "No Events scheduled",
+                    subtitle: payload == nil ? "Today updates after Schedule loads." : "Today is clear.",
+                    compact: false
+                )
                 Spacer(minLength: 0)
             } else {
                 VStack(spacing: 8) {
-                    ForEach(payload.events.prefix(3)) { event in
+                    ForEach((payload?.events ?? []).prefix(3)) { event in
                         CreatorScheduleEventRow(event: event)
                     }
                 }
@@ -158,16 +163,16 @@ struct CreatorScheduleMediumView: View {
 }
 
 struct CreatorScheduleLargeView: View {
-    let payload: CreatorSchedulePayload
+    let payload: CreatorSchedulePayload?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            CreatorWidgetHeader(dateLabel: payload.dateLabel)
+            CreatorWidgetHeader(dateLabel: payload?.dateLabel)
 
             HStack(spacing: 8) {
-                CreatorCountPill(label: "Scheduled", value: payload.counts.scheduled)
-                CreatorCountPill(label: "Completed", value: payload.counts.completed)
-                CreatorCountPill(label: "Missed", value: payload.counts.missed)
+                CreatorCountPill(label: "Scheduled", value: payload?.counts.scheduled ?? 0)
+                CreatorCountPill(label: "Completed", value: payload?.counts.completed ?? 0)
+                CreatorCountPill(label: "Missed", value: payload?.counts.missed ?? 0)
             }
 
             Text("Upcoming Events")
@@ -175,18 +180,17 @@ struct CreatorScheduleLargeView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(CreatorWidgetTheme.mutedText)
 
-            if payload.events.isEmpty {
+            if payload?.events.isEmpty ?? true {
                 Spacer(minLength: 0)
-                Text("Today is clear")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                Text("No Events scheduled")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                CreatorScheduleStateView(
+                    title: payload == nil ? "Open CREATOR to sync Schedule" : "Today is clear",
+                    subtitle: payload == nil ? "Events appear here after Schedule loads." : "No Events scheduled.",
+                    compact: false
+                )
                 Spacer(minLength: 0)
             } else {
                 VStack(spacing: 9) {
-                    ForEach(payload.events.prefix(5)) { event in
+                    ForEach((payload?.events ?? []).prefix(5)) { event in
                         CreatorScheduleEventRow(event: event)
                     }
                 }
@@ -198,17 +202,22 @@ struct CreatorScheduleLargeView: View {
 }
 
 struct CreatorWidgetHeader: View {
-    let dateLabel: String
+    let dateLabel: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("CREATOR")
-                .font(.caption2.weight(.bold))
-                .tracking(1.4)
-                .foregroundStyle(CreatorWidgetTheme.gold)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("CREATOR")
+                    .font(.caption2.weight(.heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(.white)
+                Text("Schedule")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(CreatorWidgetTheme.green)
+            }
             Spacer(minLength: 8)
-            Text(dateLabel)
-                .font(.caption2.weight(.semibold))
+            Text(dateLabel ?? "Today")
+                .font(.caption2.weight(.bold))
                 .foregroundStyle(CreatorWidgetTheme.secondaryText)
                 .lineLimit(1)
         }
@@ -228,14 +237,15 @@ struct CreatorScheduleEventRow: View {
             Text(displayIcon)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(width: 24, height: 24)
-                .background(CreatorWidgetTheme.rowBackground, in: Circle())
+                .foregroundStyle(.white)
+                .background(CreatorWidgetTheme.iconBackground, in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     .foregroundStyle(.white)
-                Text("\(eventTimeRange(event)) - \(statusLabel(event.status))")
+                Text("\(eventTimeRange(event)) - \(event.sourceType) - \(statusLabel(event.status))")
                     .font(.caption2.weight(.medium))
                     .lineLimit(1)
                     .foregroundStyle(CreatorWidgetTheme.secondaryText)
@@ -243,6 +253,34 @@ struct CreatorScheduleEventRow: View {
 
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+        )
+    }
+}
+
+struct CreatorScheduleStateView: View {
+    let title: String
+    let subtitle: String
+    let compact: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 5 : 6) {
+            Text(title)
+                .font((compact ? Font.headline : Font.title3).weight(.bold))
+                .lineLimit(compact ? 2 : 1)
+                .minimumScaleFactor(0.82)
+                .foregroundStyle(.white)
+            Text(subtitle)
+                .font(.caption.weight(.medium))
+                .lineLimit(2)
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -264,7 +302,11 @@ struct CreatorCountPill: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
-        .background(CreatorWidgetTheme.rowBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+        )
     }
 }
 
@@ -287,16 +329,20 @@ struct CreatorScheduleWidget: Widget {
 }
 
 private enum CreatorWidgetTheme {
-    static let background = LinearGradient(
+    static let background = Color(red: 0.018, green: 0.019, blue: 0.022)
+    static let surfaceGlow = LinearGradient(
         colors: [
-            Color(red: 0.04, green: 0.04, blue: 0.05),
-            Color(red: 0.10, green: 0.09, blue: 0.08)
+            Color.white.opacity(0.045),
+            Color.white.opacity(0.012),
+            Color.clear
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
-    static let rowBackground = Color.white.opacity(0.08)
-    static let gold = Color(red: 0.95, green: 0.77, blue: 0.38)
+    static let cardBackground = Color.white.opacity(0.065)
+    static let iconBackground = Color.white.opacity(0.09)
+    static let hairline = Color.white.opacity(0.08)
+    static let green = Color(red: 0.36, green: 0.92, blue: 0.56)
     static let secondaryText = Color.white.opacity(0.66)
     static let mutedText = Color.white.opacity(0.45)
 }
@@ -350,7 +396,7 @@ extension CreatorSchedulePayload {
                 startLabel: "1:00PM",
                 endLabel: "1:30PM",
                 sourceType: "Habit",
-                icon: "+",
+                icon: "*",
                 status: "scheduled"
             )
         ]
