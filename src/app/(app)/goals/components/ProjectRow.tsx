@@ -548,10 +548,7 @@ export function ProjectRow({
     localStage,
     localStatus,
     onUpdated,
-    project.id,
-    project.progress,
-    project.skillIds,
-    project.tasks,
+    project,
     rejectProjectCompletion,
   ]);
 

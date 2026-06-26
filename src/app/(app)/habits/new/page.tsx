@@ -267,7 +267,7 @@ export default function NewHabitPage() {
         setRecurrence("none");
       }
     }
-  }, [energy, habitType, recurrence]);
+  }, [energy, habitType, MAX_PRACTICE_ENERGY, recurrence]);
 
   useEffect(() => {
     let active = true;

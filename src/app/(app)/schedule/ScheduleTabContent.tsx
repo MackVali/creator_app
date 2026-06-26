@@ -81,12 +81,12 @@ import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
   type ScheduleInstance,
-  type ScheduleContext,
 } from "@/lib/scheduler/instanceRepo";
 import {
   syncScheduleBlockLocalNotifications,
   type ScheduleBlockLocalNotificationInstance,
 } from "@/lib/notifications/scheduleBlockLocalNotifications";
+import { syncScheduleWidgetPayload } from "@/lib/widgets/scheduleWidget";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
 import { windowRectMinutes } from "@/lib/scheduler/windowRect";
@@ -227,7 +227,6 @@ const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const COMPLETION_BOUNCE_DURATION_MS = 420;
-const LONG_PRESS_ACTION_DELAY_MS = 120;
 const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
 const HABIT_STREAK_BADGE_TOP_MARGIN_PX = 8;
 const HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX = 2;
@@ -553,11 +552,6 @@ const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
   marginRight: "calc(50% - 50vw)",
   "--timeline-label-column": "clamp(1.75rem, 5vw, 2.5rem)",
   "--timeline-grid-left": "0px",
-};
-
-const TIMELINE_HEADER_PADDING: CSSProperties = {
-  paddingLeft: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
-  paddingRight: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
 };
 
 const TIMELINE_CARD_BOUNDS: CSSProperties = {
@@ -2459,12 +2453,10 @@ function addAnchorStart(
 
 export function computeWindowReportsForDay({
   windows,
-  projectInstances,
   unscheduledProjects,
   schedulerFailureByProjectId,
   schedulerDebug,
   schedulerTimelinePlacements,
-  habitPlacements,
   currentDate,
   timeZone,
   gaps,
@@ -3292,7 +3284,7 @@ export default function ScheduleTabContent({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { localTimeZone, profile, loading: profileLoading } = useProfile();
+  const { localTimeZone, loading: profileLoading } = useProfile();
   const toast = useToastHelpers();
   const ENABLE_BACKGROUND_SCHEDULER = false;
 
@@ -3371,14 +3363,7 @@ export default function ScheduleTabContent({
     () => initialDateResult.key
   );
   const hasAppliedInitialDateFallbackRef = useRef(initialDateWasValid);
-  const normalizedTz = useMemo(() => effectiveTimeZone, [effectiveTimeZone]);
   const runIdRef = useRef(0);
-  const isTimeZoneReady = stableTimeZone !== null;
-  const todayBaseDate = useMemo(
-    () =>
-      isTimeZoneReady ? startOfDayInTimeZone(new Date(), normalizedTz) : null,
-    [isTimeZoneReady, normalizedTz]
-  );
 
   const currentDate = useMemo(() => {
     return localDayFromKey(currentDateKey, resolvedScheduleTimeZone);
@@ -3387,11 +3372,6 @@ export default function ScheduleTabContent({
   const dayViewDateKey = useMemo(() => {
     return formatScheduleDateKey(currentDate, resolvedScheduleTimeZone);
   }, [currentDate, resolvedScheduleTimeZone]);
-  // 7. comparison
-  const isViewingToday = useMemo(() => {
-    if (!dayViewDateKey || !canonicalTodayDateKey) return false;
-    return dayViewDateKey === canonicalTodayDateKey;
-  }, [dayViewDateKey, canonicalTodayDateKey]);
   const [view, setView] = useState<ScheduleView>(initialView);
 
   const [tasks, setTasks] = useState<TaskLite[]>([]);
@@ -3596,7 +3576,6 @@ export default function ScheduleTabContent({
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null);
   const [editingInstance, setEditingInstance] =
     useState<ScheduleInstance | null>(null);
-  const [editOrigin, setEditOrigin] = useState<ScheduleEditOrigin | null>(null);
   const [editingSnapshot, setEditingSnapshot] =
     useState<EditingSnapshot | null>(null);
 
@@ -3847,7 +3826,6 @@ export default function ScheduleTabContent({
   const [memoCompletionState, setMemoCompletionState] =
     useState<MemoCompletionDraftState | null>(null);
 
-  const hasInitializedRef = useRef(false);
   const prevUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -4878,6 +4856,23 @@ export default function ScheduleTabContent({
             console.warn("[schedule.local_notifications.sync_failed]", error);
           }
         });
+      void syncScheduleWidgetPayload(notificationInstances, {
+        timeZone: effectiveTimeZone ?? localTimeZone ?? null,
+        date: new Date(),
+      })
+        .then((result) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[schedule.widget.sync]", {
+              inputInstances: nextInstances.length,
+              result,
+            });
+          }
+        })
+        .catch((error) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("[schedule.widget.sync_failed]", error);
+          }
+        });
       setAllInstances(nextInstances);
       setInstances(nextInstances);
       nextInstances.forEach((instance) => {
@@ -5562,42 +5557,6 @@ export default function ScheduleTabContent({
     return sourceId || "Scheduled event";
   }, [resolvedEditingInstance, taskMap, projectMap, habitMap]);
 
-  const editingEventTypeLabel = useMemo(() => {
-    if (!resolvedEditingInstance) return "Event";
-    switch (resolvedEditingInstance.source_type) {
-      case "PROJECT":
-        return "Project";
-      case "TASK":
-        return "Task";
-      case "HABIT":
-        return "Habit";
-      default:
-        return "Event";
-    }
-  }, [resolvedEditingInstance]);
-
-  const editingTimeRangeLabel = useMemo(() => {
-    if (!resolvedEditingInstance) return null;
-    const startDate = toLocal(resolvedEditingInstance.start_utc);
-    const endDate = toLocal(resolvedEditingInstance.end_utc);
-    if (
-      !(startDate instanceof Date) ||
-      Number.isNaN(startDate.getTime()) ||
-      !(endDate instanceof Date) ||
-      Number.isNaN(endDate.getTime())
-    ) {
-      return null;
-    }
-    const formatter = new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    const startLabel = formatter.format(startDate);
-    const endLabel = formatter.format(endDate);
-    const zoneLabel = friendlyTimeZone ? ` • ${friendlyTimeZone}` : "";
-    return `${startLabel} – ${endLabel}${zoneLabel}`;
-  }, [resolvedEditingInstance, friendlyTimeZone]);
-
   const editingProjectId =
     editingSnapshot?.source_type === "PROJECT"
       ? (editingSnapshot.projectId ?? null)
@@ -6262,7 +6221,6 @@ export default function ScheduleTabContent({
             completionIso ?? "null"
           }`
         );
-        let ok = false;
         const result = await updateInstanceStatus(
           instanceId,
           nextStatus,
@@ -6289,7 +6247,6 @@ export default function ScheduleTabContent({
             result.error?.message ?? result.statusText ?? ""
           }`
         );
-        ok = okResult;
         if (result.error) {
           throw result.error;
         }
@@ -7762,8 +7719,7 @@ export default function ScheduleTabContent({
       onShortPress?: (() => void) | null,
       onLongPress?: (() => void) | null,
       habitId?: string,
-      placement?: HabitTimelinePlacement,
-      scheduleContext?: ScheduleContext | null
+      placement?: HabitTimelinePlacement
     ) => {
       if (onLongPress) {
         console.log("[INTERACT] POINTER DOWN", {
@@ -8722,12 +8678,8 @@ export default function ScheduleTabContent({
     (model: DayTimelineModel | null, options?: DayTimelineRenderOptions) => {
       if (!model) return null;
       const {
-        isViewingToday,
         dayViewDateKey,
-        dayViewDetails,
         date,
-        dayStart,
-        dayEnd,
         startHour: modelStartHour,
         windows: modelWindows,
         projectInstances: modelProjectInstances,
@@ -8748,9 +8700,6 @@ export default function ScheduleTabContent({
         todayDateKey,
         timestamp: new Date().toISOString(),
       });
-      const viewDateComparison = dayViewDateKey.localeCompare(todayDateKey);
-      const viewIsPastDay = viewDateComparison < 0;
-      const viewIsFutureDay = viewDateComparison > 0;
 
       const dayHabitPlacements = modelHabitPlacements
         .map((placement) => {
@@ -9113,7 +9062,6 @@ export default function ScheduleTabContent({
                 w,
                 modelStartHour
               );
-              const windowHeightPx = Math.max(0, heightMinutes * modelPxPerMin);
               if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
                 return null;
               }

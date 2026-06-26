@@ -412,7 +412,14 @@ export function ProjectEditSheet({
       setSkillsLoading(false);
       console.log("[ProjectEditSheet] loadProject END", projectId);
     }
-  }, [projectId, supabase]);
+  }, [
+    instance?.duration_min,
+    instance?.energy_resolved,
+    projectId,
+    scheduleContext?.durationMin,
+    scheduleContext?.energyResolved,
+    supabase,
+  ]);
 
   useEffect(() => {
     if (open && projectId) {

@@ -259,7 +259,7 @@ function InlineMonumentHeaderEditor({
     return () => {
       cancelled = true;
     };
-  }, [monument.id, supabase]);
+  }, [monument.emoji, monument.id, monument.title, supabase]);
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
@@ -554,11 +554,15 @@ export function MonumentDetail({
     inlineEditOpen || actionsMenuOpen || Boolean(focusPomoSource);
 
   useEffect(() => {
-    setDisplayMonument(monument);
+    setDisplayMonument({
+      id: monument.id,
+      title: monument.title,
+      emoji: monument.emoji,
+    });
     setInlineEditOpen(false);
     setMonumentView("goals");
     setGoalSection("active");
-  }, [id, monument.title, monument.emoji]);
+  }, [id, monument.id, monument.title, monument.emoji]);
 
   useLayoutEffect(() => {
     detailScrollRef.current = getScrollParent(detailSurfaceRef.current);
