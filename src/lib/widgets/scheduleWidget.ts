@@ -6,6 +6,9 @@ import { addDaysInTimeZone, startOfDayInTimeZone } from "@/lib/scheduler/timezon
 const CREATOR_WIDGET_PLUGIN_NAME = "CreatorWidget";
 const CREATOR_WIDGET_SYNC_LOG = "[CREATOR_WIDGET_SYNC]";
 const CREATOR_FOCUS_WIDGET_LOG = "[CREATOR_FOCUS_WIDGET]";
+// TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
+const CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG =
+  "[CREATOR_FOCUS_LIVE_ACTIVITY_ACTION]";
 
 export const CREATOR_FOCUS_POMO_DEEP_LINK = "/focus-pomo";
 
@@ -16,6 +19,16 @@ export type CreatorScheduleWidgetStatus =
   | "unscheduled";
 
 export type CreatorFocusPomoWidgetMode = "POMO" | "STOPWATCH";
+
+export type CreatorFocusPomoWidgetQueueItem = {
+  id: string;
+  title: string;
+  type: string | null;
+  sourceType: string | null;
+  icon?: string | null;
+  status?: string | null;
+  scheduleInstanceId?: string | null;
+};
 
 export type CreatorFocusPomoWidgetPayload = {
   generatedAt: string;
@@ -28,6 +41,9 @@ export type CreatorFocusPomoWidgetPayload = {
   startedAt?: string | null;
   endsAt?: string | null;
   statusLabel?: string | null;
+  activeSessionId?: string | null;
+  activeQueueItem?: CreatorFocusPomoWidgetQueueItem | null;
+  queueItems: CreatorFocusPomoWidgetQueueItem[];
   deepLink: string;
 };
 
@@ -157,6 +173,9 @@ type BuildFocusPomoWidgetPayloadOptions = {
   startedAt?: string | Date | null;
   endsAt?: string | Date | null;
   statusLabel?: string | null;
+  activeSessionId?: string | null;
+  activeQueueItem?: CreatorFocusPomoWidgetQueueItem | null;
+  queueItems?: CreatorFocusPomoWidgetQueueItem[];
   deepLink?: string | null;
   now?: Date;
 };
@@ -256,6 +275,25 @@ function normalizeOptionalIsoDate(value: string | Date | null | undefined) {
 
   const date = value instanceof Date ? value : new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function normalizeFocusPomoWidgetQueueItem(
+  item: CreatorFocusPomoWidgetQueueItem | null | undefined
+): CreatorFocusPomoWidgetQueueItem | null {
+  const id = normalizeOptionalText(item?.id);
+  const title = normalizeOptionalText(item?.title);
+
+  if (!id || !title) return null;
+
+  return {
+    id,
+    title,
+    type: normalizeOptionalText(item?.type),
+    sourceType: normalizeOptionalText(item?.sourceType),
+    icon: normalizeOptionalText(item?.icon),
+    status: normalizeOptionalText(item?.status),
+    scheduleInstanceId: normalizeOptionalText(item?.scheduleInstanceId),
+  };
 }
 
 function parseFocusPomoLiveActivityAction(
@@ -508,6 +546,12 @@ export function buildFocusPomoWidgetPayload(
     startedAt: normalizeOptionalIsoDate(options.startedAt),
     endsAt: mode === "POMO" ? normalizeOptionalIsoDate(options.endsAt) : null,
     statusLabel: normalizeOptionalText(options.statusLabel),
+    activeSessionId: normalizeOptionalText(options.activeSessionId),
+    activeQueueItem: normalizeFocusPomoWidgetQueueItem(options.activeQueueItem),
+    queueItems: (options.queueItems ?? [])
+      .map(normalizeFocusPomoWidgetQueueItem)
+      .filter((item): item is CreatorFocusPomoWidgetQueueItem => item !== null)
+      .slice(0, 6),
     deepLink: normalizeOptionalText(options.deepLink) ?? CREATOR_FOCUS_POMO_DEEP_LINK,
   };
 }
@@ -530,6 +574,8 @@ export async function syncFocusPomoWidgetPayload(
     hasSourceIcon: Boolean(payload.sourceIcon),
     hasStartedAt: Boolean(payload.startedAt),
     hasEndsAt: Boolean(payload.endsAt),
+    hasActiveQueueItem: Boolean(payload.activeQueueItem),
+    queueItemCount: payload.queueItems.length,
     deepLink: payload.deepLink,
     availability,
   });
@@ -575,7 +621,16 @@ export async function readFocusPomoLiveActivityActions(): Promise<
   FocusPomoLiveActivityAction[]
 > {
   const availability = getCreatorWidgetPluginAvailability();
-  if (!availability.canUse) return [];
+  if (!availability.canUse) {
+    console.info(
+      `${CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG} js_read_skipped`,
+      {
+        reason: "plugin_unavailable",
+        availability,
+      }
+    );
+    return [];
+  }
 
   const result = await CreatorWidget.readFocusPomoLiveActivityActions();
   const nativeActions = Array.isArray(result.actions) ? result.actions : null;
@@ -591,13 +646,27 @@ export async function readFocusPomoLiveActivityActions(): Promise<
     }
   })();
 
-  return payloadActions
+  const actions = payloadActions
     .map(parseFocusPomoLiveActivityAction)
     .filter(
       (
         action
       ): action is FocusPomoLiveActivityAction => action !== null
     );
+
+  console.info(`${CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG} js_read_pending`, {
+    rawCount: payloadActions.length,
+    parsedCount: actions.length,
+    actions: actions.map((action) => ({
+      id: action.id,
+      action: action.action,
+      sessionId: action.sessionId,
+      scheduleInstanceId: action.scheduleInstanceId ?? null,
+      requestedAt: action.requestedAt ?? null,
+    })),
+  });
+
+  return actions;
 }
 
 export async function ackFocusPomoLiveActivityActions(ids: string[]) {
@@ -606,9 +675,22 @@ export async function ackFocusPomoLiveActivityActions(ids: string[]) {
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
-  if (!availability.canUse || normalizedIds.length === 0) return;
+  if (!availability.canUse || normalizedIds.length === 0) {
+    console.info(`${CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG} js_ack_skipped`, {
+      reason: !availability.canUse ? "plugin_unavailable" : "missing_ids",
+      ids: normalizedIds,
+      availability,
+    });
+    return;
+  }
 
-  await CreatorWidget.ackFocusPomoLiveActivityActions({ ids: normalizedIds });
+  const result = await CreatorWidget.ackFocusPomoLiveActivityActions({
+    ids: normalizedIds,
+  });
+  console.info(`${CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG} js_ack_succeeded`, {
+    acknowledgedCount: normalizedIds.length,
+    remaining: result.remaining ?? null,
+  });
 }
 
 export function scheduleWidgetStatusLabel(status: CreatorScheduleWidgetStatus) {

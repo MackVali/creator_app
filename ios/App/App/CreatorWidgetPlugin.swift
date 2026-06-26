@@ -21,6 +21,8 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
     private let focusPomoPayloadKey = "creator.focuspomo.widget.payload"
     private let focusPomoWidgetKind = "CreatorFocusPomoWidget"
     private let focusPomoPendingActionsKey = "creator.focuspomo.liveActivity.pendingActions"
+    // TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
+    private let focusPomoLiveActivityActionLog = "[CREATOR_FOCUS_LIVE_ACTIVITY_ACTION]"
 
     @objc func writeSchedulePayload(_ call: CAPPluginCall) {
         guard let payload = call.getString("payload"), !payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -117,12 +119,21 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func readFocusPomoLiveActivityActions(_ call: CAPPluginCall) {
         guard let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) else {
+            NSLog("\(focusPomoLiveActivityActionLog) native_read_failed reason=app_group_unavailable group=\(appGroupIdentifier)")
             call.reject("Unable to open shared Focus Pomo action storage.")
             return
         }
 
         let payload = sharedDefaults.string(forKey: focusPomoPendingActionsKey) ?? "[]"
         let actions = parseFocusPomoActions(payload)
+        NSLog(
+            "\(focusPomoLiveActivityActionLog) native_read_pending group=\(appGroupIdentifier) key=\(focusPomoPendingActionsKey) bytes=\(payload.utf8.count) pendingCount=\(actions.count)"
+        )
+        for action in actions {
+            NSLog(
+                "\(focusPomoLiveActivityActionLog) native_pending_action_found id=\(focusPomoActionValue(action, key: "id")) action=\(focusPomoActionValue(action, key: "action")) sessionId=\(focusPomoActionValue(action, key: "sessionId")) scheduleInstanceId=\(focusPomoActionValue(action, key: "scheduleInstanceId"))"
+            )
+        }
         call.resolve([
             "ok": true,
             "payload": payload,
@@ -132,13 +143,16 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func ackFocusPomoLiveActivityActions(_ call: CAPPluginCall) {
         guard let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier) else {
+            NSLog("\(focusPomoLiveActivityActionLog) native_ack_failed reason=app_group_unavailable group=\(appGroupIdentifier)")
             call.reject("Unable to open shared Focus Pomo action storage.")
             return
         }
 
         let acknowledgedIds = Set(call.getArray("ids", String.self) ?? [])
         guard !acknowledgedIds.isEmpty else {
-            call.resolve(["ok": true, "remaining": parseFocusPomoActions(sharedDefaults.string(forKey: focusPomoPendingActionsKey) ?? "[]").count])
+            let remaining = parseFocusPomoActions(sharedDefaults.string(forKey: focusPomoPendingActionsKey) ?? "[]").count
+            NSLog("\(focusPomoLiveActivityActionLog) native_ack_skipped reason=missing_ids remaining=\(remaining)")
+            call.resolve(["ok": true, "remaining": remaining])
             return
         }
 
@@ -157,6 +171,9 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
             sharedDefaults.set(payload, forKey: focusPomoPendingActionsKey)
         }
         let didSynchronize = sharedDefaults.synchronize()
+        NSLog(
+            "\(focusPomoLiveActivityActionLog) native_ack_succeeded acknowledgedCount=\(acknowledgedIds.count) remaining=\(remainingActions.count) synchronized=\(didSynchronize ? "true" : "false")"
+        )
         call.resolve([
             "ok": true,
             "remaining": remainingActions.count,
@@ -187,5 +204,13 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         return actions
+    }
+
+    private func focusPomoActionValue(_ action: [String: Any], key: String) -> String {
+        guard let value = action[key] else {
+            return ""
+        }
+
+        return String(describing: value)
     }
 }

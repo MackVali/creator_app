@@ -492,6 +492,10 @@ export function ProjectQuickEditDialog({
             projectId,
             projectSkillIds: isNewProject ? [] : project.skillIds,
             taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+            xpSurge: {
+              sourceTitle: trimmed,
+              sourceIcon: nextEmoji,
+            },
           },
           "complete"
         );
@@ -501,6 +505,10 @@ export function ProjectQuickEditDialog({
             projectId,
             projectSkillIds: project.skillIds,
             taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+            xpSurge: {
+              sourceTitle: trimmed,
+              sourceIcon: nextEmoji,
+            },
           },
           "undo"
         );
