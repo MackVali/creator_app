@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { LiveActivity } from "capacitor-live-activity";
+import type { LiveActivityState } from "capacitor-live-activity";
 
 export type FocusPomoLiveActivityMode = "pomo" | "stopwatch";
 
@@ -31,6 +32,41 @@ export type EndFocusPomoLiveActivityPayload = {
   sessionId?: string;
 };
 
+type FocusPomoLiveActivityDiagnostics = {
+  isRunning?: boolean | null;
+  currentActivity?: LiveActivityState | null;
+  hasCurrentActivity?: boolean | null;
+  activityCount?: number | null;
+};
+
+export type StartFocusPomoLiveActivityResult =
+  | ({
+      ok: true;
+      attemptedNativeIos: true;
+      activityId: string;
+    } & FocusPomoLiveActivityDiagnostics)
+  | ({
+      ok: false;
+      reason: string;
+      attemptedNativeIos: boolean;
+      activityId: string;
+    } & FocusPomoLiveActivityDiagnostics);
+
+type StartFocusPomoLiveActivityResultInput =
+  | ({
+      ok: true;
+      attemptedNativeIos: true;
+    } & FocusPomoLiveActivityDiagnostics)
+  | ({
+      ok: false;
+      reason: string;
+      attemptedNativeIos: boolean;
+    } & FocusPomoLiveActivityDiagnostics);
+
+type FocusPomoLiveActivityEligibility =
+  | { ok: true; attemptedNativeIos: true }
+  | { ok: false; reason: string; attemptedNativeIos: boolean };
+
 const FOCUS_POMO_ACTIVITY_ID = "focus-pomo-current";
 const LIVE_ACTIVITY_PLUGIN_NAME = "LiveActivity";
 
@@ -40,13 +76,63 @@ function warnInDevelopment(message: string, error: unknown) {
   console.warn(message, error);
 }
 
-async function canUseLiveActivity() {
-  if (typeof window === "undefined") return false;
-  if (!Capacitor.isNativePlatform()) return false;
-  if (!Capacitor.isPluginAvailable(LIVE_ACTIVITY_PLUGIN_NAME)) return false;
+function createLiveActivityResult(
+  result: StartFocusPomoLiveActivityResultInput
+): StartFocusPomoLiveActivityResult {
+  return {
+    activityId: FOCUS_POMO_ACTIVITY_ID,
+    ...result,
+  };
+}
 
-  const availability = await LiveActivity.isAvailable();
-  return availability.value;
+async function canUseLiveActivity(): Promise<FocusPomoLiveActivityEligibility> {
+  if (typeof window === "undefined") {
+    return { ok: false, reason: "not_browser", attemptedNativeIos: false };
+  }
+
+  if (!Capacitor.isNativePlatform()) {
+    return {
+      ok: false,
+      reason: "not_native_platform",
+      attemptedNativeIos: false,
+    };
+  }
+
+  const platform = Capacitor.getPlatform();
+  if (platform !== "ios") {
+    return {
+      ok: false,
+      reason: "not_native_ios",
+      attemptedNativeIos: false,
+    };
+  }
+
+  if (!Capacitor.isPluginAvailable(LIVE_ACTIVITY_PLUGIN_NAME)) {
+    return { ok: false, reason: "plugin_unavailable", attemptedNativeIos: true };
+  }
+
+  try {
+    const availability = await LiveActivity.isAvailable();
+    if (!availability.value) {
+      return {
+        ok: false,
+        reason: "live_activity_unavailable",
+        attemptedNativeIos: true,
+      };
+    }
+  } catch (error) {
+    warnInDevelopment(
+      "Unable to check FocusPomo Live Activity availability.",
+      error
+    );
+    return {
+      ok: false,
+      reason: "availability_check_failed",
+      attemptedNativeIos: true,
+    };
+  }
+
+  return { ok: true, attemptedNativeIos: true };
 }
 
 function toLiveActivityTimestamp(value?: string): number | undefined {
@@ -104,12 +190,41 @@ function buildEndFocusPomoContentState(
   };
 }
 
+async function readFocusPomoLiveActivityDiagnostics(): Promise<FocusPomoLiveActivityDiagnostics> {
+  const [isRunning, currentActivity, activityCount] = await Promise.all([
+    LiveActivity.isRunning({ id: FOCUS_POMO_ACTIVITY_ID })
+      .then((result) => result.value)
+      .catch(() => null),
+    LiveActivity.getCurrentActivity({ id: FOCUS_POMO_ACTIVITY_ID }).catch(
+      () => null
+    ),
+    LiveActivity.listActivities()
+      .then((result) => result.activities.length)
+      .catch(() => null),
+  ]);
+
+  return {
+    isRunning,
+    currentActivity,
+    hasCurrentActivity: currentActivity === null ? null : Boolean(currentActivity),
+    activityCount,
+  };
+}
+
 export async function startFocusPomoLiveActivity(
   payload: FocusPomoLiveActivityPayload
-): Promise<void> {
-  try {
-    if (!(await canUseLiveActivity())) return;
+): Promise<StartFocusPomoLiveActivityResult> {
+  const eligibility = await canUseLiveActivity();
 
+  if (!eligibility.ok) {
+    return createLiveActivityResult({
+      ok: false,
+      reason: eligibility.reason,
+      attemptedNativeIos: eligibility.attemptedNativeIos,
+    });
+  }
+
+  try {
     await LiveActivity.endActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
       contentState: buildEndFocusPomoContentState({ status: "canceled" }),
@@ -123,40 +238,92 @@ export async function startFocusPomoLiveActivity(
       contentState: buildFocusPomoContentState(payload),
       timestamp: toLiveActivityTimestamp(payload.startedAt),
     });
+
+    const diagnostics = await readFocusPomoLiveActivityDiagnostics();
+
+    return createLiveActivityResult({
+      ok: true,
+      attemptedNativeIos: true,
+      ...diagnostics,
+    });
   } catch (error) {
     warnInDevelopment("Unable to start FocusPomo Live Activity.", error);
+    return createLiveActivityResult({
+      ok: false,
+      reason: "start_activity_failed",
+      attemptedNativeIos: true,
+    });
   }
 }
 
 export async function updateFocusPomoLiveActivity(
   payload: FocusPomoLiveActivityPayload
-): Promise<void> {
-  try {
-    if (!(await canUseLiveActivity())) return;
+): Promise<StartFocusPomoLiveActivityResult> {
+  const eligibility = await canUseLiveActivity();
 
+  if (!eligibility.ok) {
+    return createLiveActivityResult({
+      ok: false,
+      reason: eligibility.reason,
+      attemptedNativeIos: eligibility.attemptedNativeIos,
+    });
+  }
+
+  try {
     await LiveActivity.updateActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
       contentState: buildFocusPomoContentState(payload),
       timestamp: nowLiveActivityTimestamp(),
     });
+
+    const diagnostics = await readFocusPomoLiveActivityDiagnostics();
+
+    return createLiveActivityResult({
+      ok: true,
+      attemptedNativeIos: true,
+      ...diagnostics,
+    });
   } catch (error) {
     warnInDevelopment("Unable to update FocusPomo Live Activity.", error);
+    return createLiveActivityResult({
+      ok: false,
+      reason: "update_activity_failed",
+      attemptedNativeIos: true,
+    });
   }
 }
 
 export async function endFocusPomoLiveActivity(
   payload?: EndFocusPomoLiveActivityPayload
-): Promise<void> {
-  try {
-    if (!(await canUseLiveActivity())) return;
+): Promise<StartFocusPomoLiveActivityResult> {
+  const eligibility = await canUseLiveActivity();
 
+  if (!eligibility.ok) {
+    return createLiveActivityResult({
+      ok: false,
+      reason: eligibility.reason,
+      attemptedNativeIos: eligibility.attemptedNativeIos,
+    });
+  }
+
+  try {
     await LiveActivity.endActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
       contentState: buildEndFocusPomoContentState(payload),
       timestamp: nowLiveActivityTimestamp(),
       dismissalPolicy: "immediate",
     });
+
+    return createLiveActivityResult({
+      ok: true,
+      attemptedNativeIos: true,
+    });
   } catch (error) {
     warnInDevelopment("Unable to end FocusPomo Live Activity.", error);
+    return createLiveActivityResult({
+      ok: false,
+      reason: "end_activity_failed",
+      attemptedNativeIos: true,
+    });
   }
 }
