@@ -57,14 +57,30 @@ struct CreatorScheduleProvider: TimelineProvider {
 
     private func readPayload() -> CreatorSchedulePayload? {
         guard
-            let defaults = UserDefaults(suiteName: creatorWidgetAppGroup),
-            let payload = defaults.string(forKey: creatorSchedulePayloadKey),
-            let data = payload.data(using: .utf8)
+            let defaults = UserDefaults(suiteName: creatorWidgetAppGroup)
         else {
+            NSLog("[CREATOR_WIDGET_SYNC] widget_read_app_group_open_failed group=\(creatorWidgetAppGroup)")
             return nil
         }
 
-        return try? JSONDecoder().decode(CreatorSchedulePayload.self, from: data)
+        guard let payload = defaults.string(forKey: creatorSchedulePayloadKey) else {
+            NSLog("[CREATOR_WIDGET_SYNC] widget_read_missing group=\(creatorWidgetAppGroup) key=\(creatorSchedulePayloadKey)")
+            return nil
+        }
+
+        guard let data = payload.data(using: .utf8) else {
+            NSLog("[CREATOR_WIDGET_SYNC] widget_read_invalid_utf8 bytes=\(payload.utf8.count)")
+            return nil
+        }
+
+        do {
+            let decoded = try JSONDecoder().decode(CreatorSchedulePayload.self, from: data)
+            NSLog("[CREATOR_WIDGET_SYNC] widget_read_succeeded group=\(creatorWidgetAppGroup) key=\(creatorSchedulePayloadKey) events=\(decoded.events.count)")
+            return decoded
+        } catch {
+            NSLog("[CREATOR_WIDGET_SYNC] widget_read_decode_failed bytes=\(payload.utf8.count) error=\(error.localizedDescription)")
+            return nil
+        }
     }
 }
 
