@@ -494,7 +494,7 @@ export default function EditHabitPage() {
     return () => {
       active = false;
     };
-  }, [open, supabase]);
+  }, [supabase]);
 
   const goalSelectOptions = useMemo<HabitGoalSelectOption[]>(() => {
     if (!goalMetadataSupported) {

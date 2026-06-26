@@ -2892,7 +2892,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setIsSaving(false);
       }
     },
-    [draftProjects, goalForm, onClose, resetGoalWizard, router, toast],
+    [
+      draftProjects,
+      energyChoiceOptions,
+      goalForm,
+      onClose,
+      priorityChoiceOptions,
+      resetGoalWizard,
+      resolveEnergyPayloadValue,
+      resolvePriorityPayloadValue,
+      router,
+      toast,
+    ],
   );
 
   const handleGoalFormSubmit = async (event: React.FormEvent) => {

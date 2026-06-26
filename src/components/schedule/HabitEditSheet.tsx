@@ -982,6 +982,8 @@ export function HabitEditSheet({
     recurrenceDays,
     recurrenceMode,
     skillId,
+    daylightPreference,
+    habitType,
     windowEdgePreference,
     windowId,
     updatedAt,
@@ -1286,7 +1288,16 @@ export function HabitEditSheet({
     return () => {
       active = false;
     };
-  }, [habitId, open, supabase]);
+  }, [
+    habitId,
+    instance?.duration_min,
+    instance?.energy_resolved,
+    open,
+    scheduleContext?.durationMin,
+    scheduleContext?.energyResolved,
+    scheduleContext?.windowId,
+    supabase,
+  ]);
 
   // placement-first initialization
   useEffect(() => {

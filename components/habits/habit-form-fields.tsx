@@ -468,17 +468,20 @@ export function HabitFormFields({
     });
   }, [windowOptions, normalizedHabitType]);
 
-const normalizedWindowId =
-  typeof windowId === "string" && windowId.trim().length > 0
-    ? windowId
-    : "none";
-const hasWindowSelection =
-  normalizedWindowId !== "none" &&
-  filteredWindowOptions.some((option) => option.id === normalizedWindowId);
-const resolvedWindowOptions: HabitWindowSelectOption[] = hasWindowSelection
-  ? filteredWindowOptions
-  : normalizedWindowId !== "none"
-  ? [
+  const normalizedWindowId =
+    typeof windowId === "string" && windowId.trim().length > 0
+      ? windowId
+      : "none";
+  const resolvedWindowOptions = useMemo<HabitWindowSelectOption[]>(() => {
+    const hasWindowSelection =
+      normalizedWindowId !== "none" &&
+      filteredWindowOptions.some((option) => option.id === normalizedWindowId);
+
+    if (hasWindowSelection || normalizedWindowId === "none") {
+      return filteredWindowOptions;
+    }
+
+    return [
       ...filteredWindowOptions,
       {
         id: normalizedWindowId,
@@ -488,17 +491,17 @@ const resolvedWindowOptions: HabitWindowSelectOption[] = hasWindowSelection
         timeLabel: "",
         days: null,
       },
-    ]
-  : filteredWindowOptions;
-const selectedWindowOption = useMemo(() => {
-  if (normalizedWindowId === "none") {
-    return null;
-  }
-  return (
-    resolvedWindowOptions.find((option) => option.id === normalizedWindowId) ??
-    null
-  );
-}, [normalizedWindowId, resolvedWindowOptions]);
+    ];
+  }, [filteredWindowOptions, normalizedWindowId]);
+  const selectedWindowOption = useMemo(() => {
+    if (normalizedWindowId === "none") {
+      return null;
+    }
+    return (
+      resolvedWindowOptions.find((option) => option.id === normalizedWindowId) ??
+      null
+    );
+  }, [normalizedWindowId, resolvedWindowOptions]);
 
   const handleAddCustomLocation = async () => {
     const name = customLocationName;

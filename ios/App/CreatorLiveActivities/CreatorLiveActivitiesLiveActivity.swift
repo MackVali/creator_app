@@ -30,13 +30,13 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                 elapsedSeconds: context.state.values["elapsedSeconds"],
                 mode: context.state.values["mode"] ?? context.attributes.values["mode"]
             )
-            .activityBackgroundTint(Color(red: 0.04, green: 0.045, blue: 0.06))
+            .activityBackgroundTint(FocusPomoLiveActivityTheme.background)
             .activitySystemActionForegroundColor(Color.white)
         } dynamicIsland: { context in
             let taskTitle = Self.taskTitle(context.state.values["title"])
             let sourceLabel = Self.sourceLabel(context.state.values["sourceLabel"])
-            let statusText = Self.statusText(context.state.values["status"])
             let mode = context.state.values["mode"] ?? context.attributes.values["mode"]
+            let modeLabel = Self.modeLabel(mode)
             let timeFallback = Self.timeText(
                 remainingSeconds: context.state.values["remainingSeconds"],
                 elapsedSeconds: context.state.values["elapsedSeconds"],
@@ -52,11 +52,11 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Focus Pomo")
-                            .font(.headline)
+                            .font(.headline.weight(.semibold))
                             .foregroundStyle(.white)
-                        Text(statusText)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.66))
+                        Text(modeLabel)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
                     }
                 }
 
@@ -70,27 +70,28 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                         elapsedSeconds: context.state.values["elapsedSeconds"],
                         fallbackText: timeFallback
                     )
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(Color(red: 0.78, green: 0.88, blue: 1.0))
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(FocusPomoLiveActivityTheme.green)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(taskTitle)
                             .font(.body.weight(.semibold))
                             .lineLimit(2)
                             .foregroundStyle(.white)
                         if let sourceLabel {
                             Text(sourceLabel)
-                                .font(.caption2.weight(.semibold))
+                                .font(.caption2.weight(.medium))
                                 .lineLimit(1)
-                                .foregroundStyle(Color.white.opacity(0.58))
+                                .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
                         }
                     }
                 }
             } compactLeading: {
                 Image(systemName: "timer")
-                    .foregroundStyle(Color(red: 0.78, green: 0.88, blue: 1.0))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(FocusPomoLiveActivityTheme.green)
             } compactTrailing: {
                 FocusPomoCompactTimerText(
                     status: context.state.values["status"],
@@ -99,19 +100,20 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                     targetEndAt: context.state.values["targetEndAt"],
                     fallbackText: shortTimeText
                 )
-                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .font(.caption2.monospacedDigit().weight(.bold))
                     .foregroundStyle(.white)
             } minimal: {
                 Image(systemName: "timer")
-                    .foregroundStyle(Color(red: 0.78, green: 0.88, blue: 1.0))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(FocusPomoLiveActivityTheme.green)
             }
-            .keylineTint(Color(red: 0.78, green: 0.88, blue: 1.0))
+            .keylineTint(FocusPomoLiveActivityTheme.green)
         }
     }
 
     private static func taskTitle(_ title: String?) -> String {
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedTitle.isEmpty ? "Live Activity running" : trimmedTitle
+        return trimmedTitle.isEmpty ? "Focus session" : trimmedTitle
     }
 
     private static func sourceLabel(_ sourceLabel: String?) -> String? {
@@ -119,16 +121,12 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
         return trimmedLabel.isEmpty ? nil : trimmedLabel
     }
 
-    private static func statusText(_ status: String?) -> String {
-        switch status?.lowercased() {
-        case "completed", "complete", "done", "finished":
-            return "Complete"
-        case "paused", "pause":
-            return "Paused"
-        case "canceled", "cancelled", "cancel":
-            return "Canceled"
+    private static func modeLabel(_ mode: String?) -> String {
+        switch normalized(mode) {
+        case "stopwatch":
+            return "Stopwatch"
         default:
-            return "Live Activity running"
+            return "Pomo countdown"
         }
     }
 
@@ -146,12 +144,11 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
             return "\(format(seconds: elapsedSeconds)) elapsed"
         }
 
-        let fallbackMode = mode?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let fallbackMode, !fallbackMode.isEmpty {
-            return fallbackMode
+        if let cleanStatus = statusLabel(status) {
+            return cleanStatus
         }
 
-        return statusText(status)
+        return "Active now"
     }
 
     private static func shortTimeText(remainingSeconds: String?, elapsedSeconds: String?) -> String {
@@ -174,6 +171,23 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
         return max(seconds, 0)
     }
 
+    private static func statusLabel(_ status: String?) -> String? {
+        switch normalized(status) {
+        case "completed", "complete", "done", "finished":
+            return "Complete"
+        case "paused", "pause":
+            return "Paused"
+        case "canceled", "cancelled", "cancel":
+            return "Canceled"
+        default:
+            return nil
+        }
+    }
+
+    private static func normalized(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+
     private static func format(seconds: Int) -> String {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
@@ -193,11 +207,16 @@ private struct FocusPomoLockScreenView: View {
     let mode: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "timer")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.78, green: 0.88, blue: 1.0))
+                ZStack {
+                    Circle()
+                        .fill(FocusPomoLiveActivityTheme.green.opacity(0.13))
+                    Image(systemName: "timer")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(FocusPomoLiveActivityTheme.green)
+                }
+                .frame(width: 26, height: 26)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Focus Pomo")
@@ -205,71 +224,80 @@ private struct FocusPomoLockScreenView: View {
                         .foregroundStyle(.white)
 
                     Text(modeLabel)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.58))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
                 }
 
-                Spacer(minLength: 8)
-
-                Text(statusText)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .foregroundStyle(.white)
-                    .background(statusColor.opacity(0.24), in: Capsule())
+                Spacer(minLength: 0)
             }
 
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .lastTextBaseline, spacing: 14) {
+                VStack(alignment: .leading, spacing: 7) {
                     Text(taskTitle)
                         .font(.title3.weight(.semibold))
                         .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                         .foregroundStyle(.white)
 
                     if let sourceDisplayLabel {
                         Text(sourceDisplayLabel)
-                            .font(.caption.weight(.semibold))
+                            .font(.caption.weight(.medium))
                             .lineLimit(1)
-                            .foregroundStyle(Color.white.opacity(0.58))
-                    } else {
-                        Text(statusText)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.58))
+                            .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 2) {
+                    FocusPomoTimerText(
+                        status: status,
+                        mode: mode,
+                        startedAt: startedAt,
+                        targetEndAt: targetEndAt,
+                        remainingSeconds: remainingSeconds,
+                        elapsedSeconds: elapsedSeconds,
+                        fallbackText: timeText,
+                        showsSuffix: false
+                    )
+                    .font(.system(.title2, design: .rounded, weight: .bold).monospacedDigit())
+                    .foregroundStyle(FocusPomoLiveActivityTheme.green)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.trailing)
 
-                FocusPomoTimerText(
-                    status: status,
-                    mode: mode,
-                    startedAt: startedAt,
-                    targetEndAt: targetEndAt,
-                    remainingSeconds: remainingSeconds,
-                    elapsedSeconds: elapsedSeconds,
-                    fallbackText: timeText
-                )
-                .font(.system(.title2, design: .rounded, weight: .bold).monospacedDigit())
-                .foregroundStyle(Color(red: 0.78, green: 0.88, blue: 1.0))
-                .multilineTextAlignment(.trailing)
+                    Text(timerCaption)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(FocusPomoLiveActivityTheme.mutedText)
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             if let countdownInterval {
                 ProgressView(timerInterval: countdownInterval, countsDown: false)
                     .labelsHidden()
-                    .tint(Color(red: 0.78, green: 0.88, blue: 1.0))
-                    .scaleEffect(x: 1, y: 1.35, anchor: .center)
+                    .tint(FocusPomoLiveActivityTheme.green)
+                    .scaleEffect(x: 1, y: 0.7, anchor: .center)
             } else {
-                Divider()
-                    .overlay(Color.white.opacity(0.12))
+                Capsule()
+                    .fill(FocusPomoLiveActivityTheme.green.opacity(0.28))
+                    .frame(height: 3)
             }
         }
         .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(FocusPomoLiveActivityTheme.panel)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(FocusPomoLiveActivityTheme.green.opacity(0.20), lineWidth: 1)
+        )
+        .shadow(color: FocusPomoLiveActivityTheme.green.opacity(0.10), radius: 18, x: 0, y: 8)
     }
 
     private var taskTitle: String {
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedTitle.isEmpty ? "Live Activity running" : trimmedTitle
+        return trimmedTitle.isEmpty ? "Focus session" : trimmedTitle
     }
 
     private var sourceDisplayLabel: String? {
@@ -278,7 +306,7 @@ private struct FocusPomoLockScreenView: View {
     }
 
     private var modeLabel: String {
-        switch mode?.lowercased() {
+        switch normalized(mode) {
         case "stopwatch":
             return "Stopwatch"
         default:
@@ -286,8 +314,8 @@ private struct FocusPomoLockScreenView: View {
         }
     }
 
-    private var statusText: String {
-        switch status?.lowercased() {
+    private var statusText: String? {
+        switch normalized(status) {
         case "completed", "complete", "done", "finished":
             return "Complete"
         case "paused", "pause":
@@ -295,20 +323,7 @@ private struct FocusPomoLockScreenView: View {
         case "canceled", "cancelled", "cancel":
             return "Canceled"
         default:
-            return "Live Activity running"
-        }
-    }
-
-    private var statusColor: Color {
-        switch statusText {
-        case "Complete":
-            return Color(red: 0.16, green: 0.68, blue: 0.42)
-        case "Paused":
-            return Color(red: 0.88, green: 0.62, blue: 0.22)
-        case "Canceled":
-            return Color(red: 0.82, green: 0.28, blue: 0.32)
-        default:
-            return Color(red: 0.18, green: 0.42, blue: 0.82)
+            return nil
         }
     }
 
@@ -321,12 +336,36 @@ private struct FocusPomoLockScreenView: View {
             return "\(format(seconds: elapsedSeconds)) elapsed"
         }
 
-        return statusText
+        return statusText ?? "Active now"
+    }
+
+    private var timerCaption: String {
+        if statusText != nil {
+            return "status"
+        }
+
+        if !hasTimerValue {
+            return "now"
+        }
+
+        return modeLabel == "Stopwatch" ? "elapsed" : "left"
+    }
+
+    private var hasTimerValue: Bool {
+        if seconds(from: remainingSeconds) != nil || seconds(from: elapsedSeconds) != nil {
+            return true
+        }
+
+        if normalized(mode) == "stopwatch" {
+            return date(from: startedAt) != nil
+        }
+
+        return date(from: targetEndAt) != nil
     }
 
     private var countdownInterval: ClosedRange<Date>? {
         guard
-            mode?.lowercased() != "stopwatch",
+            normalized(mode) != "stopwatch",
             let startDate = date(from: startedAt),
             let endDate = date(from: targetEndAt),
             startDate < endDate
@@ -345,6 +384,10 @@ private struct FocusPomoLockScreenView: View {
         return max(seconds, 0)
     }
 
+    private func normalized(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+
     private func format(seconds: Int) -> String {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
@@ -361,16 +404,21 @@ private struct FocusPomoTimerText: View {
     let remainingSeconds: String?
     let elapsedSeconds: String?
     let fallbackText: String
+    var showsSuffix = true
 
     var body: some View {
         if isFinished || isPaused {
             Text(fallbackText)
-        } else if mode?.lowercased() == "stopwatch", let startDate = date(from: startedAt) {
+        } else if normalized(mode) == "stopwatch", let startDate = date(from: startedAt) {
             Text(startDate, style: .timer)
         } else if let endDate = date(from: targetEndAt) {
-            HStack(spacing: 4) {
+            if showsSuffix {
+                HStack(spacing: 4) {
+                    Text(endDate, style: .timer)
+                    Text("left")
+                }
+            } else {
                 Text(endDate, style: .timer)
-                Text("left")
             }
         } else {
             Text(fallbackText)
@@ -378,7 +426,7 @@ private struct FocusPomoTimerText: View {
     }
 
     private var isFinished: Bool {
-        switch status?.lowercased() {
+        switch normalized(status) {
         case "completed", "complete", "done", "finished", "canceled", "cancelled", "cancel":
             return true
         default:
@@ -387,7 +435,11 @@ private struct FocusPomoTimerText: View {
     }
 
     private var isPaused: Bool {
-        status?.lowercased() == "paused" || status?.lowercased() == "pause"
+        normalized(status) == "paused" || normalized(status) == "pause"
+    }
+
+    private func normalized(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
     }
 }
 
@@ -402,7 +454,7 @@ private struct FocusPomoCompactTimerText: View {
     var body: some View {
         if isFinished || isPaused {
             Text(fallbackText)
-        } else if mode?.lowercased() == "stopwatch", let startDate = date(from: startedAt) {
+        } else if normalized(mode) == "stopwatch", let startDate = date(from: startedAt) {
             Text(startDate, style: .timer)
         } else if let endDate = date(from: targetEndAt) {
             Text(endDate, style: .timer)
@@ -412,7 +464,7 @@ private struct FocusPomoCompactTimerText: View {
     }
 
     private var isFinished: Bool {
-        switch status?.lowercased() {
+        switch normalized(status) {
         case "completed", "complete", "done", "finished", "canceled", "cancelled", "cancel":
             return true
         default:
@@ -421,8 +473,27 @@ private struct FocusPomoCompactTimerText: View {
     }
 
     private var isPaused: Bool {
-        status?.lowercased() == "paused" || status?.lowercased() == "pause"
+        normalized(status) == "paused" || normalized(status) == "pause"
     }
+
+    private func normalized(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    }
+}
+
+private enum FocusPomoLiveActivityTheme {
+    static let background = Color(red: 0.025, green: 0.027, blue: 0.03)
+    static let panel = LinearGradient(
+        colors: [
+            Color.white.opacity(0.075),
+            Color.white.opacity(0.035)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let green = Color(red: 0.32, green: 0.93, blue: 0.58)
+    static let secondaryText = Color.white.opacity(0.66)
+    static let mutedText = Color.white.opacity(0.46)
 }
 
 private func date(from value: String?) -> Date? {
@@ -461,7 +532,7 @@ private extension ISO8601DateFormatter {
     CreatorLiveActivitiesLiveActivity()
 } contentStates: {
     GenericAttributes.ContentState(values: [
-        "title": "Deep work sprint",
+        "title": "🍎 MEAL PREP",
         "status": "running",
         "remainingSeconds": "1495",
         "elapsedSeconds": "5"
