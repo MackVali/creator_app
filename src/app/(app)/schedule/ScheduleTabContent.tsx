@@ -181,6 +181,12 @@ import {
   resolveHabitCompletionStatus,
 } from "./habitCompletion";
 import { useToastHelpers } from "@/components/ui/toast";
+import {
+  resolveCreatorXpSurgeTitle,
+  showCreatorXpSurge,
+  type CreatorXpSurgePayload,
+  type CreatorXpSurgeSourceType,
+} from "@/components/xp/CreatorXpSurgeHud";
 
 const DEBUG_DAY_SHIFT = true;
 
@@ -884,194 +890,6 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
   );
 }
 
-function CreatorXpSurgeHud({
-  surge,
-  topOffsetPx,
-  onDismiss,
-}: {
-  surge: CreatorXpSurgeHudData | null;
-  topOffsetPx: number;
-  onDismiss: (id: number) => void;
-}) {
-  const prefersReducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!surge) return;
-    const timeout = window.setTimeout(
-      () => onDismiss(surge.id),
-      surge.levelBreak ? 1800 : 1550
-    );
-    return () => window.clearTimeout(timeout);
-  }, [onDismiss, surge]);
-
-  const progressFrom = Math.min(Math.max(surge?.progressFrom ?? 0, 0), 100);
-  const progressTo = Math.min(Math.max(surge?.progressTo ?? 0, 0), 100);
-  const isLevelBreak = Boolean(surge?.levelBreak);
-  const fillDuration = isLevelBreak ? 0.62 : 0.52;
-  const fillDelay = 0.06;
-  const levelLabel =
-    surge?.levelBreak?.oldLevel != null && surge.levelBreak.newLevel != null
-      ? `${surge.levelBreak.oldLevel} -> ${surge.levelBreak.newLevel}`
-      : null;
-  const showXpBadge = typeof surge?.displayXp === "number" && surge.displayXp > 0;
-
-  return (
-    <div
-      className="pointer-events-none fixed inset-x-0 z-[2147483638] flex justify-center px-3"
-      style={{ top: topOffsetPx }}
-      aria-live="polite"
-      aria-atomic="true"
-    >
-      <AnimatePresence mode="wait">
-        {surge ? (
-          <motion.div
-            key={surge.id}
-            initial={
-              prefersReducedMotion
-                ? { opacity: 0 }
-                : { opacity: 0, y: -10, scale: 0.985 }
-            }
-            animate={
-              prefersReducedMotion
-                ? { opacity: 1 }
-                : { opacity: 1, y: 0, scale: 1 }
-            }
-            exit={
-              prefersReducedMotion
-                ? { opacity: 0 }
-                : { opacity: 0, y: -8, scale: 0.99 }
-            }
-            transition={{ duration: 0.18, ease: [0.22, 0.72, 0.24, 1] }}
-            className={clsx(
-              "w-full max-w-[min(92vw,390px)] overflow-hidden rounded-xl border bg-[#07080b]/92 text-white shadow-[0_16px_38px_rgba(0,0,0,0.54),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-xl",
-              isLevelBreak
-                ? "border-emerald-300/28 ring-1 ring-emerald-300/10"
-                : "border-white/10"
-            )}
-          >
-            <div className="relative px-3 py-2">
-              <div className="flex items-center gap-2.5">
-                <div className="relative grid size-8 shrink-0 place-items-center rounded-full border border-white/10 bg-black/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                  {!prefersReducedMotion ? (
-                    <motion.span
-                      className={clsx(
-                        "absolute inset-0 rounded-full border",
-                        isLevelBreak
-                          ? "border-emerald-300/35"
-                          : "border-white/16"
-                      )}
-                      animate={{
-                        scale: isLevelBreak ? [1, 1.34, 1.08] : [1, 1.18, 1],
-                        opacity: isLevelBreak ? [0.8, 0, 0] : [0.45, 0, 0],
-                      }}
-                      transition={{
-                        duration: isLevelBreak ? 0.72 : 0.9,
-                        ease: [0.22, 0.72, 0.24, 1],
-                      }}
-                    />
-                  ) : null}
-                  <span className="text-sm leading-none text-white/90">
-                    {surge.sourceIcon ?? "XP"}
-                  </span>
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-white/92">
-                        {surge.title}
-                      </div>
-                    </div>
-                    {showXpBadge ? (
-                      <div className="shrink-0 rounded-full border border-white/[0.12] bg-white/[0.06] px-2 py-0.5 text-right leading-tight shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                        <div className="text-[12px] font-semibold text-white">
-                          +{surge.displayXp} XP
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {isLevelBreak && levelLabel ? (
-                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/75">
-                      LV {levelLabel}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="mt-2 h-[11px] overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45),inset_0_2px_5px_rgba(0,0,0,0.62)]">
-                <motion.div
-                  className="progress-bar-glint relative h-full overflow-hidden rounded-full border border-white/[0.14] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)]"
-                  initial={{
-                    width: `${prefersReducedMotion ? progressTo : progressFrom}%`,
-                  }}
-                  animate={{ width: `${progressTo}%` }}
-                  transition={
-                    prefersReducedMotion
-                      ? { duration: 0 }
-                      : {
-                          delay: fillDelay,
-                          duration: fillDuration,
-                          ease: [0.16, 0.92, 0.22, 1],
-                        }
-                  }
-                >
-                  <span
-                    className="progress-bar-glint-sweep level-progress-bar-glint-sweep"
-                    aria-hidden="true"
-                  />
-                  <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-white/35" />
-                  <div className="absolute inset-y-0 right-0 z-[5] w-1.5 rounded-full bg-emerald-200/80 shadow-[0_0_8px_rgba(110,231,183,0.42)]" />
-                  {!prefersReducedMotion ? (
-                    <>
-                      <motion.div
-                        className="absolute inset-y-[-3px] z-[6] w-10 bg-gradient-to-r from-transparent via-white/55 to-transparent"
-                        initial={{ left: "-18%", opacity: 0 }}
-                        animate={{ left: "100%", opacity: [0, 0.34, 0] }}
-                        transition={{
-                          delay: fillDelay + 0.03,
-                          duration: fillDuration * 0.82,
-                          ease: [0.2, 0.86, 0.22, 1],
-                        }}
-                      />
-                      <motion.div
-                        className="absolute -right-1 top-1/2 z-[7] h-4 w-4 -translate-y-1/2 rounded-full bg-emerald-200 shadow-[0_0_14px_rgba(110,231,183,0.58),0_0_5px_rgba(255,255,255,0.82)]"
-                        initial={{ opacity: 0, scale: 0.62 }}
-                        animate={{
-                          opacity: [0, 0.9, 0.72],
-                          scale: [0.62, 1.12, 0.88],
-                        }}
-                        transition={{
-                          delay: fillDelay + 0.05,
-                          duration: fillDuration,
-                          ease: [0.18, 0.78, 0.2, 1],
-                        }}
-                      />
-                      <motion.div
-                        className="absolute -right-2 top-1/2 z-[6] h-6 w-6 -translate-y-1/2 rounded-full border border-emerald-200/52"
-                        initial={{ opacity: 0, scale: 0.58 }}
-                        animate={{
-                          opacity: [0, 0, 0.46, 0],
-                          scale: [0.58, 0.58, 1.06, 1.58],
-                        }}
-                        transition={{
-                          delay: fillDelay + fillDuration - 0.04,
-                          duration: 0.34,
-                          ease: [0.16, 0.92, 0.22, 1],
-                        }}
-                      />
-                    </>
-                  ) : null}
-                </motion.div>
-              </div>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 function ManualPlacementProjectCard({
   title,
   goalName,
@@ -1549,23 +1367,6 @@ const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000;
 const MAX_FALLBACK_TASKS = 12;
 
 type LoadStatus = "idle" | "loading" | "loaded";
-
-type CreatorXpSurgeSourceType = "TASK" | "HABIT" | "PROJECT" | "GOAL";
-
-type CreatorXpSurgeHudData = {
-  id: number;
-  sourceType: CreatorXpSurgeSourceType;
-  title: string;
-  sourceIcon: string | null;
-  displayXp: number | null;
-  progressFrom: number;
-  progressTo: number;
-  levelBreak?: {
-    oldLevel?: number | null;
-    newLevel?: number | null;
-    progressRolloverTo?: number | null;
-  } | null;
-};
 
 type TaskInstanceInfo = {
   instance: ScheduleInstance;
@@ -3907,10 +3708,6 @@ export default function ScheduleTabContent({
 
   const [allInstances, setAllInstances] = useState<ScheduleInstance[]>([]);
   const [instances, setInstances] = useState<ScheduleInstance[]>([]);
-  const [xpSurgeHud, setXpSurgeHud] = useState<CreatorXpSurgeHudData | null>(
-    null
-  );
-  const xpSurgeSequenceRef = useRef(0);
   const windowsRef = useRef<RepoWindow[]>(windows);
   useEffect(() => {
     windowsRef.current = windows;
@@ -6537,30 +6334,56 @@ export default function ScheduleTabContent({
   }, [instanceStatusById]);
 
   const buildXpSurgeHudData = useCallback(
-    (instance: ScheduleInstance): CreatorXpSurgeHudData | null => {
+    (instance: ScheduleInstance): CreatorXpSurgePayload | null => {
       const sourceType = instance.source_type as CreatorXpSurgeSourceType;
+      const sourceId = instance.source_id ?? "";
+      const cleanTitle = (value?: string | null) => {
+        const trimmed = value?.trim();
+        return trimmed && trimmed.length > 0 ? trimmed : null;
+      };
       let sourceIcon: string | null = null;
       let skillId: string | null = null;
       let monumentId: string | null = null;
+      let sourceTitle: string | null = cleanTitle(instance.event_name);
+      let candidateSkillIds: (string | null | undefined)[] = [];
 
       if (sourceType === "TASK") {
-        const task = taskMap[instance.source_id];
+        const task = taskMap[sourceId];
         skillId = task?.skill_id ?? null;
+        candidateSkillIds = [skillId];
         sourceIcon = task?.skill_icon?.trim() || null;
+        monumentId = task?.skill_monument_id ?? null;
+        sourceTitle = cleanTitle(task?.name) ?? sourceTitle;
       } else if (sourceType === "PROJECT") {
-        const linkedSkillId = (projectSkillIds[instance.source_id] ?? []).find(
+        const linkedSkillIds = projectSkillIds[sourceId] ?? [];
+        const taskDerivedSkillIds = (tasksByProjectId[sourceId] ?? []).map(
+          (task) => task.skill_id
+        );
+        const linkedSkillId = linkedSkillIds.find(
           (id) => typeof id === "string" && id.length > 0
         );
         skillId = linkedSkillId ?? null;
+        candidateSkillIds = [...linkedSkillIds, ...taskDerivedSkillIds];
+        sourceTitle =
+          cleanTitle(projectMap[sourceId]?.name) ??
+          cleanTitle(instance.project_name) ??
+          sourceTitle;
       } else if (sourceType === "HABIT") {
-        const habit = habitMap[instance.source_id];
+        const habit = habitMap[sourceId];
         skillId = habit?.skillId ?? null;
+        candidateSkillIds = [skillId];
         monumentId = habit?.skillMonumentId ?? null;
+        sourceTitle = cleanTitle(habit?.name) ?? sourceTitle;
       }
 
-      const skill = skillId ? (skillMap[skillId] ?? null) : null;
+      const skill =
+        candidateSkillIds
+          .map((id) => (id ? (skillMap[id] ?? null) : null))
+          .find((item) => cleanTitle(item?.name)) ??
+        (skillId ? (skillMap[skillId] ?? null) : null);
       if (!sourceIcon) sourceIcon = skill?.icon?.trim() || null;
-      monumentId = monumentId ?? (skillId ? skillMonumentMap[skillId] : null);
+      monumentId =
+        monumentId ?? (skill?.id ? skillMonumentMap[skill.id] : null);
       const monument = monumentId
         ? monuments.find((item) => item.id === monumentId)
         : null;
@@ -6577,19 +6400,15 @@ export default function ScheduleTabContent({
           ? sourceType
           : "TASK";
       const displayXp = SCHEDULE_XP_AWARD_AMOUNTS[normalizedSourceType] ?? null;
-      const title =
-        normalizedSourceType === "PROJECT"
-          ? "Project completed"
-          : normalizedSourceType === "HABIT"
-            ? "Habit completed"
-            : normalizedSourceType === "TASK"
-              ? "Task completed"
-              : "Progress gained";
+      const title = resolveCreatorXpSurgeTitle({
+        skillName: skill?.name,
+        monumentTitle: monument?.title,
+        sourceTitle,
+      });
       const progressFrom = normalizedSourceType === "PROJECT" ? 18 : 24;
       const progressTo = normalizedSourceType === "PROJECT" ? 78 : 72;
 
       return {
-        id: xpSurgeSequenceRef.current + 1,
         sourceType: normalizedSourceType,
         title,
         sourceIcon,
@@ -6602,10 +6421,12 @@ export default function ScheduleTabContent({
     [
       habitMap,
       monuments,
+      projectMap,
       projectSkillIds,
       skillMap,
       skillMonumentMap,
       taskMap,
+      tasksByProjectId,
     ]
   );
 
@@ -6613,15 +6434,16 @@ export default function ScheduleTabContent({
     (instance: ScheduleInstance) => {
       const surge = buildXpSurgeHudData(instance);
       if (!surge) return;
-      xpSurgeSequenceRef.current = surge.id;
-      setXpSurgeHud(surge);
+      showCreatorXpSurge({
+        ...surge,
+        topOffsetPx:
+          topBarHeight !== null && Number.isFinite(topBarHeight)
+            ? Math.max(0, topBarHeight) + 8
+            : 72,
+      });
     },
-    [buildXpSurgeHudData]
+    [buildXpSurgeHudData, topBarHeight]
   );
-
-  const dismissXpSurgeHud = useCallback((id: number) => {
-    setXpSurgeHud((current) => (current?.id === id ? null : current));
-  }, []);
 
   const buildXpAwardPayload = useCallback(
     (instance: ScheduleInstance) => {
@@ -7214,6 +7036,31 @@ export default function ScheduleTabContent({
         }
         if (nextStage === "PERFECT") {
           void hapticComplete();
+          const skill = task.skill_id ? (skillMap[task.skill_id] ?? null) : null;
+          const monumentId = task.skill_id
+            ? (skillMonumentMap[task.skill_id] ?? null)
+            : null;
+          const monument = monumentId
+            ? monuments.find((item) => item.id === monumentId)
+            : null;
+          showCreatorXpSurge({
+            sourceType: "TASK",
+            title: resolveCreatorXpSurgeTitle({
+              skillName: skill?.name,
+              monumentTitle: monument?.title,
+              sourceTitle: task.name,
+            }),
+            sourceIcon:
+              task.skill_icon?.trim() ||
+              skill?.icon?.trim() ||
+              monument?.emoji?.trim() ||
+              null,
+            displayXp: SCHEDULE_XP_AWARD_AMOUNTS.TASK,
+            topOffsetPx:
+              topBarHeight !== null && Number.isFinite(topBarHeight)
+                ? Math.max(0, topBarHeight) + 8
+                : 72,
+          });
         }
 
         const shouldAwardXp = isCurrentlyCompleted || nextStage === "PERFECT";
@@ -7299,7 +7146,10 @@ export default function ScheduleTabContent({
       taskMap,
       pendingBacklogTaskIds,
       setTasks,
+      skillMap,
       skillMonumentMap,
+      monuments,
+      topBarHeight,
       userId,
       stableTimeZone,
       effectiveTimeZone,
@@ -12117,15 +11967,6 @@ export default function ScheduleTabContent({
           isManualSchedulingMode={isManualSchedulingMode}
           onToggleManualSchedulingMode={handleToggleManualSchedulingMode}
           onHeightChange={setTopBarHeight}
-        />
-        <CreatorXpSurgeHud
-          surge={xpSurgeHud}
-          topOffsetPx={
-            topBarHeight !== null && Number.isFinite(topBarHeight)
-              ? Math.max(0, topBarHeight) + 8
-              : 72
-          }
-          onDismiss={dismissXpSurgeHud}
         />
         <div
           className="space-y-4 text-[var(--text)]"

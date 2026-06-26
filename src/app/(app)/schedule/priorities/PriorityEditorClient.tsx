@@ -41,6 +41,10 @@ import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
+  resolveCreatorXpSurgeTitle,
+  showCreatorXpSurge,
+} from "@/components/xp/CreatorXpSurgeHud";
+import {
   HABIT_TYPE_LABELS,
   HABIT_TYPE_ORDER,
   type GlobalPriorityRoadmapItem,
@@ -251,7 +255,10 @@ function isRoadmapTaskComplete(task: RoadmapPriorityTask) {
   );
 }
 
-async function awardPriorityEditorTaskCompletion(task: RoadmapPriorityTask, completedAt: string) {
+async function awardPriorityEditorTaskCompletion(
+  task: RoadmapPriorityTask,
+  completedAt: string
+) {
   const body: Record<string, unknown> = {
     kind: "task",
     awardKeyBase: `task:${task.id}:complete`,
@@ -284,9 +291,12 @@ async function awardPriorityEditorTaskCompletion(task: RoadmapPriorityTask, comp
         "Failed to award XP for priority roadmap task completion",
         await response.text()
       );
+      return false;
     }
+    return true;
   } catch (error) {
     console.error("Failed to award XP for priority roadmap task completion", error);
+    return false;
   }
 }
 
@@ -780,6 +790,11 @@ export default function PriorityEditorClient({
             projectSkillIds: project.skillIds,
             taskSkillIds:
               project.taskSkillIds ?? project.tasks?.map((task) => task.skillId),
+            xpSurge: {
+              skillName: project.skillName,
+              sourceTitle: project.name,
+              sourceIcon: project.skillIcon ?? project.emoji ?? null,
+            },
           },
           "complete"
         );
@@ -831,7 +846,18 @@ export default function PriorityEditorClient({
           throw updateError;
         }
 
-        await awardPriorityEditorTaskCompletion(task, completedAt);
+        const didAwardXp = await awardPriorityEditorTaskCompletion(task, completedAt);
+        if (didAwardXp) {
+          showCreatorXpSurge({
+            sourceType: "TASK",
+            title: resolveCreatorXpSurgeTitle({
+              skillName: task.skillName,
+              sourceTitle: task.name,
+            }),
+            sourceIcon: task.skillIcon ?? null,
+            displayXp: 1,
+          });
+        }
         dispatchPriorityEditorEntitySaved("TASK", task.id);
       } catch (caught) {
         console.error("Failed to complete roadmap Task", caught);

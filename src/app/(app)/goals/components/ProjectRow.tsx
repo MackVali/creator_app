@@ -529,6 +529,10 @@ export function ProjectRow({
           projectId: project.id,
           projectSkillIds: project.skillIds,
           taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+          xpSurge: {
+            sourceTitle: project.name,
+            sourceIcon: project.emoji ?? null,
+          },
         },
         "complete"
       );
@@ -538,6 +542,10 @@ export function ProjectRow({
           projectId: project.id,
           projectSkillIds: project.skillIds,
           taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+          xpSurge: {
+            sourceTitle: project.name,
+            sourceIcon: project.emoji ?? null,
+          },
         },
         "undo"
       );

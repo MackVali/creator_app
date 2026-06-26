@@ -3,6 +3,11 @@ import {
   completePendingProjectInstances,
   updateInstanceStatus,
 } from "@/lib/scheduler/instanceRepo";
+import {
+  resolveCreatorXpSurgeTitle,
+  showCreatorXpSurge,
+  type CreatorXpSurgeTitleParts,
+} from "@/components/xp/CreatorXpSurgeHud";
 
 const PROJECT_XP_AMOUNT = 3;
 
@@ -10,6 +15,10 @@ export interface ProjectCompletionContext {
   projectId: string;
   projectSkillIds?: string[] | null;
   taskSkillIds?: Array<string | null | undefined>;
+  xpSurge?: CreatorXpSurgeTitleParts & {
+    sourceIcon?: string | null;
+    displayXp?: number | null;
+  };
 }
 
 export type ProjectCompletionAction = "complete" | "undo";
@@ -210,7 +219,7 @@ async function awardProjectXp(
   action: ProjectCompletionAction,
   completedAt: string | null,
   durationMin: number | null
-) {
+): Promise<boolean> {
   const awardKeyBase = buildAwardKeyBase(projectId, scheduleInstanceId, action);
 
   const body: Record<string, unknown> = {
@@ -248,9 +257,12 @@ async function awardProjectXp(
     });
     if (!response.ok) {
       console.error("Failed to award XP for project completion", await response.text());
+      return false;
     }
+    return true;
   } catch (error) {
     console.error("Failed to award XP for project completion", error);
+    return false;
   }
 }
 
@@ -304,7 +316,7 @@ export async function recordProjectCompletion(
   await updateProjectCompletionFlag(context.projectId, action, supabase, completionTimestamp);
   const monumentIds = await fetchMonumentIdsForSkills(userId, skillIds, supabase);
 
-  await awardProjectXp(
+  const didAwardXp = await awardProjectXp(
     context.projectId,
     skillIds,
     monumentIds,
@@ -313,4 +325,14 @@ export async function recordProjectCompletion(
     completionTimestamp,
     durationMin
   );
+  if (action === "complete" && didAwardXp) {
+    showCreatorXpSurge({
+      sourceType: "PROJECT",
+      title: resolveCreatorXpSurgeTitle(context.xpSurge ?? {}),
+      sourceIcon: context.xpSurge?.sourceIcon ?? null,
+      displayXp: context.xpSurge?.displayXp ?? PROJECT_XP_AMOUNT,
+      progressFrom: 18,
+      progressTo: 78,
+    });
+  }
 }

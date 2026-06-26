@@ -4,6 +4,8 @@ import Foundation
 
 private let focusPomoActionAppGroup = "group.app.trycreator.creator"
 private let focusPomoPendingActionsKey = "creator.focuspomo.liveActivity.pendingActions"
+// TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
+private let focusPomoLiveActivityActionLog = "[CREATOR_FOCUS_LIVE_ACTIVITY_ACTION]"
 
 private struct FocusPomoPendingAction: Codable, Hashable {
     let id: String
@@ -15,21 +17,29 @@ private struct FocusPomoPendingAction: Codable, Hashable {
 }
 
 private enum FocusPomoLiveActivityActionStore {
-    static func append(action: String, sessionId: String, title: String, scheduleInstanceId: String?) {
+    static func append(action: String, sessionId: String, title: String, scheduleInstanceId: String?) -> Bool {
+        let normalizedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard
-            !sessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            let defaults = UserDefaults(suiteName: focusPomoActionAppGroup)
+            !normalizedSessionId.isEmpty
         else {
-            return
+            NSLog("\(focusPomoLiveActivityActionLog) write_failed reason=missing_session_id action=\(action)")
+            return false
+        }
+
+        guard let defaults = UserDefaults(suiteName: focusPomoActionAppGroup) else {
+            NSLog("\(focusPomoLiveActivityActionLog) write_failed reason=app_group_unavailable group=\(focusPomoActionAppGroup) action=\(action) sessionId=\(normalizedSessionId)")
+            return false
         }
 
         var actions = readActions(defaults: defaults)
+        let normalizedScheduleInstanceId = normalized(scheduleInstanceId)
         let request = FocusPomoPendingAction(
             id: UUID().uuidString,
             action: action,
-            sessionId: sessionId,
+            sessionId: normalizedSessionId,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            scheduleInstanceId: normalized(scheduleInstanceId),
+            scheduleInstanceId: normalizedScheduleInstanceId,
             requestedAt: ISO8601DateFormatter().string(from: Date())
         )
         actions.append(request)
@@ -38,8 +48,13 @@ private enum FocusPomoLiveActivityActionStore {
         if let data = try? JSONEncoder().encode(limitedActions),
            let payload = String(data: data, encoding: .utf8) {
             defaults.set(payload, forKey: focusPomoPendingActionsKey)
-            defaults.synchronize()
+            let didSynchronize = defaults.synchronize()
+            NSLog("\(focusPomoLiveActivityActionLog) write_succeeded action=\(action) sessionId=\(normalizedSessionId) scheduleInstanceId=\(normalizedScheduleInstanceId ?? "") pendingCount=\(limitedActions.count) synchronized=\(didSynchronize ? "true" : "false")")
+            return true
         }
+
+        NSLog("\(focusPomoLiveActivityActionLog) write_failed reason=encode_failed action=\(action) sessionId=\(normalizedSessionId) scheduleInstanceId=\(normalizedScheduleInstanceId ?? "")")
+        return false
     }
 
     private static func readActions(defaults: UserDefaults) -> [FocusPomoPendingAction] {
@@ -61,22 +76,31 @@ private enum FocusPomoLiveActivityActionStore {
 }
 
 @available(iOS 17.0, *)
-private enum FocusPomoLiveActivityEnder {
-    static func end(sessionId: String, title: String, status: String) async {
+private enum FocusPomoLiveActivityQueuedStateUpdater {
+    static func update(sessionId: String, title: String, status: String, queuedAction: String) async {
+        var didUpdateActivity = false
+
         for activity in Activity<GenericAttributes>.activities {
-            let values = activity.attributes.staticValues.merging(activity.content.state.values) { _, stateValue in
+            var values = activity.attributes.staticValues.merging(activity.content.state.values) { _, stateValue in
                 stateValue
             }
             guard values["sessionId"] == sessionId else {
                 continue
             }
 
-            let content = GenericAttributes.ContentState(values: [
-                "sessionId": sessionId,
-                "title": title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Focus Pomo" : title,
-                "status": status
-            ])
-            await activity.end(ActivityContent(state: content, staleDate: nil), dismissalPolicy: .immediate)
+            values["sessionId"] = sessionId
+            values["title"] = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Focus Pomo" : title
+            values["status"] = status
+            values["queuedAction"] = queuedAction
+
+            let content = GenericAttributes.ContentState(values: values)
+            await activity.update(ActivityContent(state: content, staleDate: nil))
+            didUpdateActivity = true
+            NSLog("\(focusPomoLiveActivityActionLog) queued_state_updated action=\(queuedAction) sessionId=\(sessionId) status=\(status)")
+        }
+
+        if !didUpdateActivity {
+            NSLog("\(focusPomoLiveActivityActionLog) queued_state_update_skipped reason=activity_not_found action=\(queuedAction) sessionId=\(sessionId) status=\(status)")
         }
     }
 }
@@ -107,13 +131,22 @@ struct FocusPomoCompleteLiveActivityIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        FocusPomoLiveActivityActionStore.append(
+        let didWrite = FocusPomoLiveActivityActionStore.append(
             action: "complete",
             sessionId: sessionId,
             title: titleText,
             scheduleInstanceId: scheduleInstanceId
         )
-        await FocusPomoLiveActivityEnder.end(sessionId: sessionId, title: titleText, status: "completed")
+
+        if didWrite {
+            await FocusPomoLiveActivityQueuedStateUpdater.update(
+                sessionId: sessionId,
+                title: titleText,
+                status: "queued_complete",
+                queuedAction: "complete"
+            )
+        }
+
         return .result()
     }
 }
@@ -144,13 +177,96 @@ struct FocusPomoSkipLiveActivityIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        FocusPomoLiveActivityActionStore.append(
+        let didWrite = FocusPomoLiveActivityActionStore.append(
             action: "skip",
             sessionId: sessionId,
             title: titleText,
             scheduleInstanceId: scheduleInstanceId
         )
-        await FocusPomoLiveActivityEnder.end(sessionId: sessionId, title: titleText, status: "canceled")
+
+        if didWrite {
+            await FocusPomoLiveActivityQueuedStateUpdater.update(
+                sessionId: sessionId,
+                title: titleText,
+                status: "queued_skip",
+                queuedAction: "skip"
+            )
+        }
+
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+struct FocusPomoCompleteWidgetIntent: AppIntent {
+    static var title: LocalizedStringResource = "Complete Focus Pomo"
+    static var openAppWhenRun: Bool = true
+
+    @Parameter(title: "Session ID")
+    var sessionId: String
+
+    @Parameter(title: "Title")
+    var titleText: String
+
+    @Parameter(title: "Schedule Instance ID")
+    var scheduleInstanceId: String
+
+    init() {
+        sessionId = ""
+        titleText = ""
+        scheduleInstanceId = ""
+    }
+
+    init(sessionId: String, title: String, scheduleInstanceId: String) {
+        self.sessionId = sessionId
+        self.titleText = title
+        self.scheduleInstanceId = scheduleInstanceId
+    }
+
+    func perform() async throws -> some IntentResult {
+        _ = FocusPomoLiveActivityActionStore.append(
+            action: "complete",
+            sessionId: sessionId,
+            title: titleText,
+            scheduleInstanceId: scheduleInstanceId
+        )
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+struct FocusPomoSkipWidgetIntent: AppIntent {
+    static var title: LocalizedStringResource = "Skip Focus Pomo"
+    static var openAppWhenRun: Bool = true
+
+    @Parameter(title: "Session ID")
+    var sessionId: String
+
+    @Parameter(title: "Title")
+    var titleText: String
+
+    @Parameter(title: "Schedule Instance ID")
+    var scheduleInstanceId: String
+
+    init() {
+        sessionId = ""
+        titleText = ""
+        scheduleInstanceId = ""
+    }
+
+    init(sessionId: String, title: String, scheduleInstanceId: String) {
+        self.sessionId = sessionId
+        self.titleText = title
+        self.scheduleInstanceId = scheduleInstanceId
+    }
+
+    func perform() async throws -> some IntentResult {
+        _ = FocusPomoLiveActivityActionStore.append(
+            action: "skip",
+            sessionId: sessionId,
+            title: titleText,
+            scheduleInstanceId: scheduleInstanceId
+        )
         return .result()
     }
 }

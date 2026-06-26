@@ -72,6 +72,27 @@ type FocusPomoLiveActivityEligibility =
 
 const FOCUS_POMO_ACTIVITY_ID = "focus-pomo-current";
 const LIVE_ACTIVITY_PLUGIN_NAME = "LiveActivity";
+// TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
+const FOCUS_POMO_LIVE_ACTIVITY_LOG = "[CREATOR_FOCUS_LIVE_ACTIVITY]";
+
+type NormalizedLiveActivityDate = {
+  iso: string;
+  epochSeconds: number;
+  epochMilliseconds: number;
+};
+
+type ValidatedFocusPomoLiveActivityPayload =
+  | {
+      ok: true;
+      payload: FocusPomoLiveActivityPayload;
+      startedAt: NormalizedLiveActivityDate;
+      endsAt: NormalizedLiveActivityDate | null;
+    }
+  | {
+      ok: false;
+      reason: string;
+      details: Record<string, unknown>;
+    };
 
 function warnInDevelopment(message: string, error: unknown) {
   if (process.env.NODE_ENV !== "development") return;
@@ -138,15 +159,123 @@ async function canUseLiveActivity(): Promise<FocusPomoLiveActivityEligibility> {
   return { ok: true, attemptedNativeIos: true };
 }
 
-function toLiveActivityTimestamp(value?: string): number | undefined {
-  if (!value) return undefined;
-
-  const timestamp = Math.floor(new Date(value).getTime() / 1000);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
 function nowLiveActivityTimestamp(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+function normalizeLiveActivityDate(
+  value: string | null | undefined
+): NormalizedLiveActivityDate | null {
+  if (!value) return null;
+
+  const epochMilliseconds = new Date(value).getTime();
+  if (!Number.isFinite(epochMilliseconds)) return null;
+
+  return {
+    iso: new Date(epochMilliseconds).toISOString(),
+    epochSeconds: Math.floor(epochMilliseconds / 1000),
+    epochMilliseconds,
+  };
+}
+
+function validateFocusPomoLiveActivityPayload(
+  payload: FocusPomoLiveActivityPayload
+): ValidatedFocusPomoLiveActivityPayload {
+  const startedAt = normalizeLiveActivityDate(payload.startedAt);
+  if (!startedAt) {
+    return {
+      ok: false,
+      reason: "invalid_started_at",
+      details: {
+        startedAt: payload.startedAt,
+        startedAtType: typeof payload.startedAt,
+      },
+    };
+  }
+
+  if (payload.mode === "stopwatch") {
+    return {
+      ok: true,
+      payload: {
+        ...payload,
+        startedAt: startedAt.iso,
+        endsAt: null,
+        targetEndAt: null,
+      },
+      startedAt,
+      endsAt: null,
+    };
+  }
+
+  const endsAt = normalizeLiveActivityDate(
+    payload.endsAt ?? payload.targetEndAt ?? null
+  );
+  if (!endsAt) {
+    return {
+      ok: false,
+      reason: "invalid_countdown_end_at",
+      details: {
+        startedAt: payload.startedAt,
+        startedAtType: typeof payload.startedAt,
+        endsAt: payload.endsAt,
+        endsAtType: typeof payload.endsAt,
+        targetEndAt: payload.targetEndAt,
+        targetEndAtType: typeof payload.targetEndAt,
+      },
+    };
+  }
+
+  if (endsAt.epochMilliseconds <= startedAt.epochMilliseconds) {
+    return {
+      ok: false,
+      reason: "reversed_countdown_range",
+      details: {
+        startedAt: startedAt.iso,
+        endsAt: endsAt.iso,
+        deltaMilliseconds: endsAt.epochMilliseconds - startedAt.epochMilliseconds,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      ...payload,
+      startedAt: startedAt.iso,
+      endsAt: endsAt.iso,
+      targetEndAt: endsAt.iso,
+    },
+    startedAt,
+    endsAt,
+  };
+}
+
+function logFocusPomoLiveActivityPayload(
+  event: string,
+  validation: ValidatedFocusPomoLiveActivityPayload,
+  payload: FocusPomoLiveActivityPayload
+) {
+  if (!validation.ok) {
+    console.warn(`${FOCUS_POMO_LIVE_ACTIVITY_LOG} ${event}_invalid`, {
+      reason: validation.reason,
+      ...validation.details,
+    });
+    return;
+  }
+
+  console.info(`${FOCUS_POMO_LIVE_ACTIVITY_LOG} ${event}_payload`, {
+    sessionId: validation.payload.sessionId,
+    mode: validation.payload.mode,
+    status: validation.payload.status,
+    scheduleInstanceId: validation.payload.scheduleInstanceId ?? null,
+    startedAt: validation.payload.startedAt,
+    startedAtType: typeof payload.startedAt,
+    startedAtEpochMilliseconds: validation.startedAt.epochMilliseconds,
+    endsAt: validation.payload.endsAt ?? null,
+    endsAtType: typeof payload.endsAt,
+    endsAtEpochMilliseconds: validation.endsAt?.epochMilliseconds ?? null,
+    hasCountdownEnd: validation.endsAt !== null,
+  });
 }
 
 function buildFocusPomoAttributes(
@@ -233,6 +362,16 @@ export async function startFocusPomoLiveActivity(
     });
   }
 
+  const validation = validateFocusPomoLiveActivityPayload(payload);
+  logFocusPomoLiveActivityPayload("start", validation, payload);
+  if (!validation.ok) {
+    return createLiveActivityResult({
+      ok: false,
+      reason: validation.reason,
+      attemptedNativeIos: true,
+    });
+  }
+
   try {
     await LiveActivity.endActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
@@ -243,9 +382,9 @@ export async function startFocusPomoLiveActivity(
 
     await LiveActivity.startActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
-      attributes: buildFocusPomoAttributes(payload),
-      contentState: buildFocusPomoContentState(payload),
-      timestamp: toLiveActivityTimestamp(payload.startedAt),
+      attributes: buildFocusPomoAttributes(validation.payload),
+      contentState: buildFocusPomoContentState(validation.payload),
+      timestamp: validation.startedAt.epochSeconds,
     });
 
     const diagnostics = await readFocusPomoLiveActivityDiagnostics();
@@ -278,10 +417,20 @@ export async function updateFocusPomoLiveActivity(
     });
   }
 
+  const validation = validateFocusPomoLiveActivityPayload(payload);
+  logFocusPomoLiveActivityPayload("update", validation, payload);
+  if (!validation.ok) {
+    return createLiveActivityResult({
+      ok: false,
+      reason: validation.reason,
+      attemptedNativeIos: true,
+    });
+  }
+
   try {
     await LiveActivity.updateActivity({
       id: FOCUS_POMO_ACTIVITY_ID,
-      contentState: buildFocusPomoContentState(payload),
+      contentState: buildFocusPomoContentState(validation.payload),
       timestamp: nowLiveActivityTimestamp(),
     });
 

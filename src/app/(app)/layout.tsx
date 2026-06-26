@@ -7,6 +7,7 @@ import { TourProvider } from "@/components/tour/TourProvider";
 import { AppCartProvider } from "@/components/cart/AppCartProvider";
 import { FabCreationProvider } from "@/components/ui/FabCreationContext";
 import AppShellNavVisibility from "@/components/AppShellNavVisibility";
+import { CreatorXpSurgeProvider } from "@/components/xp/CreatorXpSurgeHud";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,10 +16,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <ToastProvider>
           <ProfileProvider>
             <FabCreationProvider>
-              <LevelUpListener />
-              <SchedulerActivityHeartbeat />
-              <ProfileSetupPrompt />
-              <AppShellNavVisibility>{children}</AppShellNavVisibility>
+              <CreatorXpSurgeProvider>
+                <LevelUpListener />
+                <SchedulerActivityHeartbeat />
+                <ProfileSetupPrompt />
+                <AppShellNavVisibility>{children}</AppShellNavVisibility>
+              </CreatorXpSurgeProvider>
             </FabCreationProvider>
           </ProfileProvider>
         </ToastProvider>

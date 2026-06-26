@@ -7,6 +7,7 @@
 
 import WidgetKit
 import SwiftUI
+import AppIntents
 
 private let creatorScheduleWidgetKind = "CreatorScheduleWidget"
 private let creatorFocusPomoWidgetKind = "CreatorFocusPomoWidget"
@@ -529,7 +530,20 @@ struct CreatorFocusPomoPayload: Codable, Hashable {
     let startedAt: String?
     let endsAt: String?
     let statusLabel: String?
+    let activeSessionId: String?
+    let activeQueueItem: CreatorFocusPomoQueueItem?
+    let queueItems: [CreatorFocusPomoQueueItem]?
     let deepLink: String
+}
+
+struct CreatorFocusPomoQueueItem: Codable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let type: String?
+    let sourceType: String?
+    let icon: String?
+    let status: String?
+    let scheduleInstanceId: String?
 }
 
 struct CreatorFocusPomoEntry: TimelineEntry {
@@ -587,7 +601,6 @@ struct CreatorFocusPomoWidgetView: View {
     var body: some View {
         ZStack {
             CreatorWidgetTheme.background
-            CreatorWidgetTheme.surfaceGlow
 
             switch family {
             case .systemSmall:
@@ -608,20 +621,39 @@ struct CreatorFocusPomoSmallView: View {
     let payload: CreatorFocusPomoPayload?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CreatorFocusPomoHeader(compact: true)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                CreatorFocusPomoQueueIcon(icon: activeItem?.icon ?? payload?.skillIcon ?? payload?.sourceIcon, size: 26)
+                Text("Focus Pomo")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
             Spacer(minLength: 0)
 
             if payload?.isActive == true {
-                CreatorFocusPomoActiveSummary(payload: payload, titleFont: .headline.weight(.bold), compact: true)
+                Text(activeItem?.title ?? payload?.title ?? payload?.sourceTitle ?? "Focus Pomo")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                CreatorFocusPomoTimerText(payload: payload, font: .title2.weight(.heavy))
             } else {
                 CreatorFocusPomoReadyState(payload: payload, compact: true)
             }
 
             Spacer(minLength: 0)
-            CreatorFocusPomoCue(isActive: payload?.isActive == true)
+            Text(payload?.isActive == true ? creatorFocusPomoModeLabel(payload?.mode) : "Enter Focus")
+                .font(.caption2.weight(.heavy))
+                .foregroundStyle(payload?.isActive == true ? CreatorWidgetTheme.green : CreatorWidgetTheme.secondaryText)
+                .lineLimit(1)
         }
         .padding(14)
+    }
+
+    private var activeItem: CreatorFocusPomoQueueItem? {
+        payload?.activeQueueItem
     }
 }
 
@@ -629,18 +661,18 @@ struct CreatorFocusPomoMediumView: View {
     let payload: CreatorFocusPomoPayload?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CreatorFocusPomoHeader(compact: false)
+        VStack(alignment: .leading, spacing: 10) {
+            CreatorFocusPomoHeader(payload: payload, compact: false)
 
             if payload?.isActive == true {
-                CreatorFocusPomoActiveCard(payload: payload, showDetails: false)
+                CreatorFocusPomoHeroQueueRow(payload: payload, compact: true)
+                CreatorFocusPomoActionButtons(payload: payload, compact: true)
+                CreatorFocusPomoNextQueueList(items: Array((payload?.queueItems ?? []).prefix(2)), limit: 2)
             } else {
                 Spacer(minLength: 0)
                 CreatorFocusPomoReadyState(payload: payload, compact: false)
                 Spacer(minLength: 0)
             }
-
-            CreatorFocusPomoCue(isActive: payload?.isActive == true)
         }
         .padding(14)
     }
@@ -650,63 +682,80 @@ struct CreatorFocusPomoLargeView: View {
     let payload: CreatorFocusPomoPayload?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            CreatorFocusPomoHeader(compact: false)
+        VStack(alignment: .leading, spacing: 12) {
+            CreatorFocusPomoHeader(payload: payload, compact: false)
 
             if payload?.isActive == true {
-                CreatorFocusPomoActiveCard(payload: payload, showDetails: true)
-                Spacer(minLength: 0)
-                CreatorFocusPomoSessionDetails(payload: payload)
+                CreatorFocusPomoHeroQueueRow(payload: payload, compact: false)
+                CreatorFocusPomoActionButtons(payload: payload, compact: false)
+                CreatorFocusPomoNextQueueList(items: Array((payload?.queueItems ?? []).prefix(4)), limit: 4)
             } else {
                 Spacer(minLength: 0)
                 CreatorFocusPomoReadyState(payload: payload, compact: false)
                 Spacer(minLength: 0)
             }
-
-            CreatorFocusPomoCue(isActive: payload?.isActive == true)
         }
         .padding(16)
     }
 }
 
 struct CreatorFocusPomoHeader: View {
+    let payload: CreatorFocusPomoPayload?
     let compact: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("CREATOR")
-                    .font(.caption2.weight(.heavy))
-                    .tracking(1.2)
-                    .foregroundStyle(.white)
                 Text("Focus Pomo")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(.white)
+                Text(headerSubtitle)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(CreatorWidgetTheme.green)
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(1)
             }
             Spacer(minLength: 8)
             if !compact {
-                Text("EXECUTE")
+                Text(payload?.isActive == true ? creatorFocusPomoModeLabel(payload?.mode) : "READY")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .foregroundStyle(payload?.isActive == true ? CreatorWidgetTheme.green : CreatorWidgetTheme.secondaryText)
                     .lineLimit(1)
             }
         }
     }
+
+    private var headerSubtitle: String {
+        if payload?.isActive == true {
+            return normalizedCreatorWidgetText(payload?.sourceTitle) ?? "Execution queue"
+        }
+        return "Enter Focus"
+    }
 }
 
-struct CreatorFocusPomoActiveCard: View {
+struct CreatorFocusPomoHeroQueueRow: View {
     let payload: CreatorFocusPomoPayload?
-    let showDetails: Bool
+    let compact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: showDetails ? 12 : 10) {
-            CreatorFocusPomoActiveSummary(payload: payload, titleFont: .title3.weight(.bold), compact: false)
+        HStack(alignment: .center, spacing: 10) {
+            CreatorFocusPomoQueueIcon(icon: item?.icon ?? payload?.skillIcon ?? payload?.sourceIcon, size: compact ? 34 : 42)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("NOW")
+                    .font(.caption2.weight(.heavy))
+                    .foregroundStyle(CreatorWidgetTheme.green)
+                Text(item?.title ?? payload?.title ?? "Focus Pomo")
+                    .font((compact ? Font.headline : Font.title3).weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(compact ? 1 : 2)
+                    .minimumScaleFactor(0.82)
 
-            HStack(spacing: 8) {
-                CreatorFocusPomoModePill(mode: payload?.mode)
-                CreatorFocusPomoTimerText(payload: payload)
-                Spacer(minLength: 0)
+                Text(heroMeta)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(1)
             }
+            Spacer(minLength: 8)
+            CreatorFocusPomoTimerText(payload: payload, font: compact ? .headline.weight(.heavy) : .title2.weight(.heavy))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -716,52 +765,133 @@ struct CreatorFocusPomoActiveCard: View {
                 .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
         )
     }
+
+    private var item: CreatorFocusPomoQueueItem? {
+        payload?.activeQueueItem
+    }
+
+    private var heroMeta: String {
+        let status = normalizedCreatorWidgetText(item?.status) ?? "Scheduled"
+        let type = creatorFocusPomoQueueTypeLabel(item)
+        return "\(status) Event / \(type)"
+    }
 }
 
-struct CreatorFocusPomoActiveSummary: View {
+struct CreatorFocusPomoActionButtons: View {
     let payload: CreatorFocusPomoPayload?
-    let titleFont: Font
     let compact: Bool
 
-    private var title: String {
-        normalizedCreatorWidgetText(payload?.title) ?? normalizedCreatorWidgetText(payload?.sourceTitle) ?? "Focus Pomo"
-    }
+    var body: some View {
+        if #available(iOS 17.0, *), let sessionId = normalizedCreatorWidgetText(payload?.activeSessionId), let item = payload?.activeQueueItem {
+            HStack(spacing: 8) {
+                Button(intent: FocusPomoCompleteWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
+                    Text("Complete")
+                        .font(.caption.weight(.heavy))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(CreatorFocusPomoActionButtonStyle(primary: true, compact: compact))
 
-    private var icon: String? {
-        normalizedCreatorWidgetText(payload?.skillIcon) ?? normalizedCreatorWidgetText(payload?.sourceIcon)
+                Button(intent: FocusPomoSkipWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
+                    Text("Skip")
+                        .font(.caption.weight(.heavy))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(CreatorFocusPomoActionButtonStyle(primary: false, compact: compact))
+            }
+        }
     }
+}
+
+@available(iOS 17.0, *)
+struct CreatorFocusPomoActionButtonStyle: ButtonStyle {
+    let primary: Bool
+    let compact: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, compact ? 7 : 9)
+            .foregroundStyle(primary ? .black : .white)
+            .background(
+                primary
+                    ? CreatorWidgetTheme.green.opacity(configuration.isPressed ? 0.78 : 0.96)
+                    : Color.white.opacity(configuration.isPressed ? 0.16 : 0.08),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay {
+                if !primary {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+                }
+            }
+    }
+}
+
+struct CreatorFocusPomoNextQueueList: View {
+    let items: [CreatorFocusPomoQueueItem]
+    let limit: Int
 
     var body: some View {
-        HStack(alignment: .center, spacing: 9) {
-            if let icon {
-                Text(icon)
-                    .font(.system(size: compact ? 18 : 22, weight: .semibold))
-                    .frame(width: compact ? 26 : 34, height: compact ? 26 : 34)
-                    .foregroundStyle(.white)
-                    .background(CreatorWidgetTheme.iconBackground, in: Circle())
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(titleFont)
-                    .lineLimit(compact ? 2 : 1)
-                    .minimumScaleFactor(0.78)
-                    .foregroundStyle(.white)
-
-                if let sourceTitle = normalizedCreatorWidgetText(payload?.sourceTitle), sourceTitle != title {
-                    Text(sourceTitle)
-                        .font(.caption.weight(.medium))
-                        .lineLimit(1)
-                        .foregroundStyle(CreatorWidgetTheme.secondaryText)
-                } else {
-                    Text("Active focus")
-                        .font(.caption.weight(.medium))
-                        .lineLimit(1)
-                        .foregroundStyle(CreatorWidgetTheme.secondaryText)
+        VStack(alignment: .leading, spacing: 7) {
+            Text("NEXT")
+                .font(.caption2.weight(.heavy))
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+            if items.isEmpty {
+                Text("Queue clear")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(1)
+            } else {
+                ForEach(Array(items.prefix(limit).enumerated()), id: \.element.id) { index, item in
+                    CreatorFocusPomoQueueRow(position: index + 1, item: item)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CreatorFocusPomoQueueRow: View {
+    let position: Int
+    let item: CreatorFocusPomoQueueItem
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("\(position)")
+                .font(.caption2.weight(.heavy))
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                .frame(width: 16, alignment: .leading)
+            CreatorFocusPomoQueueIcon(icon: item.icon, size: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                Text("\(normalizedCreatorWidgetText(item.status) ?? "Scheduled") Event / \(creatorFocusPomoQueueTypeLabel(item))")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct CreatorFocusPomoQueueIcon: View {
+    let icon: String?
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(CreatorWidgetTheme.iconBackground)
+            Text(normalizedCreatorWidgetText(icon) ?? "*")
+                .font(.system(size: size * 0.48, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .frame(width: size, height: size)
     }
 }
 
@@ -770,7 +900,7 @@ struct CreatorFocusPomoReadyState: View {
     let compact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 5 : 7) {
+        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
             Text("Enter Focus")
                 .font((compact ? Font.headline : Font.title2).weight(.bold))
                 .foregroundStyle(.white)
@@ -778,36 +908,24 @@ struct CreatorFocusPomoReadyState: View {
                 .minimumScaleFactor(0.8)
 
             if let sourceTitle = normalizedCreatorWidgetText(payload?.sourceTitle) {
-                Text("Last focused: \(sourceTitle)")
-                    .font(.caption.weight(.medium))
+                Text(sourceTitle)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(CreatorWidgetTheme.secondaryText)
-                    .lineLimit(2)
+                    .lineLimit(compact ? 1 : 2)
             } else {
-                Text("Open Focus Pomo and start execution.")
-                    .font(.caption.weight(.medium))
+                Text("Open Focus Pomo")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(CreatorWidgetTheme.secondaryText)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-struct CreatorFocusPomoModePill: View {
-    let mode: String?
-
-    var body: some View {
-        Text(creatorFocusPomoModeLabel(mode))
-            .font(.caption2.weight(.heavy))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .foregroundStyle(.black)
-            .background(CreatorWidgetTheme.green, in: Capsule())
-    }
-}
-
 struct CreatorFocusPomoTimerText: View {
     let payload: CreatorFocusPomoPayload?
+    let font: Font
 
     var body: some View {
         Group {
@@ -819,68 +937,32 @@ struct CreatorFocusPomoTimerText: View {
                 Text(normalizedCreatorWidgetText(payload?.statusLabel) ?? "Running")
             }
         }
-        .font(.caption.weight(.bold))
+        .font(font)
         .monospacedDigit()
         .lineLimit(1)
-        .minimumScaleFactor(0.76)
+        .minimumScaleFactor(0.72)
         .foregroundStyle(.white)
     }
 }
 
-struct CreatorFocusPomoSessionDetails: View {
-    let payload: CreatorFocusPomoPayload?
+private func creatorFocusPomoQueueTypeLabel(_ item: CreatorFocusPomoQueueItem?) -> String {
+    guard let item else { return "Scheduled" }
+    let type = normalizedCreatorWidgetText(item.type) ?? normalizedCreatorWidgetText(item.sourceType) ?? "Scheduled"
 
-    var body: some View {
-        VStack(spacing: 8) {
-            CreatorFocusPomoDetailRow(label: "Mode", value: creatorFocusPomoModeLabel(payload?.mode))
-            CreatorFocusPomoDetailRow(label: "Status", value: normalizedCreatorWidgetText(payload?.statusLabel) ?? "Running")
-            if let startedAt = parseCreatorWidgetDate(payload?.startedAt) {
-                CreatorFocusPomoDetailRow(label: "Started", value: startedAt.formatted(date: .omitted, time: .shortened))
-            }
-        }
+    switch type.uppercased() {
+    case "HABIT":
+        return "Habit"
+    case "PROJECT":
+        return "Project"
+    case "CHORE":
+        return "Chore"
+    default:
+        return type.capitalized
     }
 }
 
-struct CreatorFocusPomoDetailRow: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(CreatorWidgetTheme.secondaryText)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
-        )
-    }
-}
-
-struct CreatorFocusPomoCue: View {
-    let isActive: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(isActive ? CreatorWidgetTheme.green : CreatorWidgetTheme.mutedText)
-                .frame(width: 6, height: 6)
-            Text(isActive ? "Tap to resume" : "Tap to enter")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(CreatorWidgetTheme.secondaryText)
-                .lineLimit(1)
-        }
-    }
+private func creatorFocusPomoQueueTypeLabel(_ item: CreatorFocusPomoQueueItem) -> String {
+    creatorFocusPomoQueueTypeLabel(Optional(item))
 }
 
 struct CreatorFocusPomoWidget: Widget {
@@ -1205,6 +1287,45 @@ extension CreatorFocusPomoPayload {
         startedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-420)),
         endsAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(1080)),
         statusLabel: "Focus running",
+        activeSessionId: "sample-session",
+        activeQueueItem: CreatorFocusPomoQueueItem(
+            id: "PROJECT:sample-current",
+            title: "Ship Focus Pomo widget",
+            type: "project",
+            sourceType: "PROJECT",
+            icon: "*",
+            status: "Scheduled",
+            scheduleInstanceId: "sample-current"
+        ),
+        queueItems: [
+            CreatorFocusPomoQueueItem(
+                id: "HABIT:sample-next-1",
+                title: "Review launch checklist",
+                type: "habit",
+                sourceType: "HABIT",
+                icon: "*",
+                status: "Scheduled",
+                scheduleInstanceId: "sample-next-1"
+            ),
+            CreatorFocusPomoQueueItem(
+                id: "PROJECT:sample-next-2",
+                title: "Clean up device notes",
+                type: "project",
+                sourceType: "PROJECT",
+                icon: "*",
+                status: "Unscheduled",
+                scheduleInstanceId: nil
+            ),
+            CreatorFocusPomoQueueItem(
+                id: "HABIT:sample-next-3",
+                title: "Close completed Event",
+                type: "habit",
+                sourceType: "HABIT",
+                icon: "*",
+                status: "Scheduled",
+                scheduleInstanceId: "sample-next-3"
+            )
+        ],
         deepLink: "/focus-pomo"
     )
 }

@@ -7,8 +7,35 @@
 
 import ActivityKit
 import AppIntents
+import Foundation
 import WidgetKit
 import SwiftUI
+
+// TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
+private let showFocusPomoDiagnostics = true
+
+private enum FocusPomoLiveActivityDateParser {
+    private static let fractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let standardFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static func date(from value: String) -> Date? {
+        if let seconds = Double(value) {
+            let normalizedSeconds = seconds > 10_000_000_000 ? seconds / 1000 : seconds
+            return Date(timeIntervalSince1970: normalizedSeconds)
+        }
+
+        return fractionalFormatter.date(from: value) ?? standardFormatter.date(from: value)
+    }
+}
 
 @available(iOS 16.2, *)
 private extension GenericAttributes {
@@ -132,6 +159,14 @@ private struct FocusPomoLockScreenView: View {
             }
 
             FocusPomoBottomAccentView(model: model)
+
+            if showFocusPomoDiagnostics {
+                Text(model.diagnosticLine)
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(FocusPomoLiveActivityTheme.mutedText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+            }
 
             FocusPomoActionButtonsView(model: model, compact: false)
         }
@@ -383,35 +418,52 @@ private struct FocusPomoLiveActivityModel {
     }
 
     var caption: String {
-        "Active now"
+        switch normalizedStatus {
+        case "queued_complete":
+            return "Queued Complete"
+        case "queued_skip":
+            return "Queued Skip"
+        default:
+            break
+        }
+
+        return "Active now"
     }
 
     var timerCaption: String {
         if isStopwatch {
-            return "elapsed"
+            return startedAtDate == nil ? "no start" : "elapsed"
         }
 
-        return hasPomoCountdownData ? "left" : "active"
+        guard let startedAt = startedAtDate, let targetEndAt = targetEndDate else {
+            return "date missing"
+        }
+
+        return targetEndAt > startedAt ? "left" : "date error"
     }
 
     var timerDisplay: TimerDisplay {
         if isStopwatch {
-            if let startDate = dateValue("startedAt"), startDate <= Date.now {
+            if let startDate = startedAtDate {
                 return .elapsed(startDate)
             }
 
-            return .staticText(formatDuration(secondsValue("elapsedSeconds")))
+            return .staticText("No start")
         }
 
         if
-            let startedAt = dateValue("startedAt"),
-            let targetEndDate = dateValue("endsAt") ?? dateValue("targetEndAt"),
+            let startedAt = startedAtDate,
+            let targetEndDate = targetEndDate,
             targetEndDate > startedAt
         {
             return .countdown(startedAt, targetEndDate)
         }
 
-        return .staticText(formatDuration(secondsValue("remainingSeconds")))
+        if startedAtDate != nil, targetEndDate != nil {
+            return .staticText("Invalid dates")
+        }
+
+        return .staticText("Missing dates")
     }
 
     var progress: Double? {
@@ -433,8 +485,8 @@ private struct FocusPomoLiveActivityModel {
         }
 
         if
-            let startedAt = dateValue("startedAt"),
-            let targetEndAt = dateValue("endsAt") ?? dateValue("targetEndAt"),
+            let startedAt = startedAtDate,
+            let targetEndAt = targetEndDate,
             targetEndAt > startedAt
         {
             let elapsed = Date.now.timeIntervalSince(startedAt)
@@ -447,8 +499,8 @@ private struct FocusPomoLiveActivityModel {
     var countdownInterval: ClosedRange<Date>? {
         guard
             !isStopwatch,
-            let startedAt = dateValue("startedAt"),
-            let targetEndAt = dateValue("endsAt") ?? dateValue("targetEndAt"),
+            let startedAt = startedAtDate,
+            let targetEndAt = targetEndDate,
             targetEndAt > startedAt
         else {
             return nil
@@ -462,18 +514,57 @@ private struct FocusPomoLiveActivityModel {
         return mode.contains("stopwatch") || mode.contains("countup")
     }
 
-    private var hasPomoCountdownData: Bool {
-        dateValue("endsAt") != nil || dateValue("targetEndAt") != nil || secondsValue("remainingSeconds") != nil
+    var diagnosticLine: String {
+        let mode = isStopwatch ? "stopwatch" : "countdown"
+        let startedParsed = startedAtDate != nil ? "Y" : "N"
+        let endsParsed = targetEndDate != nil ? "Y" : "N"
+        let dynamic = isDynamicTimerBranchActive ? "Y" : "N"
+        let range = hasReversedCountdownRange ? "bad-range" : "range-ok"
+
+        return "diag mode=\(mode) start=\(startedParsed) end=\(endsParsed) dyn=\(dynamic) \(range)"
+    }
+
+    private var startedAtDate: Date? {
+        dateValue("startedAt")
+    }
+
+    private var targetEndDate: Date? {
+        dateValue("endsAt") ?? dateValue("targetEndAt")
+    }
+
+    private var hasReversedCountdownRange: Bool {
+        guard
+            !isStopwatch,
+            let startedAt = startedAtDate,
+            let targetEndAt = targetEndDate
+        else {
+            return false
+        }
+
+        return targetEndAt <= startedAt
+    }
+
+    private var isDynamicTimerBranchActive: Bool {
+        switch timerDisplay {
+        case .countdown, .elapsed:
+            return true
+        case .staticText:
+            return false
+        }
     }
 
     private var isRunning: Bool {
-        (sanitized("status") ?? "running").lowercased() == "running"
+        normalizedStatus == "running"
+    }
+
+    private var normalizedStatus: String {
+        (sanitized("status") ?? "running").lowercased()
     }
 
     private var durationFromDates: Int? {
         guard
-            let startedAt = dateValue("startedAt"),
-            let targetEndAt = dateValue("endsAt") ?? dateValue("targetEndAt"),
+            let startedAt = startedAtDate,
+            let targetEndAt = targetEndDate,
             targetEndAt > startedAt
         else {
             return nil
@@ -500,37 +591,7 @@ private struct FocusPomoLiveActivityModel {
             return nil
         }
 
-        if let seconds = Double(value) {
-            let normalizedSeconds = seconds > 10_000_000_000 ? seconds / 1000 : seconds
-            return Date(timeIntervalSince1970: normalizedSeconds)
-        }
-
-        return ISO8601DateFormatter().date(from: value)
-    }
-
-    private func formatDuration(_ seconds: Int?, compact: Bool = false) -> String {
-        guard let seconds else {
-            return compact ? "Now" : "Active"
-        }
-
-        let totalSeconds = max(0, seconds)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let remainingSeconds = totalSeconds % 60
-
-        if compact, hours > 0 {
-            return "\(hours)h"
-        }
-
-        if compact {
-            return "\(minutes):\(String(format: "%02d", remainingSeconds))"
-        }
-
-        if hours > 0 {
-            return "\(hours):\(String(format: "%02d", minutes)):\(String(format: "%02d", remainingSeconds))"
-        }
-
-        return "\(minutes):\(String(format: "%02d", remainingSeconds))"
+        return FocusPomoLiveActivityDateParser.date(from: value)
     }
 
     private func clamped(_ value: Double) -> Double {
