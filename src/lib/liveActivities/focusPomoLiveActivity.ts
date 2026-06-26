@@ -266,23 +266,14 @@ export async function startFocusPomoLiveActivity(
     };
   }
 
-  try {
-    await LiveActivity.endActivity({
-      id: FOCUS_POMO_ACTIVITY_ID,
-      contentState: buildEndFocusPomoContentState({ status: "canceled" }),
-      timestamp: nowLiveActivityTimestamp(),
-      dismissalPolicy: "immediate",
-    });
-  } catch (error) {
-    const reason = `endActivity pre-cleanup failed: ${readErrorMessage(error)}`;
+  await LiveActivity.endActivity({
+    id: FOCUS_POMO_ACTIVITY_ID,
+    contentState: buildEndFocusPomoContentState({ status: "canceled" }),
+    timestamp: nowLiveActivityTimestamp(),
+    dismissalPolicy: "immediate",
+  }).catch((error) => {
     warnInDevelopment("Unable to pre-clean FocusPomo Live Activity.", error);
-    return {
-      ok: false,
-      reason,
-      attemptedNativeIos,
-      activityId: FOCUS_POMO_ACTIVITY_ID,
-    };
-  }
+  });
 
   try {
     await LiveActivity.startActivity({
@@ -301,16 +292,9 @@ export async function startFocusPomoLiveActivity(
     };
   }
 
-  const nativeState = await readFocusPomoNativeState();
+  await new Promise((resolve) => window.setTimeout(resolve, 700));
 
-  if (nativeState.isRunning === false) {
-    return {
-      ok: false,
-      reason: "Live Activity failed: iOS reports no running activity after start",
-      attemptedNativeIos,
-      ...nativeState,
-    };
-  }
+  const nativeState = await readFocusPomoNativeState();
 
   return {
     ok: true,
