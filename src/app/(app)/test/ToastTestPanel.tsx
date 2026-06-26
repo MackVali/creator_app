@@ -322,7 +322,7 @@ export default function ToastTestPanel() {
       }
 
       toast.error(
-        result.reason,
+        `Live Activity failed: ${result.reason}`,
         formatFocusPomoLiveActivityToastDescription(diagnostic)
       );
     } catch (error) {
