@@ -12,6 +12,7 @@ import SwiftUI
 struct CreatorLiveActivitiesBundle: WidgetBundle {
     var body: some Widget {
         CreatorScheduleWidget()
+        CreatorFocusPomoWidget()
         CreatorLiveActivitiesLiveActivity()
     }
 }

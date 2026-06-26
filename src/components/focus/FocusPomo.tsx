@@ -63,6 +63,12 @@ import {
   startFocusPomoLiveActivity,
 } from "@/lib/liveActivities/focusPomoLiveActivity";
 import {
+  ackFocusPomoLiveActivityActions,
+  CREATOR_FOCUS_POMO_DEEP_LINK,
+  readFocusPomoLiveActivityActions,
+  syncFocusPomoWidgetPayload,
+} from "@/lib/widgets/scheduleWidget";
+import {
   cancelFocusPomoCompletionNotification,
   scheduleFocusPomoCompletionNotification,
 } from "@/lib/notifications/focusPomoLocalNotifications";
@@ -130,6 +136,8 @@ type ActiveFocusPomoLiveActivitySession = {
   sessionId: string;
   itemKey: string;
   title: string;
+  startedAt: string;
+  endsAt: string | null;
 };
 
 type ScopeOption = {
@@ -3679,6 +3687,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const completionRequestsRef = useRef(new Map<string, Promise<void>>());
   const focusPomoLiveActivityRef =
     useRef<ActiveFocusPomoLiveActivitySession | null>(null);
+  const focusPomoLiveActivityActionHandlerRef = useRef({
+    complete: () => undefined,
+    skip: () => undefined,
+  });
+  const processedLiveActivityActionIdsRef = useRef(new Set<string>());
   const previousActiveIndexRef = useRef(activeIndex);
   const queueSourceSignatureRef = useRef("");
   const suppressQueueClickRef = useRef(false);
@@ -3687,6 +3700,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     itemKey: string | null;
     durationMs: number;
   } | null>(null);
+  const focusWidgetPayloadSignatureRef = useRef<string | null>(null);
   const preserveRunningTimerItemRef = useRef<{
     itemKey: string | null;
     durationMs: number;
@@ -4536,6 +4550,47 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const currentRoutineDisplay = getItemRoutineDisplay(currentItem);
   const currentMetaDisplay =
     currentItem?.kind === "project" ? currentGoalDisplay : currentRoutineDisplay;
+  const focusWidgetActiveSession = focusPomoLiveActivityRef.current;
+  const focusWidgetTitle = currentItem?.title ?? focusWidgetActiveSession?.title ?? null;
+  const focusWidgetSkillIcon = itemSkillIcon(currentItem);
+  const focusWidgetSourceTitle = displaySource?.title ?? lastSource?.title ?? null;
+  const focusWidgetSourceIcon = displaySource?.icon ?? lastSource?.icon ?? null;
+  useEffect(() => {
+    if (!mounted) return;
+
+    const payloadInput = {
+      isActive: isRunning,
+      mode,
+      title: isRunning ? focusWidgetTitle : null,
+      sourceTitle: focusWidgetSourceTitle,
+      skillIcon: isRunning ? focusWidgetSkillIcon : null,
+      sourceIcon: focusWidgetSourceIcon,
+      startedAt: isRunning ? focusWidgetActiveSession?.startedAt : null,
+      endsAt:
+        isRunning && mode === "pomo" ? focusWidgetActiveSession?.endsAt : null,
+      statusLabel: isRunning
+        ? mode === "pomo"
+          ? "Focus running"
+          : "Stopwatch running"
+        : "Ready",
+      deepLink: CREATOR_FOCUS_POMO_DEEP_LINK,
+    };
+    const signature = JSON.stringify(payloadInput);
+    if (focusWidgetPayloadSignatureRef.current === signature) return;
+
+    focusWidgetPayloadSignatureRef.current = signature;
+    void syncFocusPomoWidgetPayload(payloadInput).catch(() => undefined);
+  }, [
+    focusWidgetActiveSession?.endsAt,
+    focusWidgetActiveSession?.startedAt,
+    focusWidgetSkillIcon,
+    focusWidgetSourceIcon,
+    focusWidgetSourceTitle,
+    focusWidgetTitle,
+    isRunning,
+    mode,
+    mounted,
+  ]);
   const resetTimerToDuration = useCallback(
     (durationMs: number, options?: { rebaseRunningTimer?: boolean }) => {
       elapsedMsRef.current = 0;
@@ -4833,6 +4888,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       sessionId,
       itemKey,
       title,
+      startedAt: startedAtDate.toISOString(),
+      endsAt: targetEndAtDate?.toISOString() ?? null,
     };
 
     if (isNativeIosApp()) {
@@ -4853,8 +4910,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       mode,
       status: "running",
       startedAt: startedAtDate.toISOString(),
+      endsAt: targetEndAtDate?.toISOString() ?? null,
       targetEndAt: targetEndAtDate?.toISOString() ?? null,
       plannedDurationSeconds: Math.max(0, Math.round(durationMs / 1000)),
+      scheduleInstanceId: readFocusPomoScheduleInstanceId(item),
       remainingSeconds:
         mode === "pomo"
           ? Math.max(0, Math.ceil(safeRemainingMs / 1000))
@@ -5004,6 +5063,82 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     return () => window.clearInterval(intervalId);
   }, [isRunning, mode]);
+
+  useEffect(() => {
+    if (!isRunning) return;
+
+    let canceled = false;
+    let draining = false;
+
+    const drainPendingLiveActivityActions = async () => {
+      if (draining) return;
+      draining = true;
+
+      try {
+        const activeSession = focusPomoLiveActivityRef.current;
+        if (!activeSession || !currentItem) return;
+
+        const currentScheduleInstanceId =
+          readFocusPomoScheduleInstanceId(currentItem);
+        const actions = await readFocusPomoLiveActivityActions();
+        if (canceled || actions.length === 0) return;
+
+        const handledIds: string[] = [];
+        for (const action of actions) {
+          if (processedLiveActivityActionIdsRef.current.has(action.id)) {
+            handledIds.push(action.id);
+            continue;
+          }
+          if (action.sessionId !== activeSession.sessionId) continue;
+          if (
+            action.scheduleInstanceId &&
+            currentScheduleInstanceId &&
+            action.scheduleInstanceId !== currentScheduleInstanceId
+          ) {
+            continue;
+          }
+
+          processedLiveActivityActionIdsRef.current.add(action.id);
+          handledIds.push(action.id);
+
+          if (action.action === "complete") {
+            focusPomoLiveActivityActionHandlerRef.current.complete();
+            break;
+          }
+
+          focusPomoLiveActivityActionHandlerRef.current.skip();
+          break;
+        }
+
+        if (handledIds.length > 0) {
+          await ackFocusPomoLiveActivityActions(handledIds);
+        }
+      } catch (error) {
+        console.warn("Unable to drain Focus Pomo Live Activity action.", error);
+      } finally {
+        draining = false;
+      }
+    };
+
+    void drainPendingLiveActivityActions();
+    const intervalId = window.setInterval(() => {
+      void drainPendingLiveActivityActions();
+    }, 1500);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void drainPendingLiveActivityActions();
+      }
+    };
+    window.addEventListener("focus", drainPendingLiveActivityActions);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      canceled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", drainPendingLiveActivityActions);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentItem, isRunning]);
 
   if (!mounted) {
     return null;
@@ -5568,6 +5703,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       .finally(() => {
         completionRequestsRef.current.delete(sessionId);
       });
+  };
+
+  focusPomoLiveActivityActionHandlerRef.current = {
+    complete: handleComplete,
+    skip: handleSkip,
   };
 
   const scopeEditorBody = (

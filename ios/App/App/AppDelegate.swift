@@ -38,6 +38,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
+        if handleCreatorDeepLink(url) {
+            return true
+        }
+
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
@@ -62,6 +66,59 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
+    private func handleCreatorDeepLink(_ url: URL) -> Bool {
+        guard url.scheme == "creator" else {
+            return false
+        }
+
+        let route = creatorRoute(for: url)
+        guard route == "/focus-pomo" else {
+            return false
+        }
+
+        navigateCapacitorWebView(to: route)
+        return true
+    }
+
+    private func creatorRoute(for url: URL) -> String {
+        let host = url.host?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let path = url.path.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if host == "focus-pomo" {
+            return "/focus-pomo"
+        }
+
+        if path == "/focus-pomo" {
+            return "/focus-pomo"
+        }
+
+        return path.isEmpty ? "/" : path
+    }
+
+    private func navigateCapacitorWebView(to route: String) {
+        let escapedRoute = route.replacingOccurrences(of: "'", with: "\\'")
+        let script = "window.location.assign('\(escapedRoute)')"
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.evaluateCreatorRouteScript(script)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.evaluateCreatorRouteScript(script)
+        }
+    }
+
+    private func evaluateCreatorRouteScript(_ script: String) {
+        guard
+            let bridgeViewController = window?.rootViewController as? CAPBridgeViewController,
+            let webView = bridgeViewController.bridge?.webView
+        else {
+            return
+        }
+
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
 }

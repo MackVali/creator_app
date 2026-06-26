@@ -20,10 +20,12 @@ export type FocusPomoLiveActivityPayload = {
   mode: FocusPomoLiveActivityMode;
   startedAt: string;
   pausedAt?: string | null;
+  endsAt?: string | null;
   targetEndAt?: string | null;
   plannedDurationSeconds: number;
   remainingSeconds?: number;
   elapsedSeconds?: number;
+  scheduleInstanceId?: string | null;
   status: FocusPomoLiveActivityStatus;
 };
 
@@ -156,6 +158,7 @@ function buildFocusPomoAttributes(
     sourceType: payload.sourceType ?? "",
     sourceId: payload.sourceId ?? "",
     mode: payload.mode,
+    scheduleInstanceId: payload.scheduleInstanceId ?? "",
   };
 }
 
@@ -173,8 +176,10 @@ function buildFocusPomoContentState(
     status: payload.status,
     startedAt: payload.startedAt,
     pausedAt: payload.pausedAt ?? "",
+    endsAt: payload.endsAt ?? payload.targetEndAt ?? "",
     targetEndAt: payload.targetEndAt ?? "",
     plannedDurationSeconds: String(payload.plannedDurationSeconds),
+    scheduleInstanceId: payload.scheduleInstanceId ?? "",
     ...(payload.remainingSeconds != null
       ? { remainingSeconds: String(payload.remainingSeconds) }
       : {}),
