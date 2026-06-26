@@ -90,6 +90,7 @@ import {
 import {
   syncScheduleWidgetPayload,
   type CreatorScheduleWidgetSourceInstance,
+  type CreatorScheduleWidgetSourceTimeBlock,
 } from "@/lib/widgets/scheduleWidget";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
@@ -1564,8 +1565,71 @@ function buildScheduleWidgetSourceInstances(
       start_utc: instance.start_utc,
       end_utc: instance.end_utc,
       status: instance.status,
+      time_block_id: instance.time_block_id,
+      day_type_time_block_id: instance.day_type_time_block_id,
+      window_id: instance.window_id,
     };
   });
+}
+
+function buildScheduleWidgetSourceTimeBlocks(
+  windows: RepoWindow[],
+  date: Date,
+  timeZone: string
+): CreatorScheduleWidgetSourceTimeBlock[] {
+  return windows
+    .map((window) => {
+      const { start, end } = resolveWindowBoundsForDateLib(
+        window,
+        date,
+        timeZone
+      );
+      if (!isValidDate(start) || !isValidDate(end)) return null;
+      if (end.getTime() <= start.getTime()) return null;
+
+      const compatibleWindow = window as RepoWindow & {
+        day_type_time_block_id?: string | null;
+        time_block_id?: string | null;
+        timeBlockId?: string | null;
+        window_id?: string | null;
+      };
+      const dayTypeTimeBlockId =
+        window.dayTypeTimeBlockId ??
+        compatibleWindow.day_type_time_block_id ??
+        null;
+      const timeBlockId =
+        dayTypeTimeBlockId
+          ? (compatibleWindow.timeBlockId ??
+            compatibleWindow.time_block_id ??
+            window.id)
+          : (compatibleWindow.timeBlockId ??
+            compatibleWindow.time_block_id ??
+            null);
+      const windowId =
+        compatibleWindow.window_id ?? (dayTypeTimeBlockId ? null : window.id);
+      const fallbackId =
+        timeBlockId ?? dayTypeTimeBlockId ?? windowId ?? window.id;
+
+      return {
+        id: `${fallbackId}:${start.toISOString()}`,
+        label: window.label,
+        title: window.label,
+        name: window.label,
+        kind: window.window_kind,
+        window_kind: window.window_kind,
+        start_utc: start.toISOString(),
+        end_utc: end.toISOString(),
+        time_block_id: timeBlockId,
+        day_type_time_block_id: dayTypeTimeBlockId,
+        window_id: windowId,
+      };
+    })
+    .filter(
+      (
+        timeBlock
+      ): timeBlock is CreatorScheduleWidgetSourceTimeBlock =>
+        timeBlock !== null
+    );
 }
 
 function buildScheduleBlockNotificationTimeBlocks(
@@ -5593,9 +5657,20 @@ export default function ScheduleTabContent({
       syncDate,
       effectiveTimeZone
     );
+    const widgetTimeBlocks = buildScheduleWidgetSourceTimeBlocks(
+      windows,
+      syncDate,
+      effectiveTimeZone ?? "UTC"
+    );
     const signature = JSON.stringify({
       date: formatScheduleDateKey(syncDate, effectiveTimeZone ?? "UTC"),
       timeZone: effectiveTimeZone ?? null,
+      timeBlocks: widgetTimeBlocks.map((timeBlock) => ({
+        id: timeBlock.id,
+        start: timeBlock.start_utc,
+        end: timeBlock.end_utc,
+        kind: timeBlock.kind ?? timeBlock.window_kind ?? null,
+      })),
       instances: todayVisibleInstances.map((instance) => ({
         id: instance.id,
         status: instance.status,
@@ -5610,6 +5685,7 @@ export default function ScheduleTabContent({
 
     console.info("[CREATOR_WIDGET_SYNC] schedule_visible_events_loaded", {
       consideredEventCount: todayVisibleInstances.length,
+      consideredTimeBlockCount: widgetTimeBlocks.length,
       timeZone: effectiveTimeZone ?? null,
     });
 
@@ -5623,13 +5699,16 @@ export default function ScheduleTabContent({
       }
     );
 
-    void syncScheduleWidgetPayload(widgetInstances, {
+    void syncScheduleWidgetPayload(widgetInstances, widgetTimeBlocks, {
       timeZone: effectiveTimeZone ?? null,
       date: syncDate,
     })
       .then((result) => {
         console.info("[CREATOR_WIDGET_SYNC] schedule_widget_sync_result", {
           ok: result.ok,
+          writtenTimeBlockCount: result.ok
+            ? result.payload.timeBlocks.length
+            : 0,
           writtenEventCount: result.ok ? result.payload.events.length : 0,
           reason: result.ok ? null : result.reason,
         });
@@ -5643,6 +5722,7 @@ export default function ScheduleTabContent({
     userId,
     instancesStatus,
     effectiveTimeZone,
+    windows,
     filterInstancesForDate,
     habits,
     projectSkillIds,

@@ -13,6 +13,7 @@ export type FocusPomoLiveActivityStatus =
 export type FocusPomoLiveActivityPayload = {
   sessionId: string;
   title: string;
+  skillIcon?: string | null;
   sourceLabel?: string | null;
   sourceType?: string | null;
   sourceId?: string | null;
@@ -161,9 +162,12 @@ function buildFocusPomoAttributes(
 function buildFocusPomoContentState(
   payload: FocusPomoLiveActivityPayload
 ): Record<string, string> {
+  const skillIcon = payload.skillIcon?.trim();
+
   return {
     sessionId: payload.sessionId,
     title: payload.title,
+    ...(skillIcon ? { skillIcon } : {}),
     sourceLabel: payload.sourceLabel ?? "",
     mode: payload.mode,
     status: payload.status,

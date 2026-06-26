@@ -15,21 +15,43 @@ export type CreatorScheduleWidgetStatus =
 export type CreatorScheduleWidgetEvent = {
   id: string;
   title: string;
+  startAt: string | null;
+  endAt: string | null;
   startLabel: string;
   endLabel: string;
   sourceType: string;
   icon?: string | null;
   status: CreatorScheduleWidgetStatus;
+  timeBlockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  windowId?: string | null;
+};
+
+export type CreatorScheduleWidgetTimeBlock = {
+  id: string;
+  title: string;
+  name: string;
+  startAt: string;
+  endAt: string;
+  startLabel: string;
+  endLabel: string;
+  kind?: string | null;
+  window_kind?: string | null;
+  timeBlockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  windowId?: string | null;
 };
 
 export type CreatorScheduleWidgetPayload = {
   generatedAt: string;
   dateLabel: string;
+  currentTimeZone: string;
   counts: {
     scheduled: number;
     completed: number;
     missed: number;
   };
+  timeBlocks: CreatorScheduleWidgetTimeBlock[];
   events: CreatorScheduleWidgetEvent[];
 };
 
@@ -43,6 +65,23 @@ export type CreatorScheduleWidgetSourceInstance = {
   start_utc: string | null;
   end_utc: string | null;
   status: string | null;
+  time_block_id?: string | null;
+  day_type_time_block_id?: string | null;
+  window_id?: string | null;
+};
+
+export type CreatorScheduleWidgetSourceTimeBlock = {
+  id: string;
+  label?: string | null;
+  title?: string | null;
+  name?: string | null;
+  kind?: string | null;
+  window_kind?: string | null;
+  start_utc: string | null;
+  end_utc: string | null;
+  time_block_id?: string | null;
+  day_type_time_block_id?: string | null;
+  window_id?: string | null;
 };
 
 type CreatorWidgetPlugin = {
@@ -154,19 +193,6 @@ function instanceOverlapsDay(
   return startMs < dayEnd.getTime() && endMs > dayStart.getTime();
 }
 
-function instanceHasNotEnded(
-  instance: CreatorScheduleWidgetSourceInstance,
-  now: Date
-) {
-  const endMs = instance.end_utc
-    ? Date.parse(instance.end_utc)
-    : instance.start_utc
-      ? Date.parse(instance.start_utc)
-      : NaN;
-
-  return Number.isFinite(endMs) && endMs >= now.getTime();
-}
-
 function toWidgetEvent(
   instance: CreatorScheduleWidgetSourceInstance,
   timeZone: string
@@ -174,16 +200,72 @@ function toWidgetEvent(
   return {
     id: instance.id,
     title: readTitle(instance),
+    startAt: instance.start_utc,
+    endAt: instance.end_utc,
     startLabel: formatTimeLabel(instance.start_utc, timeZone),
     endLabel: formatTimeLabel(instance.end_utc, timeZone),
     sourceType: formatSourceType(instance.source_type),
     icon: instance.skillIcon?.trim() || null,
     status: readStatus(instance.status),
+    timeBlockId: instance.time_block_id ?? null,
+    dayTypeTimeBlockId: instance.day_type_time_block_id ?? null,
+    windowId: instance.window_id ?? null,
+  };
+}
+
+function timeBlockOverlapsDay(
+  timeBlock: CreatorScheduleWidgetSourceTimeBlock,
+  dayStart: Date,
+  dayEnd: Date
+) {
+  const startMs = timeBlock.start_utc ? Date.parse(timeBlock.start_utc) : NaN;
+  const endMs = timeBlock.end_utc ? Date.parse(timeBlock.end_utc) : NaN;
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
+
+  return startMs < dayEnd.getTime() && endMs > dayStart.getTime();
+}
+
+function readTimeBlockTitle(timeBlock: CreatorScheduleWidgetSourceTimeBlock) {
+  return (
+    timeBlock.title?.trim() ||
+    timeBlock.name?.trim() ||
+    timeBlock.label?.trim() ||
+    "Time Block"
+  );
+}
+
+function toWidgetTimeBlock(
+  timeBlock: CreatorScheduleWidgetSourceTimeBlock,
+  timeZone: string
+): CreatorScheduleWidgetTimeBlock | null {
+  if (!timeBlock.start_utc || !timeBlock.end_utc) return null;
+  const startMs = Date.parse(timeBlock.start_utc);
+  const endMs = Date.parse(timeBlock.end_utc);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return null;
+  }
+
+  const title = readTimeBlockTitle(timeBlock);
+
+  return {
+    id: timeBlock.id,
+    title,
+    name: title,
+    startAt: timeBlock.start_utc,
+    endAt: timeBlock.end_utc,
+    startLabel: formatTimeLabel(timeBlock.start_utc, timeZone),
+    endLabel: formatTimeLabel(timeBlock.end_utc, timeZone),
+    kind: timeBlock.kind ?? timeBlock.window_kind ?? null,
+    window_kind: timeBlock.window_kind ?? timeBlock.kind ?? null,
+    timeBlockId: timeBlock.time_block_id ?? null,
+    dayTypeTimeBlockId: timeBlock.day_type_time_block_id ?? null,
+    windowId: timeBlock.window_id ?? null,
   };
 }
 
 export function buildScheduleWidgetPayload(
   instances: CreatorScheduleWidgetSourceInstance[],
+  timeBlocks: CreatorScheduleWidgetSourceTimeBlock[] = [],
   options: BuildScheduleWidgetPayloadOptions = {}
 ): CreatorScheduleWidgetPayload {
   const timeZone =
@@ -197,6 +279,15 @@ export function buildScheduleWidgetPayload(
   const todayInstances = instances.filter((instance) =>
     instanceOverlapsDay(instance, dayStart, dayEnd)
   );
+  const todayTimeBlocks = timeBlocks
+    .filter((timeBlock) => timeBlockOverlapsDay(timeBlock, dayStart, dayEnd))
+    .map((timeBlock) => toWidgetTimeBlock(timeBlock, timeZone))
+    .filter(
+      (
+        timeBlock
+      ): timeBlock is CreatorScheduleWidgetTimeBlock => timeBlock !== null
+    )
+    .sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt));
 
   const counts = todayInstances.reduce(
     (nextCounts, instance) => {
@@ -209,36 +300,36 @@ export function buildScheduleWidgetPayload(
     { scheduled: 0, completed: 0, missed: 0 }
   );
 
-  const upcomingEvents = todayInstances
-    .filter((instance) => {
-      if (readStatus(instance.status) !== "scheduled") return false;
-      return instanceHasNotEnded(instance, now);
-    })
+  const widgetEvents = todayInstances
     .sort((left, right) => {
       const leftMs = left.start_utc ? Date.parse(left.start_utc) : 0;
       const rightMs = right.start_utc ? Date.parse(right.start_utc) : 0;
       return leftMs - rightMs;
     })
-    .slice(0, 6)
     .map((instance) => toWidgetEvent(instance, timeZone));
 
   return {
     generatedAt: now.toISOString(),
     dateLabel: formatDateLabel(date, timeZone),
+    currentTimeZone: timeZone,
     counts,
-    events: upcomingEvents,
+    timeBlocks: todayTimeBlocks,
+    events: widgetEvents,
   };
 }
 
 export async function syncScheduleWidgetPayload(
   instances: CreatorScheduleWidgetSourceInstance[],
+  timeBlocks: CreatorScheduleWidgetSourceTimeBlock[] = [],
   options: BuildScheduleWidgetPayloadOptions = {}
 ): Promise<{ ok: true; payload: CreatorScheduleWidgetPayload } | { ok: false; reason: string }> {
-  const payload = buildScheduleWidgetPayload(instances, options);
+  const payload = buildScheduleWidgetPayload(instances, timeBlocks, options);
   const availability = getCreatorWidgetPluginAvailability();
 
   console.info(`${CREATOR_WIDGET_SYNC_LOG} js_payload_built`, {
     inputCount: instances.length,
+    inputTimeBlockCount: timeBlocks.length,
+    writtenTimeBlockCount: payload.timeBlocks.length,
     writtenEventCount: payload.events.length,
     scheduledCount: payload.counts.scheduled,
     completedCount: payload.counts.completed,
@@ -258,6 +349,7 @@ export async function syncScheduleWidgetPayload(
       payload: JSON.stringify(payload),
     });
     console.info(`${CREATOR_WIDGET_SYNC_LOG} native_write_succeeded`, {
+      writtenTimeBlockCount: payload.timeBlocks.length,
       writtenEventCount: payload.events.length,
     });
 
