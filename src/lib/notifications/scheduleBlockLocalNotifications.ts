@@ -534,7 +534,7 @@ function buildNotificationBody(group: GroupedBlock) {
     previews.push(`+${remaining} more`);
   }
 
-  return [`${count} scheduled`, previews.join(", ")].join("\n");
+  return previews.join(", ");
 }
 
 function isBreakTimeBlock(

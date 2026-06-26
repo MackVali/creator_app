@@ -87,7 +87,10 @@ import {
   type ScheduleBlockLocalNotificationInstance,
   type ScheduleBlockLocalNotificationTimeBlock,
 } from "@/lib/notifications/scheduleBlockLocalNotifications";
-import { syncScheduleWidgetPayload } from "@/lib/widgets/scheduleWidget";
+import {
+  syncScheduleWidgetPayload,
+  type CreatorScheduleWidgetSourceInstance,
+} from "@/lib/widgets/scheduleWidget";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
 import { windowRectMinutes } from "@/lib/scheduler/windowRect";
@@ -1506,6 +1509,61 @@ function buildScheduleBlockNotificationInstances(
       time_block_id: instance.time_block_id,
       day_type_time_block_id: instance.day_type_time_block_id,
       window_id: instance.window_id,
+    };
+  });
+}
+
+function buildScheduleWidgetSourceInstances(
+  instances: ScheduleInstance[],
+  dataset: Pick<
+    ScheduleEventDataset,
+    "habits" | "projectSkillIds" | "skills" | "tasks"
+  >
+): CreatorScheduleWidgetSourceInstance[] {
+  const skillById = new Map(dataset.skills.map((skill) => [skill.id, skill]));
+  const taskById = new Map(dataset.tasks.map((task) => [task.id, task]));
+  const habitById = new Map(dataset.habits.map((habit) => [habit.id, habit]));
+
+  const resolveSkill = (skillId: string | null | undefined) => {
+    const id = skillId?.trim();
+    return id ? skillById.get(id) ?? null : null;
+  };
+
+  const resolveProjectSkill = (projectId: string | null | undefined) => {
+    const ids = projectId ? dataset.projectSkillIds[projectId] ?? [] : [];
+    for (const skillId of ids) {
+      const skill = resolveSkill(skillId);
+      if (skill?.icon?.trim()) return skill;
+    }
+    return ids.length > 0 ? resolveSkill(ids[0]) : null;
+  };
+
+  return instances.map((instance) => {
+    let skillIcon: string | null = null;
+
+    if (instance.source_type === "TASK") {
+      const task = taskById.get(instance.source_id ?? "");
+      const skill = resolveSkill(task?.skill_id);
+      skillIcon = task?.skill_icon?.trim() || skill?.icon?.trim() || null;
+    } else if (instance.source_type === "HABIT") {
+      const habit = habitById.get(instance.source_id ?? "");
+      const skill = resolveSkill(habit?.skillId);
+      skillIcon = skill?.icon?.trim() || null;
+    } else if (instance.source_type === "PROJECT") {
+      const skill = resolveProjectSkill(instance.source_id);
+      skillIcon = skill?.icon?.trim() || null;
+    }
+
+    return {
+      id: instance.id,
+      event_name: instance.event_name,
+      project_name: instance.project_name,
+      skillIcon,
+      source_type: instance.source_type,
+      source_id: instance.source_id,
+      start_utc: instance.start_utc,
+      end_utc: instance.end_utc,
+      status: instance.status,
     };
   });
 }
@@ -3652,6 +3710,7 @@ export default function ScheduleTabContent({
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>("idle");
   const [schedulerDebug, setSchedulerDebug] =
     useState<SchedulerDebugState | null>(null);
+  const widgetSyncSignatureRef = useRef<string | null>(null);
   const [pendingInstanceStatuses, setPendingInstanceStatuses] = useState<
     Map<string, ScheduleInstance["status"]>
   >(new Map());
@@ -4951,10 +5010,10 @@ export default function ScheduleTabContent({
       setHabits(payload.habits);
       setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
-      const notificationInstances = buildScheduleBlockNotificationInstances(
-        nextInstances,
-        payload
-      );
+      console.info("[CREATOR_WIDGET_SYNC] schedule_dataset_loaded", {
+        instanceCount: nextInstances.length,
+        timeZone: effectiveTimeZone ?? localTimeZone ?? null,
+      });
       syncScheduleBlockLocalNotificationsForDataset({
         payload,
         windowsSnapshot: windowsRef.current,
@@ -4962,23 +5021,6 @@ export default function ScheduleTabContent({
         timeZone: effectiveTimeZone ?? localTimeZone ?? null,
         source: "dataset",
       });
-      void syncScheduleWidgetPayload(notificationInstances, {
-        timeZone: effectiveTimeZone ?? localTimeZone ?? null,
-        date: new Date(),
-      })
-        .then((result) => {
-          if (process.env.NODE_ENV !== "production") {
-            console.info("[schedule.widget.sync]", {
-              inputInstances: nextInstances.length,
-              result,
-            });
-          }
-        })
-        .catch((error) => {
-          if (process.env.NODE_ENV !== "production") {
-            console.warn("[schedule.widget.sync_failed]", error);
-          }
-        });
       setAllInstances(nextInstances);
       setInstances(nextInstances);
       nextInstances.forEach((instance) => {
@@ -5541,6 +5583,71 @@ export default function ScheduleTabContent({
     currentDate,
     effectiveTimeZone,
     filterInstancesForDate,
+  ]);
+
+  useEffect(() => {
+    if (!userId || instancesStatus !== "loaded") return;
+
+    const syncDate = new Date();
+    const todayVisibleInstances = filterInstancesForDate(
+      syncDate,
+      effectiveTimeZone
+    );
+    const signature = JSON.stringify({
+      date: formatScheduleDateKey(syncDate, effectiveTimeZone ?? "UTC"),
+      timeZone: effectiveTimeZone ?? null,
+      instances: todayVisibleInstances.map((instance) => ({
+        id: instance.id,
+        status: instance.status,
+        start: instance.start_utc,
+        end: instance.end_utc,
+        updated: instance.updated_at,
+      })),
+    });
+
+    if (widgetSyncSignatureRef.current === signature) return;
+    widgetSyncSignatureRef.current = signature;
+
+    console.info("[CREATOR_WIDGET_SYNC] schedule_visible_events_loaded", {
+      consideredEventCount: todayVisibleInstances.length,
+      timeZone: effectiveTimeZone ?? null,
+    });
+
+    const widgetInstances = buildScheduleWidgetSourceInstances(
+      todayVisibleInstances,
+      {
+        habits,
+        projectSkillIds,
+        skills,
+        tasks,
+      }
+    );
+
+    void syncScheduleWidgetPayload(widgetInstances, {
+      timeZone: effectiveTimeZone ?? null,
+      date: syncDate,
+    })
+      .then((result) => {
+        console.info("[CREATOR_WIDGET_SYNC] schedule_widget_sync_result", {
+          ok: result.ok,
+          writtenEventCount: result.ok ? result.payload.events.length : 0,
+          reason: result.ok ? null : result.reason,
+        });
+      })
+      .catch((error) => {
+        console.warn("[CREATOR_WIDGET_SYNC] schedule_widget_sync_failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }, [
+    userId,
+    instancesStatus,
+    effectiveTimeZone,
+    filterInstancesForDate,
+    habits,
+    projectSkillIds,
+    skills,
+    tasks,
   ]);
 
   useEffect(() => {

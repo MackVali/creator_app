@@ -19,6 +19,7 @@
 		7B8023372FE754BB00BEFB36 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 7B8023362FE754BB00BEFB36 /* FirebaseMessaging */; };
 		7BA47B192FECA00100C0D3EA /* CreatorWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA47B182FECA00100C0D3EA /* CreatorWidgetPlugin.swift */; };
 		7BA47B1A2FECA00100C0D3EA /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC3E1FB2FE9D4920015FD93 /* WidgetKit.framework */; };
+		7BA47B1B2FECA00100C0D3EA /* CreatorBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA47B1C2FECA00100C0D3EA /* CreatorBridgeViewController.swift */; };
 		7BC3E1FC2FE9D4920015FD93 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC3E1FB2FE9D4920015FD93 /* WidgetKit.framework */; };
 		7BC3E1FE2FE9D4920015FD93 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7BC3E1FD2FE9D4920015FD93 /* SwiftUI.framework */; };
 		7BC3E20D2FE9D4960015FD93 /* CreatorLiveActivitiesExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -61,6 +62,7 @@
 		7B8023312FE7387D00BEFB36 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		7B8023322FE748C800BEFB36 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		7BA47B182FECA00100C0D3EA /* CreatorWidgetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatorWidgetPlugin.swift; sourceTree = "<group>"; };
+		7BA47B1C2FECA00100C0D3EA /* CreatorBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatorBridgeViewController.swift; sourceTree = "<group>"; };
 		7BC3E1FA2FE9D4920015FD93 /* CreatorLiveActivitiesExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CreatorLiveActivitiesExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7BC3E1FB2FE9D4920015FD93 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		7BC3E1FD2FE9D4920015FD93 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -131,6 +133,7 @@
 				7B8023322FE748C800BEFB36 /* GoogleService-Info.plist */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				7BA47B1C2FECA00100C0D3EA /* CreatorBridgeViewController.swift */,
 				7BA47B182FECA00100C0D3EA /* CreatorWidgetPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -271,6 +274,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				7BA47B1B2FECA00100C0D3EA /* CreatorBridgeViewController.swift in Sources */,
 				7BA47B192FECA00100C0D3EA /* CreatorWidgetPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

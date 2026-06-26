@@ -1,10 +1,10 @@
 "use client";
 
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import type { ScheduleBlockLocalNotificationInstance } from "@/lib/notifications/scheduleBlockLocalNotifications";
 import { addDaysInTimeZone, startOfDayInTimeZone } from "@/lib/scheduler/timezone";
 
 const CREATOR_WIDGET_PLUGIN_NAME = "CreatorWidget";
+const CREATOR_WIDGET_SYNC_LOG = "[CREATOR_WIDGET_SYNC]";
 
 export type CreatorScheduleWidgetStatus =
   | "scheduled"
@@ -33,8 +33,26 @@ export type CreatorScheduleWidgetPayload = {
   events: CreatorScheduleWidgetEvent[];
 };
 
+export type CreatorScheduleWidgetSourceInstance = {
+  id: string;
+  event_name: string | null;
+  project_name?: string | null;
+  skillIcon?: string | null;
+  source_type: string;
+  source_id: string | null;
+  start_utc: string | null;
+  end_utc: string | null;
+  status: string | null;
+};
+
 type CreatorWidgetPlugin = {
-  writeSchedulePayload(options: { payload: string }): Promise<void>;
+  writeSchedulePayload(options: { payload: string }): Promise<{ ok?: boolean }>;
+  readSchedulePayload(): Promise<{
+    ok?: boolean;
+    exists?: boolean;
+    byteCount?: number;
+    payload?: string;
+  }>;
 };
 
 const CreatorWidget = registerPlugin<CreatorWidgetPlugin>(
@@ -54,13 +72,22 @@ const STATUS_LABELS: Record<CreatorScheduleWidgetStatus, string> = {
   unscheduled: "Unscheduled",
 };
 
-function canUseCreatorWidgetPlugin() {
-  return (
-    typeof window !== "undefined" &&
-    Capacitor.isNativePlatform() &&
-    Capacitor.getPlatform() === "ios" &&
-    Capacitor.isPluginAvailable(CREATOR_WIDGET_PLUGIN_NAME)
-  );
+function getCreatorWidgetPluginAvailability() {
+  const isBrowser = typeof window !== "undefined";
+  const isNative = isBrowser && Capacitor.isNativePlatform();
+  const platform = isBrowser ? Capacitor.getPlatform() : "server";
+  const isIos = platform === "ios";
+  const pluginAvailable =
+    isBrowser && Capacitor.isPluginAvailable(CREATOR_WIDGET_PLUGIN_NAME);
+
+  return {
+    isBrowser,
+    isNative,
+    platform,
+    isIos,
+    pluginAvailable,
+    canUse: isBrowser && isNative && isIos && pluginAvailable,
+  };
 }
 
 function readStatus(
@@ -78,7 +105,7 @@ function readStatus(
   return "unscheduled";
 }
 
-function readTitle(instance: ScheduleBlockLocalNotificationInstance) {
+function readTitle(instance: CreatorScheduleWidgetSourceInstance) {
   return (
     instance.event_name?.trim() ||
     instance.project_name?.trim() ||
@@ -116,7 +143,7 @@ function formatTimeLabel(value: string | null | undefined, timeZone: string) {
 }
 
 function instanceOverlapsDay(
-  instance: ScheduleBlockLocalNotificationInstance,
+  instance: CreatorScheduleWidgetSourceInstance,
   dayStart: Date,
   dayEnd: Date
 ) {
@@ -128,7 +155,7 @@ function instanceOverlapsDay(
 }
 
 function instanceHasNotEnded(
-  instance: ScheduleBlockLocalNotificationInstance,
+  instance: CreatorScheduleWidgetSourceInstance,
   now: Date
 ) {
   const endMs = instance.end_utc
@@ -141,7 +168,7 @@ function instanceHasNotEnded(
 }
 
 function toWidgetEvent(
-  instance: ScheduleBlockLocalNotificationInstance,
+  instance: CreatorScheduleWidgetSourceInstance,
   timeZone: string
 ): CreatorScheduleWidgetEvent {
   return {
@@ -156,7 +183,7 @@ function toWidgetEvent(
 }
 
 export function buildScheduleWidgetPayload(
-  instances: ScheduleBlockLocalNotificationInstance[],
+  instances: CreatorScheduleWidgetSourceInstance[],
   options: BuildScheduleWidgetPayloadOptions = {}
 ): CreatorScheduleWidgetPayload {
   const timeZone =
@@ -204,18 +231,56 @@ export function buildScheduleWidgetPayload(
 }
 
 export async function syncScheduleWidgetPayload(
-  instances: ScheduleBlockLocalNotificationInstance[],
+  instances: CreatorScheduleWidgetSourceInstance[],
   options: BuildScheduleWidgetPayloadOptions = {}
 ): Promise<{ ok: true; payload: CreatorScheduleWidgetPayload } | { ok: false; reason: string }> {
   const payload = buildScheduleWidgetPayload(instances, options);
+  const availability = getCreatorWidgetPluginAvailability();
 
-  if (!canUseCreatorWidgetPlugin()) {
+  console.info(`${CREATOR_WIDGET_SYNC_LOG} js_payload_built`, {
+    inputCount: instances.length,
+    writtenEventCount: payload.events.length,
+    scheduledCount: payload.counts.scheduled,
+    completedCount: payload.counts.completed,
+    missedCount: payload.counts.missed,
+    availability,
+  });
+
+  if (!availability.canUse) {
+    console.warn(`${CREATOR_WIDGET_SYNC_LOG} native_plugin_unavailable`, {
+      availability,
+    });
     return { ok: false, reason: "plugin_unavailable" };
   }
 
-  await CreatorWidget.writeSchedulePayload({
-    payload: JSON.stringify(payload),
-  });
+  try {
+    await CreatorWidget.writeSchedulePayload({
+      payload: JSON.stringify(payload),
+    });
+    console.info(`${CREATOR_WIDGET_SYNC_LOG} native_write_succeeded`, {
+      writtenEventCount: payload.events.length,
+    });
+
+    try {
+      const readback = await CreatorWidget.readSchedulePayload();
+      console.info(`${CREATOR_WIDGET_SYNC_LOG} native_readback`, {
+        exists: readback.exists === true,
+        byteCount: readback.byteCount ?? 0,
+      });
+    } catch (readbackError) {
+      console.warn(`${CREATOR_WIDGET_SYNC_LOG} native_readback_failed`, {
+        message:
+          readbackError instanceof Error
+            ? readbackError.message
+            : String(readbackError),
+      });
+    }
+  } catch (error) {
+    console.warn(`${CREATOR_WIDGET_SYNC_LOG} native_write_failed`, {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   return { ok: true, payload };
 }
