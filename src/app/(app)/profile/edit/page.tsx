@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import NextImage from "next/image";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Capacitor } from "@capacitor/core";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1740,9 +1741,12 @@ export default function ProfileEditPage() {
                       className="group relative h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] outline-none transition hover:border-white/30 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#15161A] disabled:cursor-not-allowed disabled:opacity-70 sm:h-24 sm:w-24"
                     >
                       {heroAvatarUrl ? (
-                        <img
+                        <NextImage
                           src={heroAvatarUrl}
                           alt={`${heroName}'s profile photo`}
+                          fill
+                          sizes="(min-width: 640px) 96px, 80px"
+                          unoptimized
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -1916,9 +1920,12 @@ export default function ProfileEditPage() {
                 }}
               >
                 {pendingAvatarSourceUrl ? (
-                  <img
+                  <NextImage
                     src={pendingAvatarSourceUrl}
                     alt="Selected profile"
+                    width={Math.max(editorRenderedWidth, 1)}
+                    height={Math.max(editorRenderedHeight, 1)}
+                    unoptimized
                     draggable={false}
                     onLoad={(event) => {
                       const imageSize = {
