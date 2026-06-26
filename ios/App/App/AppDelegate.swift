@@ -29,6 +29,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        dispatchCreatorAppActiveEvent()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -119,6 +120,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    private func dispatchCreatorAppActiveEvent() {
+        let script = "window.dispatchEvent(new CustomEvent('creator:app-active',{detail:{source:'ios_application_did_become_active'}}))"
+
+        DispatchQueue.main.async { [weak self] in
+            self?.evaluateCreatorRouteScript(script)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.evaluateCreatorRouteScript(script)
+        }
     }
 
 }

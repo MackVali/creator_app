@@ -784,19 +784,19 @@ struct CreatorFocusPomoActionButtons: View {
     var body: some View {
         if #available(iOS 17.0, *), let sessionId = normalizedCreatorWidgetText(payload?.activeSessionId), let item = payload?.activeQueueItem {
             HStack(spacing: 8) {
-                Button(intent: FocusPomoCompleteWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
-                    Text("Complete")
-                        .font(.caption.weight(.heavy))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(CreatorFocusPomoActionButtonStyle(primary: true, compact: compact))
-
                 Button(intent: FocusPomoSkipWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
                     Text("Skip")
                         .font(.caption.weight(.heavy))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(CreatorFocusPomoActionButtonStyle(primary: false, compact: compact))
+
+                Button(intent: FocusPomoCompleteWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
+                    Text("Complete")
+                        .font(.caption.weight(.heavy))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(CreatorFocusPomoActionButtonStyle(primary: true, compact: compact))
             }
         }
     }

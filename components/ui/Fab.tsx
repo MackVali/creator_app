@@ -120,6 +120,7 @@ import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
+import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
 
 export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
@@ -588,6 +589,11 @@ type FabSearchResult = {
   updatedAt?: string | null;
   updated_at?: string | null;
   goalMonumentId?: string | null;
+  goal_monument_id?: string | null;
+  goalMonumentName?: string | null;
+  goal_monument_name?: string | null;
+  monumentTitle?: string | null;
+  monument_title?: string | null;
 };
 
 type DragPointerInfo = {
@@ -15596,6 +15602,53 @@ export function Fab({
         }
 
         const nextCompletedAt = response.data.completed_at ?? completedAt;
+        const sourceType = getNexusResultScheduleSourceType(result) ?? result.type;
+        const skillId =
+          result.skillId ??
+          result.skill_id ??
+          (Array.isArray(result.skillIds) ? result.skillIds[0] : null) ??
+          null;
+        const skill = skillId ? findSkillById(skillId) : null;
+        const monumentId =
+          result.monumentId ??
+          result.monument_id ??
+          result.goalMonumentId ??
+          result.goal_monument_id ??
+          skill?.monument_id ??
+          null;
+        const monument = monumentId
+          ? monuments.find((item) => item.id === monumentId)
+          : null;
+        showScheduledEventCreatorXpSurge({
+          scheduleInstanceId,
+          completedAt: nextCompletedAt,
+          sourceType,
+          sourceIcon:
+            result.skillIcon ??
+            result.skill_icon ??
+            result.skillEmoji ??
+            result.skill_emoji ??
+            result.primarySkillIcon ??
+            result.primary_skill_icon ??
+            skill?.icon ??
+            monument?.emoji ??
+            null,
+          skillName:
+            result.skillName ??
+            result.skill_name ??
+            result.primarySkillName ??
+            result.primary_skill_name ??
+            skill?.name ??
+            null,
+          monumentTitle:
+            result.monumentTitle ??
+            result.monument_title ??
+            result.goalMonumentName ??
+            result.goal_monument_name ??
+            monument?.title ??
+            null,
+          sourceTitle: result.name,
+        });
         setSearchResults((prev) => {
           const nextResults = prev.map((item) =>
             item.scheduleInstanceId === scheduleInstanceId
@@ -15656,7 +15709,7 @@ export function Fab({
         completingNexusInstanceIdsRef.current.delete(scheduleInstanceId);
       }
     },
-    [toast],
+    [findSkillById, monuments, toast],
   );
 
   const handleManualPlacement = (
@@ -22053,7 +22106,7 @@ function FabNexus({
       ) : null}
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5",
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5 [-webkit-overflow-scrolling:touch]",
           (shouldShowPopupAdjustments && popupAdjustOpen) ||
             (shouldShowEmbeddedAdjustments && embeddedAdjustOpen)
             ? "pt-1.5"
@@ -22240,22 +22293,8 @@ function FabNexus({
                 }
 
                 if (
-                  canManualPlaceResult(state.result) &&
-                  (absX >= RESULT_CARD_DRAG_THRESHOLD_PX ||
-                    absY >= RESULT_CARD_DRAG_THRESHOLD_PX)
-                ) {
-                  clearResultLongPressTimer();
-                  lastResultTapRef.current = null;
-                  state.dragging = true;
-                  beginPointerDrag(event, state.result);
-                  event.preventDefault();
-                  event.stopPropagation();
-                  return;
-                }
-
-                if (
                   absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
-                  absY > absX * 1.1
+                  absY > absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE
                 ) {
                   clearResultLongPressTimer();
                   dragStateRef.current = null;
@@ -22276,17 +22315,23 @@ function FabNexus({
                 }
 
                 if (
-                  absX < RESULT_CARD_DRAG_THRESHOLD_PX &&
-                  absY < RESULT_CARD_DRAG_THRESHOLD_PX
+                  canManualPlaceResult(state.result) &&
+                  (absX >= RESULT_CARD_DRAG_THRESHOLD_PX ||
+                    absY >= RESULT_CARD_DRAG_THRESHOLD_PX)
                 ) {
+                  clearResultLongPressTimer();
+                  lastResultTapRef.current = null;
+                  state.dragging = true;
+                  beginPointerDrag(event, state.result);
+                  event.preventDefault();
+                  event.stopPropagation();
                   return;
                 }
 
-                if (absY > absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE) {
-                  clearResultLongPressTimer();
-                  dragStateRef.current = null;
-                  suppressTransientClick();
-                  releaseCardPointer(event);
+                if (
+                  absX < RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absY < RESULT_CARD_DRAG_THRESHOLD_PX
+                ) {
                   return;
                 }
 
@@ -22396,6 +22441,25 @@ function FabNexus({
                 }
 
                 if (
+                  absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absY > absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE
+                ) {
+                  clearResultLongPressTimer();
+                  dragStateRef.current = null;
+                  return;
+                }
+
+                if (
+                  absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
+                ) {
+                  clearResultLongPressTimer();
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  return;
+                }
+
+                if (
                   canManualPlaceResult(state.result) &&
                   (absX >= RESULT_CARD_DRAG_THRESHOLD_PX ||
                     absY >= RESULT_CARD_DRAG_THRESHOLD_PX)
@@ -22412,25 +22476,6 @@ function FabNexus({
                   });
                   event.preventDefault();
                   event.stopPropagation();
-                  return;
-                }
-
-                if (
-                  absY > RESULT_CARD_DRAG_THRESHOLD_PX &&
-                  absY > absX * 1.1
-                ) {
-                  clearResultLongPressTimer();
-                  dragStateRef.current = null;
-                  return;
-                }
-
-                if (
-                  absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
-                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
-                ) {
-                  clearResultLongPressTimer();
-                  dragStateRef.current = null;
-                  suppressTransientClick();
                   return;
                 }
               };
