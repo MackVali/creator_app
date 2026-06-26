@@ -85,6 +85,7 @@ import {
 import {
   syncScheduleBlockLocalNotifications,
   type ScheduleBlockLocalNotificationInstance,
+  type ScheduleBlockLocalNotificationTimeBlock,
 } from "@/lib/notifications/scheduleBlockLocalNotifications";
 import { syncScheduleWidgetPayload } from "@/lib/widgets/scheduleWidget";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
@@ -1507,6 +1508,112 @@ function buildScheduleBlockNotificationInstances(
       window_id: instance.window_id,
     };
   });
+}
+
+function buildScheduleBlockNotificationTimeBlocks(
+  windows: RepoWindow[],
+  date: Date,
+  timeZone: string
+): ScheduleBlockLocalNotificationTimeBlock[] {
+  return windows
+    .map((window) => {
+      const { start, end } = resolveWindowBoundsForDateLib(
+        window,
+        date,
+        timeZone
+      );
+      if (!isValidDate(start) || !isValidDate(end)) return null;
+      if (end.getTime() <= start.getTime()) return null;
+
+      const compatibleWindow = window as RepoWindow & {
+        day_type_time_block_id?: string | null;
+        time_block_id?: string | null;
+        timeBlockId?: string | null;
+        window_id?: string | null;
+      };
+      const dayTypeTimeBlockId =
+        window.dayTypeTimeBlockId ??
+        compatibleWindow.day_type_time_block_id ??
+        null;
+      const timeBlockId =
+        dayTypeTimeBlockId
+          ? (compatibleWindow.timeBlockId ??
+            compatibleWindow.time_block_id ??
+            window.id)
+          : (compatibleWindow.timeBlockId ??
+            compatibleWindow.time_block_id ??
+            null);
+      const windowId =
+        compatibleWindow.window_id ?? (dayTypeTimeBlockId ? null : window.id);
+      const fallbackId =
+        timeBlockId ?? dayTypeTimeBlockId ?? windowId ?? window.id;
+
+      const block: ScheduleBlockLocalNotificationTimeBlock = {
+        id: `${fallbackId}:${start.toISOString()}`,
+        label: window.label,
+        kind: window.window_kind,
+        start_utc: start.toISOString(),
+        end_utc: end.toISOString(),
+        time_block_id: timeBlockId,
+        day_type_time_block_id: dayTypeTimeBlockId,
+        window_id: windowId,
+      };
+
+      return block;
+    })
+    .filter(
+      (block): block is ScheduleBlockLocalNotificationTimeBlock =>
+        block !== null
+    );
+}
+
+function syncScheduleBlockLocalNotificationsForDataset({
+  payload,
+  windowsSnapshot,
+  date,
+  timeZone,
+  source,
+}: {
+  payload: ScheduleEventDataset;
+  windowsSnapshot: RepoWindow[];
+  date: Date;
+  timeZone: string | null;
+  source: "dataset" | "windows";
+}) {
+  const nextInstances = payload.instances ?? [];
+  const notificationInstances = buildScheduleBlockNotificationInstances(
+    nextInstances,
+    payload
+  );
+  const notificationTimeBlocks = buildScheduleBlockNotificationTimeBlocks(
+    windowsSnapshot,
+    date,
+    timeZone ?? "UTC"
+  );
+
+  void syncScheduleBlockLocalNotifications(notificationInstances, {
+    blockLabelByKey: buildScheduleBlockLabelMap(
+      nextInstances,
+      windowsSnapshot
+    ),
+    timeBlocks: notificationTimeBlocks,
+    timeZone,
+  })
+    .then((result) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[schedule.local_notifications.sync]", {
+          inputInstances: nextInstances.length,
+          inputTimeBlocks: notificationTimeBlocks.length,
+          source,
+          result,
+        });
+      }
+    })
+    .catch((error) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[schedule.local_notifications.sync_failed]", error);
+      }
+    });
 }
 
 type HabitTimelinePlacement = {
@@ -3472,6 +3579,10 @@ export default function ScheduleTabContent({
   useEffect(() => {
     windowsRef.current = windows;
   }, [windows]);
+  const currentDateRef = useRef(currentDate);
+  useEffect(() => {
+    currentDateRef.current = currentDate;
+  }, [currentDate]);
   const overlayWindowIdsWithEvents = useMemo(() => {
     const ids = new Set<string>();
     for (const instance of allInstances) {
@@ -4836,26 +4947,13 @@ export default function ScheduleTabContent({
         nextInstances,
         payload
       );
-      void syncScheduleBlockLocalNotifications(notificationInstances, {
-        blockLabelByKey: buildScheduleBlockLabelMap(
-          nextInstances,
-          windowsRef.current
-        ),
+      syncScheduleBlockLocalNotificationsForDataset({
+        payload,
+        windowsSnapshot: windowsRef.current,
+        date: currentDateRef.current,
         timeZone: effectiveTimeZone ?? localTimeZone ?? null,
-      })
-        .then((result) => {
-          if (process.env.NODE_ENV !== "production") {
-            console.info("[schedule.local_notifications.sync]", {
-              inputInstances: nextInstances.length,
-              result,
-            });
-          }
-        })
-        .catch((error) => {
-          if (process.env.NODE_ENV !== "production") {
-            console.warn("[schedule.local_notifications.sync_failed]", error);
-          }
-        });
+        source: "dataset",
+      });
       void syncScheduleWidgetPayload(notificationInstances, {
         timeZone: effectiveTimeZone ?? localTimeZone ?? null,
         date: new Date(),
@@ -4935,6 +5033,20 @@ export default function ScheduleTabContent({
     FULL_WRITE_WINDOW_DAYS,
     logInstanceStatusChange,
   ]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const payload = scheduleDatasetRef.current;
+    if (!payload || windows.length === 0) return;
+
+    syncScheduleBlockLocalNotificationsForDataset({
+      payload,
+      windowsSnapshot: windows,
+      date: currentDate,
+      timeZone: effectiveTimeZone ?? localTimeZone ?? null,
+      source: "windows",
+    });
+  }, [userId, windows, currentDate, effectiveTimeZone, localTimeZone]);
 
   const refreshDayTypeWindows = useCallback(async () => {
     if (!userId) {

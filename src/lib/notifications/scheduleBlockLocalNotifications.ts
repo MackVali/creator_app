@@ -33,10 +33,22 @@ export type ScheduleBlockLocalNotificationInstance = {
   window_id: string | null;
 };
 
+export type ScheduleBlockLocalNotificationTimeBlock = {
+  id: string;
+  label: string | null;
+  kind?: string | null;
+  start_utc: string | null;
+  end_utc: string | null;
+  time_block_id: string | null;
+  day_type_time_block_id: string | null;
+  window_id: string | null;
+};
+
 export type ScheduleBlockLocalNotificationOptions = {
   blockLabelByKey?:
     | Map<string, string>
     | Record<string, string | null | undefined>;
+  timeBlocks?: ScheduleBlockLocalNotificationTimeBlock[];
   timeZone?: string | null;
   now?: Date;
 };
@@ -79,8 +91,10 @@ export type ScheduleBlockBriefTestNotificationPayload = {
 
 type GroupedBlock = {
   blockKey: string;
-  anchor: ScheduleBlockLocalNotificationInstance;
-  anchorStartMs: number;
+  anchor: ScheduleBlockLocalNotificationInstance | null;
+  timeBlock: ScheduleBlockLocalNotificationTimeBlock | null;
+  blockStartMs: number;
+  blockEndMs: number | null;
   instances: ScheduleBlockLocalNotificationInstance[];
 };
 
@@ -257,26 +271,30 @@ function buildScheduleBlockNotifications(
   const horizonMs = nowMs + LOOKAHEAD_MS;
 
   return Array.from(
-    groupUpcomingInstances(
+    groupUpcomingScheduleBlocks(
       instances,
+      options.timeBlocks ?? [],
       nowMs,
       horizonMs,
       options.timeZone
     ).values()
   )
-    .sort((a, b) => a.anchorStartMs - b.anchorStartMs)
+    .sort((a, b) => a.blockStartMs - b.blockStartMs)
     .slice(0, MAX_NOTIFICATIONS)
     .map((group) => {
       const label =
+        pickText(group.timeBlock?.label) ??
         resolveBlockLabel(group.blockKey, options.blockLabelByKey) ??
         FALLBACK_TIME_BLOCK_LABEL;
-      const startUtc = new Date(group.anchorStartMs).toISOString();
-      const fireAt = new Date(group.anchorStartMs - REMINDER_LEAD_MS);
+      const startUtc = new Date(group.blockStartMs).toISOString();
+      const fireAt = new Date(group.blockStartMs - REMINDER_LEAD_MS);
+      const anchor = group.anchor;
+      const timeBlock = group.timeBlock;
 
       return {
         id: stableNotificationId(group.blockKey, startUtc),
         title: `${label} starts in 5 min`,
-        body: buildNotificationBody(group.instances),
+        body: buildNotificationBody(group),
         schedule: {
           at: fireAt,
           allowWhileIdle: true,
@@ -289,13 +307,16 @@ function buildScheduleBlockNotifications(
           blockKey: group.blockKey,
           blockLabel: label,
           blockEventCount: group.instances.length,
-          anchorInstanceId: group.anchor.id,
-          sourceType: group.anchor.source_type,
-          sourceId: group.anchor.source_id,
+          anchorInstanceId: anchor?.id ?? null,
+          sourceType: anchor?.source_type ?? null,
+          sourceId: anchor?.source_id ?? null,
           startUtc,
-          timeBlockId: group.anchor.time_block_id,
-          dayTypeTimeBlockId: group.anchor.day_type_time_block_id,
-          windowId: group.anchor.window_id,
+          timeBlockId: timeBlock?.time_block_id ?? anchor?.time_block_id ?? null,
+          dayTypeTimeBlockId:
+            timeBlock?.day_type_time_block_id ??
+            anchor?.day_type_time_block_id ??
+            null,
+          windowId: timeBlock?.window_id ?? anchor?.window_id ?? null,
         },
       };
     });
@@ -307,17 +328,56 @@ function countScheduleBlockNotificationCandidates(
 ) {
   const nowMs = options.now?.getTime() ?? Date.now();
   const horizonMs = nowMs + LOOKAHEAD_MS;
-  return groupUpcomingInstances(instances, nowMs, horizonMs, options.timeZone)
-    .size;
+  return groupUpcomingScheduleBlocks(
+    instances,
+    options.timeBlocks ?? [],
+    nowMs,
+    horizonMs,
+    options.timeZone
+  ).size;
 }
 
-function groupUpcomingInstances(
+function groupUpcomingScheduleBlocks(
   instances: ScheduleBlockLocalNotificationInstance[],
+  timeBlocks: ScheduleBlockLocalNotificationTimeBlock[],
   nowMs: number,
   horizonMs: number,
   timeZone?: string | null,
 ) {
   const groups = new Map<string, GroupedBlock>();
+
+  for (const timeBlock of timeBlocks) {
+    const startMs = parseUtcMs(timeBlock.start_utc);
+    if (startMs === null) continue;
+    if (startMs > horizonMs) continue;
+    const endMs = parseUtcMs(timeBlock.end_utc);
+
+    const notificationMs = startMs - REMINDER_LEAD_MS;
+    if (notificationMs <= nowMs) continue;
+
+    const blockKey = blockKeyForTimeBlock(timeBlock);
+    const occurrenceKey = blockOccurrenceKey(blockKey, startMs, timeZone);
+    const existing = groups.get(occurrenceKey);
+
+    if (!existing) {
+      groups.set(occurrenceKey, {
+        blockKey,
+        anchor: null,
+        timeBlock,
+        blockStartMs: startMs,
+        blockEndMs: endMs,
+        instances: [],
+      });
+      continue;
+    }
+
+    existing.timeBlock ??= timeBlock;
+    existing.blockStartMs = Math.min(existing.blockStartMs, startMs);
+    existing.blockEndMs =
+      existing.blockEndMs === null || endMs === null
+        ? (existing.blockEndMs ?? endMs)
+        : Math.max(existing.blockEndMs, endMs);
+  }
 
   for (const instance of instances) {
     if (shouldSkipInstance(instance)) continue;
@@ -330,18 +390,18 @@ function groupUpcomingInstances(
     if (notificationMs <= nowMs) continue;
 
     const blockKey = blockKeyForInstance(instance);
-    const occurrenceKey = blockOccurrenceKeyForInstance(
-      instance,
-      startMs,
-      timeZone
-    );
-    const existing = groups.get(occurrenceKey);
+    const occurrenceKey = blockOccurrenceKey(blockKey, startMs, timeZone);
+    const existing =
+      findSeededTimeBlockGroup(groups, blockKey, startMs) ??
+      groups.get(occurrenceKey);
 
     if (!existing) {
       groups.set(occurrenceKey, {
         blockKey,
         anchor: instance,
-        anchorStartMs: startMs,
+        timeBlock: null,
+        blockStartMs: startMs,
+        blockEndMs: null,
         instances: [instance],
       });
       continue;
@@ -349,9 +409,11 @@ function groupUpcomingInstances(
 
     existing.instances.push(instance);
 
-    if (startMs < existing.anchorStartMs) {
+    const anchorStartMs = existing.anchor
+      ? parseUtcMs(existing.anchor.start_utc)
+      : null;
+    if (anchorStartMs === null || startMs < anchorStartMs) {
       existing.anchor = instance;
-      existing.anchorStartMs = startMs;
     }
   }
 
@@ -364,6 +426,23 @@ function groupUpcomingInstances(
   }
 
   return groups;
+}
+
+function findSeededTimeBlockGroup(
+  groups: Map<string, GroupedBlock>,
+  blockKey: string,
+  instanceStartMs: number,
+) {
+  for (const group of groups.values()) {
+    if (group.blockKey !== blockKey || !group.timeBlock) continue;
+    if (instanceStartMs < group.blockStartMs) continue;
+    if (group.blockEndMs !== null && instanceStartMs >= group.blockEndMs) {
+      continue;
+    }
+    return group;
+  }
+
+  return null;
 }
 
 function shouldSkipInstance(instance: ScheduleBlockLocalNotificationInstance) {
@@ -386,13 +465,22 @@ function blockKeyForInstance(instance: ScheduleBlockLocalNotificationInstance) {
   );
 }
 
-function blockOccurrenceKeyForInstance(
-  instance: ScheduleBlockLocalNotificationInstance,
+function blockKeyForTimeBlock(block: ScheduleBlockLocalNotificationTimeBlock) {
+  return (
+    pickText(block.time_block_id) ??
+    pickText(block.day_type_time_block_id) ??
+    pickText(block.window_id) ??
+    block.id
+  );
+}
+
+function blockOccurrenceKey(
+  blockKey: string,
   startMs: number,
   timeZone?: string | null,
 ) {
   const occurrenceDate = localDateKeyForMs(startMs, timeZone);
-  return `${blockKeyForInstance(instance)}:${occurrenceDate}`;
+  return `${blockKey}:${occurrenceDate}`;
 }
 
 function localDateKeyForMs(startMs: number, timeZone?: string | null) {
@@ -432,9 +520,12 @@ function resolveBlockLabel(
   return pickText(value);
 }
 
-function buildNotificationBody(
-  instances: ScheduleBlockLocalNotificationInstance[],
-) {
+function buildNotificationBody(group: GroupedBlock) {
+  if (isBreakTimeBlock(group.timeBlock) || group.instances.length === 0) {
+    return "Take a break.";
+  }
+
+  const instances = group.instances;
   const count = instances.length;
   const previews = instances.slice(0, 3).map(formatEventPreview);
   const remaining = count - previews.length;
@@ -444,6 +535,12 @@ function buildNotificationBody(
   }
 
   return [`${count} scheduled`, previews.join(", ")].join("\n");
+}
+
+function isBreakTimeBlock(
+  block: ScheduleBlockLocalNotificationTimeBlock | null,
+) {
+  return block?.kind?.trim().toUpperCase() === "BREAK";
 }
 
 function formatEventPreview(instance: ScheduleBlockLocalNotificationInstance) {
