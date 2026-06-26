@@ -36,6 +36,24 @@ export type CreatorXpSurgeTitleParts = {
   sourceTitle?: string | null;
 };
 
+export const CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE = {
+  TASK: 1,
+  HABIT: 1,
+  PROJECT: 3,
+  GOAL: 5,
+} as const satisfies Record<CreatorXpSurgeSourceType, number>;
+
+export type CreatorXpSurgeBuildInput = CreatorXpSurgeTitleParts & {
+  sourceType?: string | null;
+  sourceIcon?: string | null;
+};
+
+export type ScheduledEventCreatorXpSurgeInput = CreatorXpSurgeBuildInput & {
+  scheduleInstanceId?: string | null;
+  completedAt?: string | null;
+  topOffsetPx?: number | null;
+};
+
 type CreatorXpSurgeHudData = CreatorXpSurgePayload & {
   id: number;
   progressFrom: number;
@@ -47,8 +65,10 @@ type CreatorXpSurgeListener = (payload: CreatorXpSurgePayload) => void;
 const DEFAULT_TOP_OFFSET_PX = 16;
 const DEFAULT_PROGRESS_FROM = 24;
 const DEFAULT_PROGRESS_TO = 72;
+const SCHEDULED_EVENT_SURGE_DEDUPE_TTL_MS = 5 * 60 * 1000;
 
 const listeners = new Set<CreatorXpSurgeListener>();
+const recentScheduledEventSurgeKeys = new Map<string, number>();
 
 function subscribeToCreatorXpSurges(listener: CreatorXpSurgeListener) {
   listeners.add(listener);
@@ -75,8 +95,74 @@ export function resolveCreatorXpSurgeTitle({
   );
 }
 
+function normalizeCreatorXpSurgeSourceType(
+  sourceType?: string | null
+): CreatorXpSurgeSourceType {
+  const normalized = sourceType?.trim().toUpperCase();
+  return normalized === "TASK" ||
+    normalized === "HABIT" ||
+    normalized === "PROJECT" ||
+    normalized === "GOAL"
+    ? normalized
+    : "TASK";
+}
+
+export function buildCreatorXpSurgePayload({
+  sourceType,
+  sourceIcon,
+  skillName,
+  monumentTitle,
+  sourceTitle,
+}: CreatorXpSurgeBuildInput): CreatorXpSurgePayload {
+  const normalizedSourceType = normalizeCreatorXpSurgeSourceType(sourceType);
+
+  return {
+    sourceType: normalizedSourceType,
+    title: resolveCreatorXpSurgeTitle({
+      skillName,
+      monumentTitle,
+      sourceTitle,
+    }),
+    sourceIcon: sourceIcon?.trim() || null,
+    displayXp:
+      CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE[normalizedSourceType] ?? null,
+    progressFrom: normalizedSourceType === "PROJECT" ? 18 : 24,
+    progressTo: normalizedSourceType === "PROJECT" ? 78 : 72,
+    levelBreak: null,
+  };
+}
+
 export function showCreatorXpSurge(payload: CreatorXpSurgePayload) {
   listeners.forEach((listener) => listener(payload));
+}
+
+function pruneScheduledEventSurgeKeys(now: number) {
+  recentScheduledEventSurgeKeys.forEach((timestamp, key) => {
+    if (now - timestamp > SCHEDULED_EVENT_SURGE_DEDUPE_TTL_MS) {
+      recentScheduledEventSurgeKeys.delete(key);
+    }
+  });
+}
+
+export function showScheduledEventCreatorXpSurge({
+  scheduleInstanceId,
+  completedAt,
+  topOffsetPx,
+  ...input
+}: ScheduledEventCreatorXpSurgeInput) {
+  const instanceId = scheduleInstanceId?.trim();
+  if (instanceId) {
+    const dedupeKey = `${instanceId}:${completedAt?.trim() || "completed"}`;
+    const now = Date.now();
+    pruneScheduledEventSurgeKeys(now);
+    if (recentScheduledEventSurgeKeys.has(dedupeKey)) return;
+    recentScheduledEventSurgeKeys.set(dedupeKey, now);
+  }
+
+  showCreatorXpSurge({
+    ...buildCreatorXpSurgePayload(input),
+    topOffsetPx,
+  });
 }
 
 const CreatorXpSurgeContext = createContext<{

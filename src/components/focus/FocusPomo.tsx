@@ -67,6 +67,7 @@ import {
   CREATOR_FOCUS_POMO_DEEP_LINK,
   readFocusPomoLiveActivityActions,
   syncFocusPomoWidgetPayload,
+  type FocusPomoLiveActivityAction,
   type CreatorFocusPomoWidgetQueueItem,
 } from "@/lib/widgets/scheduleWidget";
 import {
@@ -85,6 +86,7 @@ import {
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { useToastHelpers } from "@/components/ui/toast";
+import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
 
 export type FocusPomoSourceType = "monument" | "skill";
 
@@ -2846,6 +2848,23 @@ async function completeFocusPomoItem({
     return false;
   }
 
+  if (scheduleInstanceId) {
+    showScheduledEventCreatorXpSurge({
+      scheduleInstanceId,
+      completedAt,
+      sourceType: readFocusPomoCompletionSourceType(kind),
+      sourceIcon:
+        item.skillIcon ??
+        item.goalMonumentIcon ??
+        item.goal_monument_icon ??
+        item.icon ??
+        null,
+      skillName: item.skillName ?? null,
+      monumentTitle: item.goalMonumentName ?? item.goal_monument_name ?? null,
+      sourceTitle: item.title,
+    });
+  }
+
   return true;
 }
 
@@ -5174,10 +5193,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           return;
         }
 
-        const handledIds: string[] = [];
+        const handledActions: FocusPomoLiveActivityAction[] = [];
         for (const action of actions) {
           if (processedLiveActivityActionIdsRef.current.has(action.id)) {
-            handledIds.push(action.id);
+            handledActions.push(action);
             console.info(
               `${FOCUS_POMO_LIVE_ACTIVITY_ACTION_LOG} drain_action_skipped`,
               {
@@ -5229,7 +5248,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           }
 
           processedLiveActivityActionIdsRef.current.add(action.id);
-          handledIds.push(action.id);
+          handledActions.push(action);
 
           console.info(
             `${FOCUS_POMO_LIVE_ACTIVITY_ACTION_LOG} drained_action_dispatch`,
@@ -5255,8 +5274,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           break;
         }
 
-        if (handledIds.length > 0) {
-          await ackFocusPomoLiveActivityActions(handledIds);
+        if (handledActions.length > 0) {
+          await ackFocusPomoLiveActivityActions(
+            handledActions.map((action) => action.id),
+            handledActions
+          );
         } else {
           console.warn(`${FOCUS_POMO_LIVE_ACTIVITY_ACTION_LOG} drain_failed`, {
             trigger,
@@ -5292,6 +5314,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     const handlePageShow = () => {
       void drainPendingLiveActivityActions("page_show");
     };
+    const handleNativeAppActive = () => {
+      void drainPendingLiveActivityActions("native_app_active");
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void drainPendingLiveActivityActions("visibility_visible");
@@ -5299,6 +5324,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     };
     window.addEventListener("focus", handleFocus);
     window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("creator:app-active", handleNativeAppActive);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
@@ -5308,6 +5334,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       }
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("creator:app-active", handleNativeAppActive);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [currentItem, isRunning, mounted]);

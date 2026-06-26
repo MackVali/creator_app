@@ -669,7 +669,11 @@ export async function readFocusPomoLiveActivityActions(): Promise<
   return actions;
 }
 
-export async function ackFocusPomoLiveActivityActions(ids: string[]) {
+export async function ackFocusPomoLiveActivityActions(
+  ids: string[],
+  acknowledgedActions: Array<Pick<FocusPomoLiveActivityAction, "id" | "action">> =
+    []
+) {
   const availability = getCreatorWidgetPluginAvailability();
   const normalizedIds = ids
     .map((id) => id.trim())
@@ -689,6 +693,9 @@ export async function ackFocusPomoLiveActivityActions(ids: string[]) {
   });
   console.info(`${CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG} js_ack_succeeded`, {
     acknowledgedCount: normalizedIds.length,
+    actions: acknowledgedActions
+      .filter((action) => normalizedIds.includes(action.id))
+      .map((action) => ({ id: action.id, action: action.action })),
     remaining: result.remaining ?? null,
   });
 }

@@ -11,9 +11,6 @@ import Foundation
 import WidgetKit
 import SwiftUI
 
-// TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
-private let showFocusPomoDiagnostics = true
-
 private enum FocusPomoLiveActivityDateParser {
     private static let fractionalFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -159,14 +156,6 @@ private struct FocusPomoLockScreenView: View {
             }
 
             FocusPomoBottomAccentView(model: model)
-
-            if showFocusPomoDiagnostics {
-                Text(model.diagnosticLine)
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(FocusPomoLiveActivityTheme.mutedText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-            }
 
             FocusPomoActionButtonsView(model: model, compact: false)
         }
@@ -427,6 +416,15 @@ private struct FocusPomoLiveActivityModel {
             break
         }
 
+        switch normalizedQueuedAction {
+        case "complete":
+            return "Queued Complete"
+        case "skip":
+            return "Queued Skip"
+        default:
+            break
+        }
+
         return "Active now"
     }
 
@@ -514,16 +512,6 @@ private struct FocusPomoLiveActivityModel {
         return mode.contains("stopwatch") || mode.contains("countup")
     }
 
-    var diagnosticLine: String {
-        let mode = isStopwatch ? "stopwatch" : "countdown"
-        let startedParsed = startedAtDate != nil ? "Y" : "N"
-        let endsParsed = targetEndDate != nil ? "Y" : "N"
-        let dynamic = isDynamicTimerBranchActive ? "Y" : "N"
-        let range = hasReversedCountdownRange ? "bad-range" : "range-ok"
-
-        return "diag mode=\(mode) start=\(startedParsed) end=\(endsParsed) dyn=\(dynamic) \(range)"
-    }
-
     private var startedAtDate: Date? {
         dateValue("startedAt")
     }
@@ -532,33 +520,16 @@ private struct FocusPomoLiveActivityModel {
         dateValue("endsAt") ?? dateValue("targetEndAt")
     }
 
-    private var hasReversedCountdownRange: Bool {
-        guard
-            !isStopwatch,
-            let startedAt = startedAtDate,
-            let targetEndAt = targetEndDate
-        else {
-            return false
-        }
-
-        return targetEndAt <= startedAt
-    }
-
-    private var isDynamicTimerBranchActive: Bool {
-        switch timerDisplay {
-        case .countdown, .elapsed:
-            return true
-        case .staticText:
-            return false
-        }
-    }
-
     private var isRunning: Bool {
         normalizedStatus == "running"
     }
 
     private var normalizedStatus: String {
         (sanitized("status") ?? "running").lowercased()
+    }
+
+    private var normalizedQueuedAction: String {
+        (sanitized("queuedAction") ?? "").lowercased()
     }
 
     private var durationFromDates: Int? {

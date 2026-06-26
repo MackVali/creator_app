@@ -157,7 +157,14 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let currentPayload = sharedDefaults.string(forKey: focusPomoPendingActionsKey) ?? "[]"
-        let remainingActions = parseFocusPomoActions(currentPayload).filter { action in
+        let currentActions = parseFocusPomoActions(currentPayload)
+        let acknowledgedActions = currentActions.filter { action in
+            guard let id = action["id"] as? String else {
+                return false
+            }
+            return acknowledgedIds.contains(id)
+        }
+        let remainingActions = currentActions.filter { action in
             guard let id = action["id"] as? String else {
                 return false
             }
@@ -172,7 +179,7 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let didSynchronize = sharedDefaults.synchronize()
         NSLog(
-            "\(focusPomoLiveActivityActionLog) native_ack_succeeded acknowledgedCount=\(acknowledgedIds.count) remaining=\(remainingActions.count) synchronized=\(didSynchronize ? "true" : "false")"
+            "\(focusPomoLiveActivityActionLog) native_ack_succeeded acknowledgedCount=\(acknowledgedIds.count) acknowledgedActions=\(focusPomoActionSummary(acknowledgedActions)) remaining=\(remainingActions.count) synchronized=\(didSynchronize ? "true" : "false")"
         )
         call.resolve([
             "ok": true,
@@ -212,5 +219,13 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         return String(describing: value)
+    }
+
+    private func focusPomoActionSummary(_ actions: [[String: Any]]) -> String {
+        actions
+            .map { action in
+                "\(focusPomoActionValue(action, key: "id")):\(focusPomoActionValue(action, key: "action"))"
+            }
+            .joined(separator: ",")
     }
 }

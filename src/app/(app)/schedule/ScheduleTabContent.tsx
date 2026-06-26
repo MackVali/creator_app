@@ -182,10 +182,11 @@ import {
 } from "./habitCompletion";
 import { useToastHelpers } from "@/components/ui/toast";
 import {
+  CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE,
+  buildCreatorXpSurgePayload,
   resolveCreatorXpSurgeTitle,
   showCreatorXpSurge,
-  type CreatorXpSurgePayload,
-  type CreatorXpSurgeSourceType,
+  showScheduledEventCreatorXpSurge,
 } from "@/components/xp/CreatorXpSurgeHud";
 
 const DEBUG_DAY_SHIFT = true;
@@ -278,12 +279,7 @@ const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
 const TIMELINE_OVERLAY_STACK_STEP = 20;
-const SCHEDULE_XP_AWARD_AMOUNTS = {
-  TASK: 1,
-  HABIT: 1,
-  PROJECT: 3,
-  GOAL: 5,
-} as const satisfies Record<CreatorXpSurgeSourceType, number>;
+const SCHEDULE_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
 
 function getTimelineHabitEventBackground(normalizedHabitType: string) {
   if (normalizedHabitType === "CHORE") return TIMELINE_CHORE_EVENT_BACKGROUND;
@@ -6334,8 +6330,8 @@ export default function ScheduleTabContent({
   }, [instanceStatusById]);
 
   const buildXpSurgeHudData = useCallback(
-    (instance: ScheduleInstance): CreatorXpSurgePayload | null => {
-      const sourceType = instance.source_type as CreatorXpSurgeSourceType;
+    (instance: ScheduleInstance) => {
+      const sourceType = instance.source_type;
       const sourceId = instance.source_id ?? "";
       const cleanTitle = (value?: string | null) => {
         const trimmed = value?.trim();
@@ -6392,31 +6388,13 @@ export default function ScheduleTabContent({
         sourceIcon = monument.emoji.trim();
       }
 
-      const normalizedSourceType =
-        sourceType === "TASK" ||
-        sourceType === "HABIT" ||
-        sourceType === "PROJECT" ||
-        sourceType === "GOAL"
-          ? sourceType
-          : "TASK";
-      const displayXp = SCHEDULE_XP_AWARD_AMOUNTS[normalizedSourceType] ?? null;
-      const title = resolveCreatorXpSurgeTitle({
+      return buildCreatorXpSurgePayload({
+        sourceType,
         skillName: skill?.name,
         monumentTitle: monument?.title,
         sourceTitle,
-      });
-      const progressFrom = normalizedSourceType === "PROJECT" ? 18 : 24;
-      const progressTo = normalizedSourceType === "PROJECT" ? 78 : 72;
-
-      return {
-        sourceType: normalizedSourceType,
-        title,
         sourceIcon,
-        displayXp,
-        progressFrom,
-        progressTo,
-        levelBreak: null,
-      };
+      });
     },
     [
       habitMap,
@@ -6431,11 +6409,13 @@ export default function ScheduleTabContent({
   );
 
   const triggerXpSurgeHud = useCallback(
-    (instance: ScheduleInstance) => {
+    (instance: ScheduleInstance, completedAt?: string | null) => {
       const surge = buildXpSurgeHudData(instance);
       if (!surge) return;
-      showCreatorXpSurge({
+      showScheduledEventCreatorXpSurge({
         ...surge,
+        scheduleInstanceId: instance.id,
+        completedAt,
         topOffsetPx:
           topBarHeight !== null && Number.isFinite(topBarHeight)
             ? Math.max(0, topBarHeight) + 8
@@ -6687,7 +6667,7 @@ export default function ScheduleTabContent({
         const isUndo =
           nextStatus === "scheduled" && previousStatus === "completed";
         if (nextStatus === "completed" && instance) {
-          triggerXpSurgeHud(instance);
+          triggerXpSurgeHud(instance, trimResult?.endUTC ?? completionIso);
         }
         const shouldAwardXp = nextStatus === "completed" || isUndo;
 

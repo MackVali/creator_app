@@ -42,6 +42,7 @@ import {
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
+import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
 
 interface MonumentRelatedHabitsProps {
   monumentId: string;
@@ -70,6 +71,7 @@ interface HabitSummary {
   habitType: string | null;
   memoCaptureConfig: Database["public"]["Tables"]["habits"]["Row"]["memo_capture_config"];
   skillId: string | null;
+  skillName: string | null;
   skillIcon: string | null;
   routineId: string | null;
   routineName: string | null;
@@ -435,7 +437,7 @@ function readNumber(value: unknown): number | null {
 
 function formatHabitRecord(
   habit: unknown,
-  skillIconById: Map<string, string | null>,
+  skillById: Map<string, RelatedSkillSummary>,
   routineById: Map<string, RoutineMetadata>
 ): HabitSummary | null {
   if (!habit || typeof habit !== "object") return null;
@@ -475,7 +477,8 @@ function formatHabitRecord(
       (habitRecord.memo_capture_config as HabitSummary["memoCaptureConfig"]) ??
       null,
     skillId,
-    skillIcon: skillId ? skillIconById.get(skillId) ?? null : null,
+    skillName: skillId ? skillById.get(skillId)?.name ?? null : null,
+    skillIcon: skillId ? skillById.get(skillId)?.icon ?? null : null,
     routineId,
     routineName: routine?.name ?? null,
     routineDescription: routine?.description ?? null,
@@ -1606,6 +1609,14 @@ export function MonumentRelatedHabits({
 
         if (action === "undo") {
           previousRelatedHabitStateRef.current.delete(habitId);
+        } else {
+          showScheduledEventCreatorXpSurge({
+            completedAt,
+            sourceType: "HABIT",
+            sourceIcon: habitBeforeUpdate.skillIcon,
+            skillName: habitBeforeUpdate.skillName,
+            sourceTitle: habitBeforeUpdate.name,
+          });
         }
         setRefreshVersion((current) => current + 1);
       } catch (completionUpdateErr) {
@@ -1970,10 +1981,10 @@ export function MonumentRelatedHabits({
           );
         }
 
-        const skillIconById = new Map(
-          relatedSkills.map((skill) => [skill.id, skill.icon])
+        const skillById = new Map(
+          relatedSkills.map((skill) => [skill.id, skill])
         );
-        const skillIds = Array.from(skillIconById.keys());
+        const skillIds = Array.from(skillById.keys());
 
         if (skillIds.length === 0) {
           if (!cancelled) {
@@ -2014,7 +2025,7 @@ export function MonumentRelatedHabits({
 
           const formattedHabits = (habitsData ?? [])
             .map((habit) =>
-              formatHabitRecord(habit, skillIconById, routineById)
+              formatHabitRecord(habit, skillById, routineById)
             )
             .filter((habit): habit is HabitSummary => habit !== null);
           loadedRelatedHabitsMonumentIdRef.current = monumentId;
