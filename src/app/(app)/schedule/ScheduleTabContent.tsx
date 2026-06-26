@@ -1556,7 +1556,6 @@ type CreatorXpSurgeHudData = {
   id: number;
   sourceType: CreatorXpSurgeSourceType;
   title: string;
-  sourceTitle: string;
   sourceIcon: string | null;
   displayXp: number | null;
   progressFrom: number;
@@ -6540,33 +6539,21 @@ export default function ScheduleTabContent({
   const buildXpSurgeHudData = useCallback(
     (instance: ScheduleInstance): CreatorXpSurgeHudData | null => {
       const sourceType = instance.source_type as CreatorXpSurgeSourceType;
-      const instanceRecord = instance as ScheduleInstance & {
-        project_name?: string | null;
-      };
-      const fallbackTitle =
-        instance.event_name?.trim() ||
-        instanceRecord.project_name?.trim() ||
-        "Scheduled Event";
-      let sourceTitle = fallbackTitle;
       let sourceIcon: string | null = null;
       let skillId: string | null = null;
       let monumentId: string | null = null;
 
       if (sourceType === "TASK") {
         const task = taskMap[instance.source_id];
-        sourceTitle = task?.name?.trim() || fallbackTitle;
         skillId = task?.skill_id ?? null;
         sourceIcon = task?.skill_icon?.trim() || null;
       } else if (sourceType === "PROJECT") {
-        const project = projectMap[instance.source_id];
-        sourceTitle = project?.name?.trim() || fallbackTitle;
         const linkedSkillId = (projectSkillIds[instance.source_id] ?? []).find(
           (id) => typeof id === "string" && id.length > 0
         );
         skillId = linkedSkillId ?? null;
       } else if (sourceType === "HABIT") {
         const habit = habitMap[instance.source_id];
-        sourceTitle = habit?.name?.trim() || fallbackTitle;
         skillId = habit?.skillId ?? null;
         monumentId = habit?.skillMonumentId ?? null;
       }
@@ -6605,7 +6592,6 @@ export default function ScheduleTabContent({
         id: xpSurgeSequenceRef.current + 1,
         sourceType: normalizedSourceType,
         title,
-        sourceTitle,
         sourceIcon,
         displayXp,
         progressFrom,
@@ -6616,7 +6602,6 @@ export default function ScheduleTabContent({
     [
       habitMap,
       monuments,
-      projectMap,
       projectSkillIds,
       skillMap,
       skillMonumentMap,
