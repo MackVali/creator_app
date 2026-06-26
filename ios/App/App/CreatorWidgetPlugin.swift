@@ -30,8 +30,9 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
         sharedDefaults.set(payload, forKey: schedulePayloadKey)
         let didSynchronize = sharedDefaults.synchronize()
         WidgetCenter.shared.reloadTimelines(ofKind: scheduleWidgetKind)
+        let payloadCounts = readSchedulePayloadCounts(payload)
         NSLog(
-            "[CREATOR_WIDGET_SYNC] native_write_succeeded group=\(appGroupIdentifier) key=\(schedulePayloadKey) bytes=\(payload.utf8.count) synchronized=\(didSynchronize ? "true" : "false") reloadedKind=\(scheduleWidgetKind)"
+            "[CREATOR_WIDGET_SYNC] native_write_succeeded group=\(appGroupIdentifier) key=\(schedulePayloadKey) bytes=\(payload.utf8.count) timeBlocks=\(payloadCounts.timeBlockCount) events=\(payloadCounts.eventCount) synchronized=\(didSynchronize ? "true" : "false") reloadedKind=\(scheduleWidgetKind)"
         )
 
         call.resolve([
@@ -59,5 +60,19 @@ public class CreatorWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
             "byteCount": payload?.utf8.count ?? 0,
             "payload": payload ?? ""
         ])
+    }
+
+    private func readSchedulePayloadCounts(_ payload: String) -> (timeBlockCount: Int, eventCount: Int) {
+        guard
+            let data = payload.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let dictionary = object as? [String: Any]
+        else {
+            return (0, 0)
+        }
+
+        let timeBlockCount = (dictionary["timeBlocks"] as? [Any])?.count ?? 0
+        let eventCount = (dictionary["events"] as? [Any])?.count ?? 0
+        return (timeBlockCount, eventCount)
     }
 }

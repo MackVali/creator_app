@@ -38,10 +38,6 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white)
                         .labelStyle(.titleAndIcon)
-
-                        Text(model.modeLabel)
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
                     }
                 }
 
@@ -51,11 +47,11 @@ struct CreatorLiveActivitiesLiveActivity: Widget {
 
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(model.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
+                        FocusPomoEventTitleView(
+                            model: model,
+                            font: .headline.weight(.bold),
+                            lineLimit: 1
+                        )
 
                         if let sourceLabel = model.sourceLabel {
                             Text(sourceLabel)
@@ -106,10 +102,6 @@ private struct FocusPomoLockScreenView: View {
                 .foregroundStyle(.white)
                 .labelStyle(.titleAndIcon)
 
-                Text(model.modeLabel)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(FocusPomoLiveActivityTheme.secondaryText)
-
                 Spacer(minLength: 8)
 
                 Text(model.caption)
@@ -120,11 +112,11 @@ private struct FocusPomoLockScreenView: View {
 
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.title)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
+                    FocusPomoEventTitleView(
+                        model: model,
+                        font: .title3.weight(.bold),
+                        lineLimit: 2
+                    )
 
                     if let sourceLabel = model.sourceLabel {
                         Text(sourceLabel)
@@ -149,6 +141,31 @@ private struct FocusPomoLockScreenView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(FocusPomoLiveActivityTheme.border, lineWidth: 1)
         )
+    }
+}
+
+@available(iOS 16.2, *)
+private struct FocusPomoEventTitleView: View {
+    let model: FocusPomoLiveActivityModel
+    let font: Font
+    let lineLimit: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            if let skillIcon = model.visibleSkillIcon {
+                Text(skillIcon)
+                    .font(font)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .accessibilityHidden(true)
+            }
+
+            Text(model.title)
+                .font(font)
+                .foregroundStyle(.white)
+                .lineLimit(lineLimit)
+                .minimumScaleFactor(0.78)
+        }
     }
 }
 
@@ -250,8 +267,12 @@ private struct FocusPomoLiveActivityModel {
         sanitized("sourceLabel")
     }
 
-    var modeLabel: String {
-        isStopwatch ? "Stopwatch" : "Pomo countdown"
+    var visibleSkillIcon: String? {
+        guard let skillIcon = sanitized("skillIcon") else {
+            return nil
+        }
+
+        return title.hasPrefix(skillIcon) ? nil : skillIcon
     }
 
     var caption: String {

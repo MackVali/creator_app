@@ -21,18 +21,134 @@ struct CreatorScheduleCounts: Codable, Hashable {
 struct CreatorScheduleEvent: Codable, Hashable, Identifiable {
     let id: String
     let title: String
+    let startAt: String?
+    let endAt: String?
     let startLabel: String
     let endLabel: String
     let sourceType: String
     let icon: String?
     let status: String
+    let timeBlockId: String?
+    let dayTypeTimeBlockId: String?
+    let windowId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case startAt
+        case endAt
+        case startLabel
+        case endLabel
+        case sourceType
+        case icon
+        case status
+        case timeBlockId
+        case dayTypeTimeBlockId
+        case windowId
+    }
+
+    init(
+        id: String,
+        title: String,
+        startAt: String?,
+        endAt: String?,
+        startLabel: String,
+        endLabel: String,
+        sourceType: String,
+        icon: String?,
+        status: String,
+        timeBlockId: String?,
+        dayTypeTimeBlockId: String?,
+        windowId: String?
+    ) {
+        self.id = id
+        self.title = title
+        self.startAt = startAt
+        self.endAt = endAt
+        self.startLabel = startLabel
+        self.endLabel = endLabel
+        self.sourceType = sourceType
+        self.icon = icon
+        self.status = status
+        self.timeBlockId = timeBlockId
+        self.dayTypeTimeBlockId = dayTypeTimeBlockId
+        self.windowId = windowId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        startAt = try container.decodeIfPresent(String.self, forKey: .startAt)
+        endAt = try container.decodeIfPresent(String.self, forKey: .endAt)
+        startLabel = try container.decodeIfPresent(String.self, forKey: .startLabel) ?? ""
+        endLabel = try container.decodeIfPresent(String.self, forKey: .endLabel) ?? ""
+        sourceType = try container.decodeIfPresent(String.self, forKey: .sourceType) ?? "Event"
+        icon = try container.decodeIfPresent(String.self, forKey: .icon)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "scheduled"
+        timeBlockId = try container.decodeIfPresent(String.self, forKey: .timeBlockId)
+        dayTypeTimeBlockId = try container.decodeIfPresent(String.self, forKey: .dayTypeTimeBlockId)
+        windowId = try container.decodeIfPresent(String.self, forKey: .windowId)
+    }
+}
+
+struct CreatorScheduleTimeBlock: Codable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let name: String
+    let startAt: String
+    let endAt: String
+    let startLabel: String
+    let endLabel: String
+    let kind: String?
+    let window_kind: String?
+    let timeBlockId: String?
+    let dayTypeTimeBlockId: String?
+    let windowId: String?
 }
 
 struct CreatorSchedulePayload: Codable, Hashable {
     let generatedAt: String
     let dateLabel: String
+    let currentTimeZone: String
     let counts: CreatorScheduleCounts
+    let timeBlocks: [CreatorScheduleTimeBlock]
     let events: [CreatorScheduleEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case generatedAt
+        case dateLabel
+        case currentTimeZone
+        case counts
+        case timeBlocks
+        case events
+    }
+
+    init(
+        generatedAt: String,
+        dateLabel: String,
+        currentTimeZone: String,
+        counts: CreatorScheduleCounts,
+        timeBlocks: [CreatorScheduleTimeBlock],
+        events: [CreatorScheduleEvent]
+    ) {
+        self.generatedAt = generatedAt
+        self.dateLabel = dateLabel
+        self.currentTimeZone = currentTimeZone
+        self.counts = counts
+        self.timeBlocks = timeBlocks
+        self.events = events
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        generatedAt = try container.decode(String.self, forKey: .generatedAt)
+        dateLabel = try container.decode(String.self, forKey: .dateLabel)
+        currentTimeZone = try container.decodeIfPresent(String.self, forKey: .currentTimeZone) ?? TimeZone.current.identifier
+        counts = try container.decode(CreatorScheduleCounts.self, forKey: .counts)
+        timeBlocks = try container.decodeIfPresent([CreatorScheduleTimeBlock].self, forKey: .timeBlocks) ?? []
+        events = try container.decode([CreatorScheduleEvent].self, forKey: .events)
+    }
 }
 
 struct CreatorScheduleEntry: TimelineEntry {
@@ -75,7 +191,7 @@ struct CreatorScheduleProvider: TimelineProvider {
 
         do {
             let decoded = try JSONDecoder().decode(CreatorSchedulePayload.self, from: data)
-            NSLog("[CREATOR_WIDGET_SYNC] widget_read_succeeded group=\(creatorWidgetAppGroup) key=\(creatorSchedulePayloadKey) events=\(decoded.events.count)")
+            NSLog("[CREATOR_WIDGET_SYNC] widget_read_succeeded group=\(creatorWidgetAppGroup) key=\(creatorSchedulePayloadKey) timeBlocks=\(decoded.timeBlocks.count) events=\(decoded.events.count)")
             return decoded
         } catch {
             NSLog("[CREATOR_WIDGET_SYNC] widget_read_decode_failed bytes=\(payload.utf8.count) error=\(error.localizedDescription)")
@@ -111,35 +227,41 @@ struct CreatorScheduleWidgetView: View {
 struct CreatorScheduleSmallView: View {
     let payload: CreatorSchedulePayload?
 
+    private var context: CreatorTimeBlockContext {
+        makeCreatorTimeBlockContext(payload: payload, now: Date())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CreatorWidgetHeader(dateLabel: payload?.dateLabel)
 
-            if let event = payload?.events.first {
+            if let timeBlock = context.timeBlock {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Next Event")
+                    Text(context.isActive ? "Current Time Block" : "Next Time Block")
                         .font(.caption2.weight(.bold))
                         .textCase(.uppercase)
-                        .foregroundStyle(CreatorWidgetTheme.mutedText)
-                    Text(event.title)
+                        .foregroundStyle(CreatorWidgetTheme.green)
+                    Text(timeBlock.title)
                         .font(.headline.weight(.bold))
-                        .lineLimit(3)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
                         .foregroundStyle(.white)
-                    HStack(spacing: 6) {
-                        Text(eventTimeRange(event))
+                    Text(timeBlockTimeRange(timeBlock))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(CreatorWidgetTheme.secondaryText)
+
+                    if let event = context.events.first {
+                        Text(event.title)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(CreatorWidgetTheme.green)
-                        Text(event.sourceType)
-                            .font(.caption2.weight(.medium))
                             .lineLimit(1)
-                            .foregroundStyle(CreatorWidgetTheme.secondaryText)
+                            .foregroundStyle(.white.opacity(0.9))
                     }
                 }
             } else {
                 Spacer(minLength: 0)
                 CreatorScheduleStateView(
-                    title: payload == nil ? "Open CREATOR" : "No Events scheduled",
-                    subtitle: payload == nil ? "Sync Schedule" : "Today is clear",
+                    title: payload == nil ? "Open CREATOR" : "Today is clear.",
+                    subtitle: payload == nil ? "to sync Schedule" : "No remaining Time Blocks.",
                     compact: true
                 )
             }
@@ -153,24 +275,38 @@ struct CreatorScheduleSmallView: View {
 struct CreatorScheduleMediumView: View {
     let payload: CreatorSchedulePayload?
 
+    private var context: CreatorTimeBlockContext {
+        makeCreatorTimeBlockContext(payload: payload, now: Date())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             CreatorWidgetHeader(dateLabel: payload?.dateLabel)
 
-            if payload?.events.isEmpty ?? true {
-                Spacer(minLength: 0)
-                CreatorScheduleStateView(
-                    title: payload == nil ? "Open CREATOR to sync Schedule" : "No Events scheduled",
-                    subtitle: payload == nil ? "Today updates after Schedule loads." : "Today is clear.",
-                    compact: false
-                )
-                Spacer(minLength: 0)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach((payload?.events ?? []).prefix(3)) { event in
-                        CreatorScheduleEventRow(event: event)
+            if let timeBlock = context.timeBlock {
+                CreatorTimeBlockHeader(timeBlock: timeBlock, isActive: context.isActive, showKind: false)
+
+                if context.events.isEmpty {
+                    CreatorScheduleStateView(
+                        title: "No Events scheduled",
+                        subtitle: "This Time Block is open.",
+                        compact: false
+                    )
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(context.events.prefix(3)) { event in
+                            CreatorScheduleEventRow(event: event)
+                        }
                     }
                 }
+                Spacer(minLength: 0)
+            } else {
+                Spacer(minLength: 0)
+                CreatorScheduleStateView(
+                    title: payload == nil ? "Open CREATOR to sync Schedule" : "Today is clear.",
+                    subtitle: payload == nil ? "Time Blocks appear after Schedule loads." : "No remaining Time Blocks.",
+                    compact: false
+                )
                 Spacer(minLength: 0)
             }
         }
@@ -181,35 +317,40 @@ struct CreatorScheduleMediumView: View {
 struct CreatorScheduleLargeView: View {
     let payload: CreatorSchedulePayload?
 
+    private var context: CreatorTimeBlockContext {
+        makeCreatorTimeBlockContext(payload: payload, now: Date())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             CreatorWidgetHeader(dateLabel: payload?.dateLabel)
 
-            HStack(spacing: 8) {
-                CreatorCountPill(label: "Scheduled", value: payload?.counts.scheduled ?? 0)
-                CreatorCountPill(label: "Completed", value: payload?.counts.completed ?? 0)
-                CreatorCountPill(label: "Missed", value: payload?.counts.missed ?? 0)
-            }
+            if let timeBlock = context.timeBlock {
+                CreatorTimeBlockHeader(timeBlock: timeBlock, isActive: context.isActive, showKind: true)
 
-            Text("Upcoming Events")
-                .font(.caption.weight(.semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(CreatorWidgetTheme.mutedText)
-
-            if payload?.events.isEmpty ?? true {
-                Spacer(minLength: 0)
-                CreatorScheduleStateView(
-                    title: payload == nil ? "Open CREATOR to sync Schedule" : "Today is clear",
-                    subtitle: payload == nil ? "Events appear here after Schedule loads." : "No Events scheduled.",
-                    compact: false
-                )
-                Spacer(minLength: 0)
-            } else {
-                VStack(spacing: 9) {
-                    ForEach((payload?.events ?? []).prefix(5)) { event in
-                        CreatorScheduleEventRow(event: event)
+                if context.events.isEmpty {
+                    CreatorScheduleStateView(
+                        title: "No Events scheduled",
+                        subtitle: "This Time Block is open.",
+                        compact: false
+                    )
+                } else {
+                    VStack(spacing: 9) {
+                        ForEach(context.events.prefix(5)) { event in
+                            CreatorScheduleEventRow(event: event)
+                        }
                     }
                 }
+
+                Spacer(minLength: 0)
+                CreatorTodayStatusRow(counts: payload?.counts)
+            } else {
+                Spacer(minLength: 0)
+                CreatorScheduleStateView(
+                    title: payload == nil ? "Open CREATOR to sync Schedule" : "Today is clear.",
+                    subtitle: payload == nil ? "Time Blocks appear after Schedule loads." : "No remaining Time Blocks.",
+                    compact: false
+                )
                 Spacer(minLength: 0)
             }
         }
@@ -237,6 +378,43 @@ struct CreatorWidgetHeader: View {
                 .foregroundStyle(CreatorWidgetTheme.secondaryText)
                 .lineLimit(1)
         }
+    }
+}
+
+struct CreatorTimeBlockHeader: View {
+    let timeBlock: CreatorScheduleTimeBlock
+    let isActive: Bool
+    let showKind: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Text(isActive ? "Current Time Block" : "Next Time Block")
+                    .font(.caption2.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(CreatorWidgetTheme.green)
+                Spacer(minLength: 8)
+                if showKind, let kind = timeBlockKindLabel(timeBlock) {
+                    Text(kind)
+                        .font(.caption2.weight(.heavy))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .foregroundStyle(.black)
+                        .background(CreatorWidgetTheme.green, in: Capsule())
+                }
+            }
+
+            Text(timeBlock.title)
+                .font(.title3.weight(.bold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+                .foregroundStyle(.white)
+
+            Text(timeBlockTimeRange(timeBlock))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -271,6 +449,44 @@ struct CreatorScheduleEventRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+        )
+    }
+}
+
+struct CreatorTodayStatusRow: View {
+    let counts: CreatorScheduleCounts?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            CreatorStatusChip(label: "Scheduled", value: counts?.scheduled ?? 0)
+            CreatorStatusChip(label: "Completed", value: counts?.completed ?? 0)
+            CreatorStatusChip(label: "Missed", value: counts?.missed ?? 0)
+        }
+    }
+}
+
+struct CreatorStatusChip: View {
+    let label: String
+    let value: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text("\(value)")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+                .foregroundStyle(CreatorWidgetTheme.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
         .background(CreatorWidgetTheme.cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -363,6 +579,134 @@ private enum CreatorWidgetTheme {
     static let mutedText = Color.white.opacity(0.45)
 }
 
+struct CreatorTimeBlockContext {
+    let timeBlock: CreatorScheduleTimeBlock?
+    let events: [CreatorScheduleEvent]
+    let isActive: Bool
+}
+
+private let creatorWidgetIsoFormatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+}()
+
+private let creatorWidgetIsoFormatterWithoutFractionalSeconds: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+}()
+
+private func parseCreatorWidgetDate(_ value: String?) -> Date? {
+    guard let value else { return nil }
+    return creatorWidgetIsoFormatter.date(from: value) ?? creatorWidgetIsoFormatterWithoutFractionalSeconds.date(from: value)
+}
+
+private func makeCreatorTimeBlockContext(payload: CreatorSchedulePayload?, now: Date) -> CreatorTimeBlockContext {
+    guard let payload else {
+        return CreatorTimeBlockContext(timeBlock: nil, events: [], isActive: false)
+    }
+
+    let sortedTimeBlocks = payload.timeBlocks.sorted { left, right in
+        (parseCreatorWidgetDate(left.startAt) ?? .distantFuture) < (parseCreatorWidgetDate(right.startAt) ?? .distantFuture)
+    }
+
+    let activeTimeBlock = sortedTimeBlocks.first { timeBlock in
+        guard
+            let start = parseCreatorWidgetDate(timeBlock.startAt),
+            let end = parseCreatorWidgetDate(timeBlock.endAt)
+        else {
+            return false
+        }
+        return start <= now && now < end
+    }
+
+    let selectedTimeBlock = activeTimeBlock ?? sortedTimeBlocks.first { timeBlock in
+        guard let start = parseCreatorWidgetDate(timeBlock.startAt) else {
+            return false
+        }
+        return start > now
+    }
+
+    guard let selectedTimeBlock else {
+        NSLog("[CREATOR_WIDGET_SYNC] widget_active_time_block_detected id=none timeBlocks=\(payload.timeBlocks.count)")
+        NSLog("[CREATOR_WIDGET_SYNC] widget_events_matched_active_time_block timeBlockId=none events=0")
+        return CreatorTimeBlockContext(timeBlock: nil, events: [], isActive: false)
+    }
+
+    let matchedEvents = payload.events
+        .filter { event in
+            event.status.lowercased() == "scheduled"
+        }
+        .filter { event in
+            eventMatches(timeBlock: selectedTimeBlock, event: event)
+        }
+        .filter { event in
+            guard let end = parseCreatorWidgetDate(event.endAt) else {
+                return true
+            }
+            return end >= now
+        }
+        .sorted { left, right in
+            (parseCreatorWidgetDate(left.startAt) ?? .distantFuture) < (parseCreatorWidgetDate(right.startAt) ?? .distantFuture)
+        }
+
+    NSLog("[CREATOR_WIDGET_SYNC] widget_active_time_block_detected id=\(selectedTimeBlock.id) title=\(selectedTimeBlock.title) active=\(activeTimeBlock != nil ? "true" : "false")")
+    NSLog("[CREATOR_WIDGET_SYNC] widget_events_matched_active_time_block timeBlockId=\(selectedTimeBlock.id) events=\(matchedEvents.count)")
+
+    return CreatorTimeBlockContext(
+        timeBlock: selectedTimeBlock,
+        events: matchedEvents,
+        isActive: activeTimeBlock != nil
+    )
+}
+
+private func eventMatches(timeBlock: CreatorScheduleTimeBlock, event: CreatorScheduleEvent) -> Bool {
+    let eventLinkIds = [event.timeBlockId, event.dayTypeTimeBlockId, event.windowId]
+        .compactMap { normalizedId($0) }
+    let timeBlockLinkIds = [timeBlock.id, timeBlock.timeBlockId, timeBlock.dayTypeTimeBlockId, timeBlock.windowId]
+        .compactMap { normalizedId($0) }
+
+    if !eventLinkIds.isEmpty {
+        return eventLinkIds.contains { eventId in
+            timeBlockLinkIds.contains(eventId)
+        }
+    }
+
+    guard
+        let eventStart = parseCreatorWidgetDate(event.startAt),
+        let eventEnd = parseCreatorWidgetDate(event.endAt),
+        let blockStart = parseCreatorWidgetDate(timeBlock.startAt),
+        let blockEnd = parseCreatorWidgetDate(timeBlock.endAt)
+    else {
+        return false
+    }
+
+    return eventStart < blockEnd && eventEnd > blockStart
+}
+
+private func normalizedId(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+private func timeBlockTimeRange(_ timeBlock: CreatorScheduleTimeBlock) -> String {
+    if !timeBlock.startLabel.isEmpty && !timeBlock.endLabel.isEmpty {
+        return "\(timeBlock.startLabel)-\(timeBlock.endLabel)"
+    }
+
+    return timeBlock.startLabel.isEmpty ? "Scheduled" : timeBlock.startLabel
+}
+
+private func timeBlockKindLabel(_ timeBlock: CreatorScheduleTimeBlock) -> String? {
+    let rawKind = timeBlock.kind ?? timeBlock.window_kind
+    let trimmed = rawKind?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if trimmed.isEmpty || trimmed.uppercased() == "DEFAULT" {
+        return nil
+    }
+    return trimmed.uppercased()
+}
+
 private func eventTimeRange(_ event: CreatorScheduleEvent) -> String {
     if !event.startLabel.isEmpty && !event.endLabel.isEmpty {
         return "\(event.startLabel)-\(event.endLabel)"
@@ -388,32 +732,61 @@ extension CreatorSchedulePayload {
     static let emptyToday = CreatorSchedulePayload(
         generatedAt: ISO8601DateFormatter().string(from: Date()),
         dateLabel: "Today",
+        currentTimeZone: TimeZone.current.identifier,
         counts: CreatorScheduleCounts(scheduled: 0, completed: 0, missed: 0),
+        timeBlocks: [],
         events: []
     )
 
     static let sample = CreatorSchedulePayload(
         generatedAt: ISO8601DateFormatter().string(from: Date()),
         dateLabel: "Today",
+        currentTimeZone: TimeZone.current.identifier,
         counts: CreatorScheduleCounts(scheduled: 3, completed: 1, missed: 0),
+        timeBlocks: [
+            CreatorScheduleTimeBlock(
+                id: "sample-focus",
+                title: "Deep Work",
+                name: "Deep Work",
+                startAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-1800)),
+                endAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(5400)),
+                startLabel: "9:00AM",
+                endLabel: "10:30AM",
+                kind: "FOCUS",
+                window_kind: "FOCUS",
+                timeBlockId: "sample-focus",
+                dayTypeTimeBlockId: nil,
+                windowId: nil
+            )
+        ],
         events: [
             CreatorScheduleEvent(
                 id: "sample-1",
                 title: "Deep Work Session",
+                startAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-900)),
+                endAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(1800)),
                 startLabel: "9:00AM",
                 endLabel: "10:30AM",
                 sourceType: "Project",
                 icon: "*",
-                status: "scheduled"
+                status: "scheduled",
+                timeBlockId: "sample-focus",
+                dayTypeTimeBlockId: nil,
+                windowId: nil
             ),
             CreatorScheduleEvent(
                 id: "sample-2",
                 title: "Practice Review",
+                startAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(2400)),
+                endAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(4200)),
                 startLabel: "1:00PM",
                 endLabel: "1:30PM",
                 sourceType: "Habit",
                 icon: "*",
-                status: "scheduled"
+                status: "scheduled",
+                timeBlockId: "sample-focus",
+                dayTypeTimeBlockId: nil,
+                windowId: nil
             )
         ]
     )

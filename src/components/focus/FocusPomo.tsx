@@ -2264,6 +2264,14 @@ function itemDisplayIcon(item: FocusPomoQueueItem | null): string | null {
   return item.icon ?? item.skillIcon ?? null;
 }
 
+function itemSkillIcon(item: FocusPomoQueueItem | null): string | null {
+  if (!item) return null;
+
+  return (
+    readScopeString(item.skillIcon) ?? getItemSkillOptions(item)[0]?.icon ?? null
+  );
+}
+
 function getItemGoalDisplay(
   item: FocusPomoQueueItem | null
 ): { name: string; icon: string } | null {
@@ -4838,6 +4846,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     void startFocusPomoLiveActivity({
       sessionId,
       title,
+      skillIcon: itemSkillIcon(item),
       sourceLabel: displaySource?.title ?? null,
       sourceType: displaySource?.sourceType ?? null,
       sourceId: displaySource?.sourceId ?? null,
