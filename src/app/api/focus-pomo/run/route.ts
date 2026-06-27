@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
+  buildFocusPomoRunSyncState,
   clearFocusPomoRun,
   upsertFocusPomoRun,
   type FocusPomoRunMode,
@@ -123,6 +124,46 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+export async function GET(request: Request) {
+  const auth = await getAuthenticatedClient();
+  if ("error" in auth) return auth.error;
+
+  const { searchParams } = new URL(request.url);
+  const sessionId = readString(searchParams.get("sessionId"));
+
+  try {
+    let query = auth.supabase
+      .from("focus_pomo_runs")
+      .select("*")
+      .eq("user_id", auth.user.id);
+
+    if (sessionId) {
+      query = query.eq("session_id", sessionId);
+    } else {
+      query = query.eq("status", "running");
+    }
+
+    const { data, error } = await query
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message ?? "Failed to load Focus Pomo run");
+    }
+
+    return NextResponse.json({
+      run: data ? buildFocusPomoRunSyncState(data) : null,
+    });
+  } catch (error) {
+    console.error("Failed to fetch Focus Pomo run", error);
+    return NextResponse.json(
+      { error: "Unable to fetch Focus Pomo run" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function DELETE(request: Request) {

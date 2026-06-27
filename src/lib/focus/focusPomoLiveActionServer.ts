@@ -24,6 +24,28 @@ export type FocusPomoRunQueueItem = {
   title: string;
   skillIcon?: string | null;
   durationMinutes?: number | null;
+  action?: "completed" | "skipped" | null;
+  actionAt?: string | null;
+};
+
+export type FocusPomoRunSyncState = {
+  sessionId: string;
+  currentIndex: number;
+  activeItemKey: string | null;
+  queueItems: FocusPomoRunQueueItem[];
+  status: FocusPomoRunStatus;
+  mode: FocusPomoRunMode;
+  startedAt: string | null;
+  endsAt: string | null;
+  lastActionAt: string | null;
+  updatedAt: string;
+  actionHistory: Array<
+    FocusPomoRunQueueItem & {
+      index: number;
+      action: "completed" | "skipped";
+      actionAt: string | null;
+    }
+  >;
 };
 
 export type FocusPomoScheduleStatusUpdate = {
@@ -80,6 +102,12 @@ function readNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function readRunAction(value: unknown): "completed" | "skipped" | null {
+  if (value === "completed" || value === "complete") return "completed";
+  if (value === "skipped" || value === "skip") return "skipped";
+  return null;
+}
+
 function normalizeRunQueueItem(value: unknown): FocusPomoRunQueueItem | null {
   if (!isRecord(value)) return null;
 
@@ -103,10 +131,12 @@ function normalizeRunQueueItem(value: unknown): FocusPomoRunQueueItem | null {
       durationMinutes !== null && durationMinutes >= 0
         ? Math.round(durationMinutes)
         : null,
+    action: readRunAction(value.action),
+    actionAt: readString(value.actionAt),
   };
 }
 
-function readRunQueueItems(value: Json | unknown): FocusPomoRunQueueItem[] {
+export function readRunQueueItems(value: Json | unknown): FocusPomoRunQueueItem[] {
   if (!Array.isArray(value)) return [];
   return value
     .map(normalizeRunQueueItem)
@@ -123,7 +153,40 @@ function queueItemsToJson(items: FocusPomoRunQueueItem[]): Json {
     title: item.title,
     skillIcon: item.skillIcon ?? null,
     durationMinutes: item.durationMinutes ?? null,
+    action: item.action ?? null,
+    actionAt: item.actionAt ?? null,
   })) as Json;
+}
+
+export function buildFocusPomoRunSyncState(
+  run: FocusPomoRunRow
+): FocusPomoRunSyncState {
+  const queueItems = readRunQueueItems(run.queue_items);
+  const completedItemCount = Math.min(run.current_index, queueItems.length);
+
+  return {
+    sessionId: run.session_id,
+    currentIndex: run.current_index,
+    activeItemKey: run.active_item_key,
+    queueItems,
+    status: run.status,
+    mode: run.mode,
+    startedAt: run.started_at,
+    endsAt: run.ends_at,
+    lastActionAt: run.last_action_at,
+    updatedAt: run.updated_at,
+    actionHistory: queueItems
+      .slice(0, completedItemCount)
+      .map((item, index) => {
+        const action = item.action ?? "completed";
+        return {
+          ...item,
+          index,
+          action,
+          actionAt: item.actionAt ?? run.last_action_at,
+        };
+      }),
+  };
 }
 
 function plannedDurationSeconds(item: FocusPomoRunQueueItem | null) {
@@ -615,7 +678,16 @@ export async function performFocusPomoLiveAction(input: {
   }
 
   const nextIndex = run.current_index + 1;
-  const nextItem = queueItems[nextIndex] ?? null;
+  const nextQueueItems = queueItems.map((item, index) =>
+    index === run.current_index
+      ? {
+          ...item,
+          action: input.action === "complete" ? "completed" : "skipped",
+          actionAt,
+        }
+      : item
+  );
+  const nextItem = nextQueueItems[nextIndex] ?? null;
   const nextStatus: FocusPomoRunStatus = nextItem ? "running" : "completed";
   const nextStartedAt = nextItem ? new Date() : null;
   const nextEndsAt = nextStartedAt
@@ -628,6 +700,7 @@ export async function performFocusPomoLiveAction(input: {
     .update({
       active_item_key: nextItem?.itemKey ?? null,
       current_index: nextIndex,
+      queue_items: queueItemsToJson(nextQueueItems),
       started_at: nextStartedAt?.toISOString() ?? null,
       ends_at: nextEndsAt?.toISOString() ?? null,
       status: nextStatus,
