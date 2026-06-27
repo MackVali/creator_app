@@ -2,12 +2,12 @@ import ActivityKit
 import AppIntents
 import Foundation
 
-private let focusPomoActionAppGroup = "group.app.trycreator.creator"
-private let focusPomoPendingActionsKey = "creator.focuspomo.liveActivity.pendingActions"
+let focusPomoActionAppGroup = "group.app.trycreator.creator"
+let focusPomoPendingActionsKey = "creator.focuspomo.liveActivity.pendingActions"
 // TEMP_FOCUS_POMO_DIAGNOSTICS: remove after one device test.
-private let focusPomoLiveActivityActionLog = "[CREATOR_FOCUS_LIVE_ACTIVITY_ACTION]"
+let focusPomoLiveActivityActionLog = "[CREATOR_FOCUS_LIVE_ACTIVITY_ACTION]"
 
-private struct FocusPomoPendingAction: Codable, Hashable {
+struct FocusPomoPendingAction: Codable, Hashable {
     let id: String
     let action: String
     let sessionId: String
@@ -16,7 +16,7 @@ private struct FocusPomoPendingAction: Codable, Hashable {
     let requestedAt: String
 }
 
-private enum FocusPomoLiveActivityActionStore {
+enum FocusPomoLiveActivityActionStore {
     static func append(action: String, sessionId: String, title: String, scheduleInstanceId: String?) -> Bool {
         let normalizedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -193,80 +193,6 @@ struct FocusPomoSkipLiveActivityIntent: LiveActivityIntent {
             )
         }
 
-        return .result()
-    }
-}
-
-@available(iOS 17.0, *)
-struct FocusPomoCompleteWidgetIntent: AppIntent {
-    static var title: LocalizedStringResource = "Complete Focus Pomo"
-    static var openAppWhenRun: Bool = true
-
-    @Parameter(title: "Session ID")
-    var sessionId: String
-
-    @Parameter(title: "Title")
-    var titleText: String
-
-    @Parameter(title: "Schedule Instance ID")
-    var scheduleInstanceId: String
-
-    init() {
-        sessionId = ""
-        titleText = ""
-        scheduleInstanceId = ""
-    }
-
-    init(sessionId: String, title: String, scheduleInstanceId: String) {
-        self.sessionId = sessionId
-        self.titleText = title
-        self.scheduleInstanceId = scheduleInstanceId
-    }
-
-    func perform() async throws -> some IntentResult {
-        _ = FocusPomoLiveActivityActionStore.append(
-            action: "complete",
-            sessionId: sessionId,
-            title: titleText,
-            scheduleInstanceId: scheduleInstanceId
-        )
-        return .result()
-    }
-}
-
-@available(iOS 17.0, *)
-struct FocusPomoSkipWidgetIntent: AppIntent {
-    static var title: LocalizedStringResource = "Skip Focus Pomo"
-    static var openAppWhenRun: Bool = true
-
-    @Parameter(title: "Session ID")
-    var sessionId: String
-
-    @Parameter(title: "Title")
-    var titleText: String
-
-    @Parameter(title: "Schedule Instance ID")
-    var scheduleInstanceId: String
-
-    init() {
-        sessionId = ""
-        titleText = ""
-        scheduleInstanceId = ""
-    }
-
-    init(sessionId: String, title: String, scheduleInstanceId: String) {
-        self.sessionId = sessionId
-        self.titleText = title
-        self.scheduleInstanceId = scheduleInstanceId
-    }
-
-    func perform() async throws -> some IntentResult {
-        _ = FocusPomoLiveActivityActionStore.append(
-            action: "skip",
-            sessionId: sessionId,
-            title: titleText,
-            scheduleInstanceId: scheduleInstanceId
-        )
         return .result()
     }
 }
