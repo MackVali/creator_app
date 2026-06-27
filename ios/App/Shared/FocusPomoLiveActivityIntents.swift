@@ -11,13 +11,18 @@ struct FocusPomoPendingAction: Codable, Hashable {
     let id: String
     let action: String
     let sessionId: String
+    let itemKey: String?
+    let itemType: String?
+    let sourceType: String?
+    let itemId: String?
+    let sourceId: String?
     let title: String
     let scheduleInstanceId: String?
     let requestedAt: String
 }
 
 enum FocusPomoLiveActivityActionStore {
-    static func append(action: String, sessionId: String, title: String, scheduleInstanceId: String?) -> Bool {
+    static func append(action: String, sessionId: String, title: String, itemKey: String?, itemType: String?, sourceType: String?, itemId: String?, sourceId: String?, scheduleInstanceId: String?) -> Bool {
         let normalizedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard
@@ -38,6 +43,11 @@ enum FocusPomoLiveActivityActionStore {
             id: UUID().uuidString,
             action: action,
             sessionId: normalizedSessionId,
+            itemKey: normalized(itemKey),
+            itemType: normalized(itemType),
+            sourceType: normalized(sourceType),
+            itemId: normalized(itemId),
+            sourceId: normalized(sourceId),
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             scheduleInstanceId: normalizedScheduleInstanceId,
             requestedAt: ISO8601DateFormatter().string(from: Date())
@@ -81,7 +91,13 @@ private struct FocusPomoLiveActionResponse: Decodable {
         let shouldEnd: Bool
         let sessionId: String
         let title: String
+        let itemKey: String?
+        let itemType: String?
+        let sourceType: String?
+        let itemId: String?
+        let sourceId: String?
         let scheduleInstanceId: String?
+        let skillIcon: String?
         let mode: String
         let startedAt: String?
         let endsAt: String?
@@ -143,6 +159,12 @@ private enum FocusPomoLiveActivityStateUpdater {
             values["title"] = next.title
             values["status"] = next.status
             values["queuedAction"] = ""
+            values["itemKey"] = next.itemKey ?? ""
+            values["itemType"] = next.itemType ?? ""
+            values["sourceType"] = next.sourceType ?? ""
+            values["itemId"] = next.itemId ?? ""
+            values["sourceId"] = next.sourceId ?? ""
+            values["skillIcon"] = next.skillIcon ?? ""
             values["mode"] = next.mode
             values["startedAt"] = next.startedAt ?? ""
             values["endsAt"] = next.endsAt ?? ""
@@ -194,11 +216,16 @@ private enum FocusPomoLiveActivityActionClient {
         action: String,
         sessionId: String,
         title: String,
+        itemKey: String,
+        itemType: String,
+        sourceType: String,
+        itemId: String,
+        sourceId: String,
         scheduleInstanceId: String,
         backendUrl: String,
         actionId: String,
         actionToken: String
-    ) async {
+    ) async -> Bool {
         let normalizedBackendUrl = backendUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedActionId = actionId.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedActionToken = actionToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -209,11 +236,8 @@ private enum FocusPomoLiveActivityActionClient {
             !normalizedActionToken.isEmpty
         else {
             NSLog("\(focusPomoLiveActivityActionLog) request_skipped reason=missing_backend_or_token action=\(action) sessionId=\(sessionId)")
-            await FocusPomoLiveActivityStateUpdater.updateFailed(sessionId: sessionId, title: title, action: action)
-            return
+            return false
         }
-
-        await FocusPomoLiveActivityStateUpdater.updateInProgress(sessionId: sessionId, title: title, action: action)
 
         do {
             var request = URLRequest(url: url, timeoutInterval: 15)
@@ -222,6 +246,11 @@ private enum FocusPomoLiveActivityActionClient {
             request.httpBody = try JSONSerialization.data(withJSONObject: [
                 "action": action,
                 "sessionId": sessionId,
+                "itemKey": itemKey,
+                "itemType": itemType,
+                "sourceType": sourceType,
+                "itemId": itemId,
+                "sourceId": sourceId,
                 "scheduleInstanceId": scheduleInstanceId,
                 "actionId": normalizedActionId,
                 "token": normalizedActionToken,
@@ -234,16 +263,21 @@ private enum FocusPomoLiveActivityActionClient {
             guard (200..<300).contains(httpResponse.statusCode) else {
                 let body = String(data: data, encoding: .utf8) ?? ""
                 NSLog("\(focusPomoLiveActivityActionLog) request_failed action=\(action) sessionId=\(sessionId) status=\(httpResponse.statusCode) body=\(body)")
-                await FocusPomoLiveActivityStateUpdater.updateFailed(sessionId: sessionId, title: title, action: action)
-                return
+                return false
             }
 
             let decoded = try JSONDecoder().decode(FocusPomoLiveActionResponse.self, from: data)
+            guard decoded.ok else {
+                NSLog("\(focusPomoLiveActivityActionLog) request_failed action=\(action) sessionId=\(sessionId) reason=response_not_ok")
+                return false
+            }
+
             await FocusPomoLiveActivityStateUpdater.applySuccess(sessionId: sessionId, next: decoded.next)
             NSLog("\(focusPomoLiveActivityActionLog) request_succeeded action=\(action) sessionId=\(sessionId) shouldEnd=\(decoded.next.shouldEnd ? "true" : "false")")
+            return true
         } catch {
             NSLog("\(focusPomoLiveActivityActionLog) request_failed action=\(action) sessionId=\(sessionId) error=\(error.localizedDescription)")
-            await FocusPomoLiveActivityStateUpdater.updateFailed(sessionId: sessionId, title: title, action: action)
+            return false
         }
     }
 }
@@ -257,6 +291,21 @@ struct FocusPomoCompleteLiveActivityIntent: LiveActivityIntent {
 
     @Parameter(title: "Title")
     var titleText: String
+
+    @Parameter(title: "Item Key")
+    var itemKey: String
+
+    @Parameter(title: "Item Type")
+    var itemType: String
+
+    @Parameter(title: "Source Type")
+    var sourceType: String
+
+    @Parameter(title: "Item ID")
+    var itemId: String
+
+    @Parameter(title: "Source ID")
+    var sourceId: String
 
     @Parameter(title: "Schedule Instance ID")
     var scheduleInstanceId: String
@@ -273,15 +322,25 @@ struct FocusPomoCompleteLiveActivityIntent: LiveActivityIntent {
     init() {
         sessionId = ""
         titleText = ""
+        itemKey = ""
+        itemType = ""
+        sourceType = ""
+        itemId = ""
+        sourceId = ""
         scheduleInstanceId = ""
         backendUrl = ""
         actionId = ""
         actionToken = ""
     }
 
-    init(sessionId: String, title: String, scheduleInstanceId: String, backendUrl: String, actionId: String, actionToken: String) {
+    init(sessionId: String, title: String, itemKey: String, itemType: String, sourceType: String, itemId: String, sourceId: String, scheduleInstanceId: String, backendUrl: String, actionId: String, actionToken: String) {
         self.sessionId = sessionId
         self.titleText = title
+        self.itemKey = itemKey
+        self.itemType = itemType
+        self.sourceType = sourceType
+        self.itemId = itemId
+        self.sourceId = sourceId
         self.scheduleInstanceId = scheduleInstanceId
         self.backendUrl = backendUrl
         self.actionId = actionId
@@ -289,22 +348,25 @@ struct FocusPomoCompleteLiveActivityIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = FocusPomoLiveActivityActionStore.append(
-            action: "complete",
-            sessionId: sessionId,
-            title: titleText,
-            scheduleInstanceId: scheduleInstanceId
-        )
+        await FocusPomoLiveActivityStateUpdater.updateInProgress(sessionId: sessionId, title: titleText, action: "complete")
 
-        await FocusPomoLiveActivityActionClient.perform(
+        let didSucceed = await FocusPomoLiveActivityActionClient.perform(
             action: "complete",
             sessionId: sessionId,
             title: titleText,
+            itemKey: itemKey,
+            itemType: itemType,
+            sourceType: sourceType,
+            itemId: itemId,
+            sourceId: sourceId,
             scheduleInstanceId: scheduleInstanceId,
             backendUrl: backendUrl,
             actionId: actionId,
             actionToken: actionToken
         )
+        if !didSucceed {
+            await FocusPomoLiveActivityStateUpdater.updateFailed(sessionId: sessionId, title: titleText, action: "complete")
+        }
 
         return .result()
     }
@@ -320,6 +382,21 @@ struct FocusPomoSkipLiveActivityIntent: LiveActivityIntent {
     @Parameter(title: "Title")
     var titleText: String
 
+    @Parameter(title: "Item Key")
+    var itemKey: String
+
+    @Parameter(title: "Item Type")
+    var itemType: String
+
+    @Parameter(title: "Source Type")
+    var sourceType: String
+
+    @Parameter(title: "Item ID")
+    var itemId: String
+
+    @Parameter(title: "Source ID")
+    var sourceId: String
+
     @Parameter(title: "Schedule Instance ID")
     var scheduleInstanceId: String
 
@@ -335,15 +412,25 @@ struct FocusPomoSkipLiveActivityIntent: LiveActivityIntent {
     init() {
         sessionId = ""
         titleText = ""
+        itemKey = ""
+        itemType = ""
+        sourceType = ""
+        itemId = ""
+        sourceId = ""
         scheduleInstanceId = ""
         backendUrl = ""
         actionId = ""
         actionToken = ""
     }
 
-    init(sessionId: String, title: String, scheduleInstanceId: String, backendUrl: String, actionId: String, actionToken: String) {
+    init(sessionId: String, title: String, itemKey: String, itemType: String, sourceType: String, itemId: String, sourceId: String, scheduleInstanceId: String, backendUrl: String, actionId: String, actionToken: String) {
         self.sessionId = sessionId
         self.titleText = title
+        self.itemKey = itemKey
+        self.itemType = itemType
+        self.sourceType = sourceType
+        self.itemId = itemId
+        self.sourceId = sourceId
         self.scheduleInstanceId = scheduleInstanceId
         self.backendUrl = backendUrl
         self.actionId = actionId
@@ -351,22 +438,25 @@ struct FocusPomoSkipLiveActivityIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = FocusPomoLiveActivityActionStore.append(
-            action: "skip",
-            sessionId: sessionId,
-            title: titleText,
-            scheduleInstanceId: scheduleInstanceId
-        )
+        await FocusPomoLiveActivityStateUpdater.updateInProgress(sessionId: sessionId, title: titleText, action: "skip")
 
-        await FocusPomoLiveActivityActionClient.perform(
+        let didSucceed = await FocusPomoLiveActivityActionClient.perform(
             action: "skip",
             sessionId: sessionId,
             title: titleText,
+            itemKey: itemKey,
+            itemType: itemType,
+            sourceType: sourceType,
+            itemId: itemId,
+            sourceId: sourceId,
             scheduleInstanceId: scheduleInstanceId,
             backendUrl: backendUrl,
             actionId: actionId,
             actionToken: actionToken
         )
+        if !didSucceed {
+            await FocusPomoLiveActivityStateUpdater.updateFailed(sessionId: sessionId, title: titleText, action: "skip")
+        }
 
         return .result()
     }

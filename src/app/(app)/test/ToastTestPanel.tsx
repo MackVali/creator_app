@@ -298,6 +298,7 @@ export default function ToastTestPanel() {
       const targetEndAt = new Date(startedAt.getTime() + 120_000);
       const result = await startFocusPomoLiveActivity({
         sessionId: "test-focus-pomo-live-activity",
+        itemKey: "test:focus-pomo-live-activity",
         mode: "pomo",
         title: "Test Focus Pomo",
         sourceLabel: "Live Activity test",
@@ -342,6 +343,7 @@ export default function ToastTestPanel() {
       const targetEndAt = new Date(startedAt.getTime() + 120_000);
       const result = await updateFocusPomoLiveActivity({
         sessionId: "test-focus-pomo-live-activity",
+        itemKey: "test:focus-pomo-live-activity",
         mode: "pomo",
         title: "Updated Test Focus Pomo",
         sourceLabel: "Live Activity update test",

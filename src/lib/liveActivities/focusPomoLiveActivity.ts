@@ -12,7 +12,10 @@ export type FocusPomoLiveActivityStatus =
 
 export type FocusPomoLiveActivityPayload = {
   sessionId: string;
+  itemKey: string;
   title: string;
+  itemType?: string | null;
+  itemId?: string | null;
   skillIcon?: string | null;
   sourceLabel?: string | null;
   sourceType?: string | null;
@@ -270,6 +273,7 @@ function logFocusPomoLiveActivityPayload(
 
   console.info(`${FOCUS_POMO_LIVE_ACTIVITY_LOG} ${event}_payload`, {
     sessionId: validation.payload.sessionId,
+    itemKey: validation.payload.itemKey,
     mode: validation.payload.mode,
     status: validation.payload.status,
     scheduleInstanceId: validation.payload.scheduleInstanceId ?? null,
@@ -289,6 +293,9 @@ function buildFocusPomoAttributes(
   return {
     id: FOCUS_POMO_ACTIVITY_ID,
     sessionId: payload.sessionId,
+    itemKey: payload.itemKey,
+    itemType: payload.itemType ?? "",
+    itemId: payload.itemId ?? "",
     sourceType: payload.sourceType ?? "",
     sourceId: payload.sourceId ?? "",
     mode: payload.mode,
@@ -304,6 +311,9 @@ function buildFocusPomoContentState(
 
   return {
     sessionId: payload.sessionId,
+    itemKey: payload.itemKey,
+    itemType: payload.itemType ?? "",
+    itemId: payload.itemId ?? "",
     title: payload.title,
     ...(skillIcon ? { skillIcon } : {}),
     sourceLabel: payload.sourceLabel ?? "",

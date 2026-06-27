@@ -64,7 +64,6 @@ import {
 } from "@/lib/liveActivities/focusPomoLiveActivity";
 import {
   ackFocusPomoLiveActivityActions,
-  CREATOR_FOCUS_POMO_DEEP_LINK,
   readFocusPomoLiveActivityActions,
   syncFocusPomoWidgetPayload,
   type FocusPomoLiveActivityAction,
@@ -149,6 +148,17 @@ type FocusPomoLiveActivityActionTokens = {
   completeActionToken: string;
   skipActionId: string;
   skipActionToken: string;
+};
+
+type FocusPomoRunSyncQueueItem = {
+  itemKey: string;
+  sourceType: string;
+  sourceId: string;
+  itemId: string;
+  scheduleInstanceId: string | null;
+  title: string;
+  skillIcon: string | null;
+  durationMinutes: number | null;
 };
 
 type ScopeOption = {
@@ -313,18 +323,49 @@ function isNativeIosApp(): boolean {
 
 async function createFocusPomoLiveActivityActionTokens({
   sessionId,
+  itemKey,
+  itemType,
+  sourceType,
+  itemId,
+  sourceId,
   scheduleInstanceId,
+  queueItems,
+  mode,
+  currentIndex,
+  startedAt,
+  endsAt,
 }: {
   sessionId: string;
+  itemKey: string;
+  itemType: string | null;
+  sourceType: string | null;
+  itemId: string | null;
+  sourceId: string | null;
   scheduleInstanceId: string | null;
+  queueItems: FocusPomoRunSyncQueueItem[];
+  mode: FocusPomoMode;
+  currentIndex: number;
+  startedAt: string;
+  endsAt: string | null;
 }): Promise<FocusPomoLiveActivityActionTokens | null> {
-  if (!scheduleInstanceId) return null;
-
   try {
     const response = await fetch("/api/focus-pomo/live-action-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, scheduleInstanceId }),
+      body: JSON.stringify({
+        sessionId,
+        itemKey,
+        itemType,
+        sourceType,
+        itemId,
+        sourceId,
+        scheduleInstanceId,
+        queueItems,
+        mode,
+        currentIndex,
+        startedAt,
+        endsAt,
+      }),
     });
 
     if (!response.ok) {
@@ -356,6 +397,38 @@ async function createFocusPomoLiveActivityActionTokens({
   } catch (error) {
     console.error("FocusPomo failed to create Live Activity action tokens", error);
     return null;
+  }
+}
+
+async function syncFocusPomoRun(options: {
+  sessionId: string;
+  activeItemKey: string;
+  queueItems: FocusPomoRunSyncQueueItem[];
+  mode: FocusPomoMode;
+  currentIndex: number;
+  startedAt: string;
+  endsAt: string | null;
+}) {
+  try {
+    await fetch("/api/focus-pomo/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    });
+  } catch (error) {
+    console.error("FocusPomo failed to sync server run", error);
+  }
+}
+
+async function clearFocusPomoRun(sessionId: string, status: "completed" | "canceled") {
+  try {
+    await fetch("/api/focus-pomo/run", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, status }),
+    });
+  } catch (error) {
+    console.error("FocusPomo failed to clear server run", error);
   }
 }
 
@@ -2358,6 +2431,26 @@ function toFocusPomoWidgetQueueItem(
   };
 }
 
+function toFocusPomoRunSyncQueueItem(
+  item: FocusPomoQueueItem | null
+): FocusPomoRunSyncQueueItem | null {
+  if (!item) return null;
+
+  const sourceId = readScopeString(item.id);
+  if (!sourceId) return null;
+
+  return {
+    itemKey: getFocusPomoQueueItemKey(item),
+    sourceType: item.sourceType,
+    sourceId,
+    itemId: sourceId,
+    scheduleInstanceId: readFocusPomoScheduleInstanceId(item),
+    title: item.title.trim() || "Focus Pomo",
+    skillIcon: itemSkillIcon(item),
+    durationMinutes: normalizeFocusPomoDurationMinutes(item.durationMinutes),
+  };
+}
+
 function getItemGoalDisplay(
   item: FocusPomoQueueItem | null
 ): { name: string; icon: string } | null {
@@ -3779,10 +3872,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const [runHistory, setRunHistory] = useState<FocusPomoRunResult[]>([]);
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
-  const completionRequestsRef = useRef(new Map<string, Promise<void>>());
+  const completionRequestsRef = useRef(new Map<string, Promise<boolean>>());
   const focusPomoLiveActivityRef =
     useRef<ActiveFocusPomoLiveActivitySession | null>(null);
-  const focusPomoLiveActivityActionHandlerRef = useRef({
+  const focusPomoLiveActivityActionHandlerRef = useRef<{
+    complete: () => void;
+    skip: () => void;
+  }>({
     complete: () => undefined,
     skip: () => undefined,
   });
@@ -4679,7 +4775,6 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       activeSessionId: isRunning ? focusWidgetActiveSession?.sessionId : null,
       activeQueueItem: focusWidgetActiveQueueItem,
       queueItems: focusWidgetNextQueueItems,
-      deepLink: CREATOR_FOCUS_POMO_DEEP_LINK,
     };
     const signature = JSON.stringify(payloadInput);
     if (focusWidgetPayloadSignatureRef.current === signature) return;
@@ -4960,6 +5055,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   ): Promise<void> => {
     const activeSession = focusPomoLiveActivityRef.current;
     focusPomoLiveActivityRef.current = null;
+    if (activeSession?.sessionId) {
+      void clearFocusPomoRun(activeSession.sessionId, status);
+    }
 
     return Promise.all([
       cancelFocusPomoCompletionNotification(),
@@ -4999,12 +5097,40 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         ? new Date(startedAtDate.getTime() + safeRemainingMs)
         : null;
     const scheduleInstanceId = readFocusPomoScheduleInstanceId(item);
+    const runQueueItems = pendingQueueItems
+      .map(toFocusPomoRunSyncQueueItem)
+      .filter((entry): entry is FocusPomoRunSyncQueueItem => entry !== null);
+    const runCurrentIndex = Math.max(
+      0,
+      runQueueItems.findIndex((entry) => entry.itemKey === itemKey)
+    );
     const actionTokens = isNativeIosApp()
       ? await createFocusPomoLiveActivityActionTokens({
           sessionId,
+          itemKey,
+          itemType: item.kind,
+          sourceType: item.sourceType,
+          itemId: item.id,
+          sourceId: item.id,
           scheduleInstanceId,
+          queueItems: runQueueItems,
+          mode,
+          currentIndex: runCurrentIndex,
+          startedAt: startedAtDate.toISOString(),
+          endsAt: targetEndAtDate?.toISOString() ?? null,
         })
       : null;
+    if (!isNativeIosApp() && runQueueItems.length > 0) {
+      void syncFocusPomoRun({
+        sessionId,
+        activeItemKey: itemKey,
+        queueItems: runQueueItems,
+        mode,
+        currentIndex: runCurrentIndex,
+        startedAt: startedAtDate.toISOString(),
+        endsAt: targetEndAtDate?.toISOString() ?? null,
+      });
+    }
     const backendUrl =
       actionTokens && typeof window !== "undefined"
         ? new URL(actionTokens.actionEndpoint, window.location.origin).toString()
@@ -5028,11 +5154,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     void startFocusPomoLiveActivity({
       sessionId,
+      itemKey,
       title,
+      itemType: item.kind,
+      itemId: item.id,
       skillIcon: itemSkillIcon(item),
       sourceLabel: displaySource?.title ?? null,
-      sourceType: displaySource?.sourceType ?? null,
-      sourceId: displaySource?.sourceId ?? null,
+      sourceType: item.sourceType,
+      sourceId: item.id,
       mode,
       status: "running",
       startedAt: startedAtDate.toISOString(),
@@ -5230,6 +5359,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
               id: action.id,
               action: action.action,
               sessionId: action.sessionId,
+              itemKey: action.itemKey ?? null,
+              itemType: action.itemType ?? null,
+              sourceType: action.sourceType ?? null,
+              itemId: action.itemId ?? null,
+              sourceId: action.sourceId ?? null,
               scheduleInstanceId: action.scheduleInstanceId ?? null,
             })),
           }
@@ -5277,6 +5411,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 id: action.id,
                 action: action.action,
                 sessionId: action.sessionId,
+                itemKey: action.itemKey ?? null,
                 scheduleInstanceId: action.scheduleInstanceId ?? null,
               }
             );
@@ -5293,7 +5428,24 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 action: action.action,
                 sessionId: action.sessionId,
                 activeSessionId: activeSession.sessionId,
+                itemKey: action.itemKey ?? null,
                 scheduleInstanceId: action.scheduleInstanceId ?? null,
+              }
+            );
+            continue;
+          }
+
+          if (action.itemKey && action.itemKey !== currentItemKeyForLog) {
+            console.warn(
+              `${FOCUS_POMO_LIVE_ACTIVITY_ACTION_LOG} drain_action_skipped`,
+              {
+                trigger,
+                reason: "item_key_mismatch",
+                id: action.id,
+                action: action.action,
+                sessionId: action.sessionId,
+                itemKey: action.itemKey,
+                currentItemKey: currentItemKeyForLog,
               }
             );
             continue;
@@ -5331,6 +5483,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
               handler:
                 action.action === "complete" ? "handleComplete" : "handleSkip",
               sessionId: action.sessionId,
+              itemKey: action.itemKey ?? null,
               scheduleInstanceId: action.scheduleInstanceId ?? null,
               currentScheduleInstanceId,
               currentItemKey: currentItemKeyForLog,

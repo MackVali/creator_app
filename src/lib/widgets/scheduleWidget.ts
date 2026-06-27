@@ -10,8 +10,6 @@ const CREATOR_FOCUS_WIDGET_LOG = "[CREATOR_FOCUS_WIDGET]";
 const CREATOR_FOCUS_LIVE_ACTIVITY_ACTION_LOG =
   "[CREATOR_FOCUS_LIVE_ACTIVITY_ACTION]";
 
-export const CREATOR_FOCUS_POMO_DEEP_LINK = "/focus-pomo";
-
 export type CreatorScheduleWidgetStatus =
   | "scheduled"
   | "completed"
@@ -51,6 +49,11 @@ export type FocusPomoLiveActivityAction = {
   id: string;
   action: "complete" | "skip";
   sessionId: string;
+  itemKey?: string | null;
+  itemType?: string | null;
+  sourceType?: string | null;
+  itemId?: string | null;
+  sourceId?: string | null;
   title?: string | null;
   scheduleInstanceId?: string | null;
   requestedAt?: string | null;
@@ -320,6 +323,21 @@ function parseFocusPomoLiveActivityAction(
     id,
     sessionId,
     action,
+    itemKey: normalizeOptionalText(
+      typeof record.itemKey === "string" ? record.itemKey : null
+    ),
+    itemType: normalizeOptionalText(
+      typeof record.itemType === "string" ? record.itemType : null
+    ),
+    sourceType: normalizeOptionalText(
+      typeof record.sourceType === "string" ? record.sourceType : null
+    ),
+    itemId: normalizeOptionalText(
+      typeof record.itemId === "string" ? record.itemId : null
+    ),
+    sourceId: normalizeOptionalText(
+      typeof record.sourceId === "string" ? record.sourceId : null
+    ),
     title: normalizeOptionalText(
       typeof record.title === "string" ? record.title : null
     ),
@@ -552,7 +570,7 @@ export function buildFocusPomoWidgetPayload(
       .map(normalizeFocusPomoWidgetQueueItem)
       .filter((item): item is CreatorFocusPomoWidgetQueueItem => item !== null)
       .slice(0, 6),
-    deepLink: normalizeOptionalText(options.deepLink) ?? CREATOR_FOCUS_POMO_DEEP_LINK,
+    deepLink: normalizeOptionalText(options.deepLink) ?? "",
   };
 }
 
@@ -661,6 +679,11 @@ export async function readFocusPomoLiveActivityActions(): Promise<
       id: action.id,
       action: action.action,
       sessionId: action.sessionId,
+      itemKey: action.itemKey ?? null,
+      itemType: action.itemType ?? null,
+      sourceType: action.sourceType ?? null,
+      itemId: action.itemId ?? null,
+      sourceId: action.sourceId ?? null,
       scheduleInstanceId: action.scheduleInstanceId ?? null,
       requestedAt: action.requestedAt ?? null,
     })),

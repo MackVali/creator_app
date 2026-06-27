@@ -7436,33 +7436,62 @@ export default function ScheduleTabContent({
           cache: "no-store",
         }
       );
+      if (!response.ok) {
+        throw new Error(await readScheduleApiError(response));
+      }
+
       const payload = (await response.json().catch(() => null)) as
         | {
             deleted?: number;
+            cleared?: number;
+            preservedLocked?: number | null;
             preservedLockedFuture?: number | null;
+            preservedCompleted?: number | null;
             error?: string;
           }
         | null;
-      if (!response.ok) {
-        throw new Error(
-          payload?.error ?? "Unable to clear uncompleted schedule instances"
-        );
-      }
 
       await refreshScheduleData();
       await refreshScheduledProjectIds();
       void hapticComplete();
-      const preservedLockedFuture =
-        typeof payload?.preservedLockedFuture === "number" &&
-        Number.isFinite(payload.preservedLockedFuture)
-          ? payload.preservedLockedFuture
-          : 0;
-      toast.success(
-        "Clear uncompleted Events",
-        preservedLockedFuture > 0
-          ? "Cleared uncompleted Events; kept locked future Events."
-          : "Cleared uncompleted Events."
-      );
+      const cleared =
+        typeof payload?.cleared === "number" && Number.isFinite(payload.cleared)
+          ? payload.cleared
+          : typeof payload?.deleted === "number" &&
+              Number.isFinite(payload.deleted)
+            ? payload.deleted
+            : null;
+      const preservedLocked =
+        typeof payload?.preservedLocked === "number" &&
+        Number.isFinite(payload.preservedLocked)
+          ? payload.preservedLocked
+          : typeof payload?.preservedLockedFuture === "number" &&
+              Number.isFinite(payload.preservedLockedFuture)
+            ? payload.preservedLockedFuture
+            : 0;
+      const clearSummary =
+        cleared === null
+          ? "Cleared uncompleted Events."
+          : `Cleared ${cleared} uncompleted ${
+              cleared === 1 ? "Event" : "Events"
+            }.`;
+      const lockedSummary =
+        preservedLocked > 0
+          ? ` Kept ${preservedLocked} locked ${
+              preservedLocked === 1 ? "Event" : "Events"
+            }.`
+          : "";
+      const completedSummary =
+        typeof payload?.preservedCompleted === "number" &&
+        Number.isFinite(payload.preservedCompleted) &&
+        payload.preservedCompleted > 0
+          ? ` Preserved ${payload.preservedCompleted} completed ${
+              payload.preservedCompleted === 1 ? "Event" : "Events"
+            }.`
+          : "";
+      const description =
+        `${clearSummary}${lockedSummary}${completedSummary}`.trim();
+      toast.success("Clear uncompleted Events", description);
     } catch (error) {
       console.error("Failed to clear uncompleted schedule instances", error);
       void hapticErrorPattern();
