@@ -784,14 +784,14 @@ struct CreatorFocusPomoActionButtons: View {
     var body: some View {
         if #available(iOS 17.0, *), let sessionId = normalizedCreatorWidgetText(payload?.activeSessionId), let item = payload?.activeQueueItem {
             HStack(spacing: 8) {
-                Button(intent: FocusPomoSkipWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
+                Button(intent: FocusPomoSkipWidgetIntent(sessionId: sessionId, title: item.title, itemKey: item.id, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
                     Text("Skip")
                         .font(.caption.weight(.heavy))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(CreatorFocusPomoActionButtonStyle(primary: false, compact: compact))
 
-                Button(intent: FocusPomoCompleteWidgetIntent(sessionId: sessionId, title: item.title, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
+                Button(intent: FocusPomoCompleteWidgetIntent(sessionId: sessionId, title: item.title, itemKey: item.id, scheduleInstanceId: item.scheduleInstanceId ?? "")) {
                     Text("Complete")
                         .font(.caption.weight(.heavy))
                         .frame(maxWidth: .infinity)
@@ -1206,7 +1206,9 @@ private func creatorFocusPomoModeLabel(_ value: String?) -> String {
 }
 
 private func creatorFocusPomoWidgetUrl(_ payload: CreatorFocusPomoPayload?) -> URL? {
-    let route = normalizedCreatorWidgetText(payload?.deepLink) ?? "/focus-pomo"
+    guard let route = normalizedCreatorWidgetText(payload?.deepLink) else {
+        return nil
+    }
     let normalizedRoute = route.hasPrefix("/") ? String(route.dropFirst()) : route
     return URL(string: "creator://\(normalizedRoute)")
 }
@@ -1326,7 +1328,7 @@ extension CreatorFocusPomoPayload {
                 scheduleInstanceId: "sample-next-3"
             )
         ],
-        deepLink: "/focus-pomo"
+        deepLink: ""
     )
 }
 

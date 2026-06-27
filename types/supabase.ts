@@ -342,6 +342,56 @@ export interface Database {
           revoked_at?: string | null;
         };
       };
+      focus_pomo_runs: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          session_id: string;
+          active_item_key: string | null;
+          queue_items: Json;
+          mode: "pomo" | "stopwatch";
+          current_index: number;
+          started_at: string | null;
+          ends_at: string | null;
+          status: "running" | "completed" | "canceled";
+          used_action_ids: string[];
+          last_action_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          session_id: string;
+          active_item_key?: string | null;
+          queue_items?: Json;
+          mode: "pomo" | "stopwatch";
+          current_index?: number;
+          started_at?: string | null;
+          ends_at?: string | null;
+          status?: "running" | "completed" | "canceled";
+          used_action_ids?: string[];
+          last_action_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          session_id?: string;
+          active_item_key?: string | null;
+          queue_items?: Json;
+          mode?: "pomo" | "stopwatch";
+          current_index?: number;
+          started_at?: string | null;
+          ends_at?: string | null;
+          status?: "running" | "completed" | "canceled";
+          used_action_ids?: string[];
+          last_action_at?: string | null;
+        };
+      };
       location_contexts: {
         Row: {
           id: string;

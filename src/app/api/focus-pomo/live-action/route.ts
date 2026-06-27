@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { performFocusPomoLiveAction } from "@/lib/focus/focusPomoLiveActionServer";
 import {
   verifyFocusPomoLiveActionToken,
   type FocusPomoLiveAction,
 } from "@/lib/focus/focusPomoLiveActionTokens";
+import { performFocusPomoLiveAction } from "@/lib/focus/focusPomoLiveActionServer";
 
 export const runtime = "nodejs";
 
@@ -22,6 +22,11 @@ export async function POST(request: Request) {
     | {
         action?: unknown;
         sessionId?: unknown;
+        itemKey?: unknown;
+        itemType?: unknown;
+        sourceType?: unknown;
+        itemId?: unknown;
+        sourceId?: unknown;
         scheduleInstanceId?: unknown;
         actionId?: unknown;
         token?: unknown;
@@ -30,11 +35,16 @@ export async function POST(request: Request) {
 
   const action = body?.action;
   const sessionId = readString(body?.sessionId);
+  const itemKey = readString(body?.itemKey);
+  const itemType = readString(body?.itemType);
+  const sourceType = readString(body?.sourceType);
+  const itemId = readString(body?.itemId);
+  const sourceId = readString(body?.sourceId);
   const scheduleInstanceId = readString(body?.scheduleInstanceId);
   const actionId = readString(body?.actionId);
   const token = readString(body?.token);
 
-  if (!isAction(action) || !sessionId || !scheduleInstanceId || !actionId || !token) {
+  if (!isAction(action) || !sessionId || !itemKey || !actionId || !token) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
@@ -50,7 +60,12 @@ export async function POST(request: Request) {
   if (
     payload.action !== action ||
     payload.sessionId !== sessionId ||
-    payload.scheduleInstanceId !== scheduleInstanceId ||
+    payload.itemKey !== itemKey ||
+    (payload.itemType ?? null) !== itemType ||
+    (payload.sourceType ?? null) !== sourceType ||
+    (payload.itemId ?? null) !== itemId ||
+    (payload.sourceId ?? null) !== sourceId ||
+    (payload.scheduleInstanceId ?? null) !== scheduleInstanceId ||
     payload.actionId !== actionId
   ) {
     return NextResponse.json(
@@ -59,29 +74,32 @@ export async function POST(request: Request) {
     );
   }
 
-  let result: Awaited<ReturnType<typeof performFocusPomoLiveAction>>;
   try {
-    result = await performFocusPomoLiveAction({
+    const result = await performFocusPomoLiveAction({
       userId: payload.userId,
       sessionId,
+      itemKey,
+      sourceType,
+      itemId,
+      sourceId,
       scheduleInstanceId,
       action,
       actionId,
     });
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, error: result.error },
+        { status: result.status }
+      );
+    }
+
+    return NextResponse.json({ ok: true, next: result.next });
   } catch (error) {
-    console.error("Focus Pomo Live Activity action failed", error);
+    console.error("Focus Pomo live action failed", error);
     return NextResponse.json(
-      { error: "Unable to perform Focus Pomo action" },
+      { ok: false, error: "Unable to apply Focus Pomo action" },
       { status: 500 }
     );
   }
-
-  if (!result.ok) {
-    return NextResponse.json(
-      { error: result.error },
-      { status: result.status }
-    );
-  }
-
-  return NextResponse.json({ ok: true, next: result.next });
 }

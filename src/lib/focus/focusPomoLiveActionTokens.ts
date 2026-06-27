@@ -7,7 +7,12 @@ export type FocusPomoLiveActionTokenPayload = {
   scope: "focus-pomo-live-action";
   userId: string;
   sessionId: string;
-  scheduleInstanceId: string;
+  itemKey: string;
+  itemType?: string | null;
+  sourceType?: string | null;
+  itemId?: string | null;
+  sourceId?: string | null;
+  scheduleInstanceId?: string | null;
   action: FocusPomoLiveAction;
   actionId: string;
   iat: number;
@@ -62,7 +67,13 @@ function isPayload(value: unknown): value is FocusPomoLiveActionTokenPayload {
     payload.scope === "focus-pomo-live-action" &&
     typeof payload.userId === "string" &&
     typeof payload.sessionId === "string" &&
-    typeof payload.scheduleInstanceId === "string" &&
+    typeof payload.itemKey === "string" &&
+    (payload.itemType == null || typeof payload.itemType === "string") &&
+    (payload.sourceType == null || typeof payload.sourceType === "string") &&
+    (payload.itemId == null || typeof payload.itemId === "string") &&
+    (payload.sourceId == null || typeof payload.sourceId === "string") &&
+    (payload.scheduleInstanceId == null ||
+      typeof payload.scheduleInstanceId === "string") &&
     (payload.action === "complete" || payload.action === "skip") &&
     typeof payload.actionId === "string" &&
     typeof payload.iat === "number" &&
@@ -73,7 +84,12 @@ function isPayload(value: unknown): value is FocusPomoLiveActionTokenPayload {
 export function createFocusPomoLiveActionToken(input: {
   userId: string;
   sessionId: string;
-  scheduleInstanceId: string;
+  itemKey: string;
+  itemType?: string | null;
+  sourceType?: string | null;
+  itemId?: string | null;
+  sourceId?: string | null;
+  scheduleInstanceId?: string | null;
   action: FocusPomoLiveAction;
   actionId?: string;
   now?: Date;
@@ -89,7 +105,12 @@ export function createFocusPomoLiveActionToken(input: {
     scope: "focus-pomo-live-action",
     userId: input.userId,
     sessionId: input.sessionId,
-    scheduleInstanceId: input.scheduleInstanceId,
+    itemKey: input.itemKey,
+    itemType: input.itemType ?? null,
+    sourceType: input.sourceType ?? null,
+    itemId: input.itemId ?? null,
+    sourceId: input.sourceId ?? null,
+    scheduleInstanceId: input.scheduleInstanceId ?? null,
     action: input.action,
     actionId: input.actionId ?? randomUUID(),
     iat: nowSeconds,

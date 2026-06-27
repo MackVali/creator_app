@@ -15,13 +15,15 @@ type InstanceRow = {
   placement_source: "manual" | "scheduler";
   locked: boolean | null;
   status: "scheduled" | "missed" | "completed";
+  completed_at: string | null;
   start_utc: string | null;
   end_utc: string | null;
 };
 
 type QueryFilter =
   | { type: "eq" | "neq"; column: keyof InstanceRow; value: unknown }
-  | { type: "preservedLockedFuture" | "clearable"; nowIso: string };
+  | { type: "is"; column: keyof InstanceRow; value: unknown }
+  | { type: "or"; expression: string };
 
 const nowIso = "2026-06-25T15:00:00.000Z";
 const pastStart = "2026-06-25T13:00:00.000Z";
@@ -36,6 +38,7 @@ function makeRow(overrides: Partial<InstanceRow>): InstanceRow {
     placement_source: "scheduler",
     locked: false,
     status: "scheduled",
+    completed_at: null,
     start_utc: futureStart,
     end_utc: futureEnd,
     ...overrides,
@@ -66,16 +69,13 @@ class ScheduleQuery {
     return this;
   }
 
+  is(column: keyof InstanceRow, value: unknown) {
+    this.filters.push({ type: "is", column, value });
+    return this;
+  }
+
   or(expression: string) {
-    const nowMatch = expression.match(
-      /(?:end_utc\.(?:gte|lt)|start_utc\.(?:gte|lt))\.([^,)]*)/
-    );
-    this.filters.push({
-      type: expression.includes("locked.is.false")
-        ? "clearable"
-        : "preservedLockedFuture",
-      nowIso: nowMatch?.[1] ?? "",
-    });
+    this.filters.push({ type: "or", expression });
     return this;
   }
 
@@ -111,25 +111,17 @@ class ScheduleQuery {
 function matchesFilter(row: InstanceRow, filter: QueryFilter) {
   if (filter.type === "eq") return row[filter.column] === filter.value;
   if (filter.type === "neq") return row[filter.column] !== filter.value;
+  if (filter.type === "is") return row[filter.column] === filter.value;
 
-  const nowMs = Date.parse(filter.nowIso);
-  const endMs = row.end_utc ? Date.parse(row.end_utc) : null;
-  const startMs = row.start_utc ? Date.parse(row.start_utc) : null;
-  const hasFutureEnd = endMs !== null && endMs >= nowMs;
-  const hasFutureStartFallback =
-    endMs === null && startMs !== null && startMs >= nowMs;
-
-  if (filter.type === "preservedLockedFuture") {
-    return row.locked === true && (hasFutureEnd || hasFutureStartFallback);
+  if (filter.expression === "locked.is.false,locked.is.null") {
+    return row.locked === false || row.locked === null;
   }
 
-  if (row.locked !== true) return true;
+  if (filter.expression === "status.eq.completed,completed_at.not.is.null") {
+    return row.status === "completed" || row.completed_at !== null;
+  }
 
-  const hasPastEnd = endMs !== null && endMs < nowMs;
-  const hasPastStartFallback =
-    endMs === null && startMs !== null && startMs < nowMs;
-  const hasNoTime = endMs === null && startMs === null;
-  return hasPastEnd || hasPastStartFallback || hasNoTime;
+  throw new Error(`Unsupported OR expression: ${filter.expression}`);
 }
 
 function createClient(rows: InstanceRow[]) {
@@ -163,7 +155,7 @@ describe("DELETE /api/schedule/instances/clear-uncompleted", () => {
     vi.useRealTimers();
   });
 
-  it("clears uncompleted unlocked and past Events while preserving completed and locked future Events", async () => {
+  it("clears uncompleted non-locked Events while preserving completed and locked Events", async () => {
     const rows = [
       makeRow({
         id: "completed-event",
@@ -185,23 +177,28 @@ describe("DELETE /api/schedule/instances/clear-uncompleted", () => {
         end_utc: null,
       }),
       makeRow({
-        id: "past-uncompleted-event",
+        id: "unlocked-missed-event",
         locked: false,
+        status: "missed",
         start_utc: pastStart,
         end_utc: pastEnd,
       }),
       makeRow({
-        id: "locked-past-uncompleted-event",
+        id: "locked-missed-event",
         locked: true,
+        status: "missed",
         start_utc: pastStart,
         end_utc: pastEnd,
       }),
       makeRow({
-        id: "scheduler-owned-locked-future-event",
-        locked: true,
-        placement_source: "scheduler",
-        start_utc: futureStart,
-        end_utc: futureEnd,
+        id: "nullable-locked-uncompleted-event",
+        locked: null,
+      }),
+      makeRow({
+        id: "completed-at-event",
+        locked: false,
+        status: "scheduled",
+        completed_at: "2026-06-25T13:45:00.000Z",
       }),
     ];
     createSupabaseServerClientMock.mockResolvedValue(createClient(rows) as never);
@@ -213,13 +210,16 @@ describe("DELETE /api/schedule/instances/clear-uncompleted", () => {
     expect(body).toMatchObject({
       ok: true,
       deleted: 3,
-      preservedLockedFuture: 3,
+      cleared: 3,
+      preservedLocked: 3,
+      preservedCompleted: 2,
     });
     expect(rows.map((row) => row.id)).toEqual([
       "completed-event",
       "locked-future-scheduled-event",
       "locked-future-manual-event",
-      "scheduler-owned-locked-future-event",
+      "locked-missed-event",
+      "completed-at-event",
     ]);
   });
 });

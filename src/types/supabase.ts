@@ -585,6 +585,57 @@ export type Database = {
           },
         ]
       }
+      focus_pomo_runs: {
+        Row: {
+          active_item_key: string | null
+          created_at: string
+          current_index: number
+          ends_at: string | null
+          id: string
+          last_action_at: string | null
+          mode: "pomo" | "stopwatch"
+          queue_items: Json
+          session_id: string
+          started_at: string | null
+          status: "running" | "completed" | "canceled"
+          updated_at: string
+          used_action_ids: string[]
+          user_id: string
+        }
+        Insert: {
+          active_item_key?: string | null
+          created_at?: string
+          current_index?: number
+          ends_at?: string | null
+          id?: string
+          last_action_at?: string | null
+          mode: "pomo" | "stopwatch"
+          queue_items?: Json
+          session_id: string
+          started_at?: string | null
+          status?: "running" | "completed" | "canceled"
+          updated_at?: string
+          used_action_ids?: string[]
+          user_id: string
+        }
+        Update: {
+          active_item_key?: string | null
+          created_at?: string
+          current_index?: number
+          ends_at?: string | null
+          id?: string
+          last_action_at?: string | null
+          mode?: "pomo" | "stopwatch"
+          queue_items?: Json
+          session_id?: string
+          started_at?: string | null
+          status?: "running" | "completed" | "canceled"
+          updated_at?: string
+          used_action_ids?: string[]
+          user_id?: string
+        }
+        Relationships: []
+      }
       content_cards: {
         Row: {
           category: string | null

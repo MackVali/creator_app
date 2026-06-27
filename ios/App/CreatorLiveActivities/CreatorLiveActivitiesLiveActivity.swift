@@ -304,6 +304,11 @@ private struct FocusPomoActionButtonsView: View {
                 Button(intent: FocusPomoSkipLiveActivityIntent(
                     sessionId: model.sessionId,
                     title: model.title,
+                    itemKey: model.itemKey,
+                    itemType: model.itemType,
+                    sourceType: model.sourceType,
+                    itemId: model.itemId,
+                    sourceId: model.sourceId,
                     scheduleInstanceId: model.scheduleInstanceId,
                     backendUrl: model.backendUrl,
                     actionId: model.skipActionId,
@@ -317,6 +322,11 @@ private struct FocusPomoActionButtonsView: View {
                 Button(intent: FocusPomoCompleteLiveActivityIntent(
                     sessionId: model.sessionId,
                     title: model.title,
+                    itemKey: model.itemKey,
+                    itemType: model.itemType,
+                    sourceType: model.sourceType,
+                    itemId: model.itemId,
+                    sourceId: model.sourceId,
                     scheduleInstanceId: model.scheduleInstanceId,
                     backendUrl: model.backendUrl,
                     actionId: model.completeActionId,
@@ -392,6 +402,26 @@ private struct FocusPomoLiveActivityModel {
         sanitized("scheduleInstanceId") ?? ""
     }
 
+    var itemKey: String {
+        sanitized("itemKey") ?? ""
+    }
+
+    var itemType: String {
+        sanitized("itemType") ?? ""
+    }
+
+    var sourceType: String {
+        sanitized("sourceType") ?? ""
+    }
+
+    var itemId: String {
+        sanitized("itemId") ?? ""
+    }
+
+    var sourceId: String {
+        sanitized("sourceId") ?? ""
+    }
+
     var backendUrl: String {
         sanitized("backendUrl") ?? ""
     }
@@ -414,7 +444,7 @@ private struct FocusPomoLiveActivityModel {
 
     var canShowActions: Bool {
         !sessionId.isEmpty &&
-        !scheduleInstanceId.isEmpty &&
+        !itemKey.isEmpty &&
         !backendUrl.isEmpty &&
         !completeActionId.isEmpty &&
         !completeActionToken.isEmpty &&

@@ -19,34 +19,32 @@ export async function DELETE() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const nowIso = new Date().toISOString();
-  const lockedFuturePredicate = [
-    `end_utc.gte.${nowIso}`,
-    `and(end_utc.is.null,start_utc.gte.${nowIso})`,
-  ].join(",");
-  const clearablePredicate = [
-    "locked.is.false",
-    "locked.is.null",
-    `end_utc.lt.${nowIso}`,
-    `and(end_utc.is.null,start_utc.lt.${nowIso})`,
-    "and(end_utc.is.null,start_utc.is.null)",
-  ].join(",");
-
-  const {
-    count: preservedLockedFuture,
-    error: preservedLockedFutureError,
-  } = await supabase
+  const { count: preservedLocked, error: preservedLockedError } = await supabase
     .from("schedule_instances")
     .select("id", { count: "exact", head: true })
     .eq("user_id", user.id)
     .neq("status", "completed")
-    .eq("locked", true)
-    .or(lockedFuturePredicate);
+    .is("completed_at", null)
+    .eq("locked", true);
 
-  if (preservedLockedFutureError) {
+  if (preservedLockedError) {
     console.warn(
-      "Failed to count preserved locked future schedule instances",
-      preservedLockedFutureError
+      "Failed to count preserved locked schedule instances",
+      preservedLockedError
+    );
+  }
+
+  const { count: preservedCompleted, error: preservedCompletedError } =
+    await supabase
+      .from("schedule_instances")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .or("status.eq.completed,completed_at.not.is.null");
+
+  if (preservedCompletedError) {
+    console.warn(
+      "Failed to count preserved completed schedule instances",
+      preservedCompletedError
     );
   }
 
@@ -55,22 +53,28 @@ export async function DELETE() {
     .delete()
     .eq("user_id", user.id)
     .neq("status", "completed")
-    .or(clearablePredicate)
+    .is("completed_at", null)
+    .or("locked.is.false,locked.is.null")
     .select("id");
 
   if (error) {
     console.error("Failed to clear uncompleted schedule instances", error);
     return NextResponse.json(
-      { error: "Unable to clear uncompleted schedule instances" },
+      {
+        error: error.message || "Unable to clear uncompleted schedule instances",
+        details: error.details,
+        hint: error.hint,
+      },
       { status: 500 }
     );
   }
 
+  const deleted = data?.length ?? 0;
   return NextResponse.json({
     ok: true,
-    deleted: data?.length ?? 0,
-    preservedLockedFuture: preservedLockedFutureError
-      ? null
-      : preservedLockedFuture ?? 0,
+    deleted,
+    cleared: deleted,
+    preservedLocked: preservedLockedError ? null : preservedLocked ?? 0,
+    preservedCompleted: preservedCompletedError ? null : preservedCompleted ?? 0,
   });
 }
