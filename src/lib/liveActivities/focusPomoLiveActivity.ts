@@ -26,6 +26,11 @@ export type FocusPomoLiveActivityPayload = {
   remainingSeconds?: number;
   elapsedSeconds?: number;
   scheduleInstanceId?: string | null;
+  backendUrl?: string | null;
+  completeActionId?: string | null;
+  completeActionToken?: string | null;
+  skipActionId?: string | null;
+  skipActionToken?: string | null;
   status: FocusPomoLiveActivityStatus;
 };
 
@@ -288,6 +293,7 @@ function buildFocusPomoAttributes(
     sourceId: payload.sourceId ?? "",
     mode: payload.mode,
     scheduleInstanceId: payload.scheduleInstanceId ?? "",
+    backendUrl: payload.backendUrl ?? "",
   };
 }
 
@@ -309,6 +315,11 @@ function buildFocusPomoContentState(
     targetEndAt: payload.targetEndAt ?? "",
     plannedDurationSeconds: String(payload.plannedDurationSeconds),
     scheduleInstanceId: payload.scheduleInstanceId ?? "",
+    backendUrl: payload.backendUrl ?? "",
+    completeActionId: payload.completeActionId ?? "",
+    completeActionToken: payload.completeActionToken ?? "",
+    skipActionId: payload.skipActionId ?? "",
+    skipActionToken: payload.skipActionToken ?? "",
     ...(payload.remainingSeconds != null
       ? { remainingSeconds: String(payload.remainingSeconds) }
       : {}),

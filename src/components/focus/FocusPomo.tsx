@@ -143,6 +143,14 @@ type ActiveFocusPomoLiveActivitySession = {
   endsAt: string | null;
 };
 
+type FocusPomoLiveActivityActionTokens = {
+  actionEndpoint: string;
+  completeActionId: string;
+  completeActionToken: string;
+  skipActionId: string;
+  skipActionToken: string;
+};
+
 type ScopeOption = {
   id: string;
   name: string;
@@ -301,6 +309,54 @@ function createLocalSessionId(): string {
 
 function isNativeIosApp(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+}
+
+async function createFocusPomoLiveActivityActionTokens({
+  sessionId,
+  scheduleInstanceId,
+}: {
+  sessionId: string;
+  scheduleInstanceId: string | null;
+}): Promise<FocusPomoLiveActivityActionTokens | null> {
+  if (!scheduleInstanceId) return null;
+
+  try {
+    const response = await fetch("/api/focus-pomo/live-action-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, scheduleInstanceId }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        "FocusPomo failed to create Live Activity action tokens",
+        await response.text()
+      );
+      return null;
+    }
+
+    const payload = (await response.json()) as Partial<FocusPomoLiveActivityActionTokens>;
+    if (
+      typeof payload.actionEndpoint !== "string" ||
+      typeof payload.completeActionId !== "string" ||
+      typeof payload.completeActionToken !== "string" ||
+      typeof payload.skipActionId !== "string" ||
+      typeof payload.skipActionToken !== "string"
+    ) {
+      return null;
+    }
+
+    return {
+      actionEndpoint: payload.actionEndpoint,
+      completeActionId: payload.completeActionId,
+      completeActionToken: payload.completeActionToken,
+      skipActionId: payload.skipActionId,
+      skipActionToken: payload.skipActionToken,
+    };
+  } catch (error) {
+    console.error("FocusPomo failed to create Live Activity action tokens", error);
+    return null;
+  }
 }
 
 function readScopeString(value: unknown): string | null {
@@ -4915,7 +4971,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     ]).then(() => undefined);
   };
 
-  const startLiveActivityForItem = (
+  const startLiveActivityForItem = async (
     item: FocusPomoQueueItem,
     durationMs: number,
     options: {
@@ -4941,6 +4997,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     const targetEndAtDate =
       mode === "pomo"
         ? new Date(startedAtDate.getTime() + safeRemainingMs)
+        : null;
+    const scheduleInstanceId = readFocusPomoScheduleInstanceId(item);
+    const actionTokens = isNativeIosApp()
+      ? await createFocusPomoLiveActivityActionTokens({
+          sessionId,
+          scheduleInstanceId,
+        })
+      : null;
+    const backendUrl =
+      actionTokens && typeof window !== "undefined"
+        ? new URL(actionTokens.actionEndpoint, window.location.origin).toString()
         : null;
 
     focusPomoLiveActivityRef.current = {
@@ -4972,7 +5039,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       endsAt: targetEndAtDate?.toISOString() ?? null,
       targetEndAt: targetEndAtDate?.toISOString() ?? null,
       plannedDurationSeconds: Math.max(0, Math.round(durationMs / 1000)),
-      scheduleInstanceId: readFocusPomoScheduleInstanceId(item),
+      scheduleInstanceId,
+      backendUrl,
+      completeActionId: actionTokens?.completeActionId ?? null,
+      completeActionToken: actionTokens?.completeActionToken ?? null,
+      skipActionId: actionTokens?.skipActionId ?? null,
+      skipActionToken: actionTokens?.skipActionToken ?? null,
       remainingSeconds:
         mode === "pomo"
           ? Math.max(0, Math.ceil(safeRemainingMs / 1000))
@@ -5005,7 +5077,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     nextDurationMs: number
   ) => {
     void endActiveFocusPomoLiveActivity(status, completedTitle).then(() => {
-      startLiveActivityForItem(nextItem, nextDurationMs);
+      void startLiveActivityForItem(nextItem, nextDurationMs);
     });
   };
 
@@ -5757,7 +5829,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     void hapticPress();
     setHasRunStarted(true);
-    startLiveActivityForItem(currentItem, currentTimerDurationMs, {
+    void startLiveActivityForItem(currentItem, currentTimerDurationMs, {
       remainingMsSnapshot:
         mode === "pomo"
           ? remainingMsRef.current || currentTimerDurationMs

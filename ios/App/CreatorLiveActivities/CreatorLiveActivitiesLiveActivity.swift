@@ -304,7 +304,10 @@ private struct FocusPomoActionButtonsView: View {
                 Button(intent: FocusPomoSkipLiveActivityIntent(
                     sessionId: model.sessionId,
                     title: model.title,
-                    scheduleInstanceId: model.scheduleInstanceId
+                    scheduleInstanceId: model.scheduleInstanceId,
+                    backendUrl: model.backendUrl,
+                    actionId: model.skipActionId,
+                    actionToken: model.skipActionToken
                 )) {
                     Text("Skip")
                         .frame(maxWidth: .infinity)
@@ -314,7 +317,10 @@ private struct FocusPomoActionButtonsView: View {
                 Button(intent: FocusPomoCompleteLiveActivityIntent(
                     sessionId: model.sessionId,
                     title: model.title,
-                    scheduleInstanceId: model.scheduleInstanceId
+                    scheduleInstanceId: model.scheduleInstanceId,
+                    backendUrl: model.backendUrl,
+                    actionId: model.completeActionId,
+                    actionToken: model.completeActionToken
                 )) {
                     Text("Complete")
                         .frame(maxWidth: .infinity)
@@ -386,8 +392,35 @@ private struct FocusPomoLiveActivityModel {
         sanitized("scheduleInstanceId") ?? ""
     }
 
+    var backendUrl: String {
+        sanitized("backendUrl") ?? ""
+    }
+
+    var completeActionId: String {
+        sanitized("completeActionId") ?? ""
+    }
+
+    var completeActionToken: String {
+        sanitized("completeActionToken") ?? ""
+    }
+
+    var skipActionId: String {
+        sanitized("skipActionId") ?? ""
+    }
+
+    var skipActionToken: String {
+        sanitized("skipActionToken") ?? ""
+    }
+
     var canShowActions: Bool {
-        !sessionId.isEmpty && isRunning
+        !sessionId.isEmpty &&
+        !scheduleInstanceId.isEmpty &&
+        !backendUrl.isEmpty &&
+        !completeActionId.isEmpty &&
+        !completeActionToken.isEmpty &&
+        !skipActionId.isEmpty &&
+        !skipActionToken.isEmpty &&
+        canAttemptAction
     }
 
     var title: String {
@@ -408,19 +441,12 @@ private struct FocusPomoLiveActivityModel {
 
     var caption: String {
         switch normalizedStatus {
-        case "queued_complete":
-            return "Queued Complete"
-        case "queued_skip":
-            return "Queued Skip"
-        default:
-            break
-        }
-
-        switch normalizedQueuedAction {
-        case "complete":
-            return "Queued Complete"
-        case "skip":
-            return "Queued Skip"
+        case "completing":
+            return "Completing..."
+        case "skipping":
+            return "Skipping..."
+        case "action_failed":
+            return "Action failed"
         default:
             break
         }
@@ -524,12 +550,12 @@ private struct FocusPomoLiveActivityModel {
         normalizedStatus == "running"
     }
 
-    private var normalizedStatus: String {
-        (sanitized("status") ?? "running").lowercased()
+    private var canAttemptAction: Bool {
+        normalizedStatus == "running" || normalizedStatus == "action_failed"
     }
 
-    private var normalizedQueuedAction: String {
-        (sanitized("queuedAction") ?? "").lowercased()
+    private var normalizedStatus: String {
+        (sanitized("status") ?? "running").lowercased()
     }
 
     private var durationFromDates: Int? {
