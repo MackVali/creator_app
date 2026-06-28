@@ -11576,10 +11576,10 @@ export default function ScheduleTabContent({
                         )
                       }
                     >
-                      <SelectTrigger className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none">
+                      <SelectTrigger className="w-full rounded-lg border border-zinc-300/15 bg-zinc-800/45 text-left text-white focus:outline-none">
                         <SelectValue placeholder="Anywhere" />
                       </SelectTrigger>
-                      <SelectContent className="border border-white/10 bg-[#0f111a]/95 text-white shadow-xl backdrop-blur">
+                      <SelectContent className="border border-zinc-300/15 bg-zinc-900/95 text-white shadow-[0_18px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl">
                         <SelectItem value="ANY" label="Anywhere">
                           Anywhere
                         </SelectItem>
@@ -11596,11 +11596,11 @@ export default function ScheduleTabContent({
                           ))}
                       </SelectContent>
                     </Select>
-                    <div className="text-xs text-white/55">
-                      {timeBlockLocationsLoading
-                        ? "Loading locations..."
-                        : "Match this block only when you're at the selected location."}
-                    </div>
+                    {timeBlockLocationsLoading ? (
+                      <div className="text-xs text-white/55">
+                        Loading locations...
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
