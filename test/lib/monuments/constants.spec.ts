@@ -12,6 +12,8 @@ describe("monument limits", () => {
 
   it.each([
     ["CREATOR"],
+    ["FREE"],
+    ["free"],
     ["CREATOR PLUS"],
     ["ADMIN"],
     ["creator"],
