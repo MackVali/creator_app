@@ -19,13 +19,30 @@ export interface Monument {
   title: string;
   emoji: string | null;
   goalCount: number;
+  priorityRank?: number | null;
 }
+
+type MonumentGoalCountRow = {
+  monument_id: string | null;
+  status: string | null;
+  active: boolean | null;
+};
+
+type MonumentPriorityOrderRpcClient = {
+  rpc: (
+    fn: "save_monument_priority_order",
+    args: { p_monument_ids: string[] }
+  ) => Promise<{ error: unknown | null }>;
+};
 
 interface MonumentsListProps {
   limit?: number;
   createHref?: string;
   renderEmptyChildren?: boolean;
-  children: (monuments: Monument[]) => ReactNode;
+  children: (
+    monuments: Monument[],
+    saveMonumentOrder: (monumentIds: string[]) => Promise<void>
+  ) => ReactNode;
 }
 
 export type MonumentsListHandle = {
@@ -54,8 +71,9 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
         await supabase.auth.getSession();
         let query = supabase
           .from("monuments")
-          .select("id,title,emoji")
-          .order("created_at", { ascending: false });
+          .select("id,title,emoji,priority_rank")
+          .order("priority_rank", { ascending: true, nullsFirst: false })
+          .order("created_at", { ascending: true });
         if (typeof limit === "number") {
           query = query.range(0, limit - 1);
         }
@@ -66,6 +84,7 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
             id: string;
             title: string;
             emoji: string | null;
+            priority_rank: number | null;
           }[];
 
           let goalCounts: Record<string, number> = {};
@@ -78,7 +97,9 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
             if (goalsError) {
               console.error(goalsError);
             } else {
-              goalCounts = (goalsData ?? []).reduce<Record<string, number>>(
+              goalCounts = ((goalsData ?? []) as MonumentGoalCountRow[]).reduce<
+                Record<string, number>
+              >(
                 (acc, goal) => {
                   const monumentId = goal.monument_id;
                   if (
@@ -102,12 +123,50 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
             monumentsData.map((monument) => ({
               ...monument,
               goalCount: goalCounts[monument.id] ?? 0,
+              priorityRank: monument.priority_rank,
             })),
           );
           setLoading(false);
         }
       },
       [limit, supabase],
+    );
+
+    const saveMonumentOrder = useCallback(
+      async (monumentIds: string[]) => {
+        if (!supabase) return;
+
+        const previousMonuments = monuments;
+        const monumentById = new Map(
+          previousMonuments.map((monument) => [monument.id, monument])
+        );
+        const reorderedMonuments = monumentIds
+          .map((monumentId) => monumentById.get(monumentId))
+          .filter((monument): monument is Monument => Boolean(monument));
+
+        if (reorderedMonuments.length !== previousMonuments.length) {
+          return;
+        }
+
+        setMonuments(
+          reorderedMonuments.map((monument, index) => ({
+            ...monument,
+            priorityRank: index + 1,
+          }))
+        );
+
+        const { error } = await (
+          supabase as unknown as MonumentPriorityOrderRpcClient
+        ).rpc("save_monument_priority_order", {
+          p_monument_ids: monumentIds,
+        });
+
+        if (error) {
+          console.error("Failed to save Monument order", error);
+          setMonuments(previousMonuments);
+        }
+      },
+      [monuments, supabase]
     );
 
     useImperativeHandle(ref, () => ({ refresh: () => load() }), [load]);
@@ -137,13 +196,13 @@ export const MonumentsList = forwardRef<MonumentsListHandle, MonumentsListProps>
 
     if (monuments.length === 0) {
       if (renderEmptyChildren) {
-        return <>{children([])}</>;
+        return <>{children([], saveMonumentOrder)}</>;
       }
 
       return <MonumentsEmptyState onAction={() => router.push(createHref)} />;
     }
 
-    return <>{children(monuments)}</>;
+    return <>{children(monuments, saveMonumentOrder)}</>;
   },
 );
 
