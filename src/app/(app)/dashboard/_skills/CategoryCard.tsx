@@ -458,23 +458,25 @@ export default function CategoryCard({
               {menuOpen && (
                 <div
                   ref={menuRef}
-                  className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl p-2 text-sm text-slate-300 shadow-2xl backdrop-blur-xl"
+                  className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl p-2 text-sm text-zinc-200 shadow-2xl backdrop-blur-xl"
                   style={{
-                    background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.94)} 0%, ${withAlpha("#020617", 0.9)} 100%)`,
-                    border: "1px solid rgba(255, 255, 255, 0.12)",
-                    boxShadow: "0 18px 36px rgba(2, 6, 23, 0.46), inset 0 1px 0 rgba(255,255,255,0.08)",
+                    background:
+                      "linear-gradient(180deg, rgba(24,24,27,0.94) 0%, rgba(5,5,5,0.92) 100%)",
+                    border: "1px solid rgba(212, 212, 216, 0.14)",
+                    boxShadow:
+                      "0 18px 36px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255,255,255,0.08)",
                   }}
                 >
                   {deleteConfirmOpen ? (
                     <div className="space-y-3">
-                      <p className="text-xs leading-relaxed text-slate-400">
+                      <p className="text-xs leading-relaxed text-zinc-400">
                         Removing this category moves its skills to the uncategorized list. The built-in skills remain
                         locked.
                       </p>
                       <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
                         <button
                           type="button"
-                          className="text-slate-400"
+                          className="text-zinc-400 transition hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400/60"
                           onClick={() => setDeleteConfirmOpen(false)}
                           disabled={isDeleting}
                         >
@@ -494,7 +496,7 @@ export default function CategoryCard({
                     <div className="space-y-3">
                       {canDeleteCategory ? (
                         <>
-                          <p className="text-xs leading-relaxed text-slate-400">
+                          <p className="text-xs leading-relaxed text-zinc-400">
                             This locked category can be deleted, but its skills stay intact and move to Uncategorized.
                           </p>
                           <button
@@ -507,7 +509,7 @@ export default function CategoryCard({
                           </button>
                         </>
                       ) : (
-                        <p className="text-xs font-semibold uppercase text-slate-400">Category locked</p>
+                        <p className="text-xs font-semibold uppercase text-zinc-400">Category locked</p>
                       )}
                     </div>
                   ) : (
@@ -529,7 +531,7 @@ export default function CategoryCard({
                             }
                           }}
                           maxLength={8}
-                          className="h-9 w-10 rounded-md border border-black/70 bg-slate-800/80 px-2 text-center text-base text-white outline-none transition focus:border-black focus:bg-slate-800 focus:ring-2 focus:ring-white/10"
+                          className="h-9 w-10 rounded-md border border-zinc-700/70 bg-zinc-900/85 px-2 text-center text-base text-white outline-none transition placeholder:text-zinc-500 focus:border-zinc-500 focus:bg-zinc-900 focus:ring-2 focus:ring-zinc-400/20"
                           aria-label="Category icon"
                           disabled={isRenaming}
                         />
@@ -548,7 +550,7 @@ export default function CategoryCard({
                               void handleRenameSave();
                             }
                           }}
-                          className="h-9 min-w-0 rounded-md border border-black/70 bg-slate-800/80 px-2.5 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-black focus:bg-slate-800 focus:ring-2 focus:ring-white/10"
+                          className="h-9 min-w-0 rounded-md border border-zinc-700/70 bg-zinc-900/85 px-2.5 text-sm font-medium text-white outline-none transition placeholder:text-zinc-500 focus:border-zinc-500 focus:bg-zinc-900 focus:ring-2 focus:ring-zinc-400/20"
                           placeholder="Category name"
                           maxLength={80}
                           aria-label="Category name"
@@ -581,15 +583,15 @@ export default function CategoryCard({
                           />
                         </label>
                       </div>
-                      <div className="grid grid-cols-[2rem_2rem_minmax(2.75rem,1fr)_2rem_2rem] items-center gap-0.5 rounded-md border border-black/60 bg-slate-950/35 p-0.5 text-slate-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm">
+                      <div className="grid grid-cols-[2rem_2rem_minmax(2.75rem,1fr)_2rem_2rem] items-center gap-0.5 rounded-md border border-zinc-800/80 bg-black/35 p-0.5 text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm">
                         <button
                           type="button"
                           onClick={() => onReorder?.("first")}
                           disabled={!onReorder || !canMoveToStart || isReordering}
-                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-sm leading-none transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/35 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-sm leading-none transition-colors hover:bg-zinc-200/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to first position"
                         >
-                          <span aria-hidden className="relative text-slate-400">⇤</span>
+                          <span aria-hidden className="relative text-zinc-400">⇤</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
                             style={{ background: withAlpha("#ffffff", 0.08) }}
@@ -599,26 +601,26 @@ export default function CategoryCard({
                           type="button"
                           onClick={() => onReorder?.("left")}
                           disabled={!onReorder || !canMoveLeft || isReordering}
-                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-base leading-none transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/35 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-base leading-none transition-colors hover:bg-zinc-200/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move earlier"
                         >
-                          <span aria-hidden className="relative text-slate-400">‹</span>
+                          <span aria-hidden className="relative text-zinc-400">‹</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
                             style={{ background: withAlpha("#ffffff", 0.08) }}
                           />
                         </button>
-                        <span className="min-w-0 border-x border-white/10 px-1.5 text-center text-[10px] font-semibold uppercase leading-6 tracking-wide text-slate-400">
+                        <span className="min-w-0 border-x border-zinc-700/70 px-1.5 text-center text-[10px] font-semibold uppercase leading-6 tracking-wide text-zinc-400">
                           {orderLabel}
                         </span>
                         <button
                           type="button"
                           onClick={() => onReorder?.("right")}
                           disabled={!onReorder || !canMoveRight || isReordering}
-                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-base leading-none transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/35 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-base leading-none transition-colors hover:bg-zinc-200/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move later"
                         >
-                          <span aria-hidden className="relative text-slate-400">›</span>
+                          <span aria-hidden className="relative text-zinc-400">›</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
                             style={{ background: withAlpha("#ffffff", 0.08) }}
@@ -628,10 +630,10 @@ export default function CategoryCard({
                           type="button"
                           onClick={() => onReorder?.("last")}
                           disabled={!onReorder || !canMoveToEnd || isReordering}
-                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-sm leading-none transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/35 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-6 items-center justify-center overflow-hidden rounded-sm text-sm leading-none transition-colors hover:bg-zinc-200/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-black disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to last position"
                         >
-                          <span aria-hidden className="relative text-slate-400">⇥</span>
+                          <span aria-hidden className="relative text-zinc-400">⇥</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
                             style={{ background: withAlpha("#ffffff", 0.08) }}

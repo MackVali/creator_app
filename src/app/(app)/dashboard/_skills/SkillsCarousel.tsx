@@ -50,6 +50,7 @@ type CommunitySkill = {
   slug?: string | null;
   searchAliases?: string[];
   categoryName?: string | null;
+  categoryIcon?: string | null;
 };
 
 type StarterBackfillSkill = {
@@ -313,6 +314,7 @@ type CommunityCatalog = {
 type CatalogCategoryRow = {
   id: string;
   name: string;
+  icon: string | null;
   sort_order: number | null;
 };
 
@@ -508,6 +510,7 @@ function buildFallbackCommunityCatalog(): CommunityCatalog {
   const popularSkills = POPULAR_COMMUNITY_SKILLS.map((skill) => ({
     ...skill,
     categoryName: skillsByName.get(skill.name)?.categoryName ?? null,
+    categoryIcon: skillsByName.get(skill.name)?.categoryIcon ?? null,
   }));
 
   return {
@@ -528,7 +531,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
   const [categoryResponse, subcategoryResponse, skillResponse] = await Promise.all([
     supabase
       .from("global_skill_categories")
-      .select("id,name,sort_order")
+      .select("id,name,icon,sort_order")
       .eq("is_active", true)
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("name", { ascending: true }),
@@ -565,6 +568,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
   }
 
   const categoryNameById = new Map(categoryRows.map((category) => [category.id, category.name]));
+  const categoryIconById = new Map(categoryRows.map((category) => [category.id, category.icon]));
   const skillsBySubcategory = new Map<string, CommunitySkill[]>();
   for (const skill of skillRows) {
     if (!skill.subcategory_id) {
@@ -578,6 +582,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
       slug: skill.slug,
       searchAliases: getSearchAliases(skill.metadata),
       categoryName: categoryNameById.get(skill.category_id) ?? null,
+      categoryIcon: categoryIconById.get(skill.category_id) ?? null,
     });
     skillsBySubcategory.set(skill.subcategory_id, list);
   }
@@ -623,6 +628,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
       slug: skill.slug,
       searchAliases: getSearchAliases(skill.metadata),
       categoryName: categoryNameById.get(skill.category_id) ?? null,
+      categoryIcon: categoryIconById.get(skill.category_id) ?? null,
     })),
     source: "supabase",
   };
@@ -1830,7 +1836,33 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
           );
         }) ?? null
       : null;
-    const matchedCategoryId = matchedCategory?.id ?? null;
+    let targetCategory = matchedCategory;
+
+    if (!targetCategory && selectedCommunitySkill.categoryName && canAddCategory) {
+      const categoryName = selectedCommunitySkill.categoryName.trim();
+      if (categoryName) {
+        setIsCreatingCategory(true);
+        try {
+          const { data, error } = await createRecord<Category>("cats", {
+            name: categoryName,
+            color_hex: activeColor,
+            icon: selectedCommunitySkill.categoryIcon ?? DEFAULT_CATEGORY_EMOJI,
+          });
+
+          if (error || !data) {
+            console.error("Failed to create category for community skill:", error);
+          } else {
+            targetCategory = data;
+          }
+        } catch (error) {
+          console.error("Failed to create category for community skill:", error);
+        } finally {
+          setIsCreatingCategory(false);
+        }
+      }
+    }
+
+    const matchedCategoryId = targetCategory?.id ?? null;
     const created = await handleAddSkill({
       name: selectedCommunitySkill.name,
       icon: selectedCommunitySkill.icon,
@@ -1846,12 +1878,14 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
 
     toast.success(
       "Skill added",
-      matchedCategory
-        ? `${selectedCommunitySkill.name} was added to ${matchedCategory.name.toUpperCase()}.`
+      targetCategory
+        ? `${selectedCommunitySkill.name} was added to ${targetCategory.name.toUpperCase()}.`
         : `${selectedCommunitySkill.name} was added.`
     );
     closeCommunitySkillPicker();
   }, [
+    activeColor,
+    canAddCategory,
     closeCommunitySkillPicker,
     categories,
     existingSkillSortItems,
@@ -2856,15 +2890,15 @@ const SkillsCarousel = forwardRef<SkillsCarouselHandle>(function SkillsCarousel(
                       type="button"
                       onClick={handleCreateCategory}
                       disabled={isCreatingCategory || newCategoryName.trim().length === 0}
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] transition ${
+                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] shadow-[0_14px_30px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-1px_0_rgba(0,0,0,0.42)] backdrop-blur-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                         isCreatingCategory || newCategoryName.trim().length === 0
-                          ? "cursor-not-allowed bg-white/20 text-white/60"
-                          : "bg-white text-slate-900 shadow-lg shadow-white/40 hover:bg-white/90"
+                          ? "cursor-not-allowed border-black/40 bg-zinc-950/35 text-white/40 shadow-none"
+                          : "border-white/12 bg-[linear-gradient(145deg,rgba(39,39,42,0.88),rgba(9,9,11,0.94))] text-white hover:border-white/20 hover:bg-[linear-gradient(145deg,rgba(63,63,70,0.9),rgba(18,18,21,0.96))] active:translate-y-px active:bg-[linear-gradient(145deg,rgba(24,24,27,0.95),rgba(3,3,5,0.98))]"
                       }`}
                     >
                       <Plus
                         className={`h-4 w-4 ${
-                          isCreateCategoryDisabled ? "text-white/60" : "text-slate-900"
+                          isCreateCategoryDisabled ? "text-white/40" : "text-white"
                         }`}
                       />
                       Create category

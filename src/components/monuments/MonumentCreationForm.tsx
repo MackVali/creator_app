@@ -17,6 +17,10 @@ import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
 import { MAX_MONUMENTS } from "@/lib/monuments/constants";
+import {
+  getMonumentIconOrDefault,
+  normalizeMonumentIconInput,
+} from "@/lib/monuments/icon";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -236,9 +240,11 @@ export function MonumentCreationForm({
       return;
     }
 
+    const nextEmoji = getMonumentIconOrDefault(emoji);
+
     const { data: createdMonument, error: insertError } = await supabase
       .from("monuments")
-      .insert({ title, emoji, user_id: user.id })
+      .insert({ title, emoji: nextEmoji, user_id: user.id })
       .select("id")
       .single();
 
@@ -300,8 +306,7 @@ export function MonumentCreationForm({
           <Input
             id="monument-emoji"
             value={emoji}
-            onChange={(event) => setEmoji(event.target.value)}
-            maxLength={2}
+            onChange={(event) => setEmoji(normalizeMonumentIconInput(event.target.value))}
             className={cn(
               isDialogVariant
                 ? "h-12 rounded-[16px] px-2 text-center text-2xl"

@@ -12,6 +12,7 @@ export default defineConfig({
     include: [
       "test/**/*.spec.ts",
       "src/lib/scheduler/__tests__/**/*.spec.ts",
+      "src/lib/monuments/__tests__/**/*.spec.ts",
       "src/lib/scheduler/**/*.test.ts",
     ],      // your tests
     reporters: ["default"],

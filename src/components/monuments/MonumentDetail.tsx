@@ -41,6 +41,10 @@ import {
 } from "@/components/monuments/MonumentEditDialog";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
+import {
+  getMonumentIconOrDefault,
+  normalizeMonumentIconInput,
+} from "@/lib/monuments/icon";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import { useMonumentActivity } from "@/lib/hooks/useMonumentActivity";
@@ -338,7 +342,7 @@ function InlineMonumentHeaderEditor({
     }
 
     const nextTitle = title.trim();
-    const nextEmoji = emoji.trim() || "🏛️";
+    const nextEmoji = getMonumentIconOrDefault(emoji);
     if (!nextTitle) {
       setError("Name your monument before saving.");
       return;
@@ -371,8 +375,7 @@ function InlineMonumentHeaderEditor({
           <input
             aria-label="Monument icon"
             value={emoji}
-            onChange={(event) => setEmoji(event.target.value)}
-            maxLength={2}
+            onChange={(event) => setEmoji(normalizeMonumentIconInput(event.target.value))}
             className="flex h-[60px] w-[60px] shrink-0 rounded-2xl border border-white/10 bg-[#09090b] text-center text-3xl text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] outline-none transition focus:border-white/30 focus:ring-2 focus:ring-white/15 sm:h-[72px] sm:w-[72px] sm:text-4xl"
           />
           <div className="min-w-0 flex-1 space-y-2">
