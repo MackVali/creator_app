@@ -10209,7 +10209,7 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "NOTE",
+          label: "OFFER",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -10219,7 +10219,7 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "OFFER",
+          label: "NOTE",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -24890,11 +24890,11 @@ export function Fab({
       <AnimatePresence>
         <div
           data-fab-overlay
-          className="fixed inset-0 z-[2147483670]"
+          className="fixed inset-0 isolate z-[2147483670]"
           style={{ touchAction: "manipulation" }}
         >
           <motion.div
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            className="absolute inset-0 z-0 bg-black/55 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -24913,7 +24913,7 @@ export function Fab({
               prefersReducedMotion ? { opacity: 0 } : { y: "100%", opacity: 1 }
             }
             transition={{ type: "tween", ease: [0.16, 1, 0.3, 1], duration: 0.28 }}
-            className="absolute bottom-0 left-0 right-0 h-[min(84dvh,680px)] max-h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_4rem)] overflow-hidden rounded-t-[30px] border border-zinc-800/65 border-b-0 bg-[#151517]/98 text-zinc-100 shadow-[0_-28px_80px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+            className="absolute bottom-0 left-0 right-0 z-10 h-[min(92dvh,740px)] max-h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_2rem)] overflow-hidden rounded-t-[30px] border border-zinc-800/65 border-b-0 bg-[#151517]/98 text-zinc-100 shadow-[0_-28px_80px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
             onPointerDown={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
@@ -24940,7 +24940,7 @@ export function Fab({
                           : unifiedModeOptionInactiveClass,
                       )}
                     >
-                      EVENTS
+                      EVENT
                     </button>
                     <button
                       type="button"
@@ -24953,7 +24953,7 @@ export function Fab({
                           : unifiedModeOptionInactiveClass,
                       )}
                     >
-                      TASKS
+                      TASK
                     </button>
                   </div>
 
@@ -27867,7 +27867,14 @@ function FabNexus({
   const shouldUsePopupSizing = !isEmbedded && usePopupSizing;
   const shouldShowEmbeddedExpandControl =
     isEmbedded && Boolean(onEmbeddedExpandedChange);
-  const hasResults = results.length > 0;
+  const trimmedQuery = query.trim();
+  const visibleResults = useMemo(() => {
+    if (trimmedQuery.length > 0) {
+      return results;
+    }
+    return results.filter((result) => !result.isCompleted);
+  }, [results, trimmedQuery]);
+  const hasResults = visibleResults.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
     const target = event.currentTarget;
@@ -28617,7 +28624,7 @@ function FabNexus({
             </div>
           ) : hasResults ? (
             <div className="flex flex-col">
-              {results.map((result) => {
+              {visibleResults.map((result) => {
               const isCompletedProject =
                 result.type === "PROJECT" && result.isCompleted;
               const isCompletedNexusResult = result.isCompleted;

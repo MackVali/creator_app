@@ -9,16 +9,17 @@ export default function OnboardingSkillsPage() {
 
   useEffect(() => {
     const redirectParam = searchParams.get("redirect");
-    const redirectTarget =
-      redirectParam && redirectParam.startsWith("/")
-        ? redirectParam
-        : "/dashboard";
-    router.replace(redirectTarget);
+    const params = new URLSearchParams();
+    if (redirectParam && redirectParam.startsWith("/")) {
+      params.set("redirect", redirectParam);
+    }
+    const query = params.toString();
+    router.replace(query ? `/onboarding?${query}` : "/onboarding");
   }, [router, searchParams]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0F0F12] text-zinc-200">
-      <p className="text-center text-lg">Redirecting to your dashboard…</p>
+      <p className="text-center text-lg">Redirecting to CREATOR setup...</p>
     </div>
   );
 }

@@ -19,6 +19,10 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
+import {
+  getMonumentIconOrDefault,
+  normalizeMonumentIconInput,
+} from "@/lib/monuments/icon";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -456,7 +460,7 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
         supabase,
         monumentId,
         title,
-        emoji,
+        emoji: getMonumentIconOrDefault(emoji),
         skills,
         initialSkills,
       });
@@ -486,8 +490,7 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
           <Input
             id="monument-emoji"
             value={emoji}
-            onChange={(event) => setEmoji(event.target.value)}
-            maxLength={2}
+            onChange={(event) => setEmoji(normalizeMonumentIconInput(event.target.value))}
             className="h-14 rounded-2xl border-white/10 bg-white/[0.05] text-center text-3xl"
           />
         </div>

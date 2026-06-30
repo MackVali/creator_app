@@ -235,7 +235,7 @@ export default function AuthForm() {
         const finalDestination = normalizeRedirect(destination);
 
         const shouldCheckSkillStack = !finalDestination.startsWith(
-          "/onboarding/skills"
+          "/onboarding"
         );
 
         if (shouldCheckSkillStack) {
@@ -248,10 +248,7 @@ export default function AuthForm() {
                 needsSkillStack?: boolean;
               };
               if (body.needsSkillStack) {
-                const onboardingRedirect = `/onboarding/skills?redirect=${encodeURIComponent(
-                  finalDestination
-                )}`;
-                router.replace(onboardingRedirect);
+                router.replace("/onboarding");
                 return;
               }
             } else {

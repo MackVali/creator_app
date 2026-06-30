@@ -40,7 +40,12 @@ import {
 } from "@/components/habits/RelatedRoutineCard";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import FlameEmber from "@/components/FlameEmber";
-import { SkillDrawer, type Category, type Skill as DrawerSkill } from "@/app/(app)/skills/components/SkillDrawer";
+import {
+  SkillDrawer,
+  type Category,
+  type MonumentOption,
+  type Skill as DrawerSkill,
+} from "@/app/(app)/skills/components/SkillDrawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -639,7 +644,7 @@ export function SkillDetail({
   const [memoCompletionState, setMemoCompletionState] =
     useState<HabitSummary | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
+  const [monuments, setMonuments] = useState<MonumentOption[]>([]);
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
@@ -2143,7 +2148,7 @@ export function SkillDetail({
             if (userId) {
               void supabase
                 .from("cats")
-                .select("id,name")
+                .select("id,name,icon")
                 .eq("user_id", userId)
                 .then(({ data: catsData, error: catsError }) => {
                   if (cancelled) {
@@ -2163,7 +2168,7 @@ export function SkillDetail({
 
               void supabase
                 .from("monuments")
-                .select("id,title")
+                .select("id,title,emoji")
                 .eq("user_id", userId)
                 .then(({ data: monumentsData, error: monumentsError }) => {
                   if (cancelled) {
@@ -2177,6 +2182,7 @@ export function SkillDetail({
                     (monumentsData ?? []).map((monument) => ({
                       id: monument.id,
                       title: monument.title,
+                      emoji: monument.emoji,
                     }))
                   );
                 })
@@ -2484,7 +2490,7 @@ export function SkillDetail({
       return null;
     }
 
-    const createdCategory = { id: data.id, name: data.name };
+    const createdCategory = { id: data.id, name: data.name, icon: data.icon ?? null };
     setCategories((prev) => [...prev, createdCategory]);
     return createdCategory;
   };
@@ -2599,17 +2605,23 @@ export function SkillDetail({
                             />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-44 border-black/80 bg-black text-white shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
+                        >
                           <DropdownMenuItem
                             disabled={skill.is_locked}
                             onSelect={() => setEditDrawerOpen(true)}
+                            className="text-white/80 focus:bg-white/[0.06] focus:text-white"
                           >
                             Edit skill
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={skill.is_locked || isDeleting}
                             className={
-                              deleteConfirmationOpen ? "text-amber-200 focus:text-amber-100" : ""
+                              deleteConfirmationOpen
+                                ? "text-amber-200 focus:bg-white/[0.06] focus:text-amber-100"
+                                : "text-white/80 focus:bg-white/[0.06] focus:text-white"
                             }
                             onSelect={(event) => {
                               event.preventDefault();

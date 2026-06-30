@@ -27,6 +27,13 @@ export interface Skill {
 export interface Category {
   id: string;
   name: string;
+  icon?: string | null;
+}
+
+export interface MonumentOption {
+  id: string;
+  title: string;
+  emoji?: string | null;
 }
 
 interface SkillDrawerProps {
@@ -34,7 +41,7 @@ interface SkillDrawerProps {
   onClose(): void;
   onAdd(skill: Skill): Promise<void>;
   categories: Category[];
-  monuments: { id: string; title: string }[];
+  monuments: MonumentOption[];
   onAddCategory(name: string): Promise<Category | null>;
   initialSkill?: Skill | null;
   onUpdate?(skill: Skill): Promise<void>;
@@ -127,13 +134,15 @@ export function SkillDrawer({
               {editing ? "Refine your skill" : "Add a new skill"}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-white/70 transition hover:border-white/30 hover:text-white sm:px-3 sm:text-xs"
-          >
-            Close
-          </button>
+          {!editing ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-white/70 transition hover:border-white/30 hover:text-white sm:px-3 sm:text-xs"
+            >
+              Close
+            </button>
+          ) : null}
         </div>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
@@ -177,7 +186,14 @@ export function SkillDrawer({
                 <SelectItem value="">None</SelectItem>
                 {monuments.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
-                    {m.title}
+                    <span className="flex min-w-0 items-center gap-2">
+                      {m.emoji ? (
+                        <span className="w-5 shrink-0 text-center" aria-hidden="true">
+                          {m.emoji}
+                        </span>
+                      ) : null}
+                      <span className="truncate">{m.title}</span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -195,7 +211,14 @@ export function SkillDrawer({
                 <SelectItem value="">Uncategorized</SelectItem>
                 {categories.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                    <span className="flex min-w-0 items-center gap-2">
+                      {c.icon ? (
+                        <span className="w-5 shrink-0 text-center" aria-hidden="true">
+                          {c.icon}
+                        </span>
+                      ) : null}
+                      <span className="truncate">{c.name}</span>
+                    </span>
                   </SelectItem>
                 ))}
                 <SelectItem value="new">+ New Category</SelectItem>
@@ -225,7 +248,11 @@ export function SkillDrawer({
               <button
                 type="submit"
                 disabled={isSaving}
-                className="h-8 rounded-full bg-white px-4 text-[11px] font-semibold text-slate-900 shadow-[0_18px_40px_-20px_rgba(148,163,184,0.85)] transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60 sm:h-10 sm:px-5 sm:text-xs"
+                className={
+                  editing
+                    ? "h-8 rounded-full border border-white/12 bg-[linear-gradient(145deg,rgba(44,44,46,0.96),rgba(8,8,10,0.98))] px-4 text-[11px] font-semibold text-white shadow-[0_16px_34px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-14px_24px_rgba(0,0,0,0.34)] backdrop-blur transition hover:border-white/18 hover:bg-[linear-gradient(145deg,rgba(58,58,60,0.96),rgba(12,12,14,0.98))] hover:shadow-[0_18px_38px_rgba(0,0,0,0.54),inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-14px_24px_rgba(0,0,0,0.34)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55 disabled:shadow-[0_10px_24px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.10)] sm:h-10 sm:px-5 sm:text-xs"
+                    : "h-8 rounded-full bg-white px-4 text-[11px] font-semibold text-slate-900 shadow-[0_18px_40px_-20px_rgba(148,163,184,0.85)] transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60 sm:h-10 sm:px-5 sm:text-xs"
+                }
               >
                 {isSaving ? "Saving..." : editing ? "Save skill" : "Add skill"}
               </button>
