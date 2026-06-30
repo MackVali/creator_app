@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { NotebookPen, X } from "lucide-react";
 import { Input } from "./input";
 import { Textarea } from "./textarea";
 import { Label } from "./label";
@@ -152,105 +152,128 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
     !isSaving;
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-[400px] max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">Add Note</h2>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-3 py-4 backdrop-blur-sm sm:items-center sm:p-5">
+      <div className="w-full max-w-[430px] max-h-[min(88vh,680px)] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.10),transparent_58%),linear-gradient(145deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_52%,rgba(39,39,45,0.82)_100%)] text-white shadow-[0_28px_90px_-36px_rgba(0,0,0,1),inset_0_1px_0_rgba(255,255,255,0.07)]">
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),0_10px_24px_rgba(0,0,0,0.32)]">
+              <NotebookPen className="h-5 w-5 text-white/80" aria-hidden="true" />
+            </span>
+            <h2 className="truncate text-lg font-semibold leading-6 text-white">
+              Add Note
+            </h2>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white focus-visible:ring-2 focus-visible:ring-white/15"
+            aria-label="Close Add Note"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="space-y-2">
-            <Label className="text-white text-sm font-medium">Skill</Label>
-            <Select
-              value={formData.skillId}
-              onValueChange={(value) =>
-                setFormData({ ...formData, skillId: value })
-              }
-            >
-              <SelectContent>
-                {skills.map((skill) => (
-                  <SelectItem key={skill.id} value={skill.id}>
-                    {skill.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-white text-sm font-medium">
-              Parent page (optional)
-            </Label>
-            <Select
-              value={selectedParentId ?? ROOT_PARENT_VALUE}
-              onValueChange={(value) => {
-                if (value === ROOT_PARENT_VALUE) {
-                  setSelectedParentId(null);
-                } else {
-                  setSelectedParentId(value);
+        <form
+          onSubmit={handleSubmit}
+          className="max-h-[calc(min(88vh,680px)-68px)] space-y-4 overflow-y-auto px-4 pb-4 pt-4 [-webkit-overflow-scrolling:touch] sm:px-5 sm:pb-5"
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-white/60">Skill</Label>
+              <Select
+                value={formData.skillId}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, skillId: value })
                 }
-              }}
-              placeholder="Add to top level"
-              className="text-white"
-              triggerClassName="h-10 bg-gray-800 border-gray-600 text-left text-sm text-white"
-            >
-              <SelectContent className="bg-gray-900 text-white">
-                <SelectItem value={ROOT_PARENT_VALUE}>
-                  {isLoadingParents ? "Loading…" : "Top-level page"}
-                </SelectItem>
-                {parentOptions.map((note) => {
-                  const displayTitle =
-                    note.title?.trim() ||
-                    note.content
-                      ?.split(/\r?\n/)
-                      .map((line) => line.trim())
-                      .find((line) => line.length > 0) ||
-                    "Untitled";
-
-                  return (
-                    <SelectItem key={note.id} value={note.id}>
-                      {displayTitle}
+                placeholder="Choose skill"
+                triggerClassName="h-11 rounded-2xl border-white/[0.07] bg-black/24 text-left text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.11]"
+                contentWrapperClassName="border-white/[0.08] bg-[#090909] shadow-2xl shadow-black/60"
+              >
+                <SelectContent className="bg-[#090909] text-white">
+                  {skills.map((skill) => (
+                    <SelectItem key={skill.id} value={skill.id}>
+                      {skill.name}
                     </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            {selectedParentId ? (
-              <p className="text-xs text-white/60">
-                Sub-notes can only nest one level deep.
-              </p>
-            ) : null}
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-white/60">
+                Parent page (optional)
+              </Label>
+              <Select
+                value={selectedParentId ?? ROOT_PARENT_VALUE}
+                onValueChange={(value) => {
+                  if (value === ROOT_PARENT_VALUE) {
+                    setSelectedParentId(null);
+                  } else {
+                    setSelectedParentId(value);
+                  }
+                }}
+                placeholder="Add to top level"
+                className="text-white"
+                triggerClassName="h-11 rounded-2xl border-white/[0.07] bg-black/24 text-left text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.11]"
+                contentWrapperClassName="border-white/[0.08] bg-[#090909] shadow-2xl shadow-black/60"
+              >
+                <SelectContent className="bg-[#090909] text-white">
+                  <SelectItem value={ROOT_PARENT_VALUE}>
+                    {isLoadingParents ? "Loading…" : "Top-level page"}
+                  </SelectItem>
+                  {parentOptions.map((note) => {
+                    const displayTitle =
+                      note.title?.trim() ||
+                      note.content
+                        ?.split(/\r?\n/)
+                        .map((line) => line.trim())
+                        .find((line) => line.length > 0) ||
+                      "Untitled";
+
+                    return (
+                      <SelectItem key={note.id} value={note.id}>
+                        {displayTitle}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              {selectedParentId ? (
+                <p className="text-xs text-white/60">
+                  Sub-notes can only nest one level deep.
+                </p>
+              ) : null}
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label className="text-white text-sm font-medium">Title</Label>
-            <Input
-              value={formData.title}
-              onChange={(e) =>
-                setFormData({ ...formData, title: e.target.value })
-              }
-              placeholder="Note title"
-              className="bg-gray-800 border-gray-600 text-white h-10 text-sm"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-white text-sm font-medium">Content</Label>
-            <Textarea
-              value={formData.content}
-              onChange={(e) =>
-                setFormData({ ...formData, content: e.target.value })
-              }
-              placeholder="Write your note..."
-              className="bg-gray-800 border-gray-600 text-white text-base"
-              rows={4}
-            />
+
+          <div className="rounded-[24px] border border-white/[0.07] bg-black/24 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+            <div className="border-b border-white/[0.06] px-4 py-3 sm:px-5">
+              <Label className="sr-only">Title</Label>
+              <Input
+                value={formData.title}
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+                placeholder="Untitled"
+                className="h-auto border-0 bg-transparent px-0 py-0 text-[1.55rem] font-semibold leading-10 text-white shadow-none outline-none placeholder:text-white/28 focus-visible:ring-0 sm:text-[1.7rem]"
+                aria-label="Note title"
+              />
+            </div>
+            <div className="px-4 py-3 sm:px-5 sm:py-4">
+              <Label className="sr-only">Content</Label>
+              <Textarea
+                value={formData.content}
+                onChange={(e) =>
+                  setFormData({ ...formData, content: e.target.value })
+                }
+                placeholder="Start typing your note..."
+                className="min-h-[180px] resize-none border-0 bg-transparent px-0 py-0 text-base leading-7 text-white shadow-none outline-none ring-0 placeholder:text-white/28 focus-visible:ring-0 focus-visible:ring-offset-0 sm:min-h-[220px]"
+                rows={7}
+                aria-label="Note content"
+              />
+            </div>
           </div>
           <Button
             type="submit"
-            className="w-full"
+            className="h-12 w-full rounded-2xl border border-emerald-300/20 bg-emerald-400/90 text-sm font-semibold text-black shadow-[0_18px_40px_-24px_rgba(52,211,153,0.9)] transition hover:bg-emerald-300 disabled:border-white/[0.06] disabled:bg-white/[0.05] disabled:text-white/36 disabled:shadow-none"
             disabled={!canSubmit}
             aria-busy={isSaving}
           >

@@ -3706,6 +3706,7 @@ export function Fab({
   const habitNameInputRef = useRef<HTMLInputElement | null>(null);
   const unifiedNotesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const unifiedTagCreateInputRef = useRef<HTMLInputElement | null>(null);
+  const unifiedSheetSuppressClickUntilRef = useRef(0);
   const creationSelectionTimeoutRef = useRef<number | null>(null);
   const mobileCreationFocusTimeoutRef = useRef<number | null>(null);
   const mobileCreationFocusTypeRef = useRef<CreationType | null>(null);
@@ -3732,6 +3733,31 @@ export function Fab({
         initialOverlayStart.getTime() +
           DEFAULT_OVERLAY_DURATION_MINUTES * 60000,
       ),
+  );
+  const getUnifiedSheetTouchActivationProps = useCallback(
+    (action: () => void, opts?: { disabled?: boolean }) => ({
+      onTouchEnd: (event: React.TouchEvent<HTMLElement>) => {
+        event.stopPropagation();
+        if (opts?.disabled) return;
+
+        event.preventDefault();
+        unifiedSheetSuppressClickUntilRef.current =
+          Date.now() + 450;
+        action();
+      },
+      onClick: (event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        if (opts?.disabled) return;
+
+        if (Date.now() < unifiedSheetSuppressClickUntilRef.current) {
+          event.preventDefault();
+          return;
+        }
+
+        action();
+      },
+    }),
+    [],
   );
   useEffect(() => {
     if (!isUnifiedTagsSheetOpen || !isUnifiedTagCreateOpen) return;
@@ -8478,21 +8504,31 @@ export function Fab({
     ariaLabel,
     size = "md",
     className,
+    activationProps,
   }: {
     value?: string | null;
     onChange: (value: string) => void;
     ariaLabel: string;
     size?: FlameEmberProps["size"];
     className?: string;
+    activationProps?: Partial<
+      Pick<
+        React.ButtonHTMLAttributes<HTMLButtonElement>,
+        "onClick" | "onTouchEnd"
+      >
+    >;
   }) {
     const resolvedLevel = normalizeFlameLevel(value);
+    const handleClick = () => {
+      void hapticSoftTick();
+      onChange(getNextFabEnergyValue(resolvedLevel));
+    };
+
     return (
       <button
         type="button"
-        onClick={() => {
-          void hapticSoftTick();
-          onChange(getNextFabEnergyValue(resolvedLevel));
-        }}
+        onClick={activationProps?.onClick ?? handleClick}
+        onTouchEnd={activationProps?.onTouchEnd}
         className={cn(
           "flex h-12 w-12 items-center justify-center rounded-md border border-white/15 bg-white/[0.06] text-white transition hover:border-white/30 hover:bg-white/10",
           className,
@@ -21389,10 +21425,6 @@ export function Fab({
 
     void handleFabSave();
   };
-  const unifiedAddEventSubmitTapHandlers = useTapHandler(
-    handleUnifiedAddEventSubmit,
-  );
-
   useEffect(() => {
     setGoalDeleteConfirmTarget(null);
   }, [editTarget?.entityId, editTarget?.entityType]);
@@ -23298,10 +23330,10 @@ export function Fab({
             <button
               type="button"
               aria-expanded={isUnifiedTimingMonthYearPickerOpen}
-              onClick={() => {
+              {...getUnifiedSheetTouchActivationProps(() => {
                 void hapticSoftTick();
                 setIsUnifiedTimingMonthYearPickerOpen((isOpen) => !isOpen);
-              }}
+              })}
               className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-1.5 py-1 text-left text-[17px] font-semibold text-zinc-100 transition hover:bg-white/[0.055] active:bg-white/[0.08]"
             >
               <span className="truncate">{monthTitle}</span>
@@ -23316,10 +23348,10 @@ export function Fab({
             {isUnifiedTimingMonthYearPickerOpen ? (
               <button
                 type="button"
-                onClick={() => {
+                {...getUnifiedSheetTouchActivationProps(() => {
                   void hapticSoftTick();
                   setIsUnifiedTimingMonthYearPickerOpen(false);
-                }}
+                })}
                 className="rounded-full px-3 py-1.5 text-[12px] font-semibold text-zinc-300 transition hover:bg-white/[0.055] active:bg-white/[0.08]"
               >
                 Done
@@ -23334,7 +23366,7 @@ export function Fab({
               <button
                 type="button"
                 aria-label="Previous month"
-                onClick={() => {
+                {...getUnifiedSheetTouchActivationProps(() => {
                   void hapticSoftTick();
                   setUnifiedTimingViewedMonth(
                     new Date(
@@ -23343,7 +23375,7 @@ export function Fab({
                       1,
                     ),
                   );
-                }}
+                })}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:bg-white/[0.055] active:bg-white/[0.08]"
               >
                 <ChevronLeft className="h-5 w-5" aria-hidden="true" />
@@ -23351,7 +23383,7 @@ export function Fab({
               <button
                 type="button"
                 aria-label="Next month"
-                onClick={() => {
+                {...getUnifiedSheetTouchActivationProps(() => {
                   void hapticSoftTick();
                   setUnifiedTimingViewedMonth(
                     new Date(
@@ -23360,7 +23392,7 @@ export function Fab({
                       1,
                     ),
                   );
-                }}
+                })}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:bg-white/[0.055] active:bg-white/[0.08]"
               >
                 <ChevronRight className="h-5 w-5" aria-hidden="true" />
@@ -23424,10 +23456,10 @@ export function Fab({
                     <button
                       key={dateValue}
                       type="button"
-                      onClick={() => {
+                      {...getUnifiedSheetTouchActivationProps(() => {
                         void hapticSoftTick();
                         onDateChange(dateValue);
-                      }}
+                      })}
                       className={cn(
                         "mx-auto flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-medium transition touch-manipulation",
                         isSelected
@@ -23519,7 +23551,7 @@ export function Fab({
               type="button"
               role="switch"
               aria-checked={unifiedEventAllDay}
-              onClick={toggleUnifiedEventAllDay}
+              {...getUnifiedSheetTouchActivationProps(toggleUnifiedEventAllDay)}
               className="-mt-0.5 inline-flex w-full items-center justify-between gap-3 px-1.5 py-1.5 text-left text-[13px] font-medium text-zinc-400 transition hover:text-zinc-200 active:text-zinc-100 touch-manipulation"
             >
               <span className="inline-flex min-w-0 items-center gap-2">
@@ -23550,7 +23582,7 @@ export function Fab({
           {picker === "endTime" ? (
             <button
               type="button"
-              onClick={() => {
+              {...getUnifiedSheetTouchActivationProps(() => {
                 setIsUnifiedTimingMonthYearPickerOpen(false);
                 const currentStartDate = taskExactDate.trim();
                 const currentEndDate = unifiedEventEndDate.trim();
@@ -23573,7 +23605,7 @@ export function Fab({
                   );
                 }
                 setUnifiedTimingPickerOpen("endDate");
-              }}
+              })}
               className="-mt-0.5 inline-flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-[13px] font-medium text-zinc-400 transition hover:text-zinc-200 active:text-zinc-100 touch-manipulation"
             >
               <CalendarPlus
@@ -23930,7 +23962,7 @@ export function Fab({
                 <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
                   <button
                     type="button"
-                    onClick={clearUnifiedNotes}
+                    {...getUnifiedSheetTouchActivationProps(clearUnifiedNotes)}
                     className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                   >
                     Clear
@@ -23940,7 +23972,9 @@ export function Fab({
                   </h2>
                   <button
                     type="button"
-                    onClick={closeUnifiedNotesSheet}
+                    {...getUnifiedSheetTouchActivationProps(
+                      closeUnifiedNotesSheet,
+                    )}
                     className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                   >
                     Done
@@ -24014,7 +24048,9 @@ export function Fab({
                   {canClearUnifiedTagsSheet ? (
                     <button
                       type="button"
-                      onClick={clearUnifiedTagsSheet}
+                      {...getUnifiedSheetTouchActivationProps(
+                        clearUnifiedTagsSheet,
+                      )}
                       className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                     >
                       Clear
@@ -24025,7 +24061,9 @@ export function Fab({
                   <h2 className="text-sm font-semibold text-zinc-100">Tags</h2>
                   <button
                     type="button"
-                    onClick={closeUnifiedTagsSheet}
+                    {...getUnifiedSheetTouchActivationProps(
+                      closeUnifiedTagsSheet,
+                    )}
                     className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                   >
                     Done
@@ -24047,10 +24085,10 @@ export function Fab({
                           ) : null}
                           <button
                             type="button"
-                            onClick={() => {
+                            {...getUnifiedSheetTouchActivationProps(() => {
                               void hapticSoftTick();
                               setIsUnifiedTagCreateOpen(true);
-                            }}
+                            }, { disabled: tagsLoading || isCreatingTag })}
                             disabled={tagsLoading || isCreatingTag}
                             className="inline-flex h-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.07] px-3 text-[11px] font-semibold text-zinc-100 transition hover:border-white/18 hover:bg-white/[0.11] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 disabled:cursor-not-allowed disabled:opacity-45"
                           >
@@ -24091,7 +24129,14 @@ export function Fab({
                                   ? "Select existing tag"
                                   : "Create tag"
                               }
-                              onClick={() => void handleUnifiedTagCreate()}
+                              {...getUnifiedSheetTouchActivationProps(
+                                () => void handleUnifiedTagCreate(),
+                                {
+                                  disabled:
+                                    !normalizeTagName(unifiedTagCreateValue) ||
+                                    isCreatingTag,
+                                },
+                              )}
                               disabled={
                                 !normalizeTagName(unifiedTagCreateValue) ||
                                 isCreatingTag
@@ -24114,7 +24159,10 @@ export function Fab({
                               type="button"
                               aria-label="Cancel tag creation"
                               title="Cancel"
-                              onClick={cancelUnifiedTagCreate}
+                              {...getUnifiedSheetTouchActivationProps(
+                                cancelUnifiedTagCreate,
+                                { disabled: isCreatingTag },
+                              )}
                               disabled={isCreatingTag}
                               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/25 text-zinc-300 transition hover:border-white/18 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
@@ -24137,10 +24185,10 @@ export function Fab({
                                   key={tag.id}
                                   type="button"
                                   aria-pressed={isSelected}
-                                  onClick={() => {
+                                  {...getUnifiedSheetTouchActivationProps(() => {
                                     void hapticSoftTick();
                                     toggleSelectedTagId(tag.id);
-                                  }}
+                                  })}
                                   className={cn(
                                     "inline-flex min-h-9 max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50",
                                     isSelected
@@ -24434,7 +24482,9 @@ export function Fab({
                   {canClearUnifiedFormsSheet ? (
                     <button
                       type="button"
-                      onClick={clearUnifiedFormsSheet}
+                      {...getUnifiedSheetTouchActivationProps(
+                        clearUnifiedFormsSheet,
+                      )}
                       className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                     >
                       Clear
@@ -24445,7 +24495,9 @@ export function Fab({
                   <h2 className="text-sm font-semibold text-zinc-100">Forms</h2>
                   <button
                     type="button"
-                    onClick={closeUnifiedFormsSheet}
+                    {...getUnifiedSheetTouchActivationProps(
+                      closeUnifiedFormsSheet,
+                    )}
                     className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                   >
                     Done
@@ -24499,14 +24551,14 @@ export function Fab({
                                   key={target.id}
                                   type="button"
                                   aria-pressed={isSelected}
-                                  onClick={() => {
+                                  {...getUnifiedSheetTouchActivationProps(() => {
                                     void hapticSoftTick();
                                     setSelectedMemoDatabaseTargetId(target.id);
                                     setMemoCaptureActions((current) => ({
                                       ...current,
                                       form: true,
                                     }));
-                                  }}
+                                  })}
                                   className={cn(
                                     "flex min-h-11 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50",
                                     isSelected
@@ -24615,7 +24667,9 @@ export function Fab({
                   <h2 className="text-sm font-semibold text-zinc-100">More</h2>
                   <button
                     type="button"
-                    onClick={closeAddEventMoreSheet}
+                    {...getUnifiedSheetTouchActivationProps(
+                      closeAddEventMoreSheet,
+                    )}
                     className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
                   >
                     Done
@@ -24675,9 +24729,9 @@ export function Fab({
                                     <button
                                       type="button"
                                       aria-label="Remove sub-event"
-                                      onClick={() =>
+                                      {...getUnifiedSheetTouchActivationProps(() =>
                                         removeAddEventSubAction(subAction.id)
-                                      }
+                                      )}
                                       className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.08] bg-black/20 text-zinc-500 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
                                     >
                                       <Trash2
@@ -24690,11 +24744,11 @@ export function Fab({
                                     <div className="min-w-0">
                                       <button
                                         type="button"
-                                        onClick={() =>
+                                        {...getUnifiedSheetTouchActivationProps(() =>
                                           cycleAddEventSubActionPriority(
                                             subAction.id,
                                           )
-                                        }
+                                        )}
                                         className={cn(
                                           subEventToolButtonClass,
                                           normalizedSubActionPriority !== "NO" &&
@@ -24730,11 +24784,11 @@ export function Fab({
                                     <div className="min-w-0">
                                       <button
                                         type="button"
-                                        onClick={() =>
+                                        {...getUnifiedSheetTouchActivationProps(() =>
                                           cycleAddEventSubActionEnergy(
                                             subAction.id,
                                           )
-                                        }
+                                        )}
                                         className={cn(
                                           subEventToolButtonClass,
                                           normalizedSubActionEnergy !== "NO" &&
@@ -24866,11 +24920,11 @@ export function Fab({
                                     <div className="min-w-0">
                                       <button
                                         type="button"
-                                        onClick={() =>
+                                        {...getUnifiedSheetTouchActivationProps(() =>
                                           cycleAddEventSubActionDuration(
                                             subAction.id,
                                           )
-                                        }
+                                        )}
                                         className={cn(
                                           subEventToolButtonClass,
                                           subEventToolActiveClass,
@@ -24903,7 +24957,9 @@ export function Fab({
                         <div className="border-t border-zinc-800/55 p-3">
                           <button
                             type="button"
-                            onClick={addAddEventSubAction}
+                            {...getUnifiedSheetTouchActivationProps(
+                              addAddEventSubAction,
+                            )}
                             className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-3 text-sm font-semibold text-zinc-100 transition hover:border-white/18 hover:bg-white/[0.11] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
                           >
                             <Plus
@@ -24971,7 +25027,9 @@ export function Fab({
                     <button
                       type="button"
                       aria-pressed={isEventsMode}
-                      onClick={() => handleUnifiedCreationModeChange("EVENTS")}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        handleUnifiedCreationModeChange("EVENTS"),
+                      )}
                       className={cn(
                         unifiedModeOptionClass,
                         isEventsMode
@@ -24984,7 +25042,9 @@ export function Fab({
                     <button
                       type="button"
                       aria-pressed={isTasksMode}
-                      onClick={() => handleUnifiedCreationModeChange("TASKS")}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        handleUnifiedCreationModeChange("TASKS"),
+                      )}
                       className={cn(
                         unifiedModeOptionClass,
                         isTasksMode
@@ -25001,7 +25061,7 @@ export function Fab({
                       <button
                         ref={unifiedGoalPickerTriggerRef}
                         type="button"
-                        onClick={() => {
+                        {...getUnifiedSheetTouchActivationProps(() => {
                           setIsUnifiedGoalPickerOpen((open) => {
                             if (!open) {
                               setUnifiedGoalSortMode(
@@ -25013,7 +25073,7 @@ export function Fab({
                             }
                             return !open;
                           });
-                        }}
+                        })}
                         className={cn(
                           "flex max-w-[min(20rem,calc(100vw-2rem))] items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition",
                           hasUnifiedTaskRelation
@@ -25103,12 +25163,12 @@ export function Fab({
                                       </div>
                                       <button
                                         type="button"
-                                        onClick={() => {
+                                        {...getUnifiedSheetTouchActivationProps(() => {
                                           void hapticSoftTick();
                                           setShowUnifiedProjectFilters(
                                             (open) => !open,
                                           );
-                                        }}
+                                        })}
                                         className={cn(
                                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition",
                                           showUnifiedProjectFilters ||
@@ -25208,11 +25268,11 @@ export function Fab({
                                                 <button
                                                   key={option.value}
                                                   type="button"
-                                                  onClick={() =>
+                                                  {...getUnifiedSheetTouchActivationProps(() =>
                                                     setUnifiedProjectSortMode(
                                                       option.value,
                                                     )
-                                                  }
+                                                  )}
                                                   className={cn(
                                                     "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition",
                                                     unifiedProjectSortMode ===
@@ -25259,12 +25319,12 @@ export function Fab({
                                       </div>
                                       <button
                                         type="button"
-                                        onClick={() => {
+                                        {...getUnifiedSheetTouchActivationProps(() => {
                                           void hapticSoftTick();
                                           setShowUnifiedGoalFilters(
                                             (open) => !open,
                                           );
-                                        }}
+                                        })}
                                         className={cn(
                                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition",
                                           showUnifiedGoalFilters ||
@@ -25328,11 +25388,11 @@ export function Fab({
                                           <button
                                             key={option.value}
                                             type="button"
-                                            onClick={() =>
+                                            {...getUnifiedSheetTouchActivationProps(() =>
                                               setUnifiedGoalSortMode(
                                                 option.value,
                                               )
-                                            }
+                                            )}
                                             className={cn(
                                               "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition",
                                               unifiedGoalSortMode ===
@@ -25360,13 +25420,13 @@ export function Fab({
                                     <div className="flex justify-center px-2.5 py-1.5">
                                       <button
                                         type="button"
-                                        onClick={() => {
+                                        {...getUnifiedSheetTouchActivationProps(() => {
                                           void hapticSoftTick();
                                           setUnifiedTaskRelationPickerMode(
                                             "goals",
                                           );
                                           setTaskProjectSearch("");
-                                        }}
+                                        })}
                                         className="text-xs font-semibold text-zinc-500 underline-offset-4 transition hover:text-zinc-300 hover:underline"
                                       >
                                         See goals
@@ -25394,12 +25454,12 @@ export function Fab({
                                           <button
                                             key={project.id}
                                             type="button"
-                                            onClick={() => {
+                                            {...getUnifiedSheetTouchActivationProps(() => {
                                               void hapticSoftTick();
                                               setTaskProjectId(project.id);
                                               setTaskGoalId(null);
                                               setIsUnifiedGoalPickerOpen(false);
-                                            }}
+                                            })}
                                             className={cn(
                                               "relative flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-2.5 py-2 text-left transition",
                                               isCompletedProject
@@ -25475,13 +25535,13 @@ export function Fab({
                                       <div className="flex justify-center px-2.5 py-1.5">
                                         <button
                                           type="button"
-                                          onClick={() => {
+                                          {...getUnifiedSheetTouchActivationProps(() => {
                                             void hapticSoftTick();
                                             setUnifiedTaskRelationPickerMode(
                                               "projects",
                                             );
                                             setShowUnifiedGoalFilters(false);
-                                          }}
+                                          })}
                                           className="text-xs font-semibold text-zinc-500 underline-offset-4 transition hover:text-zinc-300 hover:underline"
                                         >
                                           See projects
@@ -25490,26 +25550,26 @@ export function Fab({
                                     ) : null}
                                     {!isTask ? (
                                       <button
-                                  type="button"
-                                  onClick={() => {
-                                    void hapticSoftTick();
-                                    setUnifiedGoalId(null);
-                                    setIsUnifiedGoalPickerOpen(false);
-                                  }}
-                                  className={cn(
-                                    "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition hover:bg-white/[0.06]",
-                                    !unifiedGoalId
-                                      ? "bg-white/[0.08] text-white"
-                                      : "text-zinc-300",
-                                  )}
-                                >
-                                  <span>No goal</span>
-                                  {!unifiedGoalId ? (
-                                    <Check
-                                      className="h-3.5 w-3.5 shrink-0 text-zinc-100"
-                                      aria-hidden="true"
-                                    />
-                                  ) : null}
+                                        type="button"
+                                        {...getUnifiedSheetTouchActivationProps(() => {
+                                          void hapticSoftTick();
+                                          setUnifiedGoalId(null);
+                                          setIsUnifiedGoalPickerOpen(false);
+                                        })}
+                                        className={cn(
+                                          "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition hover:bg-white/[0.06]",
+                                          !unifiedGoalId
+                                            ? "bg-white/[0.08] text-white"
+                                            : "text-zinc-300",
+                                        )}
+                                      >
+                                        <span>No goal</span>
+                                        {!unifiedGoalId ? (
+                                          <Check
+                                            className="h-3.5 w-3.5 shrink-0 text-zinc-100"
+                                            aria-hidden="true"
+                                          />
+                                        ) : null}
                                       </button>
                                     ) : null}
 
@@ -25532,11 +25592,11 @@ export function Fab({
                                         <button
                                           key={goal.id}
                                           type="button"
-                                          onClick={() => {
+                                          {...getUnifiedSheetTouchActivationProps(() => {
                                             void hapticSoftTick();
                                             setUnifiedGoalId(goal.id);
                                             setIsUnifiedGoalPickerOpen(false);
-                                          }}
+                                          })}
                                           className={cn(
                                             "relative flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-2.5 py-2 text-left transition",
                                             isCompletedGoal
@@ -25752,13 +25812,13 @@ export function Fab({
                               }`}
                               role="switch"
                               aria-checked={addEventTimingMode === "dynamic"}
-                              onClick={() =>
+                              {...getUnifiedSheetTouchActivationProps(() =>
                                 handleTimingModeChange(
                                   addEventTimingMode === "dynamic"
                                     ? "manual"
                                     : "dynamic",
                                 )
-                              }
+                              )}
                               className={cn(
                                 "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
                                 addEventTimingMode === "dynamic"
@@ -25818,12 +25878,12 @@ export function Fab({
                                 aria-expanded={
                                   unifiedTimingPickerOpen === "startDate"
                                 }
-                                onClick={() => {
+                                {...getUnifiedSheetTouchActivationProps(() => {
                                   void hapticSoftTick();
                                   setUnifiedTimingPickerOpen((current) =>
                                     current === "startDate" ? null : "startDate",
                                   );
-                                }}
+                                })}
                                 className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
                               >
                                 {formatPickerDate(startDateValue)}
@@ -25839,14 +25899,14 @@ export function Fab({
                                     aria-expanded={
                                       unifiedTimingPickerOpen === "startTime"
                                     }
-                                    onClick={() => {
+                                    {...getUnifiedSheetTouchActivationProps(() => {
                                       void hapticSoftTick();
                                       setUnifiedTimingPickerOpen((current) =>
                                         current === "startTime"
                                           ? null
                                           : "startTime",
                                       );
-                                    }}
+                                    })}
                                     className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
                                   >
                                     {formatPickerTime(startTimeValue)}
@@ -25901,7 +25961,7 @@ export function Fab({
                                     aria-expanded={
                                       unifiedTimingPickerOpen === "endDate"
                                     }
-                                    onClick={() => {
+                                    {...getUnifiedSheetTouchActivationProps(() => {
                                       void hapticSoftTick();
                                       setIsUnifiedTimingMonthYearPickerOpen(false);
                                       if (selectedEndDate) {
@@ -25916,7 +25976,7 @@ export function Fab({
                                       setUnifiedTimingPickerOpen((current) =>
                                         current === "endDate" ? null : "endDate",
                                       );
-                                    }}
+                                    })}
                                     className={cn(
                                       "inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation",
                                       isAddEventTimingInvalid &&
@@ -25937,12 +25997,12 @@ export function Fab({
                                   unifiedTimingPickerOpen === "endTime"
                                 }
                                 disabled={unifiedEventAllDay}
-                                onClick={() => {
+                                {...getUnifiedSheetTouchActivationProps(() => {
                                   void hapticSoftTick();
                                   setUnifiedTimingPickerOpen((current) =>
                                     current === "endTime" ? null : "endTime",
                                   );
-                                }}
+                                }, { disabled: unifiedEventAllDay })}
                                 className={cn(
                                   "inline-flex min-h-8 items-center whitespace-nowrap rounded-lg px-1 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation",
                                   isAddEventTimingInvalid &&
@@ -26085,6 +26145,16 @@ export function Fab({
                             onChange={setEnergyValue}
                             ariaLabel={`${eventTypeLabel} energy`}
                             className="h-9 w-9 shrink-0 rounded-xl border-zinc-700/40 bg-zinc-800/35 hover:bg-zinc-800/55"
+                            activationProps={getUnifiedSheetTouchActivationProps(
+                              () => {
+                                void hapticSoftTick();
+                                setEnergyValue(
+                                  getNextFabEnergyValue(
+                                    normalizeFlameLevel(energyValue),
+                                  ),
+                                );
+                              },
+                            )}
                           />
                         </div>
                       </div>
@@ -26272,7 +26342,9 @@ export function Fab({
                   >
                     <button
                       type="button"
-                      onClick={() => handleQuickActionClick("tags")}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        handleQuickActionClick("tags"),
+                      )}
                       className={quickActionCardClass}
                     >
                       <Tags className={quickActionIconClass} aria-hidden="true" />
@@ -26280,7 +26352,9 @@ export function Fab({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleQuickActionClick("notes")}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        handleQuickActionClick("notes"),
+                      )}
                       className={quickActionCardClass}
                     >
                       <FileText
@@ -26291,7 +26365,9 @@ export function Fab({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleQuickActionClick("forms")}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        handleQuickActionClick("forms"),
+                      )}
                       aria-expanded={isUnifiedFormsSheetOpen}
                       aria-label="Forms quick action"
                       className={cn(
@@ -26313,7 +26389,9 @@ export function Fab({
                       type="button"
                       aria-expanded={isAddEventMoreOpen}
                       aria-label="More event options"
-                      onClick={openAddEventMoreSheet}
+                      {...getUnifiedSheetTouchActivationProps(
+                        openAddEventMoreSheet,
+                      )}
                       className={cn(
                         quickActionCardClass,
                         isAddEventMoreOpen &&
@@ -26342,7 +26420,14 @@ export function Fab({
                       isUnifiedAddEventSubmitHardDisabled ||
                       !!unifiedAddEventSaveBlockReason
                     }
-                    {...unifiedAddEventSubmitTapHandlers}
+                    {...getUnifiedSheetTouchActivationProps(
+                      handleUnifiedAddEventSubmit,
+                      {
+                        disabled:
+                          isUnifiedAddEventSubmitHardDisabled ||
+                          !!unifiedAddEventSaveBlockReason,
+                      },
+                    )}
                     className={cn(
                       "h-11 w-full rounded-full border border-white/10 bg-zinc-100 px-5 text-sm font-semibold text-zinc-950 shadow-[0_6px_18px_rgba(0,0,0,0.2)] hover:bg-white",
                       (isUnifiedAddEventSubmitHardDisabled ||

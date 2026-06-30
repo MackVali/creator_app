@@ -44,7 +44,7 @@ export const MonumentContainer = forwardRef<MonumentContainerHandle>(
           createHref="/monuments/new"
           renderEmptyChildren
         >
-          {(monuments) => {
+          {(monuments, saveMonumentOrder) => {
             const canAddMonument = monuments.length < MAX_MONUMENTS;
             return (
               <div className="app-dashboard-monuments-panel px-4">
@@ -56,6 +56,7 @@ export const MonumentContainer = forwardRef<MonumentContainerHandle>(
                     stats: `${m.goalCount} Goal${m.goalCount === 1 ? "" : "s"}`,
                   }))}
                   showNewCard={canAddMonument}
+                  onReorder={saveMonumentOrder}
                 />
                 {canAddMonument && <AddMonumentDialog />}
               </div>
