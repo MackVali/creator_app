@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useToastHelpers } from "@/components/ui/toast";
 import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2, X, ChevronRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -178,16 +179,30 @@ function isDeniedPhotoLibraryPermission(permission: PhotoLibraryPermissionState)
 async function blobFromNativeMediaResult(media: MediaResult) {
   const format = media.metadata?.format ?? "jpeg";
   const mimeType = getImageMimeType(format);
-  const mediaUrl = media.webPath ?? media.uri;
+  const urlCandidates = [media.webPath, media.uri]
+    .filter((url): url is string => Boolean(url))
+    .flatMap((url) => {
+      const convertedUrl = Capacitor.convertFileSrc(url);
+      return convertedUrl && convertedUrl !== url ? [url, convertedUrl] : [url];
+    });
 
-  if (mediaUrl) {
-    const response = await fetch(mediaUrl);
-    if (!response.ok) {
-      throw new Error(`Unable to read selected photo: ${response.status}`);
+  for (const mediaUrl of urlCandidates) {
+    try {
+      const response = await fetch(mediaUrl);
+      if (!response.ok) {
+        throw new Error(`Unable to read selected photo: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      if (blob.size) {
+        return blob.type ? blob : blob.slice(0, blob.size, mimeType);
+      }
+    } catch (readError) {
+      console.info("[EditProfilePhoto] Unable to read selected photo URL", {
+        mediaUrl,
+        readError,
+      });
     }
-
-    const blob = await response.blob();
-    return blob.type ? blob : blob.slice(0, blob.size, mimeType);
   }
 
   if (media.thumbnail) {
@@ -202,6 +217,7 @@ export default function ProfileEditPage() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { refreshProfile } = useProfileContext();
+  const toast = useToastHelpers();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -533,6 +549,14 @@ export default function ProfileEditPage() {
     }));
   };
 
+  const showAvatarError = useCallback(
+    (message: string, title = "Profile photo not updated") => {
+      setError(message);
+      toast.error(title, message);
+    },
+    [toast],
+  );
+
   const handlePrivacyChange = (checked: boolean) => {
     setFormData(prev => ({
       ...prev,
@@ -694,7 +718,7 @@ export default function ProfileEditPage() {
   const openAvatarEditorFromFile = useCallback((file: File) => {
     try {
       if (!file.type.startsWith("image/")) {
-        setError("Please choose an image file for your profile photo.");
+        showAvatarError("Please choose an image file for your profile photo.");
         return false;
       }
 
@@ -715,10 +739,10 @@ export default function ProfileEditPage() {
       return true;
     } catch (err) {
       console.error("Error opening selected profile photo:", err);
-      setError("We couldn't open that photo. Please try choosing another image.");
+      showAvatarError("We couldn't open that photo. Please try choosing another image.");
       return false;
     }
-  }, []);
+  }, [showAvatarError]);
 
   const stopWebCameraStream = useCallback(() => {
     webCameraStreamRef.current?.getTracks().forEach((track) => {
@@ -752,7 +776,7 @@ export default function ProfileEditPage() {
           }
 
           if (isDeniedPhotoLibraryPermission(permissionState)) {
-            setError(PHOTO_LIBRARY_SETTINGS_MESSAGE);
+            showAvatarError(PHOTO_LIBRARY_SETTINGS_MESSAGE);
             return "denied";
           }
         } catch (permissionError) {
@@ -783,15 +807,15 @@ export default function ProfileEditPage() {
           return "granted";
         }
 
-        setError(permissionMessage);
+        showAvatarError(permissionMessage);
         return "denied";
       } catch (permissionError) {
         console.error(`Error checking ${permissionLabel} permission:`, permissionError);
-        setError(`We couldn't check ${permissionLabel} permission. Please try again.`);
+        showAvatarError(`We couldn't check ${permissionLabel} permission. Please try again.`);
         return "denied";
       }
     },
-    [],
+    [showAvatarError],
   );
 
   const handleCapacitorAvatarPhoto = async (source: AvatarPhotoSource) => {
@@ -809,13 +833,14 @@ export default function ProfileEditPage() {
         const mediaResults = await CapacitorCamera.chooseFromGallery({
           mediaType: MediaTypeSelection.Photo,
           allowMultipleSelection: false,
+          includeMetadata: true,
           quality: 85,
           correctOrientation: true,
         });
         const media = mediaResults.results[0];
 
         if (!media) {
-          setError("We couldn't read that photo. Please try another image.");
+          showAvatarError("We couldn't read that photo. Please try another image.");
           return;
         }
 
@@ -824,12 +849,12 @@ export default function ProfileEditPage() {
           blob = await blobFromNativeMediaResult(media);
         } catch (conversionError) {
           console.error("Error converting selected profile photo:", conversionError);
-          setError("We couldn't process that photo. Please try another image.");
+          showAvatarError("We couldn't process that photo. Please try another image.");
           return;
         }
 
         if (!blob.size) {
-          setError("We couldn't read that photo. Please try another image.");
+          showAvatarError("We couldn't read that photo. Please try another image.");
           return;
         }
 
@@ -853,7 +878,7 @@ export default function ProfileEditPage() {
       });
 
       if (!photo.base64String) {
-        setError("We couldn't read that photo. Please try another image.");
+        showAvatarError("We couldn't read that photo. Please try another image.");
         return;
       }
 
@@ -863,12 +888,12 @@ export default function ProfileEditPage() {
         blob = base64ToBlob(photo.base64String, mimeType);
       } catch (conversionError) {
         console.error("Error converting profile photo result:", conversionError);
-        setError("We couldn't process that photo. Please try another image.");
+        showAvatarError("We couldn't process that photo. Please try another image.");
         return;
       }
 
       if (!blob.size) {
-        setError("We couldn't read that photo. Please try another image.");
+        showAvatarError("We couldn't read that photo. Please try another image.");
         return;
       }
 
@@ -884,7 +909,7 @@ export default function ProfileEditPage() {
       }
 
       console.error(`Error opening profile photo ${source}:`, err);
-      setError(
+      showAvatarError(
         source === "camera"
           ? "We couldn't open the camera. Check camera permission and try again."
           : PHOTO_LIBRARY_SETTINGS_MESSAGE,
@@ -955,7 +980,7 @@ export default function ProfileEditPage() {
     setIsAvatarSourceDialogOpen(false);
     const input = webPhotoLibraryInputRef.current;
     if (!input) {
-      setError("We couldn't open your photo library. Please try again.");
+      showAvatarError("We couldn't open your photo library. Please try again.");
       return;
     }
     input.value = "";
@@ -1223,6 +1248,7 @@ export default function ProfileEditPage() {
 
   const handleAvatarEditorSave = async () => {
     if (!pendingAvatarFile || !pendingAvatarSourceUrl || !avatarEditorFrameRef.current || !editorImageSize.width) {
+      showAvatarError("We couldn't prepare that photo. Please try choosing it again.");
       return;
     }
 
@@ -1230,7 +1256,10 @@ export default function ProfileEditPage() {
       const frameRect = avatarEditorFrameRef.current.getBoundingClientRect();
       const frameWidth = frameRect.width;
       const frameHeight = frameRect.height;
-      if (!frameWidth || !frameHeight) return;
+      if (!frameWidth || !frameHeight) {
+        showAvatarError("We couldn't prepare that photo. Please try choosing it again.");
+        return;
+      }
 
       const outputWidth = AVATAR_EXPORT_SIZE;
       const outputHeight = AVATAR_EXPORT_SIZE;
@@ -1239,7 +1268,10 @@ export default function ProfileEditPage() {
       canvas.height = outputHeight;
 
       const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+      if (!ctx) {
+        showAvatarError("We couldn't edit that photo in this browser. Please try another image.");
+        return;
+      }
 
       const image = new Image();
       await new Promise<void>((resolve, reject) => {
@@ -1257,7 +1289,10 @@ export default function ProfileEditPage() {
         editorImageSize,
         frameSize,
       );
-      if (!surfaceSize || !cropSize) return;
+      if (!surfaceSize || !cropSize) {
+        showAvatarError("We couldn't prepare that photo. Please try choosing it again.");
+        return;
+      }
 
       const clampedOffset = clampEditorOffset(
         editorOffset,
@@ -1282,7 +1317,10 @@ export default function ProfileEditPage() {
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
       });
-      if (!blob) return;
+      if (!blob?.size) {
+        showAvatarError("We couldn't save that photo. Please try another image.");
+        return;
+      }
 
       const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" });
       const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
@@ -1293,7 +1331,7 @@ export default function ProfileEditPage() {
       handleAvatarEditorCancel();
     } catch (err) {
       console.error("Error saving edited profile photo:", err);
-      setError("We couldn't save that photo. Please try another image.");
+      showAvatarError("We couldn't save that photo. Please try another image.");
     }
   };
 
@@ -1340,6 +1378,7 @@ export default function ProfileEditPage() {
     try {
       setSaving(true);
       setError(null);
+      setSuccess(false);
 
       let avatarUrl: string | undefined;
       const shouldRemoveAvatar = avatarMarkedForRemoval && !avatarFile;
@@ -1347,7 +1386,7 @@ export default function ProfileEditPage() {
       if (avatarFile) {
         const uploadRes = await uploadAvatar(avatarFile, user.id);
         if (!uploadRes.success || !uploadRes.url) {
-          setError(uploadRes.error || "Failed to upload profile picture");
+          showAvatarError(uploadRes.error || "Failed to upload profile picture", "Upload failed");
           setSaving(false);
           return;
         }
@@ -1366,23 +1405,28 @@ export default function ProfileEditPage() {
         if (shouldRemoveAvatar) {
           const supabase = getSupabaseBrowser();
           if (!supabase) {
-            setError("Supabase client not initialized");
+            showAvatarError("Supabase client not initialized", "Profile photo not removed");
             setSaving(false);
             return;
           }
 
           const { data: clearedProfile, error: clearAvatarError } = await supabase
             .from("profiles")
-            .update({
-              avatar_url: null,
-              updated_at: new Date().toISOString(),
-            })
+            .update(
+              {
+                avatar_url: null,
+                updated_at: new Date().toISOString(),
+              } as never,
+            )
             .eq("user_id", user.id)
             .select()
             .maybeSingle();
 
           if (clearAvatarError || !clearedProfile) {
-            setError(clearAvatarError?.message || "Failed to remove profile picture");
+            showAvatarError(
+              clearAvatarError?.message || "Failed to remove profile picture",
+              "Profile photo not removed",
+            );
             setSaving(false);
             return;
           }
@@ -1425,6 +1469,8 @@ export default function ProfileEditPage() {
           console.error("Failed to refresh profile context:", err);
         }
 
+        toast.success("Profile updated", avatarUrl ? "Your profile photo has been updated." : undefined);
+
         const redirectTarget =
           redirectPath && redirectPath.startsWith("/")
             ? redirectPath
@@ -1434,11 +1480,11 @@ export default function ProfileEditPage() {
           router.replace(redirectTarget);
         }, 1500);
       } else {
-        setError(result.error || "Failed to update profile");
+        showAvatarError(result.error || "Failed to update profile", "Profile not updated");
       }
     } catch (err) {
       console.error("Error updating profile:", err);
-      setError("An unexpected error occurred");
+      showAvatarError("An unexpected error occurred", "Profile not updated");
     } finally {
       setSaving(false);
     }

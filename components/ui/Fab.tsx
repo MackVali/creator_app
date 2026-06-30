@@ -13,7 +13,7 @@ import {
   type RefObject,
   type UIEvent,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   motion,
@@ -17231,6 +17231,18 @@ export function Fab({
       parseDateInputValueLocal(defaultSchedule.date) ??
       new Date();
 
+    pendingFabSwipeRef.current = null;
+    isDraggingRef.current = false;
+    dragTargetPageRef.current = null;
+    dragDirectionRef.current = null;
+    pageDragAxisRef.current = null;
+    setTouchStartY(null);
+    setIsDragging(false);
+    setDragTargetPage(null);
+    setDragDirection(null);
+    setIsAnimatingPageChange(false);
+    pageX.set(0);
+
     if (!isUnifiedEventSheetOpen) {
       setUnifiedCreationMode("EVENTS");
       setTaskHasExactDate(true);
@@ -17270,11 +17282,19 @@ export function Fab({
     setUnifiedEventAllDay(false);
     setAddEventTimingMode("manual");
     setSelected("TASK");
-    setExpanded(false);
-    setIsDirectCreationOpen(false);
-    setIsOpen(false);
+    setNormalNexusExpanded(false);
+    flushSync(() => {
+      setExpanded(false);
+      setIsDirectCreationOpen(false);
+      setIsOpen(false);
+    });
     setIsUnifiedEventSheetOpen(true);
-  }, [activeTaskCreationGoalId, isUnifiedEventSheetOpen, taskExactDate]);
+  }, [
+    activeTaskCreationGoalId,
+    isUnifiedEventSheetOpen,
+    pageX,
+    taskExactDate,
+  ]);
 
   useEffect(() => {
     if (!isUnifiedEventSheetOpen) return;
@@ -22267,6 +22287,7 @@ export function Fab({
     [closeExpandedPanel, shouldUseCenteredEditModal],
   );
   const shouldRenderFabPanel = isOpen || expanded || isDirectCreationOpen;
+  const shouldDisableFabLauncherInteractions = isUnifiedEventSheetOpen;
   const shouldRenderFabCarouselChevrons =
     isOpen &&
     !expanded &&
@@ -24914,6 +24935,9 @@ export function Fab({
             }
             transition={{ type: "tween", ease: [0.16, 1, 0.3, 1], duration: 0.28 }}
             className="absolute bottom-0 left-0 right-0 z-10 h-[min(92dvh,740px)] max-h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_2rem)] overflow-hidden rounded-t-[30px] border border-zinc-800/65 border-b-0 bg-[#151517]/98 text-zinc-100 shadow-[0_-28px_80px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+            onPointerDownCapture={(event) => event.stopPropagation()}
+            onPointerUpCapture={(event) => event.stopPropagation()}
+            onClickCapture={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
@@ -26382,6 +26406,8 @@ export function Fab({
                     !shouldUseCenteredEditModal &&
                       !shouldUseCenteredCreationPanel &&
                       menuClassName,
+                    shouldDisableFabLauncherInteractions &&
+                      "pointer-events-none",
                   )}
                   style={
                     expanded && shouldUseCenteredMobileCreationPanel
@@ -26964,7 +26990,9 @@ export function Fab({
           className={cn(
             "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full border border-white/[0.12] text-white shadow-lg backdrop-blur-xl transition hover:scale-110 hover:border-white/[0.18]",
             isOpen ? "rotate-45" : "",
-            shouldAttachCreationControls ? "pointer-events-none" : "",
+            shouldAttachCreationControls || shouldDisableFabLauncherInteractions
+              ? "pointer-events-none"
+              : "",
           )}
           onTouchStart={handleFabButtonTouchStart}
           onTouchEnd={handleFabButtonTouchEnd}
