@@ -24935,10 +24935,8 @@ export function Fab({
             }
             transition={{ type: "tween", ease: [0.16, 1, 0.3, 1], duration: 0.28 }}
             className="absolute bottom-0 left-0 right-0 z-10 h-[min(92dvh,740px)] max-h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_2rem)] overflow-hidden rounded-t-[30px] border border-zinc-800/65 border-b-0 bg-[#151517]/98 text-zinc-100 shadow-[0_-28px_80px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
-            onPointerDownCapture={(event) => event.stopPropagation()}
-            onPointerUpCapture={(event) => event.stopPropagation()}
-            onClickCapture={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
