@@ -29,20 +29,30 @@ import {
 import {
   CircleDot,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Clock,
   Expand,
   Filter,
   FileText,
+  FolderKanban,
   ListChecks,
+  Layers,
   Loader2,
   Pin,
   Plus,
+  Flag,
+  Repeat2,
   Search,
   Settings2,
   Shrink,
   Brain,
+  Calendar,
+  CalendarPlus,
+  Sun,
   Tags,
+  Timer,
   Trash2,
   X,
 } from "lucide-react";
@@ -67,6 +77,7 @@ import {
   SelectValue,
   useSelectContext,
 } from "@/components/ui/select";
+import { WheelPicker, WheelPickerWrapper } from "@/components/wheel-picker";
 import { Label } from "@/components/ui/label";
 import { useToastHelpers } from "./toast";
 import { teardownFabViewportState } from "./fabViewportCleanup";
@@ -75,11 +86,15 @@ import type { Database } from "@/types/supabase";
 import { DEFAULT_MEMO_DATABASE_TARGETS } from "@/lib/skillStarterNotes";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
-import { getProjectsForUser, type Project } from "@/lib/queries/projects";
+import type { Project } from "@/lib/queries/projects";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
-import { normalizeHabitType } from "@/lib/scheduler/habits";
+import {
+  normalizeHabitType,
+  type HabitScheduleItem,
+} from "@/lib/scheduler/habits";
+import { getHabitNextDue } from "@/lib/scheduler/habitRecurrence";
 import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
 import {
@@ -112,6 +127,9 @@ import {
   hapticErrorPattern,
   hapticLongPress,
   hapticPress,
+  hapticSelectionChangedOnly,
+  hapticSelectionEnd,
+  hapticSelectionStart,
   hapticSnap,
   hapticSoftTick,
   hapticWarningPattern,
@@ -138,6 +156,32 @@ export interface FabProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
+type UnifiedEventType = Extract<CreationType, "TASK" | "HABIT">;
+type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
+type AddEventSubAction = {
+  id: string;
+  title: string;
+  skillId?: string | null;
+  priority?: string | null;
+  durationMin?: number | null;
+  energy?: string | null;
+};
+type AddEventWorkspaceValue = "PERSONAL" | `CIRCLE:${string}`;
+type UnifiedTimingPickerOpen =
+  | "startDate"
+  | "startTime"
+  | "endTime"
+  | "endDate"
+  | null;
+type FabAdvancedTimingPickerOpen =
+  | "projectExactStartTime"
+  | "projectExactEndTime"
+  | "habitFixedStartTime"
+  | "habitFixedEndTime"
+  | null;
+type AddEventTimingMode = "manual" | "dynamic";
+type ProjectScheduleTimingMode = "manual" | "dynamic";
+type HabitScheduleTimingMode = "manual" | "dynamic";
 type OverlayBlockMode = "MANUAL" | "DYNAMIC";
 type OverlayDynamicBlockType = "FOCUS" | "BREAK" | "PRACTICE";
 type OverlayDynamicEnergy = NonNullable<
@@ -256,6 +300,7 @@ type FabLockedScheduleInstanceRow = {
 type FabTaskEditRow = {
   id: string;
   name: string | null;
+  goal_id: string | null;
   project_id: string | null;
   priority: string | null;
   energy: string | null;
@@ -303,6 +348,125 @@ type FabHabitEditSnapshot = {
   fixedEndLocal?: string | null;
   lastCompletedAt?: string | null;
 };
+
+const readFabRecordString = (
+  record: Record<string, unknown>,
+  key: string,
+): string | null => {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+};
+
+const readFabRecordNumber = (
+  record: Record<string, unknown>,
+  key: string,
+): number | null => {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
+const readFabRecordStringFromKeys = (
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null => {
+  for (const key of keys) {
+    const value = readFabRecordString(record, key);
+    if (value) return value;
+  }
+  return null;
+};
+
+const readFabRecurrenceDays = (
+  record: Record<string, unknown>,
+): number[] | null => {
+  const value = record.recurrence_days;
+  if (!Array.isArray(value)) return null;
+  const days = value.filter(
+    (day): day is number => typeof day === "number" && Number.isFinite(day),
+  );
+  return days.length > 0 ? days : null;
+};
+
+const toFabHabitScheduleItem = (
+  record: Record<string, unknown>,
+): HabitScheduleItem => {
+  const legacyHabitType = readFabRecordString(record, "type");
+  const habitType =
+    normalizeHabitType(readFabRecordString(record, "habit_type") ?? legacyHabitType) ||
+    "HABIT";
+
+  return {
+    id: readFabRecordString(record, "id") ?? "",
+    name: readFabRecordString(record, "name") ?? "",
+    memoCaptureConfig:
+      (record.memo_capture_config as HabitScheduleItem["memoCaptureConfig"]) ??
+      null,
+    durationMinutes:
+      readFabRecordNumber(record, "duration_minutes") ??
+      readFabRecordNumber(record, "duration_min"),
+    createdAt: readFabRecordString(record, "created_at"),
+    updatedAt: readFabRecordString(record, "updated_at"),
+    lastCompletedAt:
+      readFabRecordString(record, "last_completed_at") ??
+      readFabRecordString(record, "completed_at"),
+    currentStreakDays: readFabRecordNumber(record, "current_streak_days") ?? 0,
+    longestStreakDays: readFabRecordNumber(record, "longest_streak_days") ?? 0,
+    habitType,
+    windowId: readFabRecordString(record, "window_id"),
+    energy: readFabRecordString(record, "energy"),
+    recurrence: readFabRecordString(record, "recurrence"),
+    recurrenceDays: readFabRecurrenceDays(record),
+    recurrenceMode: readFabRecordString(record, "recurrence_mode"),
+    anchorType: readFabRecordString(record, "anchor_type"),
+    anchorValue: readFabRecordString(record, "anchor_value"),
+    anchorStartDate: readFabRecordString(record, "anchor_start_date"),
+    skillId: readFabRecordString(record, "skill_id"),
+    goalId: readFabRecordString(record, "goal_id"),
+    completionTarget: readFabRecordNumber(record, "completion_target"),
+    locationContextId: readFabRecordString(record, "location_context_id"),
+    locationContextValue: null,
+    locationContextName: null,
+    daylightPreference: readFabRecordString(record, "daylight_preference"),
+    windowEdgePreference: readFabRecordString(record, "window_edge_preference"),
+    nextDueOverride: readFabRecordString(record, "next_due_override"),
+    fixedStartLocal: readFabRecordString(record, "fixed_start_local"),
+    fixedEndLocal: readFabRecordString(record, "fixed_end_local"),
+    fixedTimezone: readFabRecordString(record, "fixed_timezone"),
+    window: null,
+  };
+};
+
+const getFabHabitEffectiveNextDueFallback = ({
+  habitRecord,
+  scheduledStartUtc,
+}: {
+  habitRecord: Record<string, unknown>;
+  scheduledStartUtc?: string | null;
+}): string => {
+  if (scheduledStartUtc) {
+    return formatDateTimeLocalInputValue(scheduledStartUtc);
+  }
+
+  const computedNextDue = readFabRecordStringFromKeys(habitRecord, [
+    "next_due",
+    "nextDue",
+    "computed_next_due",
+    "computedNextDue",
+    "due_at",
+    "dueAt",
+  ]);
+  if (computedNextDue) {
+    return formatDateTimeLocalInputValue(computedNextDue);
+  }
+
+  const nextDue = getHabitNextDue({
+    habit: toFabHabitScheduleItem(habitRecord),
+    timeZone: getBrowserTimeZone() ?? "UTC",
+    nextDueOverride: null,
+  });
+
+  return nextDue ? formatDateTimeLocalInputValue(nextDue.toISOString()) : "";
+};
 export type FabEditTarget = {
   entityType: CreationType;
   entityId: string;
@@ -325,6 +489,7 @@ type CreationFormMode =
   | "projects"
   | "tags"
   | "tasks"
+  | "schedule"
   | "advanced"
   | "memoForms";
 type CreationModeOption = {
@@ -609,6 +774,24 @@ type OverlaySortMode =
   | "priority"
   | "global_rank"
   | "scheduled";
+type UnifiedGoalSortMode =
+  | "default"
+  | "alphabetical"
+  | "global_rank"
+  | "updated_at";
+type UnifiedProjectSortMode =
+  | "default"
+  | "alphabetical"
+  | "global_rank"
+  | "updated_at";
+type UnifiedTaskProject = Project & {
+  title?: string | null;
+  completed_at?: string | null;
+  global_rank?: number | null;
+  updated_at?: string | null;
+  skill_icon?: string | null;
+  skill_id?: string | null;
+};
 type ScheduleSourceInstanceType =
   Database["public"]["Enums"]["schedule_instance_source_type"];
 type NexusResultInstanceTypeFilter =
@@ -687,6 +870,15 @@ type GoalCircleOption = {
   name: string;
   circle_type?: string | null;
   viewerRole?: string | null;
+  activeMemberCount?: number | null;
+  memberPreview?: Array<{
+    userId: string;
+    role: string;
+    displayName: string;
+    username?: string | null;
+    avatarUrl?: string | null;
+    initials?: string | null;
+  }>;
 };
 
 type GoalRelationResolution = {
@@ -969,9 +1161,9 @@ function FabHabitRoutineCreateRow({
   );
 }
 
-const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
+const FAB_PAGES = ["primary", "nexus"] as const;
 const FAB_PRIMARY_PAGE_INDEX = 0;
-const FAB_NEXUS_PAGE_INDEX = 2;
+const FAB_NEXUS_PAGE_INDEX = 1;
 
 const FLAME_LEVELS: FlameLevel[] = [
   "NO",
@@ -1032,6 +1224,7 @@ function CompactNativeDateTimeField({
   className,
   placeholder,
   disabled = false,
+  displayValue,
 }: {
   id: string;
   type: "date" | "time";
@@ -1040,8 +1233,9 @@ function CompactNativeDateTimeField({
   className: string;
   placeholder: string;
   disabled?: boolean;
+  displayValue?: string;
 }) {
-  const displayValue = formatCompactNativeDateTimeValue(
+  const resolvedDisplayValue = displayValue ?? formatCompactNativeDateTimeValue(
     type,
     value,
     placeholder,
@@ -1069,7 +1263,7 @@ function CompactNativeDateTimeField({
             "cursor-not-allowed border-white/[0.07] bg-white/[0.025] text-white/30",
         )}
       >
-        <span className="block min-w-0 truncate">{displayValue}</span>
+        <span className="block min-w-0 truncate">{resolvedDisplayValue}</span>
       </div>
     </div>
   );
@@ -1374,7 +1568,94 @@ const normalizeFabPriority = (value?: string | null) => {
 const formatFabPriorityLabel = (value?: string | null) =>
   value === "ULTRA-CRITICAL" ? "Ultra" : value ?? "";
 
+const ADD_EVENT_PRIORITY_LABELS: Record<string, string> = {
+  NO: "No",
+  LOW: "Low",
+  MEDIUM: "Medium",
+  HIGH: "High",
+  CRITICAL: "Critical",
+  "ULTRA-CRITICAL": "Ultra",
+};
+
+const formatAddEventPriorityLabel = (value?: string | null) =>
+  ADD_EVENT_PRIORITY_LABELS[normalizeFabPriority(value)];
+
+const formatAddEventRecurrenceLabel = (label?: string | null) => {
+  const normalized = String(label ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (!normalized) return "";
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
+};
+
+const resolveAddEventSourceType = ({
+  recurrenceEffectivelyNever,
+  hasSubActions,
+}: {
+  recurrenceEffectivelyNever: boolean;
+  hasSubActions: boolean;
+}): AddEventSourceType => {
+  if (recurrenceEffectivelyNever) {
+    return hasSubActions ? "PROJECT" : "TASK";
+  }
+
+  return hasSubActions ? "ROUTINE" : "HABIT";
+};
+
+const AddEventPriorityDisplay = ({
+  value,
+  priorityIconMap,
+  className,
+}: {
+  value?: string | null;
+  priorityIconMap: Record<string, string | null>;
+  className?: string;
+}) => {
+  const normalizedPriority = normalizeFabPriority(value);
+  const priorityIcon = priorityIconMap[normalizedPriority];
+
+  return (
+    <span
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1.5",
+        className,
+      )}
+    >
+      <span className="min-w-0 truncate">
+        {formatAddEventPriorityLabel(normalizedPriority)}
+      </span>
+      {priorityIcon ? (
+        <span
+          className="shrink-0 text-xs font-semibold leading-none text-red-400"
+          aria-hidden="true"
+        >
+          {priorityIcon}
+        </span>
+      ) : null}
+    </span>
+  );
+};
+
 const normalizeFabEnergy = (value?: string | null) => normalizeFlameLevel(value);
+const ADD_EVENT_ENERGY_LABEL_ICON_SIZE: FlameEmberProps["size"] = "xs";
+const ADD_EVENT_ENERGY_LABEL_ICON_BASE_CLASS =
+  "pointer-events-none -translate-y-px origin-center";
+const ADD_EVENT_ENERGY_LABEL_ICON_SCALE_CLASS: Record<FlameLevel, string> = {
+  NO: "scale-[1.75]",
+  LOW: "scale-[1.75]",
+  MEDIUM: "scale-[1.35]",
+  HIGH: "scale-[1.35]",
+  ULTRA: "scale-[1.35]",
+  EXTREME: "scale-[1.35]",
+};
+const getAddEventEnergyLabelIconClass = (value?: string | null) =>
+  cn(
+    ADD_EVENT_ENERGY_LABEL_ICON_BASE_CLASS,
+    ADD_EVENT_ENERGY_LABEL_ICON_SCALE_CLASS[normalizeFlameLevel(value)],
+  );
 
 const pickHydratedGoalPriority = (
   priority?: string | null,
@@ -1620,6 +1901,7 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   PROJECT: [
     { id: "main", label: "Main", icon: CircleDot },
     { id: "tasks", label: "Tasks", icon: ListChecks },
+    { id: "schedule", label: "Schedule", icon: Calendar },
     { id: "advanced", label: "Advanced", icon: Settings2 },
   ],
   TASK: [
@@ -1629,7 +1911,8 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   HABIT: [
     { id: "main", label: "Main", icon: CircleDot },
     { id: "memoForms", label: "Memo Forms", icon: FileText },
-    { id: "advanced", label: "Advanced", icon: Settings2 },
+    { id: "advanced", label: "Advanced", icon: Clock },
+    { id: "tags", label: "Tags", icon: Tags },
   ],
 };
 
@@ -1724,6 +2007,127 @@ const formatDateInputValue = (date: Date) =>
     "0",
   )}-${String(date.getDate()).padStart(2, "0")}`;
 
+const parseDateInputValueLocal = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+};
+
+const getTimeValueMinutes = (value: string) => {
+  const [hours, minutes] = value.split(":").map(Number);
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return hours * 60 + minutes;
+};
+
+const buildFabLocalDateTime = (dateValue: string, timeValue: string) => {
+  const parsedDate = parseDateInputValueLocal(dateValue.trim());
+  const parsedTimeMinutes = getTimeValueMinutes(timeValue.trim());
+  if (!parsedDate || parsedTimeMinutes === null) {
+    return null;
+  }
+
+  parsedDate.setHours(
+    Math.floor(parsedTimeMinutes / 60),
+    parsedTimeMinutes % 60,
+    0,
+    0,
+  );
+  return parsedDate;
+};
+
+const resolveAddEventEffectiveEndTiming = ({
+  startDateValue,
+  startTimeValue,
+  endTimeValue,
+  explicitEndDateValue,
+}: {
+  startDateValue: string;
+  startTimeValue: string;
+  endTimeValue: string;
+  explicitEndDateValue?: string;
+}) => {
+  const explicitEndDate = explicitEndDateValue?.trim() ?? "";
+  const startDateTime = buildFabLocalDateTime(startDateValue, startTimeValue);
+  let endDateTime = buildFabLocalDateTime(
+    explicitEndDate || startDateValue,
+    endTimeValue,
+  );
+
+  if (!startDateTime || !endDateTime) {
+    return null;
+  }
+
+  let isInferredEndDate = false;
+  if (!explicitEndDate && endDateTime.getTime() <= startDateTime.getTime()) {
+    endDateTime = new Date(endDateTime);
+    endDateTime.setDate(endDateTime.getDate() + 1);
+    isInferredEndDate = true;
+  }
+
+  return {
+    startDateTime,
+    endDateTime,
+    endDateValue: formatDateInputValue(endDateTime),
+    isInferredEndDate,
+  };
+};
+
+const getTimeValueParts = (value: string) => {
+  const totalMinutes = getTimeValueMinutes(value) ?? 0;
+  const hours24 = Math.floor(totalMinutes / 60);
+  return {
+    hour: hours24 % 12 === 0 ? 12 : hours24 % 12,
+    minute: totalMinutes % 60,
+    period: hours24 >= 12 ? "PM" : "AM",
+  } as const;
+};
+
+const getTimeValueFromParts = (
+  hour: number,
+  minute: number,
+  period: "AM" | "PM",
+) => {
+  const normalizedHour = ((hour - 1 + 12) % 12) + 1;
+  let hours24 = normalizedHour % 12;
+  if (period === "PM") {
+    hours24 += 12;
+  }
+  return `${String(hours24).padStart(2, "0")}:${String(minute).padStart(
+    2,
+    "0",
+  )}`;
+};
+
+const getNextSolidHourEventDefaults = (now = new Date()) => {
+  const start = new Date(now);
+  start.setHours(start.getHours() + 1, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(end.getHours() + 1);
+
+  return {
+    date: formatDateInputValue(start),
+    startTime: formatTimeInputValue(start),
+    endTime: formatTimeInputValue(end),
+  };
+};
+
 const formatDateTimeLocalInputValue = (value?: string | null) => {
   if (!value) return "";
   const parsed = new Date(value);
@@ -1732,6 +2136,29 @@ const formatDateTimeLocalInputValue = (value?: string | null) => {
   }
   const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
+};
+
+const formatDateLocalInputValue = (value?: string | null) => {
+  return formatDateTimeLocalInputValue(value).slice(0, 10);
+};
+
+const formatLocalDateAsStartOfDayDateTime = (value: string) => {
+  return value ? `${value}T00:00` : "";
+};
+
+const getRelativeLocalDayLabel = (value?: string | null) => {
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  const dayDelta =
+    getLocalCalendarDayIndex(parsed) - getLocalCalendarDayIndex(new Date());
+
+  if (dayDelta === 0) return "Today";
+  if (dayDelta === 1) return "Tomorrow";
+  if (dayDelta === -1) return "Yesterday";
+  return null;
 };
 
 const parseExactSchedule = (
@@ -1920,6 +2347,7 @@ const upsertLockedScheduleInstance = async ({
   sourceId,
   exactSchedule,
   removeWhenBlank,
+  eventName,
 }: {
   supabase: FabSupabaseClient;
   userId: string;
@@ -1927,6 +2355,7 @@ const upsertLockedScheduleInstance = async ({
   sourceId: string;
   exactSchedule: ParsedExactSchedule | null;
   removeWhenBlank: boolean;
+  eventName?: string | null;
 }) => {
   if (!exactSchedule) {
     if (!removeWhenBlank) return;
@@ -1954,30 +2383,7 @@ const upsertLockedScheduleInstance = async ({
   if (fetchError) throw fetchError;
 
   if (existing?.id) {
-    const { error: updateError } = await supabase
-      .from("schedule_instances")
-      .update({
-        start_utc: exactSchedule.startIso,
-        end_utc: exactSchedule.endIso,
-        duration_min: exactSchedule.durationMin,
-        status: "scheduled",
-        locked: true,
-        window_id: null,
-        day_type_time_block_id: null,
-        time_block_id: null,
-      })
-      .eq("id", existing.id)
-      .eq("user_id", userId);
-    if (updateError) throw updateError;
-    return;
-  }
-
-  const { error: insertError } = await supabase
-    .from("schedule_instances")
-    .insert({
-      user_id: userId,
-      source_type: sourceType,
-      source_id: sourceId,
+    const updatePayload = {
       start_utc: exactSchedule.startIso,
       end_utc: exactSchedule.endIso,
       duration_min: exactSchedule.durationMin,
@@ -1986,9 +2392,36 @@ const upsertLockedScheduleInstance = async ({
       window_id: null,
       day_type_time_block_id: null,
       time_block_id: null,
-      weight_snapshot: 0,
-      energy_resolved: "NO",
-    });
+      ...(eventName !== undefined ? { event_name: eventName } : {}),
+    };
+    const { error: updateError } = await supabase
+      .from("schedule_instances")
+      .update(updatePayload)
+      .eq("id", existing.id)
+      .eq("user_id", userId);
+    if (updateError) throw updateError;
+    return;
+  }
+
+  const insertPayload = {
+    user_id: userId,
+    source_type: sourceType,
+    source_id: sourceId,
+    start_utc: exactSchedule.startIso,
+    end_utc: exactSchedule.endIso,
+    duration_min: exactSchedule.durationMin,
+    status: "scheduled",
+    locked: true,
+    window_id: null,
+    day_type_time_block_id: null,
+    time_block_id: null,
+    weight_snapshot: 0,
+    energy_resolved: "NO",
+    ...(eventName !== undefined ? { event_name: eventName } : {}),
+  };
+  const { error: insertError } = await supabase
+    .from("schedule_instances")
+    .insert(insertPayload);
   if (insertError) throw insertError;
 };
 
@@ -3180,8 +3613,42 @@ export function Fab({
   const aiOverlayRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<CreationType | null>(null);
-  const [pressedCreationType, setPressedCreationType] =
-    useState<CreationType | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+  const [isUnifiedEventSheetOpen, setIsUnifiedEventSheetOpen] =
+    useState(false);
+  const [isUnifiedNotesSheetOpen, setIsUnifiedNotesSheetOpen] =
+    useState(false);
+  const [isUnifiedTagsSheetOpen, setIsUnifiedTagsSheetOpen] = useState(false);
+  const [isUnifiedFormsSheetOpen, setIsUnifiedFormsSheetOpen] =
+    useState(false);
+  const [isAddEventMoreOpen, setIsAddEventMoreOpen] = useState(false);
+  const [unifiedEventType, setUnifiedEventType] =
+    useState<UnifiedEventType>("TASK");
+  const [addEventSubActions, setAddEventSubActions] = useState<
+    AddEventSubAction[]
+  >([]);
+  const [addEventWorkspaceValue, setAddEventWorkspaceValue] =
+    useState<AddEventWorkspaceValue>("PERSONAL");
+  const [addEventTimingMode, setAddEventTimingMode] =
+    useState<AddEventTimingMode>("manual");
+  const [addEventDynamicDuration, setAddEventDynamicDuration] =
+    useState("60");
+  const [unifiedEventAllDay, setUnifiedEventAllDay] = useState(false);
+  const [unifiedTimingPickerOpen, setUnifiedTimingPickerOpen] =
+    useState<UnifiedTimingPickerOpen>(null);
+  const [fabAdvancedTimingPickerOpen, setFabAdvancedTimingPickerOpen] =
+    useState<FabAdvancedTimingPickerOpen>(null);
+  const [unifiedTimingViewedMonth, setUnifiedTimingViewedMonth] = useState(
+    () => {
+      const currentMonth = new Date();
+      return new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    },
+  );
+  const [
+    isUnifiedTimingMonthYearPickerOpen,
+    setIsUnifiedTimingMonthYearPickerOpen,
+  ] = useState(false);
+  const [, setPressedCreationType] = useState<CreationType | null>(null);
   const [creationSpawnOrigin, setCreationSpawnOrigin] =
     useState<FabCreationSpawnOrigin | null>(null);
   const [creationRevealGeometry, setCreationRevealGeometry] =
@@ -3233,6 +3700,8 @@ export function Fab({
   const projectNameInputRef = useRef<HTMLInputElement | null>(null);
   const taskNameInputRef = useRef<HTMLInputElement | null>(null);
   const habitNameInputRef = useRef<HTMLInputElement | null>(null);
+  const unifiedNotesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const unifiedTagCreateInputRef = useRef<HTMLInputElement | null>(null);
   const creationSelectionTimeoutRef = useRef<number | null>(null);
   const mobileCreationFocusTimeoutRef = useRef<number | null>(null);
   const mobileCreationFocusTypeRef = useRef<CreationType | null>(null);
@@ -3245,6 +3714,8 @@ export function Fab({
   const [tagIconInputValue, setTagIconInputValue] = useState("");
   const [tagsLoading, setTagsLoading] = useState(false);
   const [isCreatingTag, setIsCreatingTag] = useState(false);
+  const [isUnifiedTagCreateOpen, setIsUnifiedTagCreateOpen] = useState(false);
+  const [unifiedTagCreateValue, setUnifiedTagCreateValue] = useState("");
   const initialOverlayStart = useMemo(
     () => roundToNearestMinutes(new Date(), 5),
     [],
@@ -3258,6 +3729,16 @@ export function Fab({
           DEFAULT_OVERLAY_DURATION_MINUTES * 60000,
       ),
   );
+  useEffect(() => {
+    if (!isUnifiedTagsSheetOpen || !isUnifiedTagCreateOpen) return;
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      unifiedTagCreateInputRef.current?.focus();
+    });
+    window.setTimeout(() => {
+      unifiedTagCreateInputRef.current?.focus();
+    }, 80);
+  }, [isUnifiedTagCreateOpen, isUnifiedTagsSheetOpen]);
   const [overlayStartInputValue, setOverlayStartInputValue] = useState(
     formatTimeInputValue(initialOverlayStart),
   );
@@ -3762,6 +4243,75 @@ export function Fab({
   const endTimeInputId = useId();
   const fabKeyboardOwnerId = useId();
   const fabPanelChromeOwnerId = useId();
+  type AddEventWheelFeedbackKey =
+    | "startDate-month"
+    | "startDate-year"
+    | "startTime-hour"
+    | "startTime-minute"
+    | "startTime-period"
+    | "endTime-hour"
+    | "endTime-minute"
+    | "endTime-period";
+  const addEventWheelFeedbackRef = useRef<{
+    isActive: boolean;
+    lastChangedAt: number;
+    lastValues: Map<AddEventWheelFeedbackKey, string | number>;
+    settleTimer: ReturnType<typeof window.setTimeout> | null;
+  }>({
+    isActive: false,
+    lastChangedAt: 0,
+    lastValues: new Map(),
+    settleTimer: null,
+  });
+  const runAddEventWheelFeedback = useCallback(
+    (key: AddEventWheelFeedbackKey, value: string | number) => {
+      const feedback = addEventWheelFeedbackRef.current;
+      if (Object.is(feedback.lastValues.get(key), value)) {
+        return;
+      }
+
+      feedback.lastValues.set(key, value);
+
+      if (feedback.settleTimer) {
+        window.clearTimeout(feedback.settleTimer);
+        feedback.settleTimer = null;
+      }
+
+      if (!feedback.isActive) {
+        feedback.isActive = true;
+        feedback.lastChangedAt = 0;
+        void hapticSelectionStart();
+      }
+
+      const now = Date.now();
+      if (now - feedback.lastChangedAt >= 45) {
+        feedback.lastChangedAt = now;
+        void hapticSelectionChangedOnly();
+      }
+
+      feedback.settleTimer = window.setTimeout(() => {
+        feedback.isActive = false;
+        feedback.lastChangedAt = 0;
+        feedback.settleTimer = null;
+        void hapticSelectionEnd();
+      }, 150);
+    },
+    [],
+  );
+  useEffect(
+    () => () => {
+      const feedback = addEventWheelFeedbackRef.current;
+      if (feedback.settleTimer) {
+        window.clearTimeout(feedback.settleTimer);
+        feedback.settleTimer = null;
+      }
+      if (feedback.isActive) {
+        feedback.isActive = false;
+        void hapticSelectionEnd();
+      }
+    },
+    [],
+  );
   const PROJECT_STAGE_OPTIONS_LOCAL = [
     { value: "RESEARCH", label: "RESEARCH" },
     { value: "TEST", label: "TEST" },
@@ -3831,6 +4381,7 @@ export function Fab({
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(false);
+  const [goalsLoaded, setGoalsLoaded] = useState(false);
   const [goalFilterSkillId, setGoalFilterSkillId] = useState("");
   const [goalFilterMonumentId, setGoalFilterMonumentId] = useState("");
   const [goalFilterEnergy, setGoalFilterEnergy] = useState("");
@@ -3847,8 +4398,16 @@ export function Fab({
   const [taskProjectFilterPriority, setTaskProjectFilterPriority] =
     useState("");
   const [showTaskProjectFilters, setShowTaskProjectFilters] = useState(false);
-  const [taskProjects, setTaskProjects] = useState<Project[]>([]);
+  const [taskProjects, setTaskProjects] = useState<UnifiedTaskProject[]>([]);
   const [taskProjectsLoading, setTaskProjectsLoading] = useState(false);
+  const [showUnifiedProjectFilters, setShowUnifiedProjectFilters] =
+    useState(false);
+  const [unifiedProjectFilterGoalId, setUnifiedProjectFilterGoalId] =
+    useState("");
+  const [unifiedProjectFilterSkillId, setUnifiedProjectFilterSkillId] =
+    useState("");
+  const [unifiedProjectSortMode, setUnifiedProjectSortMode] =
+    useState<UnifiedProjectSortMode>("default");
   const tagsByNormalizedName = useMemo(() => {
     const map = new Map<string, FabTag>();
     availableTags.forEach((tag) => {
@@ -3962,6 +4521,114 @@ export function Fab({
     });
     return map;
   }, [goals]);
+  const unifiedProjectGoalOptions = useMemo(() => {
+    const optionById = new Map<string, { id: string; name: string }>();
+    taskProjects.forEach((project) => {
+      const goalId = project.goal_id;
+      if (!goalId || optionById.has(goalId)) return;
+      const goal = goalsById.get(goalId);
+      const name =
+        goal?.name?.trim() ||
+        (goal as (Goal & { title?: string | null }) | undefined)?.title?.trim();
+      if (!name) return;
+      optionById.set(goalId, { id: goalId, name });
+    });
+    return Array.from(optionById.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [goalsById, taskProjects]);
+  const unifiedProjectSkillOptions = useMemo(() => {
+    const optionById = new Map<
+      string,
+      { id: string; name: string; icon: string | null }
+    >();
+    taskProjects.forEach((project) => {
+      const skillId = project.skill_id;
+      if (!skillId || optionById.has(skillId)) return;
+      const skill = skills.find((item) => item.id === skillId);
+      const name = skill?.name?.trim();
+      if (!name) return;
+      optionById.set(skillId, {
+        id: skillId,
+        name,
+        icon: project.skill_icon ?? skill.icon ?? null,
+      });
+    });
+    return Array.from(optionById.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [skills, taskProjects]);
+  const unifiedProjectSupportsGoalFilter =
+    unifiedProjectGoalOptions.length > 0;
+  const unifiedProjectSupportsSkillFilter =
+    unifiedProjectSkillOptions.length > 0;
+  const unifiedProjectSupportsGlobalRankSort = useMemo(
+    () =>
+      taskProjects.some(
+        (project) =>
+          typeof project.global_rank === "number" &&
+          Number.isFinite(project.global_rank),
+      ),
+    [taskProjects],
+  );
+  const unifiedProjectDefaultSortMode: UnifiedProjectSortMode =
+    unifiedProjectSupportsGlobalRankSort ? "global_rank" : "default";
+  const unifiedProjectSupportsUpdatedSort = useMemo(
+    () =>
+      taskProjects.some((project) => {
+        const updatedAt = project.updated_at;
+        if (!updatedAt) return false;
+        return Number.isFinite(Date.parse(updatedAt));
+      }),
+    [taskProjects],
+  );
+  const unifiedProjectSortOptions = useMemo(
+    () => [
+      { value: "default" as const, label: "Default" },
+      { value: "alphabetical" as const, label: "A-Z" },
+      ...(unifiedProjectSupportsGlobalRankSort
+        ? [{ value: "global_rank" as const, label: "Rank" }]
+        : []),
+      ...(unifiedProjectSupportsUpdatedSort
+        ? [{ value: "updated_at" as const, label: "Last Updated" }]
+        : []),
+    ],
+    [unifiedProjectSupportsGlobalRankSort, unifiedProjectSupportsUpdatedSort],
+  );
+  useEffect(() => {
+    if (
+      unifiedProjectFilterGoalId &&
+      !unifiedProjectGoalOptions.some(
+        (option) => option.id === unifiedProjectFilterGoalId,
+      )
+    ) {
+      setUnifiedProjectFilterGoalId("");
+    }
+  }, [unifiedProjectFilterGoalId, unifiedProjectGoalOptions]);
+  useEffect(() => {
+    if (
+      unifiedProjectFilterSkillId &&
+      !unifiedProjectSkillOptions.some(
+        (option) => option.id === unifiedProjectFilterSkillId,
+      )
+    ) {
+      setUnifiedProjectFilterSkillId("");
+    }
+  }, [unifiedProjectFilterSkillId, unifiedProjectSkillOptions]);
+  useEffect(() => {
+    if (
+      (unifiedProjectSortMode === "global_rank" &&
+        !unifiedProjectSupportsGlobalRankSort) ||
+      (unifiedProjectSortMode === "updated_at" &&
+        !unifiedProjectSupportsUpdatedSort)
+    ) {
+      setUnifiedProjectSortMode("default");
+    }
+  }, [
+    unifiedProjectSortMode,
+    unifiedProjectSupportsGlobalRankSort,
+    unifiedProjectSupportsUpdatedSort,
+  ]);
   const filteredTaskProjects = useMemo(() => {
     let list = taskProjects;
     if (taskProjectFilterStage) {
@@ -3986,6 +4653,84 @@ export function Fab({
     taskProjectFilterStage,
     taskProjectSearch,
     taskProjects,
+  ]);
+  const filteredUnifiedTaskProjects = useMemo(() => {
+    const term = taskProjectSearch.trim().toLowerCase();
+    let list = taskProjects.filter((project) => {
+      const isCompleted =
+        Boolean(project.completed_at) ||
+        project.stage?.trim().toUpperCase() === "RELEASE";
+      if (!term && isCompleted) return false;
+      if (!term) return true;
+      const projectGoal = project.goal_id
+        ? goalsById.get(project.goal_id)
+        : undefined;
+      const projectGoalName =
+        projectGoal?.name?.trim() ||
+        (projectGoal as (Goal & { title?: string | null }) | undefined)
+          ?.title?.trim() ||
+        null;
+      return [project.name, project.title, projectGoalName].some((value) =>
+        (value ?? "").toLowerCase().includes(term),
+      );
+    });
+    if (unifiedProjectFilterGoalId) {
+      list = list.filter(
+        (project) => project.goal_id === unifiedProjectFilterGoalId,
+      );
+    }
+    if (unifiedProjectFilterSkillId) {
+      list = list.filter(
+        (project) => project.skill_id === unifiedProjectFilterSkillId,
+      );
+    }
+    const effectiveSortMode =
+      unifiedProjectSortMode === "default" &&
+      unifiedProjectSupportsGlobalRankSort
+        ? "global_rank"
+        : unifiedProjectSortMode;
+    if (effectiveSortMode === "default") {
+      return list;
+    }
+    const listOrder = new Map(list.map((project, index) => [project.id, index]));
+    return [...list].sort((a, b) => {
+      const labelCompare = (a.name ?? a.title ?? "").localeCompare(
+        b.name ?? b.title ?? "",
+      );
+      if (effectiveSortMode === "alphabetical") {
+        return labelCompare || a.id.localeCompare(b.id);
+      }
+      if (effectiveSortMode === "global_rank") {
+        const rankA =
+          typeof a.global_rank === "number" && Number.isFinite(a.global_rank)
+            ? a.global_rank
+            : Number.POSITIVE_INFINITY;
+        const rankB =
+          typeof b.global_rank === "number" && Number.isFinite(b.global_rank)
+            ? b.global_rank
+            : Number.POSITIVE_INFINITY;
+        if (rankA !== rankB) return rankA - rankB;
+        return (listOrder.get(a.id) ?? 0) - (listOrder.get(b.id) ?? 0);
+      }
+      const updatedA = a.updated_at ? Date.parse(a.updated_at) : NaN;
+      const updatedB = b.updated_at ? Date.parse(b.updated_at) : NaN;
+      const timeA = Number.isFinite(updatedA)
+        ? updatedA
+        : Number.NEGATIVE_INFINITY;
+      const timeB = Number.isFinite(updatedB)
+        ? updatedB
+        : Number.NEGATIVE_INFINITY;
+      if (timeA !== timeB) return timeB - timeA;
+      return labelCompare || a.id.localeCompare(b.id);
+    });
+  }, [
+    goalsById,
+    taskProjectSearch,
+    taskProjects,
+    unifiedProjectFilterGoalId,
+    unifiedProjectFilterSkillId,
+    unifiedProjectSortMode,
+    unifiedProjectSupportsGlobalRankSort,
   ]);
   const resetSkillLookupState = useCallback(() => {
     setSkillSearch("");
@@ -4546,6 +5291,8 @@ export function Fab({
   const [projectHasExactDate, setProjectHasExactDate] = useState(
     PROJECT_EXACT_DATE_DEFAULT_ON,
   );
+  const [projectScheduleTimingMode, setProjectScheduleTimingMode] =
+    useState<ProjectScheduleTimingMode>("dynamic");
   const [projectExactDate, setProjectExactDate] = useState("");
   const [projectExactFallbackDate, setProjectExactFallbackDate] = useState("");
   const [projectExactStartTime, setProjectExactStartTime] = useState("");
@@ -4652,15 +5399,217 @@ export function Fab({
   const [taskPriority, setTaskPriority] = useState("MEDIUM");
   const [taskEnergy, setTaskEnergy] = useState("MEDIUM");
   const [taskProjectId, setTaskProjectId] = useState<string | "">("");
+  const [taskGoalId, setTaskGoalId] = useState<string | null>(null);
+  const activeTaskCreationGoalId =
+    creationRequest?.type === "TASK" &&
+    openingCreationRequestIdRef.current === creationRequest.id
+      ? (creationRequest.goalId ?? null)
+      : null;
+  const derivedUnifiedAddEventSourceType = useMemo(
+    () =>
+      resolveAddEventSourceType({
+        recurrenceEffectivelyNever: unifiedEventType === "TASK",
+        hasSubActions: addEventSubActions.length > 0,
+      }),
+    [addEventSubActions.length, unifiedEventType],
+  );
+  const resolvedUnifiedAddEventSaveSelected = useMemo<CreationType | null>(() => {
+    if (!isUnifiedEventSheetOpen) return null;
+    if (derivedUnifiedAddEventSourceType === "TASK") return "TASK";
+    if (derivedUnifiedAddEventSourceType === "HABIT") return "HABIT";
+    return null;
+  }, [derivedUnifiedAddEventSourceType, isUnifiedEventSheetOpen]);
+  const resolvedAddEventTaskGoalId =
+    isUnifiedEventSheetOpen && resolvedUnifiedAddEventSaveSelected === "TASK"
+      ? (taskGoalId ?? activeTaskCreationGoalId)
+      : taskGoalId;
+  const [unifiedGoalSearch, setUnifiedGoalSearch] = useState("");
+  const [showUnifiedGoalFilters, setShowUnifiedGoalFilters] = useState(false);
+  const [unifiedGoalFilterMonumentId, setUnifiedGoalFilterMonumentId] =
+    useState("");
+  const [unifiedGoalSortMode, setUnifiedGoalSortMode] =
+    useState<UnifiedGoalSortMode>("default");
+  const [isUnifiedGoalPickerOpen, setIsUnifiedGoalPickerOpen] = useState(false);
+  const [unifiedTaskRelationPickerMode, setUnifiedTaskRelationPickerMode] =
+    useState<"goals" | "projects">("goals");
+  const unifiedGoalPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const unifiedGoalPickerContentRef = useRef<HTMLDivElement | null>(null);
   const [taskSkillId, setTaskSkillId] = useState<string | "">("");
   const [taskNotes, setTaskNotes] = useState("");
   const [taskDue, setTaskDue] = useState("");
   const [taskCompletedAt, setTaskCompletedAt] = useState<string | null>(null);
   const [taskHasExactDate, setTaskHasExactDate] = useState(false);
   const [taskExactDate, setTaskExactDate] = useState("");
+  const [unifiedEventEndDate, setUnifiedEventEndDate] = useState("");
   const [taskExactFallbackDate, setTaskExactFallbackDate] = useState("");
   const [taskExactStartTime, setTaskExactStartTime] = useState("");
   const [taskExactEndTime, setTaskExactEndTime] = useState("");
+  const unifiedGoalMonumentOptions = useMemo(() => {
+    const monumentById = new Map(
+      monuments
+        .filter((monument) => monument.id && monument.title?.trim())
+        .map((monument) => [monument.id, monument]),
+    );
+    const optionById = new Map<
+      string,
+      { id: string; title: string; emoji: string | null }
+    >();
+    goals.forEach((goal) => {
+      const monumentId = goal.monument_id ?? "";
+      if (!monumentId) return;
+      const monument = monumentById.get(monumentId);
+      if (!monument) return;
+      optionById.set(monumentId, {
+        id: monumentId,
+        title: monument.title.trim(),
+        emoji: monument.emoji ?? monumentEmojiMap.get(monumentId) ?? null,
+      });
+    });
+    return Array.from(optionById.values()).sort((a, b) =>
+      a.title.localeCompare(b.title),
+    );
+  }, [goals, monumentEmojiMap, monuments]);
+  const unifiedGoalSupportsMonumentFilter =
+    unifiedGoalMonumentOptions.length > 0;
+  const unifiedGoalSupportsGlobalRankSort = useMemo(
+    () =>
+      goals.some(
+        (goal) =>
+          typeof goal.global_rank === "number" &&
+          Number.isFinite(goal.global_rank),
+      ),
+    [goals],
+  );
+  const unifiedGoalDefaultSortMode: UnifiedGoalSortMode =
+    unifiedGoalSupportsGlobalRankSort ? "global_rank" : "default";
+  const unifiedGoalSupportsUpdatedSort = useMemo(
+    () =>
+      goals.some((goal) => {
+        const updatedAt = goal.updated_at;
+        if (!updatedAt) return false;
+        return Number.isFinite(Date.parse(updatedAt));
+      }),
+    [goals],
+  );
+  const unifiedGoalSortOptions = useMemo(
+    () => [
+      { value: "default" as const, label: "Default" },
+      { value: "alphabetical" as const, label: "A-Z" },
+      ...(unifiedGoalSupportsGlobalRankSort
+        ? [{ value: "global_rank" as const, label: "Global Rank" }]
+        : []),
+      ...(unifiedGoalSupportsUpdatedSort
+        ? [{ value: "updated_at" as const, label: "Last Updated" }]
+        : []),
+    ],
+    [unifiedGoalSupportsGlobalRankSort, unifiedGoalSupportsUpdatedSort],
+  );
+  useEffect(() => {
+    if (
+      unifiedGoalFilterMonumentId &&
+      !unifiedGoalMonumentOptions.some(
+        (option) => option.id === unifiedGoalFilterMonumentId,
+      )
+    ) {
+      setUnifiedGoalFilterMonumentId("");
+    }
+  }, [unifiedGoalFilterMonumentId, unifiedGoalMonumentOptions]);
+  useEffect(() => {
+    if (
+      (unifiedGoalSortMode === "global_rank" &&
+        !unifiedGoalSupportsGlobalRankSort) ||
+      (unifiedGoalSortMode === "updated_at" && !unifiedGoalSupportsUpdatedSort)
+    ) {
+      setUnifiedGoalSortMode("default");
+    }
+  }, [
+    unifiedGoalSortMode,
+    unifiedGoalSupportsGlobalRankSort,
+    unifiedGoalSupportsUpdatedSort,
+  ]);
+  useEffect(() => {
+    if (isUnifiedGoalPickerOpen) return;
+    setShowUnifiedGoalFilters(false);
+    setShowUnifiedProjectFilters(false);
+  }, [isUnifiedGoalPickerOpen]);
+  useEffect(() => {
+    if (unifiedTaskRelationPickerMode === "projects") {
+      setShowUnifiedGoalFilters(false);
+      return;
+    }
+    setShowUnifiedProjectFilters(false);
+  }, [unifiedTaskRelationPickerMode]);
+  const filteredUnifiedGoals = useMemo(() => {
+    const query = unifiedGoalSearch.trim().toLowerCase();
+    let list = goals;
+    if (query) {
+      list = list.filter((goal) =>
+        (
+          goal.name ??
+          ((goal as Goal & { title?: string | null }).title ?? "")
+        )
+          .toLowerCase()
+          .includes(query),
+      );
+    }
+    list = list.filter((goal) => {
+      const isCompleted =
+        normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
+      return !isCompleted || query.length > 0;
+    });
+    if (unifiedGoalFilterMonumentId) {
+      list = list.filter(
+        (goal) => (goal.monument_id ?? "") === unifiedGoalFilterMonumentId,
+      );
+    }
+    const effectiveSortMode =
+      unifiedGoalSortMode === "default" && unifiedGoalSupportsGlobalRankSort
+        ? "global_rank"
+        : unifiedGoalSortMode;
+    if (effectiveSortMode === "default") {
+      return list;
+    }
+    const listOrder = new Map(list.map((goal, index) => [goal.id, index]));
+    return [...list].sort((a, b) => {
+      const labelCompare = (
+        a.name ??
+        ((a as Goal & { title?: string | null }).title ?? "")
+      ).localeCompare(
+        b.name ?? ((b as Goal & { title?: string | null }).title ?? ""),
+      );
+      if (effectiveSortMode === "alphabetical") {
+        return labelCompare || a.id.localeCompare(b.id);
+      }
+      if (effectiveSortMode === "global_rank") {
+        const rankA =
+          typeof a.global_rank === "number" && Number.isFinite(a.global_rank)
+            ? a.global_rank
+            : Number.POSITIVE_INFINITY;
+        const rankB =
+          typeof b.global_rank === "number" && Number.isFinite(b.global_rank)
+            ? b.global_rank
+            : Number.POSITIVE_INFINITY;
+        if (rankA !== rankB) return rankA - rankB;
+        return (listOrder.get(a.id) ?? 0) - (listOrder.get(b.id) ?? 0);
+      }
+      const updatedA = a.updated_at ? Date.parse(a.updated_at) : NaN;
+      const updatedB = b.updated_at ? Date.parse(b.updated_at) : NaN;
+      const timeA = Number.isFinite(updatedA)
+        ? updatedA
+        : Number.NEGATIVE_INFINITY;
+      const timeB = Number.isFinite(updatedB)
+        ? updatedB
+        : Number.NEGATIVE_INFINITY;
+      if (timeA !== timeB) return timeB - timeA;
+      return labelCompare || a.id.localeCompare(b.id);
+    });
+  }, [
+    goals,
+    unifiedGoalFilterMonumentId,
+    unifiedGoalSearch,
+    unifiedGoalSortMode,
+    unifiedGoalSupportsGlobalRankSort,
+  ]);
   const [projectDraftTasks, setProjectDraftTasks] = useState<DraftTaskChild[]>(
     [],
   );
@@ -4759,6 +5708,17 @@ export function Fab({
   const [habitWindowEdgePreference, setHabitWindowEdgePreference] =
     useState("FRONT");
   const [habitNextDueOverride, setHabitNextDueOverride] = useState("");
+  const [habitNextDueFallback, setHabitNextDueFallback] = useState("");
+  const [habitNextDueOverrideTouched, setHabitNextDueOverrideTouched] =
+    useState(false);
+  const habitEffectiveNextDueValue =
+    habitNextDueOverrideTouched || habitNextDueOverride
+      ? habitNextDueOverride
+      : habitNextDueFallback;
+  const habitNextDueRelativeLabel =
+    getRelativeLocalDayLabel(habitEffectiveNextDueValue);
+  const [habitScheduleTimingMode, setHabitScheduleTimingMode] =
+    useState<HabitScheduleTimingMode>("dynamic");
   const [habitFixedStartTime, setHabitFixedStartTime] = useState("");
   const [habitFixedEndTime, setHabitFixedEndTime] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
@@ -4795,6 +5755,35 @@ export function Fab({
   const habitCircleTriggerLabel = habitCircleId
     ? (selectedHabitCircle?.name ?? "Selected Circle")
     : "add to CIRCLE";
+  useEffect(() => {
+    if (!isUnifiedEventSheetOpen) return;
+
+    if (addEventWorkspaceValue === "PERSONAL") {
+      if (habitCircleId) {
+        setHabitCircleId("");
+      }
+      return;
+    }
+
+    const circleId = addEventWorkspaceValue.replace("CIRCLE:", "");
+    if (!manageableCircleById.has(circleId)) {
+      setAddEventWorkspaceValue("PERSONAL");
+      if (habitCircleId === circleId) {
+        setHabitCircleId("");
+      }
+      return;
+    }
+
+    if (unifiedEventType === "HABIT" && habitCircleId !== circleId) {
+      setHabitCircleId(circleId);
+    }
+  }, [
+    addEventWorkspaceValue,
+    habitCircleId,
+    isUnifiedEventSheetOpen,
+    manageableCircleById,
+    unifiedEventType,
+  ]);
   const [nestedDraftPanel, setNestedDraftPanel] =
     useState<NestedDraftPanel>(null);
   const [draftProjectName, setDraftProjectName] = useState("");
@@ -4837,6 +5826,7 @@ export function Fab({
       setProjectGoalId(null);
       setProjectDue("");
       setProjectHasExactDate(exactDateDefault);
+      setProjectScheduleTimingMode("dynamic");
       setProjectExactDate("");
       setProjectExactFallbackDate("");
       setProjectExactStartTime("");
@@ -4888,6 +5878,9 @@ export function Fab({
     setHabitDaylightPreference("ALL_DAY");
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
+    setHabitNextDueFallback("");
+    setHabitNextDueOverrideTouched(false);
+    setHabitScheduleTimingMode("dynamic");
     setHabitFixedStartTime("");
     setHabitFixedEndTime("");
     setHabitRoutineId("");
@@ -4980,20 +5973,23 @@ export function Fab({
             : null,
         ),
       );
+      setHabitNextDueFallback("");
+      setHabitNextDueOverrideTouched(false);
+      const fixedStartTime = formatLocalTimeInputValue(
+        typeof draft?.fixedStartLocal === "string"
+          ? draft.fixedStartLocal
+          : null,
+      );
+      const fixedEndTime = formatLocalTimeInputValue(
+        typeof draft?.fixedEndLocal === "string" ? draft.fixedEndLocal : null,
+      );
+      setHabitScheduleTimingMode(
+        fixedStartTime && fixedEndTime ? "manual" : "dynamic",
+      );
       setHabitFixedStartTime(
-        formatLocalTimeInputValue(
-          typeof draft?.fixedStartLocal === "string"
-            ? draft.fixedStartLocal
-            : null,
-        ),
+        fixedStartTime && fixedEndTime ? fixedStartTime : "",
       );
-      setHabitFixedEndTime(
-        formatLocalTimeInputValue(
-          typeof draft?.fixedEndLocal === "string"
-            ? draft.fixedEndLocal
-            : null,
-        ),
-      );
+      setHabitFixedEndTime(fixedStartTime && fixedEndTime ? fixedEndTime : "");
     },
     [defaultHabitRecurrence, defaultHabitType],
   );
@@ -5022,6 +6018,7 @@ export function Fab({
     setTaskPriority("MEDIUM");
     setTaskEnergy("MEDIUM");
     setTaskProjectId("");
+    setTaskGoalId(null);
     setTaskSkillId("");
     setTaskNotes("");
     setTaskDue("");
@@ -6324,6 +7321,8 @@ export function Fab({
     }
     setSelectedTagIds([]);
     setTagInputValue("");
+    setUnifiedTagCreateValue("");
+    setIsUnifiedTagCreateOpen(false);
     setIsCreatingTag(false);
   }, [
     editTarget?.entityId,
@@ -6892,6 +7891,9 @@ export function Fab({
             lockedScheduleData?.end_utc,
           );
           setProjectHasExactDate(projectExactSchedule.hasExactDate);
+          setProjectScheduleTimingMode(
+            projectExactSchedule.hasExactDate ? "manual" : "dynamic",
+          );
           setProjectExactDate(projectExactSchedule.date);
           setProjectExactFallbackDate(projectExactSchedule.date);
           setProjectExactStartTime(projectExactSchedule.startTime);
@@ -6944,12 +7946,23 @@ export function Fab({
           hydrationBranch = "HABIT";
           const [
             { data: habitRow, error: habitError },
+            { data: scheduledHabitRow, error: scheduledHabitError },
             { data: tagRows, error: tagError },
           ] = await Promise.all([
             supabase
               .from("habits")
               .select("*")
               .eq("id", entityId)
+              .maybeSingle(),
+            supabase
+              .from("schedule_instances")
+              .select("id, start_utc, end_utc")
+              .eq("user_id", user.id)
+              .eq("source_type", "HABIT")
+              .eq("source_id", entityId)
+              .in("status", ["scheduled", "in_progress"])
+              .order("start_utc", { ascending: true })
+              .limit(1)
               .maybeSingle(),
             supabase
               .from("event_tags")
@@ -6960,6 +7973,7 @@ export function Fab({
           ]);
 
           if (habitError) throw habitError;
+          if (scheduledHabitError) throw scheduledHabitError;
           if (tagError) {
             console.error("Failed to hydrate FAB habit tags", tagError);
           }
@@ -6984,6 +7998,8 @@ export function Fab({
           }
 
           const habitRowRecord = habitRow as Record<string, unknown>;
+          const scheduledHabitInstance =
+            scheduledHabitRow as FabLockedScheduleInstanceRow | null;
           const legacyHabitType =
             typeof habitRowRecord.type === "string" ? habitRowRecord.type : null;
           const normalizedHabitTypeValue =
@@ -7067,6 +8083,12 @@ export function Fab({
                   ? habitRowRecord.completed_at
                   : null,
           });
+          setHabitNextDueFallback(
+            getFabHabitEffectiveNextDueFallback({
+              habitRecord: habitRowRecord,
+              scheduledStartUtc: scheduledHabitInstance?.start_utc,
+            }),
+          );
           setSelectedTagIds(
             !tagError && Array.isArray(tagRows)
               ? tagRows
@@ -7077,7 +8099,7 @@ export function Fab({
         } else {
           hydrationBranch = "TASK";
           const taskEditHydrationSelect =
-            "id, name, project_id, priority, energy, stage, completed_at, duration_min, skill_id, why";
+            "id, name, goal_id, project_id, priority, energy, stage, completed_at, duration_min, skill_id, why";
           hydrationSelect = taskEditHydrationSelect;
           const [
             { data: taskRowData, error: taskError },
@@ -7119,6 +8141,7 @@ export function Fab({
           const tagRows = tagRowsData as FabTagRelationRow[] | null;
 
           setTaskName(taskRow?.name ?? "");
+          setTaskGoalId(taskRow?.goal_id ?? null);
           setTaskProjectId(taskRow?.project_id ?? "");
           setTaskPriority(normalizeFabPriority(taskRow?.priority));
           setTaskEnergy(normalizeFabEnergy(taskRow?.energy));
@@ -7854,7 +8877,6 @@ export function Fab({
   const [stageWidth, setStageWidth] = useState(0);
   const pageX = useMotionValue(0);
   const pageDragControls = useDragControls();
-  const prefersReducedMotion = useReducedMotion();
   const router = useRouter();
   const { isPlus } = useEntitlement();
   const locationContextsResult = useLocationContexts();
@@ -8111,6 +9133,7 @@ export function Fab({
       setOverlayOpen(false);
       setOverlayPickerOpen(false);
       setOverlayPickerSelected(null);
+      setIsUnifiedEventSheetOpen(false);
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
@@ -8239,10 +9262,14 @@ export function Fab({
   }, [habitSkillId, habitType, memoNoteSkillId]);
 
   useEffect(() => {
-    if (activeCreationMode === "memoForms" && !isMemoHabitCreation) {
+    if (!selected) return;
+    const modes = getCreationModesForType(selected).filter(
+      (mode) => mode.id !== "memoForms" || isMemoHabitCreation,
+    );
+    if (!modes.some((mode) => mode.id === activeCreationMode)) {
       setActiveCreationMode("main");
     }
-  }, [activeCreationMode, isMemoHabitCreation]);
+  }, [activeCreationMode, isMemoHabitCreation, selected]);
 
   useEffect(() => {
     return () => {
@@ -8373,6 +9400,7 @@ export function Fab({
       setProjectDue("");
       if (!editTarget) {
         setProjectHasExactDate(PROJECT_EXACT_DATE_DEFAULT_ON);
+        setProjectScheduleTimingMode("dynamic");
         setProjectExactDate("");
         setProjectExactFallbackDate("");
         setProjectExactStartTime("");
@@ -8383,6 +9411,9 @@ export function Fab({
       setHabitDaylightPreference("ALL_DAY");
       setHabitWindowEdgePreference("FRONT");
       setHabitNextDueOverride("");
+      setHabitNextDueFallback("");
+      setHabitNextDueOverrideTouched(false);
+      setAddEventWorkspaceValue("PERSONAL");
       resetNestedDraftState();
     }
     if (!expanded) {
@@ -8393,7 +9424,7 @@ export function Fab({
   }, [editTarget, expanded, resetNestedDraftState, selected]);
 
   useEffect(() => {
-    if (!expanded || !selected) return;
+    if ((!expanded || !selected) && !isUnifiedEventSheetOpen) return;
     let cancelled = false;
     const loadTags = async () => {
       try {
@@ -8445,7 +9476,7 @@ export function Fab({
       setSelectedTagIds([]);
       setTagInputValue("");
     };
-  }, [expanded, selected]);
+  }, [expanded, isUnifiedEventSheetOpen, selected]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -8740,6 +9771,78 @@ export function Fab({
     };
   }, [isGoalPickerOpen]);
 
+  const [unifiedGoalPickerPosition, setUnifiedGoalPickerPosition] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isUnifiedGoalPickerOpen) {
+      setUnifiedGoalPickerPosition(null);
+      return;
+    }
+    const handleClick = (event: MouseEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (unifiedGoalPickerTriggerRef.current?.contains(target)) return;
+      if (unifiedGoalPickerContentRef.current?.contains(target)) return;
+      setIsUnifiedGoalPickerOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick, true);
+    return () => document.removeEventListener("mousedown", handleClick, true);
+  }, [isUnifiedGoalPickerOpen]);
+
+  useLayoutEffect(() => {
+    if (!isUnifiedGoalPickerOpen) return;
+    const updatePosition = () => {
+      const trigger = unifiedGoalPickerTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+      const gap = 6;
+      const safeMargin = 12;
+      const desiredWidth = Math.max(280, rect.width);
+      const width = Math.min(desiredWidth, viewportWidth - safeMargin * 2);
+      const left = Math.min(
+        Math.max(rect.left, safeMargin),
+        Math.max(safeMargin, viewportWidth - width - safeMargin),
+      );
+      const spaceBelow = viewportHeight - rect.bottom - gap;
+      const spaceAbove = rect.top - gap;
+      const preferAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const availableSpace = preferAbove ? spaceAbove : spaceBelow;
+      const maxHeight = Math.min(360, Math.max(220, availableSpace - 8));
+      setUnifiedGoalPickerPosition({
+        left,
+        width,
+        top: preferAbove
+          ? Math.max(safeMargin, rect.top - maxHeight - gap)
+          : rect.bottom + gap,
+        maxHeight,
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, { passive: true });
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition);
+    };
+  }, [isUnifiedGoalPickerOpen]);
+
+  useEffect(() => {
+    if (
+      !isUnifiedEventSheetOpen ||
+      (selected !== "PROJECT" && selected !== "TASK")
+    ) {
+      setIsUnifiedGoalPickerOpen(false);
+    }
+  }, [isUnifiedEventSheetOpen, selected]);
+
   useEffect(() => {
     if (!showSkillFilters) return;
     const handleClick = (event: MouseEvent) => {
@@ -8950,6 +10053,7 @@ export function Fab({
     setProjectGoalId(null);
     setProjectDue("");
     setProjectHasExactDate(PROJECT_EXACT_DATE_DEFAULT_ON);
+    setProjectScheduleTimingMode("dynamic");
     setProjectExactDate("");
     setProjectExactFallbackDate("");
     setProjectExactStartTime("");
@@ -8979,6 +10083,7 @@ export function Fab({
     setTaskPriority("MEDIUM");
     setTaskEnergy("MEDIUM");
     setTaskProjectId("");
+    setTaskGoalId(null);
     setTaskSkillId("");
     setTaskNotes("");
     setTaskDue("");
@@ -8988,6 +10093,10 @@ export function Fab({
     setTaskExactFallbackDate("");
     setTaskExactStartTime("");
     setTaskExactEndTime("");
+    setAddEventSubActions([]);
+    setAddEventWorkspaceValue("PERSONAL");
+    setAddEventTimingMode("manual");
+    setAddEventDynamicDuration("60");
 
     setHabitName("");
     setHabitType(defaultHabitType);
@@ -9011,6 +10120,8 @@ export function Fab({
     setHabitDaylightPreference("ALL_DAY");
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
+    setHabitNextDueFallback("");
+    setHabitNextDueOverrideTouched(false);
     setHabitFixedStartTime("");
     setHabitFixedEndTime("");
     setHabitRoutineId("");
@@ -9049,11 +10160,6 @@ export function Fab({
       lowlight: [25, 30, 40],
     },
     {
-      base: [8, 17, 28],
-      highlight: [50, 80, 120],
-      lowlight: [2, 4, 10],
-    },
-    {
       base: [10, 12, 24],
       highlight: [86, 60, 140],
       lowlight: [4, 6, 18],
@@ -9089,31 +10195,25 @@ export function Fab({
     default: {
       primary: [
         {
-          label: "GOAL",
-          eventType: "GOAL" as const,
+          label: "EVENT",
+          action: "unified-event",
           color: "hover:bg-gray-600",
         },
         {
-          label: "PROJECT",
-          eventType: "PROJECT" as const,
+          label: "NOTE",
+          action: "extra",
           color: "hover:bg-gray-600",
         },
         {
-          label: "TASK",
-          eventType: "TASK" as const,
+          label: "POST",
+          action: "extra",
           color: "hover:bg-gray-600",
         },
         {
-          label: "HABIT",
-          eventType: "HABIT" as const,
+          label: "OFFER",
+          action: "extra",
           color: "hover:bg-gray-600",
         },
-      ],
-      secondary: [
-        { label: "SERVICE" },
-        { label: "PRODUCT" },
-        { label: "POST" },
-        { label: "NOTE" },
       ],
       menuClassName: "left-1/2 -translate-x-1/2",
       itemAlignmentClass: "text-left",
@@ -9121,38 +10221,32 @@ export function Fab({
     timeline: {
       primary: [
         {
-          label: "GOAL",
-          eventType: "GOAL" as const,
+          label: "EVENT",
+          action: "unified-event",
           color: "hover:bg-gray-600",
         },
         {
-          label: "PROJECT",
-          eventType: "PROJECT" as const,
+          label: "NOTE",
+          action: "extra",
           color: "hover:bg-gray-600",
         },
         {
-          label: "TASK",
-          eventType: "TASK" as const,
+          label: "POST",
+          action: "extra",
           color: "hover:bg-gray-600",
         },
         {
-          label: "HABIT",
-          eventType: "HABIT" as const,
+          label: "OFFER",
+          action: "extra",
           color: "hover:bg-gray-600",
         },
-      ],
-      secondary: [
-        { label: "NOTE" },
-        { label: "POST" },
-        { label: "SERVICE" },
-        { label: "PRODUCT" },
       ],
       menuClassName: "right-0 origin-bottom-right text-left",
       itemAlignmentClass: "text-left",
     },
   } as const;
 
-  const { primary, secondary, menuClassName, itemAlignmentClass } =
+  const { primary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
   const menuContainerHeight = primary.length * 56;
   const compactFabPanelHeight = menuContainerHeight;
@@ -10217,6 +11311,24 @@ export function Fab({
     });
   }, [createOrSelectTag, tagInputValue]);
 
+  const cancelUnifiedTagCreate = useCallback(() => {
+    setIsUnifiedTagCreateOpen(false);
+    setUnifiedTagCreateValue("");
+  }, []);
+
+  const handleUnifiedTagCreate = useCallback(async () => {
+    const normalizedName = normalizeTagName(unifiedTagCreateValue);
+    if (!normalizedName || isCreatingTag) return;
+
+    const tag = await createOrSelectTag({
+      name: unifiedTagCreateValue,
+    });
+    if (!tag) return;
+
+    setUnifiedTagCreateValue("");
+    setIsUnifiedTagCreateOpen(false);
+  }, [createOrSelectTag, isCreatingTag, unifiedTagCreateValue]);
+
   const handleTogglePinnedTag = useCallback(async () => {
     await createOrSelectTag({
       name: PINNED_TAG_NAME,
@@ -10293,6 +11405,7 @@ export function Fab({
     fillExpanded = true,
     surface = "card",
     flatFooter = false,
+    showHeader = true,
   }: {
     label: string;
     footer?: React.ReactNode;
@@ -10300,6 +11413,7 @@ export function Fab({
     fillExpanded?: boolean;
     surface?: "card" | "flat";
     flatFooter?: boolean;
+    showHeader?: boolean;
   }) => {
     const isFlatSurface = surface === "flat";
     const pinnedTag = tagsByNormalizedName.get(PINNED_TAG_NORMALIZED_NAME);
@@ -10487,16 +11601,18 @@ export function Fab({
         )}
         style={fillExpanded ? secondaryCreationPanelStyle : undefined}
       >
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold leading-none text-white">
-            {label}
-          </h3>
-          {selectedTagIds.length > 0 ? (
-            <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
-              {selectedTagIds.length} selected
-            </span>
-          ) : null}
-        </div>
+        {showHeader ? (
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold leading-none text-white">
+              {label}
+            </h3>
+            {selectedTagIds.length > 0 ? (
+              <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                {selectedTagIds.length} selected
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
         <div
           className={cn(
@@ -10548,6 +11664,396 @@ export function Fab({
     );
   };
 
+  const formatAdvancedPickerTime = (value: string) => {
+    if (!value) return "Pick time";
+    const [hours, minutes] = value.split(":").map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(2000, 0, 1, hours, minutes));
+  };
+
+  const formatAdvancedPickerDate = (value: string) => {
+    if (!value) return "Pick date";
+    const parsed = parseDateInputValueLocal(value);
+    if (!parsed) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(parsed);
+  };
+
+  const formatAdvancedPickerShortDate = (value: string) => {
+    if (!value) return "";
+    const parsed = parseDateInputValueLocal(value);
+    if (!parsed) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(parsed);
+  };
+
+  const advancedTimingTimelineRowClass =
+    "grid min-h-[56px] grid-cols-[0.9rem_minmax(3.9rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1.5 sm:px-3";
+  const advancedTimingPickerLabelClass =
+    "text-[14px] font-medium text-zinc-500";
+  const advancedTimingPickerValueClass =
+    "relative min-w-0 text-right text-[13px] font-medium text-zinc-100/95 sm:text-[13.5px]";
+  const advancedTimelineGroupLineClass =
+    "pointer-events-none absolute bottom-7 left-[0.875rem] top-7 w-px border-l border-dashed border-zinc-600/60 sm:left-[1rem]";
+  const advancedTimelineMarkerWrapClass =
+    "relative z-10 flex h-full min-h-[42px] w-3 items-center justify-start";
+  const advancedTimelineDotClass =
+    "relative z-10 h-2 w-2 rounded-full bg-zinc-500/75 shadow-[0_0_0_3px_rgba(24,24,27,0.94)]";
+  const advancedTimingInlinePanelClass =
+    "relative z-10 grid grid-cols-[0.9rem_minmax(3.9rem,auto)_minmax(0,1fr)] gap-1.5 overflow-hidden px-2.5 sm:px-3";
+  const advancedTimingInlinePanelInnerClass =
+    "col-start-2 col-span-2 border-t border-zinc-800/55 bg-zinc-950/24 pb-3 pt-2.5";
+
+  const renderAdvancedTimingPanelShell = (
+    picker: Exclude<FabAdvancedTimingPickerOpen, null>,
+    children: React.ReactNode,
+  ) => (
+    <AnimatePresence initial={false}>
+      {fabAdvancedTimingPickerOpen === picker ? (
+        <motion.div
+          key={picker}
+          initial={{ gridTemplateRows: "0fr" }}
+          animate={{ gridTemplateRows: "1fr" }}
+          exit={
+            prefersReducedMotion
+              ? {
+                  gridTemplateRows: "0fr",
+                  transition: { duration: 0.04, ease: "linear" },
+                }
+              : {
+                  gridTemplateRows: "0fr",
+                  transition: {
+                    gridTemplateRows: {
+                      duration: 0.32,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  },
+                }
+          }
+          transition={
+            prefersReducedMotion
+              ? { duration: 0.04, ease: "linear" }
+              : {
+                  gridTemplateRows: {
+                    duration: 0.46,
+                    ease: [0.16, 1, 0.3, 1],
+                  },
+                }
+          }
+          className={advancedTimingInlinePanelClass}
+          style={{
+            display: "grid",
+            overflow: "hidden",
+            transformOrigin: "top",
+          }}
+        >
+          <motion.div
+            className={cn(
+              advancedTimingInlinePanelInnerClass,
+              "min-h-0 overflow-hidden",
+            )}
+            initial={
+              prefersReducedMotion
+                ? { opacity: 0 }
+                : { opacity: 0, y: -3, scale: 0.998 }
+            }
+            animate={
+              prefersReducedMotion
+                ? { opacity: 1 }
+                : { opacity: 1, y: 0, scale: 1 }
+            }
+            exit={
+              prefersReducedMotion
+                ? {
+                    opacity: 0,
+                    transition: { duration: 0.08, ease: "linear" },
+                  }
+                : {
+                    opacity: 0,
+                    y: -2,
+                    scale: 0.998,
+                    transition: {
+                      opacity: {
+                        duration: 0.18,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                      y: {
+                        duration: 0.28,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                      scale: {
+                        duration: 0.28,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                    },
+                  }
+            }
+            transition={
+              prefersReducedMotion
+                ? { duration: 0.08, ease: "linear" }
+                : {
+                    opacity: {
+                      duration: 0.24,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                    y: {
+                      duration: 0.34,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                    scale: {
+                      duration: 0.34,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+            }
+            style={{ transformOrigin: "top" }}
+          >
+            {children}
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+
+  const renderAdvancedTimePicker = ({
+    picker,
+    value,
+    onChange,
+    label,
+    feedbackKey,
+  }: {
+    picker: Exclude<FabAdvancedTimingPickerOpen, null>;
+    value: string;
+    onChange: (value: string) => void;
+    label: string;
+    feedbackKey: "startTime" | "endTime";
+  }) => {
+    const selectedParts = getTimeValueParts(value);
+    const hourOptions = Array.from({ length: 12 }, (_, index) => {
+      const hour = index + 1;
+      return { value: hour, label: hour };
+    });
+    const minuteOptions = Array.from({ length: 60 }, (_, index) => ({
+      value: index,
+      label: String(index).padStart(2, "0"),
+    }));
+    const periodOptions: Array<"AM" | "PM"> = ["AM", "PM"];
+    const setTimePart = (
+      nextPart: Partial<ReturnType<typeof getTimeValueParts>>,
+    ) => {
+      const nextHour = nextPart.hour ?? selectedParts.hour;
+      const nextMinute = nextPart.minute ?? selectedParts.minute;
+      const nextPeriod = nextPart.period ?? selectedParts.period;
+      onChange(getTimeValueFromParts(nextHour, nextMinute, nextPeriod));
+    };
+
+    return renderAdvancedTimingPanelShell(
+      picker,
+      <div className="flex w-full justify-center py-3">
+        <WheelPickerWrapper aria-label={label} className="border-0 dark:border-0">
+          <WheelPicker
+            value={selectedParts.hour}
+            onValueChange={(hour) => {
+              runAddEventWheelFeedback(`${feedbackKey}-hour`, hour);
+              setTimePart({ hour });
+            }}
+            options={hourOptions}
+            infinite
+          />
+          <WheelPicker
+            value={selectedParts.minute}
+            onValueChange={(minute) => {
+              runAddEventWheelFeedback(`${feedbackKey}-minute`, minute);
+              setTimePart({ minute });
+            }}
+            options={minuteOptions}
+            infinite
+          />
+          <WheelPicker<"AM" | "PM">
+            value={selectedParts.period}
+            onValueChange={(period) => {
+              runAddEventWheelFeedback(`${feedbackKey}-period`, period);
+              setTimePart({ period });
+            }}
+            options={periodOptions.map((period) => ({
+              value: period,
+              label: period,
+            }))}
+          />
+        </WheelPickerWrapper>
+      </div>,
+    );
+  };
+
+  const renderAdvancedManualTimeRows = ({
+    startPicker,
+    endPicker,
+    startValue,
+    endValue,
+    onStartChange,
+    onEndChange,
+    startAriaLabel,
+    endAriaLabel,
+    exactDate,
+    endMeta,
+  }: {
+    startPicker: Exclude<FabAdvancedTimingPickerOpen, null>;
+    endPicker: Exclude<FabAdvancedTimingPickerOpen, null>;
+    startValue: string;
+    endValue: string;
+    onStartChange: (value: string) => void;
+    onEndChange: (value: string) => void;
+    startAriaLabel: string;
+    endAriaLabel: string;
+    exactDate?: {
+      id: string;
+      value: string;
+      enabled: boolean;
+      onChange: (value: string) => void;
+      onToggle: () => void;
+      showToggle?: boolean;
+    };
+    endMeta?: string | null;
+  }) => (
+    <div className="relative">
+      <span className={advancedTimelineGroupLineClass} aria-hidden="true" />
+
+      <div className={advancedTimingTimelineRowClass}>
+        <span className={advancedTimelineMarkerWrapClass} aria-hidden="true">
+          <span className={advancedTimelineDotClass} />
+        </span>
+        <Label className={advancedTimingPickerLabelClass}>Starts</Label>
+        <div
+          className={cn(
+            advancedTimingPickerValueClass,
+            "flex min-w-0 flex-nowrap items-center justify-end overflow-hidden whitespace-nowrap",
+          )}
+        >
+          {exactDate ? (
+            <>
+              {exactDate.showToggle === false ? null : (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={exactDate.enabled}
+                  aria-label="Use exact date"
+                  title="Use exact date"
+                  onClick={exactDate.onToggle}
+                  className={cn(
+                    "relative mr-1 inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-white/10 transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20",
+                    exactDate.enabled
+                      ? "border-white/25 bg-white/70"
+                      : "bg-white/10",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "inline-block h-3 w-3 rounded-full shadow transition-transform",
+                      exactDate.enabled
+                        ? "translate-x-[13px] bg-neutral-950"
+                        : "translate-x-0.5 bg-white",
+                    )}
+                  />
+                </button>
+              )}
+              <div className="min-w-0 max-w-[8.75rem] shrink">
+                <CompactNativeDateTimeField
+                  id={exactDate.id}
+                  type="date"
+                  value={exactDate.enabled ? exactDate.value : ""}
+                  onChange={(event) => exactDate.onChange(event.target.value)}
+                  disabled={!exactDate.enabled}
+                  className="h-8 min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-right text-[13px] font-medium text-zinc-100/95 transition-colors hover:bg-white/[0.045] peer-focus-visible:border-white/20 peer-focus-visible:bg-white/[0.045] disabled:text-white/30 sm:text-[13.5px]"
+                  placeholder={exactDate.enabled ? "Pick date" : "No date"}
+                  displayValue={
+                    exactDate.enabled
+                      ? formatAdvancedPickerDate(exactDate.value)
+                      : "No date"
+                  }
+                />
+              </div>
+              <span className="shrink-0 text-zinc-600" aria-hidden="true">
+                ·
+              </span>
+            </>
+          ) : null}
+          <button
+            type="button"
+            aria-label={startAriaLabel}
+            aria-expanded={fabAdvancedTimingPickerOpen === startPicker}
+            onClick={() => {
+              void hapticSoftTick();
+              setFabAdvancedTimingPickerOpen((current) =>
+                current === startPicker ? null : startPicker,
+              );
+            }}
+            className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
+          >
+            {formatAdvancedPickerTime(startValue)}
+          </button>
+        </div>
+      </div>
+
+      {renderAdvancedTimePicker({
+        picker: startPicker,
+        value: startValue,
+        onChange: onStartChange,
+        label: `${startAriaLabel} picker`,
+        feedbackKey: "startTime",
+      })}
+
+      <div className={advancedTimingTimelineRowClass}>
+        <span className={advancedTimelineMarkerWrapClass} aria-hidden="true">
+          <span className={advancedTimelineDotClass} />
+        </span>
+        <Label className={advancedTimingPickerLabelClass}>Ends</Label>
+        <div
+          className={cn(
+            advancedTimingPickerValueClass,
+            "flex min-w-0 flex-nowrap items-center justify-end overflow-hidden whitespace-nowrap",
+          )}
+        >
+          <button
+            type="button"
+            aria-label={endAriaLabel}
+            aria-expanded={fabAdvancedTimingPickerOpen === endPicker}
+            onClick={() => {
+              void hapticSoftTick();
+              setFabAdvancedTimingPickerOpen((current) =>
+                current === endPicker ? null : endPicker,
+              );
+            }}
+            className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
+          >
+            {formatAdvancedPickerTime(endValue)}
+          </button>
+          {endMeta ? (
+            <span className="ml-1 min-w-0 truncate text-[11px] font-medium text-zinc-500">
+              {endMeta}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {renderAdvancedTimePicker({
+        picker: endPicker,
+        value: endValue,
+        onChange: onEndChange,
+        label: `${endAriaLabel} picker`,
+        feedbackKey: "endTime",
+      })}
+    </div>
+  );
+
   const renderFlatAdvancedPanel = ({
     dueDateId,
     dueDateValue,
@@ -10567,6 +12073,10 @@ export function Fab({
     tagSurface = "card",
     flatDateSections = false,
     tightenExactScheduleColumns = false,
+    useManualTimePicker = false,
+    showTags = true,
+    showExactSchedule = true,
+    showDueDate = true,
   }: {
     dueDateId: string;
     dueDateValue: string;
@@ -10586,6 +12096,10 @@ export function Fab({
     tagSurface?: "card" | "flat";
     flatDateSections?: boolean;
     tightenExactScheduleColumns?: boolean;
+    useManualTimePicker?: boolean;
+    showTags?: boolean;
+    showExactSchedule?: boolean;
+    showDueDate?: boolean;
   }) => {
     const toggleExactDate = () => {
       const nextValue = !hasExactDate;
@@ -10620,156 +12134,79 @@ export function Fab({
     const exactScheduleDateLabelRowClass = tightenExactScheduleColumns
       ? "flex min-w-0 items-center justify-between gap-1 overflow-hidden"
       : "flex min-w-0 items-center justify-between gap-1.5";
+    const getExactScheduleEndMeta = () => {
+      if (
+        !useManualTimePicker ||
+        !hasExactDate ||
+        !exactDateValue ||
+        !exactStartTimeValue ||
+        !exactEndTimeValue
+      ) {
+        return null;
+      }
+
+      const startDate = new Date(`${exactDateValue}T${exactStartTimeValue}`);
+      const endDate = new Date(`${exactDateValue}T${exactEndTimeValue}`);
+      if (
+        Number.isNaN(startDate.getTime()) ||
+        Number.isNaN(endDate.getTime()) ||
+        endDate.getTime() > startDate.getTime()
+      ) {
+        return null;
+      }
+
+      const inferredEndDate = parseDateInputValueLocal(exactDateValue);
+      if (!inferredEndDate) return null;
+      inferredEndDate.setDate(inferredEndDate.getDate() + 1);
+      return formatAdvancedPickerShortDate(formatDateInputValue(inferredEndDate));
+    };
 
     return (
       <div
         className={cn("grid gap-3 content-start", expanded && "min-h-full")}
         style={secondaryCreationPanelStyle}
       >
-        {renderTagPickerPanel({
-          label: tagLabel,
-          density: "compact",
-          fillExpanded: false,
-          surface: tagSurface,
-        })}
+        {showTags
+          ? renderTagPickerPanel({
+              label: tagLabel,
+              density: "compact",
+              fillExpanded: false,
+              surface: tagSurface,
+            })
+          : null}
 
-        <section className={exactScheduleSectionClass}>
-          <p className={FAB_ADVANCED_LABEL_CLASS}>Exact schedule</p>
-          {flatDateSections ? (
-            <div className={exactScheduleGridClass}>
-              <div className="grid min-w-0 gap-1.5">
-                <Label
-                  htmlFor={exactStartTimeId}
-                  className={exactScheduleFieldLabelClass}
-                >
-                  Start
-                </Label>
-                <CompactNativeDateTimeField
-                  id={exactStartTimeId}
-                  type="time"
-                  value={exactStartTimeValue}
-                  onChange={(event) =>
-                    onExactStartTimeChange(event.target.value)
-                  }
-                  className={exactScheduleInputClass}
-                  placeholder="--:--"
-                />
+        {showExactSchedule ? (
+          <section className={exactScheduleSectionClass}>
+            <p className={FAB_ADVANCED_LABEL_CLASS}>Exact schedule</p>
+            {useManualTimePicker ? (
+              <div className="grid gap-2.5">
+                {renderAdvancedManualTimeRows({
+                  startPicker: "projectExactStartTime",
+                  endPicker: "projectExactEndTime",
+                  startValue: exactStartTimeValue,
+                  endValue: exactEndTimeValue,
+                  onStartChange: onExactStartTimeChange,
+                  onEndChange: onExactEndTimeChange,
+                  startAriaLabel: "Project exact start time",
+                  endAriaLabel: "Project exact end time",
+                  exactDate: {
+                    id: exactDateId,
+                    value: exactDateValue,
+                    enabled: hasExactDate,
+                    onChange: onExactDateChange,
+                    onToggle: toggleExactDate,
+                  },
+                  endMeta: getExactScheduleEndMeta(),
+                })}
               </div>
-              <div className="grid min-w-0 gap-1.5">
-                <Label
-                  htmlFor={exactEndTimeId}
-                  className={exactScheduleFieldLabelClass}
-                >
-                  End
-                </Label>
-                <CompactNativeDateTimeField
-                  id={exactEndTimeId}
-                  type="time"
-                  value={exactEndTimeValue}
-                  onChange={(event) => onExactEndTimeChange(event.target.value)}
-                  className={exactScheduleInputClass}
-                  placeholder="--:--"
-                />
-              </div>
-              <div className="grid min-w-0 gap-1.5">
-                <div className={exactScheduleDateLabelRowClass}>
-                  <Label
-                    htmlFor={exactDateId}
-                    className={exactScheduleFieldLabelClass}
-                  >
-                    Date
-                  </Label>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={hasExactDate}
-                    aria-label="Use exact date"
-                    title="Use exact date"
-                    onClick={toggleExactDate}
-                    className={cn(
-                      exactScheduleCompactToggleClass,
-                      hasExactDate
-                        ? "border-white/25 bg-white/70"
-                        : "bg-white/10",
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "inline-block h-3 w-3 rounded-full shadow transition-transform",
-                        hasExactDate
-                          ? "translate-x-[13px] bg-neutral-950"
-                          : "translate-x-0.5 bg-white",
-                      )}
-                    />
-                  </button>
-                </div>
-                <CompactNativeDateTimeField
-                  id={exactDateId}
-                  type="date"
-                  value={hasExactDate ? exactDateValue : ""}
-                  onChange={(event) => onExactDateChange(event.target.value)}
-                  disabled={!hasExactDate}
-                  className={exactScheduleInputClass}
-                  placeholder={hasExactDate ? "Date" : "—"}
-                />
-              </div>
-            </div>
-          ) : (
-            <>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={hasExactDate}
-                aria-label="Use exact date"
-                onClick={toggleExactDate}
-                className={exactScheduleToggleClass}
-              >
-                <span>Use exact date</span>
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-white/10 transition-colors",
-                    hasExactDate
-                      ? "border-white/25 bg-white/70"
-                      : "bg-white/10",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "inline-block h-[18px] w-[18px] rounded-full shadow transition-transform",
-                      hasExactDate
-                        ? "translate-x-[21px] bg-neutral-950"
-                        : "translate-x-1 bg-white",
-                    )}
-                  />
-                </span>
-              </button>
-              {hasExactDate ? (
-                <div className="grid gap-1.5">
-                  <Label
-                    htmlFor={exactDateId}
-                    className={FAB_ADVANCED_LABEL_CLASS}
-                  >
-                    Date
-                  </Label>
-                  <CompactNativeDateTimeField
-                    id={exactDateId}
-                    type="date"
-                    value={exactDateValue}
-                    onChange={(event) => onExactDateChange(event.target.value)}
-                    className={exactScheduleInputClass}
-                    placeholder="Date"
-                  />
-                </div>
-              ) : null}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="grid gap-1.5">
+            ) : flatDateSections ? (
+              <div className={exactScheduleGridClass}>
+                <div className="grid min-w-0 gap-1.5">
                   <Label
                     htmlFor={exactStartTimeId}
-                    className={FAB_ADVANCED_LABEL_CLASS}
+                    className={exactScheduleFieldLabelClass}
                   >
-                    Start time
+                    Start
                   </Label>
                   <CompactNativeDateTimeField
                     id={exactStartTimeId}
@@ -10782,12 +12219,12 @@ export function Fab({
                     placeholder="--:--"
                   />
                 </div>
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <Label
                     htmlFor={exactEndTimeId}
-                    className={FAB_ADVANCED_LABEL_CLASS}
+                    className={exactScheduleFieldLabelClass}
                   >
-                    End time
+                    End
                   </Label>
                   <CompactNativeDateTimeField
                     id={exactEndTimeId}
@@ -10800,29 +12237,496 @@ export function Fab({
                     placeholder="--:--"
                   />
                 </div>
+                <div className="grid min-w-0 gap-1.5">
+                  <div className={exactScheduleDateLabelRowClass}>
+                    <Label
+                      htmlFor={exactDateId}
+                      className={exactScheduleFieldLabelClass}
+                    >
+                      Date
+                    </Label>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={hasExactDate}
+                      aria-label="Use exact date"
+                      title="Use exact date"
+                      onClick={toggleExactDate}
+                      className={cn(
+                        exactScheduleCompactToggleClass,
+                        hasExactDate
+                          ? "border-white/25 bg-white/70"
+                          : "bg-white/10",
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "inline-block h-3 w-3 rounded-full shadow transition-transform",
+                          hasExactDate
+                            ? "translate-x-[13px] bg-neutral-950"
+                            : "translate-x-0.5 bg-white",
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <CompactNativeDateTimeField
+                    id={exactDateId}
+                    type="date"
+                    value={hasExactDate ? exactDateValue : ""}
+                    onChange={(event) => onExactDateChange(event.target.value)}
+                    disabled={!hasExactDate}
+                    className={exactScheduleInputClass}
+                    placeholder={hasExactDate ? "Date" : "—"}
+                  />
+                </div>
               </div>
-            </>
-          )}
-        </section>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={hasExactDate}
+                  aria-label="Use exact date"
+                  onClick={toggleExactDate}
+                  className={exactScheduleToggleClass}
+                >
+                  <span>Use exact date</span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-white/10 transition-colors",
+                      hasExactDate
+                        ? "border-white/25 bg-white/70"
+                        : "bg-white/10",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-[18px] w-[18px] rounded-full shadow transition-transform",
+                        hasExactDate
+                          ? "translate-x-[21px] bg-neutral-950"
+                          : "translate-x-1 bg-white",
+                      )}
+                    />
+                  </span>
+                </button>
+                {hasExactDate ? (
+                  <div className="grid gap-1.5">
+                    <Label
+                      htmlFor={exactDateId}
+                      className={FAB_ADVANCED_LABEL_CLASS}
+                    >
+                      Date
+                    </Label>
+                    <CompactNativeDateTimeField
+                      id={exactDateId}
+                      type="date"
+                      value={exactDateValue}
+                      onChange={(event) =>
+                        onExactDateChange(event.target.value)
+                      }
+                      className={exactScheduleInputClass}
+                      placeholder="Date"
+                    />
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-1.5">
+                    <Label
+                      htmlFor={exactStartTimeId}
+                      className={FAB_ADVANCED_LABEL_CLASS}
+                    >
+                      Start time
+                    </Label>
+                    <CompactNativeDateTimeField
+                      id={exactStartTimeId}
+                      type="time"
+                      value={exactStartTimeValue}
+                      onChange={(event) =>
+                        onExactStartTimeChange(event.target.value)
+                      }
+                      className={exactScheduleInputClass}
+                      placeholder="--:--"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label
+                      htmlFor={exactEndTimeId}
+                      className={FAB_ADVANCED_LABEL_CLASS}
+                    >
+                      End time
+                    </Label>
+                    <CompactNativeDateTimeField
+                      id={exactEndTimeId}
+                      type="time"
+                      value={exactEndTimeValue}
+                      onChange={(event) =>
+                        onExactEndTimeChange(event.target.value)
+                      }
+                      className={exactScheduleInputClass}
+                      placeholder="--:--"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
 
-        <section className={dueDateSectionClass}>
-          <div className="grid gap-1">
-            <Label htmlFor={dueDateId} className={FAB_ADVANCED_LABEL_CLASS}>
-              Due date
-            </Label>
-            <p className="text-[10px] leading-snug text-white/45">
-              A deadline for priority, separate from exact schedule.
-            </p>
+        {showDueDate ? (
+          <section className={dueDateSectionClass}>
+            <div className="grid gap-1">
+              <Label htmlFor={dueDateId} className={FAB_ADVANCED_LABEL_CLASS}>
+                Due date
+              </Label>
+              <p className="text-[10px] leading-snug text-white/45">
+                A deadline for priority, separate from exact schedule.
+              </p>
+            </div>
+            <Input
+              id={dueDateId}
+              type="date"
+              value={dueDateValue}
+              onChange={(event) => onDueDateChange(event.target.value)}
+              className={exactScheduleInputClass}
+            />
+          </section>
+        ) : null}
+      </div>
+    );
+  };
+
+  const handleProjectScheduleTimingModeChange = (
+    nextMode: ProjectScheduleTimingMode,
+  ) => {
+    setProjectScheduleTimingMode(nextMode);
+    setFabAdvancedTimingPickerOpen(null);
+    if (nextMode === "manual") {
+      setProjectHasExactDate(true);
+    }
+  };
+
+  const renderProjectSchedulePanel = () => {
+    const projectScheduleCardClass =
+      "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
+    const projectScheduleModeToggleClass =
+      "inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5";
+    const projectScheduleRowIconClass =
+      "flex h-7 w-6 items-center justify-start text-zinc-500";
+    const projectSchedulePickerLabelClass =
+      "text-[14px] font-medium text-zinc-500";
+    const sanitizedProjectDuration =
+      typeof projectDuration === "number" && Number.isFinite(projectDuration)
+        ? String(projectDuration)
+        : "";
+
+    return (
+      <div
+        className={cn("grid gap-3 content-start", expanded && "min-h-full")}
+        style={secondaryCreationPanelStyle}
+      >
+        <section className={projectScheduleCardClass}>
+          <h3 className="sr-only">Project schedule</h3>
+          <div className="grid gap-2 pb-2">
+            <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+              <span className={projectScheduleRowIconClass} aria-hidden="true">
+                <Clock className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className={projectScheduleModeToggleClass}>
+                <span
+                  className={cn(
+                    "text-[11px] font-semibold transition-colors",
+                    projectScheduleTimingMode === "manual"
+                      ? "text-zinc-100"
+                      : "text-zinc-500",
+                  )}
+                >
+                  Manual
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Switch project schedule timing mode to ${
+                    projectScheduleTimingMode === "dynamic"
+                      ? "Manual"
+                      : "Dynamic"
+                  }`}
+                  role="switch"
+                  aria-checked={projectScheduleTimingMode === "dynamic"}
+                  onClick={() =>
+                    handleProjectScheduleTimingModeChange(
+                      projectScheduleTimingMode === "dynamic"
+                        ? "manual"
+                        : "dynamic",
+                    )
+                  }
+                  className={cn(
+                    "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                    projectScheduleTimingMode === "dynamic"
+                      ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                      : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                      projectScheduleTimingMode === "dynamic"
+                        ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                        : "border-zinc-400/20 bg-zinc-500",
+                    )}
+                    aria-hidden="true"
+                  />
+                </button>
+                <span
+                  className={cn(
+                    "text-[11px] font-semibold transition-colors",
+                    projectScheduleTimingMode === "dynamic"
+                      ? "text-zinc-100"
+                      : "text-zinc-500",
+                  )}
+                >
+                  Dynamic
+                </span>
+              </div>
+            </div>
+
+            {projectScheduleTimingMode === "manual" ? (
+              <div className="relative">
+                {renderAdvancedManualTimeRows({
+                  startPicker: "projectExactStartTime",
+                  endPicker: "projectExactEndTime",
+                  startValue: projectExactStartTime,
+                  endValue: projectExactEndTime,
+                  onStartChange: setProjectExactStartTime,
+                  onEndChange: setProjectExactEndTime,
+                  startAriaLabel: "Project exact start time",
+                  endAriaLabel: "Project exact end time",
+                  exactDate: {
+                    id: "project-schedule-exact-date",
+                    value: projectExactDate,
+                    enabled: true,
+                    onChange: setProjectExactDate,
+                    onToggle: () => setProjectHasExactDate(true),
+                    showToggle: false,
+                  },
+                  endMeta:
+                    projectHasExactDate &&
+                    projectExactDate &&
+                    projectExactStartTime &&
+                    projectExactEndTime
+                      ? (() => {
+                          const startDate = new Date(
+                            `${projectExactDate}T${projectExactStartTime}`,
+                          );
+                          const endDate = new Date(
+                            `${projectExactDate}T${projectExactEndTime}`,
+                          );
+                          if (
+                            Number.isNaN(startDate.getTime()) ||
+                            Number.isNaN(endDate.getTime()) ||
+                            endDate.getTime() > startDate.getTime()
+                          ) {
+                            return null;
+                          }
+                          const inferredEndDate =
+                            parseDateInputValueLocal(projectExactDate);
+                          if (!inferredEndDate) return null;
+                          inferredEndDate.setDate(
+                            inferredEndDate.getDate() + 1,
+                          );
+                          return formatAdvancedPickerShortDate(
+                            formatDateInputValue(inferredEndDate),
+                          );
+                        })()
+                      : null,
+                })}
+              </div>
+            ) : (
+              <div className="grid gap-1 px-3 pb-1 sm:px-4">
+                <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                  <span
+                    className={projectScheduleRowIconClass}
+                    aria-hidden="true"
+                  >
+                    <Timer className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <Label
+                    htmlFor="project-schedule-dynamic-duration"
+                    className={projectSchedulePickerLabelClass}
+                  >
+                    Duration
+                  </Label>
+                  <div className="flex min-w-0 items-center justify-end gap-2">
+                    <Input
+                      id="project-schedule-dynamic-duration"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={sanitizedProjectDuration}
+                      onChange={(event) => {
+                        const nextValue = event.target.value.replace(
+                          /[^\d]/g,
+                          "",
+                        );
+                        setProjectDuration(
+                          nextValue ? Number.parseInt(nextValue, 10) : "",
+                        );
+                      }}
+                      className="h-8 w-20 rounded-lg border-zinc-700/35 bg-zinc-950/35 px-2 text-right text-[13px] font-semibold text-zinc-100 shadow-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                      aria-label="Project dynamic duration in minutes"
+                    />
+                    <span className="text-[12px] font-medium text-zinc-500">
+                      min
+                    </span>
+                  </div>
+                </div>
+                <p className="px-0.5 pb-1 text-right text-[11px] font-medium text-zinc-500">
+                  Scheduler will place this inside your Time Blocks.
+                </p>
+              </div>
+            )}
           </div>
-          <Input
-            id={dueDateId}
-            type="date"
-            value={dueDateValue}
-            onChange={(event) => onDueDateChange(event.target.value)}
-            className={exactScheduleInputClass}
-          />
         </section>
       </div>
+    );
+  };
+
+  const handleHabitScheduleTimingModeChange = (
+    nextMode: HabitScheduleTimingMode,
+  ) => {
+    setHabitScheduleTimingMode(nextMode);
+    setFabAdvancedTimingPickerOpen(null);
+    if (nextMode === "dynamic") {
+      setHabitFixedStartTime("");
+      setHabitFixedEndTime("");
+    }
+  };
+
+  const renderHabitAdvancedTimingPanel = () => {
+    const habitScheduleCardClass =
+      "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
+    const habitScheduleModeToggleClass =
+      "inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5";
+    const habitScheduleRowIconClass =
+      "flex h-7 w-6 items-center justify-start text-zinc-500";
+    const habitSchedulePickerLabelClass =
+      "text-[14px] font-medium text-zinc-500";
+
+    return (
+      <section className={habitScheduleCardClass}>
+        <h3 className="sr-only">Habit timing</h3>
+        <div className="grid gap-2 pb-2">
+          <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+            <span className={habitScheduleRowIconClass} aria-hidden="true">
+              <Clock className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className={habitScheduleModeToggleClass}>
+              <span
+                className={cn(
+                  "text-[11px] font-semibold transition-colors",
+                  habitScheduleTimingMode === "manual"
+                    ? "text-zinc-100"
+                    : "text-zinc-500",
+                )}
+              >
+                Manual
+              </span>
+              <button
+                type="button"
+                aria-label={`Switch habit timing mode to ${
+                  habitScheduleTimingMode === "dynamic"
+                    ? "Manual"
+                    : "Dynamic"
+                }`}
+                role="switch"
+                aria-checked={habitScheduleTimingMode === "dynamic"}
+                onClick={() =>
+                  handleHabitScheduleTimingModeChange(
+                    habitScheduleTimingMode === "dynamic"
+                      ? "manual"
+                      : "dynamic",
+                  )
+                }
+                className={cn(
+                  "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                  habitScheduleTimingMode === "dynamic"
+                    ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                    : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                    habitScheduleTimingMode === "dynamic"
+                      ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                      : "border-zinc-400/20 bg-zinc-500",
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+              <span
+                className={cn(
+                  "text-[11px] font-semibold transition-colors",
+                  habitScheduleTimingMode === "dynamic"
+                    ? "text-zinc-100"
+                    : "text-zinc-500",
+                )}
+              >
+                Dynamic
+              </span>
+            </div>
+          </div>
+
+          {habitScheduleTimingMode === "manual" ? (
+            <div className="relative">
+              {renderAdvancedManualTimeRows({
+                startPicker: "habitFixedStartTime",
+                endPicker: "habitFixedEndTime",
+                startValue: habitFixedStartTime,
+                endValue: habitFixedEndTime,
+                onStartChange: setHabitFixedStartTime,
+                onEndChange: setHabitFixedEndTime,
+                startAriaLabel: "Habit fixed start time",
+                endAriaLabel: "Habit fixed end time",
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-1 px-3 pb-1 sm:px-4">
+              <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                <span className={habitScheduleRowIconClass} aria-hidden="true">
+                  <Timer className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <Label
+                  htmlFor="habit-advanced-dynamic-duration"
+                  className={habitSchedulePickerLabelClass}
+                >
+                  Duration
+                </Label>
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <Input
+                    id="habit-advanced-dynamic-duration"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={habitDuration}
+                    onChange={(event) =>
+                      setHabitDuration(
+                        event.target.value.replace(/[^\d]/g, ""),
+                      )
+                    }
+                    className="h-8 w-20 rounded-lg border-zinc-700/35 bg-zinc-950/35 px-2 text-right text-[13px] font-semibold text-zinc-100 shadow-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                    aria-label="Habit dynamic duration in minutes"
+                  />
+                  <span className="text-[12px] font-medium text-zinc-500">
+                    min
+                  </span>
+                </div>
+              </div>
+              <p className="px-0.5 pb-1 text-right text-[11px] font-medium text-zinc-500">
+                Scheduler will place this inside your Time Blocks.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
     );
   };
 
@@ -10844,6 +12748,8 @@ export function Fab({
     "h-[277px] max-h-[277px] overflow-y-auto overscroll-contain pr-1";
   const projectTaskEditViewportClass =
     "h-[277px] max-h-[277px] overflow-y-auto overscroll-contain pr-1";
+  const unifiedGoalCompletedRowClass =
+    "shimmer-border-complete isolate z-0 overflow-hidden border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
   const renderAssociatedEnergyFlame = (energy?: string | null) => (
     <span className="pointer-events-none absolute inset-y-0 right-0 z-[2] flex w-8 items-center justify-center">
       <FlameEmber
@@ -12166,21 +14072,19 @@ export function Fab({
               }}
             >
               {primary.map((event) => {
-                const isPressed = pressedCreationType === event.eventType;
                 return (
                   <motion.button
                     key={event.label}
                     variants={itemVariants}
-                    onClick={(clickEvent) =>
-                      handleEventClick(
-                        event.eventType,
-                        clickEvent.currentTarget,
-                      )
-                    }
+                    onClick={() => {
+                      if (event.action === "unified-event") {
+                        openUnifiedEventSheet();
+                        return;
+                      }
+                      handleExtraClick(event.label);
+                    }}
                     animate={{
-                      backgroundColor: isPressed
-                        ? "rgba(255,255,255,0.12)"
-                        : "rgba(255,255,255,0)",
+                      backgroundColor: "rgba(255,255,255,0)",
                     }}
                     whileTap={
                       prefersReducedMotion ? undefined : { y: 1, opacity: 0.9 }
@@ -12194,7 +14098,6 @@ export function Fab({
                       "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
                       itemAlignmentClass,
                       event.color,
-                      isPressed && "text-white",
                     )}
                   >
                     <span className="text-sm opacity-80">add</span>{" "}
@@ -13693,7 +15596,7 @@ export function Fab({
                               <span>{selectedHabitRoutine.name}</span>
                             </span>
                           ) : (
-                            <span>Link to existing ROUTINE +</span>
+                            <span>Link to existing ROUTINE+</span>
                           )
                         }
                       >
@@ -14291,6 +16194,9 @@ export function Fab({
                 activeCreationMode === "tasks" &&
                 renderProjectTasksPanel()}
 
+              {selected === "PROJECT" && activeCreationMode === "schedule" &&
+                renderProjectSchedulePanel()}
+
               {selected === "PROJECT" && activeCreationMode === "advanced" &&
                 renderFlatAdvancedPanel({
                   dueDateId: "project-advanced-due-date",
@@ -14311,6 +16217,8 @@ export function Fab({
                   tagSurface: "flat",
                   flatDateSections: true,
                   tightenExactScheduleColumns: true,
+                  useManualTimePicker: true,
+                  showExactSchedule: false,
                 })}
 
               {selected === "TASK" && activeCreationMode === "advanced" &&
@@ -14690,54 +16598,58 @@ export function Fab({
                 </div>
               )}
 
-              {selected === "HABIT" && activeCreationMode === "advanced" &&
+              {selected === "HABIT" && activeCreationMode === "advanced" && (
+                <div
+                  className={cn(
+                    "grid content-start gap-4 rounded-none px-0 py-4",
+                    expanded && "min-h-full",
+                  )}
+                  style={secondaryCreationPanelStyle}
+                >
+                  <div className="grid min-w-0 gap-1.5">
+                    <Label
+                      htmlFor="habit-advanced-next-due-override"
+                      className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
+                    >
+                      Next due
+                    </Label>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Input
+                        id="habit-advanced-next-due-override"
+                        type="date"
+                        value={formatDateLocalInputValue(
+                          habitEffectiveNextDueValue,
+                        )}
+                        onChange={(event) => {
+                          setHabitNextDueOverrideTouched(true);
+                          setHabitNextDueOverride(
+                            formatLocalDateAsStartOfDayDateTime(
+                              event.target.value,
+                            ),
+                          );
+                        }}
+                        className={cn(HABIT_ADVANCED_INPUT_CLASS, "min-w-0 flex-1")}
+                      />
+                      {habitNextDueRelativeLabel ? (
+                        <span className="shrink-0 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-white/45">
+                          {habitNextDueRelativeLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-[10px] leading-snug text-white/40">
+                      Sets the next eligible due day, separate from fixed time.
+                    </p>
+                  </div>
+                  {renderHabitAdvancedTimingPanel()}
+                </div>
+              )}
+
+              {selected === "HABIT" && activeCreationMode === "tags" &&
                 renderTagPickerPanel({
-                  label: "Habit Advanced",
+                  label: "Habit Tags",
+                  showHeader: false,
                   footer: (
                     <>
-                      <div className="grid min-w-0 gap-2">
-                        <p className={HABIT_ADVANCED_FIELD_LABEL_CLASS}>
-                          Exact time
-                        </p>
-                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-1.5 sm:gap-2">
-                          <div className="grid min-w-0 gap-1.5">
-                            <Label
-                              htmlFor="habit-advanced-fixed-start-time"
-                              className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
-                            >
-                              Start time
-                            </Label>
-                            <CompactNativeDateTimeField
-                              id="habit-advanced-fixed-start-time"
-                              type="time"
-                              value={habitFixedStartTime}
-                              onChange={(event) =>
-                                setHabitFixedStartTime(event.target.value)
-                              }
-                              className={HABIT_ADVANCED_INPUT_CLASS}
-                              placeholder="--:--"
-                            />
-                          </div>
-                          <div className="grid min-w-0 gap-1.5">
-                            <Label
-                              htmlFor="habit-advanced-fixed-end-time"
-                              className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
-                            >
-                              End time
-                            </Label>
-                            <CompactNativeDateTimeField
-                              id="habit-advanced-fixed-end-time"
-                              type="time"
-                              value={habitFixedEndTime}
-                              onChange={(event) =>
-                                setHabitFixedEndTime(event.target.value)
-                              }
-                              className={HABIT_ADVANCED_INPUT_CLASS}
-                              placeholder="--:--"
-                            />
-                          </div>
-                        </div>
-                      </div>
                       <div className="grid min-w-0 gap-1.5">
                         <Label
                           htmlFor="habit-advanced-location-context"
@@ -14901,23 +16813,6 @@ export function Fab({
                           </Select>
                         </div>
                       </div>
-                      <div className="grid min-w-0 gap-1.5">
-                        <Label
-                          htmlFor="habit-advanced-next-due-override"
-                          className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
-                        >
-                          Next due
-                        </Label>
-                        <Input
-                          id="habit-advanced-next-due-override"
-                          type="datetime-local"
-                          value={habitNextDueOverride}
-                          onChange={(event) =>
-                            setHabitNextDueOverride(event.target.value)
-                          }
-                          className={HABIT_ADVANCED_INPUT_CLASS}
-                        />
-                      </div>
                     </>
                   ),
                   surface: "flat",
@@ -14932,25 +16827,6 @@ export function Fab({
           )}
         </AnimatePresence>
       </div>
-    </div>
-  );
-
-  const renderSecondaryPage = () => (
-    <div className="flex w-full flex-col px-4 py-2">
-      {secondary.map((event) => (
-        <motion.button
-          key={event.label}
-          variants={itemVariants}
-          onClick={() => handleExtraClick(event.label)}
-          className={cn(
-            "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-            itemAlignmentClass,
-          )}
-        >
-          <span className="text-sm opacity-80">add</span>{" "}
-          <span className="text-lg font-bold">{event.label}</span>
-        </motion.button>
-      ))}
     </div>
   );
 
@@ -15050,9 +16926,6 @@ export function Fab({
     const page = pages[pageIndex];
     if (page === "primary") {
       return renderPrimaryPage();
-    }
-    if (page === "secondary") {
-      return renderSecondaryPage();
     }
     return renderNexusPage();
   };
@@ -15307,6 +17180,7 @@ export function Fab({
       }
     }
     if (creationRequest.type === "TASK") {
+      setTaskGoalId(creationRequest.goalId ?? null);
       setTaskProjectId(creationRequest.projectId ?? "");
     }
     if (creationRequest.type === "HABIT") {
@@ -15339,6 +17213,227 @@ export function Fab({
       setComingSoon(label);
     }
   };
+
+  const openUnifiedEventSheet = useCallback(() => {
+    void hapticPress();
+    const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+    const initialDate =
+      parseDateInputValueLocal(taskExactDate.trim()) ??
+      parseDateInputValueLocal(defaultSchedule.date) ??
+      new Date();
+
+    if (!isUnifiedEventSheetOpen) {
+      setTaskHasExactDate(true);
+      setTaskExactDate(defaultSchedule.date);
+      setTaskExactFallbackDate(defaultSchedule.date);
+      setTaskExactStartTime(defaultSchedule.startTime);
+      setTaskExactEndTime(defaultSchedule.endTime);
+      setAddEventSubActions([]);
+      setTaskGoalId((current) => current ?? activeTaskCreationGoalId);
+      setAddEventTimingMode("manual");
+      setAddEventDynamicDuration("60");
+    }
+
+    setSaveError(null);
+    setGoalDeleteConfirmTarget(null);
+    setActiveCreationMode("main");
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
+    setUnifiedTimingPickerOpen(null);
+    setIsUnifiedTagsSheetOpen(false);
+    setIsAddEventMoreOpen(false);
+    setIsGoalPickerOpen(false);
+    setIsUnifiedGoalPickerOpen(false);
+    setShowUnifiedGoalFilters(false);
+    setUnifiedGoalSearch("");
+    setUnifiedGoalFilterMonumentId("");
+    setUnifiedGoalSortMode("default");
+    setUnifiedEventEndDate("");
+    setUnifiedTimingViewedMonth(
+      new Date(initialDate.getFullYear(), initialDate.getMonth(), 1),
+    );
+    setPendingCreationNameFocus(null);
+    setProjectTaskStack(null);
+    setGoalProjectStack(null);
+    setUnifiedEventType("TASK");
+    setUnifiedEventAllDay(false);
+    setAddEventTimingMode("manual");
+    setSelected("TASK");
+    setExpanded(false);
+    setIsDirectCreationOpen(false);
+    setIsOpen(false);
+    setIsUnifiedEventSheetOpen(true);
+  }, [activeTaskCreationGoalId, isUnifiedEventSheetOpen, taskExactDate]);
+
+  useEffect(() => {
+    if (!isUnifiedEventSheetOpen) return;
+
+    const isMissingDate = taskExactDate.trim().length === 0;
+    const isMissingStartTime = taskExactStartTime.trim().length === 0;
+    const isMissingEndTime = taskExactEndTime.trim().length === 0;
+
+    if (!isMissingDate && !isMissingStartTime && !isMissingEndTime) {
+      return;
+    }
+
+    const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+
+    setTaskHasExactDate(true);
+    if (isMissingDate) {
+      setTaskExactDate(defaultSchedule.date);
+    }
+    setTaskExactFallbackDate(
+      isMissingDate ? defaultSchedule.date : taskExactDate.trim(),
+    );
+    if (isMissingStartTime) {
+      setTaskExactStartTime(defaultSchedule.startTime);
+    }
+    if (isMissingEndTime) {
+      setTaskExactEndTime(defaultSchedule.endTime);
+    }
+  }, [
+    isUnifiedEventSheetOpen,
+    taskExactDate,
+    taskExactEndTime,
+    taskExactStartTime,
+  ]);
+
+  useEffect(() => {
+    if (!isUnifiedEventSheetOpen) {
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      return;
+    }
+
+    if (!isUnifiedNotesSheetOpen || typeof window === "undefined") {
+      return;
+    }
+
+    let animationFrameId: number | null = window.requestAnimationFrame(() => {
+      unifiedNotesTextareaRef.current?.focus();
+    });
+    const focusTimeoutId = window.setTimeout(() => {
+      unifiedNotesTextareaRef.current?.focus();
+    }, 80);
+
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      window.clearTimeout(focusTimeoutId);
+    };
+  }, [isUnifiedEventSheetOpen, isUnifiedNotesSheetOpen]);
+
+  const isUnifiedEventDraftDirty = useCallback(() => {
+    return (
+      taskName.trim().length > 0 ||
+      taskDue.trim().length > 0 ||
+      taskHasExactDate ||
+      taskExactDate.trim().length > 0 ||
+      taskExactStartTime.trim().length > 0 ||
+      taskExactEndTime.trim().length > 0 ||
+      taskNotes.trim().length > 0 ||
+      Boolean(taskGoalId) ||
+      taskProjectId.trim().length > 0 ||
+      taskSkillId.trim().length > 0 ||
+      habitName.trim().length > 0 ||
+      habitWhy.trim().length > 0 ||
+      habitSkillId.trim().length > 0 ||
+      habitLocationContextId.trim().length > 0 ||
+      habitNextDueOverride.trim().length > 0 ||
+      habitFixedStartTime.trim().length > 0 ||
+      habitFixedEndTime.trim().length > 0 ||
+      addEventSubActions.length > 0
+    );
+  }, [
+    addEventSubActions.length,
+    habitFixedEndTime,
+    habitFixedStartTime,
+    habitLocationContextId,
+    habitName,
+    habitNextDueOverride,
+    habitSkillId,
+    habitWhy,
+    taskDue,
+    taskExactDate,
+    taskExactEndTime,
+    taskExactStartTime,
+    taskHasExactDate,
+    taskGoalId,
+    taskName,
+    taskNotes,
+    taskProjectId,
+    taskSkillId,
+  ]);
+
+  const closeUnifiedEventSheet = useCallback(() => {
+    void hapticSnap();
+    setSaveError(null);
+    setShowTaskDurationPicker(false);
+    setTaskDurationPosition(null);
+    setShowHabitDurationPicker(false);
+    setHabitDurationPosition(null);
+    setUnifiedTimingPickerOpen(null);
+    setIsUnifiedNotesSheetOpen(false);
+    setIsUnifiedTagsSheetOpen(false);
+    setIsAddEventMoreOpen(false);
+    setIsGoalPickerOpen(false);
+    setIsUnifiedGoalPickerOpen(false);
+    setShowUnifiedGoalFilters(false);
+    setUnifiedGoalSearch("");
+    setUnifiedGoalFilterMonumentId("");
+    setUnifiedGoalSortMode("default");
+    setIsUnifiedEventSheetOpen(false);
+    setSelected(null);
+  }, []);
+
+  const requestCloseUnifiedEventSheet = useCallback(() => {
+    const hasDraftChanges = isUnifiedEventDraftDirty();
+
+    if (hasDraftChanges) {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm("Discard this event?")
+      ) {
+        return;
+      }
+
+      resetTaskFormDraft();
+      resetHabitFormDraft();
+      setAddEventSubActions([]);
+      setTaskGoalId(null);
+    }
+
+    closeUnifiedEventSheet();
+  }, [
+    closeUnifiedEventSheet,
+    isUnifiedEventDraftDirty,
+    resetHabitFormDraft,
+    resetTaskFormDraft,
+  ]);
+
+  const handleUnifiedEventTypeChange = useCallback((type: UnifiedEventType) => {
+    void hapticSoftTick();
+    setSaveError(null);
+    setUnifiedEventType(type);
+    setSelected(type);
+    setActiveCreationMode("main");
+    setShowTaskDurationPicker(false);
+    setTaskDurationPosition(null);
+    setShowHabitDurationPicker(false);
+    setHabitDurationPosition(null);
+    setIsGoalPickerOpen(false);
+    setIsUnifiedGoalPickerOpen(false);
+    setShowUnifiedGoalFilters(false);
+    setUnifiedGoalSearch("");
+    setUnifiedGoalFilterMonumentId("");
+    setUnifiedGoalSortMode("default");
+    resetHabitRoutineInlineCreation();
+  }, [resetHabitRoutineInlineCreation]);
 
   const measureAiOverlayOrigin = useCallback((): FabAiOverlayOrigin => {
     if (typeof window === "undefined") {
@@ -15855,11 +17950,16 @@ export function Fab({
   }, [expanded, scrollFabTextEntryIntoView]);
 
   useEffect(() => {
-    if (selected !== "PROJECT") return;
+    const shouldLoadGoals =
+      selected === "PROJECT" ||
+      selected === "TASK" ||
+      (isUnifiedEventSheetOpen && unifiedEventType === "TASK");
+    if (!shouldLoadGoals) return;
     let cancelled = false;
     const loadGoals = async () => {
       try {
         setGoalsLoading(true);
+        setGoalsLoaded(false);
         const supabase = getSupabaseBrowser();
         if (!supabase) return;
         const {
@@ -15874,7 +17974,7 @@ export function Fab({
             ? supabase
                 .from("goals")
                 .select(
-                  "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, monument:monuments(emoji)",
+                  "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, global_rank, updated_at, monument:monuments(emoji)",
                 )
                 .eq("user_id", user.id)
                 .in("circle_id", manageableCircleIds)
@@ -15899,7 +17999,6 @@ export function Fab({
           });
           setMonumentEmojiMap(map);
           const mergedGoals = new Map<string, Goal>();
-          const manageableCircleIdSet = new Set(manageableCircleIds);
           const addGoals = (items: Goal[]) => {
             items.forEach((goal) => {
               if (!mergedGoals.has(goal.id)) {
@@ -15915,12 +18014,7 @@ export function Fab({
             ...goal,
             monumentEmoji: monument?.emoji ?? null,
           }));
-          addGoals(
-            goalsData.filter(
-              (goal) =>
-                !goal.circle_id || manageableCircleIdSet.has(goal.circle_id),
-            ),
-          );
+          addGoals(goalsData);
           addGoals(circleGoals);
           setGoals(
             Array.from(mergedGoals.values()).map((goal) => ({
@@ -15941,6 +18035,7 @@ export function Fab({
       } finally {
         if (!cancelled) {
           setGoalsLoading(false);
+          setGoalsLoaded(true);
         }
       }
     };
@@ -15948,12 +18043,13 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [manageableCircles, selected]);
+  }, [isUnifiedEventSheetOpen, manageableCircles, selected, unifiedEventType]);
 
   useEffect(() => {
     const shouldLoadMonuments =
       selected === "GOAL" ||
       selected === "PROJECT" ||
+      isUnifiedEventSheetOpen ||
       overlayOpen ||
       overlayPickerOpen ||
       FAB_PAGES[activeFabPage] === "nexus";
@@ -15998,10 +18094,22 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [activeFabPage, overlayOpen, overlayPickerOpen, selected]);
+  }, [
+    activeFabPage,
+    isUnifiedEventSheetOpen,
+    overlayOpen,
+    overlayPickerOpen,
+    selected,
+  ]);
 
   useEffect(() => {
-    if (selected !== "GOAL" && selected !== "PROJECT" && selected !== "HABIT") {
+    if (
+      selected !== "GOAL" &&
+      selected !== "PROJECT" &&
+      selected !== "HABIT" &&
+      selected !== "TASK" &&
+      !isUnifiedEventSheetOpen
+    ) {
       return;
     }
     const controller = new AbortController();
@@ -16051,10 +18159,13 @@ export function Fab({
       cancelled = true;
       controller.abort();
     };
-  }, [selected]);
+  }, [isUnifiedEventSheetOpen, selected]);
 
   useEffect(() => {
-    if (selected !== "TASK") return;
+    const shouldLoadTaskProjects =
+      selected === "TASK" ||
+      (isUnifiedEventSheetOpen && resolvedUnifiedAddEventSaveSelected === "TASK");
+    if (!shouldLoadTaskProjects) return;
     let cancelled = false;
     const loadProjects = async () => {
       try {
@@ -16071,9 +18182,70 @@ export function Fab({
           setTaskProjectsLoading(false);
           return;
         }
-        const projectsData = await getProjectsForUser(user.id);
+        const { data: projectRowsData, error: projectRowsError } =
+          await supabase
+            .from("projects")
+            .select(
+              "id, name, goal_id, priority, energy, stage, why, duration_min, completed_at, global_rank, updated_at, created_at",
+            )
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false });
+        if (projectRowsError) throw projectRowsError;
+        const projectRows = Array.isArray(projectRowsData)
+          ? (projectRowsData as UnifiedTaskProject[])
+          : [];
+        const projectIds = projectRows
+          .map((project) => project.id)
+          .filter((projectId): projectId is string => Boolean(projectId));
+        const projectSkillIconByProjectId = new Map<
+          string,
+          { skillId: string | null; icon: string | null }
+        >();
+        if (projectIds.length > 0) {
+          const { data: projectSkillRowsData, error: projectSkillRowsError } =
+            await supabase
+              .from("project_skills")
+              .select("project_id, skill_id, skills(id, name, icon)")
+              .in("project_id", projectIds);
+          if (projectSkillRowsError) throw projectSkillRowsError;
+          const projectSkillRows = Array.isArray(projectSkillRowsData)
+            ? (projectSkillRowsData as {
+                project_id?: string | null;
+                skill_id?: string | null;
+                skills?: { icon?: string | null } | { icon?: string | null }[] | null;
+              }[])
+            : [];
+          for (const row of projectSkillRows) {
+            const projectId =
+              typeof row.project_id === "string" ? row.project_id : null;
+            if (!projectId || projectSkillIconByProjectId.has(projectId)) {
+              continue;
+            }
+            const joinedSkill = Array.isArray(row.skills)
+              ? row.skills[0]
+              : row.skills;
+            const skillIcon =
+              typeof joinedSkill?.icon === "string" &&
+              joinedSkill.icon.trim().length > 0
+                ? joinedSkill.icon
+                : null;
+            projectSkillIconByProjectId.set(projectId, {
+              skillId:
+                typeof row.skill_id === "string" ? row.skill_id : null,
+              icon: skillIcon,
+            });
+          }
+        }
+        const projectsData = projectRows.map((project) => {
+          const skill = projectSkillIconByProjectId.get(project.id);
+          return {
+            ...project,
+            skill_id: skill?.skillId ?? null,
+            skill_icon: skill?.icon ?? null,
+          };
+        });
         if (!cancelled) {
-          setTaskProjects(projectsData ?? []);
+          setTaskProjects(projectsData);
           setTaskProjectId((current) =>
             current && projectsData.some((p) => p.id === current)
               ? current
@@ -16095,7 +18267,7 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [isUnifiedEventSheetOpen, resolvedUnifiedAddEventSaveSelected, selected]);
 
   useEffect(() => {
     if (selected !== "GOAL") return;
@@ -16588,6 +18760,7 @@ export function Fab({
       selected === "TASK" ||
       overlayOpen ||
       overlayPickerOpen ||
+      isUnifiedEventSheetOpen ||
       FAB_PAGES[activeFabPage] === "nexus";
     if (!shouldLoadSkills) return;
     let cancelled = false;
@@ -16632,7 +18805,13 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [activeFabPage, overlayOpen, overlayPickerOpen, selected]);
+  }, [
+    activeFabPage,
+    isUnifiedEventSheetOpen,
+    overlayOpen,
+    overlayPickerOpen,
+    selected,
+  ]);
 
   useEffect(() => {
     if (selected !== "HABIT") return;
@@ -17055,7 +19234,7 @@ export function Fab({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [isOpen, primary.length, secondary.length]);
+  }, [isOpen, primary.length]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -17202,9 +19381,44 @@ export function Fab({
     }
   }, [activeFabPage, isMobileViewport, isOpen, overlayPickerOpen, pages]);
 
+  const isAddEventTimingInvalid = useMemo(() => {
+    if (!isUnifiedEventSheetOpen || unifiedEventAllDay) {
+      return false;
+    }
+
+    const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+    const startDateValue = taskExactDate.trim() || defaultSchedule.date;
+    const startTimeValue = taskExactStartTime.trim() || defaultSchedule.startTime;
+    const explicitEndDateValue = unifiedEventEndDate.trim();
+    const endTimeValue = taskExactEndTime.trim() || defaultSchedule.endTime;
+    const effectiveTiming = resolveAddEventEffectiveEndTiming({
+      startDateValue,
+      startTimeValue,
+      endTimeValue,
+      explicitEndDateValue,
+    });
+
+    if (!effectiveTiming) {
+      return false;
+    }
+
+    return (
+      effectiveTiming.endDateTime.getTime() <=
+      effectiveTiming.startDateTime.getTime()
+    );
+  }, [
+    isUnifiedEventSheetOpen,
+    taskExactDate,
+    taskExactEndTime,
+    taskExactStartTime,
+    unifiedEventAllDay,
+    unifiedEventEndDate,
+  ]);
+
   const isSaveDisabled = useMemo(() => {
     if (isSavingFab || isDeletingFabEntity || editHydrating || !selected)
       return true;
+    if (isAddEventTimingInvalid) return true;
     if (selected === "GOAL") {
       if (goalName.trim().length === 0) return true;
       if (!goalRelationType || !goalRelationId) return true;
@@ -17222,7 +19436,18 @@ export function Fab({
     }
     if (selected === "TASK") {
       if (taskName.trim().length === 0) return true;
-      if (!taskProjectId && projectTaskStack?.parentMode !== "create")
+      if (
+        isUnifiedEventSheetOpen &&
+        !resolvedAddEventTaskGoalId &&
+        !taskProjectId
+      )
+        return true;
+      if (
+        !isUnifiedEventSheetOpen &&
+        !taskGoalId &&
+        !taskProjectId &&
+        projectTaskStack?.parentMode !== "create"
+      )
         return true;
       if (!taskSkillId) return true;
       return false;
@@ -17247,34 +19472,138 @@ export function Fab({
     habitRecurrence,
     habitSkillId,
     habitType,
+    isAddEventTimingInvalid,
     editHydrating,
     isDeletingFabEntity,
     isSavingFab,
+    isUnifiedEventSheetOpen,
     goalProjectStack?.parentMode,
     projectGoalId,
     projectName,
     projectSkillIds,
     projectTaskStack?.parentMode,
+    resolvedAddEventTaskGoalId,
     selected,
+    taskGoalId,
     taskName,
     taskProjectId,
     taskSkillId,
   ]);
 
+  const getUnifiedAddEventSaveBlockReason = (): string | null => {
+    if (!isUnifiedEventSheetOpen) return null;
+    if (isAddEventTimingInvalid) return "End time must be after start time.";
+
+    if (derivedUnifiedAddEventSourceType === "PROJECT") {
+      return "Project events with sub-events are not ready to save yet.";
+    }
+    if (derivedUnifiedAddEventSourceType === "ROUTINE") {
+      return "Routine events with sub-events are not ready to save yet.";
+    }
+
+    const saveSelected = resolvedUnifiedAddEventSaveSelected;
+    if (!saveSelected) return "Unable to resolve this event type.";
+
+    const isDynamicAddEvent = addEventTimingMode === "dynamic";
+    if (isDynamicAddEvent) {
+      const parsedDuration = Number.parseInt(addEventDynamicDuration, 10);
+      if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+        return "Enter a duration before saving.";
+      }
+    }
+
+    const trimmedName =
+      saveSelected === "PROJECT"
+        ? projectName.trim()
+        : saveSelected === "TASK"
+          ? taskName.trim()
+          : habitName.trim();
+    if (trimmedName.length === 0) return "Please enter a name.";
+
+    if (saveSelected === "PROJECT") {
+      if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
+        return "Link this project to a goal before saving.";
+      }
+      if (projectSkillIds.length === 0) {
+        return "Link at least one skill before saving.";
+      }
+    }
+
+    if (saveSelected === "TASK") {
+      if (!resolvedAddEventTaskGoalId && !taskProjectId) {
+        return "Link this event to a goal or project before saving.";
+      }
+      if (!taskSkillId) {
+        return "Link this task to a skill before saving.";
+      }
+    }
+
+    if (saveSelected === "HABIT") {
+      if (!habitEnergy) {
+        return "Select an energy level before saving.";
+      }
+      if (!habitRecurrence) {
+        return "Select a recurrence before saving.";
+      }
+      if (!habitType) {
+        return "Select a habit type before saving.";
+      }
+      if (!habitSkillId) {
+        return "Link this habit to a skill before saving.";
+      }
+    }
+
+    if (
+      saveSelected === "TASK" &&
+      addEventTimingMode === "manual" &&
+      !unifiedEventAllDay
+    ) {
+      const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+      const effectiveTiming = resolveAddEventEffectiveEndTiming({
+        startDateValue: taskExactDate.trim() || defaultSchedule.date,
+        startTimeValue: taskExactStartTime.trim() || defaultSchedule.startTime,
+        endTimeValue: taskExactEndTime.trim() || defaultSchedule.endTime,
+        explicitEndDateValue: unifiedEventEndDate.trim(),
+      });
+      if (!effectiveTiming) {
+        return "Enter valid exact schedule values.";
+      }
+      if (
+        effectiveTiming.endDateTime.getTime() <=
+        effectiveTiming.startDateTime.getTime()
+      ) {
+        return "End time must be after start time.";
+      }
+    }
+
+    if (saveSelected === "HABIT") {
+      const parsed = parseHabitFixedTime(habitFixedStartTime, habitFixedEndTime);
+      if (parsed.error) return parsed.error;
+    }
+
+    return null;
+  };
+
   const handleFabSave = useCallback(async () => {
+    const saveSelected = isUnifiedEventSheetOpen
+      ? resolvedUnifiedAddEventSaveSelected
+      : selected;
     if (
       fabSavePendingRef.current ||
       isSavingFab ||
       isDeletingFabEntity ||
-      !selected
+      !saveSelected
     )
       return;
-    const createdType = selected;
+    const createdType = saveSelected;
     const activeEditTarget =
-      editTarget?.entityType === selected && editTarget.entityId
+      editTarget?.entityType === saveSelected && editTarget.entityId
         ? editTarget
         : null;
     const selectedTagIdsSnapshot = [...selectedTagIds];
+    const isDynamicAddEvent =
+      isUnifiedEventSheetOpen && addEventTimingMode === "dynamic";
+    const effectiveAddEventTaskGoalId = resolvedAddEventTaskGoalId;
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
@@ -17282,6 +19611,25 @@ export function Fab({
         void hapticWarningPattern();
         setSaveError(message);
       };
+      if (isAddEventTimingInvalid) {
+        setSaveError(null);
+        return;
+      }
+      let parsedDynamicDuration: number | null = null;
+      if (isDynamicAddEvent) {
+        const parsedDuration = Number.parseInt(addEventDynamicDuration, 10);
+        if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+          setBlockedSaveError("Enter a duration before saving.");
+          return;
+        }
+        parsedDynamicDuration = parsedDuration;
+      }
+      const effectiveTaskDuration =
+        parsedDynamicDuration ?? normalizedTaskDuration;
+      const parsedHabitDuration = Number.parseInt(habitDuration || "0", 10);
+      const effectiveHabitDuration =
+        parsedDynamicDuration ??
+        (Number.isFinite(parsedHabitDuration) ? parsedHabitDuration : null);
       const supabase = getSupabaseBrowser();
       if (!supabase) {
         setBlockedSaveError("Supabase client not available.");
@@ -17300,11 +19648,11 @@ export function Fab({
         return;
       }
       const trimmedName =
-        selected === "GOAL"
+        saveSelected === "GOAL"
           ? goalName.trim()
-          : selected === "PROJECT"
+          : saveSelected === "PROJECT"
             ? projectName.trim()
-            : selected === "TASK"
+            : saveSelected === "TASK"
               ? taskName.trim()
               : habitName.trim();
       if (trimmedName.length === 0) {
@@ -17312,14 +19660,14 @@ export function Fab({
         return;
       }
       const goalRelationResolution =
-        selected === "GOAL"
+        saveSelected === "GOAL"
           ? resolveSelectedGoalRelation()
           : {
               selectedMonumentId: null,
               selectedCircleId: null,
               error: null,
             };
-      if (selected === "GOAL") {
+      if (saveSelected === "GOAL") {
         if (goalRelationResolution.error) {
           setBlockedSaveError(goalRelationResolution.error);
           return;
@@ -17333,7 +19681,7 @@ export function Fab({
           return;
         }
       }
-      if (selected === "PROJECT") {
+      if (saveSelected === "PROJECT") {
         if (!projectGoalId && goalProjectStack?.parentMode !== "create") {
           setBlockedSaveError("Link this project to a goal before saving.");
           return;
@@ -17343,9 +19691,24 @@ export function Fab({
           return;
         }
       }
-      if (selected === "TASK") {
-        if (!taskProjectId && projectTaskStack?.parentMode !== "create") {
-          setBlockedSaveError("Link this task to a project before saving.");
+      if (saveSelected === "TASK") {
+        if (
+          isUnifiedEventSheetOpen &&
+          !effectiveAddEventTaskGoalId &&
+          !taskProjectId
+        ) {
+          setBlockedSaveError(
+            "Link this event to a goal or project before saving.",
+          );
+          return;
+        }
+        if (
+          !isUnifiedEventSheetOpen &&
+          !taskGoalId &&
+          !taskProjectId &&
+          projectTaskStack?.parentMode !== "create"
+        ) {
+          setBlockedSaveError("Link this task to a goal or project before saving.");
           return;
         }
         if (!taskSkillId) {
@@ -17353,7 +19716,7 @@ export function Fab({
           return;
         }
       }
-      if (selected === "HABIT") {
+      if (saveSelected === "HABIT") {
         if (!habitEnergy) {
           setBlockedSaveError("Select an energy level before saving.");
           return;
@@ -17372,36 +19735,86 @@ export function Fab({
         }
       }
       let exactSchedule: ParsedExactSchedule | null = null;
-      if (selected === "PROJECT") {
+      if (
+        saveSelected === "PROJECT" &&
+        projectScheduleTimingMode === "manual"
+      ) {
         const parsed = parseExactSchedule(
-          projectHasExactDate,
+          true,
           projectExactDate,
           projectExactStartTime,
           projectExactEndTime,
           projectExactFallbackDate,
         );
         if (parsed.error) {
-          setBlockedSaveError(parsed.error);
+          setBlockedSaveError(
+            parsed.error === "Provide an exact date, or turn exact date off."
+              ? "Provide a project schedule date."
+              : parsed.error,
+          );
           return;
         }
         exactSchedule = parsed.schedule;
       }
-      if (selected === "TASK") {
-        const parsed = parseExactSchedule(
-          taskHasExactDate,
-          taskExactDate,
-          taskExactStartTime,
-          taskExactEndTime,
-          taskExactFallbackDate,
-        );
-        if (parsed.error) {
-          setBlockedSaveError(parsed.error);
-          return;
+      if (saveSelected === "TASK") {
+        if (
+          isUnifiedEventSheetOpen &&
+          addEventTimingMode === "manual" &&
+          !unifiedEventAllDay
+        ) {
+          const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+          const effectiveTiming = resolveAddEventEffectiveEndTiming({
+            startDateValue: taskExactDate.trim() || defaultSchedule.date,
+            startTimeValue:
+              taskExactStartTime.trim() || defaultSchedule.startTime,
+            endTimeValue: taskExactEndTime.trim() || defaultSchedule.endTime,
+            explicitEndDateValue: unifiedEventEndDate.trim(),
+          });
+
+          if (!effectiveTiming) {
+            setBlockedSaveError("Enter valid exact schedule values.");
+            return;
+          }
+          if (
+            effectiveTiming.endDateTime.getTime() <=
+            effectiveTiming.startDateTime.getTime()
+          ) {
+            setBlockedSaveError("End time must be after start time.");
+            return;
+          }
+
+          exactSchedule = {
+            startIso: effectiveTiming.startDateTime.toISOString(),
+            endIso: effectiveTiming.endDateTime.toISOString(),
+            durationMin: Math.max(
+              1,
+              Math.round(
+                (effectiveTiming.endDateTime.getTime() -
+                  effectiveTiming.startDateTime.getTime()) /
+                  60000,
+              ),
+            ),
+          };
+        } else if (!isDynamicAddEvent) {
+          const parsed = parseExactSchedule(
+            taskHasExactDate,
+            taskExactDate,
+            taskExactStartTime,
+            taskExactEndTime,
+            taskExactFallbackDate,
+          );
+          if (parsed.error) {
+            setBlockedSaveError(parsed.error);
+            return;
+          }
+          exactSchedule = parsed.schedule;
         }
-        exactSchedule = parsed.schedule;
       }
       let habitFixedTime: ParsedHabitFixedTime | null = null;
-      if (selected === "HABIT") {
+      if (
+        saveSelected === "HABIT" &&
+        (isUnifiedEventSheetOpen || habitScheduleTimingMode === "manual")
+      ) {
         const parsed = parseHabitFixedTime(
           habitFixedStartTime,
           habitFixedEndTime,
@@ -17578,7 +19991,7 @@ export function Fab({
           return belongsToSelectedContext ? goalCampaignId : null;
         };
 
-        if (selected === "PROJECT" && goalProjectStack) {
+        if (saveSelected === "PROJECT" && goalProjectStack) {
           const durationMin =
             typeof projectDuration === "number" &&
             Number.isFinite(projectDuration)
@@ -17747,14 +20160,14 @@ export function Fab({
           return;
         }
 
-        if (selected === "TASK" && projectTaskStack) {
+        if (saveSelected === "TASK" && projectTaskStack) {
           const nextTaskListItem = {
             name: trimmedName,
             priority: taskPriority,
             energy: taskEnergy,
             stage: taskStage,
             why: taskNotes.trim(),
-            durationMin: normalizedTaskDuration || null,
+            durationMin: effectiveTaskDuration || null,
             skillId: taskSkillId || null,
             dueDate: taskDue || null,
             tagIds: [...selectedTagIdsSnapshot],
@@ -17814,7 +20227,7 @@ export function Fab({
                 skill_id: taskSkillId || null,
                 priority: taskPriority,
                 energy: taskEnergy,
-                duration_min: normalizedTaskDuration || 0,
+                duration_min: effectiveTaskDuration || 0,
                 why: taskNotes.trim() || null,
               })
               .eq("id", savedTaskId)
@@ -17831,7 +20244,7 @@ export function Fab({
                 skill_id: taskSkillId || null,
                 priority: taskPriority,
                 energy: taskEnergy,
-                duration_min: normalizedTaskDuration || 0,
+                duration_min: effectiveTaskDuration || 0,
                 why: taskNotes.trim() || null,
               })
               .select("id")
@@ -17873,7 +20286,7 @@ export function Fab({
             energy: taskEnergy,
             stage: taskStage,
             completedAt: taskStage === "PERFECT" ? taskCompletedAt : null,
-            durationMin: normalizedTaskDuration || null,
+            durationMin: effectiveTaskDuration || null,
             skillId: taskSkillId || null,
             dueDate: taskDue || null,
           };
@@ -17911,7 +20324,7 @@ export function Fab({
           return;
         }
 
-        if (selected === "GOAL" && activeEditTarget?.entityType === "GOAL") {
+        if (saveSelected === "GOAL" && activeEditTarget?.entityType === "GOAL") {
           const { data: existingGoalData, error: existingGoalError } =
             await supabase
               .from("goals")
@@ -18053,7 +20466,7 @@ export function Fab({
         }
 
         if (
-          selected === "PROJECT" &&
+          saveSelected === "PROJECT" &&
           activeEditTarget?.entityType === "PROJECT"
         ) {
           const { error } = await supabase
@@ -18139,17 +20552,26 @@ export function Fab({
           return;
         }
 
-        if (selected === "TASK" && activeEditTarget?.entityType === "TASK") {
+        if (saveSelected === "TASK" && activeEditTarget?.entityType === "TASK") {
+          const effectiveTaskGoalId = taskProjectId
+            ? null
+            : isUnifiedEventSheetOpen
+              ? effectiveAddEventTaskGoalId
+              : taskGoalId;
+          const effectiveTaskProjectId = effectiveTaskGoalId
+            ? null
+            : taskProjectId || null;
           const { error } = await supabase
             .from("tasks")
             .update({
               name: trimmedName,
-              project_id: taskProjectId || null,
+              goal_id: effectiveTaskGoalId || null,
+              project_id: effectiveTaskProjectId,
               stage: taskStage,
               skill_id: taskSkillId || null,
               priority: taskPriority,
               energy: taskEnergy,
-              duration_min: normalizedTaskDuration || 0,
+              duration_min: effectiveTaskDuration || 0,
               why: taskNotes.trim() || null,
             })
             .eq("id", activeEditTarget.entityId)
@@ -18199,7 +20621,7 @@ export function Fab({
           return;
         }
 
-        if (selected === "HABIT" && activeEditTarget?.entityType === "HABIT") {
+        if (saveSelected === "HABIT" && activeEditTarget?.entityType === "HABIT") {
           const parsedDuration = Number.parseInt(habitDuration || "0", 10);
           const duration = Number.isFinite(parsedDuration)
             ? parsedDuration
@@ -18299,7 +20721,7 @@ export function Fab({
           return;
         }
 
-        if (selected === "GOAL") {
+        if (saveSelected === "GOAL") {
           const roadmapId = await resolveGoalRoadmapId({
             selectedMonumentId: goalRelationResolution.selectedMonumentId,
             selectedCircleId: goalRelationResolution.selectedCircleId,
@@ -18348,7 +20770,7 @@ export function Fab({
               position: nextPosition,
             });
           }
-        } else if (selected === "PROJECT") {
+        } else if (saveSelected === "PROJECT") {
           const { data: projectData, error } = await supabase
             .from("projects")
             .insert({
@@ -18392,25 +20814,35 @@ export function Fab({
               );
             if (projectSkillsError) throwIfLimitError(projectSkillsError);
           }
-        } else if (selected === "TASK") {
+        } else if (saveSelected === "TASK") {
+          const effectiveTaskGoalId = taskProjectId
+            ? null
+            : isUnifiedEventSheetOpen
+              ? effectiveAddEventTaskGoalId
+              : taskGoalId;
+          const effectiveTaskProjectId = effectiveTaskGoalId
+            ? null
+            : taskProjectId || null;
           const { data: taskData, error } = await supabase
             .from("tasks")
             .insert({
               user_id: user.id,
               name: trimmedName,
-              project_id: taskProjectId || null,
+              goal_id: effectiveTaskGoalId || null,
+              project_id: effectiveTaskProjectId,
               stage: taskStage,
               skill_id: taskSkillId || null,
               priority: taskPriority,
               energy: taskEnergy,
-              duration_min: normalizedTaskDuration || 0,
+              duration_min: effectiveTaskDuration || 0,
               why: taskNotes.trim() || null,
             })
             .select("id")
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = taskData?.id ?? null;
-          createdProjectId = taskProjectId || null;
+          createdGoalId = effectiveTaskGoalId || null;
+          createdProjectId = effectiveTaskProjectId;
           if (taskData?.id && exactSchedule) {
             await upsertLockedScheduleInstance({
               supabase,
@@ -18419,18 +20851,15 @@ export function Fab({
               sourceId: taskData.id,
               exactSchedule,
               removeWhenBlank: false,
+              eventName: isUnifiedEventSheetOpen ? trimmedName : undefined,
             });
           }
-        } else if (selected === "HABIT") {
+        } else if (saveSelected === "HABIT") {
           try {
             await enforceHabitLimit({ supabase, userId: user.id });
           } catch (error) {
             throwIfLimitError(error);
           }
-          const parsedDuration = Number.parseInt(habitDuration || "0", 10);
-          const duration = Number.isFinite(parsedDuration)
-            ? parsedDuration
-            : null;
           let routineIdToUse: string | null = habitRoutineId || null;
           if (isCreatingHabitRoutineInline) {
             const trimmedRoutineName = habitInlineRoutineName.trim();
@@ -18465,7 +20894,7 @@ export function Fab({
               type: habitType,
               habit_type: habitType,
               recurrence: habitRecurrence,
-              duration_minutes: duration,
+              duration_minutes: effectiveHabitDuration,
               energy: habitEnergy,
               skill_id: habitSkillId || null,
               routine_id: routineIdToUse,
@@ -18508,7 +20937,11 @@ export function Fab({
             console.error("Failed to attach tags after create", error);
           }
         }
-        if (selected === "GOAL" && createdEntityId && goalDraftProjects.length > 0) {
+        if (
+          saveSelected === "GOAL" &&
+          createdEntityId &&
+          goalDraftProjects.length > 0
+        ) {
           const childErrors: string[] = [];
           for (const draftProject of goalDraftProjects) {
             try {
@@ -18573,7 +21006,7 @@ export function Fab({
           }
         }
         if (
-          selected === "PROJECT" &&
+          saveSelected === "PROJECT" &&
           createdEntityId &&
           projectDraftTasks.length > 0
         ) {
@@ -18706,7 +21139,11 @@ export function Fab({
                   ? "Habit"
               : "Item";
         void hapticComplete();
-        toast.success(`${successLabel} created`);
+        toast.success(
+          isUnifiedEventSheetOpen && createdType === "TASK"
+            ? `Event scheduled: ${trimmedName}`
+            : `${successLabel} created`,
+        );
         if (tagAttachmentFailed) {
           toast.error(
             "Tags not attached",
@@ -18720,7 +21157,7 @@ export function Fab({
         console.error("Failed to save item", error);
         if (
           process.env.NODE_ENV === "development" &&
-          selected === "GOAL" &&
+          saveSelected === "GOAL" &&
           activeEditTarget?.entityType === "GOAL"
         ) {
           console.error("[fab goal edit save] failed", error);
@@ -18744,7 +21181,9 @@ export function Fab({
       fabSavePendingRef.current = false;
     }
   }, [
+    addEventDynamicDuration,
     habitDuration,
+    addEventTimingMode,
     habitCircleId,
     habitDaylightPreference,
     habitEnergy,
@@ -18757,6 +21196,7 @@ export function Fab({
     habitLocationContextId,
     habitRecurrence,
     habitRoutineId,
+    habitScheduleTimingMode,
     habitSkillId,
     habitType,
     habitNextDueOverride,
@@ -18764,8 +21204,10 @@ export function Fab({
     habitWhy,
     habitName,
     editTarget,
+    isAddEventTimingInvalid,
     isDeletingFabEntity,
     isCreatingHabitRoutineInline,
+    isUnifiedEventSheetOpen,
     isSavingFab,
     goalCampaignId,
     goalCampaigns,
@@ -18788,9 +21230,9 @@ export function Fab({
     projectExactFallbackDate,
     projectExactStartTime,
     projectGoalId,
-    projectHasExactDate,
     projectName,
     projectPriority,
+    projectScheduleTimingMode,
     projectSkillIds,
     projectStage,
     projectWhy,
@@ -18798,8 +21240,10 @@ export function Fab({
     projectTaskStack,
     replaceSelectedTagsForEntity,
     resolveSelectedGoalRelation,
+    resolvedAddEventTaskGoalId,
     restoreGoalProjectStack,
     restoreProjectTaskStack,
+    resolvedUnifiedAddEventSaveSelected,
     selectedTagIds,
     selected,
     taskDue,
@@ -18809,6 +21253,7 @@ export function Fab({
     taskExactFallbackDate,
     taskExactStartTime,
     taskHasExactDate,
+    taskGoalId,
     taskName,
     taskNotes,
     taskCompletedAt,
@@ -18816,6 +21261,8 @@ export function Fab({
     taskProjectId,
     taskSkillId,
     taskStage,
+    unifiedEventAllDay,
+    unifiedEventEndDate,
     attachSelectedTagsToEntity,
     buildMemoCaptureConfig,
     closeExpandedPanel,
@@ -18825,6 +21272,48 @@ export function Fab({
     resetFabFormState,
     toast,
   ]);
+
+  const isUnifiedAddEventSubmitHardDisabled =
+    isSavingFab ||
+    isDeletingFabEntity ||
+    editHydrating ||
+    !resolvedUnifiedAddEventSaveSelected;
+  const handleUnifiedAddEventSubmit = () => {
+    const blockReason = getUnifiedAddEventSaveBlockReason();
+
+    if (isSavingFab) {
+      const reason = "Still saving this event.";
+      setSaveError(reason);
+      toast.error(reason);
+      return;
+    }
+
+    if (isDeletingFabEntity || editHydrating) {
+      const reason = "Please wait a moment before saving.";
+      setSaveError(reason);
+      toast.error(reason);
+      return;
+    }
+
+    if (!resolvedUnifiedAddEventSaveSelected) {
+      const reason = blockReason ?? "Unable to resolve this event type.";
+      setSaveError(reason);
+      toast.error(reason);
+      return;
+    }
+
+    if (blockReason) {
+      void hapticErrorPattern();
+      setSaveError(blockReason);
+      toast.error(blockReason);
+      return;
+    }
+
+    void handleFabSave();
+  };
+  const unifiedAddEventSubmitTapHandlers = useTapHandler(
+    handleUnifiedAddEventSubmit,
+  );
 
   useEffect(() => {
     setGoalDeleteConfirmTarget(null);
@@ -19852,6 +22341,3918 @@ export function Fab({
     </div>
   );
 
+  const renderUnifiedEventDurationPicker = () => {
+    if (unifiedEventType === "TASK") {
+      return showTaskDurationPicker && taskDurationPosition
+        ? createPortal(
+            <div
+              data-fab-overlay
+              id="unified-task-duration-picker"
+              ref={taskDurationPickerRef}
+              className="z-[2147483671] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+              style={{
+                position: "absolute",
+                top: taskDurationPosition.top,
+                left: taskDurationPosition.left,
+                width: taskDurationPosition.width,
+                touchAction: "manipulation",
+              }}
+              onTouchStart={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  {...taskDurationMinusTapHandlers}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                >
+                  -
+                </button>
+                <div className="text-lg font-semibold text-white">
+                  {Number.parseInt(taskDuration || "30", 10) || 30} min
+                </div>
+                <button
+                  type="button"
+                  {...taskDurationPlusTapHandlers}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                >
+                  +
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null;
+    }
+
+    return showHabitDurationPicker && habitDurationPosition
+      ? createPortal(
+          <div
+            data-fab-overlay
+            id="unified-habit-duration-picker"
+            ref={habitDurationPickerRef}
+            className="z-[2147483671] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+            style={{
+              position: "absolute",
+              top: habitDurationPosition.top,
+              left: habitDurationPosition.left,
+              width: habitDurationPosition.width,
+              touchAction: "manipulation",
+            }}
+            onTouchStart={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                {...habitDurationMinusTapHandlers}
+                className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+              >
+                -
+              </button>
+              <div className="text-lg font-semibold text-white">
+                {habitDuration || 15} min
+              </div>
+              <button
+                type="button"
+                {...habitDurationPlusTapHandlers}
+                className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+              >
+                +
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+  };
+
+  const renderUnifiedEventSheet = () => {
+    if (!isUnifiedEventSheetOpen || typeof document === "undefined") {
+      return null;
+    }
+
+    const isProject = selected === "PROJECT";
+    const isTask = unifiedEventType === "TASK" && !isProject;
+    const isHabit = unifiedEventType === "HABIT";
+    const isGoalLinkedEvent = isTask || isProject;
+    const titleValue = isProject ? projectName : isTask ? taskName : habitName;
+    const titleSetter = isProject
+      ? setProjectName
+      : isTask
+        ? setTaskName
+        : setHabitName;
+    const energyValue = isProject
+      ? projectEnergy
+      : isTask
+        ? taskEnergy
+        : habitEnergy;
+    const setEnergyValue = isProject
+      ? setProjectEnergy
+      : isTask
+        ? setTaskEnergy
+        : setHabitEnergy;
+    const skillValue = isProject
+      ? (projectSkillIds[0] ?? "")
+      : isTask
+        ? taskSkillId
+        : habitSkillId;
+    const setSkillValue = isProject
+      ? (value: string) => setProjectSkillIds(value ? [value] : [])
+      : isTask
+        ? setTaskSkillId
+        : setHabitSkillId;
+    const notesValue = isProject ? projectWhy : isTask ? taskNotes : habitWhy;
+    const setNotesValue = isProject
+      ? setProjectWhy
+      : isTask
+        ? setTaskNotes
+        : setHabitWhy;
+    const eventTypeLabel = "Event";
+    const timingCardClass =
+      "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
+    const timingPickerRowClass =
+      "grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 px-3 py-1.5 sm:px-4";
+    const timingTimelineRowClass =
+      "grid min-h-[56px] grid-cols-[0.9rem_minmax(3.9rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1.5 sm:px-3";
+    const timingModeToggleClass =
+      "inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5";
+    const timingPickerLabelClass = "text-[14px] font-medium text-zinc-500";
+    const timingPickerValueClass =
+      "relative min-w-0 text-right text-[13px] font-medium text-zinc-100/95 sm:text-[13.5px]";
+    const timingRowIconClass =
+      "flex h-7 w-6 items-center justify-start text-zinc-500";
+    const timelineGroupClass = "relative";
+    const timelineGroupLineClass =
+      "pointer-events-none absolute bottom-7 left-[0.875rem] top-7 w-px border-l border-dashed border-zinc-600/60 sm:left-[1rem]";
+    const timelineMarkerWrapClass =
+      "relative z-10 flex h-full min-h-[42px] w-3 items-center justify-start";
+    const timelineDotClass =
+      "relative z-10 h-2 w-2 rounded-full bg-zinc-500/75 shadow-[0_0_0_3px_rgba(24,24,27,0.94)]";
+    const timingSelectTriggerClass =
+      "h-8 justify-end rounded-lg !border-transparent !bg-transparent px-1 text-right text-[15px] font-semibold text-zinc-100/95 shadow-none hover:!bg-white/[0.035] focus:!border-zinc-500/35 focus:!ring-0 focus-visible:!border-zinc-500/35 focus-visible:!ring-0";
+    const timingSelectContentWrapperClass =
+      "rounded-md border-zinc-700/70 bg-zinc-950 shadow-xl shadow-black/50";
+    const timingSelectContentClass = "bg-zinc-950";
+    const timingInlinePanelClass =
+      "relative z-10 grid grid-cols-[0.9rem_minmax(3.9rem,auto)_minmax(0,1fr)] gap-1.5 overflow-hidden px-2.5 sm:px-3";
+    const timingInlinePanelInnerClass =
+      "col-start-2 col-span-2 border-t border-zinc-800/55 bg-zinc-950/24 pb-3 pt-2.5";
+    const timingInvalidValueClass =
+      "text-red-300 hover:text-red-200 active:text-red-100";
+    const detailSectionClass = "grid gap-2.5 pt-1";
+    const detailLabelClass =
+      "inline-flex items-center gap-2 text-[14px] font-medium text-zinc-500";
+    const detailIconClass = "h-3.5 w-3.5 text-zinc-500";
+    const detailSelectTriggerClass =
+      "h-9 rounded-xl border-zinc-700/30 bg-zinc-800/35 text-left text-sm text-zinc-100/95 shadow-none hover:bg-zinc-800/55 focus-visible:ring-0 focus-visible:ring-offset-0";
+    const detailInlineSelectTriggerClass =
+      "h-8 justify-end rounded-lg !border-transparent !bg-transparent px-1 text-right text-[15px] font-semibold text-zinc-100/95 shadow-none hover:!bg-white/[0.035] focus:!border-zinc-500/35 focus:!ring-0 focus-visible:!border-zinc-500/35 focus-visible:!ring-0";
+    const detailCardClass =
+      "overflow-hidden rounded-[16px] border border-zinc-800/45 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_8px_18px_rgba(0,0,0,0.10)]";
+    const detailRowClass =
+      "grid min-h-[48px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3 px-3.5 py-2";
+    const detailControlWrapClass = "flex min-w-0 justify-end";
+    const inviteSectionClass =
+      "rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(0,0,0,0.12)]";
+    const inviteChipClass =
+      "inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-700/45 bg-zinc-900/62 px-2.5 text-[11px] font-semibold text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]";
+    const inviteActionClass =
+      "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-full border border-zinc-700/40 bg-zinc-900/52 px-2.5 text-[11px] font-semibold text-zinc-400 opacity-80";
+    const workspaceRowClass =
+      "rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(0,0,0,0.12)]";
+    const workspaceSelectTriggerClass =
+      "h-8 max-w-[12rem] justify-end rounded-lg !border-transparent !bg-transparent px-1 text-right text-[13px] font-semibold text-zinc-100/95 shadow-none hover:!bg-white/[0.035] focus:!border-zinc-500/35 focus:!ring-0 focus-visible:!border-zinc-500/35 focus-visible:!ring-0 sm:max-w-[15rem]";
+    const quickActionCardClass =
+      "group inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-[15px] border border-zinc-700/45 bg-zinc-900/58 px-2 text-left text-zinc-100/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_8px_18px_rgba(0,0,0,0.12)] transition hover:border-zinc-600/70 hover:bg-zinc-800/64 active:bg-zinc-800/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation";
+    const quickActionIconClass =
+      "h-3.5 w-3.5 shrink-0 text-zinc-400 transition group-hover:text-zinc-200";
+    const quickActionLabelClass =
+      "min-w-0 whitespace-nowrap text-[11px] font-semibold leading-none text-zinc-100/88 sm:text-[12px]";
+    const subEventDurationOptions = [15, 30, 45, 60, 90];
+    const subEventToolButtonClass =
+      "inline-flex h-7 w-full min-w-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-[10px] font-semibold leading-none text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-white/18 hover:bg-white/[0.075] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation";
+    const subEventToolActiveClass =
+      "border-white/18 bg-white/[0.085] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_0_0_1px_rgba(255,255,255,0.025)]";
+    const subEventToolIconClass = "h-3.5 w-3.5 shrink-0 text-current";
+    const subEventDefaultPriority = isProject
+      ? projectPriority
+      : isTask
+        ? taskPriority
+        : "MEDIUM";
+    const selectedAddEventCircleId = addEventWorkspaceValue.startsWith(
+      "CIRCLE:",
+    )
+      ? addEventWorkspaceValue.slice("CIRCLE:".length)
+      : "";
+    const selectedAddEventCircle = selectedAddEventCircleId
+      ? (manageableCircleById.get(selectedAddEventCircleId) ?? null)
+      : null;
+    const isCircleWorkspace = Boolean(selectedAddEventCircle);
+    const circleWorkspacePersists = isHabit && isCircleWorkspace;
+    const peopleSectionTitle = isCircleWorkspace ? "Assign" : "Invite";
+    const peopleSectionDescription = isCircleWorkspace
+      ? circleWorkspacePersists
+        ? "Assignment save is not wired yet"
+        : "Circle scope is preview only for tasks"
+      : "No one invited yet";
+    const selectedCircleMembers = selectedAddEventCircle?.memberPreview ?? [];
+    const selectedCircleMemberCount =
+      selectedAddEventCircle?.activeMemberCount ?? selectedCircleMembers.length;
+    const handleAddEventWorkspaceChange = (value: string) => {
+      if (
+        value !== "PERSONAL" &&
+        (!value.startsWith("CIRCLE:") ||
+          !manageableCircleById.has(value.slice("CIRCLE:".length)))
+      ) {
+        return;
+      }
+
+      void hapticSoftTick();
+      const nextValue = value as AddEventWorkspaceValue;
+      setAddEventWorkspaceValue(nextValue);
+      if (nextValue === "PERSONAL") {
+        setHabitCircleId("");
+        return;
+      }
+
+      const circleId = nextValue.slice("CIRCLE:".length);
+      if (isHabit) {
+        setHabitCircleId(circleId);
+      }
+    };
+    const focusUnifiedNotesTextarea = () => {
+      if (typeof window === "undefined") return;
+      window.requestAnimationFrame(() => {
+        unifiedNotesTextareaRef.current?.focus();
+      });
+      window.setTimeout(() => {
+        unifiedNotesTextareaRef.current?.focus();
+      }, 80);
+    };
+    const openUnifiedNotesSheet = () => {
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedNotesSheetOpen(true);
+    };
+    const openUnifiedTagsSheet = () => {
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedTagsSheetOpen(true);
+    };
+    const openUnifiedFormsSheet = () => {
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedFormsSheetOpen(true);
+    };
+    const openAddEventMoreSheet = () => {
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsAddEventMoreOpen(true);
+    };
+    const clearUnifiedNotes = () => {
+      void hapticSoftTick();
+      setNotesValue("");
+      focusUnifiedNotesTextarea();
+    };
+    const closeUnifiedNotesSheet = () => {
+      void hapticSoftTick();
+      setIsUnifiedNotesSheetOpen(false);
+    };
+    const closeUnifiedTagsSheet = () => {
+      void hapticSoftTick();
+      setIsUnifiedTagsSheetOpen(false);
+      cancelUnifiedTagCreate();
+    };
+    const closeUnifiedFormsSheet = () => {
+      void hapticSoftTick();
+      setIsUnifiedFormsSheetOpen(false);
+    };
+    const closeAddEventMoreSheet = () => {
+      void hapticSoftTick();
+      setIsAddEventMoreOpen(false);
+    };
+    const unifiedGoalId = isProject
+      ? projectGoalId
+      : taskProjectId
+        ? null
+        : resolvedAddEventTaskGoalId;
+    const setUnifiedGoalId = (value: string | null) => {
+      if (isProject) {
+        setProjectGoalId(value);
+        return;
+      }
+      setTaskGoalId(value);
+      if (value) {
+        setTaskProjectId("");
+      }
+    };
+    const selectedUnifiedGoal = unifiedGoalId
+      ? (goalsById.get(unifiedGoalId) ?? null)
+      : null;
+    const selectedUnifiedProject =
+      isTask && taskProjectId
+        ? (taskProjects.find((project) => project.id === taskProjectId) ?? null)
+        : null;
+    const hasUnifiedTaskRelation = Boolean(
+      selectedUnifiedGoal || selectedUnifiedProject,
+    );
+    const hasActiveUnifiedGoalPickerFilters =
+      unifiedGoalFilterMonumentId.trim().length > 0 ||
+      unifiedGoalSortMode !== unifiedGoalDefaultSortMode;
+    const hasActiveUnifiedProjectPickerFilters =
+      unifiedProjectFilterGoalId.trim().length > 0 ||
+      unifiedProjectFilterSkillId.trim().length > 0 ||
+      unifiedProjectSortMode !== unifiedProjectDefaultSortMode;
+    const getUnifiedGoalIcon = (goal: Goal) =>
+      goal.emoji ??
+      goal.monumentEmoji ??
+      monumentEmojiMap.get(goal.monument_id ?? "") ??
+      null;
+    const getUnifiedGoalLabel = (goal: Goal) =>
+      goal.name ??
+      ((goal as Goal & { title?: string | null }).title?.trim() || "Untitled goal");
+    const getUnifiedGoalMonumentTitle = (goal: Goal) => {
+      if (!goal.monument_id) return null;
+      return (
+        monuments
+          .find((monument) => monument.id === goal.monument_id)
+          ?.title?.trim() || null
+      );
+    };
+    const getUnifiedGoalPriorityLabel = (goal: Goal) => {
+      const priority = String(goal.priority ?? "").trim().toUpperCase();
+      if (FAB_PRIORITY_VALUES.has(priority)) {
+        return formatAddEventPriorityLabel(priority);
+      }
+      const priorityCode = String(goal.priority_code ?? "").trim().toUpperCase();
+      if (FAB_PRIORITY_VALUES.has(priorityCode)) {
+        return formatAddEventPriorityLabel(priorityCode);
+      }
+      return null;
+    };
+    const getUnifiedGoalRankLabel = (goal: Goal) =>
+      typeof goal.global_rank === "number" && Number.isFinite(goal.global_rank)
+        ? `#${goal.global_rank}`
+        : null;
+    const isUnifiedGoalCompleted = (goal: Goal) =>
+      normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
+    const getUnifiedGoalContext = (goal: Goal) => {
+      return [
+        getUnifiedGoalMonumentTitle(goal),
+        getUnifiedGoalPriorityLabel(goal),
+        getUnifiedGoalRankLabel(goal),
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join(" · ");
+    };
+    const getUnifiedProjectLabel = (project: UnifiedTaskProject) =>
+      project.name?.trim() || project.title?.trim() || "Untitled project";
+    const getUnifiedProjectGoalName = (project: UnifiedTaskProject) =>
+      project.goal_id
+        ? (goalsById.get(project.goal_id)?.name?.trim() ||
+          (
+            goalsById.get(project.goal_id) as
+              | (Goal & { title?: string | null })
+              | undefined
+          )?.title?.trim() ||
+          null)
+        : null;
+    const getUnifiedProjectRankLabel = (project: UnifiedTaskProject) =>
+      typeof project.global_rank === "number" &&
+      Number.isFinite(project.global_rank)
+        ? `#${project.global_rank}`
+        : null;
+    const getUnifiedProjectContext = (project: UnifiedTaskProject) =>
+      [getUnifiedProjectGoalName(project), getUnifiedProjectRankLabel(project)]
+        .filter((part): part is string => Boolean(part))
+        .join(" · ");
+    const isUnifiedProjectCompleted = (project: UnifiedTaskProject) =>
+      Boolean(project.completed_at) ||
+      project.stage?.trim().toUpperCase() === "RELEASE";
+    const unifiedDueDateMetadata =
+      selected === "PROJECT"
+        ? {
+            id: "unified-project-due-date",
+            value: projectDue,
+            onChange: setProjectDue,
+            disabled: false,
+            helper: "Project deadline metadata, separate from exact schedule.",
+          }
+        : isTask
+          ? {
+              id: "unified-task-due-date",
+              value: "",
+              onChange: setTaskDue,
+              disabled: true,
+              helper: "Task due date persistence is not available yet.",
+            }
+          : null;
+    const canClearUnifiedTagsSheet =
+      selectedTagIds.length > 0 ||
+      (isHabit && Boolean(habitLocationContextId)) ||
+      (selected === "PROJECT" && projectDue.trim().length > 0);
+    const visibleHabitTypeOptions = HABIT_TYPE_OPTIONS.filter(
+      (option) => option.label.toUpperCase() !== "RELAXER",
+    );
+    const clearUnifiedTagsSheet = () => {
+      if (!canClearUnifiedTagsSheet) return;
+      void hapticSoftTick();
+      setSelectedTagIds([]);
+      if (isHabit) {
+        setHabitLocationContextId("");
+      }
+      if (selected === "PROJECT") {
+        setProjectDue("");
+      }
+    };
+    const selectedMemoDatabaseTarget = selectedMemoDatabaseTargetId
+      ? (MEMO_DATABASE_TARGET_OPTIONS.find(
+          (target) => target.id === selectedMemoDatabaseTargetId,
+        ) ?? null)
+      : null;
+    const canClearUnifiedFormsSheet =
+      Boolean(selectedMemoDatabaseTargetId) ||
+      (memoCaptureActions.form && memoCaptureActions.note);
+    const clearUnifiedFormsSheet = () => {
+      if (!canClearUnifiedFormsSheet) return;
+      void hapticSoftTick();
+      setSelectedMemoDatabaseTargetId(null);
+      setMemoCaptureActions((current) =>
+        current.note ? { ...current, form: false } : current,
+      );
+    };
+    const handleQuickActionClick = (target: "tags" | "notes" | "forms") => {
+      void hapticSoftTick();
+      if (target === "tags") {
+        openUnifiedTagsSheet();
+        return;
+      }
+      if (target === "notes") {
+        openUnifiedNotesSheet();
+        return;
+      }
+      if (target === "forms") {
+        openUnifiedFormsSheet();
+      }
+    };
+    const visibleDefaultSchedule = getNextSolidHourEventDefaults(new Date());
+    const startDateValue = taskExactDate.trim() || visibleDefaultSchedule.date;
+    const explicitEndDateValue = unifiedEventEndDate.trim();
+    const startTimeValue =
+      taskExactStartTime.trim() || visibleDefaultSchedule.startTime;
+    const endTimeValue =
+      taskExactEndTime.trim() || visibleDefaultSchedule.endTime;
+    const effectiveEndTiming = resolveAddEventEffectiveEndTiming({
+      startDateValue,
+      startTimeValue,
+      endTimeValue,
+      explicitEndDateValue,
+    });
+    const visibleEndDateValue =
+      explicitEndDateValue ||
+      (effectiveEndTiming?.isInferredEndDate
+        ? effectiveEndTiming.endDateValue
+        : "");
+    const inferredManualDurationMinutes = effectiveEndTiming
+      ? Math.max(
+          1,
+          Math.round(
+            (effectiveEndTiming.endDateTime.getTime() -
+              effectiveEndTiming.startDateTime.getTime()) /
+              60000,
+          ),
+        )
+      : 60;
+    const selectedStartDate =
+      parseDateInputValueLocal(startDateValue) ??
+      parseDateInputValueLocal(visibleDefaultSchedule.date) ??
+      new Date();
+    const selectedEndDate =
+      parseDateInputValueLocal(visibleEndDateValue) ?? selectedStartDate;
+    const habitRecurrenceLabel =
+      formatAddEventRecurrenceLabel(
+        HABIT_RECURRENCE_OPTIONS.find(
+          (option) => option.value === habitRecurrence,
+        )?.label ?? "Recurrence",
+      );
+    const recurrenceLabel = isGoalLinkedEvent ? "Never" : habitRecurrenceLabel;
+    const addEventSourceType = resolveAddEventSourceType({
+      recurrenceEffectivelyNever: isGoalLinkedEvent,
+      hasSubActions: addEventSubActions.length > 0,
+    });
+    const addEventSourceTypeLabel =
+      addEventSourceType.charAt(0) +
+      addEventSourceType.slice(1).toLowerCase();
+    const unifiedSubmitLabel = `Add ${addEventSourceTypeLabel}`;
+    const unifiedAddEventSaveBlockReason =
+      getUnifiedAddEventSaveBlockReason();
+    const addAddEventSubAction = () => {
+      void hapticSoftTick();
+      setAddEventSubActions((current) => [
+        ...current,
+        {
+          id: createLocalDraftId(),
+          title: "",
+          skillId: skillValue || null,
+          priority: subEventDefaultPriority || "MEDIUM",
+          durationMin: 30,
+          energy: energyValue || "MEDIUM",
+        },
+      ]);
+    };
+    const updateAddEventSubActionTitle = (id: string, title: string) => {
+      setAddEventSubActions((current) =>
+        current.map((subAction) =>
+          subAction.id === id ? { ...subAction, title } : subAction,
+        ),
+      );
+    };
+    const updateAddEventSubActionSkill = (
+      id: string,
+      skillId: string | null,
+    ) => {
+      void hapticSoftTick();
+      setAddEventSubActions((current) =>
+        current.map((subAction) =>
+          subAction.id === id ? { ...subAction, skillId } : subAction,
+        ),
+      );
+    };
+    const cycleAddEventSubActionPriority = (id: string) => {
+      void hapticSoftTick();
+      setAddEventSubActions((current) =>
+        current.map((subAction) => {
+          if (subAction.id !== id) return subAction;
+          const currentPriority = normalizeFabPriority(subAction.priority);
+          const currentIndex = PRIORITY_OPTIONS_LOCAL.findIndex(
+            (option) => option.value === currentPriority,
+          );
+          const nextPriority =
+            PRIORITY_OPTIONS_LOCAL[
+              (Math.max(currentIndex, 0) + 1) % PRIORITY_OPTIONS_LOCAL.length
+            ]?.value ?? "MEDIUM";
+          return { ...subAction, priority: nextPriority };
+        }),
+      );
+    };
+    const cycleAddEventSubActionDuration = (id: string) => {
+      void hapticSoftTick();
+      setAddEventSubActions((current) =>
+        current.map((subAction) => {
+          if (subAction.id !== id) return subAction;
+          const currentIndex = subEventDurationOptions.findIndex(
+            (duration) => duration === subAction.durationMin,
+          );
+          const nextDuration =
+            subEventDurationOptions[
+              (Math.max(currentIndex, 0) + 1) % subEventDurationOptions.length
+            ] ?? 30;
+          return { ...subAction, durationMin: nextDuration };
+        }),
+      );
+    };
+    const cycleAddEventSubActionEnergy = (id: string) => {
+      void hapticSoftTick();
+      setAddEventSubActions((current) =>
+        current.map((subAction) =>
+          subAction.id === id
+            ? {
+                ...subAction,
+                energy: getNextFabEnergyValue(
+                  normalizeFabEnergy(subAction.energy),
+                ),
+              }
+            : subAction,
+        ),
+      );
+    };
+    const removeAddEventSubAction = (id: string) => {
+      void hapticSoftTick();
+      setAddEventSubActions((current) =>
+        current.filter((subAction) => subAction.id !== id),
+      );
+    };
+    const handleRecurrenceChange = (value: string) => {
+      if (value === "__never__") {
+        if (!taskName.trim() && habitName.trim()) {
+          setTaskName(habitName);
+        }
+        if (!taskNotes.trim() && habitWhy.trim()) {
+          setTaskNotes(habitWhy);
+        }
+        handleUnifiedEventTypeChange("TASK");
+        return;
+      }
+
+      if (!habitName.trim() && taskName.trim()) {
+        setHabitName(taskName);
+      }
+      if (!habitWhy.trim() && taskNotes.trim()) {
+        setHabitWhy(taskNotes);
+      }
+      setHabitRecurrence(value);
+      handleUnifiedEventTypeChange("HABIT");
+    };
+    const formatPickerDate = (value: string) => {
+      if (!value) return "Pick date";
+      const [year, month, day] = value.split("-").map(Number);
+      if (!year || !month || !day) return value;
+      return new Intl.DateTimeFormat(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      }).format(new Date(year, month - 1, day));
+    };
+    const formatPickerTime = (value: string) => {
+      if (!value) return "Pick time";
+      const [hours, minutes] = value.split(":").map(Number);
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(2000, 0, 1, hours, minutes));
+    };
+    const handleStartDateChange = (value: string) => {
+      setTaskHasExactDate(true);
+      setTaskExactDate(value);
+      setTaskExactFallbackDate(value);
+      const nextDate = parseDateInputValueLocal(value);
+      if (nextDate) {
+        setUnifiedTimingViewedMonth(
+          new Date(nextDate.getFullYear(), nextDate.getMonth(), 1),
+        );
+      }
+    };
+    const handleStartTimeChange = (value: string) => {
+      setTaskHasExactDate(true);
+      setTaskExactStartTime(value);
+    };
+    const handleEndTimeChange = (value: string) => {
+      setTaskHasExactDate(true);
+      setTaskExactEndTime(value);
+    };
+    const handleEndDateChange = (value: string) => {
+      setUnifiedEventEndDate(value);
+      const nextDate = parseDateInputValueLocal(value);
+      if (nextDate) {
+        setUnifiedTimingViewedMonth(
+          new Date(nextDate.getFullYear(), nextDate.getMonth(), 1),
+        );
+      }
+    };
+    const handleTimingModeChange = (mode: AddEventTimingMode) => {
+      if (addEventTimingMode === mode) return;
+      void hapticSoftTick();
+      setSaveError(null);
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedTimingMonthYearPickerOpen(false);
+      if (mode === "dynamic") {
+        setAddEventDynamicDuration(String(inferredManualDurationMinutes));
+      }
+      setAddEventTimingMode(mode);
+    };
+    const toggleUnifiedEventAllDay = () => {
+      setUnifiedEventAllDay((current) => {
+        const nextValue = !current;
+        if (nextValue) {
+          setUnifiedTimingPickerOpen((openPicker) =>
+            openPicker === "startDate" ? openPicker : null,
+          );
+        }
+        return nextValue;
+      });
+    };
+    const renderTimingPanelShell = (
+      picker: Exclude<UnifiedTimingPickerOpen, null>,
+      children: React.ReactNode,
+    ) => (
+      <AnimatePresence initial={false}>
+        {unifiedTimingPickerOpen === picker ? (
+          <motion.div
+            key={picker}
+            initial={
+              prefersReducedMotion
+                ? { gridTemplateRows: "0fr" }
+                : { gridTemplateRows: "0fr" }
+            }
+            animate={
+              prefersReducedMotion
+                ? { gridTemplateRows: "1fr" }
+                : { gridTemplateRows: "1fr" }
+            }
+            exit={
+              prefersReducedMotion
+                ? {
+                    gridTemplateRows: "0fr",
+                    transition: { duration: 0.04, ease: "linear" },
+                  }
+                : {
+                    gridTemplateRows: "0fr",
+                    transition: {
+                      gridTemplateRows: {
+                        duration: 0.32,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                    },
+                  }
+            }
+            transition={
+              prefersReducedMotion
+                ? { duration: 0.04, ease: "linear" }
+                : {
+                    gridTemplateRows: {
+                      duration: 0.46,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }
+            }
+            className={timingInlinePanelClass}
+            style={{
+              display: "grid",
+              overflow: "hidden",
+              transformOrigin: "top",
+            }}
+          >
+            <motion.div
+              className={cn(
+                timingInlinePanelInnerClass,
+                "min-h-0 overflow-hidden",
+              )}
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: -3, scale: 0.998 }
+              }
+              animate={
+                prefersReducedMotion
+                  ? { opacity: 1 }
+                  : { opacity: 1, y: 0, scale: 1 }
+              }
+              exit={
+                prefersReducedMotion
+                  ? {
+                      opacity: 0,
+                      transition: { duration: 0.08, ease: "linear" },
+                    }
+                  : {
+                      opacity: 0,
+                      y: -2,
+                      scale: 0.998,
+                      transition: {
+                        opacity: {
+                          duration: 0.18,
+                          ease: [0.16, 1, 0.3, 1],
+                        },
+                        y: {
+                          duration: 0.28,
+                          ease: [0.16, 1, 0.3, 1],
+                        },
+                        scale: {
+                          duration: 0.28,
+                          ease: [0.16, 1, 0.3, 1],
+                        },
+                      },
+                    }
+              }
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0.08, ease: "linear" }
+                  : {
+                      opacity: {
+                        duration: 0.24,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                      y: {
+                        duration: 0.34,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                      scale: {
+                        duration: 0.34,
+                        ease: [0.16, 1, 0.3, 1],
+                      },
+                    }
+              }
+              style={{ transformOrigin: "top" }}
+            >
+              {children}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+    const renderDatePicker = (
+      picker: Extract<UnifiedTimingPickerOpen, "startDate" | "endDate">,
+      selectedDate: Date,
+      onDateChange: (value: string) => void,
+    ) => {
+      const monthStart = new Date(
+        unifiedTimingViewedMonth.getFullYear(),
+        unifiedTimingViewedMonth.getMonth(),
+        1,
+      );
+      const monthEnd = new Date(
+        monthStart.getFullYear(),
+        monthStart.getMonth() + 1,
+        0,
+      );
+      const firstGridDate = new Date(monthStart);
+      firstGridDate.setDate(monthStart.getDate() - monthStart.getDay());
+      const lastGridDate = new Date(monthEnd);
+      lastGridDate.setDate(monthEnd.getDate() + (6 - monthEnd.getDay()));
+      const monthTitle = new Intl.DateTimeFormat(undefined, {
+        month: "long",
+        year: "numeric",
+      }).format(monthStart);
+      const monthLabels = Array.from({ length: 12 }, (_, monthIndex) =>
+        new Intl.DateTimeFormat(undefined, { month: "short" }).format(
+          new Date(monthStart.getFullYear(), monthIndex, 1),
+        ),
+      );
+      const yearOptions = Array.from(
+        { length: 16 },
+        (_, index) => monthStart.getFullYear() - 5 + index,
+      );
+      const weekdayLabels = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+      const gridDayCount =
+        Math.round(
+          (lastGridDate.getTime() - firstGridDate.getTime()) /
+            (24 * 60 * 60 * 1000),
+        ) + 1;
+      const gridDates = Array.from({ length: gridDayCount }, (_, index) => {
+        const gridDate = new Date(firstGridDate);
+        gridDate.setDate(firstGridDate.getDate() + index);
+        return gridDate;
+      });
+      const selectedDateValue = formatDateInputValue(selectedDate);
+      const updateVisibleMonthYear = (year: number, monthIndex: number) => {
+        const nextSelectedDay = Math.min(
+          selectedDate.getDate(),
+          new Date(year, monthIndex + 1, 0).getDate(),
+        );
+        const nextSelectedDate = new Date(year, monthIndex, nextSelectedDay);
+
+        setUnifiedTimingViewedMonth(new Date(year, monthIndex, 1));
+        onDateChange(formatDateInputValue(nextSelectedDate));
+      };
+
+      return renderTimingPanelShell(
+        picker,
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              aria-expanded={isUnifiedTimingMonthYearPickerOpen}
+              onClick={() => {
+                void hapticSoftTick();
+                setIsUnifiedTimingMonthYearPickerOpen((isOpen) => !isOpen);
+              }}
+              className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-1.5 py-1 text-left text-[17px] font-semibold text-zinc-100 transition hover:bg-white/[0.055] active:bg-white/[0.08]"
+            >
+              <span className="truncate">{monthTitle}</span>
+              <ChevronRight
+                className={cn(
+                  "h-4 w-4 shrink-0 text-zinc-400 transition-transform",
+                  isUnifiedTimingMonthYearPickerOpen && "rotate-90",
+                )}
+                aria-hidden="true"
+              />
+            </button>
+            {isUnifiedTimingMonthYearPickerOpen ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void hapticSoftTick();
+                  setIsUnifiedTimingMonthYearPickerOpen(false);
+                }}
+                className="rounded-full px-3 py-1.5 text-[12px] font-semibold text-zinc-300 transition hover:bg-white/[0.055] active:bg-white/[0.08]"
+              >
+                Done
+              </button>
+            ) : null}
+            <div
+              className={cn(
+                "flex items-center gap-1",
+                isUnifiedTimingMonthYearPickerOpen && "hidden",
+              )}
+            >
+              <button
+                type="button"
+                aria-label="Previous month"
+                onClick={() => {
+                  void hapticSoftTick();
+                  setUnifiedTimingViewedMonth(
+                    new Date(
+                      monthStart.getFullYear(),
+                      monthStart.getMonth() - 1,
+                      1,
+                    ),
+                  );
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:bg-white/[0.055] active:bg-white/[0.08]"
+              >
+                <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="Next month"
+                onClick={() => {
+                  void hapticSoftTick();
+                  setUnifiedTimingViewedMonth(
+                    new Date(
+                      monthStart.getFullYear(),
+                      monthStart.getMonth() + 1,
+                      1,
+                    ),
+                  );
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 hover:bg-white/[0.055] active:bg-white/[0.08]"
+              >
+                <ChevronRight className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          {isUnifiedTimingMonthYearPickerOpen ? (
+            <div
+              className="flex w-full justify-center py-3"
+              aria-label="Choose month and year"
+            >
+              <WheelPickerWrapper className="border-0 dark:border-0">
+                <WheelPicker
+                  value={monthStart.getMonth()}
+                  onValueChange={(monthIndex) => {
+                    if (picker === "startDate") {
+                      runAddEventWheelFeedback("startDate-month", monthIndex);
+                    }
+                    updateVisibleMonthYear(
+                      monthStart.getFullYear(),
+                      monthIndex,
+                    );
+                  }}
+                  options={monthLabels.map((label, monthIndex) => ({
+                    value: monthIndex,
+                    label,
+                  }))}
+                  infinite
+                />
+                <WheelPicker
+                  value={monthStart.getFullYear()}
+                  onValueChange={(year) => {
+                    if (picker === "startDate") {
+                      runAddEventWheelFeedback("startDate-year", year);
+                    }
+                    updateVisibleMonthYear(year, monthStart.getMonth());
+                  }}
+                  options={yearOptions.map((year) => ({
+                    value: year,
+                    label: year,
+                  }))}
+                />
+              </WheelPickerWrapper>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-zinc-500">
+                {weekdayLabels.map((weekday) => (
+                  <div key={weekday} className="py-1">
+                    {weekday}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-y-1 text-center">
+                {gridDates.map((gridDate) => {
+                  const dateValue = formatDateInputValue(gridDate);
+                  const isSelected = dateValue === selectedDateValue;
+                  const isCurrentMonth =
+                    gridDate.getMonth() === monthStart.getMonth();
+                  return (
+                    <button
+                      key={dateValue}
+                      type="button"
+                      onClick={() => {
+                        void hapticSoftTick();
+                        onDateChange(dateValue);
+                      }}
+                      className={cn(
+                        "mx-auto flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-medium transition touch-manipulation",
+                        isSelected
+                          ? "bg-zinc-100 text-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.18)]"
+                          : "text-zinc-200 hover:bg-white/[0.055]",
+                        !isCurrentMonth && !isSelected && "text-zinc-700",
+                      )}
+                    >
+                      {gridDate.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>,
+      );
+    };
+    const renderStartDatePicker = () =>
+      renderDatePicker("startDate", selectedStartDate, handleStartDateChange);
+    const renderEndDatePicker = () =>
+      renderDatePicker("endDate", selectedEndDate, handleEndDateChange);
+    const renderTimePicker = (
+      picker: Extract<UnifiedTimingPickerOpen, "startTime" | "endTime">,
+      value: string,
+      onChange: (value: string) => void,
+      label: string,
+    ) => {
+      const selectedParts = getTimeValueParts(value);
+      const hourOptions = Array.from({ length: 12 }, (_, index) => {
+        const hour = index + 1;
+        return { value: hour, label: hour };
+      });
+      const minuteOptions = Array.from({ length: 60 }, (_, index) => ({
+        value: index,
+        label: String(index).padStart(2, "0"),
+      }));
+      const periodOptions: Array<"AM" | "PM"> = ["AM", "PM"];
+      const setTimePart = (
+        nextPart: Partial<ReturnType<typeof getTimeValueParts>>,
+      ) => {
+        const nextHour = nextPart.hour ?? selectedParts.hour;
+        const nextMinute = nextPart.minute ?? selectedParts.minute;
+        const nextPeriod = nextPart.period ?? selectedParts.period;
+        onChange(getTimeValueFromParts(nextHour, nextMinute, nextPeriod));
+      };
+
+      return renderTimingPanelShell(
+        picker,
+        <>
+          <div className="flex w-full justify-center py-3">
+            <WheelPickerWrapper
+              aria-label={label}
+              className="border-0 dark:border-0"
+            >
+              <WheelPicker
+                value={selectedParts.hour}
+                onValueChange={(hour) => {
+                  runAddEventWheelFeedback(`${picker}-hour`, hour);
+                  setTimePart({ hour });
+                }}
+                options={hourOptions}
+                infinite
+              />
+              <WheelPicker
+                value={selectedParts.minute}
+                onValueChange={(minute) => {
+                  runAddEventWheelFeedback(`${picker}-minute`, minute);
+                  setTimePart({ minute });
+                }}
+                options={minuteOptions}
+                infinite
+              />
+              <WheelPicker<"AM" | "PM">
+                value={selectedParts.period}
+                onValueChange={(period) => {
+                  runAddEventWheelFeedback(`${picker}-period`, period);
+                  setTimePart({ period });
+                }}
+                options={periodOptions.map((period) => ({
+                  value: period,
+                  label: period,
+                }))}
+              />
+            </WheelPickerWrapper>
+          </div>
+          {picker === "startTime" ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={unifiedEventAllDay}
+              onClick={toggleUnifiedEventAllDay}
+              className="-mt-0.5 inline-flex w-full items-center justify-between gap-3 px-1.5 py-1.5 text-left text-[13px] font-medium text-zinc-400 transition hover:text-zinc-200 active:text-zinc-100 touch-manipulation"
+            >
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <Sun
+                  className="h-4 w-4 shrink-0 text-zinc-500"
+                  aria-hidden="true"
+                />
+                <span>All-day</span>
+              </span>
+              <span
+                className={cn(
+                  "relative h-5 w-9 shrink-0 rounded-full border transition shadow-inner",
+                  unifiedEventAllDay
+                    ? "border-zinc-300/35 bg-zinc-500/75"
+                    : "border-zinc-700/60 bg-zinc-800/80",
+                )}
+                aria-hidden="true"
+              >
+                <span
+                  className={cn(
+                    "absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-zinc-100 shadow-sm transition",
+                    unifiedEventAllDay ? "left-[1.1rem]" : "left-0.5",
+                  )}
+                />
+              </span>
+            </button>
+          ) : null}
+          {picker === "endTime" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setIsUnifiedTimingMonthYearPickerOpen(false);
+                const currentStartDate = taskExactDate.trim();
+                const currentEndDate = unifiedEventEndDate.trim();
+                const seededEndDate =
+                  currentEndDate ||
+                  currentStartDate ||
+                  formatDateInputValue(new Date());
+                const parsedEndDate = parseDateInputValueLocal(seededEndDate);
+
+                if (!currentEndDate) {
+                  setUnifiedEventEndDate(seededEndDate);
+                }
+                if (parsedEndDate) {
+                  setUnifiedTimingViewedMonth(
+                    new Date(
+                      parsedEndDate.getFullYear(),
+                      parsedEndDate.getMonth(),
+                      1,
+                    ),
+                  );
+                }
+                setUnifiedTimingPickerOpen("endDate");
+              }}
+              className="-mt-0.5 inline-flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-[13px] font-medium text-zinc-400 transition hover:text-zinc-200 active:text-zinc-100 touch-manipulation"
+            >
+              <CalendarPlus
+                className="h-4 w-4 shrink-0 text-zinc-500"
+                aria-hidden="true"
+              />
+              <span>
+                {unifiedEventEndDate.trim()
+                  ? formatPickerDate(unifiedEventEndDate.trim())
+                  : "Add end date"}
+              </span>
+            </button>
+          ) : null}
+        </>,
+      );
+    };
+    const renderAddEventGroupedSkillItems = () => {
+      const uncategorizedGroupId = "__uncategorized_skill_group__";
+      const uncategorizedGroupLabel = "Uncategorized";
+      const groups = new Map<
+        string,
+        { id: string; label: string; skills: Skill[] }
+      >();
+
+      filteredSkills.forEach((skill) => {
+        const groupId = skill.cat_id ?? uncategorizedGroupId;
+        const categoryLabel =
+          skillCategories
+            .find((category) => category.id === groupId)
+            ?.name?.trim() || uncategorizedGroupLabel;
+        const group = groups.get(groupId) ?? {
+          id: groupId,
+          label:
+            groupId === uncategorizedGroupId
+              ? uncategorizedGroupLabel
+              : categoryLabel,
+          skills: [],
+        };
+        group.skills.push(skill);
+        groups.set(groupId, group);
+      });
+
+      const orderedGroups: Array<{
+        id: string;
+        label: string;
+        skills: Skill[];
+      }> = [];
+      const seen = new Set<string>();
+
+      skillCategories.forEach((category) => {
+        const group = groups.get(category.id);
+        if (!group) return;
+        orderedGroups.push({
+          ...group,
+          label: category.name?.trim() || group.label,
+        });
+        seen.add(category.id);
+      });
+
+      const uncategorizedGroup = groups.get(uncategorizedGroupId);
+      if (uncategorizedGroup) {
+        orderedGroups.push(uncategorizedGroup);
+        seen.add(uncategorizedGroupId);
+      }
+
+      groups.forEach((group, groupId) => {
+        if (!seen.has(groupId)) {
+          orderedGroups.push(group);
+        }
+      });
+
+      return orderedGroups.map((group) => (
+        <div key={group.id} className="space-y-1.5 px-2.5 py-2.5">
+          <div className="px-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+            {group.label}
+          </div>
+          <div className="grid gap-1.5">
+            {group.skills.map((skill) => (
+              <SelectItem
+                key={skill.id}
+                value={skill.id}
+                className={fabCreationSelectItemClass(
+                  skillValue === skill.id,
+                  "min-h-10 px-3 py-2.5 text-[14px] leading-5",
+                )}
+              >
+                <span className="inline-flex min-w-0 items-center gap-2.5">
+                  {skill.icon ? (
+                    <span
+                      className="w-5 shrink-0 text-center text-base leading-none"
+                      aria-hidden="true"
+                    >
+                      {skill.icon}
+                    </span>
+                  ) : (
+                    <span
+                      className="mx-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-500/55"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="min-w-0 truncate">{skill.name}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </div>
+        </div>
+      ));
+    };
+
+    const workspaceSection = (
+      <section className={workspaceRowClass} aria-label="Workspace">
+        <div className="grid min-h-[38px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3">
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold leading-none text-zinc-100">
+              Workspace
+            </h3>
+            <p className="mt-1 text-[11px] font-medium leading-snug text-zinc-500">
+              {isCircleWorkspace
+                ? circleWorkspacePersists
+                  ? "Circle system"
+                  : "Circle preview"
+                : "My system"}
+            </p>
+          </div>
+          <div className="flex min-w-0 justify-end">
+            <Select
+              value={addEventWorkspaceValue}
+              onValueChange={handleAddEventWorkspaceChange}
+              triggerClassName={workspaceSelectTriggerClass}
+              trigger={
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  {isCircleWorkspace ? (
+                    <CircleDot
+                      className="h-3.5 w-3.5 shrink-0 text-zinc-300"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-zinc-500"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="truncate">
+                    {isCircleWorkspace
+                      ? (selectedAddEventCircle?.name ?? "Selected Circle")
+                      : "Personal"}
+                  </span>
+                </span>
+              }
+              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+              contentAlign="end"
+              minContentWidth={220}
+            >
+              <SelectContent
+                className={cn(FAB_CREATION_SELECT_CONTENT_CLASS, "max-h-[18rem]")}
+              >
+                <SelectItem
+                  value="PERSONAL"
+                  className={fabCreationSelectItemClass(
+                    addEventWorkspaceValue === "PERSONAL",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full bg-zinc-400"
+                      aria-hidden="true"
+                    />
+                    <span>Personal · My system</span>
+                  </div>
+                </SelectItem>
+                {manageableCirclesLoading ? (
+                  <SelectItem
+                    value="__workspace_circles_loading"
+                    disabled
+                    className={fabCreationSelectItemClass(false)}
+                  >
+                    Loading circles...
+                  </SelectItem>
+                ) : manageableCircles.length > 0 ? (
+                  manageableCircles.map((circle) => {
+                    const value =
+                      `CIRCLE:${circle.id}` as AddEventWorkspaceValue;
+                    return (
+                      <SelectItem
+                        key={circle.id}
+                        value={value}
+                        className={fabCreationSelectItemClass(
+                          addEventWorkspaceValue === value,
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <CircleDot
+                            className="h-4 w-4 shrink-0 text-zinc-300"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{circle.name}</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })
+                ) : (
+                  <SelectItem
+                    value="__workspace_circle_later"
+                    disabled
+                    className={fabCreationSelectItemClass(false)}
+                  >
+                    Circle later
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </section>
+    );
+
+    const peopleSection = (
+      <section className={inviteSectionClass} aria-label={peopleSectionTitle}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-semibold leading-none text-zinc-100">
+              {peopleSectionTitle}
+            </h3>
+            <p className="mt-1 text-[11px] font-medium leading-snug text-zinc-500">
+              {peopleSectionDescription}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled
+            className={inviteActionClass}
+            aria-label={
+              isCircleWorkspace
+                ? "Assignment coming soon"
+                : "Invite people coming soon"
+            }
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add
+          </button>
+        </div>
+
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+          {isCircleWorkspace ? (
+            <>
+              {selectedCircleMembers.length > 0 ? (
+                selectedCircleMembers.map((member) => (
+                  <span
+                    key={member.userId}
+                    className={cn(inviteChipClass, "max-w-[10rem] opacity-80")}
+                    aria-label={`${member.displayName} assignment preview`}
+                  >
+                    {member.avatarUrl ? (
+                      <span
+                        className="h-5 w-5 shrink-0 rounded-full bg-cover bg-center"
+                        style={{
+                          backgroundImage: `url(${member.avatarUrl})`,
+                        }}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-[9px] font-bold text-zinc-200">
+                        {member.initials ?? "?"}
+                      </span>
+                    )}
+                    <span className="truncate">{member.displayName}</span>
+                  </span>
+                ))
+              ) : (
+                <span className={inviteChipClass}>
+                  <CircleDot className="h-3 w-3" aria-hidden="true" />
+                  Members unavailable
+                </span>
+              )}
+              <span
+                className={cn(inviteChipClass, "text-zinc-500")}
+                aria-label="Assignment persistence is not available yet"
+              >
+                Assign later
+              </span>
+              {selectedCircleMemberCount > selectedCircleMembers.length ? (
+                <span className={cn(inviteChipClass, "text-zinc-500")}>
+                  +{selectedCircleMemberCount - selectedCircleMembers.length}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <span className={inviteChipClass}>
+                <span className="h-2 w-2 rounded-full bg-zinc-600" />
+                People
+              </span>
+              <span
+                className={cn(inviteChipClass, "gap-1 text-zinc-500")}
+                aria-label="Circle workspace selection is available from the Workspace row"
+              >
+                <CircleDot className="h-3 w-3" aria-hidden="true" />
+                Circle later
+              </span>
+            </>
+          )}
+        </div>
+      </section>
+    );
+
+    const notesMiniSheet = (
+      <AnimatePresence initial={false}>
+        {isUnifiedNotesSheetOpen ? (
+          <motion.div
+            key="unified-event-notes-sheet"
+            className="absolute inset-0 isolate z-[80] overflow-hidden bg-[#08080a]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onClick={closeUnifiedNotesSheet}
+          >
+            <motion.div
+              className="absolute inset-0 z-0 bg-[#08080a]/95 backdrop-blur-[2px]"
+              aria-hidden="true"
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Description"
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              animate={{ y: 0, opacity: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              transition={{
+                type: "tween",
+                ease: [0.16, 1, 0.3, 1],
+                duration: 0.24,
+              }}
+              className="absolute inset-0 z-10 overflow-hidden rounded-t-[30px] border border-zinc-800/70 border-b-0 bg-[#151517] text-zinc-100 shadow-[0_-22px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeUnifiedNotesSheet();
+                }
+              }}
+            >
+              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
+                  <button
+                    type="button"
+                    onClick={clearUnifiedNotes}
+                    className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Clear
+                  </button>
+                  <h2 className="text-sm font-semibold text-zinc-100">
+                    Description
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={closeUnifiedNotesSheet}
+                    className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Done
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3">
+                  <Textarea
+                    ref={unifiedNotesTextareaRef}
+                    value={notesValue}
+                    onChange={(event) => setNotesValue(event.target.value)}
+                    placeholder="type something"
+                    className="h-full min-h-0 w-full resize-none overflow-y-auto rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5 text-base leading-6 text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:border-zinc-600/80 focus-visible:border-zinc-600/80 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+
+    const tagsMiniSheet = (
+      <AnimatePresence initial={false}>
+        {isUnifiedTagsSheetOpen ? (
+          <motion.div
+            key="unified-event-tags-sheet"
+            className="absolute inset-0 isolate z-[80] overflow-hidden bg-[#08080a]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onClick={closeUnifiedTagsSheet}
+          >
+            <motion.div
+              className="absolute inset-0 z-0 bg-[#08080a]/95 backdrop-blur-[2px]"
+              aria-hidden="true"
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Tags"
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              animate={{ y: 0, opacity: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              transition={{
+                type: "tween",
+                ease: [0.16, 1, 0.3, 1],
+                duration: 0.24,
+              }}
+              className="absolute inset-0 z-10 overflow-hidden rounded-t-[30px] border border-zinc-800/70 border-b-0 bg-[#151517] text-zinc-100 shadow-[0_-22px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeUnifiedTagsSheet();
+                }
+              }}
+            >
+              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
+                  {canClearUnifiedTagsSheet ? (
+                    <button
+                      type="button"
+                      onClick={clearUnifiedTagsSheet}
+                      className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                    >
+                      Clear
+                    </button>
+                  ) : (
+                    <span aria-hidden="true" />
+                  )}
+                  <h2 className="text-sm font-semibold text-zinc-100">Tags</h2>
+                  <button
+                    type="button"
+                    onClick={closeUnifiedTagsSheet}
+                    className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Done
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-4">
+                  <div className="mx-auto grid w-full max-w-xl gap-4">
+                    <section className="grid gap-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Tags
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          {selectedTagIds.length > 0 ? (
+                            <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                              {selectedTagIds.length} selected
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void hapticSoftTick();
+                              setIsUnifiedTagCreateOpen(true);
+                            }}
+                            disabled={tagsLoading || isCreatingTag}
+                            className="inline-flex h-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.07] px-3 text-[11px] font-semibold text-zinc-100 transition hover:border-white/18 hover:bg-white/[0.11] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            New
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="min-h-[8rem] rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                        {isUnifiedTagCreateOpen ? (
+                          <div className="mb-3 flex items-center gap-2 rounded-[14px] border border-white/10 bg-white/[0.04] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                            <input
+                              ref={unifiedTagCreateInputRef}
+                              type="text"
+                              value={unifiedTagCreateValue}
+                              onChange={(event) =>
+                                setUnifiedTagCreateValue(event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void handleUnifiedTagCreate();
+                                } else if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  cancelUnifiedTagCreate();
+                                }
+                              }}
+                              placeholder="New tag"
+                              className="h-9 min-w-0 flex-1 rounded-[10px] border border-white/10 bg-black/25 px-3 text-sm text-zinc-100 shadow-none outline-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:border-zinc-600/80 focus:ring-0 focus-visible:border-zinc-600/80 focus-visible:outline-none focus-visible:ring-0"
+                            />
+                            <button
+                              type="button"
+                              aria-label="Create tag"
+                              title={
+                                tagsByNormalizedName.has(
+                                  normalizeTagName(unifiedTagCreateValue),
+                                )
+                                  ? "Select existing tag"
+                                  : "Create tag"
+                              }
+                              onClick={() => void handleUnifiedTagCreate()}
+                              disabled={
+                                !normalizeTagName(unifiedTagCreateValue) ||
+                                isCreatingTag
+                              }
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/10 text-white transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {isCreatingTag ? (
+                                <Loader2
+                                  className="h-3.5 w-3.5 animate-spin"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <Check
+                                  className="h-3.5 w-3.5"
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Cancel tag creation"
+                              title="Cancel"
+                              onClick={cancelUnifiedTagCreate}
+                              disabled={isCreatingTag}
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/25 text-zinc-300 transition hover:border-white/18 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                        ) : null}
+                        {tagsLoading ? (
+                          <div className="grid min-h-[6rem] place-items-center">
+                            <p className="text-sm text-zinc-400">
+                              Loading tags...
+                            </p>
+                          </div>
+                        ) : availableTags.length > 0 ? (
+                          <div className="flex flex-wrap content-start gap-2">
+                            {availableTags.map((tag) => {
+                              const isSelected = selectedTagIds.includes(tag.id);
+                              return (
+                                <button
+                                  key={tag.id}
+                                  type="button"
+                                  aria-pressed={isSelected}
+                                  onClick={() => {
+                                    void hapticSoftTick();
+                                    toggleSelectedTagId(tag.id);
+                                  }}
+                                  className={cn(
+                                    "inline-flex min-h-9 max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50",
+                                    isSelected
+                                      ? "border-white/30 bg-white/14 text-white"
+                                      : "border-white/10 bg-black/25 text-zinc-300 hover:border-white/20 hover:text-white",
+                                  )}
+                                >
+                                  <span
+                                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/40"
+                                    style={
+                                      tag.color
+                                        ? { backgroundColor: tag.color }
+                                        : undefined
+                                    }
+                                  />
+                                  <span className="min-w-0 truncate">
+                                    {tag.name}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="grid min-h-[6rem] place-items-center rounded-[14px] border border-dashed border-zinc-800/70 bg-zinc-950/30 px-4 text-center">
+                            <p className="text-sm text-zinc-400">
+                              No tags available yet.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    {unifiedDueDateMetadata ? (
+                      <section className="grid gap-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-zinc-100">
+                            Due Date
+                          </h3>
+                          {unifiedDueDateMetadata.value ? (
+                            <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                              {unifiedDueDateMetadata.value}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                          <Input
+                            id={unifiedDueDateMetadata.id}
+                            type="date"
+                            value={unifiedDueDateMetadata.value}
+                            onChange={(event) => {
+                              void hapticSoftTick();
+                              unifiedDueDateMetadata.onChange(
+                                event.target.value,
+                              );
+                            }}
+                            disabled={unifiedDueDateMetadata.disabled}
+                            className="h-10 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-sm text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:border-zinc-600/80 focus-visible:border-zinc-600/80 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:border-white/[0.06] disabled:bg-white/[0.025] disabled:text-zinc-500"
+                          />
+                          <p className="mt-2 text-xs leading-snug text-zinc-500">
+                            {unifiedDueDateMetadata.helper}
+                          </p>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {isTask ? (
+                      <section className="grid gap-2.5">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Stage
+                        </h3>
+                        <div className="rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                          <Select
+                            value={taskStage}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setTaskStage(value);
+                            }}
+                            triggerClassName={cn(
+                              detailSelectTriggerClass,
+                              "w-full justify-between text-[11px] uppercase tracking-[0.12em]",
+                            )}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                          >
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                              {TASK_STAGE_OPTIONS_LOCAL.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                  className={fabCreationSelectItemClass(
+                                    taskStage === option.value,
+                                  )}
+                                >
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {isHabit ? (
+                      <section className="grid gap-2.5">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Location Context
+                        </h3>
+                        <div className="rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                          <Select
+                            value={habitLocationContextId || "none"}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setHabitLocationContextId(
+                                value === "none" ? "" : value,
+                              );
+                            }}
+                            disabled={locationContextsLoading}
+                            triggerClassName={cn(
+                              detailSelectTriggerClass,
+                              "w-full justify-between text-sm",
+                            )}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                          >
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                              <SelectItem
+                                value="none"
+                                className={fabCreationSelectItemClass(
+                                  !habitLocationContextId,
+                                )}
+                              >
+                                Anywhere
+                              </SelectItem>
+                              {validLocationContexts.map((context) => (
+                                <SelectItem
+                                  key={context.id}
+                                  value={context.id}
+                                  className={fabCreationSelectItemClass(
+                                    habitLocationContextId === context.id,
+                                  )}
+                                >
+                                  {context.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {locationContextsLoading ? (
+                            <p className="mt-2 text-xs text-zinc-500">
+                              Loading location contexts...
+                            </p>
+                          ) : locationContextsError ? (
+                            <p className="mt-2 text-xs text-red-300/80">
+                              Location contexts could not be loaded.
+                            </p>
+                          ) : validLocationContexts.length === 0 ? (
+                            <p className="mt-2 text-xs text-zinc-500">
+                              No location contexts available.
+                            </p>
+                          ) : null}
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {isHabit ? (
+                      <section className="grid gap-2.5">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Daylight
+                        </h3>
+                        <div className="rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                          <Select
+                            value={habitDaylightPreference}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setHabitDaylightPreference(value);
+                            }}
+                            triggerClassName={cn(
+                              detailSelectTriggerClass,
+                              "w-full justify-between text-sm",
+                            )}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                          >
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                              {HABIT_DAYLIGHT_ADVANCED_OPTIONS.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                  className={fabCreationSelectItemClass(
+                                    habitDaylightPreference === option.value,
+                                  )}
+                                >
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {isHabit ? (
+                      <section className="grid gap-2.5">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Window Edge
+                        </h3>
+                        <div className="rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                          <Select
+                            value={habitWindowEdgePreference}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              setHabitWindowEdgePreference(value);
+                            }}
+                            triggerClassName={cn(
+                              detailSelectTriggerClass,
+                              "w-full justify-between text-sm",
+                            )}
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                          >
+                            <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                              {HABIT_WINDOW_EDGE_ADVANCED_OPTIONS.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                  className={fabCreationSelectItemClass(
+                                    habitWindowEdgePreference === option.value,
+                                  )}
+                                >
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </section>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+
+    const formsMiniSheet = (
+      <AnimatePresence initial={false}>
+        {isUnifiedFormsSheetOpen ? (
+          <motion.div
+            key="unified-event-forms-sheet"
+            className="absolute inset-0 isolate z-[80] overflow-hidden bg-[#08080a]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onClick={closeUnifiedFormsSheet}
+          >
+            <motion.div
+              className="absolute inset-0 z-0 bg-[#08080a]/95 backdrop-blur-[2px]"
+              aria-hidden="true"
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Forms"
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              animate={{ y: 0, opacity: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              transition={{
+                type: "tween",
+                ease: [0.16, 1, 0.3, 1],
+                duration: 0.24,
+              }}
+              className="absolute inset-0 z-10 overflow-hidden rounded-t-[30px] border border-zinc-800/70 border-b-0 bg-[#151517] text-zinc-100 shadow-[0_-22px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeUnifiedFormsSheet();
+                }
+              }}
+            >
+              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
+                  {canClearUnifiedFormsSheet ? (
+                    <button
+                      type="button"
+                      onClick={clearUnifiedFormsSheet}
+                      className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                    >
+                      Clear
+                    </button>
+                  ) : (
+                    <span aria-hidden="true" />
+                  )}
+                  <h2 className="text-sm font-semibold text-zinc-100">Forms</h2>
+                  <button
+                    type="button"
+                    onClick={closeUnifiedFormsSheet}
+                    className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Done
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-4">
+                  <div className="mx-auto grid w-full max-w-xl gap-4">
+                    <section className="grid gap-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-zinc-100">
+                            Forms
+                          </h3>
+                          <p className="mt-1 text-xs leading-snug text-zinc-500">
+                            Attach a capture form to this Event.
+                          </p>
+                        </div>
+                        {selectedMemoDatabaseTarget ? (
+                          <span className="max-w-[9rem] truncate rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                            {selectedMemoDatabaseTarget.label}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-3 rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5">
+                        <div className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3">
+                          <Search
+                            className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                            aria-hidden="true"
+                          />
+                          <input
+                            type="search"
+                            value={memoFormSearch}
+                            onChange={(event) =>
+                              setMemoFormSearch(event.target.value)
+                            }
+                            placeholder="Search forms"
+                            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-zinc-100 outline-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white"
+                          />
+                        </div>
+
+                        {filteredMemoDatabaseTargets.length > 0 ? (
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {filteredMemoDatabaseTargets.map((target) => {
+                              const isSelected =
+                                selectedMemoDatabaseTargetId === target.id;
+
+                              return (
+                                <button
+                                  key={target.id}
+                                  type="button"
+                                  aria-pressed={isSelected}
+                                  onClick={() => {
+                                    void hapticSoftTick();
+                                    setSelectedMemoDatabaseTargetId(target.id);
+                                    setMemoCaptureActions((current) => ({
+                                      ...current,
+                                      form: true,
+                                    }));
+                                  }}
+                                  className={cn(
+                                    "flex min-h-11 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50",
+                                    isSelected
+                                      ? "border-white/30 bg-white/14 text-white"
+                                      : "border-white/10 bg-black/25 text-zinc-300 hover:border-white/20 hover:text-white",
+                                  )}
+                                >
+                                  <span className="min-w-0 truncate">
+                                    {target.label}
+                                  </span>
+                                  {isSelected ? (
+                                    <Check
+                                      className="h-4 w-4 shrink-0 text-zinc-100"
+                                      aria-hidden="true"
+                                    />
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="grid min-h-[6rem] place-items-center rounded-[14px] border border-dashed border-zinc-800/70 bg-zinc-950/30 px-4 text-center">
+                            <p className="text-sm text-zinc-400">
+                              No forms found.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    {selectedMemoDatabaseTarget ? (
+                      <section className="rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 px-3.5 py-3">
+                        <p className="text-xs font-medium leading-snug text-zinc-300">
+                          Selected: {selectedMemoDatabaseTarget.label}
+                        </p>
+                        {isProject || isTask ? (
+                          <p className="mt-1 text-xs leading-snug text-zinc-500">
+                            Project and Task form persistence is coming next.
+                          </p>
+                        ) : null}
+                      </section>
+                    ) : isProject || isTask ? (
+                      <p className="text-xs leading-snug text-zinc-500">
+                        Project and Task form persistence is coming next.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+
+    const moreMiniSheet = (
+      <AnimatePresence initial={false}>
+        {isAddEventMoreOpen ? (
+          <motion.div
+            key="unified-event-more-sheet"
+            className="absolute inset-0 isolate z-[80] overflow-hidden bg-[#08080a]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onClick={closeAddEventMoreSheet}
+          >
+            <motion.div
+              className="absolute inset-0 z-0 bg-[#08080a]/95 backdrop-blur-[2px]"
+              aria-hidden="true"
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="More event options"
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              animate={{ y: 0, opacity: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              transition={{
+                type: "tween",
+                ease: [0.16, 1, 0.3, 1],
+                duration: 0.24,
+              }}
+              className="absolute inset-0 z-10 overflow-hidden rounded-t-[30px] border border-zinc-800/70 border-b-0 bg-[#151517] text-zinc-100 shadow-[0_-22px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeAddEventMoreSheet();
+                }
+              }}
+            >
+              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
+                  <span aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-zinc-100">More</h2>
+                  <button
+                    type="button"
+                    onClick={closeAddEventMoreSheet}
+                    className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Done
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-4">
+                  <div className="mx-auto grid w-full max-w-xl gap-4">
+                    {workspaceSection}
+                    {peopleSection}
+
+                    <section className="grid gap-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Sub-events
+                        </h3>
+                        <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+                          {addEventSourceTypeLabel}
+                        </span>
+                      </div>
+                      <div className="overflow-hidden rounded-[18px] border border-zinc-800/55 bg-[#0d0d10]">
+                        {addEventSubActions.length > 0 ? (
+                          <div className="grid gap-2 p-2">
+                            {addEventSubActions.map((subAction, index) => {
+                              const selectedSubActionSkill = subAction.skillId
+                                ? findSkillById(subAction.skillId)
+                                : null;
+                              const normalizedSubActionPriority =
+                                normalizeFabPriority(subAction.priority);
+                              const subActionPriorityIcon =
+                                PRIORITY_ICON_MAP[normalizedSubActionPriority];
+                              const normalizedSubActionEnergy =
+                                normalizeFabEnergy(subAction.energy);
+                              const subActionDuration =
+                                subAction.durationMin ?? 30;
+
+                              return (
+                                <div
+                                  key={subAction.id}
+                                  className="grid gap-2 rounded-[15px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_20px_rgba(0,0,0,0.16)]"
+                                >
+                                  <div className="grid min-h-8 grid-cols-[1.5rem_minmax(0,1fr)_1.875rem] items-center gap-2">
+                                    <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/[0.09] bg-black/25 text-[10px] font-semibold text-zinc-400">
+                                      {index + 1}
+                                    </span>
+                                    <Input
+                                      value={subAction.title}
+                                      onChange={(event) =>
+                                        updateAddEventSubActionTitle(
+                                          subAction.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Sub-event title"
+                                      className="h-8 min-w-0 rounded-lg border-transparent bg-transparent px-1.5 text-sm font-medium text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:border-white/10 focus:bg-white/[0.045] focus-visible:border-white/10 focus-visible:bg-white/[0.045] focus-visible:ring-0 focus-visible:ring-offset-0"
+                                    />
+                                    <button
+                                      type="button"
+                                      aria-label="Remove sub-event"
+                                      onClick={() =>
+                                        removeAddEventSubAction(subAction.id)
+                                      }
+                                      className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.08] bg-black/20 text-zinc-500 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
+                                    >
+                                      <Trash2
+                                        className="h-3.5 w-3.5"
+                                        aria-hidden="true"
+                                      />
+                                    </button>
+                                  </div>
+                                  <div className="grid min-w-0 grid-cols-4 items-center gap-1.5 pb-0.5">
+                                    <div className="min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          cycleAddEventSubActionPriority(
+                                            subAction.id,
+                                          )
+                                        }
+                                        className={cn(
+                                          subEventToolButtonClass,
+                                          normalizedSubActionPriority !== "NO" &&
+                                            subEventToolActiveClass,
+                                        )}
+                                        aria-label={`Priority ${formatAddEventPriorityLabel(
+                                          normalizedSubActionPriority,
+                                        )}`}
+                                        title={`Priority: ${formatAddEventPriorityLabel(
+                                          normalizedSubActionPriority,
+                                        )}`}
+                                      >
+                                        {subActionPriorityIcon ? (
+                                          <span
+                                            className="min-w-3 text-center text-[10px] font-black leading-none text-red-400"
+                                            aria-hidden="true"
+                                          >
+                                            {subActionPriorityIcon}
+                                          </span>
+                                        ) : (
+                                          <Flag
+                                            className={subEventToolIconClass}
+                                            aria-hidden="true"
+                                          />
+                                        )}
+                                        <span className="sr-only">
+                                          {formatAddEventPriorityLabel(
+                                            normalizedSubActionPriority,
+                                          )}
+                                        </span>
+                                      </button>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          cycleAddEventSubActionEnergy(
+                                            subAction.id,
+                                          )
+                                        }
+                                        className={cn(
+                                          subEventToolButtonClass,
+                                          normalizedSubActionEnergy !== "NO" &&
+                                            subEventToolActiveClass,
+                                        )}
+                                        aria-label={`Energy ${normalizedSubActionEnergy}`}
+                                        title={`Energy: ${normalizedSubActionEnergy}`}
+                                      >
+                                        <FlameEmber
+                                          level={normalizedSubActionEnergy}
+                                          size="xs"
+                                          className="pointer-events-none -translate-y-px"
+                                        />
+                                      </button>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <Select
+                                        value={subAction.skillId || "__none__"}
+                                        onValueChange={(value) =>
+                                          updateAddEventSubActionSkill(
+                                            subAction.id,
+                                            value === "__none__"
+                                              ? null
+                                              : value,
+                                          )
+                                        }
+                                        triggerClassName={cn(
+                                          subEventToolButtonClass,
+                                          selectedSubActionSkill &&
+                                            subEventToolActiveClass,
+                                        )}
+                                        hideChevron
+                                        trigger={
+                                          <span className="inline-flex min-w-0 items-center justify-center">
+                                            {selectedSubActionSkill?.icon ? (
+                                              <span
+                                                className="truncate text-[13px] leading-none"
+                                                aria-hidden="true"
+                                              >
+                                                {selectedSubActionSkill.icon}
+                                              </span>
+                                            ) : (
+                                              <Brain
+                                                className={subEventToolIconClass}
+                                                aria-hidden="true"
+                                              />
+                                            )}
+                                            <span className="sr-only">
+                                              {selectedSubActionSkill
+                                                ? `Skill ${selectedSubActionSkill.name}`
+                                                : "Skill none"}
+                                            </span>
+                                          </span>
+                                        }
+                                        contentWrapperClassName={
+                                          FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS
+                                        }
+                                        contentAlign="start"
+                                        minContentWidth={224}
+                                        placeholder="Skill"
+                                      >
+                                        <SelectContent
+                                          className={cn(
+                                            FAB_CREATION_SELECT_CONTENT_CLASS,
+                                            "max-h-[18rem]",
+                                          )}
+                                        >
+                                          <SelectItem
+                                            value="__none__"
+                                            className={fabCreationSelectItemClass(
+                                              !subAction.skillId,
+                                            )}
+                                          >
+                                            No skill
+                                          </SelectItem>
+                                          {skillsLoading ? (
+                                            <SelectItem
+                                              value="__skills_loading"
+                                              disabled
+                                              className={fabCreationSelectItemClass(
+                                                false,
+                                              )}
+                                            >
+                                              Loading skills...
+                                            </SelectItem>
+                                          ) : filteredSkills.length > 0 ? (
+                                            filteredSkills.map((skill) => (
+                                              <SelectItem
+                                                key={skill.id}
+                                                value={skill.id}
+                                                className={fabCreationSelectItemClass(
+                                                  subAction.skillId === skill.id,
+                                                )}
+                                              >
+                                                <span className="inline-flex min-w-0 items-center gap-2">
+                                                  {skill.icon ? (
+                                                    <span
+                                                      className="w-5 shrink-0 text-center text-base leading-none"
+                                                      aria-hidden="true"
+                                                    >
+                                                      {skill.icon}
+                                                    </span>
+                                                  ) : (
+                                                    <Brain
+                                                      className="h-4 w-4 shrink-0 text-zinc-400"
+                                                      aria-hidden="true"
+                                                    />
+                                                  )}
+                                                  <span className="min-w-0 truncate">
+                                                    {skill.name}
+                                                  </span>
+                                                </span>
+                                              </SelectItem>
+                                            ))
+                                          ) : (
+                                            <SelectItem
+                                              value="__skills_empty"
+                                              disabled
+                                              className={fabCreationSelectItemClass(
+                                                false,
+                                              )}
+                                            >
+                                              No skills found
+                                            </SelectItem>
+                                          )}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          cycleAddEventSubActionDuration(
+                                            subAction.id,
+                                          )
+                                        }
+                                        className={cn(
+                                          subEventToolButtonClass,
+                                          subEventToolActiveClass,
+                                          "gap-1 px-1.5",
+                                        )}
+                                        aria-label={`Duration ${subActionDuration} minutes`}
+                                        title={`Duration: ${subActionDuration} minutes`}
+                                      >
+                                        <Timer
+                                          className={subEventToolIconClass}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="min-w-0 truncate text-[10px] tabular-nums">
+                                          {subActionDuration}m
+                                        </span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="grid min-h-[6rem] place-items-center px-4 text-center">
+                            <p className="text-sm text-zinc-400">
+                              No sub-events added.
+                            </p>
+                          </div>
+                        )}
+                        <div className="border-t border-zinc-800/55 p-3">
+                          <button
+                            type="button"
+                            onClick={addAddEventSubAction}
+                            className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-3 text-sm font-semibold text-zinc-100 transition hover:border-white/18 hover:bg-white/[0.11] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
+                          >
+                            <Plus
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
+                            Add sub-event
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+
+    const sheet = (
+      <AnimatePresence>
+        <div
+          data-fab-overlay
+          className="fixed inset-0 z-[2147483670]"
+          style={{ touchAction: "manipulation" }}
+        >
+          <motion.div
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            onClick={requestCloseUnifiedEventSheet}
+          />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add Event"
+            initial={
+              prefersReducedMotion ? { opacity: 0 } : { y: "100%", opacity: 1 }
+            }
+            animate={{ y: 0, opacity: 1 }}
+            exit={
+              prefersReducedMotion ? { opacity: 0 } : { y: "100%", opacity: 1 }
+            }
+            transition={{ type: "tween", ease: [0.16, 1, 0.3, 1], duration: 0.28 }}
+            className="absolute bottom-0 left-0 right-0 h-[min(84dvh,680px)] max-h-[calc(100dvh_-_env(safe-area-inset-top,0px)_-_4rem)] overflow-hidden rounded-t-[30px] border border-zinc-800/65 border-b-0 bg-[#151517]/98 text-zinc-100 shadow-[0_-28px_80px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="shrink-0 bg-transparent px-4 pb-1 pt-2.5 sm:px-6">
+                <div className="mx-auto h-1.5 w-11 rounded-full bg-zinc-600/60" />
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-1 sm:px-6">
+                <div className="mx-auto grid w-full max-w-xl gap-2 pb-0">
+                  {isGoalLinkedEvent ? (
+                    <div className="w-fit" data-unified-event-goal-link>
+                      <button
+                        ref={unifiedGoalPickerTriggerRef}
+                        type="button"
+                        onClick={() => {
+                          setIsUnifiedGoalPickerOpen((open) => {
+                            if (!open) {
+                              setUnifiedGoalSortMode(
+                                unifiedGoalDefaultSortMode,
+                              );
+                              if (isTask) {
+                                setUnifiedTaskRelationPickerMode("goals");
+                              }
+                            }
+                            return !open;
+                          });
+                        }}
+                        className={cn(
+                          "flex max-w-[min(20rem,calc(100vw-2rem))] items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition",
+                          hasUnifiedTaskRelation
+                            ? "text-zinc-200/90 hover:text-white"
+                            : "text-red-400/85 drop-shadow-[0_0_4px_rgba(248,113,113,0.14)] hover:text-red-300",
+                        )}
+                      >
+                        {selectedUnifiedProject ? (
+                          <>
+                            <FolderKanban
+                              className="h-3.5 w-3.5 shrink-0 text-zinc-400"
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 truncate">
+                              {selectedUnifiedProject.name}
+                            </span>
+                          </>
+                        ) : selectedUnifiedGoal ? (
+                          <>
+                            {getUnifiedGoalIcon(selectedUnifiedGoal) ? (
+                              <span
+                                className="shrink-0 text-sm leading-none"
+                                aria-hidden="true"
+                              >
+                                {getUnifiedGoalIcon(selectedUnifiedGoal)}
+                              </span>
+                            ) : null}
+                            <span className="min-w-0 truncate">
+                              {getUnifiedGoalLabel(selectedUnifiedGoal)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="block">Link to existing GOAL+</span>
+                        )}
+                      </button>
+                      {isUnifiedGoalPickerOpen &&
+                        typeof window !== "undefined" &&
+                        createPortal(
+                          <div
+                            ref={unifiedGoalPickerContentRef}
+                            className="fixed z-[2147483675] overflow-hidden rounded-xl border border-zinc-700/70 bg-zinc-950/96 text-zinc-100 shadow-2xl shadow-black/60 backdrop-blur-xl"
+                            style={
+                              unifiedGoalPickerPosition
+                                ? {
+                                    ...unifiedGoalPickerPosition,
+                                    height: unifiedGoalPickerPosition.maxHeight,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <div
+                              className="flex h-full min-h-0 flex-col"
+                              style={{
+                                maxHeight:
+                                  unifiedGoalPickerPosition?.maxHeight,
+                              }}
+                            >
+                              <div className="shrink-0 border-b border-white/[0.07] bg-black/35 p-2.5">
+                                {isTask &&
+                                unifiedTaskRelationPickerMode ===
+                                "projects" ? (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-2.5">
+                                        <Search
+                                          className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                                          aria-hidden="true"
+                                        />
+                                        <input
+                                          autoFocus
+                                          type="search"
+                                          value={taskProjectSearch}
+                                          onChange={(event) =>
+                                            setTaskProjectSearch(
+                                              event.target.value,
+                                            )
+                                          }
+                                          onKeyDown={(event) => {
+                                            event.stopPropagation();
+                                            if (event.key === "Escape") {
+                                              setIsUnifiedGoalPickerOpen(false);
+                                            }
+                                          }}
+                                          placeholder="Search projects"
+                                          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-zinc-100 outline-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void hapticSoftTick();
+                                          setShowUnifiedProjectFilters(
+                                            (open) => !open,
+                                          );
+                                        }}
+                                        className={cn(
+                                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition",
+                                          showUnifiedProjectFilters ||
+                                            hasActiveUnifiedProjectPickerFilters
+                                            ? "border-white/25 bg-white/14 text-white"
+                                            : "border-white/10 bg-white/[0.05] text-zinc-400 hover:border-white/20 hover:text-zinc-200",
+                                        )}
+                                        aria-pressed={showUnifiedProjectFilters}
+                                        aria-label="Filter projects"
+                                      >
+                                        <Filter
+                                          className="h-3.5 w-3.5"
+                                          aria-hidden="true"
+                                        />
+                                      </button>
+                                    </div>
+                                    {showUnifiedProjectFilters ? (
+                                      <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.05] p-2">
+                                        {unifiedProjectSupportsGoalFilter ? (
+                                          <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                              Goal
+                                            </span>
+                                            <select
+                                              value={unifiedProjectFilterGoalId}
+                                              onChange={(event) =>
+                                                setUnifiedProjectFilterGoalId(
+                                                  event.target.value,
+                                                )
+                                              }
+                                              className="h-8 w-full rounded-md border border-white/10 bg-zinc-950/90 px-2 text-xs font-semibold text-zinc-100 outline-none"
+                                            >
+                                              <option value="">All Goals</option>
+                                              {unifiedProjectGoalOptions.map(
+                                                (goal) => (
+                                                  <option
+                                                    key={goal.id}
+                                                    value={goal.id}
+                                                  >
+                                                    {goal.name}
+                                                  </option>
+                                                ),
+                                              )}
+                                            </select>
+                                          </label>
+                                        ) : null}
+                                        {unifiedProjectSupportsSkillFilter ? (
+                                          <label
+                                            className={cn(
+                                              "block",
+                                              unifiedProjectSupportsGoalFilter &&
+                                                "mt-2",
+                                            )}
+                                          >
+                                            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                              Skill
+                                            </span>
+                                            <select
+                                              value={unifiedProjectFilterSkillId}
+                                              onChange={(event) =>
+                                                setUnifiedProjectFilterSkillId(
+                                                  event.target.value,
+                                                )
+                                              }
+                                              className="h-8 w-full rounded-md border border-white/10 bg-zinc-950/90 px-2 text-xs font-semibold text-zinc-100 outline-none"
+                                            >
+                                              <option value="">All Skills</option>
+                                              {unifiedProjectSkillOptions.map(
+                                                (skill) => (
+                                                  <option
+                                                    key={skill.id}
+                                                    value={skill.id}
+                                                  >
+                                                    {skill.icon
+                                                      ? `${skill.icon} `
+                                                      : ""}
+                                                    {skill.name}
+                                                  </option>
+                                                ),
+                                              )}
+                                            </select>
+                                          </label>
+                                        ) : null}
+                                        <div
+                                          className={cn(
+                                            (unifiedProjectSupportsGoalFilter ||
+                                              unifiedProjectSupportsSkillFilter) &&
+                                              "mt-2",
+                                          )}
+                                        >
+                                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                            Sort
+                                          </span>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {unifiedProjectSortOptions.map(
+                                              (option) => (
+                                                <button
+                                                  key={option.value}
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setUnifiedProjectSortMode(
+                                                      option.value,
+                                                    )
+                                                  }
+                                                  className={cn(
+                                                    "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition",
+                                                    unifiedProjectSortMode ===
+                                                      option.value
+                                                      ? "border-white/30 bg-white/14 text-white"
+                                                      : "border-white/10 bg-white/[0.04] text-zinc-400 hover:border-white/20 hover:text-zinc-200",
+                                                  )}
+                                                >
+                                                  {option.label}
+                                                </button>
+                                              ),
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-2.5">
+                                        <Search
+                                          className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                                          aria-hidden="true"
+                                        />
+                                        <input
+                                          autoFocus
+                                          type="search"
+                                          value={unifiedGoalSearch}
+                                          onChange={(event) =>
+                                            setUnifiedGoalSearch(
+                                              event.target.value,
+                                            )
+                                          }
+                                          onKeyDown={(event) => {
+                                            event.stopPropagation();
+                                            if (event.key === "Escape") {
+                                              setIsUnifiedGoalPickerOpen(false);
+                                            }
+                                          }}
+                                          placeholder="Search goals"
+                                          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-zinc-100 outline-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void hapticSoftTick();
+                                          setShowUnifiedGoalFilters(
+                                            (open) => !open,
+                                          );
+                                        }}
+                                        className={cn(
+                                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition",
+                                          showUnifiedGoalFilters ||
+                                            hasActiveUnifiedGoalPickerFilters
+                                            ? "border-white/25 bg-white/14 text-white"
+                                            : "border-white/10 bg-white/[0.05] text-zinc-400 hover:border-white/20 hover:text-zinc-200",
+                                        )}
+                                        aria-pressed={showUnifiedGoalFilters}
+                                        aria-label="Filter goals"
+                                      >
+                                        <Filter
+                                          className="h-3.5 w-3.5"
+                                          aria-hidden="true"
+                                        />
+                                      </button>
+                                    </div>
+                                    {showUnifiedGoalFilters ? (
+                                  <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.05] p-2">
+                                    {unifiedGoalSupportsMonumentFilter ? (
+                                      <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                          Monument
+                                        </span>
+                                        <select
+                                          value={unifiedGoalFilterMonumentId}
+                                          onChange={(event) =>
+                                            setUnifiedGoalFilterMonumentId(
+                                              event.target.value,
+                                            )
+                                          }
+                                          className="h-8 w-full rounded-md border border-white/10 bg-zinc-950/90 px-2 text-xs font-semibold text-zinc-100 outline-none"
+                                        >
+                                          <option value="">All Monuments</option>
+                                          {unifiedGoalMonumentOptions.map(
+                                            (monument) => (
+                                              <option
+                                                key={monument.id}
+                                                value={monument.id}
+                                              >
+                                                {monument.emoji
+                                                  ? `${monument.emoji} `
+                                                  : ""}
+                                                {monument.title}
+                                              </option>
+                                            ),
+                                          )}
+                                        </select>
+                                      </label>
+                                    ) : null}
+                                    <div
+                                      className={cn(
+                                        unifiedGoalSupportsMonumentFilter &&
+                                          "mt-2",
+                                      )}
+                                    >
+                                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                        Sort
+                                      </span>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {unifiedGoalSortOptions.map((option) => (
+                                          <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() =>
+                                              setUnifiedGoalSortMode(
+                                                option.value,
+                                              )
+                                            }
+                                            className={cn(
+                                              "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition",
+                                              unifiedGoalSortMode ===
+                                                option.value
+                                                ? "border-white/30 bg-white/14 text-white"
+                                                : "border-white/10 bg-white/[0.04] text-zinc-400 hover:border-white/20 hover:text-zinc-200",
+                                            )}
+                                          >
+                                            {option.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                    ) : null}
+                                  </>
+                                )}
+                              </div>
+
+                              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
+                                {isTask &&
+                                unifiedTaskRelationPickerMode ===
+                                  "projects" ? (
+                                  <>
+                                    <div className="flex justify-center px-2.5 py-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void hapticSoftTick();
+                                          setUnifiedTaskRelationPickerMode(
+                                            "goals",
+                                          );
+                                          setTaskProjectSearch("");
+                                        }}
+                                        className="text-xs font-semibold text-zinc-500 underline-offset-4 transition hover:text-zinc-300 hover:underline"
+                                      >
+                                        See goals
+                                      </button>
+                                    </div>
+                                    {taskProjectsLoading ? (
+                                      <div className="px-2.5 py-3 text-sm text-zinc-500">
+                                        Loading projects...
+                                      </div>
+                                    ) : filteredUnifiedTaskProjects.length >
+                                      0 ? (
+                                      filteredUnifiedTaskProjects.map((project) => {
+                                        const isSelected =
+                                          taskProjectId === project.id;
+                                        const projectLabel =
+                                          getUnifiedProjectLabel(project);
+                                        const projectContext =
+                                          getUnifiedProjectContext(project);
+                                        const projectSkillIcon =
+                                          project.skill_icon?.trim() || null;
+                                        const isCompletedProject =
+                                          isUnifiedProjectCompleted(project);
+
+                                        return (
+                                          <button
+                                            key={project.id}
+                                            type="button"
+                                            onClick={() => {
+                                              void hapticSoftTick();
+                                              setTaskProjectId(project.id);
+                                              setTaskGoalId(null);
+                                              setIsUnifiedGoalPickerOpen(false);
+                                            }}
+                                            className={cn(
+                                              "relative flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-2.5 py-2 text-left transition",
+                                              isCompletedProject
+                                                ? unifiedGoalCompletedRowClass
+                                                : isSelected
+                                                  ? "border-transparent bg-white/[0.08] text-white hover:bg-white/[0.08]"
+                                                  : "border-transparent text-zinc-200 hover:bg-white/[0.06]",
+                                            )}
+                                          >
+                                            {isCompletedProject ? (
+                                              <span
+                                                className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+                                                aria-hidden="true"
+                                              />
+                                            ) : null}
+                                            <span className="relative z-10 flex min-w-0 items-center gap-2.5">
+                                              {projectSkillIcon ? (
+                                                <span
+                                                  className="w-5 shrink-0 text-center text-base leading-none"
+                                                  aria-hidden="true"
+                                                >
+                                                  {projectSkillIcon}
+                                                </span>
+                                              ) : (
+                                                <FolderKanban
+                                                  className={cn(
+                                                    "h-4 w-4 shrink-0",
+                                                    isCompletedProject
+                                                      ? "text-white/70"
+                                                      : "text-zinc-400",
+                                                  )}
+                                                  aria-hidden="true"
+                                                />
+                                              )}
+                                              <span className="min-w-0">
+                                                <span className="block truncate text-sm font-semibold">
+                                                  {projectLabel}
+                                                </span>
+                                                {projectContext ? (
+                                                  <span
+                                                    className={cn(
+                                                      "mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.12em]",
+                                                      isCompletedProject
+                                                        ? "text-white/70"
+                                                        : "text-zinc-500",
+                                                    )}
+                                                  >
+                                                    {projectContext}
+                                                  </span>
+                                                ) : null}
+                                              </span>
+                                            </span>
+                                            {isSelected ? (
+                                              <Check
+                                                className="relative z-10 h-3.5 w-3.5 shrink-0 text-zinc-100"
+                                                aria-hidden="true"
+                                              />
+                                            ) : null}
+                                          </button>
+                                        );
+                                      })
+                                    ) : (
+                                      <div className="px-2.5 py-3 text-sm text-zinc-500">
+                                        {taskProjectSearch.trim().length > 0
+                                          ? "No projects match your search"
+                                          : "No projects yet"}
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {isTask ? (
+                                      <div className="flex justify-center px-2.5 py-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            void hapticSoftTick();
+                                            setUnifiedTaskRelationPickerMode(
+                                              "projects",
+                                            );
+                                            setShowUnifiedGoalFilters(false);
+                                          }}
+                                          className="text-xs font-semibold text-zinc-500 underline-offset-4 transition hover:text-zinc-300 hover:underline"
+                                        >
+                                          See projects
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                    {!isTask ? (
+                                      <button
+                                  type="button"
+                                  onClick={() => {
+                                    void hapticSoftTick();
+                                    setUnifiedGoalId(null);
+                                    setIsUnifiedGoalPickerOpen(false);
+                                  }}
+                                  className={cn(
+                                    "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition hover:bg-white/[0.06]",
+                                    !unifiedGoalId
+                                      ? "bg-white/[0.08] text-white"
+                                      : "text-zinc-300",
+                                  )}
+                                >
+                                  <span>No goal</span>
+                                  {!unifiedGoalId ? (
+                                    <Check
+                                      className="h-3.5 w-3.5 shrink-0 text-zinc-100"
+                                      aria-hidden="true"
+                                    />
+                                  ) : null}
+                                      </button>
+                                    ) : null}
+
+                                {goalsLoading || !goalsLoaded ? (
+                                  <div className="px-2.5 py-3 text-sm text-zinc-500">
+                                    Loading goals...
+                                  </div>
+                                ) : goals.length > 0 ? (
+                                  filteredUnifiedGoals.length > 0 ? (
+                                    filteredUnifiedGoals.map((goal) => {
+                                      const goalIcon = getUnifiedGoalIcon(goal);
+                                      const goalContext =
+                                        getUnifiedGoalContext(goal);
+                                      const isSelected =
+                                        unifiedGoalId === goal.id;
+                                      const isCompletedGoal =
+                                        isUnifiedGoalCompleted(goal);
+
+                                      return (
+                                        <button
+                                          key={goal.id}
+                                          type="button"
+                                          onClick={() => {
+                                            void hapticSoftTick();
+                                            setUnifiedGoalId(goal.id);
+                                            setIsUnifiedGoalPickerOpen(false);
+                                          }}
+                                          className={cn(
+                                            "relative flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-2.5 py-2 text-left transition",
+                                            isCompletedGoal
+                                              ? unifiedGoalCompletedRowClass
+                                              : isSelected
+                                                ? "border-transparent bg-white/[0.08] text-white hover:bg-white/[0.08]"
+                                                : "border-transparent text-zinc-200 hover:bg-white/[0.06]",
+                                          )}
+                                        >
+                                          {isCompletedGoal ? (
+                                            <span
+                                              className="focus-pomo-start-glint pointer-events-none absolute inset-0 rounded-[inherit]"
+                                              aria-hidden="true"
+                                            />
+                                          ) : null}
+                                          <span className="relative z-10 flex min-w-0 items-center gap-2.5">
+                                            {goalIcon ? (
+                                              <span
+                                                className="w-5 shrink-0 text-center text-base leading-none"
+                                                aria-hidden="true"
+                                              >
+                                                {goalIcon}
+                                              </span>
+                                            ) : goal.circle_id ? (
+                                              <CircleDot
+                                                className={cn(
+                                                  "h-4 w-4 shrink-0",
+                                                  isCompletedGoal
+                                                    ? "text-white/70"
+                                                    : "text-zinc-300",
+                                                )}
+                                                aria-hidden="true"
+                                              />
+                                            ) : null}
+                                            <span className="min-w-0">
+                                              <span className="block truncate text-sm font-semibold">
+                                                {getUnifiedGoalLabel(goal)}
+                                              </span>
+                                              {goalContext ? (
+                                                <span
+                                                  className={cn(
+                                                    "mt-0.5 block truncate text-[10px] font-semibold uppercase tracking-[0.12em]",
+                                                    isCompletedGoal
+                                                      ? "text-white/70"
+                                                      : "text-zinc-500",
+                                                  )}
+                                                >
+                                                  {goalContext}
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                          </span>
+                                          {isSelected ? (
+                                            <Check
+                                              className="relative z-10 h-3.5 w-3.5 shrink-0 text-zinc-100"
+                                              aria-hidden="true"
+                                            />
+                                          ) : null}
+                                        </button>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="px-2.5 py-3 text-sm text-zinc-500">
+                                      No goals match your search
+                                    </div>
+                                  )
+                                ) : (
+                                  <div className="px-2.5 py-3 text-sm text-zinc-500">
+                                    No goals yet
+                                  </div>
+                                )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>,
+                          document.body,
+                        )}
+                    </div>
+                  ) : null}
+
+                  {isHabit ? (
+                    <div className="w-fit" data-unified-event-routine-link>
+                      <Select
+                        value={habitRoutineId || "__none__"}
+                        onValueChange={(value) => {
+                          void hapticSoftTick();
+                          resetHabitRoutineInlineCreation();
+                          setHabitRoutineId(value === "__none__" ? "" : value);
+                        }}
+                        hideChevron
+                        trigger={
+                          <span className="block">
+                            Link to existing ROUTINE+
+                          </span>
+                        }
+                        triggerClassName={cn(
+                          "h-auto border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                          "text-zinc-500/90 hover:text-zinc-300",
+                        )}
+                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                        minContentWidth={240}
+                      >
+                        <SelectContent
+                          className={cn(
+                            FAB_CREATION_SELECT_CONTENT_CLASS,
+                            "max-h-[18rem]",
+                          )}
+                        >
+                          <SelectItem
+                            value="__none__"
+                            className={fabCreationSelectItemClass(
+                              !habitRoutineId,
+                            )}
+                          >
+                            No routine
+                          </SelectItem>
+                          {habitRoutinesLoading ? (
+                            <SelectItem
+                              value="__routines_loading"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
+                              Loading routines...
+                            </SelectItem>
+                          ) : habitRoutines.length > 0 ? (
+                            habitRoutines.map((routine) => (
+                              <SelectItem
+                                key={routine.id}
+                                value={routine.id}
+                                className={fabCreationSelectItemClass(
+                                  habitRoutineId === routine.id,
+                                )}
+                              >
+                                <span className="flex max-w-[16rem] items-center gap-1.5 truncate">
+                                  <span aria-hidden="true">
+                                    {getHabitRoutineIcon(routine)}
+                                  </span>
+                                  <span className="truncate">
+                                    {routine.name}
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem
+                              value="__routines_empty"
+                              disabled
+                              className={fabCreationSelectItemClass(false)}
+                            >
+                              No routines yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-[18px] border border-zinc-700/30 bg-zinc-800/28 px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors focus-within:border-zinc-500/45 focus-within:bg-zinc-800/34">
+                    <Label
+                      htmlFor="unified-event-title"
+                      className="sr-only"
+                    >
+                      Event title
+                    </Label>
+                    <Input
+                      id="unified-event-title"
+                      ref={
+                        isProject
+                          ? projectNameInputRef
+                          : isTask
+                            ? taskNameInputRef
+                            : habitNameInputRef
+                      }
+                      value={titleValue}
+                      onChange={(event) => titleSetter(event.target.value)}
+                      placeholder="Event name"
+                      className="h-auto rounded-none !border-0 !bg-transparent px-0 py-0 text-[1.45rem] font-medium leading-tight text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:!border-0 focus-visible:!border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none sm:text-[1.65rem]"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <section className={timingCardClass}>
+                      <h3 className="sr-only">Timing</h3>
+                      <div className="grid gap-2 pb-2">
+                        <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+                          <span
+                            className={timingRowIconClass}
+                            aria-hidden="true"
+                          >
+                            <Clock
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          </span>
+                          <div className={timingModeToggleClass}>
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold transition-colors",
+                                addEventTimingMode === "manual"
+                                  ? "text-zinc-100"
+                                  : "text-zinc-500",
+                              )}
+                            >
+                              Manual
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Switch timing mode to ${
+                                addEventTimingMode === "dynamic"
+                                  ? "Manual"
+                                  : "Dynamic"
+                              }`}
+                              role="switch"
+                              aria-checked={addEventTimingMode === "dynamic"}
+                              onClick={() =>
+                                handleTimingModeChange(
+                                  addEventTimingMode === "dynamic"
+                                    ? "manual"
+                                    : "dynamic",
+                                )
+                              }
+                              className={cn(
+                                "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                                addEventTimingMode === "dynamic"
+                                  ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                                  : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                                  addEventTimingMode === "dynamic"
+                                    ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                                    : "border-zinc-400/20 bg-zinc-500",
+                                )}
+                                aria-hidden="true"
+                              />
+                            </button>
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold transition-colors",
+                                addEventTimingMode === "dynamic"
+                                  ? "text-zinc-100"
+                                  : "text-zinc-500",
+                              )}
+                            >
+                              Dynamic
+                            </span>
+                          </div>
+                        </div>
+
+                        {addEventTimingMode === "manual" ? (
+                          <div className={timelineGroupClass}>
+                          <span
+                            className={timelineGroupLineClass}
+                            aria-hidden="true"
+                          />
+
+                          <div className={timingTimelineRowClass}>
+                            <span
+                              className={timelineMarkerWrapClass}
+                              aria-hidden="true"
+                            >
+                              <span className={timelineDotClass} />
+                            </span>
+                            <Label className={timingPickerLabelClass}>
+                              Starts
+                            </Label>
+                            <div
+                              className={cn(
+                                timingPickerValueClass,
+                                "flex min-w-0 flex-nowrap items-center justify-end overflow-hidden whitespace-nowrap",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`${eventTypeLabel} start date`}
+                                aria-expanded={
+                                  unifiedTimingPickerOpen === "startDate"
+                                }
+                                onClick={() => {
+                                  void hapticSoftTick();
+                                  setUnifiedTimingPickerOpen((current) =>
+                                    current === "startDate" ? null : "startDate",
+                                  );
+                                }}
+                                className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
+                              >
+                                {formatPickerDate(startDateValue)}
+                              </button>
+                              {!unifiedEventAllDay ? (
+                                <>
+                                  <span className="shrink-0 px-0.5 text-[11px] font-normal text-zinc-500">
+                                    at
+                                  </span>
+                                  <button
+                                    type="button"
+                                    aria-label={`${eventTypeLabel} start time`}
+                                    aria-expanded={
+                                      unifiedTimingPickerOpen === "startTime"
+                                    }
+                                    onClick={() => {
+                                      void hapticSoftTick();
+                                      setUnifiedTimingPickerOpen((current) =>
+                                        current === "startTime"
+                                          ? null
+                                          : "startTime",
+                                      );
+                                    }}
+                                    className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation"
+                                  >
+                                    {formatPickerTime(startTimeValue)}
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {renderStartDatePicker()}
+                          {!unifiedEventAllDay
+                            ? renderTimePicker(
+                                "startTime",
+                                startTimeValue,
+                                handleStartTimeChange,
+                                `${eventTypeLabel} start time picker`,
+                              )
+                            : null}
+
+                          <div
+                            className={cn(
+                              timingTimelineRowClass,
+                              unifiedEventAllDay && "text-zinc-500",
+                            )}
+                          >
+                            <span
+                              className={timelineMarkerWrapClass}
+                              aria-hidden="true"
+                            >
+                              <span className={timelineDotClass} />
+                            </span>
+                            <Label
+                              className={cn(
+                                timingPickerLabelClass,
+                                unifiedEventAllDay && "text-zinc-500",
+                              )}
+                            >
+                              Ends
+                            </Label>
+                            <div
+                              className={cn(
+                                timingPickerValueClass,
+                                "flex min-w-0 flex-nowrap items-center justify-end overflow-hidden whitespace-nowrap",
+                                unifiedEventAllDay && "text-zinc-500",
+                              )}
+                            >
+                              {visibleEndDateValue && !unifiedEventAllDay ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    aria-label={`${eventTypeLabel} end date`}
+                                    aria-expanded={
+                                      unifiedTimingPickerOpen === "endDate"
+                                    }
+                                    onClick={() => {
+                                      void hapticSoftTick();
+                                      setIsUnifiedTimingMonthYearPickerOpen(false);
+                                      if (selectedEndDate) {
+                                        setUnifiedTimingViewedMonth(
+                                          new Date(
+                                            selectedEndDate.getFullYear(),
+                                            selectedEndDate.getMonth(),
+                                            1,
+                                          ),
+                                        );
+                                      }
+                                      setUnifiedTimingPickerOpen((current) =>
+                                        current === "endDate" ? null : "endDate",
+                                      );
+                                    }}
+                                    className={cn(
+                                      "inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-lg px-1 text-zinc-100/95 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation",
+                                      isAddEventTimingInvalid &&
+                                        timingInvalidValueClass,
+                                    )}
+                                  >
+                                    {formatPickerDate(visibleEndDateValue)}
+                                  </button>
+                                  <span className="shrink-0 px-0.5 text-[11px] font-normal text-zinc-500">
+                                    at
+                                  </span>
+                                </>
+                              ) : null}
+                              <button
+                                type="button"
+                                aria-label={`${eventTypeLabel} end time`}
+                                aria-expanded={
+                                  unifiedTimingPickerOpen === "endTime"
+                                }
+                                disabled={unifiedEventAllDay}
+                                onClick={() => {
+                                  void hapticSoftTick();
+                                  setUnifiedTimingPickerOpen((current) =>
+                                    current === "endTime" ? null : "endTime",
+                                  );
+                                }}
+                                className={cn(
+                                  "inline-flex min-h-8 items-center whitespace-nowrap rounded-lg px-1 hover:bg-white/[0.045] active:bg-white/[0.07] touch-manipulation",
+                                  isAddEventTimingInvalid &&
+                                    timingInvalidValueClass,
+                                  unifiedEventAllDay &&
+                                    "pointer-events-none text-zinc-500 hover:bg-transparent",
+                                )}
+                              >
+                                {unifiedEventAllDay
+                                  ? "All day"
+                                  : formatPickerTime(endTimeValue)}
+                              </button>
+                            </div>
+                          </div>
+                          {!unifiedEventAllDay
+                            ? renderTimePicker(
+                                "endTime",
+                                endTimeValue,
+                                handleEndTimeChange,
+                                `${eventTypeLabel} end time picker`,
+                              )
+                            : null}
+                          {!unifiedEventAllDay ? renderEndDatePicker() : null}
+                          {isAddEventTimingInvalid ? (
+                            <p className="relative z-10 -mt-1 px-3 pb-2 text-right text-[12px] font-medium text-red-300/90">
+                              End time must be after start time
+                            </p>
+                          ) : null}
+                          </div>
+                        ) : (
+                          <div className="grid gap-1 px-3 pb-1 sm:px-4">
+                            <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                              <span
+                                className={timingRowIconClass}
+                                aria-hidden="true"
+                              >
+                                <Timer className="h-4 w-4" />
+                              </span>
+                              <Label
+                                htmlFor="add-event-dynamic-duration"
+                                className={timingPickerLabelClass}
+                              >
+                                Duration
+                              </Label>
+                              <div className="flex min-w-0 items-center justify-end gap-2">
+                                <Input
+                                  id="add-event-dynamic-duration"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  value={addEventDynamicDuration}
+                                  onChange={(event) => {
+                                    setAddEventDynamicDuration(
+                                      event.target.value.replace(/[^\d]/g, ""),
+                                    );
+                                  }}
+                                  className="h-8 w-20 rounded-lg border-zinc-700/35 bg-zinc-950/35 px-2 text-right text-[13px] font-semibold text-zinc-100 shadow-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                                  aria-label={`${eventTypeLabel} dynamic duration in minutes`}
+                                />
+                                <span className="text-[12px] font-medium text-zinc-500">
+                                  min
+                                </span>
+                              </div>
+                            </div>
+                            <p className="px-0.5 pb-1 text-right text-[11px] font-medium text-zinc-500">
+                              Scheduler will place this inside your Time Blocks.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className={timingCardClass}>
+                      <div className={timingPickerRowClass}>
+                        <span className={timingRowIconClass} aria-hidden="true">
+                          <Repeat2 className="h-4 w-4" />
+                        </span>
+                        <span className={timingPickerLabelClass}>
+                          Recurrence
+                        </span>
+                        <div className="flex min-w-0 justify-end">
+                          <Select
+                            value={
+                              isGoalLinkedEvent ? "__never__" : habitRecurrence
+                            }
+                            onValueChange={handleRecurrenceChange}
+                            trigger={
+                              <span className="block w-full truncate text-right">
+                                {recurrenceLabel}
+                              </span>
+                            }
+                            triggerClassName={timingSelectTriggerClass}
+                            contentWrapperClassName={timingSelectContentWrapperClass}
+                            contentAlign="end"
+                            minContentWidth={180}
+                          >
+                            <SelectContent className={timingSelectContentClass}>
+                              <SelectItem
+                                value="__never__"
+                                className={fabCreationSelectItemClass(
+                                  isGoalLinkedEvent,
+                                )}
+                              >
+                                Never
+                              </SelectItem>
+                              {HABIT_RECURRENCE_OPTIONS.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                  className={fabCreationSelectItemClass(
+                                    !isGoalLinkedEvent &&
+                                      habitRecurrence === option.value,
+                                  )}
+                                >
+                                  {formatAddEventRecurrenceLabel(option.label)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  <section className={detailSectionClass}>
+                    <div className={detailCardClass}>
+                      <div className={detailRowClass}>
+                        <Label className={detailLabelClass}>
+                          <FlameEmber
+                            level={normalizeFlameLevel(energyValue)}
+                            size={ADD_EVENT_ENERGY_LABEL_ICON_SIZE}
+                            className={getAddEventEnergyLabelIconClass(
+                              energyValue,
+                            )}
+                          />
+                          Energy
+                        </Label>
+                        <div className={detailControlWrapClass}>
+                          <EnergyCycleButton
+                            value={energyValue}
+                            onChange={setEnergyValue}
+                            ariaLabel={`${eventTypeLabel} energy`}
+                            className="h-9 w-9 shrink-0 rounded-xl border-zinc-700/40 bg-zinc-800/35 hover:bg-zinc-800/55"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {isGoalLinkedEvent ? (
+                      <div className={detailCardClass}>
+                        <div className={detailRowClass}>
+                          <Label className={detailLabelClass}>
+                            <Flag className={detailIconClass} aria-hidden="true" />
+                            Priority
+                          </Label>
+                          <div className={detailControlWrapClass}>
+                            <Select
+                              value={isProject ? projectPriority : taskPriority}
+                              onValueChange={(value) => {
+                                void hapticSoftTick();
+                                if (isProject) {
+                                  setProjectPriority(value);
+                                  return;
+                                }
+                                setTaskPriority(value);
+                              }}
+                              triggerClassName={detailInlineSelectTriggerClass}
+                              trigger={
+                                <AddEventPriorityDisplay
+                                  value={
+                                    isProject ? projectPriority : taskPriority
+                                  }
+                                  priorityIconMap={PRIORITY_ICON_MAP}
+                                  className="justify-end text-right"
+                                />
+                              }
+                              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                              contentAlign="end"
+                            >
+                              <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                                {PRIORITY_OPTIONS_LOCAL.map((option) => (
+                                  <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                    className={fabCreationSelectItemClass(
+                                      (isProject
+                                        ? projectPriority
+                                        : taskPriority) === option.value,
+                                    )}
+                                  >
+                                    <AddEventPriorityDisplay
+                                      value={option.value}
+                                      priorityIconMap={PRIORITY_ICON_MAP}
+                                      className="w-full"
+                                    />
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {isHabit ? (
+                      <div className={detailCardClass}>
+                        <div className={detailRowClass}>
+                          <Label className={detailLabelClass}>
+                            <Layers
+                              className={detailIconClass}
+                              aria-hidden="true"
+                            />
+                            Habit Type
+                          </Label>
+                          <div className={detailControlWrapClass}>
+                            <Select
+                              value={habitType}
+                              onValueChange={(value) => {
+                                void hapticSoftTick();
+                                setHabitType(value);
+                              }}
+                              triggerClassName={detailInlineSelectTriggerClass}
+                              trigger={
+                                <span className="block max-w-[9rem] truncate text-right">
+                                  {visibleHabitTypeOptions.find(
+                                    (option) => option.value === habitType,
+                                  )?.label ?? "Habit Type"}
+                                </span>
+                              }
+                              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                              contentAlign="end"
+                              minContentWidth={240}
+                            >
+                              <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                                {visibleHabitTypeOptions.map((option) => (
+                                  <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                    className={fabCreationSelectItemClass(
+                                      habitType === option.value,
+                                      "whitespace-nowrap px-4 text-[13px]",
+                                    )}
+                                  >
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className={detailCardClass}>
+                      <div className={detailRowClass}>
+                        <Label className={detailLabelClass}>
+                          <Brain className={detailIconClass} aria-hidden="true" />
+                          Skill
+                        </Label>
+                        <div className={detailControlWrapClass}>
+                          <Select
+                            value={skillValue || "__none__"}
+                            onValueChange={(value) => {
+                              void hapticSoftTick();
+                              const nextValue = value === "__none__" ? "" : value;
+                              setSkillValue(nextValue);
+                            }}
+                            triggerClassName={detailInlineSelectTriggerClass}
+                            trigger={
+                              <SelectValue
+                                placeholder="Link a skill"
+                                className="text-right"
+                              />
+                            }
+                            contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                            contentAlign="end"
+                            minContentWidth={224}
+                            placeholder="Link a skill"
+                          >
+                            <SelectContent
+                              className={cn(
+                                FAB_CREATION_SELECT_CONTENT_CLASS,
+                                "max-h-[18rem]",
+                              )}
+                            >
+                              <SelectItem
+                                value="__none__"
+                                className={fabCreationSelectItemClass(!skillValue)}
+                              >
+                                Link a skill
+                              </SelectItem>
+                              {skillsLoading ? (
+                                <SelectItem
+                                  value="__skills_loading"
+                                  disabled
+                                  className={fabCreationSelectItemClass(false)}
+                                >
+                                  Loading skills...
+                                </SelectItem>
+                              ) : filteredSkills.length > 0 ? (
+                                renderAddEventGroupedSkillItems()
+                              ) : (
+                                <SelectItem
+                                  value="__skills_empty"
+                                  disabled
+                                  className={fabCreationSelectItemClass(false)}
+                                >
+                                  No skills found
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+
+                  </section>
+
+                  {saveError ? (
+                    <p className="rounded-xl border border-red-500/20 bg-red-950/45 px-3 py-2 text-sm text-red-100">
+                      {saveError}
+                    </p>
+                  ) : null}
+
+                  <section
+                    className="grid grid-cols-4 gap-1.5 pt-1 sm:gap-2"
+                    aria-label="Event quick actions"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleQuickActionClick("tags")}
+                      className={quickActionCardClass}
+                    >
+                      <Tags className={quickActionIconClass} aria-hidden="true" />
+                      <span className={quickActionLabelClass}>Tags</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickActionClick("notes")}
+                      className={quickActionCardClass}
+                    >
+                      <FileText
+                        className={quickActionIconClass}
+                        aria-hidden="true"
+                      />
+                      <span className={quickActionLabelClass}>Notes</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickActionClick("forms")}
+                      aria-expanded={isUnifiedFormsSheetOpen}
+                      aria-label="Forms quick action"
+                      className={cn(
+                        quickActionCardClass,
+                        isUnifiedFormsSheetOpen &&
+                          "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                      )}
+                    >
+                      <ListChecks
+                        className={cn(
+                          quickActionIconClass,
+                          isUnifiedFormsSheetOpen && "text-zinc-100",
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className={quickActionLabelClass}>Forms</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-expanded={isAddEventMoreOpen}
+                      aria-label="More event options"
+                      onClick={openAddEventMoreSheet}
+                      className={cn(
+                        quickActionCardClass,
+                        isAddEventMoreOpen &&
+                          "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                      )}
+                    >
+                      <Settings2
+                        className={cn(
+                          quickActionIconClass,
+                          isAddEventMoreOpen && "text-zinc-100",
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className={quickActionLabelClass}>More</span>
+                    </button>
+                  </section>
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 shrink-0 border-t border-white/[0.055] bg-[#141416]/92 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur-xl sm:px-6">
+                <div className="mx-auto flex max-w-xl">
+                  <Button
+                    type="button"
+                    haptic={false}
+                    aria-disabled={
+                      isUnifiedAddEventSubmitHardDisabled ||
+                      !!unifiedAddEventSaveBlockReason
+                    }
+                    {...unifiedAddEventSubmitTapHandlers}
+                    className={cn(
+                      "h-11 w-full rounded-full border border-white/10 bg-zinc-100 px-5 text-sm font-semibold text-zinc-950 shadow-[0_6px_18px_rgba(0,0,0,0.2)] hover:bg-white",
+                      (isUnifiedAddEventSubmitHardDisabled ||
+                        unifiedAddEventSaveBlockReason) &&
+                        "cursor-not-allowed opacity-45",
+                    )}
+                  >
+                    {isSavingFab ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Saving
+                      </span>
+                    ) : (
+                      unifiedSubmitLabel
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {notesMiniSheet}
+            {tagsMiniSheet}
+            {formsMiniSheet}
+            {moreMiniSheet}
+          </motion.div>
+          {renderUnifiedEventDurationPicker()}
+        </div>
+      </AnimatePresence>
+    );
+
+    return createPortal(sheet, document.body);
+  };
+
   const fabContent = (
     <div
       className={cn("relative", className)}
@@ -20503,6 +26904,8 @@ export function Fab({
           )}
         </motion.button>
       ) : null}
+
+      {renderUnifiedEventSheet()}
 
       {/* Event Creation Modal */}
       <EventModal

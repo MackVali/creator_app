@@ -54,7 +54,7 @@ export async function DELETE() {
     .eq("user_id", user.id)
     .neq("status", "completed")
     .is("completed_at", null)
-    .or("locked.is.false,locked.is.null")
+    .is("locked", false)
     .select("id");
 
   if (error) {

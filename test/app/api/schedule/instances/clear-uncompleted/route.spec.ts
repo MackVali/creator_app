@@ -13,7 +13,7 @@ type InstanceRow = {
   id: string;
   user_id: string;
   placement_source: "manual" | "scheduler";
-  locked: boolean | null;
+  locked: boolean;
   status: "scheduled" | "missed" | "completed";
   completed_at: string | null;
   start_utc: string | null;
@@ -24,6 +24,11 @@ type QueryFilter =
   | { type: "eq" | "neq"; column: keyof InstanceRow; value: unknown }
   | { type: "is"; column: keyof InstanceRow; value: unknown }
   | { type: "or"; expression: string };
+
+type QueryExecution = {
+  mode: "select" | "delete";
+  filters: QueryFilter[];
+};
 
 const nowIso = "2026-06-25T15:00:00.000Z";
 const pastStart = "2026-06-25T13:00:00.000Z";
@@ -51,7 +56,8 @@ class ScheduleQuery {
 
   constructor(
     private rows: InstanceRow[],
-    private mode: "select" | "delete"
+    private mode: "select" | "delete",
+    private executions: QueryExecution[]
   ) {}
 
   select(_columns: string, options?: { count?: "exact"; head?: boolean }) {
@@ -87,6 +93,11 @@ class ScheduleQuery {
   }
 
   private execute() {
+    this.executions.push({
+      mode: this.mode,
+      filters: [...this.filters],
+    });
+
     const matched = this.rows.filter((row) =>
       this.filters.every((filter) => matchesFilter(row, filter))
     );
@@ -113,10 +124,6 @@ function matchesFilter(row: InstanceRow, filter: QueryFilter) {
   if (filter.type === "neq") return row[filter.column] !== filter.value;
   if (filter.type === "is") return row[filter.column] === filter.value;
 
-  if (filter.expression === "locked.is.false,locked.is.null") {
-    return row.locked === false || row.locked === null;
-  }
-
   if (filter.expression === "status.eq.completed,completed_at.not.is.null") {
     return row.status === "completed" || row.completed_at !== null;
   }
@@ -124,7 +131,7 @@ function matchesFilter(row: InstanceRow, filter: QueryFilter) {
   throw new Error(`Unsupported OR expression: ${filter.expression}`);
 }
 
-function createClient(rows: InstanceRow[]) {
+function createClient(rows: InstanceRow[], executions: QueryExecution[]) {
   return {
     auth: {
       getUser: vi.fn(async () => ({
@@ -136,9 +143,12 @@ function createClient(rows: InstanceRow[]) {
       return {
         select: vi.fn(
           (columns: string, options?: { count?: "exact"; head?: boolean }) =>
-            new ScheduleQuery(rows, "select").select(columns, options)
+            new ScheduleQuery(rows, "select", executions).select(
+              columns,
+              options
+            )
         ),
-        delete: vi.fn(() => new ScheduleQuery(rows, "delete")),
+        delete: vi.fn(() => new ScheduleQuery(rows, "delete", executions)),
       };
     }),
   };
@@ -191,17 +201,16 @@ describe("DELETE /api/schedule/instances/clear-uncompleted", () => {
         end_utc: pastEnd,
       }),
       makeRow({
-        id: "nullable-locked-uncompleted-event",
-        locked: null,
-      }),
-      makeRow({
         id: "completed-at-event",
         locked: false,
         status: "scheduled",
         completed_at: "2026-06-25T13:45:00.000Z",
       }),
     ];
-    createSupabaseServerClientMock.mockResolvedValue(createClient(rows) as never);
+    const executions: QueryExecution[] = [];
+    createSupabaseServerClientMock.mockResolvedValue(
+      createClient(rows, executions) as never
+    );
 
     const response = await DELETE();
     const body = await response.json();
@@ -209,10 +218,22 @@ describe("DELETE /api/schedule/instances/clear-uncompleted", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
-      deleted: 3,
-      cleared: 3,
+      deleted: 2,
+      cleared: 2,
       preservedLocked: 3,
       preservedCompleted: 2,
+    });
+    const deleteExecution = executions.find(
+      (execution) => execution.mode === "delete"
+    );
+    expect(deleteExecution?.filters).toContainEqual({
+      type: "is",
+      column: "locked",
+      value: false,
+    });
+    expect(deleteExecution?.filters).not.toContainEqual({
+      type: "or",
+      expression: "locked.is.false,locked.is.null",
     });
     expect(rows.map((row) => row.id)).toEqual([
       "completed-event",
