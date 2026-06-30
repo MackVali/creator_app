@@ -19,6 +19,8 @@ export interface Goal {
   weight?: number | null;
   weight_boost?: number | null;
   due_date?: string | null;
+  global_rank?: number | null;
+  updated_at?: string | null;
 }
 
 type GoalQueryRow = Goal & {
@@ -36,7 +38,7 @@ export async function getGoalsForUser(userId: string): Promise<Goal[]> {
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, monument:monuments(emoji)"
+      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, global_rank, updated_at, monument:monuments(emoji)"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -63,7 +65,7 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, due_date, monument:monuments(emoji)"
+      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, due_date, global_rank, updated_at, monument:monuments(emoji)"
     )
     .eq("id", goalId)
     .single();

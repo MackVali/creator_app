@@ -54,6 +54,18 @@ export function hapticSoftTick() {
   return runHaptic(selectionTick);
 }
 
+export function hapticSelectionStart() {
+  return runHaptic(() => Haptics.selectionStart());
+}
+
+export function hapticSelectionChangedOnly() {
+  return runHaptic(() => Haptics.selectionChanged());
+}
+
+export function hapticSelectionEnd() {
+  return runHaptic(() => Haptics.selectionEnd());
+}
+
 export function hapticSnap() {
   return runHaptic(async () => {
     await Haptics.impact({ style: ImpactStyle.Medium });

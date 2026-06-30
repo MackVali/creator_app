@@ -1777,9 +1777,10 @@ type MemoCompletionDraftState = {
 };
 
 type EditingSnapshot = {
-  source_type: "PROJECT" | "HABIT";
+  source_type: "PROJECT" | "HABIT" | "TASK";
   projectId: string | null;
   habitId: string | null;
+  taskId: string | null;
   habitSnapshot?: HabitEditSnapshot | null;
   originData?: ScheduleEditOrigin | null;
 };
@@ -1808,7 +1809,9 @@ function normalizeEditableScheduleSourceType(
 ): EditableScheduleSourceType | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
-  return normalized === "PROJECT" || normalized === "HABIT"
+  return normalized === "PROJECT" ||
+    normalized === "HABIT" ||
+    normalized === "TASK"
     ? normalized
     : null;
 }
@@ -1845,6 +1848,7 @@ const describeEditingSnapshot = (snapshot: EditingSnapshot | null) => ({
   source_type: snapshot?.source_type ?? null,
   projectId: snapshot?.projectId ?? null,
   habitId: snapshot?.habitId ?? null,
+  taskId: snapshot?.taskId ?? null,
 });
 
 type EditingSnapshotWithInstance = EditingSnapshot & {
@@ -5882,6 +5886,11 @@ export default function ScheduleTabContent({
       ? (editingSnapshot.habitId ?? null)
       : null;
 
+  const editingTaskId =
+    editingSnapshot?.source_type === "TASK"
+      ? (editingSnapshot.taskId ?? null)
+      : null;
+
   const editingLayoutId = editingInstance?.id
     ? getScheduleInstanceLayoutId(editingInstance.id)
     : null;
@@ -5928,6 +5937,19 @@ export default function ScheduleTabContent({
       };
     }
 
+    if (editingSnapshot?.source_type === "TASK" && editingTaskId) {
+      const task = taskMap[editingTaskId] ?? null;
+      return {
+        entityType: "TASK" as const,
+        entityId: editingTaskId,
+        instanceId: editingInstance?.id ?? null,
+        title: editingEventTitle ?? null,
+        layoutId: editingLayoutId,
+        originRect,
+        stage: task?.stage ?? null,
+      };
+    }
+
     return null;
   }, [
     editingEventTitle,
@@ -5935,11 +5957,13 @@ export default function ScheduleTabContent({
     editingInstance?.id,
     editingLayoutId,
     editingProjectId,
+    editingTaskId,
     editingSnapshot?.source_type,
     editingSnapshot?.originData,
     editingSnapshot?.habitSnapshot,
     habitMap,
     projectMap,
+    taskMap,
   ]);
 
   const isProjectEditing =
@@ -8144,6 +8168,7 @@ export default function ScheduleTabContent({
         source_type: sourceType,
         projectId: sourceType === "PROJECT" ? instance.source_id : null,
         habitId: sourceType === "HABIT" ? instance.source_id : null,
+        taskId: sourceType === "TASK" ? instance.source_id : null,
         habitSnapshot:
           sourceType === "HABIT"
             ? buildHabitEditSnapshot(habitMap[instance.source_id] ?? null)
@@ -8406,6 +8431,7 @@ export default function ScheduleTabContent({
             source_type: sourceType,
             projectId: sourceType === "PROJECT" ? instance.source_id : null,
             habitId: sourceType === "HABIT" ? instance.source_id : null,
+            taskId: sourceType === "TASK" ? instance.source_id : null,
             habitSnapshot:
               sourceType === "HABIT"
                 ? buildHabitEditSnapshot(habitMap[instance.source_id] ?? null)
@@ -8456,6 +8482,7 @@ export default function ScheduleTabContent({
             source_type: "HABIT",
             projectId: null,
             habitId,
+            taskId: null,
             habitSnapshot: buildHabitEditSnapshot(habitMap[habitId] ?? null),
             originData,
           };
@@ -9995,6 +10022,7 @@ export default function ScheduleTabContent({
                             source_type: "HABIT",
                             projectId: null,
                             habitId: canonicalHabitId,
+                            taskId: null,
                             habitSnapshot,
                             originData,
                           };
@@ -10498,6 +10526,7 @@ export default function ScheduleTabContent({
                                     source_type: "PROJECT",
                                     projectId: project.id,
                                     habitId: null,
+                                    taskId: null,
                                     originData,
                                   };
                                   logEditingSnapshotEvent(
@@ -11101,8 +11130,6 @@ export default function ScheduleTabContent({
                     });
                   }
 
-                  const progress =
-                    (task as { progress?: number }).progress ?? 0;
                   const standaloneEnergyLevel: FlameLevel =
                     resolveEnergyLevel(task.energy) ?? "NO";
                   const pendingStatus = pendingInstanceStatuses.get(
@@ -11114,32 +11141,22 @@ export default function ScheduleTabContent({
                   const canToggle =
                     status === "completed" || status === "scheduled";
                   const isCompleted = status === "completed";
+                  const layoutMode = taskLayouts[index] ?? "full";
                   const standaloneHeightPx = Math.max(
                     durationMinutes * modelPxPerMin,
-                    0
+                    1
                   );
                   const useCompactStandaloneShadow =
                     standaloneHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
-                  const baseStandaloneShadow = useCompactStandaloneShadow
+                  const standaloneShadow = useCompactStandaloneShadow
                     ? TIMELINE_COMPACT_CARD_SHADOW
-                    : "var(--elev-card)";
-                  const layoutMode = taskLayouts[index] ?? "full";
-                  const style: CSSProperties = applyTimelineLayoutStyle(
+                    : TIMELINE_RESTING_CARD_SHADOW;
+                  const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                     {
                       ...TIMELINE_CARD_BOUNDS,
                       position: "absolute",
                       top: toTimelinePosition(startOffsetMinutes),
                       height: toTimelinePosition(durationMinutes),
-                      boxShadow: isCompleted
-                        ? FOCUS_POMO_COMPLETE_SHADOW
-                        : baseStandaloneShadow,
-                      outline: isCompleted
-                        ? FOCUS_POMO_COMPLETE_OUTLINE
-                        : "1px solid var(--event-border)",
-                      outlineOffset: "-1px",
-                      background: isCompleted
-                        ? FOCUS_POMO_COMPLETE_BACKGROUND
-                        : TIMELINE_NEUTRAL_EVENT_BACKGROUND,
                     },
                     layoutMode,
                     { animate: !prefersReducedMotion }
@@ -11147,7 +11164,7 @@ export default function ScheduleTabContent({
                   const stackingZIndex =
                     computeTimelineStackingIndex(startOffsetMinutes);
                   const layeredStyle = {
-                    ...style,
+                    ...positionStyle,
                     zIndex: getOverlayBackedCardZIndex(
                       stackingZIndex,
                       instance.overlay_window_id
@@ -11156,23 +11173,25 @@ export default function ScheduleTabContent({
                   const shouldWrapStandaloneTitle =
                     Number(durationMinutes) >= 30;
                   const standaloneTitleClass = shouldWrapStandaloneTitle
-                    ? "text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
-                    : "text-sm font-medium leading-tight truncate";
-                  const standaloneBaseClass =
-                    "absolute flex items-center justify-between px-3 py-2";
-                  const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)]`;
-                  const standaloneCompletedClass = `${standaloneBaseClass} ${FOCUS_POMO_COMPLETE_EFFECT_CLASSES} text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45`;
+                    ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
+                    : "min-w-0 leading-tight truncate";
                   const standaloneCornerClass =
                     getTimelineCardCornerClass(layoutMode);
-                  const standaloneClassName = [
-                    isCompleted
-                      ? standaloneCompletedClass
-                      : standaloneScheduledClass,
-                    standaloneCornerClass,
-                    canToggle && !isPending ? "cursor-pointer" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
+                  const standaloneCardStyle: CSSProperties = {
+                    ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+                    boxShadow: isCompleted
+                      ? FOCUS_POMO_COMPLETE_SHADOW
+                      : standaloneShadow,
+                    outline: isCompleted
+                      ? FOCUS_POMO_COMPLETE_OUTLINE
+                      : "1px solid rgba(10, 10, 12, 0.85)",
+                    outlineOffset: "-1px",
+                    background: isCompleted
+                      ? FOCUS_POMO_COMPLETE_BACKGROUND
+                      : TIMELINE_DARK_EVENT_BACKGROUND,
+                    touchAction: TIMELINE_TOUCH_ACTION,
+                    WebkitTapHighlightColor: "transparent",
+                  };
                   const standaloneLongPressActive =
                     longPressBounceId === instance.id;
                   const standaloneCompletionBounceActive =
@@ -11224,7 +11243,7 @@ export default function ScheduleTabContent({
                       aria-pressed={isCompleted}
                       aria-disabled={!canToggle || isPending}
                       data-completed={isCompleted ? "true" : "false"}
-                      className={standaloneClassName}
+                      className="absolute"
                       style={layeredStyle}
                       onPointerDown={(event) => {
                         handleInstancePointerDown(
@@ -11276,43 +11295,48 @@ export default function ScheduleTabContent({
                         prefersReducedMotion ? undefined : { y: 4 }
                       }
                     >
-                      <div className="flex flex-col">
-                        <motion.span
-                          layoutId={layoutTokens.title}
-                          className={standaloneTitleClass}
-                        >
-                          {task.name}
-                        </motion.span>
-                        <motion.div
-                          layoutId={layoutTokens.meta}
-                          className={
-                            isCompleted
-                              ? "text-xs text-emerald-100/80"
-                              : "text-xs text-zinc-700/80"
-                          }
-                        >
-                          {Math.round(
-                            (end.getTime() - start.getTime()) / 60000
-                          )}
-                          m
-                        </motion.div>
-                      </div>
-                      <SkillEnergyBadge
-                        energyLevel={standaloneEnergyLevel}
-                        skillIcon={task.skill_icon}
-                        size="xs"
-                        className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
-                        iconClassName="text-xs leading-none"
-                        flameClassName="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
-                      />
                       <div
-                        className={
+                        className={clsx(
+                          "relative flex h-full w-full items-center justify-between px-3 py-2 text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
+                          standaloneCornerClass,
                           isCompleted
-                            ? "absolute left-0 bottom-0 h-[3px] bg-emerald-300/80"
-                            : "absolute left-0 bottom-0 h-[3px] bg-zinc-900/25"
-                        }
-                        style={{ width: `${progress}%` }}
-                      />
+                            ? `border-green-900/45 ${FOCUS_POMO_COMPLETE_EFFECT_CLASSES}`
+                            : "border-black/70",
+                          canToggle && !isPending && "cursor-pointer"
+                        )}
+                        style={standaloneCardStyle}
+                      >
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <motion.span
+                              layoutId={layoutTokens.title}
+                              className="block text-sm font-medium"
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className={standaloneTitleClass}>
+                                  {task.name}
+                                </span>
+                              </span>
+                            </motion.span>
+                            <motion.div
+                              layoutId={layoutTokens.meta}
+                              className="text-xs text-zinc-200/70"
+                            >
+                              {Math.round(
+                                (end.getTime() - start.getTime()) / 60000
+                              )}
+                              m
+                            </motion.div>
+                          </div>
+                        </div>
+                        <SkillEnergyBadge
+                          energyLevel={standaloneEnergyLevel}
+                          skillIcon={task.skill_icon}
+                          className="flex flex-shrink-0 items-center gap-2"
+                          iconClassName="text-lg leading-none"
+                          flameClassName="flex-shrink-0"
+                        />
+                      </div>
                     </motion.div>
                   );
                 }
