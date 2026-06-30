@@ -591,7 +591,7 @@ export function MonumentGridWithSharedTransition({
       <div className="grid grid-cols-4 gap-1">
         <div className="card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1">
           <p className="text-xs text-[var(--muted)]">
-            Maximum of {MAX_MONUMENTS} monuments reached.
+            Monument cap of {MAX_MONUMENTS} reached.
           </p>
         </div>
       </div>

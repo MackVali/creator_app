@@ -33,7 +33,7 @@ export function AddMonumentDialog() {
         <Dialog.Content className="fixed left-1/2 top-1/2 z-[220] max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[460px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[28px] border border-white/12 bg-[linear-gradient(160deg,rgba(32,33,36,0.96)_0%,rgba(9,10,13,0.98)_46%,rgba(3,4,7,1)_100%)] text-white shadow-[0_34px_90px_rgba(0,0,0,0.82),inset_0_1px_0_rgba(255,255,255,0.11),inset_0_-28px_70px_rgba(0,0,0,0.46)] backdrop-blur-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35">
           <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
 
-          <header className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
+          <header className="flex items-start justify-between gap-2.5 border-b border-white/10 px-4 py-4 sm:gap-4 sm:px-5">
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/45">
                 Monument
@@ -41,7 +41,7 @@ export function AddMonumentDialog() {
               <Dialog.Title className="mt-1 text-[1.35rem] font-semibold leading-tight tracking-normal text-white">
                 Create a monument
               </Dialog.Title>
-              <Dialog.Description className="mt-1 max-w-[22rem] text-xs leading-5 text-white/60">
+              <Dialog.Description className="mt-1 text-xs leading-5 text-white/60">
                 Pillar of life, where your skills take form in action.
               </Dialog.Description>
             </div>

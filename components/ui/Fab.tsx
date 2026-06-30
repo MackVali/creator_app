@@ -156,6 +156,7 @@ export interface FabProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
+type UnifiedCreationMode = "EVENTS" | "TASKS";
 type UnifiedEventType = Extract<CreationType, "TASK" | "HABIT">;
 type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
 type AddEventSubAction = {
@@ -694,6 +695,7 @@ type FabSearchResult = {
   type: "PROJECT" | "TASK" | "HABIT";
   nextScheduledAt: string | null;
   scheduleInstanceId: string | null;
+  schedule_instance_id?: string | null;
   durationMinutes: number | null;
   nextDueAt: string | null;
   completedAt: string | null;
@@ -3622,6 +3624,8 @@ export function Fab({
   const [isUnifiedFormsSheetOpen, setIsUnifiedFormsSheetOpen] =
     useState(false);
   const [isAddEventMoreOpen, setIsAddEventMoreOpen] = useState(false);
+  const [unifiedCreationMode, setUnifiedCreationMode] =
+    useState<UnifiedCreationMode>("EVENTS");
   const [unifiedEventType, setUnifiedEventType] =
     useState<UnifiedEventType>("TASK");
   const [addEventSubActions, setAddEventSubActions] = useState<
@@ -5415,10 +5419,15 @@ export function Fab({
   );
   const resolvedUnifiedAddEventSaveSelected = useMemo<CreationType | null>(() => {
     if (!isUnifiedEventSheetOpen) return null;
+    if (unifiedCreationMode === "EVENTS") return null;
     if (derivedUnifiedAddEventSourceType === "TASK") return "TASK";
     if (derivedUnifiedAddEventSourceType === "HABIT") return "HABIT";
     return null;
-  }, [derivedUnifiedAddEventSourceType, isUnifiedEventSheetOpen]);
+  }, [
+    derivedUnifiedAddEventSourceType,
+    isUnifiedEventSheetOpen,
+    unifiedCreationMode,
+  ]);
   const resolvedAddEventTaskGoalId =
     isUnifiedEventSheetOpen && resolvedUnifiedAddEventSaveSelected === "TASK"
       ? (taskGoalId ?? activeTaskCreationGoalId)
@@ -17223,6 +17232,7 @@ export function Fab({
       new Date();
 
     if (!isUnifiedEventSheetOpen) {
+      setUnifiedCreationMode("EVENTS");
       setTaskHasExactDate(true);
       setTaskExactDate(defaultSchedule.date);
       setTaskExactFallbackDate(defaultSchedule.date);
@@ -17434,6 +17444,22 @@ export function Fab({
     setUnifiedGoalSortMode("default");
     resetHabitRoutineInlineCreation();
   }, [resetHabitRoutineInlineCreation]);
+
+  const handleUnifiedCreationModeChange = useCallback(
+    (mode: UnifiedCreationMode) => {
+      if (unifiedCreationMode === mode) return;
+      void hapticSoftTick();
+      setSaveError(null);
+      setUnifiedCreationMode(mode);
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedGoalPickerOpen(false);
+      setShowUnifiedGoalFilters(false);
+      setUnifiedGoalSearch("");
+      setUnifiedGoalFilterMonumentId("");
+      setUnifiedGoalSortMode("default");
+    },
+    [unifiedCreationMode],
+  );
 
   const measureAiOverlayOrigin = useCallback((): FabAiOverlayOrigin => {
     if (typeof window === "undefined") {
@@ -17812,13 +17838,15 @@ export function Fab({
     pointer?: DragPointerInfo,
   ) => {
     if (result.type === "PROJECT" && result.isCompleted) return;
+    const scheduleInstanceId =
+      result.scheduleInstanceId ?? result.schedule_instance_id ?? null;
     const hasSourceMetadata =
       (result.type === "PROJECT" ||
         result.type === "HABIT" ||
         result.type === "TASK") &&
       typeof result.id === "string" &&
       result.id.trim().length > 0;
-    if (!result.scheduleInstanceId && !hasSourceMetadata) {
+    if (!scheduleInstanceId && !hasSourceMetadata) {
       toast.error(
         "Manual placement unavailable",
         "This item has no Event source to place.",
@@ -17837,7 +17865,11 @@ export function Fab({
       window.dispatchEvent(
         new CustomEvent("schedule:manual-placement-requested", {
           detail: {
-            result: { ...result, durationMinutes: safeDuration },
+            result: {
+              ...result,
+              scheduleInstanceId,
+              durationMinutes: safeDuration,
+            },
             source: "fab-nexus",
             pointer,
           },
@@ -19492,6 +19524,7 @@ export function Fab({
 
   const getUnifiedAddEventSaveBlockReason = (): string | null => {
     if (!isUnifiedEventSheetOpen) return null;
+    if (unifiedCreationMode === "EVENTS") return null;
     if (isAddEventTimingInvalid) return "End time must be after start time.";
 
     if (derivedUnifiedAddEventSourceType === "PROJECT") {
@@ -21277,7 +21310,7 @@ export function Fab({
     isSavingFab ||
     isDeletingFabEntity ||
     editHydrating ||
-    !resolvedUnifiedAddEventSaveSelected;
+    (unifiedCreationMode === "TASKS" && !resolvedUnifiedAddEventSaveSelected);
   const handleUnifiedAddEventSubmit = () => {
     const blockReason = getUnifiedAddEventSaveBlockReason();
 
@@ -21290,6 +21323,14 @@ export function Fab({
 
     if (isDeletingFabEntity || editHydrating) {
       const reason = "Please wait a moment before saving.";
+      setSaveError(reason);
+      toast.error(reason);
+      return;
+    }
+
+    if (unifiedCreationMode === "EVENTS") {
+      const reason = "Event saving is not wired yet.";
+      void hapticErrorPattern();
       setSaveError(reason);
       toast.error(reason);
       return;
@@ -22430,10 +22471,12 @@ export function Fab({
       return null;
     }
 
-    const isProject = selected === "PROJECT";
-    const isTask = unifiedEventType === "TASK" && !isProject;
-    const isHabit = unifiedEventType === "HABIT";
-    const isGoalLinkedEvent = isTask || isProject;
+    const isEventsMode = unifiedCreationMode === "EVENTS";
+    const isTasksMode = unifiedCreationMode === "TASKS";
+    const isProject = isTasksMode && selected === "PROJECT";
+    const isTask = (isEventsMode || unifiedEventType === "TASK") && !isProject;
+    const isHabit = isTasksMode && unifiedEventType === "HABIT";
+    const isGoalLinkedEvent = isTasksMode && (isTask || isProject);
     const titleValue = isProject ? projectName : isTask ? taskName : habitName;
     const titleSetter = isProject
       ? setProjectName
@@ -22527,6 +22570,12 @@ export function Fab({
       "h-3.5 w-3.5 shrink-0 text-zinc-400 transition group-hover:text-zinc-200";
     const quickActionLabelClass =
       "min-w-0 whitespace-nowrap text-[11px] font-semibold leading-none text-zinc-100/88 sm:text-[12px]";
+    const unifiedModeOptionClass =
+      "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50";
+    const unifiedModeOptionActiveClass =
+      "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]";
+    const unifiedModeOptionInactiveClass =
+      "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200";
     const subEventDurationOptions = [15, 30, 45, 60, 90];
     const subEventToolButtonClass =
       "inline-flex h-7 w-full min-w-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-[10px] font-semibold leading-none text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-white/18 hover:bg-white/[0.075] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation";
@@ -22850,7 +22899,9 @@ export function Fab({
     const addEventSourceTypeLabel =
       addEventSourceType.charAt(0) +
       addEventSourceType.slice(1).toLowerCase();
-    const unifiedSubmitLabel = `Add ${addEventSourceTypeLabel}`;
+    const unifiedSubmitLabel = isEventsMode
+      ? "Add Event"
+      : `Add ${addEventSourceTypeLabel}`;
     const unifiedAddEventSaveBlockReason =
       getUnifiedAddEventSaveBlockReason();
     const addAddEventSubAction = () => {
@@ -24874,6 +24925,38 @@ export function Fab({
 
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-1 sm:px-6">
                 <div className="mx-auto grid w-full max-w-xl gap-2 pb-0">
+                  <div
+                    className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
+                    aria-label="Creation mode"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={isEventsMode}
+                      onClick={() => handleUnifiedCreationModeChange("EVENTS")}
+                      className={cn(
+                        unifiedModeOptionClass,
+                        isEventsMode
+                          ? unifiedModeOptionActiveClass
+                          : unifiedModeOptionInactiveClass,
+                      )}
+                    >
+                      EVENTS
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={isTasksMode}
+                      onClick={() => handleUnifiedCreationModeChange("TASKS")}
+                      className={cn(
+                        unifiedModeOptionClass,
+                        isTasksMode
+                          ? unifiedModeOptionActiveClass
+                          : unifiedModeOptionInactiveClass,
+                      )}
+                    >
+                      TASKS
+                    </button>
+                  </div>
+
                   {isGoalLinkedEvent ? (
                     <div className="w-fit" data-unified-event-goal-link>
                       <button

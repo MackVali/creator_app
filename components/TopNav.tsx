@@ -27,6 +27,7 @@ import {
   type NoteDatabaseEntry,
 } from "@/components/notes/NoteSlashTextarea";
 import { isScheduleRoute } from "@/components/appChromeVisibility";
+import { userIsAdmin } from "@/lib/auth/userRoles";
 import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import { getMonumentNote, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import { getNote, updateSkillNote } from "@/lib/notesStorage";
@@ -690,6 +691,8 @@ export default function TopNav() {
     return null;
   }
 
+  const isAdmin = userIsAdmin(currentUser);
+
   const bodyPanelRows =
     pinnedBodyDatabases.length > 0
       ? pinnedBodyDatabases.map((database) => ({
@@ -855,6 +858,19 @@ export default function TopNav() {
                   Help
                 </Link>
               </DropdownMenuItem>
+              {isAdmin ? (
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/test"
+                    className="text-[var(--muted)]"
+                    onClick={() => {
+                      void hapticPress();
+                    }}
+                  >
+                    Test
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
           <button

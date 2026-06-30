@@ -231,7 +231,7 @@ export function MonumentCreationForm({
     }
 
     if ((count ?? 0) >= MAX_MONUMENTS) {
-      setError(`You can only have up to ${MAX_MONUMENTS} monuments.`);
+      setError(`You’ve reached the Monument cap of ${MAX_MONUMENTS}.`);
       setLoading(false);
       return;
     }
@@ -479,7 +479,7 @@ export function MonumentCreationForm({
           className={
             submitButtonClassName ??
             (isDialogVariant
-              ? "h-11 w-full rounded-[14px] border border-white/25 bg-white text-sm font-semibold text-black shadow-[0_16px_30px_-18px_rgba(255,255,255,0.62),inset_0_1px_0_rgba(255,255,255,0.8)] transition hover:bg-zinc-100 hover:text-black focus-visible:ring-white/35 disabled:cursor-not-allowed disabled:bg-white/35 disabled:text-black/55"
+              ? "h-11 w-full rounded-[14px] border border-white/12 bg-[linear-gradient(145deg,rgba(39,39,42,0.88),rgba(9,9,11,0.94))] text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(0,0,0,0.95),0_8px_22px_-18px_rgba(255,255,255,0.22),inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:border-white/20 hover:bg-[linear-gradient(145deg,rgba(63,63,70,0.9),rgba(18,18,21,0.96))] hover:text-white active:translate-y-px active:bg-[linear-gradient(145deg,rgba(24,24,27,0.95),rgba(3,3,5,0.98))] focus-visible:ring-white/35 disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-zinc-900/45 disabled:text-white/42 disabled:shadow-none"
               : "h-12 rounded-xl bg-gradient-to-r from-slate-600 to-slate-400 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed")
           }
         >

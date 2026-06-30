@@ -9,9 +9,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { User, LogIn, Settings, LogOut, Inbox, FlaskConical } from "lucide-react";
+import { LogIn, Settings, LogOut, Inbox } from "lucide-react";
 import { signOut } from "@/lib/auth";
-import { userIsAdmin } from "@/lib/auth/userRoles";
 import { hapticPress } from "@/lib/haptics/creatorHaptics";
 
 interface Profile {
@@ -51,11 +50,6 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
     router.push("/inbox");
   };
 
-  const handleTestClick = () => {
-    void hapticPress();
-    router.push("/test");
-  };
-
   const handleSignInClick = () => {
     void hapticPress();
     router.push("/auth");
@@ -81,7 +75,6 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const initials = getInitials(profile?.name || null, profile?.username || "U");
   const displayName = profile?.name?.trim() || profile?.username || "You";
   const handleTagline = profile?.username ? `@${profile.username}` : user?.email;
-  const isAdmin = userIsAdmin(user);
 
   return (
     <DropdownMenu>
@@ -114,7 +107,10 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
         {user ? (
           // User is signed in
           <>
-            <div className="mx-1 mb-1 flex items-center gap-2.5 border-b border-white/10 px-2 py-2.5">
+            <DropdownMenuItem
+              onClick={handleProfileClick}
+              className="mx-1 mb-1 flex cursor-pointer items-center gap-2.5 rounded-xl border-b border-white/10 px-2 py-2.5 text-white transition-colors hover:bg-white/[0.07] focus:bg-white/[0.07] focus:text-white"
+            >
               <Avatar className="h-8 w-8 border border-white/10">
                 {profile?.avatar_url ? (
                   <AvatarImage
@@ -135,16 +131,9 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                   <p className="truncate text-xs text-white/50">{handleTagline}</p>
                 ) : null}
               </div>
-            </div>
+            </DropdownMenuItem>
 
             <div className="text-sm">
-              <DropdownMenuItem
-                onClick={handleProfileClick}
-                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
-              >
-                <User className="h-4 w-4 text-white/55" />
-                View profile
-              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleEditProfileClick}
                 className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
@@ -159,15 +148,6 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                 <Inbox className="h-4 w-4 text-white/55" />
                 Inbox
               </DropdownMenuItem>
-              {isAdmin ? (
-                <DropdownMenuItem
-                  onClick={handleTestClick}
-                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-white/80 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
-                >
-                  <FlaskConical className="h-4 w-4 text-white/55" />
-                  Test
-                </DropdownMenuItem>
-              ) : null}
               <DropdownMenuItem
                 onClick={handleSignOut}
                 className="mt-1 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border-t border-white/10 px-3 py-2.5 text-white/60 transition-colors hover:bg-white/[0.07] hover:text-white focus:bg-white/[0.07] focus:text-white"
