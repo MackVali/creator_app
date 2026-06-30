@@ -429,6 +429,7 @@ type ManualPlacementRequestDetail = {
   result?: {
     id?: string;
     scheduleInstanceId?: string | null;
+    schedule_instance_id?: string | null;
     durationMinutes?: number;
     nextScheduledAt?: string;
     name?: string;
@@ -4815,6 +4816,9 @@ export default function ScheduleTabContent({
         typeof result?.scheduleInstanceId === "string" &&
         result.scheduleInstanceId.trim().length > 0
           ? result.scheduleInstanceId.trim()
+          : typeof result?.schedule_instance_id === "string" &&
+              result.schedule_instance_id.trim().length > 0
+            ? result.schedule_instance_id.trim()
           : null;
       if (!result || (!instanceId && (!sourceType || !sourceId))) {
         toast.error(

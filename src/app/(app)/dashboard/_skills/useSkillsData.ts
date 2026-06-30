@@ -146,6 +146,16 @@ export function groupByCategory(skills: Skill[]): Record<string, Skill[]> {
   }, {});
 }
 
+const UNCATEGORIZED_CATEGORY: Category = {
+  id: "uncategorized",
+  name: "Uncategorized",
+  color_hex: "#000000",
+  order: null,
+  icon: null,
+  is_default: false,
+  is_locked: false,
+};
+
 export function useSkillsData() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [skillsByCategory, setSkillsByCategory] = useState<Record<string, Skill[]>>({});
@@ -179,12 +189,18 @@ export function useSkillsData() {
         ]);
       }
       const grouped = groupByCategory(skills);
+      const hasUncategorizedSkills = (grouped["uncategorized"] ?? []).length > 0;
+      const categoriesWithUncategorized =
+        hasUncategorizedSkills && !cats.some((cat) => cat.id === "uncategorized")
+          ? [...cats, UNCATEGORIZED_CATEGORY]
+          : cats;
+
       setSkillsByCategory(grouped);
-      if (cats.length > 0) {
-        setCategories(cats);
+      if (categoriesWithUncategorized.length > 0) {
+        setCategories(categoriesWithUncategorized);
       } else if (Object.keys(grouped).length > 0) {
         // derive a single fallback category so skills still render
-        setCategories([{ id: "uncategorized", name: "Skills" }]);
+        setCategories([UNCATEGORIZED_CATEGORY]);
       } else {
         setCategories([]);
       }
