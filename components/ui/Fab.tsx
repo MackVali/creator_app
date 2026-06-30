@@ -14087,7 +14087,9 @@ export function Fab({
                     variants={itemVariants}
                     onClick={() => {
                       if (event.action === "unified-event") {
-                        openUnifiedEventSheet();
+                        openUnifiedEventSheet({
+                          deferUntilAfterLauncherClose: true,
+                        });
                         return;
                       }
                       handleExtraClick(event.label);
@@ -17223,7 +17225,9 @@ export function Fab({
     }
   };
 
-  const openUnifiedEventSheet = useCallback(() => {
+  const openUnifiedEventSheet = useCallback((options?: {
+    deferUntilAfterLauncherClose?: boolean;
+  }) => {
     void hapticPress();
     const defaultSchedule = getNextSolidHourEventDefaults(new Date());
     const initialDate =
@@ -17288,7 +17292,20 @@ export function Fab({
       setIsDirectCreationOpen(false);
       setIsOpen(false);
     });
-    setIsUnifiedEventSheetOpen(true);
+
+    const openSheet = () => {
+      setIsUnifiedEventSheetOpen(true);
+    };
+
+    if (
+      options?.deferUntilAfterLauncherClose &&
+      typeof window !== "undefined"
+    ) {
+      window.requestAnimationFrame(openSheet);
+      return;
+    }
+
+    openSheet();
   }, [
     activeTaskCreationGoalId,
     isUnifiedEventSheetOpen,
