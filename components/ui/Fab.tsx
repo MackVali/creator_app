@@ -28597,6 +28597,9 @@ function FabNexus({
                         Number.isFinite(res.durationMinutes) &&
                         res.durationMinutes > 0)),
                 );
+              const shouldReserveTimelineManualPlacement = (
+                res: FabSearchResult,
+              ) => markTimelineNexus && canManualPlaceResult(res);
 
               const beginManualPlacement = (
                 res: FabSearchResult,
@@ -28708,7 +28711,8 @@ function FabNexus({
 
                 if (
                   absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
-                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
+                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE &&
+                  !shouldReserveTimelineManualPlacement(state.result)
                 ) {
                   clearResultLongPressTimer();
                   dragStateRef.current = null;
@@ -28854,7 +28858,8 @@ function FabNexus({
 
                 if (
                   absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
-                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
+                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE &&
+                  !shouldReserveTimelineManualPlacement(state.result)
                 ) {
                   clearResultLongPressTimer();
                   dragStateRef.current = null;
@@ -28934,6 +28939,11 @@ function FabNexus({
                   key={`${result.type}-${result.id}`}
                   type="button"
                   data-fab-nexus-result-card="true"
+                  data-fab-swipe-ignore={
+                    shouldReserveTimelineManualPlacement(result)
+                      ? "true"
+                      : undefined
+                  }
                   onClick={handleClick}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
