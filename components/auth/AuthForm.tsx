@@ -28,6 +28,9 @@ const authSegmentedToggleActiveClassName =
 const authSegmentedToggleInactiveClassName =
   "text-zinc-400 hover:bg-[#2d2d30] hover:text-zinc-100";
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GENERIC_SIGN_IN_ERROR = "Invalid email or username or password";
+
 export default function AuthForm() {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
   const [signupStep, setSignupStep] = useState<1 | 2>(1);
@@ -132,7 +135,13 @@ export default function AuthForm() {
         "Too many failed attempts. Please wait 5 minutes before trying again."
       );
     } else {
-      setError(appError.userMessage);
+      const isGenericSignInFailure =
+        tab === "signin" &&
+        (appError.code === "auth/invalid-credentials" ||
+          error.message === GENERIC_SIGN_IN_ERROR);
+      setError(
+        isGenericSignInFailure ? GENERIC_SIGN_IN_ERROR : appError.userMessage
+      );
     }
   };
 
@@ -152,10 +161,43 @@ export default function AuthForm() {
     setSuccess(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const identifier = email.trim();
+      const isEmailSignIn = EMAIL_PATTERN.test(identifier);
+      const signInResult = isEmailSignIn
+        ? await supabase.auth.signInWithPassword({
+            email: identifier,
+            password,
+          })
+        : await fetch("/api/auth/sign-in", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: identifier.toLowerCase(),
+              password,
+            }),
+          }).then(async (response) => {
+            if (!response.ok) {
+              return {
+                data: { user: null },
+                error: { message: GENERIC_SIGN_IN_ERROR },
+              };
+            }
+
+            const { data: userData, error: userError } =
+              await supabase.auth.getUser();
+            if (userError || !userData.user) {
+              return {
+                data: { user: null },
+                error: { message: GENERIC_SIGN_IN_ERROR },
+              };
+            }
+
+            return {
+              data: { user: userData.user },
+              error: null,
+            };
+          });
+      const { data, error } = signInResult;
       if (error) {
         handleAuthError(error);
       } else {
@@ -393,15 +435,16 @@ export default function AuthForm() {
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
               <label className={labelClassName}>
-                Email
+                Email or username
               </label>
               <input
-                type="email"
-                placeholder="Enter your email"
+                type="text"
+                placeholder="Enter your email or username"
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEmail(e.target.value)
                 }
+                autoComplete="username"
                 className={inputClassName}
                 required
               />
