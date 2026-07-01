@@ -1,3 +1,5 @@
+import type { FlameLevel } from "@/components/FlameEmber";
+
 export const PRIORITY_ORDER = [
   "ULTRA-CRITICAL",
   "CRITICAL",
@@ -124,6 +126,7 @@ export type PriorityTimeBlockFilterOptionData = {
   id: string;
   name: string;
   detail?: string | null;
+  energy: FlameLevel;
   blockType?: string | null;
   allowAllHabitTypes: boolean;
   allowAllSkills: boolean;

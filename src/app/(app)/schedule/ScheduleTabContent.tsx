@@ -68,6 +68,7 @@ import {
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { getCatsForUser } from "@/lib/data/cats";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -113,6 +114,7 @@ import {
   type TimelineCardLayoutMode,
 } from "@/lib/scheduler/syncLayout";
 import type { ScheduleEventDataset } from "@/lib/scheduler/dataset";
+import type { CatRow } from "@/lib/types/cat";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import { formatLocalDateKey, toLocal, dayKeyFromUtc } from "@/lib/time/tz";
 import {
@@ -237,6 +239,11 @@ const inlineJumpCloseTransition = {
 } as const;
 const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
+const QUICK_CREATE_EVENT_LONG_PRESS_MS = 650;
+const QUICK_CREATE_EVENT_DURATION_MIN = 30;
+const QUICK_CREATE_EVENT_MOVE_CANCEL_PX = 28;
+const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
+const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const COMPLETION_BOUNCE_DURATION_MS = 420;
 const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
@@ -472,6 +479,28 @@ type OptimisticManualPlacement = {
   tempId: string | null;
   previousInstances: ScheduleInstance[];
   previousAllInstances: ScheduleInstance[];
+};
+
+type QuickCreateDraftEvent = {
+  id: string;
+  title: string;
+  startMinute: number;
+  endMinute: number;
+  skillId: string | null;
+  skillName: string | null;
+  relationIcon: string | null;
+};
+
+type QuickCreatePressInput = "pointer" | "touch";
+
+type QuickCreateSurfacePress = {
+  input: QuickCreatePressInput;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  clientY: number;
+  surface: HTMLElement;
+  startMinute: number;
 };
 
 function normalizeManualPlacementSourceType(
@@ -3517,6 +3546,39 @@ function formatGapRangeLabel(start: Date, end: Date): string {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`;
 }
 
+const QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID = "uncategorized";
+const QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
+
+type QuickCreateSkillGroup = {
+  id: string;
+  label: string;
+  categoryOrder: number | null;
+  skills: SkillRow[];
+};
+
+function compareQuickCreateOrderThenName(
+  leftOrder: number | null | undefined,
+  leftName: string | null | undefined,
+  rightOrder: number | null | undefined,
+  rightName: string | null | undefined
+) {
+  const leftHasOrder =
+    typeof leftOrder === "number" && Number.isFinite(leftOrder);
+  const rightHasOrder =
+    typeof rightOrder === "number" && Number.isFinite(rightOrder);
+
+  if (leftHasOrder && rightHasOrder && leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
+  }
+  if (leftHasOrder !== rightHasOrder) return leftHasOrder ? -1 : 1;
+
+  return (leftName?.trim() || "").localeCompare(
+    rightName?.trim() || "",
+    undefined,
+    { sensitivity: "base" }
+  );
+}
+
 export default function ScheduleTabContent({
   isSwipePreview = false,
 }: {
@@ -3588,6 +3650,17 @@ export default function ScheduleTabContent({
   }, [isSwipePreview, startScheduleTour]);
 
   const initialViewParam = searchParams.get("view") as ScheduleView | null;
+  const quickCreateDebugEnabled = searchParams.get("quickCreateDebug") === "1";
+  const [quickCreateDebugPhase, setQuickCreateDebugPhaseState] =
+    useState("idle");
+  const setQuickCreateDebugPhase = useCallback(
+    (phase: string) => {
+      if (quickCreateDebugEnabled) {
+        setQuickCreateDebugPhaseState(phase);
+      }
+    },
+    [quickCreateDebugEnabled]
+  );
   const initialView: ScheduleView =
     initialViewParam && ["day", "focus"].includes(initialViewParam)
       ? initialViewParam
@@ -3618,6 +3691,7 @@ export default function ScheduleTabContent({
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [skills, setSkills] = useState<SkillRow[]>([]);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [projectSkillIds, setProjectSkillIds] = useState<
     Record<string, string[]>
@@ -3654,6 +3728,26 @@ export default function ScheduleTabContent({
   } | null>(null);
   const manualPlacementSessionRef = useRef<typeof manualPlacementSession>(null);
   const manualPlacementPointerIdRef = useRef<number | null>(null);
+  const [quickCreateDraftEvent, setQuickCreateDraftEvent] =
+    useState<QuickCreateDraftEvent | null>(null);
+  const [isQuickCreateSkillPickerOpen, setIsQuickCreateSkillPickerOpen] =
+    useState(false);
+  const [quickCreateSkillSearch, setQuickCreateSkillSearch] = useState("");
+  const quickCreateDraftEventRef = useRef<QuickCreateDraftEvent | null>(null);
+  const quickCreateDraftCardRef = useRef<HTMLDivElement | null>(null);
+  const quickCreateSkillPickerRef = useRef<HTMLDivElement | null>(null);
+  const quickCreateDraftInputRef = useRef<HTMLInputElement | null>(null);
+  const quickCreateDraftCreatedAtRef = useRef<number | null>(null);
+  const quickCreateDraftInputFocusedRef = useRef(false);
+  const quickCreateDraftPointerInsideRef = useRef(false);
+  const quickCreateLongPressTimerRef = useRef<number | null>(null);
+  const quickCreateSurfacePressRef = useRef<QuickCreateSurfacePress | null>(
+    null
+  );
+  const quickCreateDragRef = useRef<{
+    pointerId: number;
+    minuteOffset: number;
+  } | null>(null);
   const updateManualPlacementSession = useCallback(
     (
       updater: (
@@ -3671,6 +3765,14 @@ export default function ScheduleTabContent({
   useEffect(() => {
     manualPlacementSessionRef.current = manualPlacementSession;
   }, [manualPlacementSession]);
+  useEffect(() => {
+    quickCreateDraftEventRef.current = quickCreateDraftEvent;
+  }, [quickCreateDraftEvent]);
+  useEffect(() => {
+    if (quickCreateDraftEvent) {
+      setQuickCreateDebugPhase("draft rendered");
+    }
+  }, [quickCreateDraftEvent, setQuickCreateDebugPhase]);
   const renderDayStart = useMemo(
     () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
     [currentDate, effectiveTimeZone]
@@ -3973,6 +4075,7 @@ export default function ScheduleTabContent({
     setTasks([]);
     setProjects([]);
     setSkills([]);
+    setSkillCategories([]);
     setMonuments([]);
     setProjectSkillIds({});
     setProjectGoalRelations({});
@@ -3984,6 +4087,29 @@ export default function ScheduleTabContent({
     backlogTaskPreviousStageRef.current = new Map();
     scheduleDatasetRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (!userId) {
+      setSkillCategories([]);
+      return;
+    }
+
+    let active = true;
+    const supabase = getSupabaseBrowser();
+
+    getCatsForUser(userId, supabase ?? undefined)
+      .then((categories) => {
+        if (active) setSkillCategories(categories);
+      })
+      .catch(() => {
+        if (active) setSkillCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   const [pxPerMin, setPxPerMin] = useState<number>(INITIAL_PX_PER_MIN);
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
@@ -5038,6 +5164,9 @@ export default function ScheduleTabContent({
 
   useEffect(() => {
     const params = new URLSearchParams();
+    if (quickCreateDebugEnabled) {
+      params.set("quickCreateDebug", "1");
+    }
     params.set("view", view);
     if (!Number.isNaN(currentDate.getTime())) {
       const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
@@ -5051,6 +5180,7 @@ export default function ScheduleTabContent({
     pathname,
     stableTimeZone,
     effectiveTimeZone,
+    quickCreateDebugEnabled,
   ]);
 
   useEffect(() => {
@@ -5800,6 +5930,86 @@ export default function ScheduleTabContent({
     for (const skill of skills) map[skill.id] = skill;
     return map;
   }, [skills]);
+
+  const quickCreateSkillGroups = useMemo<QuickCreateSkillGroup[]>(() => {
+    const term = quickCreateSkillSearch.trim().toLowerCase();
+    const categoryLookup = new Map(
+      skillCategories.map((category) => [category.id, category])
+    );
+    const originalIndex = new Map(
+      skills.map((skill, index) => [skill.id, index])
+    );
+    const groups = new Map<string, QuickCreateSkillGroup>();
+
+    const filteredSkills = skills.filter((skill) => {
+      if (!term) return true;
+      return (
+        (skill.name ?? "").toLowerCase().includes(term) ||
+        (skill.icon ?? "").toLowerCase().includes(term)
+      );
+    });
+
+    filteredSkills.forEach((skill) => {
+      const groupId =
+        skill.cat_id?.trim() || QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID;
+      const category = categoryLookup.get(groupId);
+      const label =
+        groupId === QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID
+          ? QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_LABEL
+          : category?.name?.trim() || `Category ${groupId.slice(0, 8)}`;
+      const existing = groups.get(groupId);
+
+      if (existing) {
+        existing.skills.push(skill);
+      } else {
+        groups.set(groupId, {
+          id: groupId,
+          label,
+          categoryOrder: category?.sort_order ?? null,
+          skills: [skill],
+        });
+      }
+    });
+
+    const orderedGroups = Array.from(groups.values()).sort((left, right) => {
+      const leftUncategorized =
+        left.id === QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID;
+      const rightUncategorized =
+        right.id === QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID;
+
+      if (leftUncategorized !== rightUncategorized) {
+        return leftUncategorized ? 1 : -1;
+      }
+
+      const orderComparison = compareQuickCreateOrderThenName(
+        left.categoryOrder,
+        left.label,
+        right.categoryOrder,
+        right.label
+      );
+
+      return orderComparison !== 0
+        ? orderComparison
+        : left.id.localeCompare(right.id);
+    });
+
+    return orderedGroups.map((group) => ({
+      ...group,
+      skills: [...group.skills].sort((left, right) => {
+        const orderComparison = compareQuickCreateOrderThenName(
+          left.sort_order,
+          left.name,
+          right.sort_order,
+          right.name
+        );
+
+        return orderComparison !== 0
+          ? orderComparison
+          : (originalIndex.get(left.id) ?? 0) -
+              (originalIndex.get(right.id) ?? 0);
+      }),
+    }));
+  }, [quickCreateSkillSearch, skillCategories, skills]);
 
   const skillMonumentMap = useMemo(() => {
     const map: Record<string, string | null> = {};
@@ -8887,10 +9097,6 @@ export default function ScheduleTabContent({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [manualPlacementSession, stopAutoScroll]);
 
-  useEffect(() => {
-    return () => stopAutoScroll();
-  }, [stopAutoScroll]);
-
   const baseTimelineHeight = useMemo(
     () =>
       dayTimelineModel
@@ -8937,6 +9143,542 @@ export default function ScheduleTabContent({
     },
     [dayTimelineModel, pxPerMin, renderDayStart]
   );
+
+  const resolveTimelineTimeFromSurface = useCallback(
+    (clientY: number, surface: HTMLElement | null) => {
+      if (!dayTimelineModel || !surface) return null;
+      const timelineEl =
+        surface.matches(".timeline-content")
+          ? surface
+          : (surface.querySelector(".timeline-content") as HTMLElement | null);
+      if (!timelineEl) return null;
+      const rect = timelineEl.getBoundingClientRect();
+      const offsetY = clientY - rect.top;
+      if (!Number.isFinite(offsetY)) return null;
+      const minutesFromStart =
+        offsetY / pxPerMin + (dayTimelineModel.startHour ?? 0) * 60;
+      const clampedMinutes = Math.min(Math.max(minutesFromStart, 0), 24 * 60);
+      return new Date(renderDayStart.getTime() + clampedMinutes * 60_000);
+    },
+    [dayTimelineModel, pxPerMin, renderDayStart]
+  );
+
+  const clearQuickCreateLongPressTimer = useCallback(() => {
+    if (quickCreateLongPressTimerRef.current !== null) {
+      window.clearTimeout(quickCreateLongPressTimerRef.current);
+      quickCreateLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelQuickCreateSurfacePress = useCallback(() => {
+    clearQuickCreateLongPressTimer();
+    quickCreateSurfacePressRef.current = null;
+  }, [clearQuickCreateLongPressTimer]);
+
+  const focusQuickCreateDraftInput = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      setQuickCreateDebugPhase("input focus attempted");
+      quickCreateDraftInputRef.current?.focus({ preventScroll: true });
+      quickCreateDraftInputRef.current?.select();
+      quickCreateDraftInputFocusedRef.current =
+        document.activeElement === quickCreateDraftInputRef.current;
+    });
+  }, [setQuickCreateDebugPhase]);
+
+  const isQuickCreateDraftInteractionInside = useCallback(() => {
+    const card = quickCreateDraftCardRef.current;
+    const picker = quickCreateSkillPickerRef.current;
+    const activeElement = document.activeElement;
+    return (
+      (activeElement instanceof Node &&
+        ((!!card && card.contains(activeElement)) ||
+          (!!picker && picker.contains(activeElement)))) ||
+      quickCreateDraftPointerInsideRef.current
+    );
+  }, []);
+
+  const cancelQuickCreateDraft = useCallback(() => {
+    setQuickCreateDraftEvent(null);
+    setIsQuickCreateSkillPickerOpen(false);
+    setQuickCreateSkillSearch("");
+    quickCreateDraftEventRef.current = null;
+    quickCreateDragRef.current = null;
+    quickCreateDraftCreatedAtRef.current = null;
+    quickCreateDraftInputFocusedRef.current = false;
+    quickCreateDraftPointerInsideRef.current = false;
+    cancelQuickCreateSurfacePress();
+  }, [cancelQuickCreateSurfacePress]);
+
+  const resolveQuickCreateStartMinute = useCallback(
+    (clientY: number, surface: HTMLElement | null) => {
+      const resolved = resolveTimelineTimeFromSurface(clientY, surface);
+      if (!resolved) {
+        setQuickCreateDebugPhase("start time resolved/null");
+        return null;
+      }
+      const snapped = snapToFiveMinuteGrid(resolved);
+      const startMinute = Math.round(
+        getDayMinuteOffset(snapped, renderDayStart)
+      );
+      const maxStartMinute = 24 * 60 - QUICK_CREATE_EVENT_DURATION_MIN;
+      const clamped = Math.min(Math.max(startMinute, 0), maxStartMinute);
+      setQuickCreateDebugPhase(`start time resolved/${clamped}`);
+      return clamped;
+    },
+    [
+      renderDayStart,
+      resolveTimelineTimeFromSurface,
+      setQuickCreateDebugPhase,
+      snapToFiveMinuteGrid,
+    ]
+  );
+
+  const getQuickCreateBlockedTargetReason = useCallback(
+    (target: EventTarget | null, surface: HTMLElement) => {
+      if (!(target instanceof HTMLElement)) return "blocked target reason: non-element";
+      const timelineContent = target.closest(".timeline-content");
+      if (!timelineContent || !surface.contains(timelineContent)) {
+        return "blocked target reason: outside timeline-content";
+      }
+      if (target.closest("[data-quick-create-draft]")) {
+        return "blocked target reason: draft";
+      }
+      if (target.closest("[data-schedule-instance-id]")) {
+        return "blocked target reason: scheduled Event";
+      }
+      if (target.closest("[data-expanded-project-id]")) {
+        return "blocked target reason: expanded project";
+      }
+      if (target.closest("[data-backlog-task-id]")) {
+        return "blocked target reason: backlog task";
+      }
+      if (target.closest("[data-inline-jump-panel]")) {
+        return "blocked target reason: inline jump panel";
+      }
+      if (
+        isInlineJumpToDateOpen &&
+        target.closest("[data-inline-jump-timeline-peek]")
+      ) {
+        return "blocked target reason: inline jump peek";
+      }
+      if (
+        target.closest("[data-fab-overlay], [data-fab-reschedule-overlay]")
+      ) {
+        return "blocked target reason: FAB overlay";
+      }
+      if (
+        target.closest(
+          "button, input, textarea, select, a, [role='button'], [contenteditable='true']"
+        )
+      ) {
+        return "blocked target reason: interactive target";
+      }
+      return null;
+    },
+    [isInlineJumpToDateOpen]
+  );
+
+  const startQuickCreateSurfacePress = useCallback(
+    ({
+      input,
+      pointerId,
+      clientX,
+      clientY,
+      target,
+      surface,
+    }: {
+      input: QuickCreatePressInput;
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+      target: EventTarget | null;
+      surface: HTMLElement;
+    }) => {
+      setQuickCreateDebugPhase(`${input} down received`);
+      if (quickCreateSurfacePressRef.current) {
+        setQuickCreateDebugPhase("timer already active");
+        return;
+      }
+      if (manualPlacementSessionRef.current) {
+        setQuickCreateDebugPhase("manual placement active");
+        return;
+      }
+      if (quickCreateDraftEventRef.current) {
+        setQuickCreateDebugPhase("blocked target reason: draft already exists");
+        return;
+      }
+      if (pinchActiveRef.current) {
+        setQuickCreateDebugPhase("pinch active");
+        return;
+      }
+      if (isSwipingDayView) {
+        setQuickCreateDebugPhase("day swipe active");
+        return;
+      }
+      const blockedReason = getQuickCreateBlockedTargetReason(target, surface);
+      if (blockedReason) {
+        setQuickCreateDebugPhase(blockedReason);
+        return;
+      }
+
+      const startMinute = resolveQuickCreateStartMinute(clientY, surface);
+      if (startMinute === null) return;
+
+      clearQuickCreateLongPressTimer();
+      quickCreateSurfacePressRef.current = {
+        input,
+        pointerId,
+        startX: clientX,
+        startY: clientY,
+        clientY,
+        surface,
+        startMinute,
+      };
+      setQuickCreateDebugPhase("timer started");
+
+      quickCreateLongPressTimerRef.current = window.setTimeout(() => {
+        quickCreateLongPressTimerRef.current = null;
+        setQuickCreateDebugPhase("timer fired");
+        const press = quickCreateSurfacePressRef.current;
+        if (
+          !press ||
+          press.pointerId !== pointerId ||
+          press.input !== input
+        ) {
+          setQuickCreateDebugPhase("timer fired/no active press");
+          return;
+        }
+        const resolvedStartMinute =
+          resolveQuickCreateStartMinute(press.clientY, press.surface) ??
+          press.startMinute;
+        const id = `quick-create-event-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`;
+        const nextDraft: QuickCreateDraftEvent = {
+          id,
+          title: "",
+          startMinute: resolvedStartMinute,
+          endMinute: resolvedStartMinute + QUICK_CREATE_EVENT_DURATION_MIN,
+          skillId: null,
+          skillName: null,
+          relationIcon: null,
+        };
+        setQuickCreateDraftEvent(nextDraft);
+        quickCreateDraftEventRef.current = nextDraft;
+        quickCreateDraftCreatedAtRef.current = Date.now();
+        quickCreateDraftInputFocusedRef.current = false;
+        quickCreateSurfacePressRef.current = null;
+        longPressTriggeredRef.current = true;
+        setQuickCreateDebugPhase("draft set");
+        void hapticLongPress();
+        focusQuickCreateDraftInput();
+      }, QUICK_CREATE_EVENT_LONG_PRESS_MS);
+    },
+    [
+      clearQuickCreateLongPressTimer,
+      focusQuickCreateDraftInput,
+      getQuickCreateBlockedTargetReason,
+      isSwipingDayView,
+      resolveQuickCreateStartMinute,
+      setQuickCreateDebugPhase,
+    ]
+  );
+
+  const handleQuickCreateSurfacePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      startQuickCreateSurfacePress({
+        input: "pointer",
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        target: event.target,
+        surface: event.currentTarget,
+      });
+    },
+    [startQuickCreateSurfacePress]
+  );
+
+  const handleQuickCreateSurfacePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const press = quickCreateSurfacePressRef.current;
+      if (
+        !press ||
+        press.input !== "pointer" ||
+        press.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+      press.clientY = event.clientY;
+      const dx = event.clientX - press.startX;
+      const dy = event.clientY - press.startY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const distance = Math.hypot(dx, dy);
+      const isVerticalScrollIntent =
+        absDy > QUICK_CREATE_EVENT_MOVE_CANCEL_PX &&
+        absDy > absDx + QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX;
+      const isHorizontalSwipeIntent =
+        absDx > QUICK_CREATE_EVENT_MOVE_CANCEL_PX &&
+        absDx > absDy + QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX;
+      if (
+        isVerticalScrollIntent ||
+        isHorizontalSwipeIntent ||
+        distance > QUICK_CREATE_EVENT_FORCE_CANCEL_PX
+      ) {
+        setQuickCreateDebugPhase(
+          isHorizontalSwipeIntent
+            ? "movement cancelled/day swipe"
+            : isVerticalScrollIntent
+              ? "movement cancelled/vertical scroll"
+              : "movement cancelled/distance"
+        );
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        } catch {}
+        cancelQuickCreateSurfacePress();
+      }
+    },
+    [cancelQuickCreateSurfacePress, setQuickCreateDebugPhase]
+  );
+
+  const handleQuickCreateSurfacePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const press = quickCreateSurfacePressRef.current;
+      if (press?.input === "pointer" && press.pointerId === event.pointerId) {
+        setQuickCreateDebugPhase("movement cancelled/pointer ended");
+        cancelQuickCreateSurfacePress();
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {}
+    },
+    [cancelQuickCreateSurfacePress, setQuickCreateDebugPhase]
+  );
+
+  const handleQuickCreateSurfaceTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      startQuickCreateSurfacePress({
+        input: "touch",
+        pointerId: touch.identifier,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        target: touch.target,
+        surface: event.currentTarget,
+      });
+    },
+    [startQuickCreateSurfacePress]
+  );
+
+  const handleQuickCreateSurfaceTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      const press = quickCreateSurfacePressRef.current;
+      if (!press || press.input !== "touch") return;
+      const touch = Array.from(event.touches).find(
+        (item) => item.identifier === press.pointerId
+      );
+      if (!touch) return;
+      press.clientY = touch.clientY;
+      const dx = touch.clientX - press.startX;
+      const dy = touch.clientY - press.startY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const distance = Math.hypot(dx, dy);
+      const isVerticalScrollIntent =
+        absDy > QUICK_CREATE_EVENT_MOVE_CANCEL_PX &&
+        absDy > absDx + QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX;
+      const isHorizontalSwipeIntent =
+        absDx > QUICK_CREATE_EVENT_MOVE_CANCEL_PX &&
+        absDx > absDy + QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX;
+      if (
+        isVerticalScrollIntent ||
+        isHorizontalSwipeIntent ||
+        distance > QUICK_CREATE_EVENT_FORCE_CANCEL_PX
+      ) {
+        setQuickCreateDebugPhase(
+          isHorizontalSwipeIntent
+            ? "movement cancelled/day swipe"
+            : isVerticalScrollIntent
+              ? "movement cancelled/vertical scroll"
+              : "movement cancelled/distance"
+        );
+        cancelQuickCreateSurfacePress();
+      }
+    },
+    [cancelQuickCreateSurfacePress, setQuickCreateDebugPhase]
+  );
+
+  const handleQuickCreateSurfaceTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      const press = quickCreateSurfacePressRef.current;
+      if (!press || press.input !== "touch") return;
+      const ended = Array.from(event.changedTouches).some(
+        (touch) => touch.identifier === press.pointerId
+      );
+      if (ended) {
+        setQuickCreateDebugPhase("movement cancelled/touch ended");
+        cancelQuickCreateSurfacePress();
+      }
+    },
+    [cancelQuickCreateSurfacePress, setQuickCreateDebugPhase]
+  );
+
+  const handleQuickCreateDraftPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, button, select, a")
+      ) {
+        return;
+      }
+      const draft = quickCreateDraftEventRef.current;
+      if (!draft) return;
+      const resolved = resolveManualPlacementTime(event.clientY);
+      if (!resolved) return;
+      if (event.pointerType !== "mouse") {
+        event.preventDefault();
+      }
+      const pointerMinute = getDayMinuteOffset(resolved, renderDayStart);
+      quickCreateDragRef.current = {
+        pointerId: event.pointerId,
+        minuteOffset: pointerMinute - draft.startMinute,
+      };
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {}
+    },
+    [renderDayStart, resolveManualPlacementTime]
+  );
+
+  const updateQuickCreateDraftFromPointer = useCallback(
+    (clientY: number) => {
+      const drag = quickCreateDragRef.current;
+      const draft = quickCreateDraftEventRef.current;
+      if (!drag || !draft) return;
+      const resolved = resolveManualPlacementTime(clientY);
+      if (!resolved) return;
+      const pointerMinute = getDayMinuteOffset(resolved, renderDayStart);
+      const rawStartMinute = pointerMinute - drag.minuteOffset;
+      const rawStartDate = new Date(
+        renderDayStart.getTime() + rawStartMinute * 60_000
+      );
+      const snappedStart = snapToFiveMinuteGrid(rawStartDate);
+      const maxStartMinute = 24 * 60 - QUICK_CREATE_EVENT_DURATION_MIN;
+      const nextStartMinute = Math.min(
+        Math.max(Math.round(getDayMinuteOffset(snappedStart, renderDayStart)), 0),
+        maxStartMinute
+      );
+      const nextDraft = {
+        ...draft,
+        startMinute: nextStartMinute,
+        endMinute: nextStartMinute + QUICK_CREATE_EVENT_DURATION_MIN,
+      };
+      setQuickCreateDraftEvent(nextDraft);
+      quickCreateDraftEventRef.current = nextDraft;
+    },
+    [renderDayStart, resolveManualPlacementTime, snapToFiveMinuteGrid]
+  );
+
+  const handleQuickCreateDraftPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = quickCreateDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      updateQuickCreateDraftFromPointer(event.clientY);
+    },
+    [updateQuickCreateDraftFromPointer]
+  );
+
+  const handleQuickCreateDraftPointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = quickCreateDragRef.current;
+      if (drag?.pointerId === event.pointerId) {
+        updateQuickCreateDraftFromPointer(event.clientY);
+        quickCreateDragRef.current = null;
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {}
+      focusQuickCreateDraftInput();
+    },
+    [focusQuickCreateDraftInput, updateQuickCreateDraftFromPointer]
+  );
+
+  const handleQuickCreateSkillSelect = useCallback(
+    (skill: SkillRow) => {
+      const draft = quickCreateDraftEventRef.current;
+      if (!draft) return;
+      const relationIcon = (skill.icon ?? "").trim() || "✦";
+      const skillName = skill.name?.trim() || "Untitled skill";
+      const nextDraft: QuickCreateDraftEvent = {
+        ...draft,
+        skillId: skill.id,
+        skillName,
+        relationIcon,
+      };
+      setQuickCreateDraftEvent(nextDraft);
+      quickCreateDraftEventRef.current = nextDraft;
+      setIsQuickCreateSkillPickerOpen(false);
+      setQuickCreateSkillSearch("");
+      quickCreateDraftPointerInsideRef.current = true;
+      focusQuickCreateDraftInput();
+    },
+    [focusQuickCreateDraftInput]
+  );
+
+  useEffect(() => {
+    if (!quickCreateDraftEvent) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (isQuickCreateSkillPickerOpen) {
+          event.preventDefault();
+          setIsQuickCreateSkillPickerOpen(false);
+          focusQuickCreateDraftInput();
+          return;
+        }
+        cancelQuickCreateDraft();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    cancelQuickCreateDraft,
+    focusQuickCreateDraftInput,
+    isQuickCreateSkillPickerOpen,
+    quickCreateDraftEvent,
+  ]);
+
+  useEffect(() => {
+    if (!quickCreateDraftEvent) return;
+    const updatePointerContainment = (event: PointerEvent | TouchEvent) => {
+      const card = quickCreateDraftCardRef.current;
+      const picker = quickCreateSkillPickerRef.current;
+      const target = event.target;
+      quickCreateDraftPointerInsideRef.current =
+        target instanceof Node &&
+        ((!!card && card.contains(target)) ||
+          (!!picker && picker.contains(target)));
+    };
+    window.addEventListener("pointerdown", updatePointerContainment, true);
+    window.addEventListener("touchstart", updatePointerContainment, true);
+    return () => {
+      window.removeEventListener("pointerdown", updatePointerContainment, true);
+      window.removeEventListener("touchstart", updatePointerContainment, true);
+      quickCreateDraftPointerInsideRef.current = false;
+    };
+  }, [quickCreateDraftEvent]);
+
+  useEffect(() => {
+    return () => {
+      stopAutoScroll();
+      clearQuickCreateLongPressTimer();
+    };
+  }, [clearQuickCreateLongPressTimer, stopAutoScroll]);
 
   const updatePreviewAndScrollIntent = useCallback(
     (clientY: number) => {
@@ -9525,6 +10267,23 @@ export default function ScheduleTabContent({
           heightPx,
         };
       })();
+      const quickCreateTimelineDraft = (() => {
+        if (!quickCreateDraftEvent) return null;
+        const startMinute = quickCreateDraftEvent.startMinute;
+        const endMinute = quickCreateDraftEvent.endMinute;
+        if (!Number.isFinite(startMinute) || !Number.isFinite(endMinute)) {
+          return null;
+        }
+        const durationMinutes = Math.max(0, endMinute - startMinute);
+        if (durationMinutes <= 0) return null;
+        const startOffsetMinutes = Math.max(0, startMinute);
+        const heightPx = Math.max(durationMinutes * modelPxPerMin, 1);
+        return {
+          top: toTimelinePosition(startOffsetMinutes),
+          height: toTimelinePosition(durationMinutes),
+          heightPx,
+        };
+      })();
       const shouldHideManualPlacementInstance = (
         instanceId?: string | null
       ) => {
@@ -9542,6 +10301,46 @@ export default function ScheduleTabContent({
           className={containerClass}
           ref={options?.containerRef ?? undefined}
           style={containerStyle}
+          onPointerDownCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfacePointerDown
+          }
+          onPointerMoveCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfacePointerMove
+          }
+          onPointerUpCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfacePointerEnd
+          }
+          onPointerCancelCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfacePointerEnd
+          }
+          onTouchStartCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfaceTouchStart
+          }
+          onTouchMoveCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfaceTouchMove
+          }
+          onTouchEndCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfaceTouchEnd
+          }
+          onTouchCancelCapture={
+            options?.disableInteractions
+              ? undefined
+              : handleQuickCreateSurfaceTouchEnd
+          }
         >
           <DayTimeline
             date={date}
@@ -9756,7 +10555,7 @@ export default function ScheduleTabContent({
                           ) : null}
                         </div>
                       ) : null}
-                    </div>
+                      </div>
                   );
                 });
               })}
@@ -10232,6 +11031,244 @@ export default function ScheduleTabContent({
                 />
               </div>
             ) : null}
+            {quickCreateDraftEvent && quickCreateTimelineDraft
+              ? (() => {
+                  const quickCreateDraftVisuals = getScheduledHabitCardVisuals({
+                    habitType: "SYNC",
+                    completed: false,
+                  });
+
+                  return (
+                    <motion.div
+                      key={quickCreateDraftEvent.id}
+                      ref={quickCreateDraftCardRef}
+                      data-quick-create-draft="true"
+                      aria-label="Draft Event"
+                      className="absolute"
+                      style={{
+                        ...TIMELINE_CARD_BOUNDS,
+                        top: quickCreateTimelineDraft.top,
+                        height: quickCreateTimelineDraft.height,
+                        zIndex: TIMELINE_STACK_BASE_Z_INDEX + 950,
+                      }}
+                      layout={!prefersReducedMotion}
+                      initial={
+                        prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                      }
+                      animate={
+                        prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                      }
+                      exit={
+                        prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
+                      }
+                      onPointerDown={handleQuickCreateDraftPointerDown}
+                      onPointerMove={handleQuickCreateDraftPointerMove}
+                      onPointerUp={handleQuickCreateDraftPointerEnd}
+                      onPointerCancel={handleQuickCreateDraftPointerEnd}
+                    >
+                      <div
+                        className={clsx(
+                          "habit-card habit-card--scheduled relative flex h-full w-full items-center justify-between gap-3 border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                          getTimelineCardCornerClass("full"),
+                          quickCreateDraftVisuals.borderClass,
+                          quickCreateDraftVisuals.typeClass
+                        )}
+                        style={{
+                          ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+                          boxShadow: quickCreateDraftVisuals.shadow,
+                          outline: quickCreateDraftVisuals.outline,
+                          outlineOffset: "-1px",
+                          background: quickCreateDraftVisuals.background,
+                          touchAction: "none",
+                          WebkitTapHighlightColor: "transparent",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={clsx(
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm leading-none transition",
+                            quickCreateDraftEvent.skillId
+                              ? "border-white/25 bg-white/[0.16] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_4px_10px_rgba(0,0,0,0.18)]"
+                              : "border-white/20 bg-black/20 text-white/90"
+                          )}
+                          aria-label={
+                            quickCreateDraftEvent.skillName
+                              ? `Change Skill relation: ${quickCreateDraftEvent.skillName}`
+                              : "Choose Skill relation"
+                          }
+                          aria-expanded={isQuickCreateSkillPickerOpen}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            quickCreateDraftPointerInsideRef.current = true;
+                            setQuickCreateSkillSearch("");
+                            setIsQuickCreateSkillPickerOpen((open) => !open);
+                          }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                          onTouchStart={(event) => {
+                            event.stopPropagation();
+                            quickCreateDraftPointerInsideRef.current = true;
+                          }}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            quickCreateDraftPointerInsideRef.current = true;
+                          }}
+                        >
+                          {quickCreateDraftEvent.skillId
+                            ? (quickCreateDraftEvent.relationIcon ?? "✦")
+                            : "+"}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <input
+                            ref={quickCreateDraftInputRef}
+                            value={quickCreateDraftEvent.title}
+                            onChange={(event) => {
+                              const nextDraft = {
+                                ...quickCreateDraftEvent,
+                                title: event.target.value,
+                              };
+                              setQuickCreateDraftEvent(nextDraft);
+                              quickCreateDraftEventRef.current = nextDraft;
+                            }}
+                            onBlur={() => {
+                              const createdAt =
+                                quickCreateDraftCreatedAtRef.current;
+                              const justCreated =
+                                createdAt !== null &&
+                                Date.now() - createdAt < 1200;
+                              if (
+                                justCreated ||
+                                !quickCreateDraftInputFocusedRef.current
+                              ) {
+                                setQuickCreateDebugPhase(
+                                  "blur ignored/just created"
+                                );
+                                return;
+                              }
+                              window.requestAnimationFrame(() => {
+                                if (isQuickCreateDraftInteractionInside()) {
+                                  setQuickCreateDebugPhase(
+                                    "blur ignored/inside draft"
+                                  );
+                                  return;
+                                }
+                                if (
+                                  !quickCreateDraftEventRef.current?.title.trim()
+                                ) {
+                                  setQuickCreateDebugPhase(
+                                    "blur cancelled draft"
+                                  );
+                                  cancelQuickCreateDraft();
+                                }
+                              });
+                            }}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            className="w-full min-w-0 bg-transparent text-sm font-semibold leading-tight text-white placeholder:text-white/55 focus:outline-none"
+                            placeholder="Event name"
+                            aria-label="Event name"
+                          />
+                          {quickCreateDraftEvent.skillName &&
+                          quickCreateTimelineDraft.heightPx >
+                            TIMELINE_COMPACT_CARD_HEIGHT_PX ? (
+                            <div className="mt-0.5 truncate text-[10px] font-medium leading-none text-white/75">
+                              {quickCreateDraftEvent.skillName}
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="shrink-0 text-xs font-semibold text-white/80">
+                          {QUICK_CREATE_EVENT_DURATION_MIN}m
+                        </span>
+                        {isQuickCreateSkillPickerOpen ? (
+                          <div
+                            ref={quickCreateSkillPickerRef}
+                            className="absolute left-2 top-[calc(100%+0.375rem)] z-20 w-64 max-w-[calc(100vw-2rem)] touch-pan-y rounded-[1.25rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                              quickCreateDraftPointerInsideRef.current = true;
+                            }}
+                            onTouchStart={(event) => {
+                              event.stopPropagation();
+                              quickCreateDraftPointerInsideRef.current = true;
+                            }}
+                            onMouseDown={(event) => {
+                              event.stopPropagation();
+                              quickCreateDraftPointerInsideRef.current = true;
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <input
+                              value={quickCreateSkillSearch}
+                              onChange={(event) =>
+                                setQuickCreateSkillSearch(event.target.value)
+                              }
+                              placeholder="Search skills"
+                              className="h-8 w-full rounded-full border border-white/10 bg-black/35 px-3 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/25"
+                              aria-label="Search skills"
+                              onPointerDown={(event) => event.stopPropagation()}
+                            />
+                            <div className="mt-2 max-h-[min(20rem,calc(100vh-16rem))] touch-pan-y overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]">
+                              {quickCreateSkillGroups.length === 0 ? (
+                                <div className="px-2 py-3 text-xs text-white/40">
+                                  No skills found.
+                                </div>
+                              ) : (
+                                <div className="grid gap-2">
+                                  {quickCreateSkillGroups.map((group) => (
+                                    <div key={group.id} className="grid gap-1">
+                                      <div className="px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35">
+                                        {group.label}
+                                      </div>
+                                      {group.skills.map((skill) => {
+                                        const selected =
+                                          quickCreateDraftEvent.skillId ===
+                                          skill.id;
+                                        const icon =
+                                          (skill.icon ?? "").trim() || "✦";
+                                        const name =
+                                          skill.name?.trim() ||
+                                          "Untitled skill";
+                                        return (
+                                          <button
+                                            key={skill.id}
+                                            type="button"
+                                            aria-pressed={selected}
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              handleQuickCreateSkillSelect(
+                                                skill
+                                              );
+                                            }}
+                                            className={clsx(
+                                              "flex h-9 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs transition",
+                                              selected
+                                                ? "bg-white/[0.16] text-white"
+                                                : "text-white/75 hover:bg-white/10 hover:text-white"
+                                            )}
+                                          >
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/30 text-sm leading-none">
+                                              {icon}
+                                            </span>
+                                            <span className="min-w-0 flex-1 truncate">
+                                              {name}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                    </div>
+                  </motion.div>
+                );
+              })()
+              : null}
             {dayProjectInstances.map(
               ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
@@ -11364,6 +12401,10 @@ export default function ScheduleTabContent({
       pendingInstanceStatuses,
       pendingBacklogTaskIds,
       manualPlacementSession,
+      quickCreateDraftEvent,
+      isQuickCreateSkillPickerOpen,
+      quickCreateSkillGroups,
+      quickCreateSkillSearch,
       snapToFiveMinuteGrid,
       projectGoalRelations,
       getHabitCompletionStatus,
@@ -11374,6 +12415,19 @@ export default function ScheduleTabContent({
       handleInstancePointerDown,
       handleInstancePointerUp,
       handleInstancePointerCancel,
+      handleQuickCreateSurfacePointerDown,
+      handleQuickCreateSurfacePointerMove,
+      handleQuickCreateSurfacePointerEnd,
+      handleQuickCreateSurfaceTouchStart,
+      handleQuickCreateSurfaceTouchMove,
+      handleQuickCreateSurfaceTouchEnd,
+      handleQuickCreateDraftPointerDown,
+      handleQuickCreateDraftPointerMove,
+      handleQuickCreateDraftPointerEnd,
+      handleQuickCreateSkillSelect,
+      cancelQuickCreateDraft,
+      isQuickCreateDraftInteractionInside,
+      setQuickCreateDebugPhase,
       bindProjectTimelineNoSelectSurface,
       shouldBlockClickFromLongPress,
       longPressBounceId,
@@ -11971,6 +13025,11 @@ export default function ScheduleTabContent({
   return (
     <LayoutGroup id="schedule-shared-layout">
       {timeBlockConstraintsPortal}
+      {quickCreateDebugEnabled ? (
+        <div className="fixed bottom-3 left-3 z-[2147483647] max-w-[min(22rem,calc(100vw-1.5rem))] rounded-md border border-amber-300/30 bg-black/80 px-2.5 py-1.5 text-[11px] font-medium leading-tight text-amber-100 shadow-lg backdrop-blur">
+          quick-create: {quickCreateDebugPhase}
+        </div>
+      ) : null}
       <ProtectedRoute>
         <ScheduleTopBar
           year={year}

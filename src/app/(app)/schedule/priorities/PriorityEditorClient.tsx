@@ -6,9 +6,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type SetStateAction,
 } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -44,6 +46,7 @@ import {
   type WindowConstraint,
 } from "@/lib/scheduler/constraints";
 import { cn } from "@/lib/utils";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
   resolveCreatorXpSurgeTitle,
@@ -82,7 +85,7 @@ import {
   type PriorityRoadmapSensors,
 } from "./GlobalPriorityRoadmap";
 
-interface PriorityEditorClientProps {
+export interface PriorityEditorClientProps {
   userId: string;
   initialGlobalPriorityItems: GlobalPriorityRoadmapItem[];
   initialHabitItems: RoadmapHabitItem[];
@@ -91,6 +94,9 @@ interface PriorityEditorClientProps {
   initialSkillCategories: UserPrioritySkillCategoryData[];
   initialTimeBlockOptions: PriorityTimeBlockFilterOptionData[];
   initialError?: string | null;
+  variant?: "page" | "embedded";
+  adjustOpen?: boolean;
+  onAdjustOpenChange?: Dispatch<SetStateAction<boolean>>;
 }
 
 type GlobalPriorityOrderPayloadItem = {
@@ -316,6 +322,9 @@ export default function PriorityEditorClient({
   initialSkillCategories,
   initialTimeBlockOptions,
   initialError = null,
+  variant = "page",
+  adjustOpen: controlledAdjustOpen,
+  onAdjustOpenChange,
 }: PriorityEditorClientProps) {
   const router = useRouter();
   const [globalPriorityItems, setGlobalPriorityItems] = useState(
@@ -328,7 +337,7 @@ export default function PriorityEditorClient({
     useState(false);
   const [habitRoadmapError, setHabitRoadmapError] = useState<string | null>(null);
   const [isSavingHabitOrder, setIsSavingHabitOrder] = useState(false);
-  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [internalAdjustOpen, setInternalAdjustOpen] = useState(false);
   const [selectedRoadmapType, setSelectedRoadmapType] =
     useState<PriorityRoadmapType>("goals");
   const [selectedMonumentFilterIds, setSelectedMonumentFilterIds] = useState<
@@ -342,6 +351,8 @@ export default function PriorityEditorClient({
   const isSavingOrderRef = useRef(false);
 
   const sensors = usePriorityRoadmapSensors();
+  const adjustOpen = controlledAdjustOpen ?? internalAdjustOpen;
+  const setAdjustOpen = onAdjustOpenChange ?? setInternalAdjustOpen;
 
   useEffect(() => {
     setGlobalPriorityItems(initialGlobalPriorityItems);
@@ -561,6 +572,7 @@ export default function PriorityEditorClient({
   const timeBlockReorderDisabledReason = selectedTimeBlockFilter
     ? "Reordering is paused while a Time Block filter is active."
     : null;
+  const shouldRenderAdjustFilters = variant !== "embedded" || adjustOpen;
 
   const handleGlobalPriorityDragEnd = useCallback(
     async (
@@ -917,17 +929,17 @@ export default function PriorityEditorClient({
     [globalPriorityItems, userId]
   );
 
-  return (
-    <main className="min-h-screen bg-[#050507] text-white">
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-12 sm:pt-2">
-        {error && (
-          <div className="rounded-2xl border border-red-500/40 bg-red-500/5 p-4 text-sm text-red-100">
-            {error}
-          </div>
-        )}
+  const content = (
+    <>
+      {error && (
+        <div className="rounded-2xl border border-red-500/40 bg-red-500/5 p-4 text-sm text-red-100">
+          {error}
+        </div>
+      )}
 
-        {hasAnyRoadmapItems ? (
-          <>
+      {hasAnyRoadmapItems ? (
+        <>
+          {shouldRenderAdjustFilters ? (
             <PriorityAdjustFilters
               isOpen={adjustOpen}
               selectedType={selectedRoadmapType}
@@ -946,37 +958,55 @@ export default function PriorityEditorClient({
               onSelectTimeBlock={selectTimeBlockFilter}
               onClear={clearPriorityFilters}
             />
-            {selectedRoadmapType === "habits" ? (
-              <GlobalHabitRoadmap
-                items={visibleHabitItems}
-                totalItemCount={habitRoadmapItems.length}
-                error={habitRoadmapError}
-                isSaving={isSavingHabitOrder}
-                sensors={sensors}
-                isFiltered={hasActiveFilters}
-                disabledReason={timeBlockReorderDisabledReason}
-                emptyFilteredLabel={timeBlockFilteredEmptyLabel}
-                onDragEnd={handleHabitDragEnd}
-              />
-            ) : (
-              <GlobalPriorityRoadmap
-                items={visibleGlobalPriorityItems}
-                error={globalPriorityError}
-                isSaving={isSavingGlobalPriorityOrder}
-                sensors={sensors}
-                isFiltered={hasActiveFilters}
-                isDragDisabled={Boolean(selectedTimeBlockFilter)}
-                disabledReason={timeBlockReorderDisabledReason}
-                emptyFilteredLabel={timeBlockFilteredEmptyLabel}
-                appearance="priorityEditor"
-                onDragEnd={handleGlobalPriorityDragEnd}
-                onCampaignGoalDragEnd={handleCampaignGoalDragEnd}
-                onProjectComplete={handleRoadmapProjectComplete}
-                onTaskComplete={handleRoadmapTaskComplete}
-              />
-            )}
-          </>
-        ) : null}
+          ) : null}
+          {selectedRoadmapType === "habits" ? (
+            <GlobalHabitRoadmap
+              items={visibleHabitItems}
+              totalItemCount={habitRoadmapItems.length}
+              error={habitRoadmapError}
+              isSaving={isSavingHabitOrder}
+              sensors={sensors}
+              isFiltered={hasActiveFilters}
+              disabledReason={timeBlockReorderDisabledReason}
+              emptyFilteredLabel={timeBlockFilteredEmptyLabel}
+              onDragEnd={handleHabitDragEnd}
+            />
+          ) : (
+            <GlobalPriorityRoadmap
+              items={visibleGlobalPriorityItems}
+              error={globalPriorityError}
+              isSaving={isSavingGlobalPriorityOrder}
+              sensors={sensors}
+              isFiltered={hasActiveFilters}
+              isDragDisabled={Boolean(selectedTimeBlockFilter)}
+              disabledReason={timeBlockReorderDisabledReason}
+              emptyFilteredLabel={timeBlockFilteredEmptyLabel}
+              appearance="priorityEditor"
+              onDragEnd={handleGlobalPriorityDragEnd}
+              onCampaignGoalDragEnd={handleCampaignGoalDragEnd}
+              onProjectComplete={handleRoadmapProjectComplete}
+              onTaskComplete={handleRoadmapTaskComplete}
+            />
+          )}
+        </>
+      ) : null}
+    </>
+  );
+
+  if (variant === "embedded") {
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-black text-white">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))] pt-3 [-webkit-overflow-scrolling:touch]">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3">{content}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#050507] text-white">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-12 sm:pt-2">
+        {content}
       </div>
     </main>
   );
@@ -1040,6 +1070,13 @@ function PriorityAdjustFilters({
     }
     onOpenChange(false);
   }, [isOpen, onOpenChange]);
+  const selectedTimeBlock = useMemo(
+    () =>
+      selectedTimeBlockId
+        ? timeBlockOptions.find((option) => option.id === selectedTimeBlockId) ?? null
+        : null,
+    [selectedTimeBlockId, timeBlockOptions]
+  );
 
   return (
     <section className="overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_32%,rgba(39,39,42,0.28)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.30)] sm:rounded-[20px]">
@@ -1132,13 +1169,44 @@ function PriorityAdjustFilters({
             <p className="min-w-0 truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:text-[10px] sm:tracking-[0.18em]">
               Priority Scope
             </p>
-            <p className="mt-0.5 min-w-0 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
-              {summary}
-            </p>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+              {selectedTimeBlock ? (
+                <TimeBlockFlameIcon
+                  level={selectedTimeBlock.energy}
+                  className="size-4 sm:size-5"
+                />
+              ) : null}
+              <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
+                {summary}
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function TimeBlockFlameIcon({
+  level,
+  className,
+}: {
+  level: FlameLevel;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:size-5",
+        className
+      )}
+    >
+      <FlameEmber
+        level={level}
+        size="xs"
+        className="drop-shadow-[0_0_5px_rgba(0,0,0,0.45)]"
+      />
+    </span>
   );
 }
 
@@ -1240,7 +1308,7 @@ function PriorityTimeBlockFilterSection({
               : "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]"
           )}
         >
-          All Time Blocks
+          ALL
         </button>
       </div>
       <div
@@ -1270,9 +1338,7 @@ function PriorityTimeBlockFilterSection({
                         : "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                     }
                   >
-                    <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                      T
-                    </span>
+                    <TimeBlockFlameIcon level={option.energy} />
                     <span className="min-w-0 truncate">
                       {option.name}
                       {option.detail ? (
