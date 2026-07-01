@@ -247,6 +247,9 @@ const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
 const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
 const QUICK_CREATE_INTERACTION_SELECTOR =
   "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory]";
+const UNIFIED_EVENT_SHEET_SELECTOR = "[data-unified-event-sheet]";
+const QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX = 56;
+const QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX = 8;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const COMPLETION_BOUNCE_DURATION_MS = 420;
 const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
@@ -1030,7 +1033,12 @@ function ScheduleMyListSheet({
         aria-label={open ? "Close My List" : "Open My List"}
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
-        className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+        className={clsx(
+          "pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
+          open
+            ? "-translate-y-[1.35rem]"
+            : "-translate-y-[calc(1.35rem+env(safe-area-inset-bottom,0px)+0.5rem)]"
+        )}
       >
         <ChevronUp
           className={clsx(
@@ -8206,6 +8214,28 @@ export default function ScheduleTabContent({
     return false;
   };
 
+  const isInsideUnifiedEventSheetTarget = (target: EventTarget | null) => {
+    return (
+      target instanceof Element &&
+      Boolean(target.closest(UNIFIED_EVENT_SHEET_SELECTOR))
+    );
+  };
+
+  const isEventFromUnifiedEventSheet = (
+    event: React.SyntheticEvent | Event
+  ) => {
+    if (isInsideUnifiedEventSheetTarget(event.target)) return true;
+
+    const nativeEvent =
+      "nativeEvent" in event
+        ? (event.nativeEvent as Event & { composedPath?: () => EventTarget[] })
+        : (event as Event & { composedPath?: () => EventTarget[] });
+    const path = nativeEvent.composedPath?.();
+    return Array.isArray(path)
+      ? path.some(isInsideUnifiedEventSheetTarget)
+      : false;
+  };
+
   const isTouchFromFabOverlay = (event: React.TouchEvent) => {
     const target = event.target as HTMLElement | null;
     if (
@@ -8230,6 +8260,7 @@ export default function ScheduleTabContent({
 
   function handleTouchStart(e: React.TouchEvent) {
     if (isEventFromInlineJumpPanel(e)) return;
+    if (isEventFromUnifiedEventSheet(e)) return;
     if (isTouchFromFabOverlay(e)) return;
 
     if (isInlineJumpToDateOpen) {
@@ -8353,6 +8384,7 @@ export default function ScheduleTabContent({
 
   function handleTouchMove(e: React.TouchEvent) {
     if (isEventFromInlineJumpPanel(e)) return;
+    if (isEventFromUnifiedEventSheet(e)) return;
     if (isTouchFromFabOverlay(e)) return;
     if (isInlineJumpToDateOpen) {
       if (shouldUseInlineJumpEditorPanel) return;
@@ -8527,6 +8559,8 @@ export default function ScheduleTabContent({
 
   async function handleTouchEnd(e?: React.TouchEvent) {
     if (e && isEventFromInlineJumpPanel(e)) return;
+    if (e && isEventFromUnifiedEventSheet(e)) return;
+    if (e && isTouchFromFabOverlay(e)) return;
     if (pinchActiveRef.current) {
       pinchActiveRef.current = false;
       pinchStateRef.current = null;
@@ -9696,6 +9730,9 @@ export default function ScheduleTabContent({
       ) {
         return "blocked target reason: inline jump peek";
       }
+      if (target.closest(UNIFIED_EVENT_SHEET_SELECTOR)) {
+        return "blocked target reason: unified event sheet";
+      }
       if (
         target.closest("[data-fab-overlay], [data-fab-reschedule-overlay]")
       ) {
@@ -10279,6 +10316,121 @@ export default function ScheduleTabContent({
       focusQuickCreateDraftInput();
     },
     [focusQuickCreateDraftInput]
+  );
+
+  const renderQuickCreateSkillPicker = useCallback(
+    (anchor: "card" | "accessory") => {
+      const draft = quickCreateDraftEventRef.current ?? quickCreateDraftEvent;
+      if (!draft) return null;
+
+      const isAccessoryAnchor = anchor === "accessory";
+      const pickerBottom =
+        quickCreateKeyboardInset +
+        QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX +
+        QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX;
+
+      return (
+        <div
+          ref={quickCreateSkillPickerRef}
+          data-quick-create-skill-picker="true"
+          className={clsx(
+            "touch-pan-y border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
+            isAccessoryAnchor
+              ? "fixed inset-x-0 z-[2147483646] border-x-0 rounded-none md:hidden"
+              : "absolute left-2 top-[calc(100%+0.375rem)] z-20 w-64 max-w-[calc(100vw-2rem)] rounded-[1.25rem]"
+          )}
+          style={
+            isAccessoryAnchor
+              ? {
+                  bottom: pickerBottom,
+                }
+              : undefined
+          }
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            quickCreateDraftPointerInsideRef.current = true;
+          }}
+          onTouchStart={(event) => {
+            event.stopPropagation();
+            quickCreateDraftPointerInsideRef.current = true;
+          }}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+            quickCreateDraftPointerInsideRef.current = true;
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <input
+            value={quickCreateSkillSearch}
+            onChange={(event) => setQuickCreateSkillSearch(event.target.value)}
+            placeholder="Search skills"
+            className="h-8 w-full rounded-full border border-white/10 bg-black/35 px-3 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/25"
+            aria-label="Search skills"
+            onPointerDown={(event) => event.stopPropagation()}
+          />
+          <div
+            className={clsx(
+              "mt-2 touch-pan-y overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]",
+              isAccessoryAnchor
+                ? "max-h-[min(18rem,calc(100dvh-12rem))]"
+                : "max-h-[min(20rem,calc(100vh-16rem))]"
+            )}
+          >
+            {quickCreateSkillGroups.length === 0 ? (
+              <div className="px-2 py-3 text-xs text-white/40">
+                No skills found.
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {quickCreateSkillGroups.map((group) => (
+                  <div key={group.id} className="grid gap-1">
+                    <div className="px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35">
+                      {group.label}
+                    </div>
+                    {group.skills.map((skill) => {
+                      const selected = draft.skillId === skill.id;
+                      const icon = (skill.icon ?? "").trim() || "✦";
+                      const name = skill.name?.trim() || "Untitled skill";
+                      return (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleQuickCreateSkillSelect(skill);
+                          }}
+                          className={clsx(
+                            "flex h-9 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs transition",
+                            selected
+                              ? "bg-white/[0.16] text-white"
+                              : "text-white/75 hover:bg-white/10 hover:text-white"
+                          )}
+                        >
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/30 text-sm leading-none">
+                            {icon}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    },
+    [
+      handleQuickCreateSkillSelect,
+      quickCreateDraftEvent,
+      quickCreateKeyboardInset,
+      quickCreateSkillGroups,
+      quickCreateSkillSearch,
+    ]
   );
 
   useEffect(() => {
@@ -11982,101 +12134,10 @@ export default function ScheduleTabContent({
                         <span className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-white/80">
                           {quickCreateDraftDurationMinutes}m
                         </span>
-                        {isQuickCreateSkillPickerOpen ? (
-                          <div
-                            ref={quickCreateSkillPickerRef}
-                            data-quick-create-skill-picker="true"
-                            className={clsx(
-                              "w-64 max-w-[calc(100vw-2rem)] touch-pan-y rounded-[1.25rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
-                              quickCreateSkillPickerAnchor === "accessory"
-                                ? "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[2147483646] mx-auto"
-                                : "absolute left-2 top-[calc(100%+0.375rem)] z-20"
-                            )}
-                            style={
-                              quickCreateSkillPickerAnchor === "accessory" &&
-                              quickCreateKeyboardInset > 0
-                                ? { bottom: quickCreateKeyboardInset + 76 }
-                                : undefined
-                            }
-                            onPointerDown={(event) => {
-                              event.stopPropagation();
-                              quickCreateDraftPointerInsideRef.current = true;
-                            }}
-                            onTouchStart={(event) => {
-                              event.stopPropagation();
-                              quickCreateDraftPointerInsideRef.current = true;
-                            }}
-                            onMouseDown={(event) => {
-                              event.stopPropagation();
-                              quickCreateDraftPointerInsideRef.current = true;
-                            }}
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <input
-                              value={quickCreateSkillSearch}
-                              onChange={(event) =>
-                                setQuickCreateSkillSearch(event.target.value)
-                              }
-                              placeholder="Search skills"
-                              className="h-8 w-full rounded-full border border-white/10 bg-black/35 px-3 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/25"
-                              aria-label="Search skills"
-                              onPointerDown={(event) => event.stopPropagation()}
-                            />
-                            <div className="mt-2 max-h-[min(20rem,calc(100vh-16rem))] touch-pan-y overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]">
-                              {quickCreateSkillGroups.length === 0 ? (
-                                <div className="px-2 py-3 text-xs text-white/40">
-                                  No skills found.
-                                </div>
-                              ) : (
-                                <div className="grid gap-2">
-                                  {quickCreateSkillGroups.map((group) => (
-                                    <div key={group.id} className="grid gap-1">
-                                      <div className="px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35">
-                                        {group.label}
-                                      </div>
-                                      {group.skills.map((skill) => {
-                                        const selected =
-                                          quickCreateDraftEvent.skillId ===
-                                          skill.id;
-                                        const icon =
-                                          (skill.icon ?? "").trim() || "✦";
-                                        const name =
-                                          skill.name?.trim() ||
-                                          "Untitled skill";
-                                        return (
-                                          <button
-                                            key={skill.id}
-                                            type="button"
-                                            aria-pressed={selected}
-                                            onClick={(event) => {
-                                              event.stopPropagation();
-                                              handleQuickCreateSkillSelect(
-                                                skill
-                                              );
-                                            }}
-                                            className={clsx(
-                                              "flex h-9 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs transition",
-                                              selected
-                                                ? "bg-white/[0.16] text-white"
-                                                : "text-white/75 hover:bg-white/10 hover:text-white"
-                                            )}
-                                          >
-                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/30 text-sm leading-none">
-                                              {icon}
-                                            </span>
-                                            <span className="min-w-0 flex-1 truncate">
-                                              {name}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ) : null}
+                        {isQuickCreateSkillPickerOpen &&
+                        quickCreateSkillPickerAnchor === "card"
+                          ? renderQuickCreateSkillPicker("card")
+                          : null}
                     </div>
                   </motion.div>
                 );
@@ -13217,9 +13278,7 @@ export default function ScheduleTabContent({
       quickCreateDraftEvent,
       isQuickCreateSkillPickerOpen,
       quickCreateSkillPickerAnchor,
-      quickCreateSkillGroups,
-      quickCreateSkillSearch,
-      quickCreateKeyboardInset,
+      renderQuickCreateSkillPicker,
       snapToFiveMinuteGrid,
       projectGoalRelations,
       getHabitCompletionStatus,
@@ -13243,7 +13302,6 @@ export default function ScheduleTabContent({
       handleQuickCreateResizePointerMove,
       handleQuickCreateResizePointerEnd,
       toggleQuickCreateSkillPicker,
-      handleQuickCreateSkillSelect,
       cancelQuickCreateDraft,
       isQuickCreateDraftInteractionInside,
       setQuickCreateDebugPhase,
@@ -13845,50 +13903,20 @@ export default function ScheduleTabContent({
     (quickCreateTitleFocused || isQuickCreateSkillPickerOpen) &&
     typeof document !== "undefined"
       ? createPortal(
-          <div
-            ref={quickCreateKeyboardAccessoryRef}
-            data-quick-create-keyboard-accessory="true"
-            className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[2147483645] mx-auto flex min-h-14 max-w-[34rem] items-center gap-3 rounded-[1.15rem] border border-white/10 bg-zinc-950/82 px-3 py-2 text-white shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl md:hidden"
-            style={
-              quickCreateKeyboardInset > 0
-                ? { bottom: quickCreateKeyboardInset + 8 }
-                : undefined
-            }
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              quickCreateDraftPointerInsideRef.current = true;
-            }}
-            onTouchStart={(event) => {
-              event.stopPropagation();
-              quickCreateDraftPointerInsideRef.current = true;
-            }}
-            onMouseDown={(event) => {
-              event.stopPropagation();
-              quickCreateDraftPointerInsideRef.current = true;
-            }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className={clsx(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-base leading-none transition",
-                quickCreateDraftEvent.skillId
-                  ? "border-white/25 bg-white/[0.14] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_5px_14px_rgba(0,0,0,0.24)]"
-                  : "border-white/15 bg-black/35 text-white/90"
-              )}
-              aria-label={
-                quickCreateDraftEvent.skillName
-                  ? `Change Skill relation: ${quickCreateDraftEvent.skillName}`
-                  : "Choose Skill relation"
-              }
-              aria-expanded={isQuickCreateSkillPickerOpen}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                toggleQuickCreateSkillPicker("accessory");
+          <>
+            {isQuickCreateSkillPickerOpen &&
+            quickCreateSkillPickerAnchor === "accessory"
+              ? renderQuickCreateSkillPicker("accessory")
+              : null}
+            <div
+              ref={quickCreateKeyboardAccessoryRef}
+              data-quick-create-keyboard-accessory="true"
+              className="fixed inset-x-0 bottom-0 z-[2147483645] flex h-14 items-center gap-3 border-t border-white/10 bg-zinc-950/88 px-3 text-white shadow-none backdrop-blur-2xl md:hidden"
+              style={{
+                bottom: quickCreateKeyboardInset,
+                height: QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX,
               }}
-              onMouseDown={(event) => {
-                event.preventDefault();
+              onPointerDown={(event) => {
                 event.stopPropagation();
                 quickCreateDraftPointerInsideRef.current = true;
               }}
@@ -13896,26 +13924,61 @@ export default function ScheduleTabContent({
                 event.stopPropagation();
                 quickCreateDraftPointerInsideRef.current = true;
               }}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                quickCreateDraftPointerInsideRef.current = true;
+              }}
               onClick={(event) => event.stopPropagation()}
             >
-              {quickCreateDraftEvent.skillId
-                ? (quickCreateDraftEvent.relationIcon ?? "✦")
-                : "+"}
-            </button>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold leading-tight text-white">
-                {quickCreateDraftEvent.title.trim() || "New Event"}
-              </div>
-              {quickCreateDraftEvent.skillName ? (
-                <div className="mt-0.5 truncate text-[11px] font-medium leading-none text-white/55">
-                  {quickCreateDraftEvent.skillName}
+              <button
+                type="button"
+                className={clsx(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-base leading-none transition",
+                  quickCreateDraftEvent.skillId
+                    ? "border-white/25 bg-white/[0.12] text-white"
+                    : "border-white/15 bg-black/30 text-white/90"
+                )}
+                aria-label={
+                  quickCreateDraftEvent.skillName
+                    ? `Change Skill relation: ${quickCreateDraftEvent.skillName}`
+                    : "Choose Skill relation"
+                }
+                aria-expanded={isQuickCreateSkillPickerOpen}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleQuickCreateSkillPicker("accessory");
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {quickCreateDraftEvent.skillId
+                  ? (quickCreateDraftEvent.relationIcon ?? "✦")
+                  : "+"}
+              </button>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <div className="truncate text-sm font-semibold leading-tight text-white">
+                  {quickCreateDraftEvent.title.trim() || "New Event"}
                 </div>
-              ) : null}
+                {quickCreateDraftEvent.skillName ? (
+                  <div className="mt-0.5 truncate text-[11px] font-medium leading-none text-white/55">
+                    {quickCreateDraftEvent.skillName}
+                  </div>
+                ) : null}
+              </div>
+              <div className="shrink-0 text-[11px] font-semibold leading-none text-white/65">
+                {quickCreateDraftDurationMinutes}m
+              </div>
             </div>
-            <div className="shrink-0 rounded-full border border-white/10 bg-black/25 px-2 py-1 text-[11px] font-semibold leading-none text-white/65">
-              {quickCreateDraftDurationMinutes}m
-            </div>
-          </div>,
+          </>,
           document.body
         )
       : null;
