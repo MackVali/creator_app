@@ -20087,6 +20087,7 @@ export function Fab({
           projectTaskStack ||
           (isUnifiedEventSheetOpen ? resolvedAddEventTaskGoalId : taskGoalId),
       );
+      if (isStandaloneUnifiedTaskDraft && !taskSkillId) return true;
       if (hasTaskRelation && !taskSkillId) return true;
       return false;
     }
@@ -20175,6 +20176,9 @@ export function Fab({
       const hasTaskRelation = Boolean(
         taskProjectId || projectTaskStack || resolvedAddEventTaskGoalId,
       );
+      if (isStandaloneUnifiedTaskDraft && !taskSkillId) {
+        return "Link this to-do to a skill before saving.";
+      }
       if (hasTaskRelation && !taskSkillId) {
         return "Link this task to a skill before saving.";
       }
@@ -20538,6 +20542,10 @@ export function Fab({
             projectTaskStack ||
             (isUnifiedEventSheetOpen ? effectiveAddEventTaskGoalId : taskGoalId),
         );
+        if (isStandaloneUnifiedTaskCreate && !taskSkillId) {
+          setBlockedSaveError("Link this to-do to a skill before saving.");
+          return;
+        }
         if (hasTaskRelation && !taskSkillId) {
           setBlockedSaveError("Link this task to a skill before saving.");
           return;
@@ -26659,6 +26667,7 @@ export function Fab({
       <AnimatePresence>
         <div
           data-fab-overlay
+          data-unified-event-sheet
           className="fixed inset-0 isolate z-[2147483670]"
           style={{ touchAction: "manipulation" }}
         >
