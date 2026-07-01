@@ -26,7 +26,7 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { ChevronDown, ChevronUp, Lock, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Lock, Plus, X } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -193,6 +193,7 @@ import {
 import {
   PRIORITY_LABELS,
   PRIORITY_ORDER,
+  normalizePriority,
   type PriorityBucketId,
 } from "./priorities/utils";
 
@@ -321,6 +322,16 @@ const QUICK_CREATE_PRIORITY_OPTIONS = PRIORITY_ORDER.map((priority) => ({
   symbol: QUICK_CREATE_PRIORITY_SYMBOLS[priority],
 }));
 const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
+
+function resolveQuickCreateMediumPriorityMetadata() {
+  return (
+    QUICK_CREATE_PRIORITY_OPTIONS.find((option) => option.id === "MEDIUM") ?? {
+      id: "MEDIUM" as PriorityBucketId,
+      label: PRIORITY_LABELS.MEDIUM,
+      symbol: QUICK_CREATE_PRIORITY_SYMBOLS.MEDIUM,
+    }
+  );
+}
 
 function getTimelineHabitEventBackground(normalizedHabitType: string) {
   if (normalizedHabitType === "CHORE") return TIMELINE_CHORE_EVENT_BACKGROUND;
@@ -1017,42 +1028,125 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
 type ScheduleManualListRow = {
   id: string;
   done: boolean;
+  skillId: string | null;
+  skillName: string | null;
   skillIcon: string;
+  priorityId: PriorityBucketId;
   text: string;
+};
+
+type ScheduleMyListRowKey = `manual:${string}` | `task:${string}`;
+
+type ScheduleMyListTaskOverride = {
+  skillId?: string | null;
+  skillName?: string | null;
+  skillIcon?: string | null;
+  priorityId?: PriorityBucketId;
 };
 
 function ScheduleMyListSheet({
   open,
   onOpenChange,
   tasks,
+  skills,
+  skillCategories,
   pendingTaskIds,
   onToggleTask,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tasks: TaskLite[];
+  skills: SkillRow[];
+  skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
   onToggleTask: (taskId: string) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const [note, setNote] = useState("");
   const [manualRows, setManualRows] = useState<ScheduleManualListRow[]>([]);
-  const hasListRows = tasks.length > 0 || manualRows.length > 0;
+  const [activeSkillPickerRowKey, setActiveSkillPickerRowKey] =
+    useState<ScheduleMyListRowKey | null>(null);
+  const [activePriorityPickerRowKey, setActivePriorityPickerRowKey] =
+    useState<ScheduleMyListRowKey | null>(null);
+  const [manualSkillSearch, setManualSkillSearch] = useState("");
+  const [pendingDeleteRowId, setPendingDeleteRowId] = useState<string | null>(
+    null
+  );
+  const [taskOverrides, setTaskOverrides] = useState<
+    Record<string, ScheduleMyListTaskOverride>
+  >({});
+  const [hiddenTaskRowIds, setHiddenTaskRowIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => !hiddenTaskRowIds.has(task.id)),
+    [hiddenTaskRowIds, tasks]
+  );
+  const hasListRows = visibleTasks.length > 0 || manualRows.length > 0;
+  const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
+  const skillLookup = useMemo(
+    () => new Map(skills.map((skill) => [skill.id, skill])),
+    [skills]
+  );
+
+  const resolveTaskPriorityId = useCallback(
+    (task: TaskLite): PriorityBucketId => {
+      const overridePriority = taskOverrides[task.id]?.priorityId;
+      if (overridePriority) return overridePriority;
+      if (task.priority?.trim()) return normalizePriority(task.priority);
+      return defaultPriority.id;
+    },
+    [defaultPriority.id, taskOverrides]
+  );
+
+  const resolveTaskSkillMetadata = useCallback(
+    (task: TaskLite) => {
+      const override = taskOverrides[task.id];
+      const overrideSkillId = override?.skillId;
+      const sourceSkillId =
+        overrideSkillId !== undefined ? overrideSkillId : task.skill_id ?? null;
+      const skill = sourceSkillId ? skillLookup.get(sourceSkillId) ?? null : null;
+      const skillName =
+        override?.skillName ??
+        skill?.name?.trim() ??
+        (sourceSkillId ? "Untitled skill" : null);
+      const skillIcon =
+        override?.skillIcon?.trim() ||
+        task.skill_icon?.trim() ||
+        skill?.icon?.trim() ||
+        "✦";
+
+      return {
+        skillId: sourceSkillId,
+        skillName,
+        skillIcon,
+      };
+    },
+    [skillLookup, taskOverrides]
+  );
 
   const addManualRow = useCallback(() => {
+    setPendingDeleteRowId(null);
+    setActivePriorityPickerRowKey(null);
     setManualRows((currentRows) => [
       ...currentRows,
       {
         id: `manual-${Date.now()}-${currentRows.length}`,
         done: false,
+        skillId: null,
+        skillName: null,
         skillIcon: "",
+        priorityId: defaultPriority.id,
         text: "",
       },
     ]);
-  }, []);
+  }, [defaultPriority.id]);
 
   const updateManualRow = useCallback(
     (rowId: string, updates: Partial<Omit<ScheduleManualListRow, "id">>) => {
+      setPendingDeleteRowId((currentRowId) =>
+        currentRowId === `manual:${rowId}` ? null : currentRowId
+      );
       setManualRows((currentRows) =>
         currentRows.map((row) =>
           row.id === rowId ? { ...row, ...updates } : row
@@ -1061,6 +1155,378 @@ function ScheduleMyListSheet({
     },
     []
   );
+
+  const manualSkillGroups = useMemo<QuickCreateSkillGroup[]>(() => {
+    const term = manualSkillSearch.trim().toLowerCase();
+    const categoryLookup = new Map(
+      skillCategories.map((category) => [category.id, category])
+    );
+    const originalIndex = new Map(
+      skills.map((skill, index) => [skill.id, index])
+    );
+    const groups = new Map<string, QuickCreateSkillGroup>();
+
+    const filteredSkills = skills.filter((skill) => {
+      if (!term) return true;
+      return (
+        (skill.name ?? "").toLowerCase().includes(term) ||
+        (skill.icon ?? "").toLowerCase().includes(term)
+      );
+    });
+
+    filteredSkills.forEach((skill) => {
+      const groupId =
+        skill.cat_id?.trim() || QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID;
+      const category = categoryLookup.get(groupId);
+      const label =
+        groupId === QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID
+          ? QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_LABEL
+          : category?.name?.trim() || `Category ${groupId.slice(0, 8)}`;
+      const existing = groups.get(groupId);
+
+      if (existing) {
+        existing.skills.push(skill);
+      } else {
+        groups.set(groupId, {
+          id: groupId,
+          label,
+          categoryOrder: category?.sort_order ?? null,
+          skills: [skill],
+        });
+      }
+    });
+
+    const orderedGroups = Array.from(groups.values()).sort((left, right) => {
+      const leftUncategorized =
+        left.id === QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID;
+      const rightUncategorized =
+        right.id === QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID;
+
+      if (leftUncategorized !== rightUncategorized) {
+        return leftUncategorized ? 1 : -1;
+      }
+
+      const orderComparison = compareQuickCreateOrderThenName(
+        left.categoryOrder,
+        left.label,
+        right.categoryOrder,
+        right.label
+      );
+
+      return orderComparison !== 0
+        ? orderComparison
+        : left.id.localeCompare(right.id);
+    });
+
+    return orderedGroups.map((group) => ({
+      ...group,
+      skills: [...group.skills].sort((left, right) => {
+        const orderComparison = compareQuickCreateOrderThenName(
+          left.sort_order,
+          left.name,
+          right.sort_order,
+          right.name
+        );
+
+        return orderComparison !== 0
+          ? orderComparison
+          : (originalIndex.get(left.id) ?? 0) -
+              (originalIndex.get(right.id) ?? 0);
+      }),
+    }));
+  }, [manualSkillSearch, skillCategories, skills]);
+
+  const handleManualSkillSelect = useCallback(
+    (rowId: string, skill: SkillRow) => {
+      updateManualRow(rowId, {
+        skillId: skill.id,
+        skillName: skill.name?.trim() || "Untitled skill",
+        skillIcon: (skill.icon ?? "").trim() || "✦",
+      });
+      setActiveSkillPickerRowKey(null);
+      setManualSkillSearch("");
+    },
+    [updateManualRow]
+  );
+
+  const handleTaskSkillSelect = useCallback((taskId: string, skill: SkillRow) => {
+    setPendingDeleteRowId((currentRowId) =>
+      currentRowId === `task:${taskId}` ? null : currentRowId
+    );
+    setTaskOverrides((currentOverrides) => ({
+      ...currentOverrides,
+      [taskId]: {
+        ...currentOverrides[taskId],
+        skillId: skill.id,
+        skillName: skill.name?.trim() || "Untitled skill",
+        skillIcon: (skill.icon ?? "").trim() || "✦",
+      },
+    }));
+    setActiveSkillPickerRowKey(null);
+    setManualSkillSearch("");
+  }, []);
+
+  const handlePrioritySelect = useCallback(
+    (
+      rowId: string,
+      rowType: "manual" | "task",
+      priorityId: PriorityBucketId
+    ) => {
+      setPendingDeleteRowId((currentRowId) =>
+        currentRowId === `${rowType}:${rowId}` ? null : currentRowId
+      );
+
+      if (rowType === "manual") {
+        updateManualRow(rowId, { priorityId });
+      } else {
+        setTaskOverrides((currentOverrides) => ({
+          ...currentOverrides,
+          [rowId]: {
+            ...currentOverrides[rowId],
+            priorityId,
+          },
+        }));
+      }
+
+      setActivePriorityPickerRowKey(null);
+    },
+    [updateManualRow]
+  );
+
+  const handleDeleteRowAction = useCallback(
+    (rowId: string, rowType: "manual" | "task") => {
+      const deleteRowId = `${rowType}:${rowId}`;
+
+      if (pendingDeleteRowId !== deleteRowId) {
+        setPendingDeleteRowId(deleteRowId);
+        return;
+      }
+
+      setPendingDeleteRowId(null);
+      if (rowType === "manual") {
+        setManualRows((currentRows) =>
+          currentRows.filter((row) => row.id !== rowId)
+        );
+        setActiveSkillPickerRowKey((currentRowKey) =>
+          currentRowKey === `manual:${rowId}` ? null : currentRowKey
+        );
+        setActivePriorityPickerRowKey((currentRowKey) =>
+          currentRowKey === `manual:${rowId}` ? null : currentRowKey
+        );
+        return;
+      }
+
+      setActiveSkillPickerRowKey((currentRowKey) =>
+        currentRowKey === `task:${rowId}` ? null : currentRowKey
+      );
+      setActivePriorityPickerRowKey((currentRowKey) =>
+        currentRowKey === `task:${rowId}` ? null : currentRowKey
+      );
+      setHiddenTaskRowIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.add(rowId);
+        return nextIds;
+      });
+    },
+    [pendingDeleteRowId]
+  );
+
+  const renderDeleteRowButton = useCallback(
+    (rowId: string, rowType: "manual" | "task") => {
+      const deleteRowId = `${rowType}:${rowId}`;
+      const confirming = pendingDeleteRowId === deleteRowId;
+
+      return (
+        <button
+          type="button"
+          aria-label={confirming ? "Confirm remove to-do" : "Remove to-do"}
+          onClick={(event) => {
+            event.stopPropagation();
+            handleDeleteRowAction(rowId, rowType);
+          }}
+          tabIndex={open ? 0 : -1}
+          className={clsx(
+            "ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-transparent p-0 outline-none transition focus-visible:ring-2 focus-visible:ring-white/30",
+            confirming
+              ? "text-emerald-200/72 hover:text-emerald-100"
+              : "text-white/24 hover:text-white/48"
+          )}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={confirming ? "check" : "x"}
+              initial={
+                prefersReducedMotion ? false : { opacity: 0, scale: 0.72 }
+              }
+              animate={{ opacity: 1, scale: 1 }}
+              exit={
+                prefersReducedMotion ? undefined : { opacity: 0, scale: 0.72 }
+              }
+              transition={{ duration: prefersReducedMotion ? 0 : 0.14 }}
+              className="flex h-3.5 w-3.5 items-center justify-center"
+            >
+              {confirming ? (
+                <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+              ) : (
+                <X className="h-3.5 w-3.5" strokeWidth={2} />
+              )}
+            </motion.span>
+          </AnimatePresence>
+        </button>
+      );
+    },
+    [
+      handleDeleteRowAction,
+      open,
+      pendingDeleteRowId,
+      prefersReducedMotion,
+    ]
+  );
+
+  const renderSkillPicker = useCallback(
+    (
+      rowKey: ScheduleMyListRowKey,
+      selectedSkillId: string | null,
+      onSelect: (skill: SkillRow) => void
+    ) =>
+      activeSkillPickerRowKey === rowKey ? (
+        <div
+          role="listbox"
+          aria-label="Choose Skill"
+          className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-64 max-w-[calc(100vw-3rem)] rounded-[1.1rem] border border-white/10 bg-zinc-950/94 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <input
+            value={manualSkillSearch}
+            onChange={(event) => setManualSkillSearch(event.target.value)}
+            placeholder="Search skills"
+            className="h-8 w-full rounded-full border border-white/10 bg-black/35 px-3 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/25"
+            aria-label="Search skills"
+            tabIndex={open ? 0 : -1}
+          />
+          <div className="mt-2 max-h-[min(16rem,calc(100vh-14rem))] touch-pan-y overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]">
+            {manualSkillGroups.length === 0 ? (
+              <div className="px-2 py-3 text-xs text-white/40">
+                No skills found.
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {manualSkillGroups.map((group) => (
+                  <div key={group.id} className="grid gap-1">
+                    <div className="px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35">
+                      {group.label}
+                    </div>
+                    {group.skills.map((skill) => {
+                      const selected = selectedSkillId === skill.id;
+                      const icon = (skill.icon ?? "").trim() || "✦";
+                      const name = skill.name?.trim() || "Untitled skill";
+                      return (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSelect(skill);
+                          }}
+                          tabIndex={open ? 0 : -1}
+                          className={clsx(
+                            "flex h-9 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs transition",
+                            selected
+                              ? "bg-white/[0.16] text-white"
+                              : "text-white/75 hover:bg-white/10 hover:text-white"
+                          )}
+                        >
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/30 text-sm leading-none">
+                            {icon}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null,
+    [
+      activeSkillPickerRowKey,
+      manualSkillGroups,
+      manualSkillSearch,
+      open,
+    ]
+  );
+
+  const renderPriorityPicker = useCallback(
+    (
+      rowKey: ScheduleMyListRowKey,
+      selectedPriorityId: PriorityBucketId,
+      onSelect: (priorityId: PriorityBucketId) => void
+    ) =>
+      activePriorityPickerRowKey === rowKey ? (
+        <div
+          role="listbox"
+          aria-label="Choose priority"
+          className="absolute right-0 top-[calc(100%+0.45rem)] z-30 w-44 rounded-[1.05rem] border border-white/10 bg-zinc-950/94 p-1.5 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="grid gap-1">
+            {QUICK_CREATE_PRIORITY_OPTIONS.map((option) => {
+              const selected = selectedPriorityId === option.id;
+              const symbol =
+                option.symbol || QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelect(option.id);
+                  }}
+                  tabIndex={open ? 0 : -1}
+                  className={clsx(
+                    "flex h-8 w-full items-center gap-2 rounded-full border px-2 text-left text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                    selected
+                      ? "border-white/22 bg-white/[0.12] text-white"
+                      : "border-transparent bg-transparent text-white/68 hover:bg-white/[0.08] hover:text-white"
+                  )}
+                >
+                  <span className="flex h-5 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/30 text-[10px] font-black leading-none text-white/72">
+                    {symbol}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {option.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null,
+    [activePriorityPickerRowKey, open]
+  );
+
+  useEffect(() => {
+    if (!open) {
+      setActiveSkillPickerRowKey(null);
+      setActivePriorityPickerRowKey(null);
+      setManualSkillSearch("");
+      setPendingDeleteRowId(null);
+    }
+  }, [open]);
 
   return (
     <motion.aside
@@ -1097,20 +1563,26 @@ function ScheduleMyListSheet({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         className={clsx(
-          "pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
+          "pointer-events-auto absolute left-1/2 top-0 flex -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
           open
-            ? "-translate-y-[1.35rem]"
-            : "-translate-y-[calc(1.35rem+0.375rem)]"
+            ? "h-6 w-16 -translate-y-[1.35rem]"
+            : "h-[1.95rem] w-[4.75rem] -translate-y-[calc(1.35rem+0.375rem)] flex-col gap-0.5 pb-1 pt-0.5"
         )}
       >
         <ChevronUp
           className={clsx(
-            "h-4 w-4 transition-transform duration-200",
+            "transition-transform duration-200",
+            open ? "h-4 w-4" : "h-3.5 w-3.5",
             open && "rotate-180"
           )}
           strokeWidth={2.2}
           aria-hidden="true"
         />
+        {!open ? (
+          <span className="text-[0.55rem] font-semibold leading-none tracking-[0.08em] text-white/58">
+            My List
+          </span>
+        ) : null}
       </button>
       <div
         aria-hidden={!open}
@@ -1120,7 +1592,6 @@ function ScheduleMyListSheet({
         }}
       >
         <div className="relative border-b border-white/[0.07] bg-black/[0.18] px-4 pb-1.5 pt-1.5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.025)] sm:px-5">
-          <div className="mx-auto mb-1 h-0.5 w-8 rounded-full bg-white/16" />
           <h2 className="text-center text-[0.72rem] font-semibold leading-none tracking-[0.08em] text-white/90">
             My List
           </h2>
@@ -1138,14 +1609,24 @@ function ScheduleMyListSheet({
           <div className="space-y-1.5">
             {hasListRows ? (
               <>
-                {tasks.map((task) => {
+                {visibleTasks.map((task) => {
                   const done =
                     task.stage?.toString().toUpperCase() === "PERFECT";
                   const pending = pendingTaskIds.has(task.id);
-                  const skillEmoji = task.skill_icon?.trim() || "✦";
+                  const taskSkill = resolveTaskSkillMetadata(task);
+                  const priorityId = resolveTaskPriorityId(task);
+                  const priorityOption =
+                    QUICK_CREATE_PRIORITY_OPTIONS.find(
+                      (option) => option.id === priorityId
+                    ) ?? defaultPriority;
+                  const prioritySymbol =
+                    priorityOption.symbol ||
+                    QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+                  const checkboxId = `my-list-task-${task.id}`;
+                  const rowKey = `task:${task.id}` as const;
 
                   return (
-                    <label
+                    <div
                       key={task.id}
                       className={clsx(
                         "flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
@@ -1156,17 +1637,24 @@ function ScheduleMyListSheet({
                       )}
                     >
                       <input
+                        id={checkboxId}
                         type="checkbox"
                         checked={done}
                         disabled={pending}
-                        onChange={() => onToggleTask(task.id)}
+                        onChange={() => {
+                          setPendingDeleteRowId(null);
+                          onToggleTask(task.id);
+                        }}
                         tabIndex={open ? 0 : -1}
                         className="peer sr-only disabled:cursor-wait"
                       />
-                      <span
-                        aria-hidden="true"
+                      <label
+                        htmlFor={checkboxId}
+                        aria-label={
+                          done ? "Mark to-do incomplete" : "Mark to-do complete"
+                        }
                         className={clsx(
-                          "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                          "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
                           done
                             ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
                             : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
@@ -1178,25 +1666,77 @@ function ScheduleMyListSheet({
                             done ? "opacity-100" : "opacity-0"
                           )}
                         />
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className={clsx(
-                          "flex h-4 w-4 shrink-0 items-center justify-center text-[0.78rem] leading-none text-white/70 transition",
-                          done && "text-emerald-50/58"
+                      </label>
+                      <div className="relative h-4 w-4 shrink-0">
+                        <button
+                          type="button"
+                          aria-label={
+                            taskSkill.skillName
+                              ? `Change Skill: ${taskSkill.skillName}`
+                              : "Choose Skill"
+                          }
+                          aria-haspopup="listbox"
+                          aria-expanded={activeSkillPickerRowKey === rowKey}
+                          title={taskSkill.skillName ?? "Choose Skill"}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setActivePriorityPickerRowKey(null);
+                            setManualSkillSearch("");
+                            setActiveSkillPickerRowKey((currentRowKey) =>
+                              currentRowKey === rowKey ? null : rowKey
+                            );
+                          }}
+                          tabIndex={open ? 0 : -1}
+                          className={clsx(
+                            "flex h-4 w-4 items-center justify-center bg-transparent p-0 text-center text-[0.78rem] leading-none text-white/70 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
+                            done && "text-emerald-50/58"
+                          )}
+                        >
+                          {taskSkill.skillIcon}
+                        </button>
+                        {renderSkillPicker(rowKey, taskSkill.skillId, (skill) =>
+                          handleTaskSkillSelect(task.id, skill)
                         )}
-                      >
-                        {skillEmoji}
-                      </span>
-                      <span
+                      </div>
+                      <label
+                        htmlFor={checkboxId}
                         className={clsx(
-                          "min-w-0 leading-snug transition",
+                          "min-w-0 flex-1 cursor-pointer leading-snug transition",
                           done && "text-white/42 line-through"
                         )}
                       >
                         {task.name}
-                      </span>
-                    </label>
+                      </label>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          aria-label={`Choose priority: ${priorityOption.label}`}
+                          aria-haspopup="listbox"
+                          aria-expanded={activePriorityPickerRowKey === rowKey}
+                          title={priorityOption.label}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setActiveSkillPickerRowKey(null);
+                            setActivePriorityPickerRowKey((currentRowKey) =>
+                              currentRowKey === rowKey ? null : rowKey
+                            );
+                          }}
+                          tabIndex={open ? 0 : -1}
+                          className={clsx(
+                            "flex h-5 min-w-5 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1.5 text-[10px] font-black leading-none text-white/46 outline-none transition hover:border-white/14 hover:bg-white/[0.055] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                            done && "text-emerald-50/42"
+                          )}
+                        >
+                          <span className="max-w-8 truncate">
+                            {prioritySymbol}
+                          </span>
+                        </button>
+                        {renderPriorityPicker(rowKey, priorityId, (nextId) =>
+                          handlePrioritySelect(task.id, "task", nextId)
+                        )}
+                      </div>
+                      {renderDeleteRowButton(task.id, "task")}
+                    </div>
                   );
                 })}
                 {manualRows.map((row) => (
@@ -1236,22 +1776,44 @@ function ScheduleMyListSheet({
                         )}
                       />
                     </label>
-                    <input
-                      type="text"
-                      value={row.skillIcon}
-                      onChange={(event) =>
-                        updateManualRow(row.id, {
-                          skillIcon: event.target.value,
-                        })
-                      }
-                      placeholder="✦"
-                      aria-label="Skill/icon"
-                      tabIndex={open ? 0 : -1}
-                      className={clsx(
-                        "h-4 w-4 shrink-0 bg-transparent p-0 text-center text-[0.78rem] leading-none text-white/70 outline-none placeholder:text-white/36 focus:text-white",
-                        row.done && "text-emerald-50/58"
+                    <div className="relative h-4 w-4 shrink-0">
+                      <button
+                        type="button"
+                        aria-label={
+                          row.skillName
+                            ? `Change Skill: ${row.skillName}`
+                            : "Choose Skill"
+                        }
+                        aria-haspopup="listbox"
+                        aria-expanded={
+                          activeSkillPickerRowKey === `manual:${row.id}`
+                        }
+                        title={row.skillName ?? "Choose Skill"}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setActivePriorityPickerRowKey(null);
+                          setManualSkillSearch("");
+                          setActiveSkillPickerRowKey((currentRowKey) =>
+                            currentRowKey === `manual:${row.id}`
+                              ? null
+                              : `manual:${row.id}`
+                          );
+                        }}
+                        tabIndex={open ? 0 : -1}
+                        className={clsx(
+                          "flex h-4 w-4 items-center justify-center bg-transparent p-0 text-center text-[0.78rem] leading-none text-white/70 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
+                          !row.skillIcon.trim() && "text-white/36",
+                          row.done && "text-emerald-50/58"
+                        )}
+                      >
+                        {row.skillIcon.trim() || "✦"}
+                      </button>
+                      {renderSkillPicker(
+                        `manual:${row.id}`,
+                        row.skillId,
+                        (skill) => handleManualSkillSelect(row.id, skill)
                       )}
-                    />
+                    </div>
                     <input
                       type="text"
                       value={row.text}
@@ -1266,6 +1828,56 @@ function ScheduleMyListSheet({
                         row.done && "text-white/42 line-through"
                       )}
                     />
+                    <div className="relative shrink-0">
+                      {(() => {
+                        const priorityOption =
+                          QUICK_CREATE_PRIORITY_OPTIONS.find(
+                            (option) => option.id === row.priorityId
+                          ) ?? defaultPriority;
+                        const prioritySymbol =
+                          priorityOption.symbol ||
+                          QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+                        const rowKey = `manual:${row.id}` as const;
+
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              aria-label={`Choose priority: ${priorityOption.label}`}
+                              aria-haspopup="listbox"
+                              aria-expanded={
+                                activePriorityPickerRowKey === rowKey
+                              }
+                              title={priorityOption.label}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setActiveSkillPickerRowKey(null);
+                                setActivePriorityPickerRowKey(
+                                  (currentRowKey) =>
+                                    currentRowKey === rowKey ? null : rowKey
+                                );
+                              }}
+                              tabIndex={open ? 0 : -1}
+                              className={clsx(
+                                "flex h-5 min-w-5 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1.5 text-[10px] font-black leading-none text-white/46 outline-none transition hover:border-white/14 hover:bg-white/[0.055] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                                row.done && "text-emerald-50/42"
+                              )}
+                            >
+                              <span className="max-w-8 truncate">
+                                {prioritySymbol}
+                              </span>
+                            </button>
+                            {renderPriorityPicker(
+                              rowKey,
+                              row.priorityId,
+                              (nextId) =>
+                                handlePrioritySelect(row.id, "manual", nextId)
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    {renderDeleteRowButton(row.id, "manual")}
                   </div>
                 ))}
               </>
@@ -4184,7 +4796,38 @@ export default function ScheduleTabContent({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const updateQuickCreateKeyboardInset = () => {
+    let quickCreateAccessoryPositionFrame: number | null = null;
+    let lastKeyboardInset = -1;
+
+    const syncQuickCreateAccessoryPosition = () => {
+      quickCreateAccessoryPositionFrame = null;
+      const viewport = window.visualViewport;
+      const viewportBottom = viewport
+        ? viewport.offsetTop + viewport.height
+        : window.innerHeight;
+      const rawAccessoryY =
+        viewportBottom - QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX;
+      const accessoryY = Math.max(0, rawAccessoryY);
+      const accessoryYValue = `${accessoryY.toFixed(2)}px`;
+
+      document.documentElement.style.setProperty(
+        "--quick-create-accessory-y",
+        accessoryYValue
+      );
+      quickCreateKeyboardAccessoryRef.current?.style.setProperty(
+        "--quick-create-accessory-y",
+        accessoryYValue
+      );
+    };
+
+    const requestQuickCreateAccessoryPositionSync = () => {
+      if (quickCreateAccessoryPositionFrame !== null) return;
+      quickCreateAccessoryPositionFrame = window.requestAnimationFrame(
+        syncQuickCreateAccessoryPosition
+      );
+    };
+
+    const updateQuickCreateKeyboardInsetFallback = () => {
       const viewport = window.visualViewport;
       const nextInset = viewport
         ? Math.max(
@@ -4192,21 +4835,42 @@ export default function ScheduleTabContent({
             Math.round(window.innerHeight - (viewport.height + viewport.offsetTop))
           )
         : 0;
+      if (nextInset === lastKeyboardInset) return;
+      lastKeyboardInset = nextInset;
       setQuickCreateKeyboardInset((currentInset) =>
         currentInset === nextInset ? currentInset : nextInset
       );
     };
 
+    const handleViewportResize = () => {
+      updateQuickCreateKeyboardInsetFallback();
+      requestQuickCreateAccessoryPositionSync();
+    };
+    const handleViewportScroll = () => {
+      requestQuickCreateAccessoryPositionSync();
+    };
+
     const viewport = window.visualViewport;
-    updateQuickCreateKeyboardInset();
-    viewport?.addEventListener("resize", updateQuickCreateKeyboardInset);
-    viewport?.addEventListener("scroll", updateQuickCreateKeyboardInset);
-    window.addEventListener("resize", updateQuickCreateKeyboardInset);
+    updateQuickCreateKeyboardInsetFallback();
+    syncQuickCreateAccessoryPosition();
+    viewport?.addEventListener("resize", handleViewportResize, {
+      passive: true,
+    });
+    viewport?.addEventListener("scroll", handleViewportScroll, {
+      passive: true,
+    });
+    window.addEventListener("resize", handleViewportResize);
 
     return () => {
-      viewport?.removeEventListener("resize", updateQuickCreateKeyboardInset);
-      viewport?.removeEventListener("scroll", updateQuickCreateKeyboardInset);
-      window.removeEventListener("resize", updateQuickCreateKeyboardInset);
+      if (quickCreateAccessoryPositionFrame !== null) {
+        window.cancelAnimationFrame(quickCreateAccessoryPositionFrame);
+      }
+      viewport?.removeEventListener("resize", handleViewportResize);
+      viewport?.removeEventListener("scroll", handleViewportScroll);
+      window.removeEventListener("resize", handleViewportResize);
+      document.documentElement.style.removeProperty(
+        "--quick-create-accessory-y"
+      );
     };
   }, []);
   const renderDayStart = useMemo(
@@ -10098,6 +10762,7 @@ export default function ScheduleTabContent({
         const id = `quick-create-event-${Date.now()}-${Math.random()
           .toString(36)
           .slice(2)}`;
+        const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
         const nextDraft: QuickCreateDraftEvent = {
           id,
           title: "",
@@ -10106,7 +10771,9 @@ export default function ScheduleTabContent({
           skillId: null,
           skillName: null,
           relationIcon: null,
-          prioritySymbol: "",
+          priorityId: defaultPriority.id,
+          priorityLabel: defaultPriority.label,
+          prioritySymbol: defaultPriority.symbol,
           energyLevel: "MEDIUM",
         };
         setQuickCreateDraftEvent(nextDraft);
@@ -10600,10 +11267,13 @@ export default function ScheduleTabContent({
       if (!draft) return null;
 
       const isAccessoryAnchor = anchor === "accessory";
-      const pickerBottom =
-        quickCreateKeyboardInset +
-        QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX +
-        QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX;
+      const accessoryPickerStyle = {
+        top: `calc(var(--quick-create-accessory-y, calc(100dvh - ${
+          QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX + quickCreateKeyboardInset
+        }px - env(safe-area-inset-bottom, 0px))) - ${QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX}px)`,
+        transform: "translate3d(0, -100%, 0)",
+        willChange: "transform",
+      } satisfies CSSProperties;
 
       return (
         <div
@@ -10616,11 +11286,7 @@ export default function ScheduleTabContent({
               : "absolute left-2 top-[calc(100%+0.375rem)] z-20 w-64 max-w-[calc(100vw-2rem)] rounded-[1.25rem]"
           )}
           style={
-            isAccessoryAnchor
-              ? {
-                  bottom: pickerBottom,
-                }
-              : undefined
+            isAccessoryAnchor ? accessoryPickerStyle : undefined
           }
           onPointerDown={(event) => {
             event.stopPropagation();
@@ -14189,10 +14855,14 @@ export default function ScheduleTabContent({
     : QUICK_CREATE_EVENT_DURATION_MIN;
   const quickCreateDraftEnergyLevel =
     quickCreateDraftEvent?.energyLevel ?? "MEDIUM";
-  const quickCreateSelectedPriority = quickCreateDraftEvent?.priorityId
-    ? QUICK_CREATE_PRIORITY_OPTIONS.find(
-        (option) => option.id === quickCreateDraftEvent.priorityId
-      )
+  const quickCreateDefaultPriority =
+    resolveQuickCreateMediumPriorityMetadata();
+  const quickCreateSelectedPriority = quickCreateDraftEvent
+    ? (quickCreateDraftEvent.priorityId
+        ? QUICK_CREATE_PRIORITY_OPTIONS.find(
+            (option) => option.id === quickCreateDraftEvent.priorityId
+          )
+        : null) ?? quickCreateDefaultPriority
     : null;
   const quickCreatePriorityButtonSymbol =
     quickCreateSelectedPriority?.symbol ||
@@ -14226,10 +14896,12 @@ export default function ScheduleTabContent({
                 data-quick-create-priority-picker="true"
                 className="fixed inset-x-3 z-[2147483646] rounded-[1.15rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl md:hidden"
                 style={{
-                  bottom:
-                    quickCreateKeyboardInset +
+                  top: `calc(var(--quick-create-accessory-y, calc(100dvh - ${
                     QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX +
-                    QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX,
+                    quickCreateKeyboardInset
+                  }px - env(safe-area-inset-bottom, 0px))) - ${QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX}px)`,
+                  transform: "translate3d(0, -100%, 0)",
+                  willChange: "transform",
                 }}
                 onPointerDown={(event) => {
                   event.stopPropagation();
@@ -14249,7 +14921,8 @@ export default function ScheduleTabContent({
                   <div className="grid gap-1">
                     {QUICK_CREATE_PRIORITY_OPTIONS.map((option) => {
                       const selected =
-                        quickCreateDraftEvent.priorityId === option.id;
+                        (quickCreateDraftEvent.priorityId ??
+                          quickCreateDefaultPriority.id) === option.id;
                       const symbol =
                         option.symbol || QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
                       return (
@@ -14286,9 +14959,12 @@ export default function ScheduleTabContent({
                 data-quick-create-duration-picker="true"
                 className="fixed inset-x-0 z-[2147483646] border-t border-white/10 bg-zinc-950/92 px-3 py-2 text-white backdrop-blur-xl md:hidden"
                 style={{
-                  bottom:
-                    quickCreateKeyboardInset +
-                    QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX,
+                  top: `var(--quick-create-accessory-y, calc(100dvh - ${
+                    QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX +
+                    quickCreateKeyboardInset
+                  }px - env(safe-area-inset-bottom, 0px)))`,
+                  transform: "translate3d(0, -100%, 0)",
+                  willChange: "transform",
                 }}
                 onPointerDown={(event) => {
                   event.stopPropagation();
@@ -14334,10 +15010,16 @@ export default function ScheduleTabContent({
             <div
               ref={quickCreateKeyboardAccessoryRef}
               data-quick-create-keyboard-accessory="true"
-              className="fixed inset-x-0 bottom-0 z-[2147483645] flex h-14 items-center gap-2 border-t border-white/10 bg-zinc-950/88 px-3 text-white shadow-none backdrop-blur-2xl md:hidden"
+              className="fixed inset-x-0 z-[2147483645] flex h-14 items-center gap-2 border-t border-white/10 bg-zinc-950/88 px-3 text-white shadow-none backdrop-blur-2xl md:hidden"
               style={{
-                bottom: quickCreateKeyboardInset,
+                top: 0,
+                bottom: "auto",
                 height: QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX,
+                transform: `translate3d(0, var(--quick-create-accessory-y, calc(100dvh - ${
+                  QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX +
+                  quickCreateKeyboardInset
+                }px - env(safe-area-inset-bottom, 0px))), 0)`,
+                willChange: "transform",
               }}
               onPointerDown={(event) => {
                 event.stopPropagation();
@@ -14721,6 +15403,8 @@ export default function ScheduleTabContent({
       <ScheduleMyListSheet
         open={isMyListOpen}
         tasks={myListTasks}
+        skills={skills}
+        skillCategories={skillCategories}
         pendingTaskIds={pendingBacklogTaskIds}
         onToggleTask={handleToggleBacklogTaskCompletion}
         onOpenChange={(open) => {
