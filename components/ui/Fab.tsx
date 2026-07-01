@@ -178,6 +178,15 @@ type UnifiedEventNotificationTiming =
   | "ON_THE_DAY"
   | "ONE_DAY_BEFORE"
   | "ONE_WEEK_BEFORE";
+type ScheduleQuickCreateTaskDetailsPayload = {
+  title?: string | null;
+  startIso?: string | null;
+  endIso?: string | null;
+  durationMin?: number | null;
+  skillId?: string | null;
+  priority?: string | null;
+  energy?: string | null;
+};
 
 const UNIFIED_EVENT_TITLE_PLACEHOLDERS = [
   "Dentist appointment",
@@ -202,6 +211,8 @@ const UNIFIED_TASK_TITLE_PLACEHOLDERS = [
 ] as const;
 
 const UNIFIED_TITLE_PLACEHOLDER_ROTATION_MS = 3200;
+const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
+  "schedule:open-quick-create-task-details";
 type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
 type AddEventSubAction = {
   id: string;
@@ -17918,6 +17929,130 @@ export function Fab({
     resetUnifiedEventInviteDraft,
     taskExactDate,
   ]);
+
+  const openQuickCreateTaskDetailsSheet = useCallback(
+    (payload: ScheduleQuickCreateTaskDetailsPayload) => {
+      void hapticPress();
+      const startDate =
+        typeof payload.startIso === "string"
+          ? new Date(payload.startIso)
+          : null;
+      const endDate =
+        typeof payload.endIso === "string" ? new Date(payload.endIso) : null;
+      const hasExactSchedule =
+        Boolean(startDate) &&
+        Boolean(endDate) &&
+        !Number.isNaN(startDate?.getTime()) &&
+        !Number.isNaN(endDate?.getTime());
+      const initialDate = hasExactSchedule && startDate
+        ? startDate
+        : parseDateInputValueLocal(
+            getNextSolidHourEventDefaults(new Date()).date,
+          ) ?? new Date();
+      const durationMin =
+        typeof payload.durationMin === "number" &&
+        Number.isFinite(payload.durationMin) &&
+        payload.durationMin > 0
+          ? Math.round(payload.durationMin)
+          : null;
+
+      pendingFabSwipeRef.current = null;
+      isDraggingRef.current = false;
+      dragTargetPageRef.current = null;
+      dragDirectionRef.current = null;
+      pageDragAxisRef.current = null;
+      setTouchStartY(null);
+      setIsDragging(false);
+      setDragTargetPage(null);
+      setDragDirection(null);
+      setIsAnimatingPageChange(false);
+      pageX.set(0);
+
+      resetTaskFormDraft();
+      resetUnifiedEventDraft();
+      setSaveError(null);
+      setGoalDeleteConfirmTarget(null);
+      setActiveCreationMode("main");
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
+      setIsGoalPickerOpen(false);
+      setIsUnifiedGoalPickerOpen(false);
+      setShowUnifiedGoalFilters(false);
+      setUnifiedGoalSearch("");
+      setUnifiedGoalFilterMonumentId("");
+      setUnifiedGoalSortMode("default");
+      setAddEventSubActions([]);
+      setAddEventTimingMode("manual");
+      setAddEventDynamicDuration("60");
+      setProjectTaskStack(null);
+      setGoalProjectStack(null);
+      setUnifiedCreationMode("TASKS");
+      setUnifiedEventType("TASK");
+      setSelected("TASK");
+      setNormalNexusExpanded(false);
+      setUnifiedEventAllDay(false);
+      setUnifiedTimingViewedMonth(
+        new Date(initialDate.getFullYear(), initialDate.getMonth(), 1),
+      );
+
+      const title =
+        typeof payload.title === "string" ? payload.title.trim() : "";
+      if (title) setTaskName(title);
+      if (durationMin !== null) setTaskDuration(String(durationMin));
+      setTaskPriority(normalizeFabPriority(payload.priority));
+      setTaskEnergy(normalizeFabEnergy(payload.energy));
+      setTaskSkillId(
+        typeof payload.skillId === "string" ? payload.skillId : "",
+      );
+      if (hasExactSchedule && startDate && endDate) {
+        const date = formatDateInputValue(startDate);
+        setTaskHasExactDate(true);
+        setTaskExactDate(date);
+        setTaskExactFallbackDate(date);
+        setTaskExactStartTime(formatTimeInputValue(startDate));
+        setTaskExactEndTime(formatTimeInputValue(endDate));
+        setTaskExactTimingTouched(true);
+      }
+
+      flushSync(() => {
+        setExpanded(false);
+        setIsDirectCreationOpen(false);
+        setIsOpen(false);
+      });
+      setIsUnifiedEventSheetOpen(true);
+    },
+    [pageX, resetTaskFormDraft, resetUnifiedEventDraft],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOpenQuickCreateTaskDetails = (event: Event) => {
+      const payload =
+        event instanceof CustomEvent && event.detail
+          ? (event.detail as ScheduleQuickCreateTaskDetailsPayload)
+          : {};
+      openQuickCreateTaskDetailsSheet(payload);
+    };
+
+    window.addEventListener(
+      SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT,
+      handleOpenQuickCreateTaskDetails,
+    );
+    return () => {
+      window.removeEventListener(
+        SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT,
+        handleOpenQuickCreateTaskDetails,
+      );
+    };
+  }, [openQuickCreateTaskDetailsSheet]);
 
   useEffect(() => {
     if (!isUnifiedEventSheetOpen) return;
