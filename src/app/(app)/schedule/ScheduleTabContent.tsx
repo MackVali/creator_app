@@ -242,11 +242,17 @@ const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const QUICK_CREATE_EVENT_LONG_PRESS_MS = 650;
 const QUICK_CREATE_EVENT_DURATION_MIN = 30;
 const QUICK_CREATE_EVENT_MIN_DURATION_MIN = 15;
+const QUICK_CREATE_EVENT_DURATION_OPTIONS_MIN = [15, 30, 45, 60, 90, 120];
+const QUICK_CREATE_EVENT_ENERGY_LEVELS: FlameLevel[] = [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+];
 const QUICK_CREATE_EVENT_MOVE_CANCEL_PX = 28;
 const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
 const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
 const QUICK_CREATE_INTERACTION_SELECTOR =
-  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory]";
+  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory], [data-quick-create-duration-picker]";
 const UNIFIED_EVENT_SHEET_SELECTOR = "[data-unified-event-sheet]";
 const QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX = 56;
 const QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX = 8;
@@ -496,6 +502,8 @@ type QuickCreateDraftEvent = {
   skillId: string | null;
   skillName: string | null;
   relationIcon: string | null;
+  prioritySymbol?: string;
+  energyLevel?: FlameLevel;
 };
 
 type QuickCreatePressInput = "pointer" | "touch";
@@ -1037,7 +1045,7 @@ function ScheduleMyListSheet({
           "pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
           open
             ? "-translate-y-[1.35rem]"
-            : "-translate-y-[calc(1.35rem+env(safe-area-inset-bottom,0px)+0.5rem)]"
+            : "-translate-y-[calc(1.35rem+env(safe-area-inset-bottom,0px)+0.25rem)]"
         )}
       >
         <ChevronUp
@@ -1068,12 +1076,16 @@ function ScheduleMyListSheet({
               tasks.map((task) => {
                 const done = task.stage?.toString().toUpperCase() === "PERFECT";
                 const pending = pendingTaskIds.has(task.id);
+                const skillEmoji = task.skill_icon?.trim() || "✦";
 
                 return (
                   <label
                     key={task.id}
                     className={clsx(
-                      "flex min-h-9 items-center gap-2.5 rounded-xl border border-white/[0.075] bg-white/[0.035] px-3 py-2 text-sm text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-colors hover:bg-white/[0.05]",
+                      "flex min-h-9 items-center gap-2.5 rounded-xl border px-3 py-2 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-colors",
+                      done
+                        ? "border-emerald-300/18 bg-emerald-950/[0.11] text-emerald-50/82 shadow-[inset_2px_0_0_rgba(52,211,153,0.22),inset_0_1px_0_rgba(255,255,255,0.06)]"
+                        : "border-white/[0.075] bg-white/[0.035] text-white/84 hover:bg-white/[0.05]",
                       pending && "opacity-60"
                     )}
                   >
@@ -1083,8 +1095,33 @@ function ScheduleMyListSheet({
                       disabled={pending}
                       onChange={() => onToggleTask(task.id)}
                       tabIndex={open ? 0 : -1}
-                      className="h-4 w-4 shrink-0 accent-zinc-200 disabled:cursor-wait"
+                      className="peer sr-only disabled:cursor-wait"
                     />
+                    <span
+                      aria-hidden="true"
+                      className={clsx(
+                        "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                        done
+                          ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
+                          : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                          done ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={clsx(
+                        "flex h-4 w-4 shrink-0 items-center justify-center text-[0.78rem] leading-none text-white/70 transition",
+                        done && "text-emerald-50/58"
+                      )}
+                    >
+                      {skillEmoji}
+                    </span>
                     <span
                       className={clsx(
                         "min-w-0 leading-snug transition",
@@ -3941,6 +3978,8 @@ export default function ScheduleTabContent({
   const [quickCreateSkillPickerAnchor, setQuickCreateSkillPickerAnchor] =
     useState<"card" | "accessory">("card");
   const [quickCreateSkillSearch, setQuickCreateSkillSearch] = useState("");
+  const [isQuickCreateDurationPickerOpen, setIsQuickCreateDurationPickerOpen] =
+    useState(false);
   const [quickCreateKeyboardInset, setQuickCreateKeyboardInset] = useState(0);
   const quickCreateDraftEventRef = useRef<QuickCreateDraftEvent | null>(null);
   const quickCreateDraftCardRef = useRef<HTMLDivElement | null>(null);
@@ -9660,6 +9699,7 @@ export default function ScheduleTabContent({
     setIsQuickCreateSkillPickerOpen(false);
     setQuickCreateSkillPickerAnchor("card");
     setQuickCreateSkillSearch("");
+    setIsQuickCreateDurationPickerOpen(false);
     quickCreateDraftEventRef.current = null;
     quickCreateDragRef.current = null;
     quickCreateResizeSessionRef.current = null;
@@ -9677,6 +9717,74 @@ export default function ScheduleTabContent({
     stopQuickCreateResizeAutoScroll,
     stopQuickCreateResizeTouchSuppression,
   ]);
+
+  const updateQuickCreatePrioritySymbol = useCallback((value: string) => {
+    const draft = quickCreateDraftEventRef.current;
+    if (!draft) return;
+    const nextDraft: QuickCreateDraftEvent = {
+      ...draft,
+      prioritySymbol: value.slice(0, 4),
+    };
+    setQuickCreateDraftEvent(nextDraft);
+    quickCreateDraftEventRef.current = nextDraft;
+    quickCreateDraftPointerInsideRef.current = true;
+  }, []);
+
+  const cycleQuickCreateEnergy = useCallback(() => {
+    const draft = quickCreateDraftEventRef.current;
+    if (!draft) return;
+    const current = draft.energyLevel ?? "MEDIUM";
+    const currentIndex = QUICK_CREATE_EVENT_ENERGY_LEVELS.indexOf(current);
+    const nextEnergy =
+      QUICK_CREATE_EVENT_ENERGY_LEVELS[
+        currentIndex >= 0
+          ? (currentIndex + 1) % QUICK_CREATE_EVENT_ENERGY_LEVELS.length
+          : 0
+      ] ?? "MEDIUM";
+    const nextDraft: QuickCreateDraftEvent = {
+      ...draft,
+      energyLevel: nextEnergy,
+    };
+    setQuickCreateDraftEvent(nextDraft);
+    quickCreateDraftEventRef.current = nextDraft;
+    quickCreateDraftPointerInsideRef.current = true;
+  }, []);
+
+  const toggleQuickCreateDurationPicker = useCallback(() => {
+    quickCreateDraftPointerInsideRef.current = true;
+    setIsQuickCreateSkillPickerOpen(false);
+    setIsQuickCreateDurationPickerOpen((open) => !open);
+  }, []);
+
+  const selectQuickCreateDuration = useCallback(
+    (durationMinutes: number) => {
+      const draft = quickCreateDraftEventRef.current;
+      if (!draft) return;
+      const safeDuration = Math.max(
+        QUICK_CREATE_EVENT_MIN_DURATION_MIN,
+        Math.round(durationMinutes / 5) * 5
+      );
+      const clampedDuration = Math.min(
+        safeDuration,
+        24 * 60 - draft.startMinute
+      );
+      const nextEndMinute = Math.min(
+        24 * 60,
+        draft.startMinute +
+          Math.max(QUICK_CREATE_EVENT_MIN_DURATION_MIN, clampedDuration)
+      );
+      const nextDraft: QuickCreateDraftEvent = {
+        ...draft,
+        endMinute: nextEndMinute,
+      };
+      setQuickCreateDraftEvent(nextDraft);
+      quickCreateDraftEventRef.current = nextDraft;
+      quickCreateDraftPointerInsideRef.current = true;
+      setIsQuickCreateDurationPickerOpen(false);
+      focusQuickCreateDraftInput();
+    },
+    [focusQuickCreateDraftInput]
+  );
 
   const resolveQuickCreateStartMinute = useCallback(
     (clientY: number, surface: HTMLElement | null) => {
@@ -9834,6 +9942,8 @@ export default function ScheduleTabContent({
           skillId: null,
           skillName: null,
           relationIcon: null,
+          prioritySymbol: "",
+          energyLevel: "MEDIUM",
         };
         setQuickCreateDraftEvent(nextDraft);
         quickCreateDraftEventRef.current = nextDraft;
@@ -10286,6 +10396,7 @@ export default function ScheduleTabContent({
   const toggleQuickCreateSkillPicker = useCallback(
     (anchor: "card" | "accessory") => {
       quickCreateDraftPointerInsideRef.current = true;
+      setIsQuickCreateDurationPickerOpen(false);
       setQuickCreateSkillSearch("");
       setQuickCreateSkillPickerAnchor(anchor);
       setIsQuickCreateSkillPickerOpen((open) =>
@@ -10437,6 +10548,12 @@ export default function ScheduleTabContent({
     if (!quickCreateDraftEvent) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (isQuickCreateDurationPickerOpen) {
+          event.preventDefault();
+          setIsQuickCreateDurationPickerOpen(false);
+          focusQuickCreateDraftInput();
+          return;
+        }
         if (isQuickCreateSkillPickerOpen) {
           event.preventDefault();
           setIsQuickCreateSkillPickerOpen(false);
@@ -10451,6 +10568,7 @@ export default function ScheduleTabContent({
   }, [
     cancelQuickCreateDraft,
     focusQuickCreateDraftInput,
+    isQuickCreateDurationPickerOpen,
     isQuickCreateSkillPickerOpen,
     quickCreateDraftEvent,
   ]);
@@ -13897,10 +14015,14 @@ export default function ScheduleTabContent({
         quickCreateDraftEvent.endMinute - quickCreateDraftEvent.startMinute
       )
     : QUICK_CREATE_EVENT_DURATION_MIN;
+  const quickCreateDraftEnergyLevel =
+    quickCreateDraftEvent?.energyLevel ?? "MEDIUM";
 
   const quickCreateKeyboardAccessory =
     quickCreateDraftEvent &&
-    (quickCreateTitleFocused || isQuickCreateSkillPickerOpen) &&
+    (quickCreateTitleFocused ||
+      isQuickCreateSkillPickerOpen ||
+      isQuickCreateDurationPickerOpen) &&
     typeof document !== "undefined"
       ? createPortal(
           <>
@@ -13908,10 +14030,60 @@ export default function ScheduleTabContent({
             quickCreateSkillPickerAnchor === "accessory"
               ? renderQuickCreateSkillPicker("accessory")
               : null}
+            {isQuickCreateDurationPickerOpen ? (
+              <div
+                data-quick-create-duration-picker="true"
+                className="fixed inset-x-0 z-[2147483646] border-t border-white/10 bg-zinc-950/92 px-3 py-2 text-white backdrop-blur-xl md:hidden"
+                style={{
+                  bottom:
+                    quickCreateKeyboardInset +
+                    QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX,
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center gap-1.5 overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                  {QUICK_CREATE_EVENT_DURATION_OPTIONS_MIN.map((minutes) => {
+                    const selected =
+                      quickCreateDraftDurationMinutes === minutes;
+                    return (
+                      <button
+                        key={minutes}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          selectQuickCreateDuration(minutes);
+                        }}
+                        className={clsx(
+                          "h-8 shrink-0 rounded-full border px-3 text-[11px] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                          selected
+                            ? "border-white/25 bg-white/[0.14] text-white"
+                            : "border-white/10 bg-black/25 text-white/62 hover:bg-white/[0.08] hover:text-white"
+                        )}
+                      >
+                        {formatDurationLabel(minutes)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <div
               ref={quickCreateKeyboardAccessoryRef}
               data-quick-create-keyboard-accessory="true"
-              className="fixed inset-x-0 bottom-0 z-[2147483645] flex h-14 items-center gap-3 border-t border-white/10 bg-zinc-950/88 px-3 text-white shadow-none backdrop-blur-2xl md:hidden"
+              className="fixed inset-x-0 bottom-0 z-[2147483645] flex h-14 items-center gap-2 border-t border-white/10 bg-zinc-950/88 px-3 text-white shadow-none backdrop-blur-2xl md:hidden"
               style={{
                 bottom: quickCreateKeyboardInset,
                 height: QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX,
@@ -13933,7 +14105,7 @@ export default function ScheduleTabContent({
               <button
                 type="button"
                 className={clsx(
-                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-base leading-none transition",
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm leading-none transition",
                   quickCreateDraftEvent.skillId
                     ? "border-white/25 bg-white/[0.12] text-white"
                     : "border-white/15 bg-black/30 text-white/90"
@@ -13964,6 +14136,32 @@ export default function ScheduleTabContent({
                   ? (quickCreateDraftEvent.relationIcon ?? "✦")
                   : "+"}
               </button>
+              <input
+                value={quickCreateDraftEvent.prioritySymbol ?? ""}
+                onChange={(event) =>
+                  updateQuickCreatePrioritySymbol(event.target.value)
+                }
+                onFocus={() => {
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                maxLength={4}
+                inputMode="text"
+                aria-label="Priority marker"
+                placeholder="◇"
+                className="h-8 w-7 shrink-0 bg-transparent text-center text-sm font-semibold leading-none text-white/80 caret-white/80 outline-none placeholder:text-white/32 focus:text-white"
+              />
               <div className="min-w-0 flex-1 overflow-hidden">
                 <div className="truncate text-sm font-semibold leading-tight text-white">
                   {quickCreateDraftEvent.title.trim() || "New Event"}
@@ -13974,9 +14172,61 @@ export default function ScheduleTabContent({
                   </div>
                 ) : null}
               </div>
-              <div className="shrink-0 text-[11px] font-semibold leading-none text-white/65">
-                {quickCreateDraftDurationMinutes}m
-              </div>
+              <button
+                type="button"
+                aria-label="Choose duration"
+                aria-expanded={isQuickCreateDurationPickerOpen}
+                className={clsx(
+                  "h-8 shrink-0 rounded-full border px-2.5 text-[11px] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                  isQuickCreateDurationPickerOpen
+                    ? "border-white/24 bg-white/[0.14] text-white"
+                    : "border-white/10 bg-black/25 text-white/68 hover:bg-white/[0.08] hover:text-white"
+                )}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleQuickCreateDurationPicker();
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {formatDurationLabel(quickCreateDraftDurationMinutes)}
+              </button>
+              <button
+                type="button"
+                aria-label={`Cycle energy from ${quickCreateDraftEnergyLevel}`}
+                title={`Energy: ${quickCreateDraftEnergyLevel}`}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/25 text-white/80 transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  cycleQuickCreateEnergy();
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <FlameEmber
+                  level={quickCreateDraftEnergyLevel}
+                  size="xs"
+                  className="pointer-events-none"
+                />
+              </button>
             </div>
           </>,
           document.body
