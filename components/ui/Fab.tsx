@@ -17933,6 +17933,7 @@ export function Fab({
   const openQuickCreateTaskDetailsSheet = useCallback(
     (payload: ScheduleQuickCreateTaskDetailsPayload) => {
       void hapticPress();
+      blurActiveEditableElement();
       const startDate =
         typeof payload.startIso === "string"
           ? new Date(payload.startIso)
@@ -17967,7 +17968,9 @@ export function Fab({
       setDragDirection(null);
       setIsAnimatingPageChange(false);
       pageX.set(0);
+      unifiedSheetSuppressClickUntilRef.current = 0;
 
+      resetFabViewportState();
       resetTaskFormDraft();
       resetUnifiedEventDraft();
       setSaveError(null);
@@ -17977,8 +17980,19 @@ export function Fab({
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
       setUnifiedTimingPickerOpen(null);
+      setIsUnifiedTimingMonthYearPickerOpen(false);
+      setFabAdvancedTimingPickerOpen(null);
+      setShowTaskDurationPicker(false);
+      setTaskDurationPosition(null);
+      setShowDraftTaskDurationPicker(false);
+      setDraftTaskDurationPosition(null);
+      setShowHabitDurationPicker(false);
+      setHabitDurationPosition(null);
       setIsUnifiedNotesSheetOpen(false);
       setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsUnifiedTagCreateOpen(false);
+      setUnifiedTagCreateValue("");
       setIsAddEventMoreOpen(false);
       setIsUnifiedEventLocationSheetOpen(false);
       setIsUnifiedEventLinkSheetOpen(false);
@@ -17988,7 +18002,16 @@ export function Fab({
       setUnifiedGoalSearch("");
       setUnifiedGoalFilterMonumentId("");
       setUnifiedGoalSortMode("default");
+      setTaskProjectSearch("");
+      setTaskProjectFilterStage("");
+      setTaskProjectFilterPriority("");
+      setShowTaskProjectFilters(false);
+      setUnifiedProjectFilterGoalId("");
+      setUnifiedProjectFilterSkillId("");
+      setUnifiedProjectSortMode(unifiedProjectDefaultSortMode);
+      setSelectedTagIds([]);
       setAddEventSubActions([]);
+      setAddEventWorkspaceValue("PERSONAL");
       setAddEventTimingMode("manual");
       setAddEventDynamicDuration("60");
       setProjectTaskStack(null);
@@ -18028,7 +18051,13 @@ export function Fab({
       });
       setIsUnifiedEventSheetOpen(true);
     },
-    [pageX, resetTaskFormDraft, resetUnifiedEventDraft],
+    [
+      pageX,
+      resetFabViewportState,
+      resetTaskFormDraft,
+      resetUnifiedEventDraft,
+      unifiedProjectDefaultSortMode,
+    ],
   );
 
   useEffect(() => {
