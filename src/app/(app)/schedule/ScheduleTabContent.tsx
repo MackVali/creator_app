@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
@@ -302,6 +303,8 @@ const TIMELINE_PRACTICE_EVENT_BACKGROUND =
 const SCHEDULE_SCHEDULER_RUNNING_EVENT =
   "schedule:scheduler-running-changed";
 const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
+const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
+  "schedule:open-quick-create-task-details";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
@@ -1080,6 +1083,9 @@ function ScheduleMyListSheet({
   const [hiddenTaskRowIds, setHiddenTaskRowIds] = useState<Set<string>>(
     () => new Set()
   );
+  const compactMyListHeight = "min(58dvh, 28rem)";
+  const expandedMyListHeight =
+    "calc(100dvh - max(4.75rem, calc(env(safe-area-inset-top, 0px) + 3.75rem)))";
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchStartYRef = useRef<number | null>(null);
   const visibleTasks = useMemo(
@@ -1611,39 +1617,93 @@ function ScheduleMyListSheet({
         event.stopPropagation();
       }}
     >
-      <button
-        type="button"
-        aria-label={open ? "Close My List" : "Open My List"}
-        aria-expanded={open}
-        onClick={() => onOpenChange(!open)}
-        className={clsx(
-          "pointer-events-auto absolute left-1/2 top-0 flex -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
-          open
-            ? "h-6 w-16 -translate-y-[1.35rem]"
-            : "h-[1.95rem] w-[4.75rem] -translate-y-[calc(1.35rem+0.375rem)] flex-col gap-0.5 pb-1 pt-0.5"
-        )}
-      >
-        <ChevronUp
-          className={clsx(
-            "transition-transform duration-200",
-            open ? "h-4 w-4" : "h-3.5 w-3.5",
-            open && "rotate-180"
-          )}
-          strokeWidth={2.2}
-          aria-hidden="true"
-        />
-        {!open ? (
+      {!open ? (
+        <button
+          type="button"
+          aria-label="Open My List"
+          aria-expanded={open}
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenChange(true);
+          }}
+          className="pointer-events-auto absolute left-1/2 top-0 flex h-[1.95rem] w-[4.75rem] -translate-x-1/2 -translate-y-[calc(1.35rem+0.375rem)] flex-col items-center justify-center gap-0.5 rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 pb-1 pt-0.5 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+        >
+          <ChevronUp
+            className="h-3.5 w-3.5 transition-transform duration-200"
+            strokeWidth={2.2}
+            aria-hidden="true"
+          />
           <span className="text-[0.55rem] font-semibold leading-none tracking-[0.08em] text-white/58">
             My List
           </span>
-        ) : null}
-      </button>
+        </button>
+      ) : isExpanded ? (
+        <button
+          type="button"
+          aria-label="Close My List"
+          aria-expanded={open}
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsExpanded(false);
+            onOpenChange(false);
+          }}
+          className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+        >
+          <ChevronDown className="h-4 w-4" strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      ) : (
+        <div
+          role="group"
+          aria-label="My List size controls"
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center overflow-hidden rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/64 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl"
+        >
+          <button
+            type="button"
+            aria-label="Expand My List"
+            aria-expanded={isExpanded}
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsExpanded(true);
+            }}
+            className="pointer-events-auto flex h-full flex-1 items-center justify-center bg-transparent p-0 text-white/72 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+          >
+            <ChevronUp className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Close My List"
+            aria-expanded={open}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenChange(false);
+            }}
+            className="flex h-full flex-1 items-center justify-center bg-transparent p-0 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+          >
+            <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <motion.div
         aria-hidden={!open}
-        className="flex max-h-[min(58dvh,28rem)] flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
+        className="flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
         initial={false}
         animate={{
-          maxHeight: isExpanded ? "min(84dvh, 42rem)" : "min(58dvh, 28rem)",
+          height: isExpanded ? expandedMyListHeight : compactMyListHeight,
+          maxHeight: isExpanded ? expandedMyListHeight : compactMyListHeight,
         }}
         transition={
           prefersReducedMotion
@@ -1661,7 +1721,10 @@ function ScheduleMyListSheet({
           <button
             type="button"
             aria-label="Add My List to-do"
-            onClick={addManualRow}
+            onClick={(event) => {
+              event.stopPropagation();
+              addManualRow();
+            }}
             tabIndex={open ? 0 : -1}
             className="absolute right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center bg-transparent p-0 text-white/58 outline-none transition hover:text-white/90 focus-visible:ring-2 focus-visible:ring-white/35 sm:right-5"
           >
@@ -4811,6 +4874,9 @@ export default function ScheduleTabContent({
   const quickCreateKeyboardAccessoryRef = useRef<HTMLDivElement | null>(null);
   const quickCreateDraftInputRef = useRef<HTMLInputElement | null>(null);
   const quickCreateDraftCreatedAtRef = useRef<number | null>(null);
+  const quickCreatePendingVisibilityDraftIdRef = useRef<string | null>(null);
+  const quickCreateVisibilityFrameRef = useRef<number | null>(null);
+  const quickCreateVisibilityTimeoutRef = useRef<number | null>(null);
   const quickCreateDraftInputFocusedRef = useRef(false);
   const quickCreateDraftPointerInsideRef = useRef(false);
   const quickCreateLongPressTimerRef = useRef<number | null>(null);
@@ -10533,17 +10599,174 @@ export default function ScheduleTabContent({
     quickCreateSurfacePressRef.current = null;
   }, [clearQuickCreateLongPressTimer]);
 
-  const focusQuickCreateDraftInput = useCallback(() => {
-    if (typeof window === "undefined") return;
-    window.requestAnimationFrame(() => {
-      setQuickCreateDebugPhase("input focus attempted");
-      quickCreateDraftInputRef.current?.focus({ preventScroll: true });
-      quickCreateDraftInputRef.current?.select();
-      quickCreateDraftInputFocusedRef.current =
-        document.activeElement === quickCreateDraftInputRef.current;
-      setQuickCreateTitleFocused(quickCreateDraftInputFocusedRef.current);
+  const ensureQuickCreateDraftVisible = useCallback((draftId: string) => {
+    if (typeof window === "undefined") return false;
+    if (quickCreatePendingVisibilityDraftIdRef.current !== draftId) {
+      return false;
+    }
+    const draft = quickCreateDraftEventRef.current;
+    const card = quickCreateDraftCardRef.current;
+    const container = dayTimelineContainerRef.current;
+    if (!draft || draft.id !== draftId || !card || !container) {
+      return false;
+    }
+
+    const viewport = window.visualViewport;
+    const viewportTop = viewport ? viewport.offsetTop : 0;
+    const viewportBottom = viewport
+      ? viewport.offsetTop + viewport.height
+      : window.innerHeight;
+    if (!Number.isFinite(viewportBottom) || viewportBottom <= viewportTop) {
+      return false;
+    }
+
+    const margin = 14;
+    const containerRect = container.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    let usableTop = Math.max(containerRect.top, viewportTop, 0) + margin;
+    let usableBottom =
+      Math.min(containerRect.bottom, viewportBottom) - margin;
+
+    const accessoryElements = [
+      quickCreateKeyboardAccessoryRef.current,
+      quickCreateSkillPickerRef.current,
+      quickCreatePriorityPickerRef.current,
+      typeof document !== "undefined"
+        ? document.querySelector<HTMLElement>(
+            "[data-quick-create-duration-picker]"
+          )
+        : null,
+    ];
+    accessoryElements.forEach((element) => {
+      if (!element) return;
+      const style = window.getComputedStyle(element);
+      if (style.position !== "fixed") return;
+      const rect = element.getBoundingClientRect();
+      const overlapsViewport =
+        rect.bottom > viewportTop && rect.top < viewportBottom;
+      if (overlapsViewport && rect.top > usableTop) {
+        usableBottom = Math.min(usableBottom, rect.top - margin);
+      }
     });
-  }, [setQuickCreateDebugPhase]);
+
+    if (usableBottom <= usableTop) {
+      usableBottom =
+        viewportBottom - QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX - margin;
+      usableTop = Math.min(usableTop, usableBottom - margin);
+    }
+
+    let delta = 0;
+    if (cardRect.bottom > usableBottom) {
+      delta = cardRect.bottom - usableBottom;
+    } else if (cardRect.top < usableTop) {
+      delta = cardRect.top - usableTop;
+    }
+
+    if (Math.abs(delta) < 1) return false;
+
+    if (container.scrollHeight > container.clientHeight + 1) {
+      const maxScrollTop = Math.max(
+        0,
+        container.scrollHeight - container.clientHeight
+      );
+      const nextScrollTop = Math.min(
+        Math.max(container.scrollTop + delta, 0),
+        maxScrollTop
+      );
+      if (Math.abs(nextScrollTop - container.scrollTop) < 1) return false;
+      container.scrollTo({ top: nextScrollTop, behavior: "auto" });
+      return true;
+    }
+
+    const currentScrollY = window.scrollY ?? window.pageYOffset ?? 0;
+    const doc = document.documentElement;
+    const maxScrollY = Math.max(
+      0,
+      doc.scrollHeight - (viewport?.height ?? window.innerHeight)
+    );
+    const nextScrollY = Math.min(
+      Math.max(currentScrollY + delta, 0),
+      maxScrollY
+    );
+    if (Math.abs(nextScrollY - currentScrollY) < 1) return false;
+    window.scrollTo({ top: nextScrollY, behavior: "auto" });
+    return true;
+  }, []);
+
+  const scheduleQuickCreateDraftVisibilityCheck = useCallback(
+    (draftId: string) => {
+      if (typeof window === "undefined") return;
+      if (quickCreateVisibilityFrameRef.current !== null) {
+        window.cancelAnimationFrame(quickCreateVisibilityFrameRef.current);
+        quickCreateVisibilityFrameRef.current = null;
+      }
+      if (quickCreateVisibilityTimeoutRef.current !== null) {
+        window.clearTimeout(quickCreateVisibilityTimeoutRef.current);
+        quickCreateVisibilityTimeoutRef.current = null;
+      }
+
+      const maxAttempts = 5;
+      const runAttempt = (attempt: number) => {
+        if (quickCreatePendingVisibilityDraftIdRef.current !== draftId) return;
+        quickCreateVisibilityFrameRef.current = window.requestAnimationFrame(
+          () => {
+            quickCreateVisibilityFrameRef.current = null;
+            const didScroll = ensureQuickCreateDraftVisible(draftId);
+            if (
+              didScroll ||
+              attempt >= maxAttempts ||
+              quickCreatePendingVisibilityDraftIdRef.current !== draftId
+            ) {
+              quickCreatePendingVisibilityDraftIdRef.current = null;
+              return;
+            }
+            quickCreateVisibilityTimeoutRef.current = window.setTimeout(() => {
+              quickCreateVisibilityTimeoutRef.current = null;
+              runAttempt(attempt + 1);
+            }, 80);
+          }
+        );
+      };
+
+      runAttempt(1);
+    },
+    [ensureQuickCreateDraftVisible]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (
+        typeof window !== "undefined" &&
+        quickCreateVisibilityFrameRef.current !== null
+      ) {
+        window.cancelAnimationFrame(quickCreateVisibilityFrameRef.current);
+      }
+      if (
+        typeof window !== "undefined" &&
+        quickCreateVisibilityTimeoutRef.current !== null
+      ) {
+        window.clearTimeout(quickCreateVisibilityTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const focusQuickCreateDraftInput = useCallback(
+    (options?: { ensureVisibleDraftId?: string }) => {
+      if (typeof window === "undefined") return;
+      window.requestAnimationFrame(() => {
+        setQuickCreateDebugPhase("input focus attempted");
+        quickCreateDraftInputRef.current?.focus({ preventScroll: true });
+        quickCreateDraftInputRef.current?.select();
+        quickCreateDraftInputFocusedRef.current =
+          document.activeElement === quickCreateDraftInputRef.current;
+        setQuickCreateTitleFocused(quickCreateDraftInputFocusedRef.current);
+        if (options?.ensureVisibleDraftId) {
+          scheduleQuickCreateDraftVisibilityCheck(options.ensureVisibleDraftId);
+        }
+      });
+    },
+    [scheduleQuickCreateDraftVisibilityCheck, setQuickCreateDebugPhase]
+  );
 
   const isQuickCreateInteractionTarget = useCallback(
     (target: EventTarget | null) => {
@@ -10598,6 +10821,7 @@ export default function ScheduleTabContent({
     stopQuickCreateResizeAutoScroll();
     stopQuickCreateResizeTouchSuppression();
     quickCreateDraftCreatedAtRef.current = null;
+    quickCreatePendingVisibilityDraftIdRef.current = null;
     quickCreateDraftInputFocusedRef.current = false;
     quickCreateDraftPointerInsideRef.current = false;
     cancelQuickCreateSurfacePress();
@@ -10860,12 +11084,13 @@ export default function ScheduleTabContent({
         setQuickCreateDraftEvent(nextDraft);
         quickCreateDraftEventRef.current = nextDraft;
         quickCreateDraftCreatedAtRef.current = Date.now();
+        quickCreatePendingVisibilityDraftIdRef.current = id;
         quickCreateDraftInputFocusedRef.current = false;
         quickCreateSurfacePressRef.current = null;
         longPressTriggeredRef.current = true;
         setQuickCreateDebugPhase("draft set");
         void hapticLongPress();
-        focusQuickCreateDraftInput();
+        focusQuickCreateDraftInput({ ensureVisibleDraftId: id });
       }, QUICK_CREATE_EVENT_LONG_PRESS_MS);
     },
     [
@@ -11037,6 +11262,7 @@ export default function ScheduleTabContent({
       if (event.pointerType !== "mouse") {
         event.preventDefault();
       }
+      quickCreatePendingVisibilityDraftIdRef.current = null;
       const pointerMinute = getDayMinuteOffset(resolved, renderDayStart);
       quickCreateDragRef.current = {
         pointerId: event.pointerId,
@@ -11217,6 +11443,7 @@ export default function ScheduleTabContent({
         event.preventDefault();
       }
       quickCreateDraftPointerInsideRef.current = true;
+      quickCreatePendingVisibilityDraftIdRef.current = null;
       quickCreateDragRef.current = null;
       quickCreateIsResizingRef.current = true;
       quickCreateResizeLastClientYRef.current = event.clientY;
@@ -14957,6 +15184,48 @@ export default function ScheduleTabContent({
         : quickCreateSelectedPriority.label
       : quickCreatePriorityButtonSymbol
     : QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+  const openQuickCreateTaskDetails = useCallback(
+    (
+      event:
+        | ReactKeyboardEvent<HTMLButtonElement>
+        | ReactMouseEvent<HTMLButtonElement>
+        | ReactPointerEvent<HTMLButtonElement>
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const draft = quickCreateDraftEventRef.current;
+      if (!draft || typeof window === "undefined") return;
+
+      quickCreateDraftPointerInsideRef.current = true;
+      setIsQuickCreateSkillPickerOpen(false);
+      setIsQuickCreatePriorityPickerOpen(false);
+      setIsQuickCreateDurationPickerOpen(false);
+
+      const start = new Date(
+        renderDayStart.getTime() + draft.startMinute * 60_000
+      );
+      const end = new Date(renderDayStart.getTime() + draft.endMinute * 60_000);
+      const durationMin = Math.max(
+        QUICK_CREATE_EVENT_MIN_DURATION_MIN,
+        draft.endMinute - draft.startMinute
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT, {
+          detail: {
+            title: draft.title,
+            startIso: start.toISOString(),
+            endIso: end.toISOString(),
+            durationMin,
+            skillId: draft.skillId,
+            priority: draft.priorityId ?? "MEDIUM",
+            energy: draft.energyLevel ?? "MEDIUM",
+          },
+        })
+      );
+    },
+    [renderDayStart]
+  );
 
   const quickCreateKeyboardAccessory =
     quickCreateDraftEvent &&
@@ -15155,10 +15424,10 @@ export default function ScheduleTabContent({
                 aria-label={`Choose priority: ${quickCreatePriorityButtonLabel}`}
                 aria-expanded={isQuickCreatePriorityPickerOpen}
                 className={clsx(
-                  "flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full border px-2 text-[11px] font-black leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                  "-mx-1 flex h-10 min-w-10 shrink-0 items-center justify-center px-2 text-[11px] font-black leading-none transition focus-visible:outline-none",
                   isQuickCreatePriorityPickerOpen
-                    ? "border-white/24 bg-white/[0.14] text-white"
-                    : "border-white/10 bg-black/25 text-white/72 hover:bg-white/[0.08] hover:text-white"
+                    ? "text-white"
+                    : "text-white/72 hover:text-white"
                 )}
                 onPointerDown={(event) => {
                   event.preventDefault();
@@ -15180,7 +15449,20 @@ export default function ScheduleTabContent({
                   {quickCreatePriorityButtonText}
                 </span>
               </button>
-              <div className="min-w-0 flex-1 overflow-hidden">
+              <button
+                type="button"
+                aria-label="Open full task details"
+                className="-my-2 min-w-0 flex-1 overflow-hidden bg-transparent py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                onPointerDown={openQuickCreateTaskDetails}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  openQuickCreateTaskDetails(event);
+                }}
+              >
                 <div className="truncate text-sm font-semibold leading-tight text-white">
                   {quickCreateDraftEvent.title.trim() || "New Event"}
                 </div>
@@ -15189,16 +15471,16 @@ export default function ScheduleTabContent({
                     {quickCreateDraftEvent.skillName}
                   </div>
                 ) : null}
-              </div>
+              </button>
               <button
                 type="button"
                 aria-label="Choose duration"
                 aria-expanded={isQuickCreateDurationPickerOpen}
                 className={clsx(
-                  "h-8 shrink-0 rounded-full border px-2.5 text-[11px] font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                  "-mx-1 flex h-10 shrink-0 items-center px-2.5 text-[11px] font-semibold leading-none transition focus-visible:outline-none",
                   isQuickCreateDurationPickerOpen
-                    ? "border-white/24 bg-white/[0.14] text-white"
-                    : "border-white/10 bg-black/25 text-white/68 hover:bg-white/[0.08] hover:text-white"
+                    ? "text-white"
+                    : "text-white/68 hover:text-white"
                 )}
                 onPointerDown={(event) => {
                   event.preventDefault();
