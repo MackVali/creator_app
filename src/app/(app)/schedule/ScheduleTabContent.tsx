@@ -12317,8 +12317,8 @@ export default function ScheduleTabContent({
                           className={clsx(
                             "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm leading-none transition",
                             quickCreateDraftEvent.skillId
-                              ? "border-white/25 bg-white/[0.16] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_4px_10px_rgba(0,0,0,0.18)]"
-                              : "border-white/20 bg-black/20 text-white/90"
+                              ? "border-zinc-950/80 bg-white/[0.16] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_4px_10px_rgba(0,0,0,0.18)]"
+                              : "border-zinc-950/80 bg-black/20 text-white/90"
                           )}
                           aria-label={
                             quickCreateDraftEvent.skillName
@@ -14391,8 +14391,8 @@ export default function ScheduleTabContent({
                 className={clsx(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm leading-none transition",
                   quickCreateDraftEvent.skillId
-                    ? "border-white/25 bg-white/[0.12] text-white"
-                    : "border-white/15 bg-black/30 text-white/90"
+                    ? "border-zinc-950/80 bg-white/[0.12] text-white"
+                    : "border-zinc-950/80 bg-black/30 text-white/90"
                 )}
                 aria-label={
                   quickCreateDraftEvent.skillName

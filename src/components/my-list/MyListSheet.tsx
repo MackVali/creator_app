@@ -46,6 +46,11 @@ const QUICK_CREATE_PRIORITY_OPTIONS = PRIORITY_ORDER.map((priority) => ({
   symbol: QUICK_CREATE_PRIORITY_SYMBOLS[priority],
 }));
 const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
+const LIST_COMPACT_HEADER_ALLOWANCE = 40;
+const LIST_COMPACT_ROW_HEIGHT = 42;
+const LIST_COMPACT_NOTES_ALLOWANCE = 120;
+const LIST_COMPACT_BOTTOM_ALLOWANCE = 36;
+const LIST_COMPACT_EXPAND_THRESHOLD_RATIO = 0.88;
 
 function resolveQuickCreateMediumPriorityMetadata() {
   return (
@@ -158,6 +163,25 @@ export function MyListSheet({
     [hiddenTaskRowIds, tasks]
   );
   const hasListRows = visibleTasks.length > 0 || manualRows.length > 0;
+  const visibleListRowCount = visibleTasks.length + manualRows.length;
+  const listContentHeight =
+    LIST_COMPACT_HEADER_ALLOWANCE +
+    visibleListRowCount * LIST_COMPACT_ROW_HEIGHT +
+    LIST_COMPACT_NOTES_ALLOWANCE +
+    LIST_COMPACT_BOTTOM_ALLOWANCE;
+  const listCompactHeight = Math.min(
+    Math.max(myListSheetHeights.compact, listContentHeight),
+    myListSheetHeights.expanded
+  );
+  const shouldExpandListOnOpen =
+    listContentHeight >= myListSheetHeights.expanded ||
+    listContentHeight >=
+      myListSheetHeights.expanded * LIST_COMPACT_EXPAND_THRESHOLD_RATIO;
+  const compactSheetHeight =
+    activeView === "list" ? listCompactHeight : myListSheetHeights.compact;
+  const currentSheetHeight = isExpanded
+    ? myListSheetHeights.expanded
+    : compactSheetHeight;
   const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
@@ -707,6 +731,12 @@ export function MyListSheet({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (open && activeView === "list" && shouldExpandListOnOpen) {
+      setIsExpanded(true);
+    }
+  }, [activeView, open, shouldExpandListOnOpen]);
+
   return (
     <motion.aside
       aria-label="My List"
@@ -746,6 +776,7 @@ export function MyListSheet({
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
+            if (shouldExpandListOnOpen) setIsExpanded(true);
             onOpenChange(true);
           }}
           className="pointer-events-auto absolute left-1/2 top-0 flex h-[1.95rem] w-[4.75rem] -translate-x-1/2 -translate-y-[calc(1.35rem+0.375rem)] flex-col items-center justify-center gap-0.5 rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 pb-1 pt-0.5 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
@@ -821,12 +852,8 @@ export function MyListSheet({
         className="flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
         initial={false}
         animate={{
-          height: isExpanded
-            ? myListSheetHeights.expanded
-            : myListSheetHeights.compact,
-          maxHeight: isExpanded
-            ? myListSheetHeights.expanded
-            : myListSheetHeights.compact,
+          height: currentSheetHeight,
+          maxHeight: currentSheetHeight,
         }}
         transition={
           prefersReducedMotion
@@ -858,9 +885,14 @@ export function MyListSheet({
               setActiveSkillPickerRowKey(null);
               setActivePriorityPickerRowKey(null);
               setPendingDeleteRowId(null);
-              setActiveView((currentView) =>
-                currentView === "list" ? "matrix" : "list"
-              );
+              if (activeView === "list") {
+                onOpenChange(true);
+                setIsExpanded(true);
+                setActiveView("matrix");
+                return;
+              }
+
+              setActiveView("list");
             }}
             tabIndex={open ? 0 : -1}
             className="absolute left-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg border border-white/[0.08] bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35 sm:left-5"
