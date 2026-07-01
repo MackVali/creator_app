@@ -2016,6 +2016,8 @@ type OverlayPlacement = {
 
 type FabSupabaseClient = NonNullable<ReturnType<typeof getSupabaseBrowser>>;
 type ExactScheduleSourceType = "PROJECT" | "TASK";
+type UnifiedEventKind = "APPOINTMENT" | "MEETING" | "REMINDER" | "EVENT";
+const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
 type ParsedExactSchedule = {
   startIso: string;
   endIso: string;
@@ -2092,6 +2094,23 @@ const buildFabLocalDateTime = (dateValue: string, timeValue: string) => {
     0,
   );
   return parsedDate;
+};
+
+const getUnifiedEventKind = ({
+  hasAssignedBookedContext,
+  hasEventVideo,
+  isEventDateMarkerStyle,
+  blocksTime,
+}: {
+  hasAssignedBookedContext: boolean;
+  hasEventVideo: boolean;
+  isEventDateMarkerStyle: boolean;
+  blocksTime: string;
+}): UnifiedEventKind => {
+  if (hasAssignedBookedContext) return "APPOINTMENT";
+  if (hasEventVideo) return "MEETING";
+  if (blocksTime === "FREE" || isEventDateMarkerStyle) return "REMINDER";
+  return "EVENT";
 };
 
 const resolveAddEventEffectiveEndTiming = ({
@@ -3862,6 +3881,17 @@ export function Fab({
     setUnifiedEventRecurrence("__never__");
     setIsUnifiedEventRecurrencePickerOpen(false);
   }, []);
+  const resetUnifiedEventDraft = useCallback(() => {
+    setUnifiedEventTitle("");
+    setUnifiedEventDescription("");
+    setUnifiedEventLocationName("");
+    setUnifiedEventLocationAddress("");
+    setUnifiedEventVirtualUrl("");
+    setUnifiedEventMeetingProvider("URL");
+    setUnifiedEventAllDay(false);
+    setUnifiedEventEndDate("");
+    resetUnifiedEventInviteDraft();
+  }, [resetUnifiedEventInviteDraft]);
   useLayoutEffect(() => {
     const trigger = isUnifiedEventRecurrencePickerOpen
       ? unifiedEventRecurrenceTriggerRef.current
@@ -20165,6 +20195,202 @@ export function Fab({
     return null;
   };
 
+  const saveUnifiedEvent = useCallback(async () => {
+    if (fabSavePendingRef.current || isSavingFab) return;
+
+    const setEventSaveError = (message: string) => {
+      void hapticErrorPattern();
+      setSaveError(message);
+      toast.error(message);
+    };
+
+    const title = unifiedEventTitle.trim();
+    if (!title) {
+      setEventSaveError("Please enter an event title.");
+      return;
+    }
+
+    const startDateValue = taskExactDate.trim();
+    if (!startDateValue) {
+      setEventSaveError("Select a start date before saving.");
+      return;
+    }
+
+    const parsedStartDate = parseDateInputValueLocal(startDateValue);
+    if (!parsedStartDate) {
+      setEventSaveError("Select a valid start date before saving.");
+      return;
+    }
+
+    const explicitEndDateValue = unifiedEventEndDate.trim();
+    const endDateValue = explicitEndDateValue || startDateValue;
+    const parsedEndDate = parseDateInputValueLocal(endDateValue);
+    if (!parsedEndDate) {
+      setEventSaveError("Select a valid end date before saving.");
+      return;
+    }
+
+    let startAt: string;
+    let endAt: string;
+    let startDateForRow: string | null = null;
+    let endDateForRow: string | null = null;
+
+    if (unifiedEventAllDay) {
+      const allDayStart = new Date(parsedStartDate);
+      allDayStart.setHours(0, 0, 0, 0);
+      const allDayEnd = new Date(parsedEndDate);
+      allDayEnd.setHours(0, 0, 0, 0);
+      allDayEnd.setDate(allDayEnd.getDate() + 1);
+
+      startAt = allDayStart.toISOString();
+      endAt = allDayEnd.toISOString();
+      startDateForRow = startDateValue;
+      endDateForRow = endDateValue;
+    } else {
+      const startTimeValue = taskExactStartTime.trim();
+      const endTimeValue = taskExactEndTime.trim();
+      if (!startTimeValue || !endTimeValue) {
+        setEventSaveError("Select start and end times before saving.");
+        return;
+      }
+
+      const startDateTime = buildFabLocalDateTime(
+        startDateValue,
+        startTimeValue,
+      );
+      const endDateTime = buildFabLocalDateTime(endDateValue, endTimeValue);
+      if (!startDateTime || !endDateTime) {
+        setEventSaveError("Enter valid event schedule values.");
+        return;
+      }
+
+      startAt = startDateTime.toISOString();
+      endAt = endDateTime.toISOString();
+    }
+
+    if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+      setEventSaveError("End time must be after start time.");
+      return;
+    }
+
+    const blocksTime: UnifiedEventDraftBlocksTime =
+      unifiedEventBlocksTime === "BLOCKS" || unifiedEventBlocksTime === "FREE"
+        ? unifiedEventBlocksTime
+        : "DEFAULT";
+    const notes = unifiedEventDescription.trim() || null;
+    const locationName = unifiedEventLocationName.trim() || null;
+    const meetingUrl = unifiedEventVirtualUrl.trim() || null;
+    const hasEventVideo =
+      Boolean(meetingUrl) || unifiedEventMeetingProvider === "CREATOR_VIDEO";
+    const hasEventPeople = unifiedEventSelectedInvitees.length > 0;
+    const hasEventLocation = Boolean(locationName);
+    const hasAssignedBookedContext = false;
+    const isEventDateMarkerStyle =
+      unifiedEventAllDay &&
+      !hasEventLocation &&
+      !hasEventVideo &&
+      !hasEventPeople;
+    const kind = getUnifiedEventKind({
+      hasAssignedBookedContext,
+      hasEventVideo,
+      isEventDateMarkerStyle,
+      blocksTime,
+    });
+    const recurrence =
+      unifiedEventRecurrence === "__never__" ||
+      unifiedEventRecurrence.toLowerCase() === "never"
+        ? "NONE"
+        : unifiedEventRecurrence;
+    fabSavePendingRef.current = true;
+    setIsSavingFab(true);
+    setSaveError(null);
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setEventSaveError("Supabase client not available.");
+        return;
+      }
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) {
+        setEventSaveError("Unable to resolve user.");
+        return;
+      }
+      if (!user) {
+        setEventSaveError("You need to be signed in to save.");
+        return;
+      }
+
+      const payload: Database["public"]["Tables"]["events"]["Insert"] = {
+        user_id: user.id,
+        title,
+        notes,
+        kind,
+        all_day: unifiedEventAllDay,
+        start_at: startAt,
+        end_at: endAt,
+        timezone: getBrowserTimeZone(),
+        start_date: startDateForRow,
+        end_date: endDateForRow,
+        recurrence,
+        location_name: locationName,
+        location_address: null,
+        meeting_provider: hasEventVideo ? unifiedEventMeetingProvider : null,
+        meeting_url: meetingUrl,
+        blocks_time: blocksTime,
+        visibility: "PRIVATE",
+        notification_timing: unifiedEventNotificationTiming || "NONE",
+      };
+
+      const { error } = await supabase.from("events").insert(payload);
+      if (error) throw error;
+
+      if (
+        !unifiedEventAllDay &&
+        (kind === "EVENT" || kind === "MEETING" || kind === "APPOINTMENT") &&
+        typeof window !== "undefined"
+      ) {
+        window.dispatchEvent(new CustomEvent(SCHEDULE_SAVED_EVENTS_UPDATED_EVENT));
+      }
+
+      resetUnifiedEventDraft();
+      closeUnifiedEventSheet();
+      void hapticComplete();
+      toast.success(`${kind.charAt(0)}${kind.slice(1).toLowerCase()} created`);
+    } catch (error: unknown) {
+      console.error("Failed to save event", error);
+      const errorMessage =
+        (error as { message?: string })?.message ||
+        (error as { error?: { message?: string } })?.error?.message ||
+        "Unable to save event right now.";
+      setEventSaveError(errorMessage);
+    } finally {
+      setIsSavingFab(false);
+      fabSavePendingRef.current = false;
+    }
+  }, [
+    closeUnifiedEventSheet,
+    isSavingFab,
+    resetUnifiedEventDraft,
+    taskExactDate,
+    taskExactEndTime,
+    taskExactStartTime,
+    toast,
+    unifiedEventAllDay,
+    unifiedEventBlocksTime,
+    unifiedEventDescription,
+    unifiedEventEndDate,
+    unifiedEventLocationName,
+    unifiedEventMeetingProvider,
+    unifiedEventNotificationTiming,
+    unifiedEventRecurrence,
+    unifiedEventSelectedInvitees.length,
+    unifiedEventTitle,
+    unifiedEventVirtualUrl,
+  ]);
+
   const handleFabSave = useCallback(async () => {
     const saveSelected = isUnifiedEventSheetOpen
       ? resolvedUnifiedAddEventSaveSelected
@@ -21877,10 +22103,7 @@ export function Fab({
     }
 
     if (unifiedCreationMode === "EVENTS") {
-      const reason = "Event saving is not wired yet.";
-      void hapticErrorPattern();
-      setSaveError(reason);
-      toast.error(reason);
+      void saveUnifiedEvent();
       return;
     }
 
@@ -23917,13 +24140,13 @@ export function Fab({
       !hasEventLocation &&
       !hasEventVideo &&
       !hasEventPeople;
-    const inferredUnifiedEventSubmitLabel = hasAssignedBookedContext
-      ? "add APPOINTMENT"
-      : hasEventVideo
-        ? "add MEETING"
-        : unifiedEventBlocksTime === "FREE" || isEventDateMarkerStyle
-          ? "add REMINDER"
-          : "add EVENT";
+    const inferredUnifiedEventKind = getUnifiedEventKind({
+      hasAssignedBookedContext,
+      hasEventVideo,
+      isEventDateMarkerStyle,
+      blocksTime: unifiedEventBlocksTime,
+    });
+    const inferredUnifiedEventSubmitLabel = `add ${inferredUnifiedEventKind}`;
     const unifiedSubmitLabel = isEventsMode
       ? inferredUnifiedEventSubmitLabel
       : `add ${addEventSourceTypeLabel.toUpperCase()}`;

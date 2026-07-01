@@ -26,7 +26,7 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { Lock } from "lucide-react";
+import { ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -241,6 +241,7 @@ const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const QUICK_CREATE_EVENT_LONG_PRESS_MS = 650;
 const QUICK_CREATE_EVENT_DURATION_MIN = 30;
+const QUICK_CREATE_EVENT_MIN_DURATION_MIN = 15;
 const QUICK_CREATE_EVENT_MOVE_CANCEL_PX = 28;
 const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
 const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
@@ -282,6 +283,7 @@ const TIMELINE_PRACTICE_EVENT_BACKGROUND =
   "radial-gradient(circle at 6% -14%, rgba(79, 70, 229, 0.22), transparent 60%), linear-gradient(142deg, rgb(8, 9, 20) 0%, rgb(24, 27, 51) 46%, rgb(34, 38, 70) 100%)";
 const SCHEDULE_SCHEDULER_RUNNING_EVENT =
   "schedule:scheduler-running-changed";
+const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
@@ -502,6 +504,8 @@ type QuickCreateSurfacePress = {
   surface: HTMLElement;
   startMinute: number;
 };
+
+type QuickCreateResizeMode = "start" | "end";
 
 function normalizeManualPlacementSourceType(
   value: unknown
@@ -733,6 +737,29 @@ type CommandBlockRecord = {
   circle_icon_emoji: string | null;
 };
 
+type SavedScheduleEventKind = "EVENT" | "MEETING" | "APPOINTMENT";
+
+type SavedScheduleEvent = {
+  id: string;
+  title: string;
+  kind: SavedScheduleEventKind;
+  start: Date;
+  end: Date;
+  locationName: string | null;
+  meetingUrl: string | null;
+};
+
+type SavedScheduleEventRow = {
+  id: string;
+  title: string | null;
+  kind: string | null;
+  all_day: boolean | null;
+  start_at: string | null;
+  end_at: string | null;
+  location_name: string | null;
+  meeting_url: string | null;
+};
+
 type OverlayWindowSegment = {
   id: string;
   source: "overlay_window" | "command_block";
@@ -782,6 +809,41 @@ const subtractOverlayRangesFromWindow = (
   }
   return result;
 };
+
+function normalizeSavedScheduleEventKind(
+  kind: string | null | undefined
+): SavedScheduleEventKind | null {
+  const normalized = kind?.trim().toUpperCase();
+  if (
+    normalized === "EVENT" ||
+    normalized === "MEETING" ||
+    normalized === "APPOINTMENT"
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function buildSavedScheduleEvent(row: SavedScheduleEventRow) {
+  if (row.all_day === true) return null;
+  const kind = normalizeSavedScheduleEventKind(row.kind);
+  if (!kind) return null;
+  if (!row.start_at || !row.end_at) return null;
+  const start = new Date(row.start_at);
+  const end = new Date(row.end_at);
+  if (!isValidDate(start) || !isValidDate(end)) return null;
+  if (end.getTime() <= start.getTime()) return null;
+
+  return {
+    id: row.id,
+    title: row.title?.trim() || "Untitled Event",
+    kind,
+    start,
+    end,
+    locationName: row.location_name?.trim() || null,
+    meetingUrl: row.meeting_url?.trim() || null,
+  } satisfies SavedScheduleEvent;
+}
 
 const getScheduleInstanceLayoutId = (instanceId: string) =>
   `schedule-instance-${instanceId}`;
@@ -913,6 +975,133 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
     >
       {children}
     </motion.div>
+  );
+}
+
+type MyListItem = {
+  id: string;
+  label: string;
+  done: boolean;
+};
+
+const MY_LIST_INITIAL_ITEMS: MyListItem[] = [
+  { id: "prep", label: "Review today's priorities", done: false },
+  { id: "follow-up", label: "Send one follow-up", done: false },
+  { id: "reset", label: "Reset workspace before shutdown", done: false },
+];
+
+function ScheduleMyListSheet({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const prefersReducedMotion = useReducedMotion();
+  const [items, setItems] = useState<MyListItem[]>(MY_LIST_INITIAL_ITEMS);
+  const [note, setNote] = useState("");
+
+  const toggleItem = useCallback((itemId: string) => {
+    setItems((currentItems) =>
+      currentItems.map((item) =>
+        item.id === itemId ? { ...item, done: !item.done } : item
+      )
+    );
+  }, []);
+
+  return (
+    <motion.aside
+      aria-label="My List"
+      data-no-tab-swipe
+      data-schedule-my-list-sheet
+      className={clsx(
+        "fixed inset-x-0 bottom-0 z-[150] mx-auto w-full max-w-[34rem] px-2 sm:px-4",
+        open ? "pointer-events-auto" : "pointer-events-none"
+      )}
+      initial={false}
+      animate={{ y: open ? 0 : "calc(100% - 2px)" }}
+      transition={
+        prefersReducedMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 245, damping: 30, mass: 0.9 }
+      }
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+      }}
+      onTouchMove={(event) => {
+        if (open) event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <button
+        type="button"
+        aria-label={open ? "Close My List" : "Open My List"}
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+        className="pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 -translate-y-[1.35rem] items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+      >
+        <ChevronUp
+          className={clsx(
+            "h-4 w-4 transition-transform duration-200",
+            open && "rotate-180"
+          )}
+          strokeWidth={2.2}
+          aria-hidden="true"
+        />
+      </button>
+      <div
+        aria-hidden={!open}
+        className="max-h-[min(58dvh,28rem)] overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
+        style={{
+          paddingBottom: "calc(0.8rem + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <div className="border-b border-white/[0.07] bg-black/[0.18] px-4 pb-1.5 pt-1.5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.025)] sm:px-5">
+          <div className="mx-auto mb-1 h-0.5 w-8 rounded-full bg-white/16" />
+          <h2 className="text-center text-[0.72rem] font-semibold leading-none tracking-[0.08em] text-white/90">
+            My List
+          </h2>
+        </div>
+        <div className="space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 [-webkit-overflow-scrolling:touch] sm:px-5">
+          <div className="space-y-1.5">
+            {items.map((item) => (
+              <label
+                key={item.id}
+                className="flex min-h-9 items-center gap-2.5 rounded-xl border border-white/[0.075] bg-white/[0.035] px-3 py-2 text-sm text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-colors hover:bg-white/[0.05]"
+              >
+                <input
+                  type="checkbox"
+                  checked={item.done}
+                  onChange={() => toggleItem(item.id)}
+                  tabIndex={open ? 0 : -1}
+                  className="h-4 w-4 shrink-0 accent-zinc-200"
+                />
+                <span
+                  className={clsx(
+                    "min-w-0 leading-snug transition",
+                    item.done && "text-white/42 line-through"
+                  )}
+                >
+                  {item.label}
+                </span>
+              </label>
+            ))}
+          </div>
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Loose notes..."
+            tabIndex={open ? 0 : -1}
+            className="min-h-24 w-full resize-none rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2.5 text-sm leading-relaxed text-white/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] outline-none placeholder:text-white/30 focus:border-white/20 focus:bg-black/34 focus:ring-2 focus:ring-white/[0.08]"
+          />
+        </div>
+      </div>
+    </motion.aside>
   );
 }
 
@@ -1458,6 +1647,7 @@ type DayTimelineModel = {
   startHour: number;
   pxPerMin: number;
   windows: RepoWindow[];
+  savedEvents: SavedScheduleEvent[];
   projectInstances: ReturnType<typeof computeProjectInstances>;
   taskInstancesByProject: Record<string, TaskInstanceInfo[]>;
   tasksByProjectId: Record<string, TaskLite[]>;
@@ -2913,6 +3103,7 @@ function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
 function buildDayTimelineModel({
   date,
   windows,
+  savedEvents,
   instances,
   projectMap,
   taskMap,
@@ -2931,6 +3122,7 @@ function buildDayTimelineModel({
 }: {
   date: Date;
   windows: RepoWindow[];
+  savedEvents: SavedScheduleEvent[];
   instances: ScheduleInstance[];
   projectMap: Record<string, ProjectItem>;
   taskMap: Record<string, TaskLite>;
@@ -3010,6 +3202,7 @@ function buildDayTimelineModel({
     startHour,
     pxPerMin,
     windows,
+    savedEvents,
     projectInstances,
     taskInstancesByProject,
     tasksByProjectId,
@@ -3719,6 +3912,7 @@ export default function ScheduleTabContent({
   const [overlayWindows, setOverlayWindows] =
     useState<OverlayWindowRecord[]>([]);
   const [commandBlocks, setCommandBlocks] = useState<CommandBlockRecord[]>([]);
+  const [savedEvents, setSavedEvents] = useState<SavedScheduleEvent[]>([]);
   const [manualPlacementSession, setManualPlacementSession] = useState<{
     candidate: ManualPlacementCandidate;
     pointerId: number | null;
@@ -3730,12 +3924,17 @@ export default function ScheduleTabContent({
   const manualPlacementPointerIdRef = useRef<number | null>(null);
   const [quickCreateDraftEvent, setQuickCreateDraftEvent] =
     useState<QuickCreateDraftEvent | null>(null);
+  const [quickCreateTitleFocused, setQuickCreateTitleFocused] =
+    useState(false);
   const [isQuickCreateSkillPickerOpen, setIsQuickCreateSkillPickerOpen] =
     useState(false);
+  const [quickCreateSkillPickerAnchor, setQuickCreateSkillPickerAnchor] =
+    useState<"card" | "accessory">("card");
   const [quickCreateSkillSearch, setQuickCreateSkillSearch] = useState("");
   const quickCreateDraftEventRef = useRef<QuickCreateDraftEvent | null>(null);
   const quickCreateDraftCardRef = useRef<HTMLDivElement | null>(null);
   const quickCreateSkillPickerRef = useRef<HTMLDivElement | null>(null);
+  const quickCreateKeyboardAccessoryRef = useRef<HTMLDivElement | null>(null);
   const quickCreateDraftInputRef = useRef<HTMLInputElement | null>(null);
   const quickCreateDraftCreatedAtRef = useRef<number | null>(null);
   const quickCreateDraftInputFocusedRef = useRef(false);
@@ -3747,6 +3946,14 @@ export default function ScheduleTabContent({
   const quickCreateDragRef = useRef<{
     pointerId: number;
     minuteOffset: number;
+  } | null>(null);
+  const [, setQuickCreateResizeMode] =
+    useState<QuickCreateResizeMode | null>(null);
+  const quickCreateResizeSessionRef = useRef<{
+    pointerId: number;
+    mode: QuickCreateResizeMode;
+    fixedStartMinute: number;
+    fixedEndMinute: number;
   } | null>(null);
   const updateManualPlacementSession = useCallback(
     (
@@ -3921,6 +4128,7 @@ export default function ScheduleTabContent({
   const [jumpToDateSnapshot, setJumpToDateSnapshot] =
     useState<JumpToDateSnapshot | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMyListOpen, setIsMyListOpen] = useState(false);
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null);
   const [editingInstance, setEditingInstance] =
     useState<ScheduleInstance | null>(null);
@@ -4081,6 +4289,7 @@ export default function ScheduleTabContent({
     setProjectGoalRelations({});
     setHabits([]);
     setSyncPairings({});
+    setSavedEvents([]);
     setScheduledProjectIds(new Set());
     setPendingInstanceStatuses(new Map());
     setPendingBacklogTaskIds(new Set());
@@ -4709,8 +4918,12 @@ export default function ScheduleTabContent({
   }, []);
   const loadReqIdRef = useRef(0);
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {});
+  const loadSavedEventsRef = useRef<() => Promise<void>>(async () => {});
   const refreshScheduleData = useCallback(async () => {
-    await loadInstancesRef.current();
+    await Promise.all([
+      loadInstancesRef.current(),
+      loadSavedEventsRef.current(),
+    ]);
   }, []);
 
   const snapToFiveMinuteGrid = useCallback((date: Date) => {
@@ -5412,6 +5625,80 @@ export default function ScheduleTabContent({
       );
     };
   }, [userId, currentDate, effectiveTimeZone]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!userId) {
+      setSavedEvents([]);
+      return;
+    }
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setSavedEvents([]);
+      return;
+    }
+
+    const dayStartIso = renderDayStart.toISOString();
+    const dayEndIso = renderDayEnd.toISOString();
+    let active = true;
+
+    async function fetchSavedEvents() {
+      try {
+        const { data, error } = await supabase
+          .from("events")
+          .select(
+            "id,title,kind,all_day,start_at,end_at,location_name,meeting_url"
+          )
+          .eq("user_id", userId)
+          .lt("start_at", dayEndIso)
+          .gt("end_at", dayStartIso)
+          .eq("all_day", false)
+          .neq("kind", "REMINDER")
+          .order("start_at", { ascending: true });
+        if (!active) return;
+        if (error) {
+          console.error("Failed to load Events for Schedule", error);
+          setSavedEvents([]);
+          return;
+        }
+        const events = ((data ?? []) as SavedScheduleEventRow[])
+          .map(buildSavedScheduleEvent)
+          .filter(
+            (event): event is SavedScheduleEvent => event !== null
+          );
+        setSavedEvents(events);
+      } catch (fetchError) {
+        if (!active) return;
+        console.error("Failed to load Events for Schedule", fetchError);
+        setSavedEvents([]);
+      }
+    }
+
+    loadSavedEventsRef.current = fetchSavedEvents;
+    void fetchSavedEvents();
+
+    return () => {
+      active = false;
+      if (loadSavedEventsRef.current === fetchSavedEvents) {
+        loadSavedEventsRef.current = async () => {};
+      }
+    };
+  }, [userId, renderDayStart, renderDayEnd]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refreshHandler = () => {
+      void refreshScheduleData();
+    };
+    window.addEventListener(SCHEDULE_SAVED_EVENTS_UPDATED_EVENT, refreshHandler);
+    return () => {
+      window.removeEventListener(
+        SCHEDULE_SAVED_EVENTS_UPDATED_EVENT,
+        refreshHandler
+      );
+    };
+  }, [refreshScheduleData]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -6417,6 +6704,7 @@ export default function ScheduleTabContent({
         const model = buildDayTimelineModel({
           date,
           windows: dayWindows,
+          savedEvents: [],
           instances: instancesForDay,
           projectMap,
           taskMap,
@@ -9003,6 +9291,7 @@ export default function ScheduleTabContent({
     return buildDayTimelineModel({
       date: currentDate,
       windows,
+      savedEvents,
       instances: visibleInstances,
       projectMap,
       taskMap,
@@ -9022,6 +9311,7 @@ export default function ScheduleTabContent({
   }, [
     currentDate,
     windows,
+    savedEvents,
     visibleInstances,
     projectMap,
     taskMap,
@@ -9183,27 +9473,34 @@ export default function ScheduleTabContent({
       quickCreateDraftInputRef.current?.select();
       quickCreateDraftInputFocusedRef.current =
         document.activeElement === quickCreateDraftInputRef.current;
+      setQuickCreateTitleFocused(quickCreateDraftInputFocusedRef.current);
     });
   }, [setQuickCreateDebugPhase]);
 
   const isQuickCreateDraftInteractionInside = useCallback(() => {
     const card = quickCreateDraftCardRef.current;
     const picker = quickCreateSkillPickerRef.current;
+    const accessory = quickCreateKeyboardAccessoryRef.current;
     const activeElement = document.activeElement;
     return (
       (activeElement instanceof Node &&
         ((!!card && card.contains(activeElement)) ||
-          (!!picker && picker.contains(activeElement)))) ||
+          (!!picker && picker.contains(activeElement)) ||
+          (!!accessory && accessory.contains(activeElement)))) ||
       quickCreateDraftPointerInsideRef.current
     );
   }, []);
 
   const cancelQuickCreateDraft = useCallback(() => {
     setQuickCreateDraftEvent(null);
+    setQuickCreateTitleFocused(false);
     setIsQuickCreateSkillPickerOpen(false);
+    setQuickCreateSkillPickerAnchor("card");
     setQuickCreateSkillSearch("");
     quickCreateDraftEventRef.current = null;
     quickCreateDragRef.current = null;
+    quickCreateResizeSessionRef.current = null;
+    setQuickCreateResizeMode(null);
     quickCreateDraftCreatedAtRef.current = null;
     quickCreateDraftInputFocusedRef.current = false;
     quickCreateDraftPointerInsideRef.current = false;
@@ -9563,13 +9860,17 @@ export default function ScheduleTabContent({
       if (!drag || !draft) return;
       const resolved = resolveManualPlacementTime(clientY);
       if (!resolved) return;
+      const durationMinutes = Math.max(
+        QUICK_CREATE_EVENT_MIN_DURATION_MIN,
+        draft.endMinute - draft.startMinute
+      );
       const pointerMinute = getDayMinuteOffset(resolved, renderDayStart);
       const rawStartMinute = pointerMinute - drag.minuteOffset;
       const rawStartDate = new Date(
         renderDayStart.getTime() + rawStartMinute * 60_000
       );
       const snappedStart = snapToFiveMinuteGrid(rawStartDate);
-      const maxStartMinute = 24 * 60 - QUICK_CREATE_EVENT_DURATION_MIN;
+      const maxStartMinute = 24 * 60 - durationMinutes;
       const nextStartMinute = Math.min(
         Math.max(Math.round(getDayMinuteOffset(snappedStart, renderDayStart)), 0),
         maxStartMinute
@@ -9577,12 +9878,106 @@ export default function ScheduleTabContent({
       const nextDraft = {
         ...draft,
         startMinute: nextStartMinute,
-        endMinute: nextStartMinute + QUICK_CREATE_EVENT_DURATION_MIN,
+        endMinute: nextStartMinute + durationMinutes,
       };
       setQuickCreateDraftEvent(nextDraft);
       quickCreateDraftEventRef.current = nextDraft;
     },
     [renderDayStart, resolveManualPlacementTime, snapToFiveMinuteGrid]
+  );
+
+  const updateQuickCreateResizeFromPointer = useCallback(
+    (clientY: number) => {
+      const session = quickCreateResizeSessionRef.current;
+      const draft = quickCreateDraftEventRef.current;
+      if (!session || !draft) return;
+      const resolved = resolveManualPlacementTime(clientY);
+      if (!resolved) return;
+      const snapped = snapToFiveMinuteGrid(resolved);
+      const snappedMinute = Math.round(
+        getDayMinuteOffset(snapped, renderDayStart)
+      );
+      const dayStartMinute = 0;
+      const dayEndMinute = 24 * 60;
+      const nextDraft =
+        session.mode === "start"
+          ? {
+              ...draft,
+              startMinute: Math.min(
+                Math.max(snappedMinute, dayStartMinute),
+                session.fixedEndMinute - QUICK_CREATE_EVENT_MIN_DURATION_MIN
+              ),
+              endMinute: session.fixedEndMinute,
+            }
+          : {
+              ...draft,
+              startMinute: session.fixedStartMinute,
+              endMinute: Math.max(
+                Math.min(snappedMinute, dayEndMinute),
+                session.fixedStartMinute + QUICK_CREATE_EVENT_MIN_DURATION_MIN
+              ),
+            };
+      setQuickCreateDraftEvent(nextDraft);
+      quickCreateDraftEventRef.current = nextDraft;
+    },
+    [renderDayStart, resolveManualPlacementTime, snapToFiveMinuteGrid]
+  );
+
+  const handleQuickCreateResizePointerDown = useCallback(
+    (
+      mode: QuickCreateResizeMode,
+      event: ReactPointerEvent<HTMLButtonElement>
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const draft = quickCreateDraftEventRef.current;
+      if (!draft) return;
+      event.preventDefault();
+      event.stopPropagation();
+      quickCreateDraftPointerInsideRef.current = true;
+      quickCreateDragRef.current = null;
+      quickCreateResizeSessionRef.current = {
+        pointerId: event.pointerId,
+        mode,
+        fixedStartMinute: draft.startMinute,
+        fixedEndMinute: draft.endMinute,
+      };
+      setQuickCreateResizeMode(mode);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {}
+    },
+    []
+  );
+
+  const handleQuickCreateResizePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const session = quickCreateResizeSessionRef.current;
+      if (!session || session.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      quickCreateDraftPointerInsideRef.current = true;
+      updateQuickCreateResizeFromPointer(event.clientY);
+    },
+    [updateQuickCreateResizeFromPointer]
+  );
+
+  const handleQuickCreateResizePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const session = quickCreateResizeSessionRef.current;
+      if (session?.pointerId === event.pointerId) {
+        event.preventDefault();
+        event.stopPropagation();
+        quickCreateDraftPointerInsideRef.current = true;
+        updateQuickCreateResizeFromPointer(event.clientY);
+        quickCreateResizeSessionRef.current = null;
+        setQuickCreateResizeMode(null);
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {}
+      focusQuickCreateDraftInput();
+    },
+    [focusQuickCreateDraftInput, updateQuickCreateResizeFromPointer]
   );
 
   const handleQuickCreateDraftPointerMove = useCallback(
@@ -9609,6 +10004,18 @@ export default function ScheduleTabContent({
     [focusQuickCreateDraftInput, updateQuickCreateDraftFromPointer]
   );
 
+  const toggleQuickCreateSkillPicker = useCallback(
+    (anchor: "card" | "accessory") => {
+      quickCreateDraftPointerInsideRef.current = true;
+      setQuickCreateSkillSearch("");
+      setQuickCreateSkillPickerAnchor(anchor);
+      setIsQuickCreateSkillPickerOpen((open) =>
+        !(open && quickCreateSkillPickerAnchor === anchor)
+      );
+    },
+    [quickCreateSkillPickerAnchor]
+  );
+
   const handleQuickCreateSkillSelect = useCallback(
     (skill: SkillRow) => {
       const draft = quickCreateDraftEventRef.current;
@@ -9624,6 +10031,7 @@ export default function ScheduleTabContent({
       setQuickCreateDraftEvent(nextDraft);
       quickCreateDraftEventRef.current = nextDraft;
       setIsQuickCreateSkillPickerOpen(false);
+      setQuickCreateSkillPickerAnchor("card");
       setQuickCreateSkillSearch("");
       quickCreateDraftPointerInsideRef.current = true;
       focusQuickCreateDraftInput();
@@ -9658,11 +10066,13 @@ export default function ScheduleTabContent({
     const updatePointerContainment = (event: PointerEvent | TouchEvent) => {
       const card = quickCreateDraftCardRef.current;
       const picker = quickCreateSkillPickerRef.current;
+      const accessory = quickCreateKeyboardAccessoryRef.current;
       const target = event.target;
       quickCreateDraftPointerInsideRef.current =
         target instanceof Node &&
         ((!!card && card.contains(target)) ||
-          (!!picker && picker.contains(target)));
+          (!!picker && picker.contains(target)) ||
+          (!!accessory && accessory.contains(target)));
     };
     window.addEventListener("pointerdown", updatePointerContainment, true);
     window.addEventListener("touchstart", updatePointerContainment, true);
@@ -9917,6 +10327,7 @@ export default function ScheduleTabContent({
         date,
         startHour: modelStartHour,
         windows: modelWindows,
+        savedEvents: modelSavedEvents,
         projectInstances: modelProjectInstances,
         taskInstancesByProject: modelTaskInstancesByProject,
         tasksByProjectId: modelTasksByProjectId,
@@ -10560,6 +10971,90 @@ export default function ScheduleTabContent({
                 });
               })}
             </div>
+            {modelSavedEvents.map((event) => {
+              const clipped = clipSegmentToDay(
+                event.start,
+                event.end,
+                renderDayStart,
+                renderDayEnd
+              );
+              if (!clipped) return null;
+              const startMin = getDayMinuteOffset(
+                clipped.segStart,
+                renderDayStart
+              );
+              const endMin = getDayMinuteOffset(clipped.segEnd, renderDayStart);
+              const startOffsetMinutes = Math.max(
+                0,
+                startMin - modelStartHour * 60
+              );
+              const durationMinutes = endMin - startMin;
+              if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                return null;
+              }
+              const eventHeightPx = Math.max(
+                durationMinutes * modelPxPerMin,
+                1
+              );
+              const showMeta = eventHeightPx >= 42;
+              const showLocation =
+                showMeta && event.locationName && eventHeightPx >= 58;
+              const rangeLabel = `${formatTimeForWindow(
+                clipped.segStart,
+                viewTimeZone
+              )} - ${formatTimeForWindow(clipped.segEnd, viewTimeZone)}`;
+              const stackingZIndex =
+                computeTimelineStackingIndex(startOffsetMinutes) + 2;
+
+              return (
+                <div
+                  key={`saved-event-${event.id}`}
+                  aria-label={`Event ${event.title}`}
+                  className="pointer-events-none absolute select-none"
+                  style={{
+                    ...TIMELINE_CARD_BOUNDS,
+                    top: toTimelinePosition(startOffsetMinutes),
+                    height: toTimelinePosition(durationMinutes),
+                    zIndex: stackingZIndex,
+                  }}
+                >
+                  <div
+                    className="flex h-full min-h-0 w-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border border-white/[0.12] px-3 py-2 text-white shadow-[0_18px_36px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl"
+                    style={{
+                      background:
+                        "radial-gradient(circle at 12% -18%, rgba(255,255,255,0.16), transparent 48%), linear-gradient(145deg, rgba(12,12,16,0.92), rgba(28,29,36,0.74))",
+                      outline: "1px solid rgba(0, 0, 0, 0.55)",
+                      outlineOffset: "-1px",
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate text-sm font-semibold leading-tight text-white">
+                        {event.title}
+                      </span>
+                      {event.meetingUrl ? (
+                        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-normal text-white/55">
+                          link
+                        </span>
+                      ) : null}
+                    </div>
+                    {showMeta ? (
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] font-medium leading-tight text-white/60">
+                        <span className="shrink-0 uppercase tracking-normal">
+                          {event.kind}
+                        </span>
+                        <span className="shrink-0 text-white/35">-</span>
+                        <span className="min-w-0 truncate">{rangeLabel}</span>
+                      </div>
+                    ) : null}
+                    {showLocation ? (
+                      <div className="mt-0.5 truncate text-[10px] font-medium leading-tight text-white/48">
+                        {event.locationName}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
             {dayHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;
@@ -11037,6 +11532,11 @@ export default function ScheduleTabContent({
                     habitType: "SYNC",
                     completed: false,
                   });
+                  const quickCreateDraftDurationMinutes = Math.max(
+                    QUICK_CREATE_EVENT_MIN_DURATION_MIN,
+                    quickCreateDraftEvent.endMinute -
+                      quickCreateDraftEvent.startMinute
+                  );
 
                   return (
                     <motion.div
@@ -11049,9 +11549,13 @@ export default function ScheduleTabContent({
                         ...TIMELINE_CARD_BOUNDS,
                         top: quickCreateTimelineDraft.top,
                         height: quickCreateTimelineDraft.height,
-                        zIndex: TIMELINE_STACK_BASE_Z_INDEX + 950,
+                        zIndex:
+                          isQuickCreateSkillPickerOpen &&
+                          quickCreateSkillPickerAnchor === "accessory"
+                            ? 2147483644
+                            : TIMELINE_STACK_BASE_Z_INDEX + 950,
                       }}
-                      layout={!prefersReducedMotion}
+                      layout={false}
                       initial={
                         prefersReducedMotion ? false : { opacity: 0, y: 4 }
                       }
@@ -11068,7 +11572,7 @@ export default function ScheduleTabContent({
                     >
                       <div
                         className={clsx(
-                          "habit-card habit-card--scheduled relative flex h-full w-full items-center justify-between gap-3 border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                          "habit-card habit-card--scheduled relative flex h-full w-full items-center justify-between gap-3 overflow-hidden border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
                           getTimelineCardCornerClass("full"),
                           quickCreateDraftVisuals.borderClass,
                           quickCreateDraftVisuals.typeClass
@@ -11083,6 +11587,50 @@ export default function ScheduleTabContent({
                           WebkitTapHighlightColor: "transparent",
                         }}
                       >
+                        <button
+                          type="button"
+                          aria-label="Resize draft start"
+                          className="absolute left-1/2 top-0 z-10 flex h-5 w-10 -translate-x-1/2 items-start justify-center bg-transparent p-0 text-white/65 outline-none"
+                          style={{
+                            touchAction: "none",
+                            WebkitTapHighlightColor: "transparent",
+                          }}
+                          onPointerDown={(event) =>
+                            handleQuickCreateResizePointerDown("start", event)
+                          }
+                          onPointerMove={handleQuickCreateResizePointerMove}
+                          onPointerUp={handleQuickCreateResizePointerEnd}
+                          onPointerCancel={handleQuickCreateResizePointerEnd}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <ChevronUp
+                            className="pointer-events-none mt-0.5 block h-3 w-3 shrink-0"
+                            strokeWidth={2.4}
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Resize draft end"
+                          className="absolute bottom-0 left-1/2 z-10 flex h-5 w-10 -translate-x-1/2 items-end justify-center bg-transparent p-0 text-white/65 outline-none"
+                          style={{
+                            touchAction: "none",
+                            WebkitTapHighlightColor: "transparent",
+                          }}
+                          onPointerDown={(event) =>
+                            handleQuickCreateResizePointerDown("end", event)
+                          }
+                          onPointerMove={handleQuickCreateResizePointerMove}
+                          onPointerUp={handleQuickCreateResizePointerEnd}
+                          onPointerCancel={handleQuickCreateResizePointerEnd}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <ChevronDown
+                            className="pointer-events-none mb-0.5 block h-3 w-3 shrink-0"
+                            strokeWidth={2.4}
+                            aria-hidden="true"
+                          />
+                        </button>
                         <button
                           type="button"
                           className={clsx(
@@ -11100,9 +11648,7 @@ export default function ScheduleTabContent({
                           onPointerDown={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            quickCreateDraftPointerInsideRef.current = true;
-                            setQuickCreateSkillSearch("");
-                            setIsQuickCreateSkillPickerOpen((open) => !open);
+                            toggleQuickCreateSkillPicker("card");
                           }}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -11121,7 +11667,7 @@ export default function ScheduleTabContent({
                             ? (quickCreateDraftEvent.relationIcon ?? "✦")
                             : "+"}
                         </button>
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 overflow-hidden">
                           <input
                             ref={quickCreateDraftInputRef}
                             value={quickCreateDraftEvent.title}
@@ -11133,7 +11679,12 @@ export default function ScheduleTabContent({
                               setQuickCreateDraftEvent(nextDraft);
                               quickCreateDraftEventRef.current = nextDraft;
                             }}
+                            onFocus={() => {
+                              quickCreateDraftInputFocusedRef.current = true;
+                              setQuickCreateTitleFocused(true);
+                            }}
                             onBlur={() => {
+                              setQuickCreateTitleFocused(false);
                               const createdAt =
                                 quickCreateDraftCreatedAtRef.current;
                               const justCreated =
@@ -11143,6 +11694,7 @@ export default function ScheduleTabContent({
                                 justCreated ||
                                 !quickCreateDraftInputFocusedRef.current
                               ) {
+                                quickCreateDraftInputFocusedRef.current = false;
                                 setQuickCreateDebugPhase(
                                   "blur ignored/just created"
                                 );
@@ -11153,6 +11705,8 @@ export default function ScheduleTabContent({
                                   setQuickCreateDebugPhase(
                                     "blur ignored/inside draft"
                                   );
+                                  quickCreateDraftInputFocusedRef.current =
+                                    false;
                                   return;
                                 }
                                 if (
@@ -11163,6 +11717,7 @@ export default function ScheduleTabContent({
                                   );
                                   cancelQuickCreateDraft();
                                 }
+                                quickCreateDraftInputFocusedRef.current = false;
                               });
                             }}
                             onPointerDown={(event) => event.stopPropagation()}
@@ -11178,13 +11733,18 @@ export default function ScheduleTabContent({
                             </div>
                           ) : null}
                         </div>
-                        <span className="shrink-0 text-xs font-semibold text-white/80">
-                          {QUICK_CREATE_EVENT_DURATION_MIN}m
+                        <span className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-white/80">
+                          {quickCreateDraftDurationMinutes}m
                         </span>
                         {isQuickCreateSkillPickerOpen ? (
                           <div
                             ref={quickCreateSkillPickerRef}
-                            className="absolute left-2 top-[calc(100%+0.375rem)] z-20 w-64 max-w-[calc(100vw-2rem)] touch-pan-y rounded-[1.25rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl"
+                            className={clsx(
+                              "w-64 max-w-[calc(100vw-2rem)] touch-pan-y rounded-[1.25rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
+                              quickCreateSkillPickerAnchor === "accessory"
+                                ? "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[2147483644] mx-auto"
+                                : "absolute left-2 top-[calc(100%+0.375rem)] z-20"
+                            )}
                             onPointerDown={(event) => {
                               event.stopPropagation();
                               quickCreateDraftPointerInsideRef.current = true;
@@ -12403,6 +12963,7 @@ export default function ScheduleTabContent({
       manualPlacementSession,
       quickCreateDraftEvent,
       isQuickCreateSkillPickerOpen,
+      quickCreateSkillPickerAnchor,
       quickCreateSkillGroups,
       quickCreateSkillSearch,
       snapToFiveMinuteGrid,
@@ -12424,6 +12985,10 @@ export default function ScheduleTabContent({
       handleQuickCreateDraftPointerDown,
       handleQuickCreateDraftPointerMove,
       handleQuickCreateDraftPointerEnd,
+      handleQuickCreateResizePointerDown,
+      handleQuickCreateResizePointerMove,
+      handleQuickCreateResizePointerEnd,
+      toggleQuickCreateSkillPicker,
       handleQuickCreateSkillSelect,
       cancelQuickCreateDraft,
       isQuickCreateDraftInteractionInside,
@@ -13014,6 +13579,88 @@ export default function ScheduleTabContent({
         )
       : null;
 
+  const quickCreateDraftDurationMinutes = quickCreateDraftEvent
+    ? Math.max(
+        QUICK_CREATE_EVENT_MIN_DURATION_MIN,
+        quickCreateDraftEvent.endMinute - quickCreateDraftEvent.startMinute
+      )
+    : QUICK_CREATE_EVENT_DURATION_MIN;
+
+  const quickCreateKeyboardAccessory =
+    quickCreateDraftEvent &&
+    (quickCreateTitleFocused || isQuickCreateSkillPickerOpen) &&
+    typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={quickCreateKeyboardAccessoryRef}
+            data-quick-create-keyboard-accessory="true"
+            className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[2147483643] mx-auto flex min-h-14 max-w-[34rem] items-center gap-3 rounded-[1.15rem] border border-white/10 bg-zinc-950/82 px-3 py-2 text-white shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl md:hidden"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              quickCreateDraftPointerInsideRef.current = true;
+            }}
+            onTouchStart={(event) => {
+              event.stopPropagation();
+              quickCreateDraftPointerInsideRef.current = true;
+            }}
+            onMouseDown={(event) => {
+              event.stopPropagation();
+              quickCreateDraftPointerInsideRef.current = true;
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className={clsx(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-base leading-none transition",
+                quickCreateDraftEvent.skillId
+                  ? "border-white/25 bg-white/[0.14] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_5px_14px_rgba(0,0,0,0.24)]"
+                  : "border-white/15 bg-black/35 text-white/90"
+              )}
+              aria-label={
+                quickCreateDraftEvent.skillName
+                  ? `Change Skill relation: ${quickCreateDraftEvent.skillName}`
+                  : "Choose Skill relation"
+              }
+              aria-expanded={isQuickCreateSkillPickerOpen}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleQuickCreateSkillPicker("accessory");
+              }}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                quickCreateDraftPointerInsideRef.current = true;
+              }}
+              onTouchStart={(event) => {
+                event.stopPropagation();
+                quickCreateDraftPointerInsideRef.current = true;
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {quickCreateDraftEvent.skillId
+                ? (quickCreateDraftEvent.relationIcon ?? "✦")
+                : "+"}
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold leading-tight text-white">
+                {quickCreateDraftEvent.title.trim() || "New Event"}
+              </div>
+              {quickCreateDraftEvent.skillName ? (
+                <div className="mt-0.5 truncate text-[11px] font-medium leading-none text-white/55">
+                  {quickCreateDraftEvent.skillName}
+                </div>
+              ) : null}
+            </div>
+            <div className="shrink-0 rounded-full border border-white/10 bg-black/25 px-2 py-1 text-[11px] font-semibold leading-none text-white/65">
+              {quickCreateDraftDurationMinutes}m
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   if (!dayTimelineModel) {
     return (
       <div className="flex h-full w-full items-center justify-center text-[var(--muted)]">
@@ -13025,6 +13672,7 @@ export default function ScheduleTabContent({
   return (
     <LayoutGroup id="schedule-shared-layout">
       {timeBlockConstraintsPortal}
+      {quickCreateKeyboardAccessory}
       {quickCreateDebugEnabled ? (
         <div className="fixed bottom-3 left-3 z-[2147483647] max-w-[min(22rem,calc(100vw-1.5rem))] rounded-md border border-amber-300/30 bg-black/80 px-2.5 py-1.5 text-[11px] font-medium leading-tight text-amber-100 shadow-lg backdrop-blur">
           quick-create: {quickCreateDebugPhase}
@@ -13213,7 +13861,11 @@ export default function ScheduleTabContent({
                           </AnimatePresence>
                         )}
                         <FocusTimelineFab
-                          hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
+                          hidden={
+                            isJumpToDateOpen ||
+                            isInlineJumpToDateOpen ||
+                            isMyListOpen
+                          }
                           editTarget={fabEditTarget}
                           onEditClose={handleCloseEditSheet}
                         />
@@ -13222,7 +13874,11 @@ export default function ScheduleTabContent({
                     {view === "focus" && (
                       <ScheduleViewShell key="focus">
                         <FocusTimeline
-                          hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
+                          hideFab={
+                            isJumpToDateOpen ||
+                            isInlineJumpToDateOpen ||
+                            isMyListOpen
+                          }
                           editTarget={fabEditTarget}
                           onEditClose={handleCloseEditSheet}
                         />
@@ -13235,6 +13891,13 @@ export default function ScheduleTabContent({
           </div>
         </div>
       </ProtectedRoute>
+      <ScheduleMyListSheet
+        open={isMyListOpen}
+        onOpenChange={(open) => {
+          void hapticPress();
+          setIsMyListOpen(open);
+        }}
+      />
       <MemoCompletionDialog
         open={Boolean(memoCompletionState)}
         context={memoCompletionState}
