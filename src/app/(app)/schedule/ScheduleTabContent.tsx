@@ -11,6 +11,7 @@ import {
   type ReactNode,
   type RefObject,
   type TouchEvent as ReactTouchEvent,
+  type WheelEvent as ReactWheelEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
@@ -1063,6 +1064,7 @@ function ScheduleMyListSheet({
 }) {
   const prefersReducedMotion = useReducedMotion();
   const [note, setNote] = useState("");
+  const [isExpanded, setIsExpanded] = useState(false);
   const [manualRows, setManualRows] = useState<ScheduleManualListRow[]>([]);
   const [activeSkillPickerRowKey, setActiveSkillPickerRowKey] =
     useState<ScheduleMyListRowKey | null>(null);
@@ -1078,6 +1080,8 @@ function ScheduleMyListSheet({
   const [hiddenTaskRowIds, setHiddenTaskRowIds] = useState<Set<string>>(
     () => new Set()
   );
+  const sheetScrollRef = useRef<HTMLDivElement | null>(null);
+  const sheetTouchStartYRef = useRef<number | null>(null);
   const visibleTasks = useMemo(
     () => tasks.filter((task) => !hiddenTaskRowIds.has(task.id)),
     [hiddenTaskRowIds, tasks]
@@ -1519,8 +1523,58 @@ function ScheduleMyListSheet({
     [activePriorityPickerRowKey, open]
   );
 
+  const expandSheet = useCallback(() => {
+    if (open) setIsExpanded(true);
+  }, [open]);
+
+  const handleSheetTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      sheetTouchStartYRef.current = event.touches[0]?.clientY ?? null;
+    },
+    []
+  );
+
+  const handleSheetTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      if (!open || isExpanded) return;
+
+      const startY = sheetTouchStartYRef.current;
+      const currentY = event.touches[0]?.clientY;
+      if (startY === null || currentY === undefined) return;
+
+      const upwardDragDistance = startY - currentY;
+      if (upwardDragDistance > 18) {
+        expandSheet();
+      }
+    },
+    [expandSheet, isExpanded, open]
+  );
+
+  const handleSheetTouchEnd = useCallback(() => {
+    sheetTouchStartYRef.current = null;
+  }, []);
+
+  const handleSheetWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      if (!open || isExpanded) return;
+
+      const scrollElement = sheetScrollRef.current;
+      const nearTop = !scrollElement || scrollElement.scrollTop <= 8;
+      if (event.deltaY > 8 && nearTop) {
+        event.preventDefault();
+        if (scrollElement) scrollElement.scrollTop = 0;
+        expandSheet();
+      }
+    },
+    [expandSheet, isExpanded, open]
+  );
+
   useEffect(() => {
     if (!open) {
+      setIsExpanded(false);
       setActiveSkillPickerRowKey(null);
       setActivePriorityPickerRowKey(null);
       setManualSkillSearch("");
@@ -1584,9 +1638,18 @@ function ScheduleMyListSheet({
           </span>
         ) : null}
       </button>
-      <div
+      <motion.div
         aria-hidden={!open}
-        className="max-h-[min(58dvh,28rem)] overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
+        className="flex max-h-[min(58dvh,28rem)] flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
+        initial={false}
+        animate={{
+          maxHeight: isExpanded ? "min(84dvh, 42rem)" : "min(58dvh, 28rem)",
+        }}
+        transition={
+          prefersReducedMotion
+            ? { duration: 0 }
+            : { type: "spring", stiffness: 260, damping: 32, mass: 0.85 }
+        }
         style={{
           paddingBottom: "calc(0.8rem + env(safe-area-inset-bottom, 0px))",
         }}
@@ -1605,7 +1668,15 @@ function ScheduleMyListSheet({
             <Plus className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
           </button>
         </div>
-        <div className="space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 [-webkit-overflow-scrolling:touch] sm:px-5">
+        <div
+          ref={sheetScrollRef}
+          className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 [-webkit-overflow-scrolling:touch] sm:px-5"
+          onTouchStart={handleSheetTouchStart}
+          onTouchMove={handleSheetTouchMove}
+          onTouchEnd={handleSheetTouchEnd}
+          onTouchCancel={handleSheetTouchEnd}
+          onWheel={handleSheetWheel}
+        >
           <div className="space-y-1.5">
             {hasListRows ? (
               <>
@@ -1897,7 +1968,7 @@ function ScheduleMyListSheet({
             />
           </div>
         </div>
-      </div>
+      </motion.div>
     </motion.aside>
   );
 }
@@ -6227,10 +6298,20 @@ export default function ScheduleTabContent({
         Boolean(
           activeElement.closest('[data-fab-timeline-nexus="true"]'),
         );
+      const isQuickCreateInteractionActive =
+        quickCreateDraftEventRef.current !== null ||
+        quickCreateDraftInputFocusedRef.current ||
+        (activeElement instanceof Element &&
+          Boolean(activeElement.closest(QUICK_CREATE_INTERACTION_SELECTOR)));
       const isKeyboardLikeViewportShrink =
         typeof visualViewport?.height === "number" &&
         window.innerHeight - visualViewport.height >= 80;
-      if (isTimelineNexusFocused && isKeyboardLikeViewportShrink) return;
+      if (
+        isKeyboardLikeViewportShrink &&
+        (isTimelineNexusFocused || isQuickCreateInteractionActive)
+      ) {
+        return;
+      }
       const viewportHeight =
         visualViewport?.height ?? window.innerHeight;
       const density = determineDensity(viewportHeight);
