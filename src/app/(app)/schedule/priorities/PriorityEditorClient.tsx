@@ -38,6 +38,11 @@ import {
 } from "@/lib/haptics/creatorHaptics";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
+import {
+  passesTimeBlockConstraints,
+  type ConstraintItem,
+  type WindowConstraint,
+} from "@/lib/scheduler/constraints";
 import { cn } from "@/lib/utils";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
@@ -49,6 +54,7 @@ import {
   HABIT_TYPE_ORDER,
   type GlobalPriorityRoadmapItem,
   type HabitBucketId,
+  type PriorityTimeBlockFilterOptionData,
   type PriorityBucketId,
   type RoadmapHabitItem,
   type RoadmapPriorityGoal,
@@ -83,6 +89,7 @@ interface PriorityEditorClientProps {
   initialMonumentOptions: UserPriorityFilterOptionData[];
   initialSkillOptions: UserPriorityFilterOptionData[];
   initialSkillCategories: UserPrioritySkillCategoryData[];
+  initialTimeBlockOptions: PriorityTimeBlockFilterOptionData[];
   initialError?: string | null;
 }
 
@@ -307,6 +314,7 @@ export default function PriorityEditorClient({
   initialMonumentOptions,
   initialSkillOptions,
   initialSkillCategories,
+  initialTimeBlockOptions,
   initialError = null,
 }: PriorityEditorClientProps) {
   const router = useRouter();
@@ -327,6 +335,8 @@ export default function PriorityEditorClient({
     string[]
   >([]);
   const [selectedSkillFilterIds, setSelectedSkillFilterIds] = useState<string[]>([]);
+  const [selectedTimeBlockFilterId, setSelectedTimeBlockFilterId] =
+    useState<string | null>(null);
   const refreshTimeoutRef = useRef<number | null>(null);
   const lastRefreshAtRef = useRef(0);
   const isSavingOrderRef = useRef(false);
@@ -458,38 +468,59 @@ export default function PriorityEditorClient({
         .filter((option): option is PriorityFilterOption => Boolean(option)),
     [selectedSkillFilterIds, skillFilterOptions]
   );
-  const hasActiveFilters =
-    selectedMonumentFilters.length > 0 || selectedSkillFilters.length > 0;
-  const visibleGlobalPriorityItems = useMemo(
+  const selectedTimeBlockFilter = useMemo(
     () =>
-      hasActiveFilters
-        ? filterGlobalPriorityItems(
-            globalPriorityItems,
-            selectedMonumentFilters,
-            selectedSkillFilters
-          )
-        : globalPriorityItems,
+      selectedTimeBlockFilterId
+        ? initialTimeBlockOptions.find(
+            (option) => option.id === selectedTimeBlockFilterId
+          ) ?? null
+        : null,
+    [initialTimeBlockOptions, selectedTimeBlockFilterId]
+  );
+  const hasActiveFilters =
+    selectedMonumentFilters.length > 0 ||
+    selectedSkillFilters.length > 0 ||
+    Boolean(selectedTimeBlockFilter);
+  const visibleGlobalPriorityItems = useMemo(
+    () => {
+      const items =
+        selectedMonumentFilters.length > 0 || selectedSkillFilters.length > 0
+          ? filterGlobalPriorityItems(
+              globalPriorityItems,
+              selectedMonumentFilters,
+              selectedSkillFilters
+            )
+          : globalPriorityItems;
+      return selectedTimeBlockFilter
+        ? filterGlobalPriorityItemsByTimeBlock(items, selectedTimeBlockFilter)
+        : items;
+    },
     [
       globalPriorityItems,
-      hasActiveFilters,
       selectedMonumentFilters,
       selectedSkillFilters,
+      selectedTimeBlockFilter,
     ]
   );
   const visibleHabitItems = useMemo(
-    () =>
-      hasActiveFilters
-        ? filterHabitRoadmapItems(
-            habitRoadmapItems,
-            selectedMonumentFilters,
-            selectedSkillFilters
-          )
-        : habitRoadmapItems,
+    () => {
+      const items =
+        selectedMonumentFilters.length > 0 || selectedSkillFilters.length > 0
+          ? filterHabitRoadmapItems(
+              habitRoadmapItems,
+              selectedMonumentFilters,
+              selectedSkillFilters
+            )
+          : habitRoadmapItems;
+      return selectedTimeBlockFilter
+        ? filterHabitRoadmapItemsByTimeBlock(items, selectedTimeBlockFilter)
+        : items;
+    },
     [
       habitRoadmapItems,
-      hasActiveFilters,
       selectedMonumentFilters,
       selectedSkillFilters,
+      selectedTimeBlockFilter,
     ]
   );
   const filterSummary = useMemo(
@@ -497,9 +528,15 @@ export default function PriorityEditorClient({
       buildPriorityFilterSummary(
         selectedRoadmapType,
         selectedMonumentFilters,
-        selectedSkillFilters
+        selectedSkillFilters,
+        selectedTimeBlockFilter
       ),
-    [selectedRoadmapType, selectedMonumentFilters, selectedSkillFilters]
+    [
+      selectedRoadmapType,
+      selectedMonumentFilters,
+      selectedSkillFilters,
+      selectedTimeBlockFilter,
+    ]
   );
   const toggleMonumentFilter = useCallback((optionId: string) => {
     setSelectedMonumentFilterIds((current) => toggleSelectedFilterId(current, optionId));
@@ -510,9 +547,20 @@ export default function PriorityEditorClient({
   const clearPriorityFilters = useCallback(() => {
     setSelectedMonumentFilterIds([]);
     setSelectedSkillFilterIds([]);
+    setSelectedTimeBlockFilterId(null);
+  }, []);
+  const selectTimeBlockFilter = useCallback((optionId: string | null) => {
+    void hapticSoftTick();
+    setSelectedTimeBlockFilterId(optionId);
   }, []);
   const hasAnyRoadmapItems =
     globalPriorityItems.length > 0 || habitRoadmapItems.length > 0;
+  const timeBlockFilteredEmptyLabel = selectedTimeBlockFilter
+    ? `No Events are eligible for ${selectedTimeBlockFilter.name}.`
+    : null;
+  const timeBlockReorderDisabledReason = selectedTimeBlockFilter
+    ? "Reordering is paused while a Time Block filter is active."
+    : null;
 
   const handleGlobalPriorityDragEnd = useCallback(
     async (
@@ -886,13 +934,16 @@ export default function PriorityEditorClient({
               summary={filterSummary}
               monumentOptions={monumentFilterOptions}
               skillOptions={skillFilterOptions}
+              timeBlockOptions={initialTimeBlockOptions}
               selectedMonumentIds={selectedMonumentFilterIds}
               selectedSkillIds={selectedSkillFilterIds}
+              selectedTimeBlockId={selectedTimeBlockFilterId}
               hasActiveFilters={hasActiveFilters}
               onOpenChange={setAdjustOpen}
               onTypeChange={setSelectedRoadmapType}
               onToggleMonument={toggleMonumentFilter}
               onToggleSkill={toggleSkillFilter}
+              onSelectTimeBlock={selectTimeBlockFilter}
               onClear={clearPriorityFilters}
             />
             {selectedRoadmapType === "habits" ? (
@@ -903,6 +954,8 @@ export default function PriorityEditorClient({
                 isSaving={isSavingHabitOrder}
                 sensors={sensors}
                 isFiltered={hasActiveFilters}
+                disabledReason={timeBlockReorderDisabledReason}
+                emptyFilteredLabel={timeBlockFilteredEmptyLabel}
                 onDragEnd={handleHabitDragEnd}
               />
             ) : (
@@ -912,6 +965,9 @@ export default function PriorityEditorClient({
                 isSaving={isSavingGlobalPriorityOrder}
                 sensors={sensors}
                 isFiltered={hasActiveFilters}
+                isDragDisabled={Boolean(selectedTimeBlockFilter)}
+                disabledReason={timeBlockReorderDisabledReason}
+                emptyFilteredLabel={timeBlockFilteredEmptyLabel}
                 appearance="priorityEditor"
                 onDragEnd={handleGlobalPriorityDragEnd}
                 onCampaignGoalDragEnd={handleCampaignGoalDragEnd}
@@ -932,13 +988,16 @@ function PriorityAdjustFilters({
   summary,
   monumentOptions,
   skillOptions,
+  timeBlockOptions,
   selectedMonumentIds,
   selectedSkillIds,
+  selectedTimeBlockId,
   hasActiveFilters,
   onOpenChange,
   onTypeChange,
   onToggleMonument,
   onToggleSkill,
+  onSelectTimeBlock,
   onClear,
 }: {
   isOpen: boolean;
@@ -946,13 +1005,16 @@ function PriorityAdjustFilters({
   summary: string;
   monumentOptions: PriorityFilterOption[];
   skillOptions: PriorityFilterOption[];
+  timeBlockOptions: PriorityTimeBlockFilterOptionData[];
   selectedMonumentIds: string[];
   selectedSkillIds: string[];
+  selectedTimeBlockId: string | null;
   hasActiveFilters: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onTypeChange: (type: PriorityRoadmapType) => void;
   onToggleMonument: (optionId: string) => void;
   onToggleSkill: (optionId: string) => void;
+  onSelectTimeBlock: (optionId: string | null) => void;
   onClear: () => void;
 }) {
   const panelId = "priority-adjust-panel";
@@ -1013,6 +1075,11 @@ function PriorityAdjustFilters({
                   <PriorityTypeSelector
                     selectedType={selectedType}
                     onTypeChange={onTypeChange}
+                  />
+                  <PriorityTimeBlockFilterSection
+                    options={timeBlockOptions}
+                    selectedId={selectedTimeBlockId}
+                    onSelect={onSelectTimeBlock}
                   />
                   <PriorityFilterSection
                     label="Monuments"
@@ -1119,6 +1186,109 @@ function PriorityTypeSelector({
             </button>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function PriorityTimeBlockFilterSection({
+  options,
+  selectedId,
+  onSelect,
+}: {
+  options: PriorityTimeBlockFilterOptionData[];
+  selectedId: string | null;
+  onSelect: (optionId: string | null) => void;
+}) {
+  const [expanded, setExpanded] = useState(Boolean(selectedId));
+  const sectionId = "priority-time-block-filters";
+  const hasSelectedFilter = Boolean(selectedId);
+
+  useEffect(() => {
+    if (hasSelectedFilter) {
+      setExpanded(true);
+    }
+  }, [hasSelectedFilter]);
+
+  const handleAllClick = () => {
+    if (hasSelectedFilter) {
+      onSelect(null);
+      setExpanded(false);
+      return;
+    }
+
+    void hapticSnap();
+    setExpanded((current) => !current);
+  };
+
+  return (
+    <section>
+      <div className="flex items-center gap-2">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
+          Time Blocks
+        </p>
+        <button
+          type="button"
+          aria-controls={sectionId}
+          aria-expanded={expanded}
+          aria-pressed={!hasSelectedFilter}
+          onClick={handleAllClick}
+          className={cn(
+            "ml-auto inline-flex min-h-7 items-center justify-center rounded-full border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-8 sm:px-3.5 sm:text-[11px]",
+            hasSelectedFilter
+              ? "border-black/60 bg-black/30 text-zinc-400 hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200"
+              : "border-black/50 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]"
+          )}
+        >
+          All Time Blocks
+        </button>
+      </div>
+      <div
+        id={sectionId}
+        className={cn(
+          "grid overflow-hidden transition-[grid-template-rows,opacity,transform] duration-300 ease-out",
+          expanded
+            ? "mt-1.5 grid-rows-[1fr] opacity-100 translate-y-0 sm:mt-2"
+            : "mt-0 grid-rows-[0fr] opacity-0 -translate-y-1"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {options.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              {options.map((option) => {
+                const selected = selectedId === option.id;
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onSelect(selected ? null : option.id)}
+                    className={
+                      selected
+                        ? "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                        : "inline-flex max-w-full items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                    }
+                  >
+                    <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                      T
+                    </span>
+                    <span className="min-w-0 truncate">
+                      {option.name}
+                      {option.detail ? (
+                        <span className="ml-1 text-zinc-500">{option.detail}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+              No Time Blocks available.
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -1599,15 +1769,178 @@ function filterHabitRoadmapItems(
   );
 }
 
+function toTimeBlockWindowConstraint(
+  timeBlock: PriorityTimeBlockFilterOptionData
+): WindowConstraint {
+  return {
+    allowAllHabitTypes: timeBlock.allowAllHabitTypes,
+    allowAllSkills: timeBlock.allowAllSkills,
+    allowAllMonuments: timeBlock.allowAllMonuments,
+    allowedHabitTypes: timeBlock.allowedHabitTypes,
+    allowedSkillIds: timeBlock.allowedSkillIds,
+    allowedMonumentIds: timeBlock.allowedMonumentIds,
+    block_type: timeBlock.blockType ?? null,
+  };
+}
+
+function itemPassesPriorityTimeBlock(
+  item: ConstraintItem,
+  timeBlock: PriorityTimeBlockFilterOptionData
+) {
+  return passesTimeBlockConstraints(item, toTimeBlockWindowConstraint(timeBlock));
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+function getProjectTimeBlockConstraintItem(
+  project: RoadmapPriorityProject,
+  parentMonumentIds: string[] = []
+): ConstraintItem {
+  return {
+    sourceType: "PROJECT",
+    skillId: project.skillId ?? null,
+    skillIds: uniqueStrings([...(project.skillIds ?? []), project.skillId]),
+    monumentId: parentMonumentIds[0] ?? project.skillMonumentId ?? null,
+    skillMonumentId: project.skillMonumentId ?? null,
+    monumentIds: uniqueStrings([
+      ...parentMonumentIds,
+      ...(project.skillMonumentIds ?? []),
+      project.skillMonumentId,
+    ]),
+    isProject: true,
+    allowEmptyProjectCandidates: true,
+  };
+}
+
+function getTaskTimeBlockConstraintItem(
+  task: RoadmapPriorityTask,
+  parentMonumentIds: string[] = []
+): ConstraintItem {
+  return {
+    sourceType: "TASK",
+    skillId: task.skillId ?? null,
+    skillIds: task.skillId ? [task.skillId] : [],
+    monumentId: parentMonumentIds[0] ?? task.skillMonumentId ?? null,
+    skillMonumentId: task.skillMonumentId ?? null,
+    monumentIds: uniqueStrings([...parentMonumentIds, task.skillMonumentId]),
+  };
+}
+
+function filterProjectsByTimeBlock(
+  projects: RoadmapPriorityProject[] | undefined,
+  timeBlock: PriorityTimeBlockFilterOptionData,
+  parentMonumentIds: string[] = []
+) {
+  return (projects ?? []).flatMap((project) => {
+    const projectAllowed = itemPassesPriorityTimeBlock(
+      getProjectTimeBlockConstraintItem(project, parentMonumentIds),
+      timeBlock
+    );
+    const allowedTasks = (project.tasks ?? []).filter((task) =>
+      itemPassesPriorityTimeBlock(
+        getTaskTimeBlockConstraintItem(task, uniqueStrings([
+          ...parentMonumentIds,
+          ...(project.skillMonumentIds ?? []),
+          project.skillMonumentId,
+        ])),
+        timeBlock
+      )
+    );
+
+    if (!projectAllowed && allowedTasks.length === 0) return [];
+    return [{ ...project, tasks: allowedTasks }];
+  });
+}
+
+function filterGoalByTimeBlock(
+  goal: RoadmapPriorityGoal,
+  timeBlock: PriorityTimeBlockFilterOptionData
+): RoadmapPriorityGoal | null {
+  const parentMonumentIds = uniqueStrings([goal.monumentId]);
+  const projects = filterProjectsByTimeBlock(
+    goal.projects,
+    timeBlock,
+    parentMonumentIds
+  );
+  return projects.length > 0 ? { ...goal, projects } : null;
+}
+
+function filterGlobalPriorityItemsByTimeBlock(
+  items: GlobalPriorityRoadmapItem[],
+  timeBlock: PriorityTimeBlockFilterOptionData
+) {
+  const filteredItems: GlobalPriorityRoadmapItem[] = [];
+
+  for (const item of items) {
+    if (item.type === "campaign") {
+      const goals = (item.goals ?? [])
+        .map((goal) => filterGoalByTimeBlock(goal, timeBlock))
+        .filter((goal): goal is RoadmapPriorityGoal => Boolean(goal));
+      if (goals.length > 0) {
+        filteredItems.push({ ...item, goals });
+      }
+      continue;
+    }
+
+    const projects = filterProjectsByTimeBlock(
+      item.projects,
+      timeBlock,
+      uniqueStrings([item.monumentId])
+    );
+    if (projects.length > 0) {
+      filteredItems.push({ ...item, projects });
+    }
+  }
+
+  return sortGlobalPriorityItems(filteredItems);
+}
+
+function getHabitTimeBlockConstraintItem(habit: RoadmapHabitItem): ConstraintItem {
+  return {
+    sourceType: "HABIT",
+    habitType: habit.rawHabitType ?? habit.habitType,
+    skillId: habit.skillId ?? null,
+    skillIds: habit.skillId ? [habit.skillId] : [],
+    monumentId: habit.monumentId ?? habit.goalMonumentId ?? null,
+    skillMonumentId: habit.skillMonumentId ?? null,
+    monumentIds: uniqueStrings([
+      habit.monumentId,
+      habit.skillMonumentId,
+      habit.goalMonumentId,
+    ]),
+  };
+}
+
+function filterHabitRoadmapItemsByTimeBlock(
+  items: RoadmapHabitItem[],
+  timeBlock: PriorityTimeBlockFilterOptionData
+) {
+  return sortHabitRoadmapItems(
+    items.filter((item) =>
+      itemPassesPriorityTimeBlock(getHabitTimeBlockConstraintItem(item), timeBlock)
+    )
+  );
+}
+
 function buildPriorityFilterSummary(
   selectedType: PriorityRoadmapType,
   selectedMonuments: PriorityFilterOption[],
-  selectedSkills: PriorityFilterOption[]
+  selectedSkills: PriorityFilterOption[],
+  selectedTimeBlock: PriorityTimeBlockFilterOptionData | null
 ) {
   const defaultLabel = selectedType === "habits" ? "All habits" : "All priorities";
-  const selectedNames = [...selectedMonuments, ...selectedSkills].map(
-    (option) => option.name
-  );
+  const selectedNames = [
+    ...[...selectedMonuments, ...selectedSkills].map((option) => option.name),
+    ...(selectedTimeBlock ? [selectedTimeBlock.name] : []),
+  ];
   if (selectedNames.length === 0) return defaultLabel;
   if (selectedNames.length <= 3) return selectedNames.join(" / ");
   return `${selectedNames.slice(0, 3).join(" / ")} +${selectedNames.length - 3}`;
@@ -1886,6 +2219,8 @@ function GlobalHabitRoadmap({
   isSaving,
   sensors,
   isFiltered,
+  disabledReason,
+  emptyFilteredLabel,
   onDragEnd,
 }: {
   items: RoadmapHabitItem[];
@@ -1894,6 +2229,8 @@ function GlobalHabitRoadmap({
   isSaving: boolean;
   sensors: PriorityRoadmapSensors;
   isFiltered: boolean;
+  disabledReason: string | null;
+  emptyFilteredLabel: string | null;
   onDragEnd: (event: DragEndEvent) => void;
 }) {
   const fabCreation = useFabCreation();
@@ -1967,9 +2304,18 @@ function GlobalHabitRoadmap({
       <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
         <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
           {error ? <p className="mb-2 px-1 text-xs text-red-200/85">{error}</p> : null}
+          {disabledReason ? (
+            <p className="mb-2 px-1 text-[11px] font-medium text-zinc-600">
+              {disabledReason}
+            </p>
+          ) : null}
           {totalItemCount === 0 ? (
             <p className="rounded-[16px] border border-black/60 bg-black/25 px-3 py-3 text-xs font-medium text-zinc-500">
               No Habits yet.
+            </p>
+          ) : items.length === 0 && emptyFilteredLabel ? (
+            <p className="rounded-[16px] border border-black/60 bg-black/25 px-3 py-3 text-xs font-medium text-zinc-500">
+              {emptyFilteredLabel}
             </p>
           ) : (
             <DndContext

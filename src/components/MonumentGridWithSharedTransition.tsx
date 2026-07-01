@@ -15,6 +15,7 @@ import { motion } from "framer-motion";
 import {
   closestCenter,
   DndContext,
+  DragOverlay,
   PointerSensor,
   TouchSensor,
   type DragEndEvent,
@@ -82,16 +83,60 @@ type SortableMonumentCardProps = {
   monument: Monument;
   isHidden: boolean;
   isActiveDrag: boolean;
+  enableSharedLayout: boolean;
   shouldSuppressClick: boolean;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onSuppressClickHandled: () => void;
   setCardRef: (monumentId: string, node: HTMLButtonElement | null) => void;
 };
 
+type MonumentCardContentProps = {
+  monument: Monument;
+  enableSharedLayout: boolean;
+};
+
+const monumentCardNoSelectStyle = {
+  WebkitTouchCallout: "none",
+  WebkitTapHighlightColor: "transparent",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+} as CSSProperties;
+
+function MonumentCardContent({
+  monument,
+  enableSharedLayout,
+}: MonumentCardContentProps) {
+  return (
+    <>
+      <motion.div
+        layoutId={enableSharedLayout ? `emoji-${monument.id}` : undefined}
+        className="mb-1 select-none text-lg"
+        style={monumentCardNoSelectStyle}
+      >
+        {monument.emoji ?? "\uD83C\uDFDB\uFE0F"}
+      </motion.div>
+      <motion.h3
+        layoutId={enableSharedLayout ? `title-${monument.id}` : undefined}
+        className="w-full select-none break-words text-center text-[10px] font-semibold leading-tight"
+        style={monumentCardNoSelectStyle}
+      >
+        {monument.title}
+      </motion.h3>
+      <p
+        className="mt-0.5 select-none text-[9px] text-zinc-500"
+        style={monumentCardNoSelectStyle}
+      >
+        {monument.stats}
+      </p>
+    </>
+  );
+}
+
 function SortableMonumentCard({
   monument,
   isHidden,
   isActiveDrag,
+  enableSharedLayout,
   shouldSuppressClick,
   onClick,
   onSuppressClickHandled,
@@ -116,11 +161,13 @@ function SortableMonumentCard({
 
   const sortableStyle = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging
+      ? "none"
+      : [transition, "opacity 160ms ease", "box-shadow 160ms ease"]
+          .filter(Boolean)
+          .join(", "),
     touchAction: "manipulation",
-    WebkitTouchCallout: "none",
-    WebkitTapHighlightColor: "transparent",
-    userSelect: "none",
+    ...monumentCardNoSelectStyle,
   } as CSSProperties;
 
   const handleClickCapture = useCallback(
@@ -139,32 +186,25 @@ function SortableMonumentCard({
     <motion.button
       key={monument.id}
       ref={setCombinedRef}
-      layoutId={`card-${monument.id}`}
+      layoutId={enableSharedLayout ? `card-${monument.id}` : undefined}
       type="button"
       draggable={false}
       onClick={onClick}
       onClickCapture={handleClickCapture}
       onContextMenu={(event) => event.preventDefault()}
       className={cn(
-        "card app-dashboard-monument-card flex aspect-square w-full flex-col items-center justify-center p-1 transition-[background-color,box-shadow,opacity,scale] hover:bg-[var(--subtle-surface)]",
-        (isDragging || isActiveDrag) &&
-          "z-20 scale-[1.03] shadow-[0_14px_28px_rgba(0,0,0,0.34)] ring-1 ring-white/20",
+        "card app-dashboard-monument-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 transition-colors hover:bg-[var(--subtle-surface)]",
+        (isDragging || isActiveDrag) && "pointer-events-none opacity-0",
         isHidden && "pointer-events-none opacity-0"
       )}
       style={sortableStyle}
       {...attributes}
       {...listeners}
     >
-      <motion.div layoutId={`emoji-${monument.id}`} className="mb-1 text-lg">
-        {monument.emoji ?? "\uD83C\uDFDB\uFE0F"}
-      </motion.div>
-      <motion.h3
-        layoutId={`title-${monument.id}`}
-        className="w-full break-words text-center text-[10px] font-semibold leading-tight"
-      >
-        {monument.title}
-      </motion.h3>
-      <p className="mt-0.5 text-[9px] text-zinc-500">{monument.stats}</p>
+      <MonumentCardContent
+        monument={monument}
+        enableSharedLayout={enableSharedLayout}
+      />
     </motion.button>
   );
 }
@@ -303,6 +343,8 @@ export function MonumentGridWithSharedTransition({
 }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [activeDragRect, setActiveDragRect] =
+    useState<MeasuredMonumentRect | null>(null);
   const [suppressNextCardClick, setSuppressNextCardClick] = useState(false);
   const [monumentTransition, setMonumentTransition] =
     useState<MonumentDetailTransition | null>(null);
@@ -327,6 +369,13 @@ export function MonumentGridWithSharedTransition({
   const monumentIds = useMemo(
     () => monuments.map((monument) => monument.id),
     [monuments]
+  );
+  const activeDragMonument = useMemo(
+    () =>
+      activeDragId
+        ? (monuments.find((monument) => monument.id === activeDragId) ?? null)
+        : null,
+    [activeDragId, monuments]
   );
   const reorderSensors = useSensors(
     useSensor(PointerSensor, {
@@ -584,11 +633,17 @@ export function MonumentGridWithSharedTransition({
     setActiveId(monumentId);
   };
 
-  const handleReorderDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-    setSuppressNextCardClick(true);
-    void hapticMediumImpact();
-  }, []);
+  const handleReorderDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const activeMonumentId = String(event.active.id);
+
+      setActiveDragId(activeMonumentId);
+      setActiveDragRect(getMonumentCardRect(activeMonumentId));
+      setSuppressNextCardClick(true);
+      void hapticMediumImpact();
+    },
+    [getMonumentCardRect]
+  );
 
   const handleReorderDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -596,6 +651,7 @@ export function MonumentGridWithSharedTransition({
       const overMonumentId = event.over ? String(event.over.id) : null;
 
       setActiveDragId(null);
+      setActiveDragRect(null);
       setSuppressNextCardClick(true);
 
       window.setTimeout(() => {
@@ -621,6 +677,7 @@ export function MonumentGridWithSharedTransition({
 
   const handleReorderDragCancel = useCallback(() => {
     setActiveDragId(null);
+    setActiveDragRect(null);
     setSuppressNextCardClick(true);
     window.setTimeout(() => {
       setSuppressNextCardClick(false);
@@ -811,9 +868,10 @@ export function MonumentGridWithSharedTransition({
                       monument={m}
                       isHidden={
                         isMonumentSourceCardHidden &&
-                        monumentTransition?.monumentId === m.id
+                          monumentTransition?.monumentId === m.id
                       }
                       isActiveDrag={activeDragId === m.id}
+                      enableSharedLayout={!activeDragId}
                       shouldSuppressClick={suppressNextCardClick}
                       onClick={(event) => openMonumentDetail(m.id, event)}
                       onSuppressClickHandled={() => setSuppressNextCardClick(false)}
@@ -821,6 +879,23 @@ export function MonumentGridWithSharedTransition({
                     />
                   ))}
                 </SortableContext>
+                <DragOverlay adjustScale={false} dropAnimation={null}>
+                  {activeDragMonument ? (
+                    <div
+                      className="card app-dashboard-monument-card flex aspect-square w-full select-none flex-col items-center justify-center p-1 shadow-[0_14px_28px_rgba(0,0,0,0.34)] ring-1 ring-white/20"
+                      style={{
+                        ...monumentCardNoSelectStyle,
+                        height: activeDragRect?.height,
+                        width: activeDragRect?.width,
+                      }}
+                    >
+                      <MonumentCardContent
+                        monument={activeDragMonument}
+                        enableSharedLayout={false}
+                      />
+                    </div>
+                  ) : null}
+                </DragOverlay>
               </DndContext>
             )}
         {allowNewMonumentCard && renderNewMonumentCard()}

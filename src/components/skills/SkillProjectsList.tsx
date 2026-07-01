@@ -11,7 +11,7 @@ import {
   type TouchEvent,
   type WheelEvent,
 } from "react";
-import { Grid2x2, Grid3x3 } from "lucide-react";
+import { Grid2x2, Grid3x3, Plus } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
@@ -19,6 +19,7 @@ import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
 import { LazyFab } from "@/components/ui/LazyFab";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -112,9 +113,13 @@ type ProjectWithCompletion = Project & {
 const PROJECT_CARD_DENSITY_STORAGE_KEY =
   "creator.skillProjectLibrary.cardDensity";
 const PROJECT_SMALL_GRID_CLASS =
-  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 pb-4 sm:grid-cols-3 sm:px-2 sm:gap-1 sm:pb-5 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 const PROJECT_GRID_CLASS =
-  "-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+  "-mx-3 grid grid-cols-3 gap-2.5 px-3 pb-4 sm:grid-cols-3 sm:gap-3 sm:pb-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+const PROJECT_ADD_CARD_OUTER_CLASS =
+  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+const PROJECT_ADD_CARD_INNER_CLASS =
+  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
 function getProjectOpenKey(section: ProjectSection, goalId: string): ProjectOpenKey {
   return `${section}:${goalId}`;
@@ -312,6 +317,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
     useState(false);
   const [openProjectKey, setOpenProjectKey] = useState<ProjectOpenKey | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const fabCreation = useFabCreation();
   const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [baseGoals, setBaseGoals] = useState<Goal[]>([]);
@@ -456,6 +462,60 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       </button>
     ),
     [handleProjectCardDensityToggle, isSmallProjectCardDensity]
+  );
+
+  const handleAddProject = useCallback(() => {
+    fabCreation?.requestProjectCreation(null, null, { skillId });
+  }, [fabCreation, skillId]);
+
+  const renderProjectAddCard = useCallback(
+    () => (
+      <button
+        type="button"
+        className={`${PROJECT_ADD_CARD_OUTER_CLASS} ${
+          isSmallProjectCardDensity
+            ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+            : ""
+        }`}
+        data-variant="compact"
+        onClick={handleAddProject}
+        aria-label="Add project"
+      >
+        <div className={`${PROJECT_ADD_CARD_INNER_CLASS} w-full min-w-0`}>
+          <div
+            className={`flex w-full min-w-0 flex-col items-center justify-center gap-1.5 ${
+              isSmallProjectCardDensity ? "gap-1" : ""
+            }`}
+          >
+            <div
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8 ${
+                isSmallProjectCardDensity ? "h-6 w-6 sm:h-7 sm:w-7" : ""
+              }`}
+            >
+              <Plus
+                className={`h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4 ${
+                  isSmallProjectCardDensity ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
+                }`}
+                aria-hidden="true"
+              />
+            </div>
+            <div className="flex w-full min-w-0 items-center justify-center">
+              <span
+                className={`line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px] ${
+                  isSmallProjectCardDensity
+                    ? "line-clamp-2 text-[8px] sm:text-[9px]"
+                    : ""
+                }`}
+                style={{ hyphens: "auto" }}
+              >
+                Add project
+              </span>
+            </div>
+          </div>
+        </div>
+      </button>
+    ),
+    [handleAddProject, isSmallProjectCardDensity]
   );
 
   const measureActiveProjectPanel = useCallback(() => {
@@ -1443,6 +1503,10 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       const sectionProjects = projectsBySection[section];
 
       if (sectionProjects.length === 0) {
+        if (section === "active") {
+          return <div className={projectGridClass}>{renderProjectAddCard()}</div>;
+        }
+
         return (
           <div className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5">
             <span
@@ -1493,6 +1557,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
               />
             </div>
           ))}
+          {section === "active" ? renderProjectAddCard() : null}
         </div>
       );
     },
@@ -1508,6 +1573,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
       handleProjectDeleted,
       handleTaskCreate,
       handleTaskToggleCompletion,
+      renderProjectAddCard,
     ]
   );
 
@@ -1590,7 +1656,7 @@ export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: s
             </div>
           )}
           </div>
-        <div className="flex items-center justify-center gap-1.5">
+        <div className="-mb-2 flex items-center justify-center gap-1.5 sm:-mb-3">
           {(["active", "completed"] as const).map((panel) => {
             const isActive = projectSection === panel;
             return (

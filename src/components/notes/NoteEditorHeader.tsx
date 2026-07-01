@@ -193,6 +193,7 @@ type NoteIconPickerProps = {
   onIconChange: (icon: string) => void;
   ariaLabel?: string;
   customInputAriaLabel?: string;
+  popoverClassName?: string;
 };
 
 export function NoteIconPicker({
@@ -200,6 +201,7 @@ export function NoteIconPicker({
   onIconChange,
   ariaLabel = "Change note icon",
   customInputAriaLabel = "Custom note icon",
+  popoverClassName = "",
 }: NoteIconPickerProps) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [iconSearch, setIconSearch] = useState("");
@@ -252,7 +254,7 @@ export function NoteIconPicker({
       </button>
 
       {isPickerOpen ? (
-        <div className="absolute left-0 top-12 z-50 w-[min(20rem,calc(100vw-1.5rem))] rounded-[18px] border border-white/[0.1] bg-[#090909]/95 p-2 shadow-[0_24px_70px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+        <div className={`absolute left-0 top-12 z-50 w-[min(20rem,calc(100vw-1.5rem))] rounded-[18px] border border-white/[0.1] bg-[#090909]/95 p-2 shadow-[0_24px_70px_-30px_rgba(0,0,0,0.95)] backdrop-blur-xl ${popoverClassName}`}>
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
             <div className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-white/35">
               Custom emoji

@@ -22,6 +22,7 @@ export type FabCreationOriginRect = {
 export type FabCreationRequest = {
   id: number;
   type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+  monumentId?: string | null;
   goalId?: string | null;
   campaignId?: string | null;
   projectId?: string | null;
@@ -38,6 +39,8 @@ export type FabCreationPreservedDrawer = {
 };
 
 type FabCreationRequestOptions = {
+  monumentId?: string | null;
+  skillId?: string | null;
   preserveDrawer?: FabCreationPreservedDrawer | null;
 };
 
@@ -88,6 +91,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       setCreationRequest({
         id: nextRequestIdRef.current,
         type: "GOAL",
+        monumentId: options?.monumentId ?? null,
         goalId: null,
         campaignId: campaignId ?? null,
         originRect: originRect ?? null,
@@ -108,6 +112,7 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
         id: nextRequestIdRef.current,
         type: "PROJECT",
         goalId: goalId ?? null,
+        skillId: options?.skillId ?? null,
         originRect: originRect ?? null,
         preserveDrawer: options?.preserveDrawer ?? null,
       });

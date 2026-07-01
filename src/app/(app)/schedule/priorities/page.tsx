@@ -14,6 +14,7 @@ import {
   sortGlobalPriorityItems,
   type RoadmapFilterOptionData,
   type GlobalPriorityRoadmapItem,
+  type PriorityTimeBlockFilterOptionData,
   type RoadmapHabitItem,
   type RoadmapPriorityCampaign,
   type RoadmapPriorityGoal,
@@ -129,6 +130,56 @@ type HabitRow = {
   goal?: HabitGoalMetadataRow | HabitGoalMetadataRow[] | null;
 };
 
+type DayTypeTimeBlockFilterRow = {
+  id: string;
+  day_type_id?: string | null;
+  block_type?: string | null;
+  time_block_label?: string | null;
+  position?: number | string | null;
+  allow_all_habit_types?: boolean | null;
+  allow_all_skills?: boolean | null;
+  allow_all_monuments?: boolean | null;
+  time_blocks?:
+    | {
+        id?: string | null;
+        label?: string | null;
+        start_local?: string | null;
+        end_local?: string | null;
+      }
+    | {
+        id?: string | null;
+        label?: string | null;
+        start_local?: string | null;
+        end_local?: string | null;
+      }[]
+    | null;
+  day_types?:
+    | {
+        id?: string | null;
+        name?: string | null;
+      }
+    | {
+        id?: string | null;
+        name?: string | null;
+      }[]
+    | null;
+};
+
+type DayTypeTimeBlockAllowedHabitTypeRow = {
+  day_type_time_block_id?: string | null;
+  habit_type?: string | null;
+};
+
+type DayTypeTimeBlockAllowedSkillRow = {
+  day_type_time_block_id?: string | null;
+  skill_id?: string | null;
+};
+
+type DayTypeTimeBlockAllowedMonumentRow = {
+  day_type_time_block_id?: string | null;
+  monument_id?: string | null;
+};
+
 type CampaignGoalRow = {
   campaign_id: string;
   goal_id: string;
@@ -221,6 +272,118 @@ function createSkillCategoryOption(
     name: (category.name ?? "").trim() || categoryId,
     sortOrder: parseSortOrder(category.sort_order),
   };
+}
+
+function normalizeAllowAllFlag(
+  value: boolean | null | undefined,
+  whitelistSize: number
+) {
+  return value === true || (value == null && whitelistSize === 0);
+}
+
+function addAllowedValue(
+  map: Map<string, Set<string>>,
+  ownerId?: string | null,
+  value?: string | null,
+  normalize: (value: string) => string = (entry) => entry.trim()
+) {
+  const key = ownerId?.trim();
+  if (!key || !value?.trim()) return;
+  const normalized = normalize(value);
+  if (!normalized) return;
+  const values = map.get(key) ?? new Set<string>();
+  values.add(normalized);
+  map.set(key, values);
+}
+
+function firstJoinedRow<T>(value?: T | T[] | null): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return value ?? null;
+}
+
+function formatTimeBlockTime(value?: string | null) {
+  if (!value) return null;
+  const [hours, minutes] = value.split(":");
+  if (!hours || !minutes) return value;
+  return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+}
+
+function buildPriorityTimeBlockFilterOptions(
+  rows: DayTypeTimeBlockFilterRow[],
+  allowedHabitTypes: DayTypeTimeBlockAllowedHabitTypeRow[],
+  allowedSkills: DayTypeTimeBlockAllowedSkillRow[],
+  allowedMonuments: DayTypeTimeBlockAllowedMonumentRow[]
+): PriorityTimeBlockFilterOptionData[] {
+  const habitTypesByBlockId = new Map<string, Set<string>>();
+  const skillIdsByBlockId = new Map<string, Set<string>>();
+  const monumentIdsByBlockId = new Map<string, Set<string>>();
+
+  for (const row of allowedHabitTypes) {
+    addAllowedValue(
+      habitTypesByBlockId,
+      row.day_type_time_block_id,
+      row.habit_type,
+      (value) => value.trim().toUpperCase()
+    );
+  }
+  for (const row of allowedSkills) {
+    addAllowedValue(skillIdsByBlockId, row.day_type_time_block_id, row.skill_id);
+  }
+  for (const row of allowedMonuments) {
+    addAllowedValue(
+      monumentIdsByBlockId,
+      row.day_type_time_block_id,
+      row.monument_id
+    );
+  }
+
+  return rows
+    .filter((row) => row.id)
+    .map((row) => {
+      const timeBlock = firstJoinedRow(row.time_blocks);
+      const dayType = firstJoinedRow(row.day_types);
+      const habitTypes = Array.from(habitTypesByBlockId.get(row.id) ?? []);
+      const skillIds = Array.from(skillIdsByBlockId.get(row.id) ?? []);
+      const monumentIds = Array.from(monumentIdsByBlockId.get(row.id) ?? []);
+      const start = formatTimeBlockTime(timeBlock?.start_local);
+      const end = formatTimeBlockTime(timeBlock?.end_local);
+      const timeRange = start && end ? `${start}-${end}` : null;
+      const dayTypeName = dayType?.name?.trim() || null;
+      const detail = [dayTypeName, timeRange].filter(Boolean).join(" / ") || null;
+
+      return {
+        id: row.id,
+        name:
+          row.time_block_label?.trim() ||
+          timeBlock?.label?.trim() ||
+          "Time Block",
+        detail,
+        blockType: row.block_type ?? null,
+        allowAllHabitTypes: normalizeAllowAllFlag(
+          row.allow_all_habit_types,
+          habitTypes.length
+        ),
+        allowAllSkills: normalizeAllowAllFlag(row.allow_all_skills, skillIds.length),
+        allowAllMonuments: normalizeAllowAllFlag(
+          row.allow_all_monuments,
+          monumentIds.length
+        ),
+        allowedHabitTypes: habitTypes,
+        allowedSkillIds: skillIds,
+        allowedMonumentIds: monumentIds,
+      };
+    })
+    .sort((a, b) => {
+      const nameDelta = a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+      });
+      if (nameDelta !== 0) return nameDelta;
+      return (a.detail ?? "").localeCompare(b.detail ?? "", undefined, {
+        sensitivity: "base",
+      });
+    });
 }
 
 function normalizeMetadataKey(value?: string | null) {
@@ -387,6 +550,7 @@ function normalizeGoal(
               skillId: task.skill_id ?? skill?.id ?? null,
               skillName: skill?.name ?? null,
               skillIcon: skill?.icon ?? null,
+              skillMonumentId: task.skills?.monument_id ?? null,
               priority: normalizePriority(task.priority),
               energy: task.energy ?? null,
               stage: task.stage ?? null,
@@ -412,6 +576,16 @@ function normalizeGoal(
               .filter((skillId): skillId is string => Boolean(skillId))
           )
         );
+        const skillMonumentIds = Array.from(
+          new Set(
+            [
+              ...(project.project_skills ?? []).map(
+                (projectSkill) => projectSkill.skills?.monument_id
+              ),
+              ...tasks.map((task) => task.skillMonumentId),
+            ].filter((monumentId): monumentId is string => Boolean(monumentId))
+          )
+        );
 
         return {
           id: project.id as string,
@@ -420,7 +594,9 @@ function normalizeGoal(
           skillId: primarySkill?.id ?? null,
           skillName: primarySkill?.name ?? null,
           skillIcon: primarySkill?.icon ?? null,
+          skillMonumentId: skillMonumentIds[0] ?? null,
           skillIds,
+          skillMonumentIds,
           taskSkillIds: tasks.map((task) => task.skillId ?? null),
           priority: normalizePriority(project.priority),
           energy: project.energy ?? null,
@@ -873,6 +1049,23 @@ export default async function PriorityEditorPage() {
     );
   }
 
+  const { data: timeBlockData, error: timeBlockError } = await supabase
+    .from("day_type_time_blocks")
+    .select(
+      `id,day_type_id,block_type,time_block_label,position,allow_all_habit_types,allow_all_skills,allow_all_monuments,
+      time_blocks(id,label,start_local,end_local),
+      day_types(id,name)`
+    )
+    .eq("user_id", userId)
+    .order("position", { ascending: true });
+
+  if (timeBlockError) {
+    console.error(
+      "Failed to load Time Block options for priority editor",
+      timeBlockError
+    );
+  }
+
   const { data: goalData, error: goalError } = await supabase
     .from("goals")
     .select(
@@ -946,6 +1139,52 @@ export default async function PriorityEditorPage() {
   const habits = (habitData ?? []) as HabitRow[];
   const allMonuments = (allMonumentData ?? []) as MonumentRow[];
   const allSkills = (allSkillData ?? []) as SkillMetadataRow[];
+  const timeBlockRows = (timeBlockData ?? []) as DayTypeTimeBlockFilterRow[];
+  const dayTypeTimeBlockIds = timeBlockRows.map((row) => row.id).filter(Boolean);
+  const [
+    allowedHabitTypesResult,
+    allowedSkillsResult,
+    allowedMonumentsResult,
+  ] =
+    !timeBlockError && dayTypeTimeBlockIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from("day_type_time_block_allowed_habit_types")
+            .select("day_type_time_block_id,habit_type")
+            .in("day_type_time_block_id", dayTypeTimeBlockIds),
+          supabase
+            .from("day_type_time_block_allowed_skills")
+            .select("day_type_time_block_id,skill_id")
+            .in("day_type_time_block_id", dayTypeTimeBlockIds),
+          supabase
+            .from("day_type_time_block_allowed_monuments")
+            .select("day_type_time_block_id,monument_id")
+            .in("day_type_time_block_id", dayTypeTimeBlockIds),
+        ])
+      : [
+          { data: [] as DayTypeTimeBlockAllowedHabitTypeRow[] | null, error: null },
+          { data: [] as DayTypeTimeBlockAllowedSkillRow[] | null, error: null },
+          { data: [] as DayTypeTimeBlockAllowedMonumentRow[] | null, error: null },
+        ];
+
+  if (allowedHabitTypesResult.error) {
+    console.error(
+      "Failed to load Time Block Habit constraints for priority editor",
+      allowedHabitTypesResult.error
+    );
+  }
+  if (allowedSkillsResult.error) {
+    console.error(
+      "Failed to load Time Block Skill constraints for priority editor",
+      allowedSkillsResult.error
+    );
+  }
+  if (allowedMonumentsResult.error) {
+    console.error(
+      "Failed to load Time Block Monument constraints for priority editor",
+      allowedMonumentsResult.error
+    );
+  }
   const skillIds = Array.from(
     new Set(goals.flatMap((goal) => collectGoalSkillIds(goal)))
   );
@@ -1023,6 +1262,44 @@ export default async function PriorityEditorPage() {
       `Skills select error: ${allSkillError.message || "Unable to load Skill options."}`
     );
   }
+  if (skillCategoryError) {
+    fetchErrorMessages.push(
+      `Skill categories select error: ${
+        skillCategoryError.message || "Unable to load Skill categories."
+      }`
+    );
+  }
+  if (timeBlockError) {
+    fetchErrorMessages.push(
+      `Time Blocks select error: ${
+        timeBlockError.message || "Unable to load Time Blocks."
+      }`
+    );
+  }
+  if (allowedHabitTypesResult.error) {
+    fetchErrorMessages.push(
+      `Time Block Habit constraints select error: ${
+        allowedHabitTypesResult.error.message ||
+        "Unable to load Time Block Habit constraints."
+      }`
+    );
+  }
+  if (allowedSkillsResult.error) {
+    fetchErrorMessages.push(
+      `Time Block Skill constraints select error: ${
+        allowedSkillsResult.error.message ||
+        "Unable to load Time Block Skill constraints."
+      }`
+    );
+  }
+  if (allowedMonumentsResult.error) {
+    fetchErrorMessages.push(
+      `Time Block Monument constraints select error: ${
+        allowedMonumentsResult.error.message ||
+        "Unable to load Time Block Monument constraints."
+      }`
+    );
+  }
   if (goalError) {
     fetchErrorMessages.push(
       `Goals select error: ${goalError.message || "Unable to load Goals."}`
@@ -1062,6 +1339,14 @@ export default async function PriorityEditorPage() {
   const skillCategoryOptions = ((skillCategoryData ?? []) as SkillCategoryRow[])
     .map(createSkillCategoryOption)
     .filter((option): option is UserPrioritySkillCategoryData => Boolean(option));
+  const timeBlockFilterOptions = buildPriorityTimeBlockFilterOptions(
+    timeBlockRows,
+    (allowedHabitTypesResult.data ??
+      []) as DayTypeTimeBlockAllowedHabitTypeRow[],
+    (allowedSkillsResult.data ?? []) as DayTypeTimeBlockAllowedSkillRow[],
+    (allowedMonumentsResult.data ??
+      []) as DayTypeTimeBlockAllowedMonumentRow[]
+  );
 
   return (
     <ProtectedRoute>
@@ -1072,6 +1357,7 @@ export default async function PriorityEditorPage() {
         initialMonumentOptions={monumentFilterOptions}
         initialSkillOptions={skillFilterOptions}
         initialSkillCategories={skillCategoryOptions}
+        initialTimeBlockOptions={timeBlockFilterOptions}
         initialError={fetchErrorMessages.length ? fetchErrorMessages.join(" ") : null}
       />
     </ProtectedRoute>
