@@ -245,6 +245,8 @@ const QUICK_CREATE_EVENT_MIN_DURATION_MIN = 15;
 const QUICK_CREATE_EVENT_MOVE_CANCEL_PX = 28;
 const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
 const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
+const QUICK_CREATE_INTERACTION_SELECTOR =
+  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory]";
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const COMPLETION_BOUNCE_DURATION_MS = 420;
 const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
@@ -978,36 +980,21 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
   );
 }
 
-type MyListItem = {
-  id: string;
-  label: string;
-  done: boolean;
-};
-
-const MY_LIST_INITIAL_ITEMS: MyListItem[] = [
-  { id: "prep", label: "Review today's priorities", done: false },
-  { id: "follow-up", label: "Send one follow-up", done: false },
-  { id: "reset", label: "Reset workspace before shutdown", done: false },
-];
-
 function ScheduleMyListSheet({
   open,
   onOpenChange,
+  tasks,
+  pendingTaskIds,
+  onToggleTask,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  tasks: TaskLite[];
+  pendingTaskIds: Set<string>;
+  onToggleTask: (taskId: string) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
-  const [items, setItems] = useState<MyListItem[]>(MY_LIST_INITIAL_ITEMS);
   const [note, setNote] = useState("");
-
-  const toggleItem = useCallback((itemId: string) => {
-    setItems((currentItems) =>
-      currentItems.map((item) =>
-        item.id === itemId ? { ...item, done: !item.done } : item
-      )
-    );
-  }, []);
 
   return (
     <motion.aside
@@ -1069,28 +1056,43 @@ function ScheduleMyListSheet({
         </div>
         <div className="space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 [-webkit-overflow-scrolling:touch] sm:px-5">
           <div className="space-y-1.5">
-            {items.map((item) => (
-              <label
-                key={item.id}
-                className="flex min-h-9 items-center gap-2.5 rounded-xl border border-white/[0.075] bg-white/[0.035] px-3 py-2 text-sm text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-colors hover:bg-white/[0.05]"
-              >
-                <input
-                  type="checkbox"
-                  checked={item.done}
-                  onChange={() => toggleItem(item.id)}
-                  tabIndex={open ? 0 : -1}
-                  className="h-4 w-4 shrink-0 accent-zinc-200"
-                />
-                <span
-                  className={clsx(
-                    "min-w-0 leading-snug transition",
-                    item.done && "text-white/42 line-through"
-                  )}
-                >
-                  {item.label}
-                </span>
-              </label>
-            ))}
+            {tasks.length > 0 ? (
+              tasks.map((task) => {
+                const done = task.stage?.toString().toUpperCase() === "PERFECT";
+                const pending = pendingTaskIds.has(task.id);
+
+                return (
+                  <label
+                    key={task.id}
+                    className={clsx(
+                      "flex min-h-9 items-center gap-2.5 rounded-xl border border-white/[0.075] bg-white/[0.035] px-3 py-2 text-sm text-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-colors hover:bg-white/[0.05]",
+                      pending && "opacity-60"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={done}
+                      disabled={pending}
+                      onChange={() => onToggleTask(task.id)}
+                      tabIndex={open ? 0 : -1}
+                      className="h-4 w-4 shrink-0 accent-zinc-200 disabled:cursor-wait"
+                    />
+                    <span
+                      className={clsx(
+                        "min-w-0 leading-snug transition",
+                        done && "text-white/42 line-through"
+                      )}
+                    >
+                      {task.name}
+                    </span>
+                  </label>
+                );
+              })
+            ) : (
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5 text-sm text-white/42">
+                No To-Dos yet.
+              </div>
+            )}
           </div>
           <textarea
             value={note}
@@ -3931,6 +3933,7 @@ export default function ScheduleTabContent({
   const [quickCreateSkillPickerAnchor, setQuickCreateSkillPickerAnchor] =
     useState<"card" | "accessory">("card");
   const [quickCreateSkillSearch, setQuickCreateSkillSearch] = useState("");
+  const [quickCreateKeyboardInset, setQuickCreateKeyboardInset] = useState(0);
   const quickCreateDraftEventRef = useRef<QuickCreateDraftEvent | null>(null);
   const quickCreateDraftCardRef = useRef<HTMLDivElement | null>(null);
   const quickCreateSkillPickerRef = useRef<HTMLDivElement | null>(null);
@@ -3955,6 +3958,16 @@ export default function ScheduleTabContent({
     fixedStartMinute: number;
     fixedEndMinute: number;
   } | null>(null);
+  const quickCreateIsResizingRef = useRef(false);
+  const quickCreateResizeLastClientYRef = useRef<number | null>(null);
+  const quickCreateResizeAutoScrollFrameRef = useRef<number | null>(null);
+  const quickCreateResizeAutoScrollDirectionRef = useRef<
+    "up" | "down" | null
+  >(null);
+  const quickCreateResizeAutoScrollSpeedRef = useRef(0);
+  const quickCreateResizeTouchSuppressCleanupRef = useRef<
+    (() => void) | null
+  >(null);
   const updateManualPlacementSession = useCallback(
     (
       updater: (
@@ -3980,6 +3993,34 @@ export default function ScheduleTabContent({
       setQuickCreateDebugPhase("draft rendered");
     }
   }, [quickCreateDraftEvent, setQuickCreateDebugPhase]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateQuickCreateKeyboardInset = () => {
+      const viewport = window.visualViewport;
+      const nextInset = viewport
+        ? Math.max(
+            0,
+            Math.round(window.innerHeight - (viewport.height + viewport.offsetTop))
+          )
+        : 0;
+      setQuickCreateKeyboardInset((currentInset) =>
+        currentInset === nextInset ? currentInset : nextInset
+      );
+    };
+
+    const viewport = window.visualViewport;
+    updateQuickCreateKeyboardInset();
+    viewport?.addEventListener("resize", updateQuickCreateKeyboardInset);
+    viewport?.addEventListener("scroll", updateQuickCreateKeyboardInset);
+    window.addEventListener("resize", updateQuickCreateKeyboardInset);
+
+    return () => {
+      viewport?.removeEventListener("resize", updateQuickCreateKeyboardInset);
+      viewport?.removeEventListener("scroll", updateQuickCreateKeyboardInset);
+      window.removeEventListener("resize", updateQuickCreateKeyboardInset);
+    };
+  }, []);
   const renderDayStart = useMemo(
     () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
     [currentDate, effectiveTimeZone]
@@ -6341,6 +6382,33 @@ export default function ScheduleTabContent({
     }
     return map;
   }, [tasks]);
+
+  const myListTasks = useMemo(() => {
+    const scheduledTaskIds = new Set(
+      allInstances
+        .filter(
+          (instance) =>
+            instance.source_type === "TASK" &&
+            typeof instance.source_id === "string" &&
+            instance.source_id.length > 0
+        )
+        .map((instance) => instance.source_id)
+    );
+
+    return tasks
+      .filter(
+        (task) =>
+          !task.goal_id &&
+          !task.project_id &&
+          !scheduledTaskIds.has(task.id)
+      )
+      .sort((left, right) => {
+        const leftDone = left.stage?.toString().toUpperCase() === "PERFECT";
+        const rightDone = right.stage?.toString().toUpperCase() === "PERFECT";
+        if (leftDone !== rightDone) return leftDone ? 1 : -1;
+        return left.name.localeCompare(right.name);
+      });
+  }, [allInstances, tasks]);
 
   const projectMap = useMemo(() => {
     const map: Record<string, (typeof projectItems)[number]> = {};
@@ -9373,6 +9441,47 @@ export default function ScheduleTabContent({
     autoScrollDirectionRef.current = null;
   }, []);
 
+  const stopQuickCreateResizeAutoScroll = useCallback(() => {
+    if (quickCreateResizeAutoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(quickCreateResizeAutoScrollFrameRef.current);
+      quickCreateResizeAutoScrollFrameRef.current = null;
+    }
+    quickCreateResizeAutoScrollDirectionRef.current = null;
+  }, []);
+
+  const stopQuickCreateResizeTouchSuppression = useCallback(() => {
+    quickCreateResizeTouchSuppressCleanupRef.current?.();
+    quickCreateResizeTouchSuppressCleanupRef.current = null;
+  }, []);
+
+  const startQuickCreateResizeTouchSuppression = useCallback(() => {
+    if (
+      typeof window === "undefined" ||
+      quickCreateResizeTouchSuppressCleanupRef.current
+    ) {
+      return;
+    }
+    const suppressNativeResizeScroll = (event: TouchEvent) => {
+      if (!quickCreateIsResizingRef.current) return;
+      event.stopPropagation();
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+    };
+    const options: AddEventListenerOptions = {
+      capture: true,
+      passive: false,
+    };
+    window.addEventListener("touchmove", suppressNativeResizeScroll, options);
+    quickCreateResizeTouchSuppressCleanupRef.current = () => {
+      window.removeEventListener(
+        "touchmove",
+        suppressNativeResizeScroll,
+        options
+      );
+    };
+  }, []);
+
   useEffect(() => {
     if (!manualPlacementSession) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -9477,19 +9586,39 @@ export default function ScheduleTabContent({
     });
   }, [setQuickCreateDebugPhase]);
 
+  const isQuickCreateInteractionTarget = useCallback(
+    (target: EventTarget | null) => {
+      if (!(target instanceof Node)) return false;
+      const targetElement =
+        target instanceof Element
+          ? target
+          : target.parentNode instanceof Element
+            ? target.parentNode
+            : null;
+      if (targetElement?.closest(QUICK_CREATE_INTERACTION_SELECTOR)) {
+        return true;
+      }
+      const card = quickCreateDraftCardRef.current;
+      const picker = quickCreateSkillPickerRef.current;
+      const accessory = quickCreateKeyboardAccessoryRef.current;
+      return (
+        (!!card && card.contains(target)) ||
+        (!!picker && picker.contains(target)) ||
+        (!!accessory && accessory.contains(target))
+      );
+    },
+    []
+  );
+
   const isQuickCreateDraftInteractionInside = useCallback(() => {
-    const card = quickCreateDraftCardRef.current;
-    const picker = quickCreateSkillPickerRef.current;
-    const accessory = quickCreateKeyboardAccessoryRef.current;
-    const activeElement = document.activeElement;
+    if (typeof document === "undefined") {
+      return quickCreateDraftPointerInsideRef.current;
+    }
     return (
-      (activeElement instanceof Node &&
-        ((!!card && card.contains(activeElement)) ||
-          (!!picker && picker.contains(activeElement)) ||
-          (!!accessory && accessory.contains(activeElement)))) ||
+      isQuickCreateInteractionTarget(document.activeElement) ||
       quickCreateDraftPointerInsideRef.current
     );
-  }, []);
+  }, [isQuickCreateInteractionTarget]);
 
   const cancelQuickCreateDraft = useCallback(() => {
     setQuickCreateDraftEvent(null);
@@ -9500,12 +9629,20 @@ export default function ScheduleTabContent({
     quickCreateDraftEventRef.current = null;
     quickCreateDragRef.current = null;
     quickCreateResizeSessionRef.current = null;
+    quickCreateIsResizingRef.current = false;
+    quickCreateResizeLastClientYRef.current = null;
     setQuickCreateResizeMode(null);
+    stopQuickCreateResizeAutoScroll();
+    stopQuickCreateResizeTouchSuppression();
     quickCreateDraftCreatedAtRef.current = null;
     quickCreateDraftInputFocusedRef.current = false;
     quickCreateDraftPointerInsideRef.current = false;
     cancelQuickCreateSurfacePress();
-  }, [cancelQuickCreateSurfacePress]);
+  }, [
+    cancelQuickCreateSurfacePress,
+    stopQuickCreateResizeAutoScroll,
+    stopQuickCreateResizeTouchSuppression,
+  ]);
 
   const resolveQuickCreateStartMinute = useCallback(
     (clientY: number, surface: HTMLElement | null) => {
@@ -9923,6 +10060,91 @@ export default function ScheduleTabContent({
     [renderDayStart, resolveManualPlacementTime, snapToFiveMinuteGrid]
   );
 
+  const updateQuickCreateResizeAutoScroll = useCallback(
+    (clientY: number) => {
+      quickCreateResizeLastClientYRef.current = clientY;
+      const container = dayTimelineContainerRef.current;
+      if (!container || typeof window === "undefined") {
+        stopQuickCreateResizeAutoScroll();
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight ?? 0;
+      if (
+        !(viewportHeight > 0) ||
+        rect.bottom <= 0 ||
+        rect.top >= viewportHeight
+      ) {
+        stopQuickCreateResizeAutoScroll();
+        return;
+      }
+
+      const visibleTop = Math.max(rect.top, 0);
+      const visibleBottom = Math.min(rect.bottom, viewportHeight);
+      const activationZone = 64;
+      const topDistance = clientY - visibleTop;
+      const bottomDistance = visibleBottom - clientY;
+      const withinTop = topDistance >= 0 && topDistance <= activationZone;
+      const withinBottom =
+        bottomDistance >= 0 && bottomDistance <= activationZone;
+
+      if (!withinTop && !withinBottom) {
+        stopQuickCreateResizeAutoScroll();
+        return;
+      }
+
+      const direction = withinTop ? "up" : "down";
+      const distance = withinTop ? topDistance : bottomDistance;
+      const intensity = 1 - Math.min(Math.max(distance / activationZone, 0), 1);
+      const minSpeed = 48;
+      const maxSpeed = 180;
+      quickCreateResizeAutoScrollDirectionRef.current = direction;
+      quickCreateResizeAutoScrollSpeedRef.current =
+        minSpeed + (maxSpeed - minSpeed) * intensity;
+
+      const step = () => {
+        if (!quickCreateIsResizingRef.current) {
+          stopQuickCreateResizeAutoScroll();
+          return;
+        }
+
+        const currentDirection =
+          quickCreateResizeAutoScrollDirectionRef.current;
+        if (!currentDirection) {
+          stopQuickCreateResizeAutoScroll();
+          return;
+        }
+
+        const frameMs = 16;
+        const delta =
+          (quickCreateResizeAutoScrollSpeedRef.current * frameMs) / 1000;
+        const sign = currentDirection === "up" ? -1 : 1;
+        const scrollDelta = sign * delta;
+
+        if (container.scrollHeight > container.clientHeight + 1) {
+          container.scrollTop += scrollDelta;
+        } else {
+          window.scrollBy({ top: scrollDelta, behavior: "auto" });
+        }
+
+        const lastY = quickCreateResizeLastClientYRef.current;
+        if (lastY !== null) {
+          updateQuickCreateResizeFromPointer(lastY);
+        }
+        quickCreateResizeAutoScrollFrameRef.current =
+          requestAnimationFrame(step);
+      };
+
+      if (quickCreateResizeAutoScrollFrameRef.current === null) {
+        quickCreateResizeAutoScrollFrameRef.current =
+          requestAnimationFrame(step);
+      }
+    },
+    [stopQuickCreateResizeAutoScroll, updateQuickCreateResizeFromPointer]
+  );
+
   const handleQuickCreateResizePointerDown = useCallback(
     (
       mode: QuickCreateResizeMode,
@@ -9931,10 +10153,14 @@ export default function ScheduleTabContent({
       if (event.pointerType === "mouse" && event.button !== 0) return;
       const draft = quickCreateDraftEventRef.current;
       if (!draft) return;
-      event.preventDefault();
       event.stopPropagation();
+      if (event.cancelable) {
+        event.preventDefault();
+      }
       quickCreateDraftPointerInsideRef.current = true;
       quickCreateDragRef.current = null;
+      quickCreateIsResizingRef.current = true;
+      quickCreateResizeLastClientYRef.current = event.clientY;
       quickCreateResizeSessionRef.current = {
         pointerId: event.pointerId,
         mode,
@@ -9942,42 +10168,58 @@ export default function ScheduleTabContent({
         fixedEndMinute: draft.endMinute,
       };
       setQuickCreateResizeMode(mode);
+      startQuickCreateResizeTouchSuppression();
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {}
     },
-    []
+    [startQuickCreateResizeTouchSuppression]
   );
 
   const handleQuickCreateResizePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
       const session = quickCreateResizeSessionRef.current;
       if (!session || session.pointerId !== event.pointerId) return;
-      event.preventDefault();
       event.stopPropagation();
+      if (event.cancelable) {
+        event.preventDefault();
+      }
       quickCreateDraftPointerInsideRef.current = true;
+      quickCreateResizeLastClientYRef.current = event.clientY;
       updateQuickCreateResizeFromPointer(event.clientY);
+      updateQuickCreateResizeAutoScroll(event.clientY);
     },
-    [updateQuickCreateResizeFromPointer]
+    [updateQuickCreateResizeAutoScroll, updateQuickCreateResizeFromPointer]
   );
 
   const handleQuickCreateResizePointerEnd = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
       const session = quickCreateResizeSessionRef.current;
       if (session?.pointerId === event.pointerId) {
-        event.preventDefault();
         event.stopPropagation();
+        if (event.cancelable) {
+          event.preventDefault();
+        }
         quickCreateDraftPointerInsideRef.current = true;
         updateQuickCreateResizeFromPointer(event.clientY);
         quickCreateResizeSessionRef.current = null;
+        quickCreateIsResizingRef.current = false;
+        quickCreateResizeLastClientYRef.current = null;
         setQuickCreateResizeMode(null);
+        stopQuickCreateResizeAutoScroll();
+        stopQuickCreateResizeTouchSuppression();
       }
       try {
         event.currentTarget.releasePointerCapture(event.pointerId);
       } catch {}
       focusQuickCreateDraftInput();
     },
-    [focusQuickCreateDraftInput, updateQuickCreateResizeFromPointer]
+    [
+      focusQuickCreateDraftInput,
+      stopQuickCreateResizeAutoScroll,
+      stopQuickCreateResizeTouchSuppression,
+      updateQuickCreateResizeFromPointer,
+    ]
   );
 
   const handleQuickCreateDraftPointerMove = useCallback(
@@ -10064,15 +10306,8 @@ export default function ScheduleTabContent({
   useEffect(() => {
     if (!quickCreateDraftEvent) return;
     const updatePointerContainment = (event: PointerEvent | TouchEvent) => {
-      const card = quickCreateDraftCardRef.current;
-      const picker = quickCreateSkillPickerRef.current;
-      const accessory = quickCreateKeyboardAccessoryRef.current;
-      const target = event.target;
       quickCreateDraftPointerInsideRef.current =
-        target instanceof Node &&
-        ((!!card && card.contains(target)) ||
-          (!!picker && picker.contains(target)) ||
-          (!!accessory && accessory.contains(target)));
+        isQuickCreateInteractionTarget(event.target);
     };
     window.addEventListener("pointerdown", updatePointerContainment, true);
     window.addEventListener("touchstart", updatePointerContainment, true);
@@ -10081,14 +10316,23 @@ export default function ScheduleTabContent({
       window.removeEventListener("touchstart", updatePointerContainment, true);
       quickCreateDraftPointerInsideRef.current = false;
     };
-  }, [quickCreateDraftEvent]);
+  }, [isQuickCreateInteractionTarget, quickCreateDraftEvent]);
 
   useEffect(() => {
     return () => {
       stopAutoScroll();
+      stopQuickCreateResizeAutoScroll();
+      stopQuickCreateResizeTouchSuppression();
+      quickCreateIsResizingRef.current = false;
+      quickCreateResizeLastClientYRef.current = null;
       clearQuickCreateLongPressTimer();
     };
-  }, [clearQuickCreateLongPressTimer, stopAutoScroll]);
+  }, [
+    clearQuickCreateLongPressTimer,
+    stopAutoScroll,
+    stopQuickCreateResizeAutoScroll,
+    stopQuickCreateResizeTouchSuppression,
+  ]);
 
   const updatePreviewAndScrollIntent = useCallback(
     (clientY: number) => {
@@ -11684,7 +11928,6 @@ export default function ScheduleTabContent({
                               setQuickCreateTitleFocused(true);
                             }}
                             onBlur={() => {
-                              setQuickCreateTitleFocused(false);
                               const createdAt =
                                 quickCreateDraftCreatedAtRef.current;
                               const justCreated =
@@ -11695,6 +11938,7 @@ export default function ScheduleTabContent({
                                 !quickCreateDraftInputFocusedRef.current
                               ) {
                                 quickCreateDraftInputFocusedRef.current = false;
+                                setQuickCreateTitleFocused(justCreated);
                                 setQuickCreateDebugPhase(
                                   "blur ignored/just created"
                                 );
@@ -11707,6 +11951,7 @@ export default function ScheduleTabContent({
                                   );
                                   quickCreateDraftInputFocusedRef.current =
                                     false;
+                                  setQuickCreateTitleFocused(true);
                                   return;
                                 }
                                 if (
@@ -11718,6 +11963,7 @@ export default function ScheduleTabContent({
                                   cancelQuickCreateDraft();
                                 }
                                 quickCreateDraftInputFocusedRef.current = false;
+                                setQuickCreateTitleFocused(false);
                               });
                             }}
                             onPointerDown={(event) => event.stopPropagation()}
@@ -11739,12 +11985,19 @@ export default function ScheduleTabContent({
                         {isQuickCreateSkillPickerOpen ? (
                           <div
                             ref={quickCreateSkillPickerRef}
+                            data-quick-create-skill-picker="true"
                             className={clsx(
                               "w-64 max-w-[calc(100vw-2rem)] touch-pan-y rounded-[1.25rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl",
                               quickCreateSkillPickerAnchor === "accessory"
-                                ? "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[2147483644] mx-auto"
+                                ? "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[2147483646] mx-auto"
                                 : "absolute left-2 top-[calc(100%+0.375rem)] z-20"
                             )}
+                            style={
+                              quickCreateSkillPickerAnchor === "accessory" &&
+                              quickCreateKeyboardInset > 0
+                                ? { bottom: quickCreateKeyboardInset + 76 }
+                                : undefined
+                            }
                             onPointerDown={(event) => {
                               event.stopPropagation();
                               quickCreateDraftPointerInsideRef.current = true;
@@ -12966,6 +13219,7 @@ export default function ScheduleTabContent({
       quickCreateSkillPickerAnchor,
       quickCreateSkillGroups,
       quickCreateSkillSearch,
+      quickCreateKeyboardInset,
       snapToFiveMinuteGrid,
       projectGoalRelations,
       getHabitCompletionStatus,
@@ -13594,7 +13848,12 @@ export default function ScheduleTabContent({
           <div
             ref={quickCreateKeyboardAccessoryRef}
             data-quick-create-keyboard-accessory="true"
-            className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[2147483643] mx-auto flex min-h-14 max-w-[34rem] items-center gap-3 rounded-[1.15rem] border border-white/10 bg-zinc-950/82 px-3 py-2 text-white shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl md:hidden"
+            className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[2147483645] mx-auto flex min-h-14 max-w-[34rem] items-center gap-3 rounded-[1.15rem] border border-white/10 bg-zinc-950/82 px-3 py-2 text-white shadow-[0_18px_44px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl md:hidden"
+            style={
+              quickCreateKeyboardInset > 0
+                ? { bottom: quickCreateKeyboardInset + 8 }
+                : undefined
+            }
             onPointerDown={(event) => {
               event.stopPropagation();
               quickCreateDraftPointerInsideRef.current = true;
@@ -13893,6 +14152,9 @@ export default function ScheduleTabContent({
       </ProtectedRoute>
       <ScheduleMyListSheet
         open={isMyListOpen}
+        tasks={myListTasks}
+        pendingTaskIds={pendingBacklogTaskIds}
+        onToggleTask={handleToggleBacklogTaskCompletion}
         onOpenChange={(open) => {
           void hapticPress();
           setIsMyListOpen(open);

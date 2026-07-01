@@ -13,6 +13,7 @@ export type TaskLite = {
   stage: string;
   duration_min: number;
   energy: string | null;
+  goal_id?: string | null;
   project_id?: string | null;
   skill_id?: string | null;
   skill_icon?: string | null;

@@ -8,7 +8,7 @@ type RouteContext = {
   };
 };
 
-const EVENT_TYPES = ["PROJECT", "HABIT"] as const;
+const EVENT_TYPES = ["PROJECT", "HABIT", "TASK"] as const;
 type SupportedEventType = (typeof EVENT_TYPES)[number];
 
 function normalizeEventType(value?: string | null): SupportedEventType | null {
@@ -62,6 +62,9 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
   try {
     if (eventType === "PROJECT") {
       return await deleteProjectEvent(supabase, eventId, user.id);
+    }
+    if (eventType === "TASK") {
+      return await deleteTaskEvent(supabase, eventId, user.id);
     }
     return await deleteHabitEvent(supabase, eventId, user.id);
   } catch (error) {
@@ -133,6 +136,65 @@ async function deleteProjectEvent(
   if (projectDeleteError) {
     console.error("Failed to delete project", projectDeleteError);
     throw projectDeleteError;
+  }
+
+  return NextResponse.json({ success: true });
+}
+
+async function deleteTaskEvent(
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
+  taskId: string,
+  userId: string
+) {
+  const { data: task, error: taskLookupError } = await supabase
+    .from("tasks")
+    .select("id")
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (taskLookupError) {
+    console.error("Failed to verify task ownership", taskLookupError);
+    throw taskLookupError;
+  }
+
+  if (!task) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  const { error: instanceError } = await supabase
+    .from("schedule_instances")
+    .delete()
+    .eq("user_id", userId)
+    .eq("source_id", taskId)
+    .eq("source_type", "TASK");
+
+  if (instanceError) {
+    console.error("Failed to delete task schedule instances", instanceError);
+    throw instanceError;
+  }
+
+  const { error: tagError } = await supabase
+    .from("event_tags")
+    .delete()
+    .eq("user_id", userId)
+    .eq("entity_id", taskId)
+    .eq("entity_type", "TASK");
+
+  if (tagError) {
+    console.error("Failed to delete task tags", tagError);
+    throw tagError;
+  }
+
+  const { error: taskDeleteError } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", taskId)
+    .eq("user_id", userId);
+
+  if (taskDeleteError) {
+    console.error("Failed to delete task", taskDeleteError);
+    throw taskDeleteError;
   }
 
   return NextResponse.json({ success: true });

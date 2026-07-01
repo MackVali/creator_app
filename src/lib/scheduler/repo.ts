@@ -264,6 +264,7 @@ type TaskRecord = {
   energy?: string | number | null;
   stage?: string | null;
   duration_min?: number | null;
+  goal_id?: string | null;
   project_id?: string | null;
   skill_id?: string | null;
   skills?: {
@@ -490,6 +491,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
     "stage",
     "duration_min",
     "energy",
+    "goal_id",
     "project_id",
     "skill_id",
     "skills(icon, monument_id)",
@@ -517,6 +519,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
       stage: normalizeStageValue(record.stage, "PREPARE"),
       duration_min: safeDuration,
       energy: normalizeEnergyValue(energyName),
+      goal_id: record.goal_id ?? null,
       project_id: record.project_id ?? null,
       skill_id: record.skill_id ?? null,
       skill_icon: record.skills?.icon ?? null,

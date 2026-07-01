@@ -350,6 +350,8 @@ type CreatorEntitySavedEventDetail = {
   preserveDrawer?: FabCreationRequest["preserveDrawer"];
 };
 type FabGoalDeleteConfirmTarget = {
+  entityType: "GOAL" | "TASK";
+  entityId: string;
   goalName: string;
   projectCount: number | null;
 };
@@ -2018,6 +2020,12 @@ type FabSupabaseClient = NonNullable<ReturnType<typeof getSupabaseBrowser>>;
 type ExactScheduleSourceType = "PROJECT" | "TASK";
 type UnifiedEventKind = "APPOINTMENT" | "MEETING" | "REMINDER" | "EVENT";
 const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
+
+const dispatchScheduleSavedEventsUpdated = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SCHEDULE_SAVED_EVENTS_UPDATED_EVENT));
+};
+
 type ParsedExactSchedule = {
   startIso: string;
   endIso: string;
@@ -5620,6 +5628,25 @@ export function Fab({
     isUnifiedEventSheetOpen && resolvedUnifiedAddEventSaveSelected === "TASK"
       ? (taskGoalId ?? activeTaskCreationGoalId)
       : taskGoalId;
+  const isStandaloneUnifiedTaskDraft = useMemo(
+    () =>
+      isUnifiedEventSheetOpen &&
+      unifiedCreationMode === "TASKS" &&
+      derivedUnifiedAddEventSourceType === "TASK" &&
+      resolvedUnifiedAddEventSaveSelected === "TASK" &&
+      !resolvedAddEventTaskGoalId &&
+      !taskProjectId &&
+      !projectTaskStack,
+    [
+      derivedUnifiedAddEventSourceType,
+      isUnifiedEventSheetOpen,
+      projectTaskStack,
+      resolvedAddEventTaskGoalId,
+      resolvedUnifiedAddEventSaveSelected,
+      taskProjectId,
+      unifiedCreationMode,
+    ],
+  );
   const [unifiedGoalSearch, setUnifiedGoalSearch] = useState("");
   const [showUnifiedGoalFilters, setShowUnifiedGoalFilters] = useState(false);
   const [unifiedGoalFilterMonumentId, setUnifiedGoalFilterMonumentId] =
@@ -5641,6 +5668,7 @@ export function Fab({
   const [taskExactFallbackDate, setTaskExactFallbackDate] = useState("");
   const [taskExactStartTime, setTaskExactStartTime] = useState("");
   const [taskExactEndTime, setTaskExactEndTime] = useState("");
+  const [taskExactTimingTouched, setTaskExactTimingTouched] = useState(false);
   const unifiedGoalMonumentOptions = useMemo(() => {
     const monumentById = new Map(
       monuments
@@ -6228,6 +6256,7 @@ export function Fab({
     setTaskExactFallbackDate("");
     setTaskExactStartTime("");
     setTaskExactEndTime("");
+    setTaskExactTimingTouched(false);
     setShowTaskDurationPicker(false);
     setTaskDurationPosition(null);
   }, []);
@@ -9240,7 +9269,10 @@ export function Fab({
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
   const editableDeleteTarget =
     editTarget?.entityType === selected &&
-    (selected === "GOAL" || selected === "PROJECT" || selected === "HABIT") &&
+    (selected === "GOAL" ||
+      selected === "PROJECT" ||
+      selected === "TASK" ||
+      selected === "HABIT") &&
     editTarget.entityId
       ? editTarget
       : null;
@@ -10339,6 +10371,7 @@ export function Fab({
     setTaskExactFallbackDate("");
     setTaskExactStartTime("");
     setTaskExactEndTime("");
+    setTaskExactTimingTouched(false);
     setAddEventSubActions([]);
     setAddEventWorkspaceValue("PERSONAL");
     setAddEventTimingMode("manual");
@@ -17778,6 +17811,7 @@ export function Fab({
       setTaskExactFallbackDate(defaultSchedule.date);
       setTaskExactStartTime(defaultSchedule.startTime);
       setTaskExactEndTime(defaultSchedule.endTime);
+      setTaskExactTimingTouched(false);
       setAddEventSubActions([]);
       resetUnifiedEventInviteDraft();
       setTaskGoalId((current) => current ?? activeTaskCreationGoalId);
@@ -17843,6 +17877,7 @@ export function Fab({
 
   useEffect(() => {
     if (!isUnifiedEventSheetOpen) return;
+    if (isStandaloneUnifiedTaskDraft) return;
 
     const isMissingDate = taskExactDate.trim().length === 0;
     const isMissingStartTime = taskExactStartTime.trim().length === 0;
@@ -17868,6 +17903,7 @@ export function Fab({
       setTaskExactEndTime(defaultSchedule.endTime);
     }
   }, [
+    isStandaloneUnifiedTaskDraft,
     isUnifiedEventSheetOpen,
     taskExactDate,
     taskExactEndTime,
@@ -20028,7 +20064,7 @@ export function Fab({
   const isSaveDisabled = useMemo(() => {
     if (isSavingFab || isDeletingFabEntity || editHydrating || !selected)
       return true;
-    if (isAddEventTimingInvalid) return true;
+    if (isAddEventTimingInvalid && !isStandaloneUnifiedTaskDraft) return true;
     if (selected === "GOAL") {
       if (goalName.trim().length === 0) return true;
       if (!goalRelationType || !goalRelationId) return true;
@@ -20046,20 +20082,12 @@ export function Fab({
     }
     if (selected === "TASK") {
       if (taskName.trim().length === 0) return true;
-      if (
-        isUnifiedEventSheetOpen &&
-        !resolvedAddEventTaskGoalId &&
-        !taskProjectId
-      )
-        return true;
-      if (
-        !isUnifiedEventSheetOpen &&
-        !taskGoalId &&
-        !taskProjectId &&
-        projectTaskStack?.parentMode !== "create"
-      )
-        return true;
-      if (!taskSkillId) return true;
+      const hasTaskRelation = Boolean(
+        taskProjectId ||
+          projectTaskStack ||
+          (isUnifiedEventSheetOpen ? resolvedAddEventTaskGoalId : taskGoalId),
+      );
+      if (hasTaskRelation && !taskSkillId) return true;
       return false;
     }
     if (selected === "HABIT") {
@@ -20091,8 +20119,9 @@ export function Fab({
     projectGoalId,
     projectName,
     projectSkillIds,
-    projectTaskStack?.parentMode,
+    projectTaskStack,
     resolvedAddEventTaskGoalId,
+    isStandaloneUnifiedTaskDraft,
     selected,
     taskGoalId,
     taskName,
@@ -20103,7 +20132,6 @@ export function Fab({
   const getUnifiedAddEventSaveBlockReason = (): string | null => {
     if (!isUnifiedEventSheetOpen) return null;
     if (unifiedCreationMode === "EVENTS") return null;
-    if (isAddEventTimingInvalid) return "End time must be after start time.";
 
     if (derivedUnifiedAddEventSourceType === "PROJECT") {
       return "Project events with sub-events are not ready to save yet.";
@@ -20114,6 +20142,9 @@ export function Fab({
 
     const saveSelected = resolvedUnifiedAddEventSaveSelected;
     if (!saveSelected) return "Unable to resolve this event type.";
+    if (isAddEventTimingInvalid && !isStandaloneUnifiedTaskDraft) {
+      return "End time must be after start time.";
+    }
 
     const isDynamicAddEvent = addEventTimingMode === "dynamic";
     if (isDynamicAddEvent) {
@@ -20141,10 +20172,10 @@ export function Fab({
     }
 
     if (saveSelected === "TASK") {
-      if (!resolvedAddEventTaskGoalId && !taskProjectId) {
-        return "Link this event to a goal or project before saving.";
-      }
-      if (!taskSkillId) {
+      const hasTaskRelation = Boolean(
+        taskProjectId || projectTaskStack || resolvedAddEventTaskGoalId,
+      );
+      if (hasTaskRelation && !taskSkillId) {
         return "Link this task to a skill before saving.";
       }
     }
@@ -20166,6 +20197,7 @@ export function Fab({
 
     if (
       saveSelected === "TASK" &&
+      !isStandaloneUnifiedTaskDraft &&
       addEventTimingMode === "manual" &&
       !unifiedEventAllDay
     ) {
@@ -20352,7 +20384,7 @@ export function Fab({
         (kind === "EVENT" || kind === "MEETING" || kind === "APPOINTMENT") &&
         typeof window !== "undefined"
       ) {
-        window.dispatchEvent(new CustomEvent(SCHEDULE_SAVED_EVENTS_UPDATED_EVENT));
+        dispatchScheduleSavedEventsUpdated();
       }
 
       resetUnifiedEventDraft();
@@ -20411,6 +20443,8 @@ export function Fab({
     const isDynamicAddEvent =
       isUnifiedEventSheetOpen && addEventTimingMode === "dynamic";
     const effectiveAddEventTaskGoalId = resolvedAddEventTaskGoalId;
+    const isStandaloneUnifiedTaskCreate =
+      saveSelected === "TASK" && !activeEditTarget && isStandaloneUnifiedTaskDraft;
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
@@ -20418,7 +20452,7 @@ export function Fab({
         void hapticWarningPattern();
         setSaveError(message);
       };
-      if (isAddEventTimingInvalid) {
+      if (isAddEventTimingInvalid && !isStandaloneUnifiedTaskCreate) {
         setSaveError(null);
         return;
       }
@@ -20499,26 +20533,12 @@ export function Fab({
         }
       }
       if (saveSelected === "TASK") {
-        if (
-          isUnifiedEventSheetOpen &&
-          !effectiveAddEventTaskGoalId &&
-          !taskProjectId
-        ) {
-          setBlockedSaveError(
-            "Link this event to a goal or project before saving.",
-          );
-          return;
-        }
-        if (
-          !isUnifiedEventSheetOpen &&
-          !taskGoalId &&
-          !taskProjectId &&
-          projectTaskStack?.parentMode !== "create"
-        ) {
-          setBlockedSaveError("Link this task to a goal or project before saving.");
-          return;
-        }
-        if (!taskSkillId) {
+        const hasTaskRelation = Boolean(
+          taskProjectId ||
+            projectTaskStack ||
+            (isUnifiedEventSheetOpen ? effectiveAddEventTaskGoalId : taskGoalId),
+        );
+        if (hasTaskRelation && !taskSkillId) {
           setBlockedSaveError("Link this task to a skill before saving.");
           return;
         }
@@ -20566,6 +20586,7 @@ export function Fab({
       if (saveSelected === "TASK") {
         if (
           isUnifiedEventSheetOpen &&
+          !isStandaloneUnifiedTaskCreate &&
           addEventTimingMode === "manual" &&
           !unifiedEventAllDay
         ) {
@@ -20602,7 +20623,7 @@ export function Fab({
               ),
             ),
           };
-        } else if (!isDynamicAddEvent) {
+        } else if (!isStandaloneUnifiedTaskDraft && !isDynamicAddEvent) {
           const parsed = parseExactSchedule(
             taskHasExactDate,
             taskExactDate,
@@ -21947,8 +21968,8 @@ export function Fab({
               : "Item";
         void hapticComplete();
         toast.success(
-          isUnifiedEventSheetOpen && createdType === "TASK"
-            ? `Event scheduled: ${trimmedName}`
+          isStandaloneUnifiedTaskCreate
+            ? "To-Do created"
             : `${successLabel} created`,
         );
         if (tagAttachmentFailed) {
@@ -22015,6 +22036,7 @@ export function Fab({
     isDeletingFabEntity,
     isCreatingHabitRoutineInline,
     isUnifiedEventSheetOpen,
+    isStandaloneUnifiedTaskDraft,
     isSavingFab,
     goalCampaignId,
     goalCampaigns,
@@ -22135,12 +22157,19 @@ export function Fab({
       void hapticPress();
 
       const { entityType, entityId } = editableDeleteTarget;
-      const typeSegment = entityType === "HABIT" ? "habit" : "project";
+      const typeSegment =
+        entityType === "HABIT"
+          ? "habit"
+          : entityType === "TASK"
+            ? "task"
+            : "project";
       const successLabel =
         entityType === "GOAL"
           ? "Goal"
           : entityType === "HABIT"
             ? "Habit"
+            : entityType === "TASK"
+              ? "Task"
             : "Project";
 
       setSaveError(null);
@@ -22173,6 +22202,8 @@ export function Fab({
               ? editableDeleteTarget.title.trim()
               : "this goal";
           setGoalDeleteConfirmTarget({
+            entityType,
+            entityId,
             goalName: goalName.trim() || fallbackName,
             projectCount: count ?? null,
           });
@@ -22191,6 +22222,21 @@ export function Fab({
         } finally {
           setIsPreparingGoalDelete(false);
         }
+        return;
+      }
+
+      if (entityType === "TASK" && !options?.confirmed) {
+        const fallbackName =
+          typeof editableDeleteTarget.title === "string" &&
+          editableDeleteTarget.title.trim().length > 0
+            ? editableDeleteTarget.title.trim()
+            : "this task";
+        setGoalDeleteConfirmTarget({
+          entityType,
+          entityId,
+          goalName: taskName.trim() || fallbackName,
+          projectCount: null,
+        });
         return;
       }
 
@@ -22235,6 +22281,9 @@ export function Fab({
           action: "deleted",
           monumentId: null,
         });
+        if (entityType === "TASK") {
+          dispatchScheduleSavedEventsUpdated();
+        }
         setGoalDeleteConfirmTarget(null);
         resetFabFormState();
         closeExpandedPanel({ notifyEditClose: false });
@@ -22268,6 +22317,7 @@ export function Fab({
       notifySchedulerOfChange,
       onEditClose,
       resetFabFormState,
+      taskName,
       toast,
     ],
   );
@@ -22309,8 +22359,8 @@ export function Fab({
     goalDeleteConfirmTarget ? (
       <motion.div
         role="alertdialog"
-        aria-labelledby="fab-goal-delete-title"
-        aria-describedby="fab-goal-delete-description"
+        aria-labelledby="fab-entity-delete-title"
+        aria-describedby="fab-entity-delete-description"
         className={cn(
           "rounded-xl border border-white/10 bg-black px-3 py-2 text-white shadow-2xl",
           className,
@@ -22323,16 +22373,20 @@ export function Fab({
         <div className="flex min-w-0 items-center gap-3">
           <div className="min-w-0 flex-1">
             <p
-              id="fab-goal-delete-title"
+              id="fab-entity-delete-title"
               className="text-sm font-semibold leading-tight"
             >
-              Delete this goal?
+              {goalDeleteConfirmTarget.entityType === "TASK"
+                ? "Delete this task?"
+                : "Delete this goal?"}
             </p>
             <p
-              id="fab-goal-delete-description"
+              id="fab-entity-delete-description"
               className="mt-0.5 text-[11px] leading-4 text-white/60"
             >
-              {goalDeleteConfirmTarget.projectCount !== null
+              {goalDeleteConfirmTarget.entityType === "TASK"
+                ? "Deletes the task and its scheduled events."
+                : goalDeleteConfirmTarget.projectCount !== null
                 ? `Deletes ${goalDeleteConfirmTarget.projectCount} ${
                     goalDeleteConfirmTarget.projectCount === 1
                       ? "project"
@@ -24081,18 +24135,28 @@ export function Fab({
       </section>
     );
     const visibleDefaultSchedule = getNextSolidHourEventDefaults(new Date());
-    const startDateValue = taskExactDate.trim() || visibleDefaultSchedule.date;
+    const shouldUseVisibleTimingDefaults = !isStandaloneUnifiedTaskDraft;
+    const shouldShowTaskTimingState =
+      !isStandaloneUnifiedTaskDraft || taskExactTimingTouched;
+    const startDateValue =
+      (shouldShowTaskTimingState ? taskExactDate.trim() : "") ||
+      (shouldUseVisibleTimingDefaults ? visibleDefaultSchedule.date : "");
     const explicitEndDateValue = unifiedEventEndDate.trim();
     const startTimeValue =
-      taskExactStartTime.trim() || visibleDefaultSchedule.startTime;
+      (shouldShowTaskTimingState ? taskExactStartTime.trim() : "") ||
+      (shouldUseVisibleTimingDefaults ? visibleDefaultSchedule.startTime : "");
     const endTimeValue =
-      taskExactEndTime.trim() || visibleDefaultSchedule.endTime;
-    const effectiveEndTiming = resolveAddEventEffectiveEndTiming({
-      startDateValue,
-      startTimeValue,
-      endTimeValue,
-      explicitEndDateValue,
-    });
+      (shouldShowTaskTimingState ? taskExactEndTime.trim() : "") ||
+      (shouldUseVisibleTimingDefaults ? visibleDefaultSchedule.endTime : "");
+    const effectiveEndTiming =
+      startDateValue && startTimeValue && endTimeValue
+        ? resolveAddEventEffectiveEndTiming({
+            startDateValue,
+            startTimeValue,
+            endTimeValue,
+            explicitEndDateValue,
+          })
+        : null;
     const visibleEndDateValue =
       explicitEndDateValue ||
       (effectiveEndTiming?.isInferredEndDate
@@ -24149,6 +24213,8 @@ export function Fab({
     const inferredUnifiedEventSubmitLabel = `add ${inferredUnifiedEventKind}`;
     const unifiedSubmitLabel = isEventsMode
       ? inferredUnifiedEventSubmitLabel
+      : isStandaloneUnifiedTaskDraft
+        ? "add TO-DO"
       : `add ${addEventSourceTypeLabel.toUpperCase()}`;
     const unifiedAddEventSaveBlockReason =
       getUnifiedAddEventSaveBlockReason();
@@ -24279,6 +24345,7 @@ export function Fab({
       }).format(new Date(2000, 0, 1, hours, minutes));
     };
     const handleStartDateChange = (value: string) => {
+      setTaskExactTimingTouched(true);
       setTaskHasExactDate(true);
       setTaskExactDate(value);
       setTaskExactFallbackDate(value);
@@ -24290,14 +24357,17 @@ export function Fab({
       }
     };
     const handleStartTimeChange = (value: string) => {
+      setTaskExactTimingTouched(true);
       setTaskHasExactDate(true);
       setTaskExactStartTime(value);
     };
     const handleEndTimeChange = (value: string) => {
+      setTaskExactTimingTouched(true);
       setTaskHasExactDate(true);
       setTaskExactEndTime(value);
     };
     const handleEndDateChange = (value: string) => {
+      setTaskExactTimingTouched(true);
       setUnifiedEventEndDate(value);
       const nextDate = parseDateInputValueLocal(value);
       if (nextDate) {
@@ -26662,7 +26732,13 @@ export function Fab({
                   </div>
 
                   {isGoalLinkedEvent ? (
-                    <div className="w-fit" data-unified-event-goal-link>
+                    <div
+                      className={cn(
+                        "flex items-center gap-3",
+                        isTask ? "w-full justify-between" : "w-fit",
+                      )}
+                      data-unified-event-goal-link
+                    >
                       <button
                         ref={unifiedGoalPickerTriggerRef}
                         type="button"
@@ -26680,10 +26756,10 @@ export function Fab({
                           });
                         })}
                         className={cn(
-                          "flex max-w-[min(20rem,calc(100vw-2rem))] items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition",
+                          "flex min-w-0 max-w-[min(20rem,calc(100vw-2rem))] items-center gap-1.5 border-0 bg-transparent p-0 text-left text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 transition",
                           hasUnifiedTaskRelation
                             ? "text-zinc-200/90 hover:text-white"
-                            : "text-red-400/85 drop-shadow-[0_0_4px_rgba(248,113,113,0.14)] hover:text-red-300",
+                            : "text-zinc-400/85 hover:text-zinc-300",
                         )}
                       >
                         {selectedUnifiedProject ? (
@@ -26711,9 +26787,16 @@ export function Fab({
                             </span>
                           </>
                         ) : (
-                          <span className="block">Link to existing GOAL+</span>
+                          <span className="block truncate">
+                            Link to GOAL / PROJECT
+                          </span>
                         )}
                       </button>
+                      {isTask ? (
+                        <span className="shrink-0 text-xs font-semibold text-zinc-500/85">
+                          add to CIRCLE
+                        </span>
+                      ) : null}
                       {isUnifiedGoalPickerOpen &&
                         typeof window !== "undefined" &&
                         createPortal(
