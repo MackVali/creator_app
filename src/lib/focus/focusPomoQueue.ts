@@ -13,7 +13,14 @@ export type FocusPomoQueueKind = "chore" | "habit" | "project";
 export interface FocusPomoQueueItem {
   id: string;
   kind: FocusPomoQueueKind;
-  sourceType: "HABIT" | "PROJECT";
+  sourceType: "HABIT" | "PROJECT" | string;
+  scheduleInstanceId?: string | null;
+  schedule_instance_id?: string | null;
+  source_type?: string | null;
+  startUtc?: string | null;
+  start_utc?: string | null;
+  endUtc?: string | null;
+  end_utc?: string | null;
   workType?: string | null;
   title: string;
   subtitle: string;
@@ -66,6 +73,12 @@ export interface FocusPomoQueueItem {
   updated_at?: string | null;
   energyCode?: string | null;
   tags?: FocusPomoQueueTag[];
+  skillIds?: string[];
+  skill_ids?: string[];
+  skillMonumentId?: string | null;
+  skill_monument_id?: string | null;
+  monumentIds?: string[];
+  monument_ids?: string[];
   habit_type?: string | null;
   habitType?: string | null;
   recurrence?: string | null;
@@ -189,6 +202,7 @@ type SkillRow = {
   name?: string | null;
   icon?: string | null;
   emoji?: string | null;
+  monument_id?: string | null;
 };
 
 type GoalRow = {
@@ -1127,6 +1141,7 @@ function mapHabit(
   const kind: FocusPomoQueueKind = habitType === "CHORE" ? "chore" : "habit";
   const skillId = readString(row.skill_id);
   const skill = skillId ? options.skillById.get(skillId) : undefined;
+  const skillMonumentId = readString(skill?.monument_id);
   const goalId = readString(row.goal_id);
   const goal = goalId ? options.goalById.get(goalId) : undefined;
   const campaignId = readString(row.campaign_id);
@@ -1141,6 +1156,15 @@ function mapHabit(
   const campaignName =
     readString(campaign?.title) ?? readString(campaign?.name);
   const campaignIcon = readRelationIcon(campaign);
+  const campaignMonumentId =
+    readString(campaign?.primary_monument_id) ?? readString(campaign?.monument_id);
+  const monumentIds = Array.from(
+    new Set(
+      [goalMonumentId, campaignMonumentId, skillMonumentId].filter(
+        (monumentId): monumentId is string => Boolean(monumentId)
+      )
+    )
+  );
   const routineName = readString(routine?.title) ?? readString(routine?.name);
   const icon =
     readString(row.icon) ??
@@ -1167,8 +1191,14 @@ function mapHabit(
     global_order: readFiniteNumber(row.global_order),
     icon,
     skillId,
+    skillIds: skillId ? [skillId] : [],
+    skill_ids: skillId ? [skillId] : [],
     skillName: readString(skill?.name),
     skillIcon: readString(skill?.icon) ?? readString(skill?.emoji),
+    skillMonumentId,
+    skill_monument_id: skillMonumentId,
+    monumentIds,
+    monument_ids: monumentIds,
     goalId,
     goal_id: goalId,
     goalTitle: goalName,
@@ -1201,8 +1231,7 @@ function mapHabit(
     campaignName,
     campaign_name: campaignName,
     campaign_goal_ids: campaign?.goal_ids ?? [],
-    campaign_monument_id:
-      readString(campaign?.primary_monument_id) ?? readString(campaign?.monument_id),
+    campaign_monument_id: campaignMonumentId,
     campaign_circle_id:
       readString(campaign?.primary_circle_id) ?? readString(campaign?.circle_id),
     campaign_roadmap_id: readString(campaign?.roadmap_id),
@@ -1243,7 +1272,7 @@ function mapProject(
   options: {
     goalById: Map<string, GoalRow>;
     campaignById: Map<string, CampaignRow>;
-    projectSkillByProjectId: Map<string, string>;
+    projectSkillByProjectId: Map<string, string[]>;
     skillById: Map<string, SkillRow>;
   }
 ): FocusPomoQueueItem | null {
@@ -1266,9 +1295,28 @@ function mapProject(
   const campaignName =
     readString(campaign?.title) ?? readString(campaign?.name);
   const campaignIcon = readRelationIcon(campaign);
-  const skillId = options.projectSkillByProjectId.get(id) ?? null;
+  const skillIds = Array.from(
+    new Set((options.projectSkillByProjectId.get(id) ?? []).filter(Boolean))
+  );
+  const skillId = skillIds[0] ?? null;
   const skill = skillId ? options.skillById.get(skillId) : undefined;
   const skillIcon = readString(skill?.icon) ?? readString(skill?.emoji);
+  const skillMonumentIds = Array.from(
+    new Set(
+      skillIds
+        .map((candidate) => readString(options.skillById.get(candidate)?.monument_id))
+        .filter((monumentId): monumentId is string => Boolean(monumentId))
+    )
+  );
+  const campaignMonumentId =
+    readString(campaign?.primary_monument_id) ?? readString(campaign?.monument_id);
+  const monumentIds = Array.from(
+    new Set(
+      [goalMonumentId, campaignMonumentId, ...skillMonumentIds].filter(
+        (monumentId): monumentId is string => Boolean(monumentId)
+      )
+    )
+  );
 
   return {
     id,
@@ -1318,8 +1366,14 @@ function mapProject(
     statusLabel: "Ready",
     icon: skillIcon,
     skillId,
+    skillIds,
+    skill_ids: skillIds,
     skillName: readString(skill?.name),
     skillIcon,
+    skillMonumentId: readString(skill?.monument_id),
+    skill_monument_id: readString(skill?.monument_id),
+    monumentIds,
+    monument_ids: monumentIds,
     goalId,
     goal_id: goalId,
     goalTitle: goalName,
@@ -1352,8 +1406,7 @@ function mapProject(
     campaignName,
     campaign_name: campaignName,
     campaign_goal_ids: campaign?.goal_ids ?? [],
-    campaign_monument_id:
-      readString(campaign?.primary_monument_id) ?? readString(campaign?.monument_id),
+    campaign_monument_id: campaignMonumentId,
     campaign_circle_id:
       readString(campaign?.primary_circle_id) ?? readString(campaign?.circle_id),
     campaign_roadmap_id: readString(campaign?.roadmap_id),
@@ -1373,7 +1426,7 @@ async function fetchSkillMetadata(
 
   const { data, error } = await supabase
     .from("skills")
-    .select("id, name, icon")
+    .select("id, name, icon, monument_id")
     .eq("user_id", userId)
     .in("id", ids);
 
@@ -1552,7 +1605,7 @@ async function fetchRoutineMetadata(
 async function fetchProjectSkillMetadata(
   supabase: SupabaseBrowserClient,
   projectIds: string[]
-): Promise<Map<string, string>> {
+): Promise<Map<string, string[]>> {
   const ids = Array.from(new Set(projectIds.filter(Boolean)));
   if (ids.length === 0) return new Map();
 
@@ -1563,12 +1616,12 @@ async function fetchProjectSkillMetadata(
 
   if (error) throw error;
 
-  const map = new Map<string, string>();
+  const map = new Map<string, string[]>();
   for (const row of (data ?? []) as ProjectSkillRow[]) {
     const projectId = readString(row.project_id);
     const skillId = readString(row.skill_id);
-    if (projectId && skillId && !map.has(projectId)) {
-      map.set(projectId, skillId);
+    if (projectId && skillId) {
+      map.set(projectId, [...(map.get(projectId) ?? []), skillId]);
     }
   }
 
@@ -1833,7 +1886,7 @@ async function fetchProjects(
       const skillById = await fetchSkillMetadata(
         supabase,
         userId,
-        Array.from(projectSkillByProjectId.values())
+        Array.from(projectSkillByProjectId.values()).flat()
       );
 
       return rows
@@ -1968,4 +2021,48 @@ export async function fetchFocusPomoQueue(params: {
     }),
     { now }
   );
+}
+
+export async function fetchScheduledTimeBlockFocusPomoQueue(params: {
+  timeBlockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  windowId?: string | null;
+  startUtc: string;
+  endUtc: string;
+}): Promise<FocusPomoQueueItem[]> {
+  const search = new URLSearchParams();
+  search.set("start", params.startUtc);
+  search.set("end", params.endUtc);
+  if (params.timeBlockId) search.set("timeBlockId", params.timeBlockId);
+  if (params.dayTypeTimeBlockId) {
+    search.set("dayTypeTimeBlockId", params.dayTypeTimeBlockId);
+  }
+  if (params.windowId) search.set("windowId", params.windowId);
+
+  const response = await fetch(
+    `/api/focus-pomo/scheduled-events?${search.toString()}`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as
+      | { error?: unknown }
+      | null;
+    throw new Error(
+      typeof body?.error === "string"
+        ? body.error
+        : "Failed to load scheduled Events.",
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as
+    | { items?: unknown }
+    | null;
+
+  return Array.isArray(body?.items)
+    ? (body.items as FocusPomoQueueItem[])
+    : [];
 }

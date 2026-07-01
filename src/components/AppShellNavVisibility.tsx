@@ -2,9 +2,13 @@
 
 import { usePathname } from "next/navigation";
 
-import { isIndividualInboxThreadRoute } from "@/components/appChromeVisibility";
+import {
+  isIndividualInboxThreadRoute,
+  shouldHideBottomChrome,
+} from "@/components/appChromeVisibility";
 import AppMain from "@/components/AppMain";
 import BottomNav from "@/components/BottomNav";
+import { GlobalMyList } from "@/components/my-list/GlobalMyList";
 import TopNav from "@/components/TopNav";
 
 const profileManagementRouteSegments = new Set(["edit", "linked-accounts"]);
@@ -31,12 +35,18 @@ export default function AppShellNavVisibility({
   const pathname = usePathname();
   const hideNav = isIndividualInboxThreadRoute(pathname);
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
+  const showBottomChrome = !hideNav && !shouldHideBottomChrome(pathname);
 
   return (
     <>
       {!hideTopNav && <TopNav />}
       <AppMain>{children}</AppMain>
-      {!hideNav && <BottomNav />}
+      {showBottomChrome && (
+        <>
+          <BottomNav />
+          <GlobalMyList />
+        </>
+      )}
     </>
   );
 }

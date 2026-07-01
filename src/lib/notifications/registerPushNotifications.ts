@@ -1,6 +1,11 @@
 import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import {
+  openNotificationPayload,
+  readCapacitorNotificationPayload,
+} from "@/lib/notifications/openNotification";
 
 let registrationInFlight: Promise<void> | null = null;
 let listenersRegistered = false;
@@ -80,7 +85,18 @@ async function registerPushToken(userId: string): Promise<void> {
 
     await PushNotifications.addListener("pushNotificationActionPerformed", (notification) => {
       console.info("Push notification opened", notification);
+      openNotificationPayload(readCapacitorNotificationPayload(notification));
     });
+
+    if (Capacitor.isPluginAvailable("LocalNotifications")) {
+      await LocalNotifications.addListener(
+        "localNotificationActionPerformed",
+        (notification) => {
+          console.info("Local notification opened", notification);
+          openNotificationPayload(readCapacitorNotificationPayload(notification));
+        },
+      );
+    }
 
     listenersRegistered = true;
   }

@@ -7,6 +7,7 @@ import {
 } from "@capacitor/local-notifications";
 
 export const SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE = "schedule_block_brief";
+export const TIME_BLOCK_START_NOTIFICATION_TYPE = "time_block_start";
 
 const FALLBACK_TIME_BLOCK_LABEL = "Time Block";
 const FALLBACK_EVENT_NAME = "Scheduled Event";
@@ -14,7 +15,9 @@ const REMINDER_LEAD_MS = 5 * 60 * 1000;
 const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 const MAX_NOTIFICATIONS = 64;
 const SCHEDULE_BRIEF_ID_OFFSET = 1_000_000_000;
-const SCHEDULE_BRIEF_ID_RANGE = 1_000_000_000;
+const SCHEDULE_BRIEF_ID_RANGE = 500_000_000;
+const TIME_BLOCK_START_ID_OFFSET = 1_500_000_000;
+const TIME_BLOCK_START_ID_RANGE = 500_000_000;
 const SCHEDULE_BRIEF_TEST_NOTIFICATION_ID = 2_147_483_646;
 
 export type ScheduleBlockLocalNotificationInstance = {
@@ -76,7 +79,11 @@ export type ScheduleBlockLocalNotificationResult =
 export type ScheduleBlockLocalNotificationPendingSummary = {
   totalCount: number;
   scheduleBriefCount: number;
+  timeBlockStartCount: number;
+  managedCount: number;
+  managedNotifications: PendingLocalNotificationSchema[];
   scheduleBriefNotifications: PendingLocalNotificationSchema[];
+  timeBlockStartNotifications: PendingLocalNotificationSchema[];
 };
 
 export type ScheduleBlockBriefTestNotificationPayload = {
@@ -136,7 +143,7 @@ export async function syncScheduleBlockLocalNotifications(
 
   const staleNotifications = pending.notifications
     .filter((notification) =>
-      isProductionScheduleBlockBriefExtra(notification.extra)
+      isProductionManagedScheduleBlockExtra(notification.extra)
     )
     .map((notification) => ({ id: notification.id }));
 
@@ -174,11 +181,21 @@ export async function listPendingScheduleBlockLocalNotifications(): Promise<Sche
   const scheduleBriefNotifications = pending.notifications.filter(
     (notification) => isScheduleBlockBriefExtra(notification.extra)
   );
+  const timeBlockStartNotifications = pending.notifications.filter(
+    (notification) => isTimeBlockStartExtra(notification.extra)
+  );
+  const managedNotifications = pending.notifications.filter((notification) =>
+    isManagedScheduleBlockExtra(notification.extra)
+  );
 
   return {
     totalCount: pending.notifications.length,
     scheduleBriefCount: scheduleBriefNotifications.length,
+    timeBlockStartCount: timeBlockStartNotifications.length,
+    managedCount: managedNotifications.length,
+    managedNotifications,
     scheduleBriefNotifications,
+    timeBlockStartNotifications,
   };
 }
 
@@ -187,15 +204,15 @@ export async function cancelPendingScheduleBlockLocalNotifications(): Promise<
 > {
   const summary = await listPendingScheduleBlockLocalNotifications();
   if (!summary) return null;
-  if (summary.scheduleBriefNotifications.length === 0) return 0;
+  if (summary.managedNotifications.length === 0) return 0;
 
   await LocalNotifications.cancel({
-    notifications: summary.scheduleBriefNotifications.map((notification) => ({
+    notifications: summary.managedNotifications.map((notification) => ({
       id: notification.id,
     })),
   });
 
-  return summary.scheduleBriefNotifications.length;
+  return summary.managedNotifications.length;
 }
 
 export async function scheduleScheduleBlockBriefTestNotification(
@@ -270,7 +287,8 @@ function buildScheduleBlockNotifications(
   const nowMs = options.now?.getTime() ?? Date.now();
   const horizonMs = nowMs + LOOKAHEAD_MS;
 
-  return Array.from(
+  const notifications: LocalNotificationSchema[] = [];
+  const groups = Array.from(
     groupUpcomingScheduleBlocks(
       instances,
       options.timeBlocks ?? [],
@@ -278,25 +296,47 @@ function buildScheduleBlockNotifications(
       horizonMs,
       options.timeZone
     ).values()
-  )
-    .sort((a, b) => a.blockStartMs - b.blockStartMs)
-    .slice(0, MAX_NOTIFICATIONS)
-    .map((group) => {
-      const label =
-        pickText(group.timeBlock?.label) ??
-        resolveBlockLabel(group.blockKey, options.blockLabelByKey) ??
-        FALLBACK_TIME_BLOCK_LABEL;
-      const startUtc = new Date(group.blockStartMs).toISOString();
-      const fireAt = new Date(group.blockStartMs - REMINDER_LEAD_MS);
-      const anchor = group.anchor;
-      const timeBlock = group.timeBlock;
+  ).sort((a, b) => a.blockStartMs - b.blockStartMs);
 
-      return {
-        id: stableNotificationId(group.blockKey, startUtc),
+  for (const group of groups) {
+    if (notifications.length >= MAX_NOTIFICATIONS) break;
+
+    const label =
+      pickText(group.timeBlock?.label) ??
+      resolveBlockLabel(group.blockKey, options.blockLabelByKey) ??
+      FALLBACK_TIME_BLOCK_LABEL;
+    const startUtc = new Date(group.blockStartMs).toISOString();
+    const endUtc = group.blockEndMs
+      ? new Date(group.blockEndMs).toISOString()
+      : null;
+    const briefFireMs = group.blockStartMs - REMINDER_LEAD_MS;
+    const anchor = group.anchor;
+    const timeBlock = group.timeBlock;
+    const blockPayload = {
+      blockKey: group.blockKey,
+      blockLabel: label,
+      blockEventCount: group.instances.length,
+      anchorInstanceId: anchor?.id ?? null,
+      sourceType: anchor?.source_type ?? null,
+      sourceId: anchor?.source_id ?? null,
+      startUtc,
+      endUtc,
+      localDayKey: localDateKeyForMs(group.blockStartMs, options.timeZone),
+      timeBlockId: timeBlock?.time_block_id ?? anchor?.time_block_id ?? null,
+      dayTypeTimeBlockId:
+        timeBlock?.day_type_time_block_id ??
+        anchor?.day_type_time_block_id ??
+        null,
+      windowId: timeBlock?.window_id ?? anchor?.window_id ?? null,
+    };
+
+    if (briefFireMs > nowMs && notifications.length < MAX_NOTIFICATIONS) {
+      notifications.push({
+        id: stableNotificationId(group.blockKey, startUtc, "brief"),
         title: `${label} starts in 5 min`,
         body: buildNotificationBody(group),
         schedule: {
-          at: fireAt,
+          at: new Date(briefFireMs),
           allowWhileIdle: true,
         },
         sound: "default",
@@ -304,22 +344,33 @@ function buildScheduleBlockNotifications(
         extra: {
           type: SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
           test: false,
-          blockKey: group.blockKey,
-          blockLabel: label,
-          blockEventCount: group.instances.length,
-          anchorInstanceId: anchor?.id ?? null,
-          sourceType: anchor?.source_type ?? null,
-          sourceId: anchor?.source_id ?? null,
-          startUtc,
-          timeBlockId: timeBlock?.time_block_id ?? anchor?.time_block_id ?? null,
-          dayTypeTimeBlockId:
-            timeBlock?.day_type_time_block_id ??
-            anchor?.day_type_time_block_id ??
-            null,
-          windowId: timeBlock?.window_id ?? anchor?.window_id ?? null,
+          ...blockPayload,
         },
-      };
-    });
+      });
+    }
+
+    if (group.blockStartMs > nowMs && notifications.length < MAX_NOTIFICATIONS) {
+      notifications.push({
+        id: stableNotificationId(group.blockKey, startUtc, "start"),
+        title: `Start ${label}`,
+        body: buildStartNotificationBody(group, label),
+        schedule: {
+          at: new Date(group.blockStartMs),
+          allowWhileIdle: true,
+        },
+        sound: "default",
+        threadIdentifier: "creator-time-block-starts",
+        extra: {
+          type: TIME_BLOCK_START_NOTIFICATION_TYPE,
+          launch: TIME_BLOCK_START_NOTIFICATION_TYPE,
+          test: false,
+          ...blockPayload,
+        },
+      });
+    }
+  }
+
+  return notifications;
 }
 
 function countScheduleBlockNotificationCandidates(
@@ -349,11 +400,9 @@ function groupUpcomingScheduleBlocks(
   for (const timeBlock of timeBlocks) {
     const startMs = parseUtcMs(timeBlock.start_utc);
     if (startMs === null) continue;
+    if (startMs <= nowMs) continue;
     if (startMs > horizonMs) continue;
     const endMs = parseUtcMs(timeBlock.end_utc);
-
-    const notificationMs = startMs - REMINDER_LEAD_MS;
-    if (notificationMs <= nowMs) continue;
 
     const blockKey = blockKeyForTimeBlock(timeBlock);
     const occurrenceKey = blockOccurrenceKey(blockKey, startMs, timeZone);
@@ -384,10 +433,8 @@ function groupUpcomingScheduleBlocks(
 
     const startMs = parseUtcMs(instance.start_utc);
     if (startMs === null) continue;
+    if (startMs <= nowMs) continue;
     if (startMs > horizonMs) continue;
-
-    const notificationMs = startMs - REMINDER_LEAD_MS;
-    if (notificationMs <= nowMs) continue;
 
     const blockKey = blockKeyForInstance(instance);
     const occurrenceKey = blockOccurrenceKey(blockKey, startMs, timeZone);
@@ -537,6 +584,13 @@ function buildNotificationBody(group: GroupedBlock) {
   return previews.join(", ");
 }
 
+function buildStartNotificationBody(group: GroupedBlock, label: string) {
+  const count = group.instances.length;
+  if (count <= 0) return `Start ${label} in Focus Pomo.`;
+  if (count === 1) return `Start ${label} with 1 scheduled Event.`;
+  return `Start ${label} with ${count} scheduled Events.`;
+}
+
 function isBreakTimeBlock(
   block: ScheduleBlockLocalNotificationTimeBlock | null,
 ) {
@@ -566,13 +620,21 @@ function pickText(value: string | null | undefined) {
   return trimmed || null;
 }
 
-function stableNotificationId(blockKey: string, startUtc: string) {
+function stableNotificationId(
+  blockKey: string,
+  startUtc: string,
+  family: "brief" | "start",
+) {
   const input = `${blockKey}:${startUtc}`;
   let hash = 0x811c9dc5;
 
   for (let index = 0; index < input.length; index += 1) {
     hash ^= input.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
+  }
+
+  if (family === "start") {
+    return TIME_BLOCK_START_ID_OFFSET + ((hash >>> 0) % TIME_BLOCK_START_ID_RANGE);
   }
 
   return SCHEDULE_BRIEF_ID_OFFSET + ((hash >>> 0) % SCHEDULE_BRIEF_ID_RANGE);
@@ -586,8 +648,20 @@ function isScheduleBlockBriefExtra(extra: unknown) {
   );
 }
 
-function isProductionScheduleBlockBriefExtra(extra: unknown) {
-  if (!isScheduleBlockBriefExtra(extra)) return false;
+function isTimeBlockStartExtra(extra: unknown) {
+  if (!extra || typeof extra !== "object") return false;
+
+  return (
+    (extra as { type?: unknown }).type === TIME_BLOCK_START_NOTIFICATION_TYPE
+  );
+}
+
+function isManagedScheduleBlockExtra(extra: unknown) {
+  return isScheduleBlockBriefExtra(extra) || isTimeBlockStartExtra(extra);
+}
+
+function isProductionManagedScheduleBlockExtra(extra: unknown) {
+  if (!isManagedScheduleBlockExtra(extra)) return false;
 
   return (extra as { test?: unknown }).test !== true;
 }
