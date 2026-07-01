@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
+  fetchScheduledTimeBlockFocusPomoQueue,
   fetchFocusPomoQueue,
   sortFocusPomoQueue,
   type FocusPomoQueueItem,
@@ -58,6 +59,11 @@ import { getSkillsForUser } from "@/lib/queries/skills";
 import type { CatRow } from "@/lib/types/cat";
 import { completionProductivityDayKey } from "@/lib/completions/completionEvents";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import {
+  passesTimeBlockConstraints,
+  type ConstraintItem,
+  type WindowConstraint,
+} from "@/lib/scheduler/constraints";
 import {
   endFocusPomoLiveActivity,
   startFocusPomoLiveActivity,
@@ -99,8 +105,22 @@ export interface FocusPomoSource {
 export interface FocusPomoProps {
   open: boolean;
   source: FocusPomoSource | null;
+  launchConfig?: FocusPomoLaunchConfig | null;
   onClose(): void;
 }
+
+export type FocusPomoLaunchConfig = {
+  launch: "time_block_start";
+  blockKey?: string | null;
+  blockLabel?: string | null;
+  timeBlockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  windowId?: string | null;
+  startUtc: string;
+  endUtc: string;
+  localDayKey?: string | null;
+  anchorInstanceId?: string | null;
+};
 
 type FocusPomoMode = "pomo" | "stopwatch";
 
@@ -219,6 +239,20 @@ type AvailableConstraintOptions = {
   campaigns: ConstraintOption[];
   routines: ConstraintOption[];
   habitTypes: HabitTypeOption[];
+};
+
+type FocusPomoTimeBlockOption = {
+  id: string;
+  name: string;
+  detail: string | null;
+  energy: FlameLevel;
+  blockType: string | null;
+  allowAllHabitTypes: boolean;
+  allowAllSkills: boolean;
+  allowAllMonuments: boolean;
+  allowedHabitTypes: string[];
+  allowedSkillIds: string[];
+  allowedMonumentIds: string[];
 };
 
 type FocusPomoCompletionKind = "habit" | "project";
@@ -2429,19 +2463,76 @@ function itemMatchesExecutionConstraints(
   });
 }
 
+function toFocusPomoTimeBlockConstraint(
+  timeBlock: FocusPomoTimeBlockOption
+): WindowConstraint {
+  return {
+    allowAllHabitTypes: timeBlock.allowAllHabitTypes,
+    allowAllSkills: timeBlock.allowAllSkills,
+    allowAllMonuments: timeBlock.allowAllMonuments,
+    allowedHabitTypes: timeBlock.allowedHabitTypes,
+    allowedSkillIds: timeBlock.allowedSkillIds,
+    allowedMonumentIds: timeBlock.allowedMonumentIds,
+    block_type: timeBlock.blockType,
+  };
+}
+
+function getFocusPomoTimeBlockConstraintItem(
+  item: FocusPomoQueueItem,
+  source: FocusPomoSource | null | undefined
+): ConstraintItem {
+  const itemKind = getFocusItemKind(item);
+  const skillIds = getItemSkillIds(item, source);
+  const monumentIds = getItemMonumentIds(item, source);
+  const record = item as unknown as Record<string, unknown>;
+
+  return {
+    sourceType: itemKind === "task" ? "TASK" : item.sourceType,
+    habitType: getFocusItemHabitType(item),
+    skillId: readScopeString(item.skillId) ?? skillIds[0] ?? null,
+    skillIds,
+    monumentId:
+      readScopeString(item.goalMonumentId) ??
+      readScopeString(record.goal_monument_id) ??
+      readScopeString(record.campaign_monument_id) ??
+      monumentIds[0] ??
+      null,
+    skillMonumentId:
+      readScopeString(record.skillMonumentId) ??
+      readScopeString(record.skill_monument_id),
+    monumentIds,
+    isProject: itemKind === "project",
+    allowEmptyProjectCandidates: itemKind === "project",
+  };
+}
+
+function itemPassesFocusPomoTimeBlock(
+  item: FocusPomoQueueItem,
+  source: FocusPomoSource | null | undefined,
+  timeBlock: FocusPomoTimeBlockOption
+): boolean {
+  return passesTimeBlockConstraints(
+    getFocusPomoTimeBlockConstraintItem(item, source),
+    toFocusPomoTimeBlockConstraint(timeBlock)
+  );
+}
+
 function getScopeSummary(
   groups: Array<{ count: number; singular: string; option?: ScopeOption | ConstraintOption }>,
   customWorkTypeFilters: boolean,
-  customHabitTypeFilters: boolean
+  customHabitTypeFilters: boolean,
+  selectedTimeBlock: FocusPomoTimeBlockOption | null
 ): string {
   const activeGroups = groups.filter((group) => group.count > 0);
   const customInstanceTypeFilters =
     customWorkTypeFilters || customHabitTypeFilters;
   const selectedCount =
     activeGroups.reduce((total, group) => total + group.count, 0) +
-    (customInstanceTypeFilters ? 1 : 0);
+    (customInstanceTypeFilters ? 1 : 0) +
+    (selectedTimeBlock ? 1 : 0);
 
   if (selectedCount === 0) return "All scheduled work";
+  if (selectedCount === 1 && selectedTimeBlock) return selectedTimeBlock.name;
   if (selectedCount === 1 && activeGroups.length === 1 && activeGroups[0].option) {
     return formatScopeSummaryOption(activeGroups[0].option);
   }
@@ -2451,6 +2542,7 @@ function getScopeSummary(
       pluralizeScopeLabel(group.count, group.singular)
     ),
     customInstanceTypeFilters ? "Instance Types" : null,
+    selectedTimeBlock ? "Time Block" : null,
   ]
     .filter(Boolean)
     .join(" • ");
@@ -2646,6 +2738,189 @@ function normalizeFlameLevel(
   }
 }
 
+function firstJoinedTimeBlockRow(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) return readScopeRecord(value[0]);
+  return readScopeRecord(value);
+}
+
+function formatTimeBlockClock(value: unknown): string | null {
+  const raw = readScopeString(value);
+  if (!raw) return null;
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+
+  const hour = Number(match[1]);
+  const minute = match[2];
+  if (!Number.isFinite(hour)) return raw;
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minute} ${period}`;
+}
+
+function normalizeTimeBlockAllowAll(
+  value: unknown,
+  allowedCount: number
+): boolean {
+  return value === true || (value == null && allowedCount === 0);
+}
+
+function addTimeBlockAllowedValue(
+  map: Map<string, Set<string>>,
+  blockId: unknown,
+  rawValue: unknown,
+  normalize: (value: string) => string = (value) => value
+) {
+  const id = readScopeString(blockId);
+  const value = readScopeString(rawValue);
+  if (!id || !value) return;
+
+  const current = map.get(id) ?? new Set<string>();
+  current.add(normalize(value));
+  map.set(id, current);
+}
+
+function buildFocusPomoTimeBlockOptions(
+  rows: Record<string, unknown>[],
+  allowedHabitTypes: Record<string, unknown>[],
+  allowedSkills: Record<string, unknown>[],
+  allowedMonuments: Record<string, unknown>[]
+): FocusPomoTimeBlockOption[] {
+  const habitTypesByBlockId = new Map<string, Set<string>>();
+  const skillIdsByBlockId = new Map<string, Set<string>>();
+  const monumentIdsByBlockId = new Map<string, Set<string>>();
+
+  for (const row of allowedHabitTypes) {
+    addTimeBlockAllowedValue(
+      habitTypesByBlockId,
+      row.day_type_time_block_id,
+      row.habit_type,
+      (value) => value.trim().toUpperCase()
+    );
+  }
+  for (const row of allowedSkills) {
+    addTimeBlockAllowedValue(
+      skillIdsByBlockId,
+      row.day_type_time_block_id,
+      row.skill_id
+    );
+  }
+  for (const row of allowedMonuments) {
+    addTimeBlockAllowedValue(
+      monumentIdsByBlockId,
+      row.day_type_time_block_id,
+      row.monument_id
+    );
+  }
+
+  return rows
+    .map((row) => {
+      const id = readScopeString(row.id);
+      if (!id) return null;
+
+      const timeBlock = firstJoinedTimeBlockRow(row.time_blocks);
+      const dayType = firstJoinedTimeBlockRow(row.day_types);
+      const allowedHabitTypeValues = Array.from(
+        habitTypesByBlockId.get(id) ?? []
+      );
+      const allowedSkillValues = Array.from(skillIdsByBlockId.get(id) ?? []);
+      const allowedMonumentValues = Array.from(
+        monumentIdsByBlockId.get(id) ?? []
+      );
+      const start = formatTimeBlockClock(timeBlock?.start_local);
+      const end = formatTimeBlockClock(timeBlock?.end_local);
+      const timeRange = start && end ? `${start}-${end}` : null;
+      const dayTypeName = readScopeString(dayType?.name);
+      const detail = [dayTypeName, timeRange].filter(Boolean).join(" / ") || null;
+
+      return {
+        id,
+        name:
+          readScopeString(row.time_block_label) ??
+          readScopeString(timeBlock?.label) ??
+          "Time Block",
+        detail,
+        energy: normalizeFlameLevel(readScopeString(row.energy), null),
+        blockType: readScopeString(row.block_type),
+        allowAllHabitTypes: normalizeTimeBlockAllowAll(
+          row.allow_all_habit_types,
+          allowedHabitTypeValues.length
+        ),
+        allowAllSkills: normalizeTimeBlockAllowAll(
+          row.allow_all_skills,
+          allowedSkillValues.length
+        ),
+        allowAllMonuments: normalizeTimeBlockAllowAll(
+          row.allow_all_monuments,
+          allowedMonumentValues.length
+        ),
+        allowedHabitTypes: allowedHabitTypeValues,
+        allowedSkillIds: allowedSkillValues,
+        allowedMonumentIds: allowedMonumentValues,
+      };
+    })
+    .filter((option): option is FocusPomoTimeBlockOption => Boolean(option))
+    .sort((a, b) => {
+      const nameDelta = a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+      });
+      if (nameDelta !== 0) return nameDelta;
+      return (a.detail ?? "").localeCompare(b.detail ?? "", undefined, {
+        sensitivity: "base",
+      });
+    });
+}
+
+async function fetchFocusPomoTimeBlockOptions(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  userId: string
+): Promise<FocusPomoTimeBlockOption[]> {
+  const { data: timeBlockData, error: timeBlockError } = await supabase
+    .from("day_type_time_blocks")
+    .select(
+      `id,day_type_id,energy,block_type,time_block_label,position,allow_all_habit_types,allow_all_skills,allow_all_monuments,
+      time_blocks(id,label,start_local,end_local),
+      day_types(id,name)`
+    )
+    .eq("user_id", userId)
+    .order("position", { ascending: true });
+
+  if (timeBlockError) throw timeBlockError;
+
+  const rows = (timeBlockData ?? []) as Record<string, unknown>[];
+  const timeBlockIds = rows
+    .map((row) => readScopeString(row.id))
+    .filter((id): id is string => Boolean(id));
+
+  if (timeBlockIds.length === 0) return [];
+
+  const [habitTypesResult, skillsResult, monumentsResult] = await Promise.all([
+    supabase
+      .from("day_type_time_block_allowed_habit_types")
+      .select("day_type_time_block_id,habit_type")
+      .in("day_type_time_block_id", timeBlockIds),
+    supabase
+      .from("day_type_time_block_allowed_skills")
+      .select("day_type_time_block_id,skill_id")
+      .in("day_type_time_block_id", timeBlockIds),
+    supabase
+      .from("day_type_time_block_allowed_monuments")
+      .select("day_type_time_block_id,monument_id")
+      .in("day_type_time_block_id", timeBlockIds),
+  ]);
+
+  if (habitTypesResult.error) throw habitTypesResult.error;
+  if (skillsResult.error) throw skillsResult.error;
+  if (monumentsResult.error) throw monumentsResult.error;
+
+  return buildFocusPomoTimeBlockOptions(
+    rows,
+    (habitTypesResult.data ?? []) as Record<string, unknown>[],
+    (skillsResult.data ?? []) as Record<string, unknown>[],
+    (monumentsResult.data ?? []) as Record<string, unknown>[]
+  );
+}
+
 function buildRunResultDisplayMetadata(item: FocusPomoQueueItem): Pick<
   FocusPomoRunResult,
   | "itemKind"
@@ -2676,6 +2951,9 @@ function buildRunResultDisplayMetadata(item: FocusPomoQueueItem): Pick<
 }
 
 function getFocusPomoQueueItemKey(item: FocusPomoQueueItem): string {
+  const scheduleInstanceId = readFocusPomoScheduleInstanceId(item);
+  if (scheduleInstanceId) return `SCHEDULE_INSTANCE:${scheduleInstanceId}`;
+
   return `${item.sourceType}:${item.id}`;
 }
 
@@ -3928,7 +4206,12 @@ function FocusPomoFilterSection({
   );
 }
 
-export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
+export default function FocusPomo({
+  open,
+  source,
+  launchConfig,
+  onClose,
+}: FocusPomoProps) {
   const fabCreation = useFabCreation();
   const toast = useToastHelpers();
   const [mounted, setMounted] = useState(false);
@@ -3958,6 +4241,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       routines: [],
       habitTypes: KNOWN_HABIT_TYPE_OPTIONS,
     });
+  const [availableTimeBlockOptions, setAvailableTimeBlockOptions] = useState<
+    FocusPomoTimeBlockOption[]
+  >([]);
   const [roadmapGoalOrderMap, setRoadmapGoalOrderMap] = useState<
     Map<string, number>
   >(new Map());
@@ -4018,6 +4304,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const [selectedGoalIds, setSelectedGoalIds] = useState<string[]>([]);
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<string[]>([]);
+  const [selectedTimeBlockId, setSelectedTimeBlockId] = useState<string | null>(
+    null
+  );
   const [enabledItemTypes, setEnabledItemTypes] =
     useState<FocusExecutionItemType[]>(DEFAULT_ENABLED_ITEM_TYPES);
   const [enabledHabitTypes, setEnabledHabitTypes] = useState<string[] | null>(
@@ -4038,6 +4327,16 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const queueListId = useId();
   const activeSourceId = source?.sourceId;
   const activeSourceType = source?.sourceType;
+  const timeBlockStartLaunch =
+    launchConfig?.launch === "time_block_start" ? launchConfig : null;
+  const hasTimeBlockStartLaunch = Boolean(timeBlockStartLaunch);
+  const timeBlockStartLaunchTimeBlockId =
+    timeBlockStartLaunch?.timeBlockId ?? null;
+  const timeBlockStartLaunchDayTypeTimeBlockId =
+    timeBlockStartLaunch?.dayTypeTimeBlockId ?? null;
+  const timeBlockStartLaunchWindowId = timeBlockStartLaunch?.windowId ?? null;
+  const timeBlockStartLaunchStartUtc = timeBlockStartLaunch?.startUtc ?? "";
+  const timeBlockStartLaunchEndUtc = timeBlockStartLaunch?.endUtc ?? "";
   const queueDragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -4094,6 +4393,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         routines: [],
         habitTypes: KNOWN_HABIT_TYPE_OPTIONS,
       });
+      setAvailableTimeBlockOptions([]);
       setRoadmapGoalOrderMap(new Map());
       setProjectOrderMap(new Map());
       return;
@@ -4113,6 +4413,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           routines: [],
           habitTypes: KNOWN_HABIT_TYPE_OPTIONS,
         });
+        setAvailableTimeBlockOptions([]);
         setRoadmapGoalOrderMap(new Map());
         setProjectOrderMap(new Map());
         return;
@@ -4138,6 +4439,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           routines: [],
           habitTypes: KNOWN_HABIT_TYPE_OPTIONS,
         });
+        setAvailableTimeBlockOptions([]);
         setRoadmapGoalOrderMap(new Map());
         setProjectOrderMap(new Map());
         return;
@@ -4153,6 +4455,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         campaignsResult,
         routinesResult,
         habitTypesResult,
+        timeBlocksResult,
         projectOrderMapResult,
       ] = await Promise.allSettled([
         getMonumentsForUser(user.id),
@@ -4164,6 +4467,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         fetchUserCampaignOptions(supabase, user.id),
         fetchUserRoutineOptions(supabase, user.id),
         fetchUserHabitTypeOptions(supabase, user.id),
+        fetchFocusPomoTimeBlockOptions(supabase, user.id),
         fetchFocusPomoProjectOrderMap(user.id),
       ]);
 
@@ -4221,6 +4525,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         console.error(
           "Failed to load FocusPomo habit type options",
           habitTypesResult.reason
+        );
+      }
+      if (timeBlocksResult.status === "rejected") {
+        console.error(
+          "Failed to load FocusPomo Time Block options",
+          timeBlocksResult.reason
         );
       }
       if (projectOrderMapResult.status === "rejected") {
@@ -4295,6 +4605,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           habitTypesResult.status === "fulfilled" ? habitTypesResult.value : []
         ),
       });
+      setAvailableTimeBlockOptions(
+        timeBlocksResult.status === "fulfilled" ? timeBlocksResult.value : []
+      );
       setRoadmapGoalOrderMap(
         roadmapsResult.status === "fulfilled"
           ? buildRoadmapGoalOrderMap(roadmapsResult.value)
@@ -4333,6 +4646,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       setSelectedGoalIds([]);
       setSelectedCampaignIds([]);
       setSelectedRoutineIds([]);
+      setSelectedTimeBlockId(null);
       setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
       setEnabledHabitTypes(null);
       setRunHistory([]);
@@ -4356,6 +4670,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setSelectedGoalIds([]);
     setSelectedCampaignIds([]);
     setSelectedRoutineIds([]);
+    setSelectedTimeBlockId(null);
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
     setEnabledHabitTypes(null);
     setRunHistory([]);
@@ -4366,14 +4681,24 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setQueueLoading(true);
     setQueueError(null);
 
-    fetchFocusPomoQueue(
-      activeSourceType && activeSourceId
-        ? {
-            sourceType: activeSourceType,
-            sourceId: activeSourceId,
-          }
-        : {}
-    )
+    const queuePromise = hasTimeBlockStartLaunch
+      ? fetchScheduledTimeBlockFocusPomoQueue({
+          timeBlockId: timeBlockStartLaunchTimeBlockId,
+          dayTypeTimeBlockId: timeBlockStartLaunchDayTypeTimeBlockId,
+          windowId: timeBlockStartLaunchWindowId,
+          startUtc: timeBlockStartLaunchStartUtc,
+          endUtc: timeBlockStartLaunchEndUtc,
+        })
+      : fetchFocusPomoQueue(
+          activeSourceType && activeSourceId
+            ? {
+                sourceType: activeSourceType,
+                sourceId: activeSourceId,
+              }
+            : {},
+        );
+
+    queuePromise
       .then((items) => {
         if (stale) return;
         setQueue(items);
@@ -4385,7 +4710,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         setQueueError(
           error instanceof Error
             ? error.message
-            : "Failed to load execution queue."
+            : hasTimeBlockStartLaunch
+              ? "Failed to load scheduled Events."
+              : "Failed to load execution queue."
         );
       })
       .finally(() => {
@@ -4396,7 +4723,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     return () => {
       stale = true;
     };
-  }, [open, activeSourceId, activeSourceType]);
+  }, [
+    open,
+    activeSourceId,
+    activeSourceType,
+    hasTimeBlockStartLaunch,
+    timeBlockStartLaunchDayTypeTimeBlockId,
+    timeBlockStartLaunchEndUtc,
+    timeBlockStartLaunchStartUtc,
+    timeBlockStartLaunchTimeBlockId,
+    timeBlockStartLaunchWindowId,
+  ]);
 
   useEffect(() => {
     if (!open || !source?.sourceId) {
@@ -4581,6 +4918,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
   const shouldShow = open;
   const displaySource = shouldShow ? source : lastSource;
+  const isTimeBlockStartLaunchMode = Boolean(timeBlockStartLaunch);
   const hasSelectedScope =
     selectedMonumentIds.length > 0 || selectedSkillIds.length > 0;
   const hasDraftSelectedScope =
@@ -4668,6 +5006,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const selectedRoutineOptions = routineOptions.filter((option) =>
     effectiveSelectedRoutineIds.includes(option.id)
   );
+  const selectedTimeBlockOption =
+    availableTimeBlockOptions.find((option) => option.id === selectedTimeBlockId) ??
+    null;
   const selectedMonumentNames = uniqueScopeValues([
     ...selectedMonumentOptions.map((option) => option.name),
     displaySource?.sourceType === "monument" &&
@@ -4730,27 +5071,41 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const effectiveEnabledHabitTypes = showHabitTypeSection
     ? enabledHabitTypes
     : null;
-  const constrainedQueue = effectiveQueue.filter((item) =>
-    itemMatchesExecutionConstraints(item, {
-      source: displaySource,
-      selectedMonumentIds,
-      selectedSkillIds,
-      selectedMonumentNames,
-      selectedSkillNames,
-      selectedTagKeys,
-      selectedGoalKeys,
-      selectedCampaignKeys,
-      selectedRoutineKeys,
-      enabledItemTypes,
-      enabledHabitTypes: effectiveEnabledHabitTypes,
-    })
-  );
-  const sourceSortedQueue = sortFocusPomoQueue(constrainedQueue, {
-    selectedMonumentIds,
-    monumentOptions,
-    goalOrderMap: roadmapGoalOrderMap,
-    projectOrderMap,
-  });
+  const constrainedQueue = isTimeBlockStartLaunchMode
+    ? effectiveQueue
+    : effectiveQueue.filter((item) =>
+        itemMatchesExecutionConstraints(item, {
+          source: displaySource,
+          selectedMonumentIds,
+          selectedSkillIds,
+          selectedMonumentNames,
+          selectedSkillNames,
+          selectedTagKeys,
+          selectedGoalKeys,
+          selectedCampaignKeys,
+          selectedRoutineKeys,
+          enabledItemTypes,
+          enabledHabitTypes: effectiveEnabledHabitTypes,
+        })
+      );
+  const timeBlockFilteredQueue =
+    selectedTimeBlockOption && !isTimeBlockStartLaunchMode
+      ? constrainedQueue.filter((item) =>
+          itemPassesFocusPomoTimeBlock(
+            item,
+            displaySource,
+            selectedTimeBlockOption
+          )
+        )
+      : constrainedQueue;
+  const sourceSortedQueue = isTimeBlockStartLaunchMode
+    ? timeBlockFilteredQueue
+    : sortFocusPomoQueue(timeBlockFilteredQueue, {
+        selectedMonumentIds,
+        monumentOptions,
+        goalOrderMap: roadmapGoalOrderMap,
+        projectOrderMap,
+      });
   const sourceQueueSignature = sourceSortedQueue
     .map(getFocusPomoQueueItemKey)
     .join("\u001F");
@@ -4773,7 +5128,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     effectiveSelectedTagIds.length > 0 ||
     effectiveSelectedGoalIds.length > 0 ||
     effectiveSelectedCampaignIds.length > 0 ||
-    effectiveSelectedRoutineIds.length > 0;
+    effectiveSelectedRoutineIds.length > 0 ||
+    Boolean(selectedTimeBlockOption);
   const selectedQueueItem = sortedQueue[activeIndex] ?? null;
   const currentItem =
     selectedQueueItem &&
@@ -5262,7 +5618,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     !effectiveQueueLoading &&
     !effectiveQueueError &&
     sortedQueue.length === 0 &&
-    (hasSelectedScope || hasCustomExecutionFilters || effectiveQueue.length > 0);
+    (hasSelectedScope ||
+      hasCustomExecutionFilters ||
+      Boolean(selectedTimeBlockOption) ||
+      effectiveQueue.length > 0);
   const scopeSummary = getScopeSummary(
     [
       {
@@ -5297,13 +5656,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       },
     ],
     hasCustomWorkTypeFilters,
-    hasCustomHabitTypeFilters
+    hasCustomHabitTypeFilters,
+    selectedTimeBlockOption
   );
   const cardState: FocusPomoCardState = effectiveQueueLoading
     ? {
         badge: "QUEUE",
-        title: "Loading focus item",
-        subtitle: hasSelectedScope
+        title: isTimeBlockStartLaunchMode
+          ? "Loading scheduled Events"
+          : "Loading focus item",
+        subtitle: isTimeBlockStartLaunchMode
+          ? `Pulling Events scheduled inside ${timeBlockStartLaunch?.blockLabel ?? "this Time Block"}.`
+          : hasSelectedScope
           ? "Pulling eligible habits and projects for this scope."
           : displaySource
             ? "Pulling habits and projects for this source."
@@ -5321,7 +5685,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         ? {
             badge: "SCOPE",
             title: "No focus items in this scope",
-            subtitle: "Clear filters or choose different constraints.",
+            subtitle: selectedTimeBlockOption
+              ? `No Events are eligible for ${selectedTimeBlockOption.name}.`
+              : "Clear filters or choose different constraints.",
             tone: "empty",
           }
       : currentItem
@@ -5335,10 +5701,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
             tone: "ready",
           }
         : {
-            badge: "QUEUE",
-            title: "No focus items in this scope",
-            subtitle:
-              displaySource
+            badge: isTimeBlockStartLaunchMode ? "TIME BLOCK" : "QUEUE",
+            title: isTimeBlockStartLaunchMode
+              ? "No scheduled Events in this Time Block"
+              : "No focus items in this scope",
+            subtitle: isTimeBlockStartLaunchMode
+              ? `${timeBlockStartLaunch?.blockLabel ?? "This Time Block"} has no scheduled Events in this occurrence.`
+              : displaySource
                 ? "Add habits or projects to this Monument/Skill to run them from FocusPomo."
                 : "Add scheduled work to run it from FocusPomo.",
             tone: "empty",
@@ -5988,6 +6357,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setSelectedGoalIds([]);
     setSelectedCampaignIds([]);
     setSelectedRoutineIds([]);
+    setSelectedTimeBlockId(null);
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
     setEnabledHabitTypes(null);
     setActiveIndex(0);
@@ -6009,6 +6379,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setSelectedGoalIds([]);
     setSelectedCampaignIds([]);
     setSelectedRoutineIds([]);
+    setSelectedTimeBlockId(null);
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
     setEnabledHabitTypes(null);
     setActiveIndex(0);
@@ -6117,6 +6488,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
   const clearRoutineFilters = () => {
     setSelectedRoutineIds([]);
+    resetScopeRunState();
+  };
+
+  const selectTimeBlockFilter = (optionId: string | null) => {
+    if (selectedTimeBlockId === optionId) return;
+    void hapticSoftTick();
+    setSelectedTimeBlockId(optionId);
     resetScopeRunState();
   };
 
@@ -6690,6 +7068,52 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           })
         : null}
     </div>
+                              </FocusPomoFilterSection>
+
+                              <FocusPomoFilterSection
+    label="Time Block"
+    hasSelectedFilters={Boolean(selectedTimeBlockOption)}
+    onClear={() => selectTimeBlockFilter(null)}
+                              >
+    {availableTimeBlockOptions.length > 0 ? (
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        {availableTimeBlockOptions.map((option) => {
+          const selected = selectedTimeBlockId === option.id;
+
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() =>
+                selectTimeBlockFilter(selected ? null : option.id)
+              }
+              className={
+                selected
+                  ? "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                  : "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+              }
+            >
+              <FlameEmber
+                level={option.energy}
+                size="sm"
+                className="size-4 shrink-0 overflow-visible [&_svg]:overflow-visible"
+              />
+              <span className="min-w-0 truncate">
+                {option.name}
+                {option.detail ? (
+                  <span className="ml-1 text-zinc-500">{option.detail}</span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    ) : (
+      <p className="rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:px-3 sm:py-2 sm:text-sm">
+        No Time Blocks available.
+      </p>
+    )}
                               </FocusPomoFilterSection>
 
                               {showTagsSection ? (
