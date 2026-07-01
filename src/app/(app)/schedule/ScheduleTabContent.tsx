@@ -26,7 +26,7 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { ChevronDown, ChevronUp, Lock, Plus } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -1014,6 +1014,13 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
   );
 }
 
+type ScheduleManualListRow = {
+  id: string;
+  done: boolean;
+  skillIcon: string;
+  text: string;
+};
+
 function ScheduleMyListSheet({
   open,
   onOpenChange,
@@ -1029,6 +1036,31 @@ function ScheduleMyListSheet({
 }) {
   const prefersReducedMotion = useReducedMotion();
   const [note, setNote] = useState("");
+  const [manualRows, setManualRows] = useState<ScheduleManualListRow[]>([]);
+  const hasListRows = tasks.length > 0 || manualRows.length > 0;
+
+  const addManualRow = useCallback(() => {
+    setManualRows((currentRows) => [
+      ...currentRows,
+      {
+        id: `manual-${Date.now()}-${currentRows.length}`,
+        done: false,
+        skillIcon: "",
+        text: "",
+      },
+    ]);
+  }, []);
+
+  const updateManualRow = useCallback(
+    (rowId: string, updates: Partial<Omit<ScheduleManualListRow, "id">>) => {
+      setManualRows((currentRows) =>
+        currentRows.map((row) =>
+          row.id === rowId ? { ...row, ...updates } : row
+        )
+      );
+    },
+    []
+  );
 
   return (
     <motion.aside
@@ -1068,7 +1100,7 @@ function ScheduleMyListSheet({
           "pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
           open
             ? "-translate-y-[1.35rem]"
-            : "-translate-y-[calc(1.35rem+0.25rem)]"
+            : "-translate-y-[calc(1.35rem+0.375rem)]"
         )}
       >
         <ChevronUp
@@ -1087,44 +1119,112 @@ function ScheduleMyListSheet({
           paddingBottom: "calc(0.8rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="border-b border-white/[0.07] bg-black/[0.18] px-4 pb-1.5 pt-1.5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.025)] sm:px-5">
+        <div className="relative border-b border-white/[0.07] bg-black/[0.18] px-4 pb-1.5 pt-1.5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.025)] sm:px-5">
           <div className="mx-auto mb-1 h-0.5 w-8 rounded-full bg-white/16" />
           <h2 className="text-center text-[0.72rem] font-semibold leading-none tracking-[0.08em] text-white/90">
             My List
           </h2>
+          <button
+            type="button"
+            aria-label="Add My List to-do"
+            onClick={addManualRow}
+            tabIndex={open ? 0 : -1}
+            className="absolute right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center bg-transparent p-0 text-white/58 outline-none transition hover:text-white/90 focus-visible:ring-2 focus-visible:ring-white/35 sm:right-5"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden="true" />
+          </button>
         </div>
         <div className="space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 [-webkit-overflow-scrolling:touch] sm:px-5">
           <div className="space-y-1.5">
-            {tasks.length > 0 ? (
-              tasks.map((task) => {
-                const done = task.stage?.toString().toUpperCase() === "PERFECT";
-                const pending = pendingTaskIds.has(task.id);
-                const skillEmoji = task.skill_icon?.trim() || "✦";
+            {hasListRows ? (
+              <>
+                {tasks.map((task) => {
+                  const done =
+                    task.stage?.toString().toUpperCase() === "PERFECT";
+                  const pending = pendingTaskIds.has(task.id);
+                  const skillEmoji = task.skill_icon?.trim() || "✦";
 
-                return (
-                  <label
-                    key={task.id}
+                  return (
+                    <label
+                      key={task.id}
+                      className={clsx(
+                        "flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                        done
+                          ? "bg-emerald-400/[0.045] text-emerald-50/82"
+                          : "bg-transparent text-white/84 hover:bg-white/[0.035]",
+                        pending && "opacity-60"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={done}
+                        disabled={pending}
+                        onChange={() => onToggleTask(task.id)}
+                        tabIndex={open ? 0 : -1}
+                        className="peer sr-only disabled:cursor-wait"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className={clsx(
+                          "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                          done
+                            ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
+                            : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        )}
+                      >
+                        <span
+                          className={clsx(
+                            "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                            done ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={clsx(
+                          "flex h-4 w-4 shrink-0 items-center justify-center text-[0.78rem] leading-none text-white/70 transition",
+                          done && "text-emerald-50/58"
+                        )}
+                      >
+                        {skillEmoji}
+                      </span>
+                      <span
+                        className={clsx(
+                          "min-w-0 leading-snug transition",
+                          done && "text-white/42 line-through"
+                        )}
+                      >
+                        {task.name}
+                      </span>
+                    </label>
+                  );
+                })}
+                {manualRows.map((row) => (
+                  <div
+                    key={row.id}
                     className={clsx(
-                      "flex min-h-9 items-center gap-2.5 rounded-xl border px-3 py-2 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-colors",
-                      done
-                        ? "border-emerald-300/18 bg-emerald-950/[0.11] text-emerald-50/82 shadow-[inset_2px_0_0_rgba(52,211,153,0.22),inset_0_1px_0_rgba(255,255,255,0.06)]"
-                        : "border-white/[0.075] bg-white/[0.035] text-white/84 hover:bg-white/[0.05]",
-                      pending && "opacity-60"
+                      "flex min-h-9 items-center gap-2.5 rounded-lg bg-transparent px-3 py-2 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
+                      row.done && "bg-emerald-400/[0.045] text-emerald-50/82"
                     )}
                   >
                     <input
+                      id={`my-list-${row.id}`}
                       type="checkbox"
-                      checked={done}
-                      disabled={pending}
-                      onChange={() => onToggleTask(task.id)}
+                      checked={row.done}
+                      onChange={(event) =>
+                        updateManualRow(row.id, { done: event.target.checked })
+                      }
                       tabIndex={open ? 0 : -1}
-                      className="peer sr-only disabled:cursor-wait"
+                      className="peer sr-only"
                     />
-                    <span
-                      aria-hidden="true"
+                    <label
+                      htmlFor={`my-list-${row.id}`}
+                      aria-label={
+                        row.done ? "Mark to-do incomplete" : "Mark to-do complete"
+                      }
                       className={clsx(
-                        "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
-                        done
+                        "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                        row.done
                           ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
                           : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                       )}
@@ -1132,43 +1232,58 @@ function ScheduleMyListSheet({
                       <span
                         className={clsx(
                           "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
-                          done ? "opacity-100" : "opacity-0"
+                          row.done ? "opacity-100" : "opacity-0"
                         )}
                       />
-                    </span>
-                    <span
-                      aria-hidden="true"
+                    </label>
+                    <input
+                      type="text"
+                      value={row.skillIcon}
+                      onChange={(event) =>
+                        updateManualRow(row.id, {
+                          skillIcon: event.target.value,
+                        })
+                      }
+                      placeholder="✦"
+                      aria-label="Skill/icon"
+                      tabIndex={open ? 0 : -1}
                       className={clsx(
-                        "flex h-4 w-4 shrink-0 items-center justify-center text-[0.78rem] leading-none text-white/70 transition",
-                        done && "text-emerald-50/58"
+                        "h-4 w-4 shrink-0 bg-transparent p-0 text-center text-[0.78rem] leading-none text-white/70 outline-none placeholder:text-white/36 focus:text-white",
+                        row.done && "text-emerald-50/58"
                       )}
-                    >
-                      {skillEmoji}
-                    </span>
-                    <span
+                    />
+                    <input
+                      type="text"
+                      value={row.text}
+                      onChange={(event) =>
+                        updateManualRow(row.id, { text: event.target.value })
+                      }
+                      placeholder="To-do"
+                      aria-label="To-do text"
+                      tabIndex={open ? 0 : -1}
                       className={clsx(
-                        "min-w-0 leading-snug transition",
-                        done && "text-white/42 line-through"
+                        "min-w-0 flex-1 bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30",
+                        row.done && "text-white/42 line-through"
                       )}
-                    >
-                      {task.name}
-                    </span>
-                  </label>
-                );
-              })
+                    />
+                  </div>
+                ))}
+              </>
             ) : (
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5 text-sm text-white/42">
+              <div className="rounded-lg bg-transparent px-3 py-2.5 text-sm text-white/42">
                 No To-Dos yet.
               </div>
             )}
           </div>
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="Loose notes..."
-            tabIndex={open ? 0 : -1}
-            className="min-h-24 w-full resize-none rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2.5 text-sm leading-relaxed text-white/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] outline-none placeholder:text-white/30 focus:border-white/20 focus:bg-black/34 focus:ring-2 focus:ring-white/[0.08]"
-          />
+          <div className="border-t border-white/[0.055] pt-2">
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Notes..."
+              tabIndex={open ? 0 : -1}
+              className="min-h-24 w-full resize-none rounded-lg bg-transparent px-3 py-2 text-sm leading-relaxed text-white/86 outline-none placeholder:text-white/30 focus:bg-white/[0.025]"
+            />
+          </div>
         </div>
       </div>
     </motion.aside>
@@ -14363,8 +14478,8 @@ export default function ScheduleTabContent({
               >
                 <FlameEmber
                   level={quickCreateDraftEnergyLevel}
-                  size="xs"
-                  className="pointer-events-none scale-[1.18]"
+                  size="sm"
+                  className="pointer-events-none"
                 />
               </button>
             </div>
