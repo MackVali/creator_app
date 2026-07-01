@@ -1084,6 +1084,78 @@ export type Database = {
           },
         ]
       }
+      events: {
+        Row: {
+          all_day: boolean
+          blocks_time: string
+          created_at: string
+          end_at: string
+          end_date: string | null
+          id: string
+          kind: string
+          location_address: string | null
+          location_name: string | null
+          meeting_provider: string | null
+          meeting_url: string | null
+          notes: string | null
+          notification_timing: string
+          recurrence: string
+          start_at: string
+          start_date: string | null
+          timezone: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          visibility: string
+        }
+        Insert: {
+          all_day?: boolean
+          blocks_time?: string
+          created_at?: string
+          end_at: string
+          end_date?: string | null
+          id?: string
+          kind?: string
+          location_address?: string | null
+          location_name?: string | null
+          meeting_provider?: string | null
+          meeting_url?: string | null
+          notes?: string | null
+          notification_timing?: string
+          recurrence?: string
+          start_at: string
+          start_date?: string | null
+          timezone?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+          visibility?: string
+        }
+        Update: {
+          all_day?: boolean
+          blocks_time?: string
+          created_at?: string
+          end_at?: string
+          end_date?: string | null
+          id?: string
+          kind?: string
+          location_address?: string | null
+          location_name?: string | null
+          meeting_provider?: string | null
+          meeting_url?: string | null
+          notes?: string | null
+          notification_timing?: string
+          recurrence?: string
+          start_at?: string
+          start_date?: string | null
+          timezone?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          visibility?: string
+        }
+        Relationships: []
+      }
       foods: {
         Row: {
           barcode: string | null

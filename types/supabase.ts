@@ -41,6 +41,77 @@ export interface Database {
           updated_at?: string;
         };
       };
+      events: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          title: string;
+          notes: string | null;
+          kind: string;
+          all_day: boolean;
+          start_at: string;
+          end_at: string;
+          timezone: string | null;
+          start_date: string | null;
+          end_date: string | null;
+          recurrence: string;
+          location_name: string | null;
+          location_address: string | null;
+          meeting_provider: string | null;
+          meeting_url: string | null;
+          blocks_time: string;
+          visibility: string;
+          notification_timing: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          title: string;
+          notes?: string | null;
+          kind?: string;
+          all_day?: boolean;
+          start_at: string;
+          end_at: string;
+          timezone?: string | null;
+          start_date?: string | null;
+          end_date?: string | null;
+          recurrence?: string;
+          location_name?: string | null;
+          location_address?: string | null;
+          meeting_provider?: string | null;
+          meeting_url?: string | null;
+          blocks_time?: string;
+          visibility?: string;
+          notification_timing?: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          title?: string;
+          notes?: string | null;
+          kind?: string;
+          all_day?: boolean;
+          start_at?: string;
+          end_at?: string;
+          timezone?: string | null;
+          start_date?: string | null;
+          end_date?: string | null;
+          recurrence?: string;
+          location_name?: string | null;
+          location_address?: string | null;
+          meeting_provider?: string | null;
+          meeting_url?: string | null;
+          blocks_time?: string;
+          visibility?: string;
+          notification_timing?: string;
+        };
+      };
       goals: {
         Row: {
           id: string;
