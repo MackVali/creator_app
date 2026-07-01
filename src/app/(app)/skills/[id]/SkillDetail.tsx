@@ -19,6 +19,7 @@ import {
   Timer,
   MoreVertical,
   User,
+  Plus,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
@@ -202,6 +203,67 @@ const RELATED_HABIT_PAGE_GRID_CLASS =
   "grid grid-cols-3 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 const RELATED_HABIT_SMALL_PAGE_GRID_CLASS =
   "grid grid-cols-4 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
+const RELATED_HABIT_ADD_CARD_OUTER_CLASS =
+  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+const RELATED_HABIT_ADD_CARD_INNER_CLASS =
+  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
+
+function renderRelatedHabitAddCard({
+  isSmall,
+  onClick,
+}: {
+  isSmall: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={clsx(
+        RELATED_HABIT_ADD_CARD_OUTER_CLASS,
+        isSmall
+          ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+          : ""
+      )}
+      onClick={onClick}
+      aria-label="Add habit"
+    >
+      <div className={clsx(RELATED_HABIT_ADD_CARD_INNER_CLASS, "w-full min-w-0")}>
+        <div
+          className={clsx(
+            "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
+            isSmall ? "gap-1" : ""
+          )}
+        >
+          <div
+            className={clsx(
+              "mt-1 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
+              isSmall ? "h-6 w-6 sm:h-7 sm:w-7" : ""
+            )}
+          >
+            <Plus
+              className={clsx(
+                "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
+                isSmall ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
+              )}
+              aria-hidden="true"
+            />
+          </div>
+          <div className="flex w-full min-w-0 items-center justify-center">
+            <span
+              className={clsx(
+                "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
+                isSmall ? "line-clamp-2 text-[8px] sm:text-[9px]" : ""
+              )}
+              style={{ hyphens: "auto" }}
+            >
+              Add habit
+            </span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -732,6 +794,11 @@ export function SkillDetail({
     },
     [fabCreation, id]
   );
+  const handleRelatedHabitAdd = useCallback(() => {
+    fabCreation?.requestHabitCreation(null, {
+      skillId: id,
+    });
+  }, [fabCreation, id]);
   const relatedHabitLongPressTimerRef = useRef<number | null>(null);
   const relatedHabitSuppressCompletionUntilRef = useRef(0);
   const starterBackfillKeysRef = useRef<Set<string>>(new Set());
@@ -2737,23 +2804,12 @@ export function SkillDetail({
                 ) : habitsError ? (
                   <p className="text-xs text-white/60">{habitsError}</p>
                 ) : relatedHabits.length === 0 ? (
-
-                    <div className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5">
-                      <span
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
-                        aria-hidden="true"
-                      >
-                        {icon}
-                      </span>
-                      <div className="min-w-0">
-                        <h3 className="text-[13px] font-medium leading-tight text-white/84">
-                          No habits linked yet
-                        </h3>
-                        <p className="mt-0.5 text-[11px] leading-4 text-white/48">
-                          Attach a habit to this skill to start building consistency.
-                        </p>
-                      </div>
-                    </div>
+                  <div className={relatedHabitGridClass}>
+                    {renderRelatedHabitAddCard({
+                      isSmall: isSmallRelatedHabitDensity,
+                      onClick: handleRelatedHabitAdd,
+                    })}
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     {completionError ? (
@@ -2993,6 +3049,10 @@ export function SkillDetail({
                                     </div>
                                   </div>
                                 );
+                                })}
+                                {renderRelatedHabitAddCard({
+                                  isSmall: isSmallRelatedHabitDensity,
+                                  onClick: handleRelatedHabitAdd,
                                 })}
                               </div>
                             </div>

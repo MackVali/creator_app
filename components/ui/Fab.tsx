@@ -17141,9 +17141,19 @@ export function Fab({
     openingCreationRequestIdRef.current = creationRequest.id;
     resetFabFormState();
     setProjectGoalId(creationRequest.goalId ?? null);
+    if (creationRequest.type === "PROJECT") {
+      setProjectSkillIds(creationRequest.skillId ? [creationRequest.skillId] : []);
+    }
     if (creationRequest.type === "GOAL") {
       const requestedCampaignId = creationRequest.campaignId ?? null;
+      const requestedMonumentId = creationRequest.monumentId ?? null;
       setGoalCampaignId(requestedCampaignId);
+      if (requestedMonumentId && !requestedCampaignId) {
+        setGoalMonumentId(requestedMonumentId);
+        setGoalCircleId("");
+        setGoalRelationType("MONUMENT");
+        setGoalRelationId(requestedMonumentId);
+      }
 
       if (requestedCampaignId) {
         const requestId = creationRequest.id;
@@ -27124,7 +27134,11 @@ export function Fab({
         onClose={() => setModalEventType(null)}
         eventType={modalEventType!}
       />
-      <NoteModal isOpen={showNote} onClose={() => setShowNote(false)} />
+      <NoteModal
+        isOpen={showNote}
+        onClose={() => setShowNote(false)}
+        forceTopLevel
+      />
       <PostModal isOpen={showPost} onClose={() => setShowPost(false)} />
       <ComingSoonModal
         isOpen={comingSoon !== null}

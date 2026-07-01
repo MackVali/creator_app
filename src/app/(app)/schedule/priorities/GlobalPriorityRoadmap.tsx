@@ -639,6 +639,9 @@ export function GlobalPriorityRoadmap({
   isSaving,
   sensors,
   isFiltered,
+  isDragDisabled = false,
+  disabledReason = null,
+  emptyFilteredLabel = null,
   appearance = "default",
   hideNestedChildCountLabels = false,
   onGoalOpen,
@@ -654,6 +657,9 @@ export function GlobalPriorityRoadmap({
   isSaving: boolean;
   sensors: PriorityRoadmapSensors;
   isFiltered: boolean;
+  isDragDisabled?: boolean;
+  disabledReason?: string | null;
+  emptyFilteredLabel?: string | null;
   appearance?: GlobalPriorityRoadmapAppearance;
   hideNestedChildCountLabels?: boolean;
   onGoalOpen?: (goalId: string) => void;
@@ -739,6 +745,7 @@ export function GlobalPriorityRoadmap({
   }, []);
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
+      if (isDragDisabled) return;
       const activeData = event.active.data.current as
         | { item?: GlobalPriorityRoadmapItem }
         | undefined;
@@ -752,10 +759,11 @@ export function GlobalPriorityRoadmap({
       );
       startEdgeAutoscroll(event.activatorEvent);
     },
-    [items, startEdgeAutoscroll]
+    [isDragDisabled, items, startEdgeAutoscroll]
   );
   const handleDragOver = useCallback(
     (event: DragOverEvent) => {
+      if (isDragDisabled) return;
       const { active, over } = event;
       if (!over) return;
 
@@ -800,7 +808,7 @@ export function GlobalPriorityRoadmap({
           : nextPreviewItems;
       });
     },
-    [appearance, items]
+    [appearance, isDragDisabled, items]
   );
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -809,10 +817,17 @@ export function GlobalPriorityRoadmap({
       setPreviewPriorityItems(null);
       lastPriorityDragHapticTargetRef.current = null;
       stopEdgeAutoscroll();
+      if (isDragDisabled) return;
       if (!event.over || !event.active.data.current) return;
       onDragEnd(event, isFiltered ? null : previewItemsOnDrop);
     },
-    [isFiltered, onDragEnd, previewPriorityItems, stopEdgeAutoscroll]
+    [
+      isDragDisabled,
+      isFiltered,
+      onDragEnd,
+      previewPriorityItems,
+      stopEdgeAutoscroll,
+    ]
   );
   const handleDragCancel = useCallback(() => {
     setActivePriorityItem(null);
@@ -846,55 +861,66 @@ export function GlobalPriorityRoadmap({
       <section className="overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(113,113,122,0.10)_30%,rgba(24,24,27,0.34)_62%,rgba(255,255,255,0.035))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
         <div className="rounded-[19px] border border-black/60 bg-zinc-950/80 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.018),inset_0_-18px_30px_rgba(0,0,0,0.34)] sm:rounded-[21px] sm:p-4">
           {error ? <p className="mb-2 px-1 text-xs text-red-200/85">{error}</p> : null}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            autoScroll={PRIORITY_DND_AUTO_SCROLL}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-          >
-            <div className="space-y-3">
-              {PRIORITY_ORDER.map((priority) => {
-                const bucketItems = itemsByPriority.get(priority) ?? [];
+          {disabledReason ? (
+            <p className="mb-2 px-1 text-[11px] font-medium text-zinc-600">
+              {disabledReason}
+            </p>
+          ) : null}
+          {displayedItems.length === 0 && emptyFilteredLabel ? (
+            <p className="rounded-[16px] border border-black/60 bg-black/25 px-3 py-3 text-xs font-medium text-zinc-500">
+              {emptyFilteredLabel}
+            </p>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              autoScroll={PRIORITY_DND_AUTO_SCROLL}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <div className="space-y-3">
+                {PRIORITY_ORDER.map((priority) => {
+                  const bucketItems = itemsByPriority.get(priority) ?? [];
 
-                return (
-                  <GlobalPriorityBucket
-                    key={priority}
-                    priority={priority}
-                    items={bucketItems}
-                    openCampaignIds={openCampaignIds}
-                    openGoalIds={openGoalIds}
-                    openProjectIds={openProjectIds}
-                    blockedProjectIds={blockedProjectIds}
-                    onToggleCampaign={handleToggleCampaign}
-                    onToggleGoal={handleToggleGoal}
-                    onToggleProject={handleToggleProject}
-                    onProjectBlocked={handleProjectBlocked}
-                    sensors={sensors}
-                    isTopLevelDragDisabled={false}
-                    isCampaignGoalDragDisabled={false}
+                  return (
+                    <GlobalPriorityBucket
+                      key={priority}
+                      priority={priority}
+                      items={bucketItems}
+                      openCampaignIds={openCampaignIds}
+                      openGoalIds={openGoalIds}
+                      openProjectIds={openProjectIds}
+                      blockedProjectIds={blockedProjectIds}
+                      onToggleCampaign={handleToggleCampaign}
+                      onToggleGoal={handleToggleGoal}
+                      onToggleProject={handleToggleProject}
+                      onProjectBlocked={handleProjectBlocked}
+                      sensors={sensors}
+                      isTopLevelDragDisabled={isDragDisabled}
+                      isCampaignGoalDragDisabled={isDragDisabled}
+                      appearance={appearance}
+                      hideNestedChildCountLabels={hideNestedChildCountLabels}
+                      onGoalOpen={onGoalOpen}
+                      onGoalLongPressEdit={handleGoalLongPressEdit}
+                      onProjectComplete={onProjectComplete}
+                      onTaskComplete={onTaskComplete}
+                      onCampaignGoalDragEnd={onCampaignGoalDragEnd}
+                    />
+                  );
+                })}
+              </div>
+              <PriorityRoadmapDragOverlay zIndex={1000}>
+                {activePriorityItem ? (
+                  <GlobalPriorityItemDragOverlay
+                    item={activePriorityItem}
                     appearance={appearance}
-                    hideNestedChildCountLabels={hideNestedChildCountLabels}
-                    onGoalOpen={onGoalOpen}
-                    onGoalLongPressEdit={handleGoalLongPressEdit}
-                    onProjectComplete={onProjectComplete}
-                    onTaskComplete={onTaskComplete}
-                    onCampaignGoalDragEnd={onCampaignGoalDragEnd}
                   />
-                );
-              })}
-            </div>
-            <PriorityRoadmapDragOverlay zIndex={1000}>
-              {activePriorityItem ? (
-                <GlobalPriorityItemDragOverlay
-                  item={activePriorityItem}
-                  appearance={appearance}
-                />
-              ) : null}
-            </PriorityRoadmapDragOverlay>
-          </DndContext>
+                ) : null}
+              </PriorityRoadmapDragOverlay>
+            </DndContext>
+          )}
         </div>
       </section>
     </div>

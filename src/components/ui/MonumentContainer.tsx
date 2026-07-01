@@ -1,7 +1,6 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import Link from "next/link";
 import MonumentGridWithSharedTransition, {
   type Monument as MonumentCard,
 } from "@/components/MonumentGridWithSharedTransition";
@@ -33,9 +32,9 @@ export const MonumentContainer = forwardRef<MonumentContainerHandle>(
     return (
       <section className="section app-dashboard-section mt-2">
         <div className="mb-3 flex items-center justify-between">
-          <Link href="/monuments" className="h-label block">
+          <h2 className="h-label block">
             Monuments
-          </Link>
+          </h2>
         </div>
 
         <MonumentsList

@@ -13,7 +13,7 @@ import {
   type WheelEvent,
 } from "react";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Grid2x2, Grid3x3 } from "lucide-react";
+import { Grid2x2, Grid3x3, Plus } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   hapticLevelUp,
@@ -381,6 +381,10 @@ const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[240px] sm:min-h-[260px]";
 const GOAL_PANEL_CONTENT_CLASS = "px-1 py-1 sm:px-1.5 sm:py-1.5";
 const GOAL_REVEAL_CLASS = "monument-goal-reveal";
 const RECENTLY_COMPLETED_GOAL_HOLD_MS = 1100;
+const GOAL_ADD_CARD_OUTER_CLASS =
+  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+const GOAL_ADD_CARD_INNER_CLASS =
+  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -4070,6 +4074,12 @@ export function MonumentGoalsList({
     },
     [creationContext]
   );
+  const handleMonumentAddGoal = useCallback(() => {
+    if (!resolvedMonumentId) return;
+    creationContext?.requestGoalCreation(null, null, {
+      monumentId: resolvedMonumentId,
+    });
+  }, [creationContext, resolvedMonumentId]);
 
   const handleManualGoalComplete = useCallback(
     async (goal: Goal) => {
@@ -5172,6 +5182,62 @@ export function MonumentGoalsList({
         filterGoalBySection(roadmapOpenGoal, section)
           ? roadmapOpenGoal
           : null;
+      const shouldShowGoalAddCard =
+        resolvedSourceType === "monument" && section === "active";
+      const goalAddCard = shouldShowGoalAddCard ? (
+        <div
+          className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+        >
+          <button
+            type="button"
+            className={GOAL_ADD_CARD_OUTER_CLASS}
+            data-variant="compact"
+            onClick={handleMonumentAddGoal}
+            aria-label="Add goal"
+          >
+            <div className={cn(GOAL_ADD_CARD_INNER_CLASS, "w-full min-w-0")}>
+              <div
+                className={cn(
+                  "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
+                  isSmallGoalCardDensity ? "gap-1" : ""
+                )}
+              >
+                <div
+                  className={cn(
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
+                    isSmallGoalCardDensity
+                      ? "h-6 w-6 sm:h-7 sm:w-7"
+                      : ""
+                  )}
+                >
+                  <Plus
+                    className={cn(
+                      "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
+                      isSmallGoalCardDensity
+                        ? "h-3 w-3 sm:h-3.5 sm:w-3.5"
+                        : ""
+                    )}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="flex w-full min-w-0 items-center justify-center">
+                  <span
+                    className={cn(
+                      "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
+                      isSmallGoalCardDensity
+                        ? "line-clamp-2 text-[8px] sm:text-[9px]"
+                        : ""
+                    )}
+                    style={{ hyphens: "auto" }}
+                  >
+                    Add goal
+                  </span>
+                </div>
+              </div>
+            </div>
+          </button>
+        </div>
+      ) : null;
 
       if (
         campaignGroupsForGoalGrid.length === 0 &&
@@ -5182,6 +5248,10 @@ export function MonumentGoalsList({
           resolvedSourceType === "circle" && section === "completed"
             ? "rounded-2xl border border-white/[0.06] bg-[#151515] p-4 text-center text-sm text-zinc-500 shadow-[0_6px_24px_rgba(0,0,0,0.35)]"
             : "rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]";
+
+        if (goalAddCard) {
+          return <div className={goalGridClass}>{goalAddCard}</div>;
+        }
 
         return (
           <Card className={emptyStateClassName}>
@@ -5348,6 +5418,7 @@ export function MonumentGoalsList({
               />
             </div>
           ))}
+          {goalAddCard}
         </div>
       );
     };
@@ -5476,6 +5547,7 @@ export function MonumentGoalsList({
     handleManualGoalComplete,
     handleGoalOpenChange,
     handleCampaignAddGoal,
+    handleMonumentAddGoal,
     handleNewCampaignGoalRevealComplete,
     handleNewProjectRevealComplete,
     handleRoadmapGoalEdit,

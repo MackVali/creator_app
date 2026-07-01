@@ -13,7 +13,7 @@ import {
   type WheelEvent,
 } from "react";
 import clsx from "clsx";
-import { Grid2x2, Grid3x3 } from "lucide-react";
+import { Grid2x2, Grid3x3, Plus } from "lucide-react";
 
 import FlameEmber from "@/components/FlameEmber";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,8 +132,74 @@ const RELATED_HABIT_COMPLETED_CARD_CLASS =
   "border-emerald-800/80 !bg-[#070b0d] !bg-[radial-gradient(circle_at_16%_0%,rgba(45,212,191,0.12),transparent_34%),radial-gradient(circle_at_88%_18%,rgba(16,185,129,0.10),transparent_36%),linear-gradient(135deg,rgba(6,78,59,0.22),rgba(3,12,14,0)_42%),linear-gradient(180deg,#11161a_0%,#090d10_55%,#050708_100%)] bg-clip-padding outline outline-1 -outline-offset-4 outline-emerald-400/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(45,212,191,0.22),inset_0_-10px_18px_rgba(0,0,0,0.34),0_0_0_1px_rgba(2,44,34,0.72),0_0_18px_-11px_rgba(16,185,129,0.58),0_10px_24px_-20px_rgba(0,0,0,0.85)]";
 const RELATED_HABIT_COMPLETED_SHIMMER_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(45deg,rgba(2,44,34,0.42),rgba(5,150,105,0.50),rgba(52,211,153,0.58),rgba(16,185,129,0.48),rgba(2,44,34,0.42))] bg-[length:400%_400%] p-[3px] opacity-85 animate-[steel-shimmer_3s_ease-in-out_infinite] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
+const RELATED_HABIT_ADD_CARD_OUTER_CLASS =
+  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
+const RELATED_HABIT_ADD_CARD_INNER_CLASS =
+  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 const RELATED_HABIT_COMPLETED_FACET_CLASS =
   "pointer-events-none absolute inset-0 z-[1] rounded-[inherit] bg-[linear-gradient(135deg,rgba(2,44,34,0.95),transparent_18%)_top_left/42%_42%_no-repeat,linear-gradient(225deg,rgba(6,95,70,0.86),transparent_18%)_top_right/42%_42%_no-repeat,linear-gradient(45deg,rgba(3,67,54,0.90),transparent_18%)_bottom_left/42%_42%_no-repeat,linear-gradient(315deg,rgba(20,184,166,0.28),transparent_18%)_bottom_right/42%_42%_no-repeat] p-[2px] shadow-[inset_0_0_0_1px_rgba(5,150,105,0.36),inset_0_0_0_2px_rgba(2,44,34,0.50)] [-webkit-mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [-webkit-mask-composite:xor] [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude]";
+
+function renderRelatedHabitAddCard({
+  isSmall,
+  onClick,
+}: {
+  isSmall: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={clsx(
+        RELATED_HABIT_ADD_CARD_OUTER_CLASS,
+        isSmall
+          ? "min-h-[70px] rounded-xl p-1.5 sm:min-h-[82px] sm:p-2"
+          : ""
+      )}
+      onClick={onClick}
+      aria-label="Add habit"
+    >
+      <div
+        className={clsx(
+          RELATED_HABIT_ADD_CARD_INNER_CLASS,
+          "w-full min-w-0"
+        )}
+      >
+        <div
+          className={clsx(
+            "flex w-full min-w-0 flex-col items-center justify-center gap-1.5",
+            isSmall ? "gap-1" : ""
+          )}
+        >
+          <div
+            className={clsx(
+              "mt-1 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
+              isSmall ? "h-6 w-6 sm:h-7 sm:w-7" : ""
+            )}
+          >
+            <Plus
+              className={clsx(
+                "h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4",
+                isSmall ? "h-3 w-3 sm:h-3.5 sm:w-3.5" : ""
+              )}
+              aria-hidden="true"
+            />
+          </div>
+          <div className="flex w-full min-w-0 items-center justify-center">
+            <span
+              className={clsx(
+                "line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]",
+                isSmall ? "line-clamp-2 text-[8px] sm:text-[9px]" : ""
+              )}
+              style={{ hyphens: "auto" }}
+            >
+              Add habit
+            </span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -565,6 +631,9 @@ export function MonumentRelatedHabits({
   const fabCreation = useFabCreation();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
+  const [relatedHabitSkillIds, setRelatedHabitSkillIds] = useState<string[]>(
+    []
+  );
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [restoreRoutineDrawerId, setRestoreRoutineDrawerId] = useState<
     string | null
@@ -693,6 +762,24 @@ export function MonumentRelatedHabits({
     },
     [fabCreation]
   );
+  const handleRelatedHabitAdd = useCallback(() => {
+    const defaultSkillId =
+      relatedHabitSkillIds[0] ??
+      relatedHabits.find((habit) => habit.skillId)?.skillId ??
+      null;
+
+    if (!defaultSkillId) {
+      toast.error(
+        "Add a related skill first",
+        "Habits are linked to this monument through skills."
+      );
+      return;
+    }
+
+    fabCreation?.requestHabitCreation(null, {
+      skillId: defaultSkillId,
+    });
+  }, [fabCreation, relatedHabitSkillIds, relatedHabits, toast]);
   const clearPendingCompletedRelatedHabitMove = useCallback(
     (habitId: string) => {
       const pendingTimer =
@@ -1989,9 +2076,13 @@ export function MonumentRelatedHabits({
         if (skillIds.length === 0) {
           if (!cancelled) {
             loadedRelatedHabitsMonumentIdRef.current = monumentId;
+            setRelatedHabitSkillIds([]);
             setRelatedHabits([]);
           }
           return;
+        }
+        if (!cancelled) {
+          setRelatedHabitSkillIds(skillIds);
         }
 
         const { data: habitsData, error: habitsError } = await supabase
@@ -2130,9 +2221,12 @@ export function MonumentRelatedHabits({
         ) : habitsError ? (
           <p className="text-xs text-white/60">{habitsError}</p>
         ) : relatedHabits.length === 0 ? (
-          <p className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 px-4 py-3 text-xs text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            no habits related to this monument yet
-          </p>
+          <div className={relatedHabitGridClass}>
+            {renderRelatedHabitAddCard({
+              isSmall: isSmallRelatedHabitDensity,
+              onClick: handleRelatedHabitAdd,
+            })}
+          </div>
         ) : (
           <div className="space-y-2">
             {completionError ? (
@@ -2405,6 +2499,10 @@ export function MonumentRelatedHabits({
                               </div>
                             </div>
                           );
+                        })}
+                        {renderRelatedHabitAddCard({
+                          isSmall: isSmallRelatedHabitDensity,
+                          onClick: handleRelatedHabitAdd,
                         })}
                       </div>
                     </div>

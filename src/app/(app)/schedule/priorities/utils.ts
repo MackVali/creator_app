@@ -58,7 +58,9 @@ export type RoadmapPriorityProject = {
   skillId?: string | null;
   skillName?: string | null;
   skillIcon?: string | null;
+  skillMonumentId?: string | null;
   skillIds?: string[];
+  skillMonumentIds?: string[];
   taskSkillIds?: Array<string | null>;
   priority?: PriorityBucketId;
   energy?: string | null;
@@ -75,6 +77,7 @@ export type RoadmapPriorityTask = {
   skillId?: string | null;
   skillName?: string | null;
   skillIcon?: string | null;
+  skillMonumentId?: string | null;
   priority?: PriorityBucketId;
   energy?: string | null;
   stage?: string | null;
@@ -115,6 +118,19 @@ export type UserPrioritySkillCategoryData = {
   id: string;
   name: string;
   sortOrder?: number | null;
+};
+
+export type PriorityTimeBlockFilterOptionData = {
+  id: string;
+  name: string;
+  detail?: string | null;
+  blockType?: string | null;
+  allowAllHabitTypes: boolean;
+  allowAllSkills: boolean;
+  allowAllMonuments: boolean;
+  allowedHabitTypes: string[];
+  allowedSkillIds: string[];
+  allowedMonumentIds: string[];
 };
 
 export type GlobalPriorityRoadmapItem = {
