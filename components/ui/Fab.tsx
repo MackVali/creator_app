@@ -23383,10 +23383,14 @@ export function Fab({
       "overflow-hidden rounded-[16px] border border-zinc-800/50 bg-zinc-900/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.032),0_8px_18px_rgba(0,0,0,0.12)]";
     const timingPickerRowClass =
       "grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 px-3 py-1.5 sm:px-4";
+    const taskTimingPickerRowClass =
+      "grid min-h-[50px] grid-cols-[1.5rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 px-3 py-1 sm:px-3.5";
     const eventTimingPickerRowClass =
       "grid min-h-[48px] grid-cols-[1.45rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-3 py-1 sm:px-3.5";
     const timingTimelineRowClass =
       "grid min-h-[56px] grid-cols-[0.9rem_minmax(3.9rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1.5 sm:px-3";
+    const taskTimingTimelineRowClass =
+      "grid min-h-[50px] grid-cols-[0.85rem_minmax(3.9rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1 sm:px-3";
     const eventTimingTimelineRowClass =
       "grid min-h-[48px] grid-cols-[0.8rem_minmax(3.6rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1 sm:px-3";
     const timingModeToggleClass =
@@ -23430,6 +23434,8 @@ export function Fab({
       "overflow-hidden rounded-[16px] border border-zinc-800/45 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_8px_18px_rgba(0,0,0,0.10)]";
     const detailRowClass =
       "grid min-h-[48px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3 px-3.5 py-2";
+    const taskDetailRowClass =
+      "grid min-h-[44px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3 px-3 py-1.5";
     const detailControlWrapClass = "flex min-w-0 justify-end";
     const inviteSectionClass =
       isEventsMode
@@ -26703,7 +26709,12 @@ export function Fab({
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-1 sm:px-6 sm:pb-6">
-                <div className="mx-auto grid w-full max-w-xl gap-2 pb-0">
+                <div
+                  className={cn(
+                    "mx-auto grid w-full max-w-xl pb-0",
+                    isTask ? "gap-1.5" : "gap-2",
+                  )}
+                >
                   <div
                     className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
                     aria-label="Creation mode"
@@ -27452,7 +27463,14 @@ export function Fab({
                     </div>
                   ) : null}
 
-                  <div className="rounded-[18px] border border-zinc-700/30 bg-zinc-800/28 px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors focus-within:border-zinc-500/45 focus-within:bg-zinc-800/34">
+                  <div
+                    className={cn(
+                      "border border-zinc-700/30 bg-zinc-800/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors focus-within:border-zinc-500/45 focus-within:bg-zinc-800/34",
+                      isTask
+                        ? "rounded-[16px] px-3 py-2"
+                        : "rounded-[18px] px-3.5 py-2.5",
+                    )}
+                  >
                     <Label
                       htmlFor="unified-event-title"
                       className="sr-only"
@@ -27478,20 +27496,30 @@ export function Fab({
                   <div className="grid gap-2">
                     <section
                       className={
-                        isEventsMode ? eventTimingCardClass : timingCardClass
+                        isEventsMode
+                          ? eventTimingCardClass
+                          : cn(timingCardClass, isTask && "rounded-[16px]")
                       }
                     >
                       <h3 className="sr-only">Timing</h3>
                       <div
                         className={cn(
                           "grid gap-2",
-                          isEventsMode ? "pb-1.5" : "pb-2",
+                          isEventsMode
+                            ? "pb-1.5"
+                            : isTask
+                              ? "pb-1.5"
+                              : "pb-2",
                         )}
                       >
                         <div
                           className={cn(
                             "grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 sm:px-4",
-                            isEventsMode ? "pt-2.5" : "pt-3",
+                            isEventsMode
+                              ? "pt-2.5"
+                              : isTask
+                                ? "pt-2"
+                                : "pt-3",
                           )}
                         >
                           <span
@@ -27619,6 +27647,8 @@ export function Fab({
                             className={
                               isEventsMode
                                 ? eventTimingTimelineRowClass
+                                : isTask
+                                  ? taskTimingTimelineRowClass
                                 : timingTimelineRowClass
                             }
                           >
@@ -27695,6 +27725,8 @@ export function Fab({
                             className={cn(
                               isEventsMode
                                 ? eventTimingTimelineRowClass
+                                : isTask
+                                  ? taskTimingTimelineRowClass
                                 : timingTimelineRowClass,
                               unifiedEventAllDay && "text-zinc-500",
                             )}
@@ -27801,7 +27833,12 @@ export function Fab({
                           </div>
                         ) : (
                           <div className="grid gap-1 px-3 pb-1 sm:px-4">
-                            <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                            <div
+                              className={cn(
+                                "grid grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2",
+                                isTask ? "min-h-[50px] py-1" : "min-h-[56px] py-1.5",
+                              )}
+                            >
                               <span
                                 className={timingRowIconClass}
                                 aria-hidden="true"
@@ -27842,8 +27879,14 @@ export function Fab({
                     </section>
 
                     {!isEventsMode ? (
-                    <section className={timingCardClass}>
-                      <div className={timingPickerRowClass}>
+                    <section
+                      className={cn(timingCardClass, isTask && "rounded-[16px]")}
+                    >
+                      <div
+                        className={
+                          isTask ? taskTimingPickerRowClass : timingPickerRowClass
+                        }
+                      >
                         <span className={timingRowIconClass} aria-hidden="true">
                           <Repeat2 className="h-4 w-4" />
                         </span>
@@ -27898,9 +27941,18 @@ export function Fab({
                   {isEventsMode ? (
                     renderUnifiedEventDraftDetails()
                   ) : (
-                  <section className={detailSectionClass}>
+                  <section
+                    className={cn(
+                      detailSectionClass,
+                      isTask && "gap-1.5 pt-0.5",
+                    )}
+                  >
                     <div className={detailCardClass}>
-                      <div className={detailRowClass}>
+                      <div
+                        className={
+                          isTask ? taskDetailRowClass : detailRowClass
+                        }
+                      >
                         <Label className={detailLabelClass}>
                           <FlameEmber
                             level={normalizeFlameLevel(energyValue)}
@@ -27916,7 +27968,10 @@ export function Fab({
                             value={energyValue}
                             onChange={setEnergyValue}
                             ariaLabel={`${eventTypeLabel} energy`}
-                            className="h-9 w-9 shrink-0 rounded-xl border-zinc-700/40 bg-zinc-800/35 hover:bg-zinc-800/55"
+                            className={cn(
+                              "shrink-0 rounded-xl border-zinc-700/40 bg-zinc-800/35 hover:bg-zinc-800/55",
+                              isTask ? "h-8 w-8" : "h-9 w-9",
+                            )}
                             activationProps={getUnifiedSheetTouchActivationProps(
                               () => {
                                 void hapticSoftTick();
@@ -27934,7 +27989,11 @@ export function Fab({
 
                     {isGoalLinkedEvent ? (
                       <div className={detailCardClass}>
-                        <div className={detailRowClass}>
+                        <div
+                          className={
+                            isTask ? taskDetailRowClass : detailRowClass
+                          }
+                        >
                           <Label className={detailLabelClass}>
                             <Flag className={detailIconClass} aria-hidden="true" />
                             Priority
@@ -28038,7 +28097,11 @@ export function Fab({
                     ) : null}
 
                     <div className={detailCardClass}>
-                      <div className={detailRowClass}>
+                      <div
+                        className={
+                          isTask ? taskDetailRowClass : detailRowClass
+                        }
+                      >
                         <Label className={detailLabelClass}>
                           <Brain className={detailIconClass} aria-hidden="true" />
                           Skill
