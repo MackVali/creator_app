@@ -27,6 +27,7 @@ import {
   type PanInfo,
 } from "framer-motion";
 import {
+  ArrowUpNarrowWide,
   CircleDot,
   Check,
   ChevronLeft,
@@ -48,12 +49,15 @@ import {
   Settings2,
   Shrink,
   Brain,
-  Calendar,
+  CalendarDays,
   CalendarPlus,
+  Bell,
   Sun,
+  Link,
   Tags,
   Timer,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import FlameEmber, {
@@ -139,6 +143,10 @@ import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
 import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
+import PriorityEditorClient, {
+  type PriorityEditorClientProps,
+} from "@/app/(app)/schedule/priorities/PriorityEditorClient";
+import type { Friend } from "@/types/friends";
 
 export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
@@ -158,6 +166,18 @@ export interface FabProps extends HTMLAttributes<HTMLDivElement> {
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
 type UnifiedCreationMode = "EVENTS" | "TASKS";
 type UnifiedEventType = Extract<CreationType, "TASK" | "HABIT">;
+type UnifiedEventDraftBlocksTime = "DEFAULT" | "BLOCKS" | "FREE";
+type UnifiedEventDraftMeetingProvider = "URL" | "CREATOR_VIDEO";
+type UnifiedEventDraftRecurrence = string;
+type UnifiedEventNotificationTiming =
+  | "NONE"
+  | "AT_TIME"
+  | "TEN_MIN_BEFORE"
+  | "THIRTY_MIN_BEFORE"
+  | "ONE_HOUR_BEFORE"
+  | "ON_THE_DAY"
+  | "ONE_DAY_BEFORE"
+  | "ONE_WEEK_BEFORE";
 type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
 type AddEventSubAction = {
   id: string;
@@ -177,6 +197,8 @@ type UnifiedTimingPickerOpen =
 type FabAdvancedTimingPickerOpen =
   | "projectExactStartTime"
   | "projectExactEndTime"
+  | "taskExactStartTime"
+  | "taskExactEndTime"
   | "habitFixedStartTime"
   | "habitFixedEndTime"
   | null;
@@ -228,6 +250,7 @@ type FabNexusEditReturnState = {
   menuVariant: "default" | "timeline";
   expanded: boolean;
 };
+type FabNexusMode = "events" | "priorityEditor";
 type FabAiOverlayOrigin = {
   top: number;
   left: number;
@@ -490,7 +513,7 @@ type CreationFormMode =
   | "projects"
   | "tags"
   | "tasks"
-  | "schedule"
+  | "notes"
   | "advanced"
   | "memoForms";
 type CreationModeOption = {
@@ -1903,17 +1926,18 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   PROJECT: [
     { id: "main", label: "Main", icon: CircleDot },
     { id: "tasks", label: "Tasks", icon: ListChecks },
-    { id: "schedule", label: "Schedule", icon: Calendar },
+    { id: "notes", label: "Notes", icon: FileText },
     { id: "advanced", label: "Advanced", icon: Settings2 },
   ],
   TASK: [
     { id: "main", label: "Main", icon: CircleDot },
+    { id: "notes", label: "Notes", icon: FileText },
     { id: "advanced", label: "Advanced", icon: Settings2 },
   ],
   HABIT: [
     { id: "main", label: "Main", icon: CircleDot },
+    { id: "notes", label: "Notes", icon: FileText },
     { id: "memoForms", label: "Memo Forms", icon: FileText },
-    { id: "advanced", label: "Advanced", icon: Clock },
     { id: "tags", label: "Tags", icon: Tags },
   ],
 };
@@ -1952,6 +1976,22 @@ const createLocalDraftId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `draft-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+const getFriendInviteDisplayName = (friend: Friend) =>
+  friend.displayName?.trim() || friend.username?.trim() || "Friend";
+
+const getFriendInviteInitials = (friend: Friend) => {
+  const label = getFriendInviteDisplayName(friend);
+  const parts = label
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const initials =
+    parts.length >= 2
+      ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`
+      : label.slice(0, 2);
+  return initials.toUpperCase() || "?";
+};
 
 const DEFAULT_OVERLAY_DURATION_MINUTES = 180;
 const TIMELINE_TICK_INTERVAL_MINUTES = 15;
@@ -3436,10 +3476,12 @@ function FabCreationModeButton({
   mode,
   isActive,
   onSelect,
+  compact = false,
 }: {
   mode: CreationModeOption;
   isActive: boolean;
   onSelect: (mode: CreationFormMode) => void;
+  compact?: boolean;
 }) {
   const Icon = mode.icon;
   const tapHandlers = useTapHandler(() => {
@@ -3471,7 +3513,8 @@ function FabCreationModeButton({
         tapHandlers.onClick(event);
       }}
       className={cn(
-        "flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
+        "flex touch-manipulation items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
+        compact ? "h-8 w-8" : "h-9 w-9",
         isActive
           ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
           : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
@@ -3480,7 +3523,7 @@ function FabCreationModeButton({
       aria-label={mode.label}
       title={mode.label}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
     </button>
   );
 }
@@ -3624,10 +3667,60 @@ export function Fab({
   const [isUnifiedFormsSheetOpen, setIsUnifiedFormsSheetOpen] =
     useState(false);
   const [isAddEventMoreOpen, setIsAddEventMoreOpen] = useState(false);
+  const [isUnifiedEventLocationSheetOpen, setIsUnifiedEventLocationSheetOpen] =
+    useState(false);
+  const [isUnifiedEventLinkSheetOpen, setIsUnifiedEventLinkSheetOpen] =
+    useState(false);
   const [unifiedCreationMode, setUnifiedCreationMode] =
     useState<UnifiedCreationMode>("EVENTS");
   const [unifiedEventType, setUnifiedEventType] =
     useState<UnifiedEventType>("TASK");
+  const [unifiedEventTitle, setUnifiedEventTitle] = useState("");
+  const [unifiedEventDescription, setUnifiedEventDescription] = useState("");
+  const [unifiedEventLocationName, setUnifiedEventLocationName] = useState("");
+  const [, setUnifiedEventLocationAddress] = useState("");
+  const [unifiedEventVirtualUrl, setUnifiedEventVirtualUrl] = useState("");
+  const [unifiedEventMeetingProvider, setUnifiedEventMeetingProvider] =
+    useState<UnifiedEventDraftMeetingProvider>("URL");
+  const [unifiedEventBlocksTime] =
+    useState<UnifiedEventDraftBlocksTime>("DEFAULT");
+  const [unifiedEventFriends, setUnifiedEventFriends] = useState<Friend[]>([]);
+  const [unifiedEventFriendsLoading, setUnifiedEventFriendsLoading] =
+    useState(false);
+  const [unifiedEventFriendsError, setUnifiedEventFriendsError] = useState<
+    string | null
+  >(null);
+  const [unifiedEventInviteSearch, setUnifiedEventInviteSearch] = useState("");
+  const [unifiedEventSelectedInvitees, setUnifiedEventSelectedInvitees] =
+    useState<Friend[]>([]);
+  const [isUnifiedEventInvitePickerOpen, setIsUnifiedEventInvitePickerOpen] =
+    useState(false);
+  const [
+    unifiedEventNotificationTiming,
+    setUnifiedEventNotificationTiming,
+  ] = useState<UnifiedEventNotificationTiming>("NONE");
+  const [
+    isUnifiedEventNotificationPickerOpen,
+    setIsUnifiedEventNotificationPickerOpen,
+  ] = useState(false);
+  const [unifiedEventRecurrence, setUnifiedEventRecurrence] =
+    useState<UnifiedEventDraftRecurrence>("__never__");
+  const [
+    isUnifiedEventRecurrencePickerOpen,
+    setIsUnifiedEventRecurrencePickerOpen,
+  ] = useState(false);
+  const unifiedEventRecurrenceTriggerRef =
+    useRef<HTMLButtonElement | null>(null);
+  const unifiedEventNotificationTriggerRef =
+    useRef<HTMLButtonElement | null>(null);
+  const [unifiedEventDropdownPosition, setUnifiedEventDropdownPosition] =
+    useState<{
+      left: number;
+      width: number;
+      top?: number;
+      bottom?: number;
+      maxHeight: number;
+    } | null>(null);
   const [addEventSubActions, setAddEventSubActions] = useState<
     AddEventSubAction[]
   >([]);
@@ -3759,6 +3852,148 @@ export function Fab({
     }),
     [],
   );
+  const resetUnifiedEventInviteDraft = useCallback(() => {
+    setUnifiedEventInviteSearch("");
+    setUnifiedEventSelectedInvitees([]);
+    setIsUnifiedEventInvitePickerOpen(false);
+    setUnifiedEventFriendsError(null);
+    setUnifiedEventNotificationTiming("NONE");
+    setIsUnifiedEventNotificationPickerOpen(false);
+    setUnifiedEventRecurrence("__never__");
+    setIsUnifiedEventRecurrencePickerOpen(false);
+  }, []);
+  useLayoutEffect(() => {
+    const trigger = isUnifiedEventRecurrencePickerOpen
+      ? unifiedEventRecurrenceTriggerRef.current
+      : isUnifiedEventNotificationPickerOpen
+        ? unifiedEventNotificationTriggerRef.current
+        : null;
+
+    if (!trigger) {
+      setUnifiedEventDropdownPosition(null);
+      return;
+    }
+
+    const updateDropdownPosition = () => {
+      const rect = trigger.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+      const safeMargin = 12;
+      const desiredWidth = Math.max(rect.width, 180);
+      const width = Math.min(
+        desiredWidth,
+        Math.max(rect.width, viewportWidth - safeMargin * 2),
+      );
+      const rawLeft = rect.right - width;
+      const left = Math.min(
+        Math.max(rawLeft, safeMargin),
+        Math.max(safeMargin, viewportWidth - width - safeMargin),
+      );
+      const spaceBelow = Math.max(0, viewportHeight - rect.bottom);
+      const spaceAbove = Math.max(0, rect.top);
+      const preferAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const availableSpace = preferAbove ? spaceAbove : spaceBelow;
+      const fallbackMax = Math.max(200, viewportHeight - safeMargin * 2);
+      const maxHeight = Math.min(
+        fallbackMax,
+        availableSpace > 0 ? availableSpace : fallbackMax,
+      );
+
+      setUnifiedEventDropdownPosition({
+        left,
+        width,
+        top: preferAbove ? undefined : rect.bottom,
+        bottom: preferAbove ? Math.max(0, viewportHeight - rect.top) : undefined,
+        maxHeight,
+      });
+    };
+
+    updateDropdownPosition();
+    window.addEventListener("resize", updateDropdownPosition);
+    window.addEventListener("scroll", updateDropdownPosition, { passive: true });
+    return () => {
+      window.removeEventListener("resize", updateDropdownPosition);
+      window.removeEventListener("scroll", updateDropdownPosition);
+    };
+  }, [
+    isUnifiedEventNotificationPickerOpen,
+    isUnifiedEventRecurrencePickerOpen,
+  ]);
+  useEffect(() => {
+    if (
+      isUnifiedEventSheetOpen &&
+      unifiedCreationMode === "EVENTS" &&
+      addEventWorkspaceValue === "PERSONAL" &&
+      isUnifiedEventInvitePickerOpen
+    ) {
+      return;
+    }
+
+    setIsUnifiedEventInvitePickerOpen(false);
+    setUnifiedEventInviteSearch("");
+    if (addEventWorkspaceValue !== "PERSONAL") {
+      setUnifiedEventSelectedInvitees([]);
+    }
+  }, [
+    addEventWorkspaceValue,
+    isUnifiedEventInvitePickerOpen,
+    isUnifiedEventSheetOpen,
+    unifiedCreationMode,
+  ]);
+  useEffect(() => {
+    if (
+      !isUnifiedEventSheetOpen ||
+      unifiedCreationMode !== "EVENTS" ||
+      addEventWorkspaceValue !== "PERSONAL" ||
+      !isUnifiedEventInvitePickerOpen
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    const loadFriends = async () => {
+      setUnifiedEventFriendsLoading(true);
+      setUnifiedEventFriendsError(null);
+
+      try {
+        const response = await fetch("/api/friends?view=friends", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load friends.");
+        }
+
+        const body = (await response.json()) as { friends?: Friend[] };
+        if (cancelled) return;
+
+        setUnifiedEventFriends(Array.isArray(body.friends) ? body.friends : []);
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        console.error("Failed to load event invite friends", error);
+        setUnifiedEventFriendsError("Unable to load friends.");
+      } finally {
+        if (!cancelled) {
+          setUnifiedEventFriendsLoading(false);
+        }
+      }
+    };
+
+    void loadFriends();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [
+    addEventWorkspaceValue,
+    isUnifiedEventInvitePickerOpen,
+    isUnifiedEventSheetOpen,
+    unifiedCreationMode,
+  ]);
   useEffect(() => {
     if (!isUnifiedTagsSheetOpen || !isUnifiedTagCreateOpen) return;
     if (typeof window === "undefined") return;
@@ -4788,14 +5023,6 @@ export function Fab({
       setTaskDurationPosition(null);
     }
   }, [selected]);
-  const [showDurationPicker, setShowDurationPicker] = useState(false);
-  const durationTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const durationPickerRef = useRef<HTMLDivElement | null>(null);
-  const [durationPosition, setDurationPosition] = useState<{
-    top: number;
-    left: number;
-    width: number;
-  } | null>(null);
   const [showTaskDurationPicker, setShowTaskDurationPicker] = useState(false);
   const taskDurationTriggerRef = useRef<HTMLButtonElement | null>(null);
   const taskDurationPickerRef = useRef<HTMLDivElement | null>(null);
@@ -4836,37 +5063,6 @@ export function Fab({
     typeof projectDuration === "number" && Number.isFinite(projectDuration)
       ? projectDuration
       : 0;
-  const updateDurationPosition = useCallback(() => {
-    if (!showDurationPicker) return;
-    const trigger = durationTriggerRef.current;
-    if (
-      !trigger ||
-      typeof window === "undefined" ||
-      typeof document === "undefined"
-    ) {
-      return;
-    }
-    const rect = trigger.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const estimatedHeight = 150;
-    const margin = 8;
-    const spaceBelow = viewportHeight - rect.bottom;
-    const placeBelow =
-      spaceBelow > estimatedHeight + margin || rect.top < estimatedHeight;
-    const top = placeBelow
-      ? rect.bottom + margin + window.scrollY
-      : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
-    const desiredWidth = Math.max(rect.width, 320);
-    const width = Math.min(desiredWidth, viewportWidth - margin * 2);
-    let left = rect.left;
-    if (left + width > viewportWidth - margin) {
-      left = viewportWidth - width - margin;
-    }
-    if (left < margin) left = margin;
-    setDurationPosition({ top, left: left + window.scrollX, width });
-  }, [showDurationPicker]);
-
   const updateTaskDurationPosition = useCallback(() => {
     if (!showTaskDurationPicker) return;
     const trigger = taskDurationTriggerRef.current;
@@ -4961,41 +5157,6 @@ export function Fab({
     if (left < margin) left = margin;
     setDraftTaskDurationPosition({ top, left: left + window.scrollX, width });
   }, [showDraftTaskDurationPicker]);
-  useEffect(() => {
-    if (!showDurationPicker) return;
-    updateDurationPosition();
-    const handle = () => updateDurationPosition();
-    window.addEventListener("resize", handle);
-    window.addEventListener("scroll", handle, true);
-    return () => {
-      window.removeEventListener("resize", handle);
-      window.removeEventListener("scroll", handle, true);
-    };
-  }, [showDurationPicker, updateDurationPosition]);
-
-  useEffect(() => {
-    if (!showDurationPicker) return;
-    const handleOutside = (event: MouseEvent | TouchEvent) => {
-      if (isTourActive()) return;
-      const target = event.target as Node | null;
-      if (
-        !target ||
-        fabRootRef.current?.contains(target) ||
-        durationPickerRef.current?.contains(target) ||
-        durationTriggerRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setShowDurationPicker(false);
-    };
-    document.addEventListener("mousedown", handleOutside);
-    document.addEventListener("touchstart", handleOutside, { passive: true });
-    return () => {
-      document.removeEventListener("mousedown", handleOutside);
-      document.removeEventListener("touchstart", handleOutside);
-    };
-  }, [showDurationPicker]);
-
   useEffect(() => {
     if (!showTaskDurationPicker) return;
     updateTaskDurationPosition();
@@ -5099,21 +5260,6 @@ export function Fab({
       document.removeEventListener("touchstart", handleOutside);
     };
   }, [showDraftTaskDurationPicker]);
-  const toggleDurationPicker = () => {
-    setShowDurationPicker((prev) => {
-      const next = !prev;
-      if (
-        next &&
-        (projectDuration === "" || !Number.isFinite(projectDuration))
-      ) {
-        setProjectDuration(30);
-      }
-      // Defer position calculation to allow layout to settle.
-      requestAnimationFrame(() => updateDurationPosition());
-      return next;
-    });
-  };
-
   const toggleTaskDurationPicker = () => {
     setShowTaskDurationPicker((prev) => {
       const next = !prev;
@@ -5126,11 +5272,6 @@ export function Fab({
       requestAnimationFrame(() => updateTaskDurationPosition());
       return next;
     });
-  };
-
-  const adjustProjectDuration = (delta: number) => {
-    const next = Math.max(0, normalizedProjectDuration + delta);
-    setProjectDuration(next);
   };
 
   const adjustTaskDuration = (delta: number) => {
@@ -5265,9 +5406,6 @@ export function Fab({
     setHabitDuration(next.toString());
   };
 
-  const projectDurationTapHandlers = useTapHandler(() =>
-    toggleDurationPicker(),
-  );
   const taskDurationTapHandlers = useTapHandler(() =>
     toggleTaskDurationPicker(),
   );
@@ -5280,9 +5418,6 @@ export function Fab({
   const habitDurationTapHandlers = useTapHandler(() =>
     toggleHabitDurationPicker(),
   );
-  const projectDurationMinusTapHandlers = useTapHandler(() =>
-    adjustProjectDuration(-5),
-  );
   const taskDurationMinusTapHandlers = useTapHandler(() =>
     adjustTaskDuration(-5),
   );
@@ -5291,9 +5426,6 @@ export function Fab({
   );
   const draftTaskDurationMinusTapHandlers = useTapHandler(() =>
     adjustDraftTaskDuration(-5),
-  );
-  const projectDurationPlusTapHandlers = useTapHandler(() =>
-    adjustProjectDuration(5),
   );
   const taskDurationPlusTapHandlers = useTapHandler(() =>
     adjustTaskDuration(5),
@@ -5752,6 +5884,9 @@ export function Fab({
       : habitNextDueFallback;
   const habitNextDueRelativeLabel =
     getRelativeLocalDayLabel(habitEffectiveNextDueValue);
+  const [habitTimingPanelView, setHabitTimingPanelView] = useState<
+    "timing" | "nextDue"
+  >("timing");
   const [habitScheduleTimingMode, setHabitScheduleTimingMode] =
     useState<HabitScheduleTimingMode>("dynamic");
   const [habitFixedStartTime, setHabitFixedStartTime] = useState("");
@@ -5866,8 +6001,6 @@ export function Fab({
       setProjectExactFallbackDate("");
       setProjectExactStartTime("");
       setProjectExactEndTime("");
-      setShowDurationPicker(false);
-      setDurationPosition(null);
     },
     [],
   );
@@ -5915,6 +6048,7 @@ export function Fab({
     setHabitNextDueOverride("");
     setHabitNextDueFallback("");
     setHabitNextDueOverrideTouched(false);
+    setHabitTimingPanelView("timing");
     setHabitScheduleTimingMode("dynamic");
     setHabitFixedStartTime("");
     setHabitFixedEndTime("");
@@ -6010,6 +6144,7 @@ export function Fab({
       );
       setHabitNextDueFallback("");
       setHabitNextDueOverrideTouched(false);
+      setHabitTimingPanelView("timing");
       const fixedStartTime = formatLocalTimeInputValue(
         typeof draft?.fixedStartLocal === "string"
           ? draft.fixedStartLocal
@@ -6143,8 +6278,6 @@ export function Fab({
     setSelectedTagIds(goalProjectStack.parentSelectedTagIds);
     setTagInputValue(goalProjectStack.parentTagInputValue);
     setSaveError(null);
-    setShowDurationPicker(false);
-    setDurationPosition(null);
     setIsGoalPickerOpen(false);
     setShowGoalFilters(false);
     setSelected("GOAL");
@@ -8658,6 +8791,14 @@ export function Fab({
   const pageCount = FAB_PAGES.length;
   const [activeFabPage, setActiveFabPage] = useState<number>(0);
   const [normalNexusExpanded, setNormalNexusExpanded] = useState(false);
+  const [popupNexusMode, setPopupNexusMode] =
+    useState<FabNexusMode>("events");
+  const [embeddedPriorityEditorProps, setEmbeddedPriorityEditorProps] =
+    useState<PriorityEditorClientProps | null>(null);
+  const [isPriorityEditorLoading, setIsPriorityEditorLoading] = useState(false);
+  const [priorityEditorError, setPriorityEditorError] = useState<string | null>(
+    null,
+  );
   const nexusEditReturnStateRef = useRef<FabNexusEditReturnState | null>(null);
   const activeFabPageType = pages[activeFabPage];
   const isNormalFabNexusPage =
@@ -8702,6 +8843,16 @@ export function Fab({
       setExpanded(false);
     }
   }, [isPopupFabNexusPage, normalNexusExpanded, selected]);
+  useEffect(() => {
+    if (!isPopupFabNexusExpanded) {
+      setPopupNexusMode("events");
+    }
+  }, [isPopupFabNexusExpanded]);
+  useEffect(() => {
+    return () => {
+      priorityEditorAbortRef.current?.abort();
+    };
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -8737,6 +8888,7 @@ export function Fab({
   const overlayNexusDropRef = useRef<HTMLButtonElement | null>(null);
   const isDraggingOverlay = Boolean(activeOverlayDragId);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const priorityEditorAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
   const searchCacheRef = useRef<FabSearchCacheEntry | null>(null);
   const completingNexusInstanceIdsRef = useRef<Set<string>>(new Set());
@@ -9077,8 +9229,15 @@ export function Fab({
   const activeCreationModes = getCreationModesForType(selected).filter(
     (mode) => mode.id !== "memoForms" || isMemoHabitCreation,
   );
+  const useCompactCreationModeButtons =
+    selected === "PROJECT" || selected === "TASK" || selected === "HABIT";
+  const creationModeButtonSize = useCompactCreationModeButtons ? 32 : 36;
+  const creationModeButtonGap = useCompactCreationModeButtons ? 5 : 6;
   const creationModeClusterWidth =
-    activeCreationModes.length > 0 ? activeCreationModes.length * 36 + (activeCreationModes.length - 1) * 6 : 0;
+    activeCreationModes.length > 0
+      ? activeCreationModes.length * creationModeButtonSize +
+        (activeCreationModes.length - 1) * creationModeButtonGap
+      : 0;
   const creationModeOverhangPos = useOverhangLT(
     panelRef,
     [expanded, selected, activeCreationMode, creationModeClusterWidth],
@@ -9317,6 +9476,11 @@ export function Fab({
   }, [activeCreationMode, isMemoHabitCreation, selected]);
 
   useEffect(() => {
+    if (selected === "HABIT" && activeCreationMode === "main") return;
+    setHabitTimingPanelView("timing");
+  }, [activeCreationMode, selected]);
+
+  useEffect(() => {
     return () => {
       if (creationSelectionTimeoutRef.current !== null) {
         window.clearTimeout(creationSelectionTimeoutRef.current);
@@ -9459,6 +9623,7 @@ export function Fab({
       setHabitNextDueFallback("");
       setHabitNextDueOverrideTouched(false);
       setAddEventWorkspaceValue("PERSONAL");
+      resetUnifiedEventInviteDraft();
       resetNestedDraftState();
     }
     if (!expanded) {
@@ -9466,7 +9631,13 @@ export function Fab({
       setTagsLoading(false);
     }
     previousSelectedRef.current = selected;
-  }, [editTarget, expanded, resetNestedDraftState, selected]);
+  }, [
+    editTarget,
+    expanded,
+    resetNestedDraftState,
+    resetUnifiedEventInviteDraft,
+    selected,
+  ]);
 
   useEffect(() => {
     if ((!expanded || !selected) && !isUnifiedEventSheetOpen) return;
@@ -10142,6 +10313,7 @@ export function Fab({
     setAddEventWorkspaceValue("PERSONAL");
     setAddEventTimingMode("manual");
     setAddEventDynamicDuration("60");
+    resetUnifiedEventInviteDraft();
 
     setHabitName("");
     setHabitType(defaultHabitType);
@@ -10167,6 +10339,7 @@ export function Fab({
     setHabitNextDueOverride("");
     setHabitNextDueFallback("");
     setHabitNextDueOverrideTouched(false);
+    setHabitTimingPanelView("timing");
     setHabitFixedStartTime("");
     setHabitFixedEndTime("");
     setHabitRoutineId("");
@@ -10189,6 +10362,7 @@ export function Fab({
     defaultHabitType,
     habitSkillId,
     resetNestedDraftState,
+    resetUnifiedEventInviteDraft,
   ]);
 
   type MenuPalette = {
@@ -11445,6 +11619,7 @@ export function Fab({
 
   const renderTagPickerPanel = ({
     label,
+    leadingContent,
     footer,
     density = "default",
     fillExpanded = true,
@@ -11453,6 +11628,7 @@ export function Fab({
     showHeader = true,
   }: {
     label: string;
+    leadingContent?: React.ReactNode;
     footer?: React.ReactNode;
     density?: "default" | "compact";
     fillExpanded?: boolean;
@@ -11665,17 +11841,30 @@ export function Fab({
             density === "compact" ? "gap-2.5" : "gap-3",
             isFlatSurface
               ? footer
-                ? "grid-rows-[auto_minmax(0,1fr)_auto]"
-                : "grid-rows-[auto_minmax(0,1fr)]"
+                ? leadingContent
+                  ? "grid-rows-[auto_auto_minmax(0,1fr)_auto]"
+                  : "grid-rows-[auto_minmax(0,1fr)_auto]"
+                : leadingContent
+                  ? "grid-rows-[auto_auto_minmax(0,1fr)]"
+                  : "grid-rows-[auto_minmax(0,1fr)]"
               : density === "compact"
                 ? footer
-                  ? "grid-rows-[auto_auto_auto]"
-                  : "grid-rows-[auto_auto]"
+                  ? leadingContent
+                    ? "grid-rows-[auto_auto_auto_auto]"
+                    : "grid-rows-[auto_auto_auto]"
+                  : leadingContent
+                    ? "grid-rows-[auto_auto_auto]"
+                    : "grid-rows-[auto_auto]"
                 : footer
-                  ? "grid-rows-[minmax(0,1fr)_auto_auto]"
-                  : "grid-rows-[minmax(0,1fr)_auto]",
+                  ? leadingContent
+                    ? "grid-rows-[auto_minmax(0,1fr)_auto_auto]"
+                    : "grid-rows-[minmax(0,1fr)_auto_auto]"
+                  : leadingContent
+                    ? "grid-rows-[auto_minmax(0,1fr)_auto]"
+                    : "grid-rows-[minmax(0,1fr)_auto]",
           )}
         >
+          {leadingContent}
           {isFlatSurface ? (
             <>
               {tagInputControls}
@@ -12122,6 +12311,8 @@ export function Fab({
     showTags = true,
     showExactSchedule = true,
     showDueDate = true,
+    showProjectStageAfterDueDate = false,
+    showTaskStageAfterTags = false,
   }: {
     dueDateId: string;
     dueDateValue: string;
@@ -12145,6 +12336,8 @@ export function Fab({
     showTags?: boolean;
     showExactSchedule?: boolean;
     showDueDate?: boolean;
+    showProjectStageAfterDueDate?: boolean;
+    showTaskStageAfterTags?: boolean;
   }) => {
     const toggleExactDate = () => {
       const nextValue = !hasExactDate;
@@ -12219,6 +12412,45 @@ export function Fab({
               surface: tagSurface,
             })
           : null}
+
+        {showTaskStageAfterTags ? (
+          <section
+            className={
+              flatDateSections
+                ? "grid gap-1.5 border-t border-white/[0.06] px-0 pt-3"
+                : "grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5"
+            }
+          >
+            <Label className={FAB_ADVANCED_LABEL_CLASS}>Stage</Label>
+            <Select
+              value={taskStage}
+              onValueChange={(value) => {
+                void hapticSoftTick();
+                setTaskStage(value);
+              }}
+              triggerClassName={cn(
+                FAB_CREATION_SELECT_TRIGGER_CLASS,
+                "h-10 w-full justify-between text-[11px] uppercase tracking-[0.12em]",
+              )}
+              contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+              placeholder="Stage"
+            >
+              <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className={fabCreationSelectItemClass(
+                      taskStage === o.value,
+                    )}
+                  >
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </section>
+        ) : null}
 
         {showExactSchedule ? (
           <section className={exactScheduleSectionClass}>
@@ -12436,6 +12668,38 @@ export function Fab({
               onChange={(event) => onDueDateChange(event.target.value)}
               className={exactScheduleInputClass}
             />
+            {showProjectStageAfterDueDate ? (
+              <div className="grid gap-1.5">
+                <Label className={FAB_ADVANCED_LABEL_CLASS}>Stage</Label>
+                <Select
+                  value={projectStage}
+                  onValueChange={(value) => {
+                    void hapticSoftTick();
+                    setProjectStage(value);
+                  }}
+                  triggerClassName={cn(
+                    FAB_CREATION_SELECT_TRIGGER_CLASS,
+                    "h-10 w-full justify-between text-[11px] uppercase tracking-[0.12em]",
+                  )}
+                  contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
+                  placeholder="Stage"
+                >
+                  <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
+                    {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        className={fabCreationSelectItemClass(
+                          projectStage === o.value,
+                        )}
+                      >
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>
@@ -12452,7 +12716,7 @@ export function Fab({
     }
   };
 
-  const renderProjectSchedulePanel = () => {
+  const renderProjectScheduleCard = () => {
     const projectScheduleCardClass =
       "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
     const projectScheduleModeToggleClass =
@@ -12467,13 +12731,9 @@ export function Fab({
         : "";
 
     return (
-      <div
-        className={cn("grid gap-3 content-start", expanded && "min-h-full")}
-        style={secondaryCreationPanelStyle}
-      >
-        <section className={projectScheduleCardClass}>
-          <h3 className="sr-only">Project schedule</h3>
-          <div className="grid gap-2 pb-2">
+      <section className={projectScheduleCardClass}>
+        <h3 className="sr-only">Project schedule</h3>
+        <div className="grid gap-2 pb-2">
             <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
               <span className={projectScheduleRowIconClass} aria-hidden="true">
                 <Clock className="h-4 w-4" aria-hidden="true" />
@@ -12629,9 +12889,203 @@ export function Fab({
                 </p>
               </div>
             )}
+        </div>
+      </section>
+    );
+  };
+
+  const handleTaskScheduleTimingModeChange = (
+    nextMode: AddEventTimingMode,
+  ) => {
+    setFabAdvancedTimingPickerOpen(null);
+    if (nextMode === "dynamic") {
+      setTaskHasExactDate(false);
+      return;
+    }
+
+    const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+    const nextDate = taskExactDate.trim() || taskExactFallbackDate.trim();
+    setTaskHasExactDate(true);
+    if (!nextDate) {
+      setTaskExactDate(defaultSchedule.date);
+      setTaskExactFallbackDate(defaultSchedule.date);
+    }
+    if (!taskExactStartTime.trim()) {
+      setTaskExactStartTime(defaultSchedule.startTime);
+    }
+    if (!taskExactEndTime.trim()) {
+      setTaskExactEndTime(defaultSchedule.endTime);
+    }
+  };
+
+  const renderTaskScheduleCard = () => {
+    const taskScheduleTimingMode = taskHasExactDate ? "manual" : "dynamic";
+    const taskScheduleCardClass =
+      "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
+    const taskScheduleModeToggleClass =
+      "inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5";
+    const taskScheduleRowIconClass =
+      "flex h-7 w-6 items-center justify-start text-zinc-500";
+    const taskSchedulePickerLabelClass =
+      "text-[14px] font-medium text-zinc-500";
+    const taskDurationMinutes =
+      Number.parseInt(taskDuration || "30", 10) || 30;
+    const handleTaskExactDateChange = (value: string) => {
+      setTaskExactDate(value);
+      if (value.trim()) {
+        setTaskExactFallbackDate(value);
+      }
+    };
+
+    return (
+      <section className={taskScheduleCardClass}>
+        <h3 className="sr-only">Task schedule</h3>
+        <div className="grid gap-2 pb-2">
+          <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+            <span className={taskScheduleRowIconClass} aria-hidden="true">
+              <Clock className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className={taskScheduleModeToggleClass}>
+              <span
+                className={cn(
+                  "text-[11px] font-semibold transition-colors",
+                  taskScheduleTimingMode === "manual"
+                    ? "text-zinc-100"
+                    : "text-zinc-500",
+                )}
+              >
+                Manual
+              </span>
+              <button
+                type="button"
+                aria-label={`Switch task schedule timing mode to ${
+                  taskScheduleTimingMode === "dynamic" ? "Manual" : "Dynamic"
+                }`}
+                role="switch"
+                aria-checked={taskScheduleTimingMode === "dynamic"}
+                onClick={() =>
+                  handleTaskScheduleTimingModeChange(
+                    taskScheduleTimingMode === "dynamic"
+                      ? "manual"
+                      : "dynamic",
+                  )
+                }
+                className={cn(
+                  "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                  taskScheduleTimingMode === "dynamic"
+                    ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                    : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                    taskScheduleTimingMode === "dynamic"
+                      ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                      : "border-zinc-400/20 bg-zinc-500",
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+              <span
+                className={cn(
+                  "text-[11px] font-semibold transition-colors",
+                  taskScheduleTimingMode === "dynamic"
+                    ? "text-zinc-100"
+                    : "text-zinc-500",
+                )}
+              >
+                Dynamic
+              </span>
+            </div>
           </div>
-        </section>
-      </div>
+
+          {taskScheduleTimingMode === "manual" ? (
+            <div className="relative">
+              {renderAdvancedManualTimeRows({
+                startPicker: "taskExactStartTime",
+                endPicker: "taskExactEndTime",
+                startValue: taskExactStartTime,
+                endValue: taskExactEndTime,
+                onStartChange: setTaskExactStartTime,
+                onEndChange: setTaskExactEndTime,
+                startAriaLabel: "Task exact start time",
+                endAriaLabel: "Task exact end time",
+                exactDate: {
+                  id: "task-schedule-exact-date",
+                  value: taskExactDate,
+                  enabled: true,
+                  onChange: handleTaskExactDateChange,
+                  onToggle: () => setTaskHasExactDate(true),
+                  showToggle: false,
+                },
+                endMeta:
+                  taskExactDate && taskExactStartTime && taskExactEndTime
+                    ? (() => {
+                        const startDate = new Date(
+                          `${taskExactDate}T${taskExactStartTime}`,
+                        );
+                        const endDate = new Date(
+                          `${taskExactDate}T${taskExactEndTime}`,
+                        );
+                        if (
+                          Number.isNaN(startDate.getTime()) ||
+                          Number.isNaN(endDate.getTime()) ||
+                          endDate.getTime() > startDate.getTime()
+                        ) {
+                          return null;
+                        }
+                        const inferredEndDate =
+                          parseDateInputValueLocal(taskExactDate);
+                        if (!inferredEndDate) return null;
+                        inferredEndDate.setDate(
+                          inferredEndDate.getDate() + 1,
+                        );
+                        return formatAdvancedPickerShortDate(
+                          formatDateInputValue(inferredEndDate),
+                        );
+                      })()
+                    : null,
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-1 px-3 pb-1 sm:px-4">
+              <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                <span className={taskScheduleRowIconClass} aria-hidden="true">
+                  <Timer className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <Label
+                  htmlFor="task-schedule-dynamic-duration"
+                  className={taskSchedulePickerLabelClass}
+                >
+                  Duration
+                </Label>
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    id="task-schedule-dynamic-duration"
+                    {...taskDurationTapHandlers}
+                    ref={taskDurationTriggerRef}
+                    className="inline-flex h-8 min-w-[5rem] items-center justify-end rounded-lg border border-zinc-700/35 bg-zinc-950/35 px-2 text-right text-[13px] font-semibold text-zinc-100 shadow-none transition hover:border-zinc-600/60 hover:bg-zinc-950/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
+                    aria-haspopup="dialog"
+                    aria-expanded={showTaskDurationPicker}
+                    aria-controls="task-duration-picker"
+                    aria-label="Task dynamic duration"
+                  >
+                    {taskDurationMinutes}
+                  </button>
+                  <span className="text-[12px] font-medium text-zinc-500">
+                    min
+                  </span>
+                </div>
+              </div>
+              <p className="px-0.5 pb-1 text-right text-[11px] font-medium text-zinc-500">
+                Scheduler will place this inside your Time Blocks.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
     );
   };
 
@@ -12660,7 +13114,7 @@ export function Fab({
       <section className={habitScheduleCardClass}>
         <h3 className="sr-only">Habit timing</h3>
         <div className="grid gap-2 pb-2">
-          <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+          <div className="grid grid-cols-[1.6rem_minmax(0,1fr)_auto] items-center gap-2 px-3 pt-3 sm:px-4">
             <span className={habitScheduleRowIconClass} aria-hidden="true">
               <Clock className="h-4 w-4" aria-hidden="true" />
             </span>
@@ -12719,9 +13173,70 @@ export function Fab({
                 Dynamic
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setHabitTimingPanelView((current) =>
+                  current === "nextDue" ? "timing" : "nextDue",
+                );
+                setFabAdvancedTimingPickerOpen(null);
+                setShowHabitDurationPicker(false);
+                setHabitDurationPosition(null);
+              }}
+              className={cn(
+                "justify-self-end text-[11px] font-bold uppercase text-zinc-500 transition hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+                habitTimingPanelView === "nextDue" && "text-zinc-300",
+              )}
+              aria-pressed={habitTimingPanelView === "nextDue"}
+            >
+              NEXT DUE
+            </button>
           </div>
 
-          {habitScheduleTimingMode === "manual" ? (
+          {habitTimingPanelView === "nextDue" ? (
+            <div className="grid gap-1 px-3 pb-1 sm:px-4">
+              <div className="grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 py-1.5">
+                <span className={habitScheduleRowIconClass} aria-hidden="true">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <Label
+                  htmlFor="habit-timing-next-due-override"
+                  className={habitSchedulePickerLabelClass}
+                >
+                  Next due
+                </Label>
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <Input
+                    id="habit-timing-next-due-override"
+                    type="date"
+                    value={formatDateLocalInputValue(
+                      habitEffectiveNextDueValue,
+                    )}
+                    onChange={(event) => {
+                      setHabitNextDueOverrideTouched(true);
+                      setHabitNextDueOverride(
+                        formatLocalDateAsStartOfDayDateTime(
+                          event.target.value,
+                        ),
+                      );
+                    }}
+                    className={cn(
+                      HABIT_ADVANCED_INPUT_CLASS,
+                      "h-8 min-w-0 max-w-[9.5rem] flex-1 text-right",
+                    )}
+                  />
+                  {habitNextDueRelativeLabel ? (
+                    <span className="shrink-0 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-white/45">
+                      {habitNextDueRelativeLabel}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <p className="px-0.5 pb-1 text-right text-[11px] font-medium text-zinc-500">
+                Habit is due on this day.
+              </p>
+            </div>
+          ) : habitScheduleTimingMode === "manual" ? (
             <div className="relative">
               {renderAdvancedManualTimeRows({
                 startPicker: "habitFixedStartTime",
@@ -12741,25 +13256,23 @@ export function Fab({
                   <Timer className="h-4 w-4" aria-hidden="true" />
                 </span>
                 <Label
-                  htmlFor="habit-advanced-dynamic-duration"
                   className={habitSchedulePickerLabelClass}
                 >
                   Duration
                 </Label>
                 <div className="flex min-w-0 items-center justify-end gap-2">
-                  <Input
-                    id="habit-advanced-dynamic-duration"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={habitDuration}
-                    onChange={(event) =>
-                      setHabitDuration(
-                        event.target.value.replace(/[^\d]/g, ""),
-                      )
-                    }
-                    className="h-8 w-20 rounded-lg border-zinc-700/35 bg-zinc-950/35 px-2 text-right text-[13px] font-semibold text-zinc-100 shadow-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  <button
+                    type="button"
+                    {...habitDurationTapHandlers}
+                    ref={habitDurationTriggerRef}
+                    className="inline-flex h-8 min-w-[5rem] items-center justify-end rounded-lg border border-zinc-700/35 bg-zinc-950/35 px-2 text-right text-[13px] font-semibold text-zinc-100 shadow-none transition hover:border-zinc-600/60 hover:bg-zinc-950/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
+                    aria-haspopup="dialog"
+                    aria-expanded={showHabitDurationPicker}
+                    aria-controls="habit-duration-picker"
                     aria-label="Habit dynamic duration in minutes"
-                  />
+                  >
+                    {Number.parseInt(habitDuration || "15", 10) || 15}
+                  </button>
                   <span className="text-[12px] font-medium text-zinc-500">
                     min
                   </span>
@@ -14833,7 +15346,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-1.5 sm:gap-2 md:gap-3">
+                  <div className="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-2 md:gap-3">
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -14853,6 +15366,26 @@ export function Fab({
                           "min-w-[240px] sm:min-w-[280px]",
                         )}
                         placeholder="Priority"
+                        trigger={
+                          <span
+                            className={cn(
+                              "flex min-w-0 flex-1 items-center justify-center text-xs font-black leading-none",
+                              PRIORITY_ICON_MAP[projectPriority]
+                                ? "text-red-400"
+                                : "text-zinc-500",
+                            )}
+                            title={`Priority ${formatFabPriorityLabel(
+                              projectPriority,
+                            )}`}
+                          >
+                            <span className="sr-only">
+                              {formatFabPriorityLabel(projectPriority)}
+                            </span>
+                            <span aria-hidden="true">
+                              {PRIORITY_ICON_MAP[projectPriority] ?? "—"}
+                            </span>
+                          </span>
+                        }
                       >
                         <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {PRIORITY_OPTIONS_LOCAL.map((o) => (
@@ -14875,62 +15408,6 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid min-w-0 gap-2">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        STAGE
-                      </Label>
-                      <Select
-                        value={projectStage}
-                        onValueChange={(value) => {
-                          void hapticSoftTick();
-                          setProjectStage(value);
-                        }}
-                        triggerClassName={cn(
-                          "h-12 w-full min-w-0 max-w-full overflow-hidden px-2 text-[11px] uppercase tracking-[0.12em] md:h-14",
-                          FAB_CREATION_SELECT_TRIGGER_CLASS,
-                        )}
-                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
-                        placeholder="Stage"
-                      >
-                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
-                          {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem
-                              key={o.value}
-                              value={o.value}
-                              className={fabCreationSelectItemClass(
-                                projectStage === o.value,
-                              )}
-                            >
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid min-w-0 items-end gap-2">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        DURATION
-                      </Label>
-                      <div className="relative min-w-0 max-w-full">
-                        <button
-                          type="button"
-                          {...projectDurationTapHandlers}
-                          ref={durationTriggerRef}
-                          className="flex h-12 w-full min-w-0 max-w-full items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white/[0.05] px-1.5 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
-                          aria-haspopup="dialog"
-                          aria-expanded={showDurationPicker}
-                          aria-controls="project-duration-picker"
-                        >
-                          <span className="flex h-9 w-9 min-w-0 shrink-0 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
-                            <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
-                            <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
-                              {normalizedProjectDuration || 30}m
-                            </span>
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         SKILL
@@ -15054,57 +15531,8 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                  {showDurationPicker && durationPosition
-                    ? createPortal(
-                        <div
-                          data-fab-overlay
-                          id="project-duration-picker"
-                          ref={durationPickerRef}
-                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
-                          style={{
-                            position: "absolute",
-                            top: durationPosition.top,
-                            left: durationPosition.left,
-                            width: durationPosition.width,
-                            touchAction: "manipulation",
-                          }}
-                          onTouchStart={(event) => event.stopPropagation()}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <button
-                              type="button"
-                              {...projectDurationMinusTapHandlers}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
-                            >
-                              -
-                            </button>
-                            <div className="text-lg font-semibold text-white">
-                              {normalizedProjectDuration || 30} min
-                            </div>
-                            <button
-                              type="button"
-                              {...projectDurationPlusTapHandlers}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>,
-                        document.body,
-                      )
-                    : null}
-                  <div className="grid gap-2">
-                    <Label htmlFor="main-project-why" className="text-zinc-500">
-                      WHY (optional)
-                    </Label>
-                    <Textarea
-                      id="main-project-why"
-                      value={projectWhy}
-                      onChange={(e) => setProjectWhy(e.target.value)}
-                      placeholder="Add context…"
-                      className="border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
-                    />
                   </div>
+                  {renderProjectScheduleCard()}
                 </div>
               )}
 
@@ -15333,7 +15761,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                  <div className="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-2 md:gap-3">
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -15353,17 +15781,43 @@ export function Fab({
                           "min-w-[240px] sm:min-w-[280px]",
                         )}
                         placeholder="Priority"
+                        trigger={
+                          <span
+                            className={cn(
+                              "flex min-w-0 flex-1 items-center justify-center text-xs font-black leading-none",
+                              PRIORITY_ICON_MAP[taskPriority]
+                                ? "text-red-400"
+                                : "text-zinc-500",
+                            )}
+                            title={`Priority ${formatFabPriorityLabel(
+                              taskPriority,
+                            )}`}
+                          >
+                            <span className="sr-only">
+                              {formatFabPriorityLabel(taskPriority)}
+                            </span>
+                            <span aria-hidden="true">
+                              {PRIORITY_ICON_MAP[taskPriority] ?? "—"}
+                            </span>
+                          </span>
+                        }
                       >
                         <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
                           {PRIORITY_OPTIONS_LOCAL.map((o) => (
                             <SelectItem
                               key={o.value}
                               value={o.value}
+                              label={o.label}
                               className={fabCreationSelectItemClass(
                                 taskPriority === o.value,
                               )}
                             >
-                              {o.label}
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <span>{o.label}</span>
+                                <span className="w-10 text-right text-red-400">
+                                  {PRIORITY_ICON_MAP[o.value] ?? ""}
+                                </span>
+                              </div>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -15371,100 +15825,8 @@ export function Fab({
                     </div>
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        STAGE
+                        SKILL
                       </Label>
-                      <Select
-                        value={taskStage}
-                        onValueChange={(value) => {
-                          void hapticSoftTick();
-                          setTaskStage(value);
-                        }}
-                        triggerClassName={cn(
-                          "h-12 text-[11px] uppercase tracking-[0.12em] md:h-14",
-                          FAB_CREATION_SELECT_TRIGGER_CLASS,
-                        )}
-                        contentWrapperClassName={FAB_CREATION_SELECT_CONTENT_WRAPPER_CLASS}
-                        placeholder="Stage"
-                      >
-                        <SelectContent className={FAB_CREATION_SELECT_CONTENT_CLASS}>
-                          {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem
-                              key={o.value}
-                              value={o.value}
-                              className={fabCreationSelectItemClass(
-                                taskStage === o.value,
-                              )}
-                            >
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid min-w-0 items-end gap-2">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        DURATION
-                      </Label>
-                      <button
-                        type="button"
-                        {...taskDurationTapHandlers}
-                        ref={taskDurationTriggerRef}
-                        className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
-                        aria-haspopup="dialog"
-                        aria-expanded={showTaskDurationPicker}
-                        aria-controls="task-duration-picker"
-                      >
-                        <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
-                          <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
-                          <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
-                            {Number.parseInt(taskDuration || "30", 10) || 30}m
-                          </span>
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                  {showTaskDurationPicker && taskDurationPosition
-                    ? createPortal(
-                        <div
-                          data-fab-overlay
-                          id="task-duration-picker"
-                          ref={taskDurationPickerRef}
-                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
-                          style={{
-                            position: "absolute",
-                            top: taskDurationPosition.top,
-                            left: taskDurationPosition.left,
-                            width: taskDurationPosition.width,
-                            touchAction: "manipulation",
-                          }}
-                          onTouchStart={(event) => event.stopPropagation()}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <button
-                              type="button"
-                              {...taskDurationMinusTapHandlers}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
-                            >
-                              -
-                            </button>
-                            <div className="text-lg font-semibold text-white">
-                              {Number.parseInt(taskDuration || "30", 10) || 30} min
-                            </div>
-                            <button
-                              type="button"
-                              {...taskDurationPlusTapHandlers}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>,
-                        document.body,
-                      )
-                    : null}
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div className="grid min-w-0 gap-2">
-                      <Label>Skill</Label>
                       <Select
                         value={taskSkillId ?? ""}
                         onOpenChange={handleSkillDropdownOpenChange}
@@ -15588,18 +15950,47 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2 md:col-span-2">
-                      <Label htmlFor="main-task-notes">Notes (optional)</Label>
-                      <Textarea
-                        id="main-task-notes"
-                        value={taskNotes}
-                        onChange={(e) => setTaskNotes(e.target.value)}
-                        placeholder="Context…"
-                        rows={3}
-                        className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
-                      />
-                    </div>
                   </div>
+                  {renderTaskScheduleCard()}
+                  {showTaskDurationPicker && taskDurationPosition
+                    ? createPortal(
+                        <div
+                          data-fab-overlay
+                          id="task-duration-picker"
+                          ref={taskDurationPickerRef}
+                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                          style={{
+                            position: "absolute",
+                            top: taskDurationPosition.top,
+                            left: taskDurationPosition.left,
+                            width: taskDurationPosition.width,
+                            touchAction: "manipulation",
+                          }}
+                          onTouchStart={(event) => event.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              {...taskDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                            >
+                              -
+                            </button>
+                            <div className="text-lg font-semibold text-white">
+                              {Number.parseInt(taskDuration || "30", 10) || 30} min
+                            </div>
+                            <button
+                              type="button"
+                              {...taskDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>,
+                        document.body,
+                      )
+                    : null}
                 </div>
               )}
 
@@ -15957,7 +16348,7 @@ export function Fab({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                  <div className="grid grid-cols-2 gap-2 md:gap-3">
                     <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         TYPE
@@ -16023,29 +16414,6 @@ export function Fab({
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="grid min-w-0 gap-2 items-end">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        DURATION
-                      </Label>
-                      <div className="relative">
-                        <button
-                          type="button"
-                          {...habitDurationTapHandlers}
-                          ref={habitDurationTriggerRef}
-                          className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
-                          aria-haspopup="dialog"
-                          aria-expanded={showHabitDurationPicker}
-                          aria-controls="habit-duration-picker"
-                        >
-                          <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
-                            <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
-                            <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
-                              {Number.parseInt(habitDuration || "15", 10)}m
-                            </span>
-                          </span>
-                        </button>
-                      </div>
                     </div>
                   </div>
                   <div className="grid gap-2">
@@ -16173,19 +16541,7 @@ export function Fab({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="habit-why" className="text-zinc-500">
-                      WHY (optional)
-                    </Label>
-                    <Textarea
-                      id="habit-why"
-                      value={habitWhy}
-                      onChange={(event) => setHabitWhy(event.target.value)}
-                      placeholder="Add context…"
-                      rows={2}
-                      className="min-h-[68px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
-                    />
-                  </div>
+                  {renderHabitAdvancedTimingPanel()}
 
                   {showHabitDurationPicker && habitDurationPosition
                     ? createPortal(
@@ -16241,8 +16597,55 @@ export function Fab({
                 activeCreationMode === "tasks" &&
                 renderProjectTasksPanel()}
 
-              {selected === "PROJECT" && activeCreationMode === "schedule" &&
-                renderProjectSchedulePanel()}
+              {selected === "PROJECT" && activeCreationMode === "notes" && (
+                <div
+                  className={cn(
+                    "grid gap-3 content-start",
+                    expanded && "min-h-full",
+                  )}
+                  style={secondaryCreationPanelStyle}
+                >
+                  <div className="grid gap-2">
+                    <Label
+                      htmlFor="project-notes-why"
+                      className="text-zinc-500"
+                    >
+                      WHY (optional)
+                    </Label>
+                    <Textarea
+                      id="project-notes-why"
+                      value={projectWhy}
+                      onChange={(e) => setProjectWhy(e.target.value)}
+                      placeholder="Add context…"
+                      className="min-h-[160px] border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {selected === "TASK" && activeCreationMode === "notes" && (
+                <div
+                  className={cn(
+                    "grid gap-3 content-start",
+                    expanded && "min-h-full",
+                  )}
+                  style={secondaryCreationPanelStyle}
+                >
+                  <div className="grid gap-2">
+                    <Label htmlFor="task-notes-why" className="text-zinc-500">
+                      Notes (optional)
+                    </Label>
+                    <Textarea
+                      id="task-notes-why"
+                      value={taskNotes}
+                      onChange={(e) => setTaskNotes(e.target.value)}
+                      placeholder="Context…"
+                      rows={3}
+                      className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
+                    />
+                  </div>
+                </div>
+              )}
 
               {selected === "PROJECT" && activeCreationMode === "advanced" &&
                 renderFlatAdvancedPanel({
@@ -16266,6 +16669,7 @@ export function Fab({
                   tightenExactScheduleColumns: true,
                   useManualTimePicker: true,
                   showExactSchedule: false,
+                  showProjectStageAfterDueDate: true,
                 })}
 
               {selected === "TASK" && activeCreationMode === "advanced" &&
@@ -16288,7 +16692,33 @@ export function Fab({
                   tagSurface: "flat",
                   flatDateSections: true,
                   tightenExactScheduleColumns: true,
+                  showExactSchedule: false,
+                  showTaskStageAfterTags: true,
                 })}
+
+              {selected === "HABIT" && activeCreationMode === "notes" && (
+                <div
+                  className={cn(
+                    "grid content-start gap-3 rounded-none px-0 py-2",
+                    expanded && "min-h-full",
+                  )}
+                  style={secondaryCreationPanelStyle}
+                >
+                  <div className="grid gap-2">
+                    <Label htmlFor="habit-why" className="text-zinc-500">
+                      Notes (optional)
+                    </Label>
+                    <Textarea
+                      id="habit-why"
+                      value={habitWhy}
+                      onChange={(event) => setHabitWhy(event.target.value)}
+                      placeholder="Add context…"
+                      rows={4}
+                      className="min-h-[128px] rounded-md border border-white/10 bg-white/[0.05] selection:bg-zinc-500/40 selection:text-white focus:border-zinc-400/50 focus-visible:border-zinc-400/50 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                    />
+                  </div>
+                </div>
+              )}
 
               {selected === "HABIT" && activeCreationMode === "memoForms" && (
                 <div
@@ -16645,52 +17075,6 @@ export function Fab({
                 </div>
               )}
 
-              {selected === "HABIT" && activeCreationMode === "advanced" && (
-                <div
-                  className={cn(
-                    "grid content-start gap-4 rounded-none px-0 py-4",
-                    expanded && "min-h-full",
-                  )}
-                  style={secondaryCreationPanelStyle}
-                >
-                  <div className="grid min-w-0 gap-1.5">
-                    <Label
-                      htmlFor="habit-advanced-next-due-override"
-                      className={HABIT_ADVANCED_FIELD_LABEL_CLASS}
-                    >
-                      Next due
-                    </Label>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Input
-                        id="habit-advanced-next-due-override"
-                        type="date"
-                        value={formatDateLocalInputValue(
-                          habitEffectiveNextDueValue,
-                        )}
-                        onChange={(event) => {
-                          setHabitNextDueOverrideTouched(true);
-                          setHabitNextDueOverride(
-                            formatLocalDateAsStartOfDayDateTime(
-                              event.target.value,
-                            ),
-                          );
-                        }}
-                        className={cn(HABIT_ADVANCED_INPUT_CLASS, "min-w-0 flex-1")}
-                      />
-                      {habitNextDueRelativeLabel ? (
-                        <span className="shrink-0 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-white/45">
-                          {habitNextDueRelativeLabel}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="text-[10px] leading-snug text-white/40">
-                      Sets the next eligible due day, separate from fixed time.
-                    </p>
-                  </div>
-                  {renderHabitAdvancedTimingPanel()}
-                </div>
-              )}
-
               {selected === "HABIT" && activeCreationMode === "tags" &&
                 renderTagPickerPanel({
                   label: "Habit Tags",
@@ -16925,6 +17309,62 @@ export function Fab({
     overlayPickerOpen,
   ]);
 
+  const loadEmbeddedPriorityEditor = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      if (!force && embeddedPriorityEditorProps) {
+        return;
+      }
+
+      priorityEditorAbortRef.current?.abort();
+      const controller = new AbortController();
+      priorityEditorAbortRef.current = controller;
+      setIsPriorityEditorLoading(true);
+      setPriorityEditorError(null);
+
+      try {
+        const response = await fetch("/api/schedule/priorities", {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load Priority Editor.");
+        }
+
+        const props = (await response.json()) as PriorityEditorClientProps;
+        setEmbeddedPriorityEditorProps(props);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load embedded Priority Editor", error);
+        setPriorityEditorError("Unable to load Priority Editor.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsPriorityEditorLoading(false);
+          priorityEditorAbortRef.current = null;
+        }
+      }
+    },
+    [embeddedPriorityEditorProps],
+  );
+
+  const openEmbeddedPriorityEditor = useCallback(() => {
+    setExpanded(true);
+    setNormalNexusExpanded(true);
+    setPopupNexusMode("priorityEditor");
+    void hapticSnap();
+    void loadEmbeddedPriorityEditor();
+  }, [loadEmbeddedPriorityEditor]);
+
+  const toggleEmbeddedPriorityEditor = useCallback(() => {
+    if (popupNexusMode === "priorityEditor") {
+      setPopupNexusMode("events");
+      void hapticSnap();
+      return;
+    }
+    openEmbeddedPriorityEditor();
+  }, [openEmbeddedPriorityEditor, popupNexusMode]);
+
   const renderNexusPage = () => (
     <FabNexus
       query={searchQuery}
@@ -16961,6 +17401,14 @@ export function Fab({
       popupContentRef={
         isPopupFabNexusExpanded ? popupFabNexusContentRef : undefined
       }
+      popupMode={isPopupFabNexusPage ? popupNexusMode : "events"}
+      onOpenPriorityEditor={
+        isPopupFabNexusPage ? toggleEmbeddedPriorityEditor : undefined
+      }
+      priorityEditorProps={embeddedPriorityEditorProps}
+      isPriorityEditorLoading={isPriorityEditorLoading}
+      priorityEditorError={priorityEditorError}
+      onRetryPriorityEditor={() => loadEmbeddedPriorityEditor({ force: true })}
       showToolbar
     />
   );
@@ -17301,6 +17749,7 @@ export function Fab({
       setTaskExactStartTime(defaultSchedule.startTime);
       setTaskExactEndTime(defaultSchedule.endTime);
       setAddEventSubActions([]);
+      resetUnifiedEventInviteDraft();
       setTaskGoalId((current) => current ?? activeTaskCreationGoalId);
       setAddEventTimingMode("manual");
       setAddEventDynamicDuration("60");
@@ -17315,6 +17764,8 @@ export function Fab({
     setUnifiedTimingPickerOpen(null);
     setIsUnifiedTagsSheetOpen(false);
     setIsAddEventMoreOpen(false);
+    setIsUnifiedEventLocationSheetOpen(false);
+    setIsUnifiedEventLinkSheetOpen(false);
     setIsGoalPickerOpen(false);
     setIsUnifiedGoalPickerOpen(false);
     setShowUnifiedGoalFilters(false);
@@ -17356,6 +17807,7 @@ export function Fab({
     activeTaskCreationGoalId,
     isUnifiedEventSheetOpen,
     pageX,
+    resetUnifiedEventInviteDraft,
     taskExactDate,
   ]);
 
@@ -17398,6 +17850,9 @@ export function Fab({
       setIsUnifiedTagsSheetOpen(false);
       setIsUnifiedFormsSheetOpen(false);
       setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
+      resetUnifiedEventInviteDraft();
       return;
     }
 
@@ -17419,7 +17874,11 @@ export function Fab({
       }
       window.clearTimeout(focusTimeoutId);
     };
-  }, [isUnifiedEventSheetOpen, isUnifiedNotesSheetOpen]);
+  }, [
+    isUnifiedEventSheetOpen,
+    isUnifiedNotesSheetOpen,
+    resetUnifiedEventInviteDraft,
+  ]);
 
   const isUnifiedEventDraftDirty = useCallback(() => {
     return (
@@ -17470,10 +17929,13 @@ export function Fab({
     setTaskDurationPosition(null);
     setShowHabitDurationPicker(false);
     setHabitDurationPosition(null);
+    setHabitTimingPanelView("timing");
     setUnifiedTimingPickerOpen(null);
     setIsUnifiedNotesSheetOpen(false);
     setIsUnifiedTagsSheetOpen(false);
     setIsAddEventMoreOpen(false);
+    setIsUnifiedEventLocationSheetOpen(false);
+    setIsUnifiedEventLinkSheetOpen(false);
     setIsGoalPickerOpen(false);
     setIsUnifiedGoalPickerOpen(false);
     setShowUnifiedGoalFilters(false);
@@ -17515,6 +17977,7 @@ export function Fab({
     setUnifiedEventType(type);
     setSelected(type);
     setActiveCreationMode("main");
+    setHabitTimingPanelView("timing");
     setShowTaskDurationPicker(false);
     setTaskDurationPosition(null);
     setShowHabitDurationPicker(false);
@@ -17535,6 +17998,8 @@ export function Fab({
       setSaveError(null);
       setUnifiedCreationMode(mode);
       setUnifiedTimingPickerOpen(null);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
       setIsUnifiedGoalPickerOpen(false);
       setShowUnifiedGoalFilters(false);
       setUnifiedGoalSearch("");
@@ -21881,11 +22346,16 @@ export function Fab({
   const goalCreationMinHeight = 240;
   const goalCenteredEditMinHeight = 320;
   const projectCreationMinHeight = 280;
+  const projectMainCenteredEditMinHeight = 400;
   const projectCenteredEditMinHeight = 480;
   const projectTasksCenteredEditMinHeight = 380;
   const taskCreationMinHeight = 320;
-  const taskCenteredEditMinHeight = 460;
+  const taskMainCenteredEditMinHeight = 400;
+  const taskNotesCenteredEditMinHeight = 380;
+  const taskAdvancedCenteredEditMinHeight = 400;
   const habitCreationMinHeight = 300;
+  const habitMainCenteredEditMinHeight = 430;
+  const habitNotesCenteredEditMinHeight = 340;
   const selectedCreationTypeMinHeight =
     selected === "GOAL"
       ? goalCreationMinHeight
@@ -21894,7 +22364,11 @@ export function Fab({
         : selected === "TASK"
           ? taskCreationMinHeight
           : selected === "HABIT"
-            ? habitCreationMinHeight
+            ? activeCreationMode === "main"
+              ? habitMainCenteredEditMinHeight
+              : activeCreationMode === "notes"
+                ? habitNotesCenteredEditMinHeight
+                : habitCreationMinHeight
             : null;
   const selectedCenteredEditMinHeight =
     selected === "GOAL"
@@ -21902,9 +22376,15 @@ export function Fab({
       : selected === "PROJECT"
         ? shouldUseProjectTasksCenteredSizing
           ? projectTasksCenteredEditMinHeight
-          : projectCenteredEditMinHeight
+          : activeCreationMode === "main"
+            ? projectMainCenteredEditMinHeight
+            : projectCenteredEditMinHeight
         : selected === "TASK"
-          ? taskCenteredEditMinHeight
+          ? activeCreationMode === "notes"
+            ? taskNotesCenteredEditMinHeight
+            : activeCreationMode === "advanced"
+              ? taskAdvancedCenteredEditMinHeight
+              : taskMainCenteredEditMinHeight
           : selected === "HABIT"
             ? habitCreationMinHeight
             : null;
@@ -22386,7 +22866,12 @@ export function Fab({
       onPointerDown={(event) => event.stopPropagation()}
       onTouchStart={(event) => event.stopPropagation()}
     >
-      <div className="flex items-center gap-2">
+      <div
+        className={cn(
+          "flex items-center",
+          useCompactCreationModeButtons ? "gap-[5px]" : "gap-2",
+        )}
+      >
         {selected && activeCreationModes.length > 1
           ? activeCreationModes.map((mode) => {
               const isActive = activeCreationMode === mode.id;
@@ -22396,6 +22881,7 @@ export function Fab({
                   mode={mode}
                   isActive={isActive}
                   onSelect={setActiveCreationMode}
+                  compact={useCompactCreationModeButtons}
                 />
               );
             })
@@ -22554,15 +23040,23 @@ export function Fab({
     const isEventsMode = unifiedCreationMode === "EVENTS";
     const isTasksMode = unifiedCreationMode === "TASKS";
     const isProject = isTasksMode && selected === "PROJECT";
-    const isTask = (isEventsMode || unifiedEventType === "TASK") && !isProject;
+    const isTask = isTasksMode && unifiedEventType === "TASK" && !isProject;
     const isHabit = isTasksMode && unifiedEventType === "HABIT";
     const isGoalLinkedEvent = isTasksMode && (isTask || isProject);
-    const titleValue = isProject ? projectName : isTask ? taskName : habitName;
+    const titleValue = isEventsMode
+      ? unifiedEventTitle
+      : isProject
+        ? projectName
+        : isTask
+          ? taskName
+          : habitName;
     const titleSetter = isProject
       ? setProjectName
-      : isTask
-        ? setTaskName
-        : setHabitName;
+      : isEventsMode
+        ? setUnifiedEventTitle
+        : isTask
+          ? setTaskName
+          : setHabitName;
     const energyValue = isProject
       ? projectEnergy
       : isTask
@@ -22583,19 +23077,33 @@ export function Fab({
       : isTask
         ? setTaskSkillId
         : setHabitSkillId;
-    const notesValue = isProject ? projectWhy : isTask ? taskNotes : habitWhy;
+    const notesValue = isEventsMode
+      ? unifiedEventDescription
+      : isProject
+        ? projectWhy
+        : isTask
+          ? taskNotes
+          : habitWhy;
     const setNotesValue = isProject
       ? setProjectWhy
-      : isTask
-        ? setTaskNotes
-        : setHabitWhy;
+      : isEventsMode
+        ? setUnifiedEventDescription
+        : isTask
+          ? setTaskNotes
+          : setHabitWhy;
     const eventTypeLabel = "Event";
     const timingCardClass =
       "overflow-hidden rounded-[18px] border border-zinc-800/55 bg-zinc-900/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_10px_24px_rgba(0,0,0,0.14)]";
+    const eventTimingCardClass =
+      "overflow-hidden rounded-[16px] border border-zinc-800/50 bg-zinc-900/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.032),0_8px_18px_rgba(0,0,0,0.12)]";
     const timingPickerRowClass =
       "grid min-h-[56px] grid-cols-[1.6rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-2 px-3 py-1.5 sm:px-4";
+    const eventTimingPickerRowClass =
+      "grid min-h-[48px] grid-cols-[1.45rem_minmax(4.35rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-3 py-1 sm:px-3.5";
     const timingTimelineRowClass =
       "grid min-h-[56px] grid-cols-[0.9rem_minmax(3.9rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1.5 sm:px-3";
+    const eventTimingTimelineRowClass =
+      "grid min-h-[48px] grid-cols-[0.8rem_minmax(3.6rem,auto)_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-1 sm:px-3";
     const timingModeToggleClass =
       "inline-flex w-fit items-center gap-2 rounded-full px-1 py-0.5";
     const timingPickerLabelClass = "text-[14px] font-medium text-zinc-500";
@@ -22603,9 +23111,13 @@ export function Fab({
       "relative min-w-0 text-right text-[13px] font-medium text-zinc-100/95 sm:text-[13.5px]";
     const timingRowIconClass =
       "flex h-7 w-6 items-center justify-start text-zinc-500";
+    const eventTimingRowIconClass =
+      "flex h-6 w-5 items-center justify-start text-zinc-500";
     const timelineGroupClass = "relative";
     const timelineGroupLineClass =
       "pointer-events-none absolute bottom-7 left-[0.875rem] top-7 w-px border-l border-dashed border-zinc-600/60 sm:left-[1rem]";
+    const eventTimelineGroupLineClass =
+      "pointer-events-none absolute bottom-6 left-[0.875rem] top-6 w-px border-l border-dashed border-zinc-600/55 sm:left-[1rem]";
     const timelineMarkerWrapClass =
       "relative z-10 flex h-full min-h-[42px] w-3 items-center justify-start";
     const timelineDotClass =
@@ -22635,17 +23147,21 @@ export function Fab({
       "grid min-h-[48px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3 px-3.5 py-2";
     const detailControlWrapClass = "flex min-w-0 justify-end";
     const inviteSectionClass =
-      "rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(0,0,0,0.12)]";
+      isEventsMode
+        ? "rounded-[16px] border border-zinc-800/50 bg-zinc-900/68 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.028),0_7px_16px_rgba(0,0,0,0.11)]"
+        : "rounded-[16px] border border-zinc-700/45 bg-zinc-900/56 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_8px_18px_rgba(0,0,0,0.12)]";
     const inviteChipClass =
-      "inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-700/45 bg-zinc-900/62 px-2.5 text-[11px] font-semibold text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]";
+      "inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-700/45 bg-zinc-800/48 px-2.5 text-[11px] font-semibold text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
     const inviteActionClass =
-      "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-full border border-zinc-700/40 bg-zinc-900/52 px-2.5 text-[11px] font-semibold text-zinc-400 opacity-80";
+      "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-800/55 bg-zinc-950/35 text-zinc-500 opacity-80 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]";
     const workspaceRowClass =
       "rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(0,0,0,0.12)]";
     const workspaceSelectTriggerClass =
       "h-8 max-w-[12rem] justify-end rounded-lg !border-transparent !bg-transparent px-1 text-right text-[13px] font-semibold text-zinc-100/95 shadow-none hover:!bg-white/[0.035] focus:!border-zinc-500/35 focus:!ring-0 focus-visible:!border-zinc-500/35 focus-visible:!ring-0 sm:max-w-[15rem]";
     const quickActionCardClass =
       "group inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-[15px] border border-zinc-700/45 bg-zinc-900/58 px-2 text-left text-zinc-100/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_8px_18px_rgba(0,0,0,0.12)] transition hover:border-zinc-600/70 hover:bg-zinc-800/64 active:bg-zinc-800/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation";
+    const eventQuickActionCardClass =
+      "group inline-flex h-10 min-w-0 items-center justify-center gap-1 rounded-[14px] border border-zinc-700/42 bg-zinc-900/54 px-1.5 text-left text-zinc-100/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.032),0_7px_16px_rgba(0,0,0,0.11)] transition hover:border-zinc-600/70 hover:bg-zinc-800/64 active:bg-zinc-800/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation";
     const quickActionIconClass =
       "h-3.5 w-3.5 shrink-0 text-zinc-400 transition group-hover:text-zinc-200";
     const quickActionLabelClass =
@@ -22656,6 +23172,22 @@ export function Fab({
       "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]";
     const unifiedModeOptionInactiveClass =
       "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200";
+    const unifiedEventInputClass =
+      "h-10 rounded-xl border-zinc-700/35 bg-zinc-950/35 px-3 text-sm font-medium text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-1 focus-visible:ring-zinc-500/50";
+    const unifiedEventMiniLabelClass =
+      "text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500";
+    const unifiedEventFieldCardClass =
+      "grid gap-2 rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(0,0,0,0.12)]";
+    const unifiedEventCompactFieldCardClass =
+      "grid gap-1.5 rounded-[16px] border border-zinc-800/42 bg-zinc-950/40 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.028),0_7px_16px_rgba(0,0,0,0.11)]";
+    const unifiedEventPlaceholderRowClass =
+      "flex items-center justify-between gap-3 rounded-[16px] border border-zinc-800/45 bg-zinc-950/42 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(0,0,0,0.12)]";
+    const unifiedEventSegmentClass =
+      "min-h-8 flex-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-zinc-500 transition hover:bg-white/[0.035] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50";
+    const unifiedEventSegmentActiveClass =
+      "bg-zinc-800/80 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_6px_14px_rgba(0,0,0,0.20)]";
+    const unifiedEventPlaceholderPillClass =
+      "shrink-0 rounded-full border border-zinc-700/45 bg-zinc-900/62 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500";
     const subEventDurationOptions = [15, 30, 45, 60, 90];
     const subEventToolButtonClass =
       "inline-flex h-7 w-full min-w-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-[10px] font-semibold leading-none text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-white/18 hover:bg-white/[0.075] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation";
@@ -22677,11 +23209,16 @@ export function Fab({
       : null;
     const isCircleWorkspace = Boolean(selectedAddEventCircle);
     const circleWorkspacePersists = isHabit && isCircleWorkspace;
+    const isPersonalEventInvitePicker = isEventsMode && !isCircleWorkspace;
     const peopleSectionTitle = isCircleWorkspace ? "Assign" : "Invite";
     const peopleSectionDescription = isCircleWorkspace
       ? circleWorkspacePersists
         ? "Assignment save is not wired yet"
         : "Circle scope is preview only for tasks"
+      : isPersonalEventInvitePicker
+        ? unifiedEventSelectedInvitees.length > 0
+          ? `${unifiedEventSelectedInvitees.length} selected`
+          : ""
       : "No one invited yet";
     const selectedCircleMembers = selectedAddEventCircle?.memberPreview ?? [];
     const selectedCircleMemberCount =
@@ -22719,6 +23256,8 @@ export function Fab({
     };
     const openUnifiedNotesSheet = () => {
       setUnifiedTimingPickerOpen(null);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
       setIsUnifiedTagsSheetOpen(false);
       setIsUnifiedFormsSheetOpen(false);
       setIsAddEventMoreOpen(false);
@@ -22726,6 +23265,8 @@ export function Fab({
     };
     const openUnifiedTagsSheet = () => {
       setUnifiedTimingPickerOpen(null);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
       setIsUnifiedNotesSheetOpen(false);
       setIsUnifiedFormsSheetOpen(false);
       setIsAddEventMoreOpen(false);
@@ -22733,6 +23274,8 @@ export function Fab({
     };
     const openUnifiedFormsSheet = () => {
       setUnifiedTimingPickerOpen(null);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
       setIsUnifiedNotesSheetOpen(false);
       setIsUnifiedTagsSheetOpen(false);
       setIsAddEventMoreOpen(false);
@@ -22740,10 +23283,30 @@ export function Fab({
     };
     const openAddEventMoreSheet = () => {
       setUnifiedTimingPickerOpen(null);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
       setIsUnifiedNotesSheetOpen(false);
       setIsUnifiedTagsSheetOpen(false);
       setIsUnifiedFormsSheetOpen(false);
       setIsAddEventMoreOpen(true);
+    };
+    const openUnifiedEventLocationSheet = () => {
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
+      setIsUnifiedEventLocationSheetOpen(true);
+    };
+    const openUnifiedEventLinkSheet = () => {
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(true);
     };
     const clearUnifiedNotes = () => {
       void hapticSoftTick();
@@ -22766,6 +23329,14 @@ export function Fab({
     const closeAddEventMoreSheet = () => {
       void hapticSoftTick();
       setIsAddEventMoreOpen(false);
+    };
+    const closeUnifiedEventLocationSheet = () => {
+      void hapticSoftTick();
+      setIsUnifiedEventLocationSheetOpen(false);
+    };
+    const closeUnifiedEventLinkSheet = () => {
+      void hapticSoftTick();
+      setIsUnifiedEventLinkSheetOpen(false);
     };
     const unifiedGoalId = isProject
       ? projectGoalId
@@ -22931,6 +23502,361 @@ export function Fab({
         openUnifiedFormsSheet();
       }
     };
+    const renderUnifiedEventLocalSegments = <T extends string,>({
+      value,
+      options,
+      onChange,
+      ariaLabel,
+    }: {
+      value: T;
+      options: Array<{ value: T; label: string }>;
+      onChange: (value: T) => void;
+      ariaLabel: string;
+    }) => (
+      <div
+        className="inline-flex w-full rounded-xl border border-zinc-800/60 bg-black/30 p-1"
+        aria-label={ariaLabel}
+      >
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            {...getUnifiedSheetTouchActivationProps(() => {
+              void hapticSoftTick();
+              onChange(option.value);
+            })}
+            className={cn(
+              unifiedEventSegmentClass,
+              value === option.value && unifiedEventSegmentActiveClass,
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    );
+    const renderUnifiedEventPlaceholderRow = (
+      title: string,
+      description: string,
+      label = "Later",
+    ) => (
+      <div className={unifiedEventPlaceholderRowClass}>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-zinc-200">{title}</p>
+          <p className="mt-0.5 text-xs font-medium text-zinc-500">
+            {description}
+          </p>
+        </div>
+        <span className={unifiedEventPlaceholderPillClass}>{label}</span>
+      </div>
+    );
+    const renderUnifiedEventLocationFields = () => (
+      <Input
+        value={unifiedEventLocationName}
+        onChange={(event) => {
+          setUnifiedEventLocationName(event.target.value);
+          setUnifiedEventLocationAddress("");
+        }}
+        placeholder="Search address, place, city, state, or country"
+        className={cn(unifiedEventInputClass, "w-full")}
+        aria-label={`${eventTypeLabel} location`}
+      />
+    );
+    const renderUnifiedEventVirtualFields = () => (
+      <section className={unifiedEventFieldCardClass}>
+        <div className="flex items-center justify-between gap-3">
+          <Label className={unifiedEventMiniLabelClass}>Video / link</Label>
+          <CircleDot className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+        </div>
+        {renderUnifiedEventLocalSegments({
+          value: unifiedEventMeetingProvider,
+          options: [
+            { value: "URL", label: "External URL" },
+            { value: "CREATOR_VIDEO", label: "CREATOR" },
+          ],
+          onChange: setUnifiedEventMeetingProvider,
+          ariaLabel: "Video provider",
+        })}
+        <Input
+          value={unifiedEventVirtualUrl}
+          onChange={(event) => setUnifiedEventVirtualUrl(event.target.value)}
+          placeholder="https://meet.google.com/... or Zoom link"
+          className={unifiedEventInputClass}
+          aria-label={`${eventTypeLabel} video or meeting URL`}
+        />
+        {renderUnifiedEventPlaceholderRow(
+          "CREATOR video / room",
+          "Room creation will come after Event schema.",
+          "Disabled",
+        )}
+      </section>
+    );
+    const unifiedEventNotificationOptions: Array<{
+      value: UnifiedEventNotificationTiming;
+      label: string;
+    }> = [
+      { value: "NONE", label: "None" },
+      { value: "AT_TIME", label: "At time" },
+      { value: "TEN_MIN_BEFORE", label: "10 min before" },
+      { value: "THIRTY_MIN_BEFORE", label: "30 min before" },
+      { value: "ONE_HOUR_BEFORE", label: "1 hour before" },
+      { value: "ON_THE_DAY", label: "On the day" },
+      { value: "ONE_DAY_BEFORE", label: "1 day before" },
+      { value: "ONE_WEEK_BEFORE", label: "1 week before" },
+    ];
+    const unifiedEventRecurrenceOptions: Array<{
+      value: UnifiedEventDraftRecurrence;
+      label: string;
+    }> = [
+      { value: "__never__", label: "Never" },
+      ...HABIT_RECURRENCE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: formatAddEventRecurrenceLabel(option.label),
+      })),
+    ];
+    const selectedUnifiedEventRecurrence =
+      unifiedEventRecurrenceOptions.find(
+        (option) => option.value === unifiedEventRecurrence,
+      ) ?? unifiedEventRecurrenceOptions[0];
+    const selectedUnifiedEventNotification =
+      unifiedEventNotificationOptions.find(
+        (option) => option.value === unifiedEventNotificationTiming,
+      ) ?? unifiedEventNotificationOptions[0];
+    const unifiedEventSelectTriggerButtonClass = (isOpen: boolean) =>
+      cn(
+        "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition overflow-visible",
+        "focus:outline-none focus:ring-2 focus:ring-zinc-500/45 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
+        isOpen && "border-zinc-500/70",
+        timingSelectTriggerClass,
+        "w-fit max-w-full touch-manipulation",
+      );
+    const unifiedEventSelectContentWrapperClass = cn(
+      "fixed z-[2147483651] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
+      "overscroll-contain overflow-y-auto overflow-x-hidden touch-pan-y",
+      timingSelectContentWrapperClass,
+    );
+    const unifiedEventSelectContentClass = cn(
+      "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y",
+      timingSelectContentClass,
+    );
+    const unifiedEventSelectItemButtonClass = (isSelected: boolean) =>
+      cn(
+        "flex w-full cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white touch-manipulation",
+        isSelected &&
+          "bg-zinc-700/45 text-white shadow-[0_0_0_1px_rgba(161,161,170,0.26)]",
+        fabCreationSelectItemClass(isSelected),
+      );
+    const renderUnifiedEventSelectDropdown = (
+      isOpen: boolean,
+      ariaLabel: string,
+      children: React.ReactNode,
+    ) =>
+      isOpen && unifiedEventDropdownPosition
+        ? createPortal(
+            <div
+              data-select-scroll-root
+              className={unifiedEventSelectContentWrapperClass}
+              role="listbox"
+              aria-label={ariaLabel}
+              onWheel={(event) => event.stopPropagation()}
+              onTouchMove={(event) => event.stopPropagation()}
+              onPointerMove={(event) => event.stopPropagation()}
+              style={{
+                WebkitOverflowScrolling: "touch",
+                left: unifiedEventDropdownPosition.left,
+                width: unifiedEventDropdownPosition.width,
+                top: unifiedEventDropdownPosition.top,
+                bottom: unifiedEventDropdownPosition.bottom,
+                maxHeight: unifiedEventDropdownPosition.maxHeight,
+              }}
+            >
+              <div
+                data-select-scroll-content
+                className={unifiedEventSelectContentClass}
+                onWheel={(event) => event.stopPropagation()}
+                onTouchMove={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                style={{ WebkitOverflowScrolling: "touch" }}
+              >
+                {children}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null;
+    const unifiedEventSelectTriggerContentClass =
+      "flex min-w-0 items-center gap-2";
+    const unifiedEventSelectChevronClass = (isOpen: boolean) =>
+      cn(
+        "h-4 w-4 opacity-50 transition-transform flex-shrink-0",
+        isOpen && "rotate-180",
+      );
+    const unifiedEventSelectTriggerLabel = (label: string) => (
+      <span className="block truncate text-right">{label}</span>
+    );
+    const renderUnifiedEventRecurrenceField = () => (
+      <section className={eventTimingCardClass}>
+        <div className={eventTimingPickerRowClass}>
+          <span className={eventTimingRowIconClass} aria-hidden="true">
+            <Repeat2 className="h-4 w-4" />
+          </span>
+          <span className={timingPickerLabelClass}>Recurrence</span>
+          <div className="flex min-w-0 justify-end">
+            <button
+              ref={unifiedEventRecurrenceTriggerRef}
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded={isUnifiedEventRecurrencePickerOpen}
+              aria-label="Event recurrence"
+              {...getUnifiedSheetTouchActivationProps(() => {
+                void hapticSoftTick();
+                setIsUnifiedEventNotificationPickerOpen(false);
+                setIsUnifiedEventRecurrencePickerOpen((current) => !current);
+              })}
+              className={unifiedEventSelectTriggerButtonClass(
+                isUnifiedEventRecurrencePickerOpen,
+              )}
+            >
+              <div className={unifiedEventSelectTriggerContentClass}>
+                {unifiedEventSelectTriggerLabel(
+                  selectedUnifiedEventRecurrence.label,
+                )}
+              </div>
+              <ChevronDown
+                className={unifiedEventSelectChevronClass(
+                  isUnifiedEventRecurrencePickerOpen,
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </div>
+        {renderUnifiedEventSelectDropdown(
+          isUnifiedEventRecurrencePickerOpen,
+          "Event recurrence options",
+          unifiedEventRecurrenceOptions.map((option) => {
+            const isSelected = unifiedEventRecurrence === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                {...getUnifiedSheetTouchActivationProps(() => {
+                  void hapticSoftTick();
+                  setUnifiedEventRecurrence(option.value);
+                  setIsUnifiedEventRecurrencePickerOpen(false);
+                })}
+                className={unifiedEventSelectItemButtonClass(isSelected)}
+              >
+                {option.label}
+              </button>
+            );
+          }),
+        )}
+      </section>
+    );
+    const renderUnifiedEventNotificationsField = () => (
+      <section className={eventTimingCardClass}>
+        <div className={eventTimingPickerRowClass}>
+          <span className={eventTimingRowIconClass} aria-hidden="true">
+            <Bell className="h-4 w-4" />
+          </span>
+          <span className={timingPickerLabelClass}>Notifications</span>
+          <div className="flex min-w-0 justify-end">
+            <button
+              ref={unifiedEventNotificationTriggerRef}
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded={isUnifiedEventNotificationPickerOpen}
+              aria-label="Event notification timing"
+              {...getUnifiedSheetTouchActivationProps(() => {
+                void hapticSoftTick();
+                setIsUnifiedEventRecurrencePickerOpen(false);
+                setIsUnifiedEventNotificationPickerOpen((current) => !current);
+              })}
+              className={unifiedEventSelectTriggerButtonClass(
+                isUnifiedEventNotificationPickerOpen,
+              )}
+            >
+              <div className={unifiedEventSelectTriggerContentClass}>
+                {unifiedEventSelectTriggerLabel(
+                  selectedUnifiedEventNotification.label,
+                )}
+              </div>
+              <ChevronDown
+                className={unifiedEventSelectChevronClass(
+                  isUnifiedEventNotificationPickerOpen,
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </div>
+        {renderUnifiedEventSelectDropdown(
+          isUnifiedEventNotificationPickerOpen,
+          "Event notification timing options",
+          unifiedEventNotificationOptions.map((option) => {
+            const isSelected = unifiedEventNotificationTiming === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                {...getUnifiedSheetTouchActivationProps(() => {
+                  void hapticSoftTick();
+                  setUnifiedEventNotificationTiming(option.value);
+                  setIsUnifiedEventNotificationPickerOpen(false);
+                })}
+                className={unifiedEventSelectItemButtonClass(isSelected)}
+              >
+                {option.label}
+              </button>
+            );
+          }),
+        )}
+      </section>
+    );
+    const renderUnifiedEventVisibilityField = () => (
+      <section className={unifiedEventCompactFieldCardClass}>
+        <Label className={unifiedEventMiniLabelClass}>Visibility</Label>
+        <div
+          className="inline-flex w-full rounded-xl border border-zinc-800/60 bg-black/30 p-1"
+          aria-label="Event public or private visibility"
+        >
+          {(["Private", "Public"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled
+              aria-disabled="true"
+              aria-pressed={option === "Private"}
+              {...getUnifiedSheetTouchActivationProps(() => undefined, {
+                disabled: true,
+              })}
+              className={cn(
+                unifiedEventSegmentClass,
+                "touch-manipulation",
+                option === "Private" && unifiedEventSegmentActiveClass,
+                option !== "Private" && "opacity-70",
+              )}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+    const renderUnifiedEventDraftDetails = () => (
+      <section className="grid gap-2 pt-0.5">
+        {renderUnifiedEventRecurrenceField()}
+        {peopleSection}
+        {renderUnifiedEventNotificationsField()}
+        {renderUnifiedEventVisibilityField()}
+      </section>
+    );
     const visibleDefaultSchedule = getNextSolidHourEventDefaults(new Date());
     const startDateValue = taskExactDate.trim() || visibleDefaultSchedule.date;
     const explicitEndDateValue = unifiedEventEndDate.trim();
@@ -22979,9 +23905,28 @@ export function Fab({
     const addEventSourceTypeLabel =
       addEventSourceType.charAt(0) +
       addEventSourceType.slice(1).toLowerCase();
+    const hasEventLocation =
+      unifiedEventLocationName.trim().length > 0;
+    const hasEventVideo =
+      unifiedEventVirtualUrl.trim().length > 0 ||
+      unifiedEventMeetingProvider === "CREATOR_VIDEO";
+    const hasEventPeople = unifiedEventSelectedInvitees.length > 0;
+    const hasAssignedBookedContext = false;
+    const isEventDateMarkerStyle =
+      unifiedEventAllDay &&
+      !hasEventLocation &&
+      !hasEventVideo &&
+      !hasEventPeople;
+    const inferredUnifiedEventSubmitLabel = hasAssignedBookedContext
+      ? "add APPOINTMENT"
+      : hasEventVideo
+        ? "add MEETING"
+        : unifiedEventBlocksTime === "FREE" || isEventDateMarkerStyle
+          ? "add REMINDER"
+          : "add EVENT";
     const unifiedSubmitLabel = isEventsMode
-      ? "Add Event"
-      : `Add ${addEventSourceTypeLabel}`;
+      ? inferredUnifiedEventSubmitLabel
+      : `add ${addEventSourceTypeLabel.toUpperCase()}`;
     const unifiedAddEventSaveBlockReason =
       getUnifiedAddEventSaveBlockReason();
     const addAddEventSubAction = () => {
@@ -23725,6 +24670,72 @@ export function Fab({
       ));
     };
 
+    const selectableEventFriends = unifiedEventFriends.filter(
+      (friend) => friend.userId !== null,
+    );
+    const normalizedInviteSearch = unifiedEventInviteSearch
+      .trim()
+      .toLowerCase();
+    const filteredEventFriends = selectableEventFriends.filter((friend) => {
+      if (!normalizedInviteSearch) return true;
+      return [friend.displayName, friend.username].some((value) =>
+        value.toLowerCase().includes(normalizedInviteSearch),
+      );
+    });
+    const selectedInviteeUserIds = new Set(
+      unifiedEventSelectedInvitees
+        .map((friend) => friend.userId)
+        .filter((userId): userId is string => Boolean(userId)),
+    );
+    const renderInviteAvatar = (
+      friend: Friend,
+      sizeClass = "h-6 w-6",
+      initialsClass = "text-[10px]",
+    ) =>
+      friend.avatarUrl ? (
+        <span
+          className={cn(sizeClass, "shrink-0 rounded-full bg-cover bg-center")}
+          style={{ backgroundImage: `url(${friend.avatarUrl})` }}
+          aria-hidden="true"
+        />
+      ) : (
+        <span
+          className={cn(
+            sizeClass,
+            initialsClass,
+            "flex shrink-0 items-center justify-center rounded-full bg-zinc-800 font-bold text-zinc-200 ring-1 ring-white/[0.06]",
+          )}
+          aria-hidden="true"
+        >
+          {getFriendInviteInitials(friend)}
+        </span>
+      );
+    const addUnifiedEventInvitee = (friend: Friend) => {
+      if (!friend.userId) return;
+      void hapticSoftTick();
+      setUnifiedEventSelectedInvitees((current) => {
+        if (current.some((invitee) => invitee.userId === friend.userId)) {
+          return current;
+        }
+        return [...current, friend];
+      });
+    };
+    const removeUnifiedEventInvitee = (userId: string | null) => {
+      if (!userId) return;
+      void hapticSoftTick();
+      setUnifiedEventSelectedInvitees((current) =>
+        current.filter((friend) => friend.userId !== userId),
+      );
+    };
+    const toggleUnifiedEventInvitePicker = () => {
+      void hapticSoftTick();
+      setIsUnifiedEventInvitePickerOpen((current) => !current);
+    };
+    const clearUnifiedEventInviteSearch = () => {
+      void hapticSoftTick();
+      setUnifiedEventInviteSearch("");
+    };
+
     const workspaceSection = (
       <section className={workspaceRowClass} aria-label="Workspace">
         <div className="grid min-h-[38px] grid-cols-[minmax(6.5rem,auto)_minmax(0,1fr)] items-center gap-3">
@@ -23836,30 +24847,58 @@ export function Fab({
       <section className={inviteSectionClass} aria-label={peopleSectionTitle}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="text-[13px] font-semibold leading-none text-zinc-100">
+            <h3 className="inline-flex min-w-0 items-center gap-2 text-[13px] font-semibold leading-none text-zinc-500">
+              <Users
+                className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                aria-hidden="true"
+              />
               {peopleSectionTitle}
             </h3>
-            <p className="mt-1 text-[11px] font-medium leading-snug text-zinc-500">
-              {peopleSectionDescription}
-            </p>
+            {peopleSectionDescription ? (
+              <p className="mt-1 text-[11px] font-medium leading-snug text-zinc-500">
+                {peopleSectionDescription}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
-            disabled
-            className={inviteActionClass}
+            disabled={!isPersonalEventInvitePicker}
+            aria-expanded={
+              isPersonalEventInvitePicker
+                ? isUnifiedEventInvitePickerOpen
+                : undefined
+            }
+            {...getUnifiedSheetTouchActivationProps(
+              isPersonalEventInvitePicker
+                ? toggleUnifiedEventInvitePicker
+                : () => undefined,
+              { disabled: !isPersonalEventInvitePicker },
+            )}
+            className={cn(
+              inviteActionClass,
+              isPersonalEventInvitePicker &&
+                "opacity-100 transition hover:border-zinc-700/70 hover:bg-zinc-900/62 hover:text-zinc-200 active:bg-zinc-900/78 touch-manipulation",
+              isUnifiedEventInvitePickerOpen &&
+                "border-zinc-600/55 bg-zinc-900/68 text-zinc-100",
+            )}
             aria-label={
               isCircleWorkspace
                 ? "Assignment coming soon"
-                : "Invite people coming soon"
+                : isPersonalEventInvitePicker
+                  ? unifiedEventSelectedInvitees.length > 0
+                    ? "Manage event invitees"
+                    : "Add event invitees"
+                  : "Invite people coming soon"
             }
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            Add
+            <Plus className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-          {isCircleWorkspace ? (
+        {isPersonalEventInvitePicker &&
+        unifiedEventSelectedInvitees.length === 0 ? null : (
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+            {isCircleWorkspace ? (
             <>
               {selectedCircleMembers.length > 0 ? (
                 selectedCircleMembers.map((member) => (
@@ -23902,7 +24941,33 @@ export function Fab({
                 </span>
               ) : null}
             </>
-          ) : (
+            ) : isPersonalEventInvitePicker ? (
+              unifiedEventSelectedInvitees.map((friend) => {
+                const inviteeLabel = getFriendInviteDisplayName(friend);
+                return (
+                  <span
+                    key={friend.userId ?? friend.id}
+                    className={cn(
+                      inviteChipClass,
+                      "h-9 max-w-full pr-1 text-zinc-200",
+                    )}
+                  >
+                    {renderInviteAvatar(friend, "h-6 w-6", "text-[10px]")}
+                    <span className="max-w-[9rem] truncate">{inviteeLabel}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${inviteeLabel}`}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        removeUnifiedEventInvitee(friend.userId),
+                      )}
+                      className="ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </span>
+                );
+              })
+            ) : (
             <>
               <span className={inviteChipClass}>
                 <span className="h-2 w-2 rounded-full bg-zinc-600" />
@@ -23916,9 +24981,278 @@ export function Fab({
                 Circle later
               </span>
             </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
+
+        {isPersonalEventInvitePicker && isUnifiedEventInvitePickerOpen ? (
+          <div className="mt-3 grid gap-2.5 border-t border-white/[0.06] pt-3">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600"
+                aria-hidden="true"
+              />
+              <Input
+                value={unifiedEventInviteSearch}
+                onChange={(event) =>
+                  setUnifiedEventInviteSearch(event.target.value)
+                }
+                placeholder="Search friends"
+                className="h-9 rounded-xl border-zinc-700/35 bg-zinc-900/48 pl-8 pr-9 text-sm font-medium text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                aria-label="Search accepted friends"
+              />
+              {unifiedEventInviteSearch.trim().length > 0 ? (
+                <button
+                  type="button"
+                  aria-label="Clear friend search"
+                  {...getUnifiedSheetTouchActivationProps(
+                    clearUnifiedEventInviteSearch,
+                  )}
+                  className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+
+            <div className="grid max-h-56 gap-1 overflow-y-auto overscroll-contain pr-0.5 [-webkit-overflow-scrolling:touch]">
+              {unifiedEventFriendsLoading ? (
+                <div className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.025] text-xs font-medium text-zinc-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  Loading friends
+                </div>
+              ) : unifiedEventFriendsError ? (
+                <div className="rounded-xl border border-red-500/15 bg-red-950/25 px-3 py-2 text-xs font-medium text-red-100/85">
+                  {unifiedEventFriendsError}
+                </div>
+              ) : filteredEventFriends.length > 0 ? (
+                filteredEventFriends.map((friend) => {
+                  const friendLabel = getFriendInviteDisplayName(friend);
+                  const isSelected = Boolean(
+                    friend.userId && selectedInviteeUserIds.has(friend.userId),
+                  );
+                  return (
+                    <button
+                      key={friend.userId ?? friend.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      {...getUnifiedSheetTouchActivationProps(() =>
+                        addUnifiedEventInvitee(friend),
+                      )}
+                      className={cn(
+                        "grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50 touch-manipulation",
+                        isSelected
+                          ? "border-zinc-500/45 bg-zinc-800/60 text-zinc-100"
+                          : "border-white/[0.06] bg-white/[0.025] text-zinc-200 hover:border-white/12 hover:bg-white/[0.05]",
+                      )}
+                    >
+                      {renderInviteAvatar(friend)}
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-semibold">
+                          {friendLabel}
+                        </span>
+                        <span className="block truncate text-[11px] font-medium text-zinc-500">
+                          @{friend.username}
+                        </span>
+                      </span>
+                      {isSelected ? (
+                        <Check
+                          className="h-4 w-4 shrink-0 text-zinc-200"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Plus
+                          className="h-4 w-4 shrink-0 text-zinc-500"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="rounded-xl border border-white/[0.05] bg-white/[0.025] px-3 py-3 text-center text-xs font-medium text-zinc-500">
+                  {selectableEventFriends.length === 0
+                    ? "No accepted friends available"
+                    : "No friends match"}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
       </section>
+    );
+
+    const clearUnifiedEventLocation = () => {
+      void hapticSoftTick();
+      setUnifiedEventLocationName("");
+      setUnifiedEventLocationAddress("");
+    };
+    const clearUnifiedEventLink = () => {
+      void hapticSoftTick();
+      setUnifiedEventVirtualUrl("");
+      setUnifiedEventMeetingProvider("URL");
+    };
+
+    const eventLocationMiniSheet = (
+      <AnimatePresence initial={false}>
+        {isUnifiedEventLocationSheetOpen ? (
+          <motion.div
+            key="unified-event-location-sheet"
+            className="absolute inset-0 isolate z-[80] overflow-hidden bg-[#08080a]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onClick={closeUnifiedEventLocationSheet}
+          >
+            <motion.div
+              className="absolute inset-0 z-0 bg-[#08080a]/95 backdrop-blur-[2px]"
+              aria-hidden="true"
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Location"
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              animate={{ y: 0, opacity: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              transition={{
+                type: "tween",
+                ease: [0.16, 1, 0.3, 1],
+                duration: 0.24,
+              }}
+              className="absolute inset-0 z-10 overflow-hidden rounded-t-[30px] border border-zinc-800/70 border-b-0 bg-[#151517] text-zinc-100 shadow-[0_-22px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeUnifiedEventLocationSheet();
+                }
+              }}
+            >
+              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
+                  <button
+                    type="button"
+                    {...getUnifiedSheetTouchActivationProps(
+                      clearUnifiedEventLocation,
+                    )}
+                    className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Clear
+                  </button>
+                  <h2 className="text-sm font-semibold text-zinc-100">
+                    Location
+                  </h2>
+                  <button
+                    type="button"
+                    {...getUnifiedSheetTouchActivationProps(
+                      closeUnifiedEventLocationSheet,
+                    )}
+                    className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Done
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-4">
+                  <div className="mx-auto grid w-full max-w-xl gap-3">
+                    {renderUnifiedEventLocationFields()}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+
+    const eventLinkMiniSheet = (
+      <AnimatePresence initial={false}>
+        {isUnifiedEventLinkSheetOpen ? (
+          <motion.div
+            key="unified-event-link-sheet"
+            className="absolute inset-0 isolate z-[80] overflow-hidden bg-[#08080a]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            onClick={closeUnifiedEventLinkSheet}
+          >
+            <motion.div
+              className="absolute inset-0 z-0 bg-[#08080a]/95 backdrop-blur-[2px]"
+              aria-hidden="true"
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Link"
+              initial={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              animate={{ y: 0, opacity: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { y: "100%", opacity: 1 }
+              }
+              transition={{
+                type: "tween",
+                ease: [0.16, 1, 0.3, 1],
+                duration: 0.24,
+              }}
+              className="absolute inset-0 z-10 overflow-hidden rounded-t-[30px] border border-zinc-800/70 border-b-0 bg-[#151517] text-zinc-100 shadow-[0_-22px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeUnifiedEventLinkSheet();
+                }
+              }}
+            >
+              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+                <div className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.06] px-4">
+                  <button
+                    type="button"
+                    {...getUnifiedSheetTouchActivationProps(clearUnifiedEventLink)}
+                    className="justify-self-start rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Clear
+                  </button>
+                  <h2 className="text-sm font-semibold text-zinc-100">Link</h2>
+                  <button
+                    type="button"
+                    {...getUnifiedSheetTouchActivationProps(
+                      closeUnifiedEventLinkSheet,
+                    )}
+                    className="justify-self-end rounded-lg px-1.5 py-1 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/50"
+                  >
+                    Done
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-4">
+                  <div className="mx-auto grid w-full max-w-xl gap-3">
+                    {renderUnifiedEventVirtualFields()}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     );
 
     const notesMiniSheet = (
@@ -23940,7 +25274,7 @@ export function Fab({
             <motion.div
               role="dialog"
               aria-modal="true"
-              aria-label="Description"
+              aria-label={isEventsMode ? "Notes" : "Description"}
               initial={
                 prefersReducedMotion
                   ? { opacity: 0 }
@@ -23978,7 +25312,7 @@ export function Fab({
                     Clear
                   </button>
                   <h2 className="text-sm font-semibold text-zinc-100">
-                    Description
+                    {isEventsMode ? "Notes" : "Description"}
                   </h2>
                   <button
                     type="button"
@@ -24688,10 +26022,46 @@ export function Fab({
 
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#151517] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-4">
                   <div className="mx-auto grid w-full max-w-xl gap-4">
-                    {workspaceSection}
-                    {peopleSection}
+                    {isEventsMode ? (
+                      <section className="grid gap-3 rounded-[18px] border border-zinc-800/55 bg-[#0d0d10] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-semibold text-zinc-100">
+                              More event options
+                            </h3>
+                            <p className="mt-1 text-xs leading-snug text-zinc-500">
+                              Extra Event controls will live here once Event
+                              saving is wired.
+                            </p>
+                          </div>
+                          <span className={unifiedEventPlaceholderPillClass}>
+                            UI only
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {["Guests", "Attachments"].map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              disabled
+                              aria-disabled="true"
+                              {...getUnifiedSheetTouchActivationProps(
+                                () => undefined,
+                                { disabled: true },
+                              )}
+                              className="min-h-10 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 text-left text-xs font-semibold text-zinc-500 opacity-75 touch-manipulation"
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ) : (
+                      <>
+                        {workspaceSection}
+                        {peopleSection}
 
-                    <section className="grid gap-2.5">
+                        <section className="grid gap-2.5">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="text-sm font-semibold text-zinc-100">
                           Sub-events
@@ -24980,7 +26350,9 @@ export function Fab({
                           </button>
                         </div>
                       </div>
-                    </section>
+                        </section>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -25028,7 +26400,7 @@ export function Fab({
                 <div className="mx-auto h-1.5 w-11 rounded-full bg-zinc-600/60" />
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-1 sm:px-6">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-1 sm:px-6 sm:pb-6">
                 <div className="mx-auto grid w-full max-w-xl gap-2 pb-0">
                   <div
                     className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur"
@@ -25783,25 +27155,82 @@ export function Fab({
                       }
                       value={titleValue}
                       onChange={(event) => titleSetter(event.target.value)}
-                      placeholder="Event name"
+                      placeholder={isEventsMode ? "Title" : "Event name"}
                       className="h-auto rounded-none !border-0 !bg-transparent px-0 py-0 text-[1.45rem] font-medium leading-tight text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:!border-0 focus-visible:!border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none sm:text-[1.65rem]"
                     />
                   </div>
 
                   <div className="grid gap-2">
-                    <section className={timingCardClass}>
+                    <section
+                      className={
+                        isEventsMode ? eventTimingCardClass : timingCardClass
+                      }
+                    >
                       <h3 className="sr-only">Timing</h3>
-                      <div className="grid gap-2 pb-2">
-                        <div className="grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 pt-3 sm:px-4">
+                      <div
+                        className={cn(
+                          "grid gap-2",
+                          isEventsMode ? "pb-1.5" : "pb-2",
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "grid grid-cols-[1.6rem_minmax(0,1fr)] items-center gap-2 px-3 sm:px-4",
+                            isEventsMode ? "pt-2.5" : "pt-3",
+                          )}
+                        >
                           <span
-                            className={timingRowIconClass}
+                            className={
+                              isEventsMode
+                                ? eventTimingRowIconClass
+                                : timingRowIconClass
+                            }
                             aria-hidden="true"
                           >
-                            <Clock
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
+                            {isEventsMode ? (
+                              <Sun
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <Clock
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                            )}
                           </span>
+                          {isEventsMode ? (
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                              <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                All day
+                              </span>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={unifiedEventAllDay}
+                                aria-label="Toggle all day"
+                                {...getUnifiedSheetTouchActivationProps(
+                                  toggleUnifiedEventAllDay,
+                                )}
+                                className={cn(
+                                  "relative h-5 w-9 shrink-0 rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_5px_12px_rgba(0,0,0,0.24)] transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 touch-manipulation",
+                                  unifiedEventAllDay
+                                    ? "border-zinc-400/25 bg-zinc-500/70 hover:border-zinc-300/30 hover:bg-zinc-500/80"
+                                    : "border-zinc-700/70 bg-zinc-800/80 hover:border-zinc-600/80 hover:bg-zinc-700/80",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full border shadow-[0_2px_8px_rgba(0,0,0,0.45)] transition-[transform,background-color,border-color] duration-200 ease-out",
+                                    unifiedEventAllDay
+                                      ? "translate-x-4 border-zinc-700/70 bg-zinc-800"
+                                      : "border-zinc-400/20 bg-zinc-500",
+                                  )}
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            </div>
+                          ) : (
                           <div className={timingModeToggleClass}>
                             <span
                               className={cn(
@@ -25857,16 +27286,27 @@ export function Fab({
                               Dynamic
                             </span>
                           </div>
+                          )}
                         </div>
 
-                        {addEventTimingMode === "manual" ? (
+                        {isEventsMode || addEventTimingMode === "manual" ? (
                           <div className={timelineGroupClass}>
                           <span
-                            className={timelineGroupLineClass}
+                            className={
+                              isEventsMode
+                                ? eventTimelineGroupLineClass
+                                : timelineGroupLineClass
+                            }
                             aria-hidden="true"
                           />
 
-                          <div className={timingTimelineRowClass}>
+                          <div
+                            className={
+                              isEventsMode
+                                ? eventTimingTimelineRowClass
+                                : timingTimelineRowClass
+                            }
+                          >
                             <span
                               className={timelineMarkerWrapClass}
                               aria-hidden="true"
@@ -25938,7 +27378,9 @@ export function Fab({
 
                           <div
                             className={cn(
-                              timingTimelineRowClass,
+                              isEventsMode
+                                ? eventTimingTimelineRowClass
+                                : timingTimelineRowClass,
                               unifiedEventAllDay && "text-zinc-500",
                             )}
                           >
@@ -26084,6 +27526,7 @@ export function Fab({
                       </div>
                     </section>
 
+                    {!isEventsMode ? (
                     <section className={timingCardClass}>
                       <div className={timingPickerRowClass}>
                         <span className={timingRowIconClass} aria-hidden="true">
@@ -26134,8 +27577,12 @@ export function Fab({
                         </div>
                       </div>
                     </section>
+                    ) : null}
                   </div>
 
+                  {isEventsMode ? (
+                    renderUnifiedEventDraftDetails()
+                  ) : (
                   <section className={detailSectionClass}>
                     <div className={detailCardClass}>
                       <div className={detailRowClass}>
@@ -26339,6 +27786,7 @@ export function Fab({
                     </div>
 
                   </section>
+                  )}
 
                   {saveError ? (
                     <p className="rounded-xl border border-red-500/20 bg-red-950/45 px-3 py-2 text-sm text-red-100">
@@ -26346,117 +27794,217 @@ export function Fab({
                     </p>
                   ) : null}
 
-                  <section
-                    className="grid grid-cols-4 gap-1.5 pt-1 sm:gap-2"
-                    aria-label="Event quick actions"
-                  >
-                    <button
-                      type="button"
-                      {...getUnifiedSheetTouchActivationProps(() =>
-                        handleQuickActionClick("tags"),
-                      )}
-                      className={quickActionCardClass}
-                    >
-                      <Tags className={quickActionIconClass} aria-hidden="true" />
-                      <span className={quickActionLabelClass}>Tags</span>
-                    </button>
-                    <button
-                      type="button"
-                      {...getUnifiedSheetTouchActivationProps(() =>
-                        handleQuickActionClick("notes"),
-                      )}
-                      className={quickActionCardClass}
-                    >
-                      <FileText
-                        className={quickActionIconClass}
-                        aria-hidden="true"
-                      />
-                      <span className={quickActionLabelClass}>Notes</span>
-                    </button>
-                    <button
-                      type="button"
-                      {...getUnifiedSheetTouchActivationProps(() =>
-                        handleQuickActionClick("forms"),
-                      )}
-                      aria-expanded={isUnifiedFormsSheetOpen}
-                      aria-label="Forms quick action"
-                      className={cn(
-                        quickActionCardClass,
-                        isUnifiedFormsSheetOpen &&
-                          "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
-                      )}
-                    >
-                      <ListChecks
-                        className={cn(
-                          quickActionIconClass,
-                          isUnifiedFormsSheetOpen && "text-zinc-100",
-                        )}
-                        aria-hidden="true"
-                      />
-                      <span className={quickActionLabelClass}>Forms</span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-expanded={isAddEventMoreOpen}
-                      aria-label="More event options"
-                      {...getUnifiedSheetTouchActivationProps(
-                        openAddEventMoreSheet,
-                      )}
-                      className={cn(
-                        quickActionCardClass,
-                        isAddEventMoreOpen &&
-                          "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
-                      )}
-                    >
-                      <Settings2
-                        className={cn(
-                          quickActionIconClass,
-                          isAddEventMoreOpen && "text-zinc-100",
-                        )}
-                        aria-hidden="true"
-                      />
-                      <span className={quickActionLabelClass}>More</span>
-                    </button>
-                  </section>
                 </div>
               </div>
 
-              <div className="sticky bottom-0 shrink-0 border-t border-white/[0.055] bg-[#141416]/92 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur-xl sm:px-6">
-                <div className="mx-auto flex max-w-xl">
-                  <Button
-                    type="button"
-                    haptic={false}
-                    aria-disabled={
-                      isUnifiedAddEventSubmitHardDisabled ||
-                      !!unifiedAddEventSaveBlockReason
-                    }
-                    {...getUnifiedSheetTouchActivationProps(
-                      handleUnifiedAddEventSubmit,
-                      {
-                        disabled:
-                          isUnifiedAddEventSubmitHardDisabled ||
-                          !!unifiedAddEventSaveBlockReason,
-                      },
-                    )}
-                    className={cn(
-                      "h-11 w-full rounded-full border border-white/10 bg-zinc-100 px-5 text-sm font-semibold text-zinc-950 shadow-[0_6px_18px_rgba(0,0,0,0.2)] hover:bg-white",
-                      (isUnifiedAddEventSubmitHardDisabled ||
-                        unifiedAddEventSaveBlockReason) &&
-                        "cursor-not-allowed opacity-45",
-                    )}
-                  >
-                    {isSavingFab ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Saving
-                      </span>
-                    ) : (
-                      unifiedSubmitLabel
-                    )}
-                  </Button>
+              <div className="sticky bottom-0 shrink-0 border-t border-white/[0.055] bg-[#141416]/94 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-2.5 shadow-[0_-18px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur-xl sm:px-6">
+                <div className="mx-auto grid max-w-xl gap-2">
+                  {isEventsMode ? (
+                    <section
+                      className="grid grid-cols-4 gap-1.5 sm:gap-2"
+                      aria-label="Event quick actions"
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={isUnifiedEventLocationSheetOpen}
+                        {...getUnifiedSheetTouchActivationProps(
+                          openUnifiedEventLocationSheet,
+                        )}
+                        className={cn(
+                          eventQuickActionCardClass,
+                          isUnifiedEventLocationSheetOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <Pin
+                          className={cn(
+                            quickActionIconClass,
+                            isUnifiedEventLocationSheetOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>Location</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-expanded={isUnifiedNotesSheetOpen}
+                        {...getUnifiedSheetTouchActivationProps(
+                          openUnifiedNotesSheet,
+                        )}
+                        className={cn(
+                          eventQuickActionCardClass,
+                          isUnifiedNotesSheetOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <FileText
+                          className={cn(
+                            quickActionIconClass,
+                            isUnifiedNotesSheetOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>Notes</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-expanded={isUnifiedEventLinkSheetOpen}
+                        {...getUnifiedSheetTouchActivationProps(
+                          openUnifiedEventLinkSheet,
+                        )}
+                        className={cn(
+                          eventQuickActionCardClass,
+                          isUnifiedEventLinkSheetOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <Link
+                          className={cn(
+                            quickActionIconClass,
+                            isUnifiedEventLinkSheetOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>Link</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-expanded={isAddEventMoreOpen}
+                        aria-label="More event options"
+                        {...getUnifiedSheetTouchActivationProps(
+                          openAddEventMoreSheet,
+                        )}
+                        className={cn(
+                          eventQuickActionCardClass,
+                          isAddEventMoreOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <Settings2
+                          className={cn(
+                            quickActionIconClass,
+                            isAddEventMoreOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>More</span>
+                      </button>
+                    </section>
+                  ) : (
+                    <section
+                      className="grid grid-cols-4 gap-1.5 sm:gap-2"
+                      aria-label="Event quick actions"
+                    >
+                      <button
+                        type="button"
+                        {...getUnifiedSheetTouchActivationProps(() =>
+                          handleQuickActionClick("tags"),
+                        )}
+                        className={quickActionCardClass}
+                      >
+                        <Tags
+                          className={quickActionIconClass}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>Tags</span>
+                      </button>
+                      <button
+                        type="button"
+                        {...getUnifiedSheetTouchActivationProps(() =>
+                          handleQuickActionClick("notes"),
+                        )}
+                        className={quickActionCardClass}
+                      >
+                        <FileText
+                          className={quickActionIconClass}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>Notes</span>
+                      </button>
+                      <button
+                        type="button"
+                        {...getUnifiedSheetTouchActivationProps(() =>
+                          handleQuickActionClick("forms"),
+                        )}
+                        aria-expanded={isUnifiedFormsSheetOpen}
+                        aria-label="Forms quick action"
+                        className={cn(
+                          quickActionCardClass,
+                          isUnifiedFormsSheetOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <ListChecks
+                          className={cn(
+                            quickActionIconClass,
+                            isUnifiedFormsSheetOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>Forms</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-expanded={isAddEventMoreOpen}
+                        aria-label="More event options"
+                        {...getUnifiedSheetTouchActivationProps(
+                          openAddEventMoreSheet,
+                        )}
+                        className={cn(
+                          quickActionCardClass,
+                          isAddEventMoreOpen &&
+                            "border-zinc-500/55 bg-zinc-800/72 text-zinc-100",
+                        )}
+                      >
+                        <Settings2
+                          className={cn(
+                            quickActionIconClass,
+                            isAddEventMoreOpen && "text-zinc-100",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={quickActionLabelClass}>More</span>
+                      </button>
+                    </section>
+                  )}
+                  <div className="flex">
+                    <Button
+                      type="button"
+                      haptic={false}
+                      aria-disabled={
+                        isUnifiedAddEventSubmitHardDisabled ||
+                        !!unifiedAddEventSaveBlockReason
+                      }
+                      {...getUnifiedSheetTouchActivationProps(
+                        handleUnifiedAddEventSubmit,
+                        {
+                          disabled:
+                            isUnifiedAddEventSubmitHardDisabled ||
+                            !!unifiedAddEventSaveBlockReason,
+                        },
+                      )}
+                      className={cn(
+                        "h-11 w-full rounded-2xl border border-zinc-50/35 bg-zinc-200/72 px-5 text-sm font-semibold text-zinc-950 shadow-[0_12px_28px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.46),inset_0_-1px_0_rgba(113,113,122,0.16)] backdrop-blur-xl transition hover:border-white/45 hover:bg-zinc-200/84 active:bg-zinc-300/78",
+                        (isUnifiedAddEventSubmitHardDisabled ||
+                          unifiedAddEventSaveBlockReason) &&
+                          "cursor-not-allowed opacity-45",
+                      )}
+                    >
+                      {isSavingFab ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Saving
+                        </span>
+                      ) : (
+                        unifiedSubmitLabel
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
+            {eventLocationMiniSheet}
+            {eventLinkMiniSheet}
             {notesMiniSheet}
             {tagsMiniSheet}
             {formsMiniSheet}
@@ -26973,7 +28521,12 @@ export function Fab({
                     onPointerDown={(event) => event.stopPropagation()}
                     onTouchStart={(event) => event.stopPropagation()}
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div
+                      className={cn(
+                        "flex items-center",
+                        useCompactCreationModeButtons ? "gap-[5px]" : "gap-1.5",
+                      )}
+                    >
                       {activeCreationModes.map((mode) => {
                         const isActive = activeCreationMode === mode.id;
                         return (
@@ -26982,6 +28535,7 @@ export function Fab({
                             mode={mode}
                             isActive={isActive}
                             onSelect={setActiveCreationMode}
+                            compact={useCompactCreationModeButtons}
                           />
                         );
                       })}
@@ -27926,6 +29480,12 @@ type FabNexusProps = {
   useBlackSurface?: boolean;
   markTimelineNexus?: boolean;
   popupContentRef?: RefObject<HTMLDivElement | null>;
+  popupMode?: FabNexusMode;
+  onOpenPriorityEditor?: () => void;
+  priorityEditorProps?: PriorityEditorClientProps | null;
+  isPriorityEditorLoading?: boolean;
+  priorityEditorError?: string | null;
+  onRetryPriorityEditor?: () => void;
   embeddedExpanded?: boolean;
   onEmbeddedExpandedChange?: (expanded: boolean) => void;
   inputRef?: RefObject<HTMLInputElement | null>;
@@ -27966,6 +29526,12 @@ function FabNexus({
   useBlackSurface = false,
   markTimelineNexus = false,
   popupContentRef,
+  popupMode = "events",
+  onOpenPriorityEditor,
+  priorityEditorProps = null,
+  isPriorityEditorLoading = false,
+  priorityEditorError = null,
+  onRetryPriorityEditor,
   embeddedExpanded = false,
   onEmbeddedExpandedChange,
   inputRef,
@@ -27973,6 +29539,7 @@ function FabNexus({
 }: FabNexusProps) {
   const [showControls, setShowControls] = useState(false);
   const [popupAdjustOpen, setPopupAdjustOpen] = useState(false);
+  const [popupPriorityAdjustOpen, setPopupPriorityAdjustOpen] = useState(false);
   const [embeddedAdjustOpen, setEmbeddedAdjustOpen] = useState(false);
   const [popupMonumentPillsOpen, setPopupMonumentPillsOpen] = useState(false);
   const [popupSkillPillsOpen, setPopupSkillPillsOpen] = useState(false);
@@ -28048,13 +29615,18 @@ function FabNexus({
   const showFilterPillControls =
     showPopupFilterPills || showEmbeddedFilterPills;
   const shouldShowPopupAdjustments =
-    showToolbar && shouldUsePopupSizing && popupExpanded;
+    showToolbar &&
+    shouldUsePopupSizing &&
+    popupExpanded &&
+    popupMode !== "priorityEditor";
   const shouldShowEmbeddedAdjustments = showToolbar && isEmbedded;
   const hasActiveFilter =
     query.trim().length > 0 ||
     Boolean(filterMonumentId) ||
     Boolean(filterSkillId) ||
     eventTypeValue !== "ALL";
+  const showPopupPriorityEditor =
+    shouldUsePopupSizing && popupExpanded && popupMode === "priorityEditor";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarSortSelectClass = cn(toolbarSelectClass, "rounded-md");
@@ -28175,8 +29747,17 @@ function FabNexus({
   useEffect(() => {
     if (!shouldUsePopupSizing || !popupExpanded) {
       setPopupAdjustOpen(false);
+      setPopupPriorityAdjustOpen(false);
     }
   }, [popupExpanded, shouldUsePopupSizing]);
+
+  useEffect(() => {
+    if (popupMode === "priorityEditor") {
+      setPopupAdjustOpen(false);
+      return;
+    }
+    setPopupPriorityAdjustOpen(false);
+  }, [popupMode]);
 
   useEffect(() => {
     if (!shouldShowEmbeddedAdjustments) {
@@ -28583,7 +30164,7 @@ function FabNexus({
               showToolbar &&
                 shouldUsePopupSizing &&
                 popupExpanded &&
-                "pr-[5.75rem]",
+                (onOpenPriorityEditor ? "pr-[8.25rem]" : "pr-[5.75rem]"),
             )}
             aria-label="Search NEXUS"
           />
@@ -28617,7 +30198,7 @@ function FabNexus({
                   title={embeddedExpanded ? "Collapse Nexus" : "Expand Nexus"}
                   onClick={() => {
                     void hapticSnap();
-                    onEmbeddedExpandedChange(!embeddedExpanded);
+                    onEmbeddedExpandedChange?.(!embeddedExpanded);
                   }}
                   className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
                 >
@@ -28634,20 +30215,60 @@ function FabNexus({
               {popupExpanded ? (
                 <button
                   type="button"
-                  aria-label="Toggle Nexus adjustments"
-                  aria-expanded={popupAdjustOpen}
-                  aria-controls="fab-nexus-adjust-controls"
-                  title="Toggle Nexus adjustments"
+                  aria-label={
+                    popupMode === "priorityEditor"
+                      ? "Toggle Priority Editor adjustments"
+                      : "Toggle Nexus adjustments"
+                  }
+                  aria-expanded={
+                    popupMode === "priorityEditor"
+                      ? popupPriorityAdjustOpen
+                      : popupAdjustOpen
+                  }
+                  aria-controls={
+                    popupMode === "priorityEditor"
+                      ? "priority-adjust-panel"
+                      : "fab-nexus-adjust-controls"
+                  }
+                  title={
+                    popupMode === "priorityEditor"
+                      ? "Toggle Priority Editor adjustments"
+                      : "Toggle Nexus adjustments"
+                  }
                   onClick={() => {
                     void hapticSnap();
+                    if (popupMode === "priorityEditor") {
+                      setPopupPriorityAdjustOpen((prev) => !prev);
+                      return;
+                    }
                     setPopupAdjustOpen((prev) => !prev);
                   }}
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60",
-                    popupAdjustOpen && "border-white/25 bg-white/10 text-white",
+                    ((popupMode === "priorityEditor"
+                      ? popupPriorityAdjustOpen
+                      : popupAdjustOpen) ||
+                      (popupMode !== "priorityEditor" && hasActiveFilter)) &&
+                      "border-white/25 bg-white/10 text-white",
                   )}
                 >
                   <Filter className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+              {popupExpanded && onOpenPriorityEditor ? (
+                <button
+                  type="button"
+                  aria-label="Open Priority Editor"
+                  aria-pressed={popupMode === "priorityEditor"}
+                  title="Open Priority Editor"
+                  onClick={onOpenPriorityEditor}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60",
+                    popupMode === "priorityEditor" &&
+                      "border-white/25 bg-white/10 text-white",
+                  )}
+                >
+                  <ArrowUpNarrowWide className="h-4 w-4" aria-hidden="true" />
                 </button>
               ) : null}
               <button
@@ -28742,21 +30363,53 @@ function FabNexus({
       <div
         className={cn(
           "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-5 [-webkit-overflow-scrolling:touch]",
-          (shouldShowPopupAdjustments && popupAdjustOpen) ||
-            (shouldShowEmbeddedAdjustments && embeddedAdjustOpen)
-            ? "pt-1.5"
-            : "pt-3",
-          isEmbedded
-            ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
-            : shouldUsePopupSizing
-              ? "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
-              : "pb-3",
+          showPopupPriorityEditor
+            ? "px-0 pb-0 pt-0"
+            : (shouldShowPopupAdjustments && popupAdjustOpen) ||
+                (shouldShowEmbeddedAdjustments && embeddedAdjustOpen)
+              ? "pt-1.5"
+              : "pt-3",
+          !showPopupPriorityEditor &&
+            (isEmbedded
+              ? "pb-[calc(5rem+env(safe-area-inset-bottom,0px))]"
+              : shouldUsePopupSizing
+                ? "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
+                : "pb-3"),
         )}
         data-fab-nexus-scroll="true"
         style={{ touchAction: "pan-y" }}
-        onScroll={handleScroll}
+        onScroll={showPopupPriorityEditor ? undefined : handleScroll}
       >
-          {isSearching && !hasResults ? (
+          {showPopupPriorityEditor ? (
+            priorityEditorProps ? (
+              <PriorityEditorClient
+                {...priorityEditorProps}
+                variant="embedded"
+                adjustOpen={popupPriorityAdjustOpen}
+                onAdjustOpenChange={setPopupPriorityAdjustOpen}
+              />
+            ) : priorityEditorError ? (
+              <div className="mx-4 mt-4 rounded-xl border border-red-500/20 bg-red-900/40 px-4 py-4 text-center text-sm text-red-100">
+                <div>{priorityEditorError}</div>
+                <button
+                  type="button"
+                  onClick={onRetryPriorityEditor}
+                  className="mt-3 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/30 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <div className="flex h-32 items-center justify-center gap-2 text-sm text-white/60">
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                <span>
+                  {isPriorityEditorLoading
+                    ? "Loading Priority Editor"
+                    : "Opening Priority Editor"}
+                </span>
+              </div>
+            )
+          ) : isSearching && !hasResults ? (
             <div className="flex h-32 items-center justify-center text-white/60">
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
             </div>
