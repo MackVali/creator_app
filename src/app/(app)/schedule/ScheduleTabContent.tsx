@@ -190,6 +190,11 @@ import {
   showCreatorXpSurge,
   showScheduledEventCreatorXpSurge,
 } from "@/components/xp/CreatorXpSurgeHud";
+import {
+  PRIORITY_LABELS,
+  PRIORITY_ORDER,
+  type PriorityBucketId,
+} from "./priorities/utils";
 
 const DEBUG_DAY_SHIFT = true;
 
@@ -252,7 +257,7 @@ const QUICK_CREATE_EVENT_MOVE_CANCEL_PX = 28;
 const QUICK_CREATE_EVENT_DIRECTION_CANCEL_BIAS_PX = 8;
 const QUICK_CREATE_EVENT_FORCE_CANCEL_PX = 48;
 const QUICK_CREATE_INTERACTION_SELECTOR =
-  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory], [data-quick-create-duration-picker]";
+  "[data-quick-create-draft], [data-quick-create-skill-picker], [data-quick-create-keyboard-accessory], [data-quick-create-duration-picker], [data-quick-create-priority-picker]";
 const UNIFIED_EVENT_SHEET_SELECTOR = "[data-unified-event-sheet]";
 const QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX = 56;
 const QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX = 8;
@@ -300,6 +305,22 @@ const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
 const TIMELINE_OVERLAY_STACK_STEP = 20;
 const SCHEDULE_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
+
+const QUICK_CREATE_PRIORITY_SYMBOLS: Record<PriorityBucketId, string> = {
+  "ULTRA-CRITICAL": "⚠️",
+  CRITICAL: "!!!",
+  HIGH: "!!",
+  MEDIUM: "!",
+  LOW: "",
+  NO: "",
+};
+
+const QUICK_CREATE_PRIORITY_OPTIONS = PRIORITY_ORDER.map((priority) => ({
+  id: priority,
+  label: PRIORITY_LABELS[priority],
+  symbol: QUICK_CREATE_PRIORITY_SYMBOLS[priority],
+}));
+const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
 
 function getTimelineHabitEventBackground(normalizedHabitType: string) {
   if (normalizedHabitType === "CHORE") return TIMELINE_CHORE_EVENT_BACKGROUND;
@@ -502,6 +523,8 @@ type QuickCreateDraftEvent = {
   skillId: string | null;
   skillName: string | null;
   relationIcon: string | null;
+  priorityId?: PriorityBucketId | null;
+  priorityLabel?: string | null;
   prioritySymbol?: string;
   energyLevel?: FlameLevel;
 };
@@ -1045,7 +1068,7 @@ function ScheduleMyListSheet({
           "pointer-events-auto absolute left-1/2 top-0 flex h-6 w-16 -translate-x-1/2 items-center justify-center rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35",
           open
             ? "-translate-y-[1.35rem]"
-            : "-translate-y-[calc(1.35rem+env(safe-area-inset-bottom,0px)+0.25rem)]"
+            : "-translate-y-[calc(1.35rem+0.25rem)]"
         )}
       >
         <ChevronUp
@@ -3980,10 +4003,13 @@ export default function ScheduleTabContent({
   const [quickCreateSkillSearch, setQuickCreateSkillSearch] = useState("");
   const [isQuickCreateDurationPickerOpen, setIsQuickCreateDurationPickerOpen] =
     useState(false);
+  const [isQuickCreatePriorityPickerOpen, setIsQuickCreatePriorityPickerOpen] =
+    useState(false);
   const [quickCreateKeyboardInset, setQuickCreateKeyboardInset] = useState(0);
   const quickCreateDraftEventRef = useRef<QuickCreateDraftEvent | null>(null);
   const quickCreateDraftCardRef = useRef<HTMLDivElement | null>(null);
   const quickCreateSkillPickerRef = useRef<HTMLDivElement | null>(null);
+  const quickCreatePriorityPickerRef = useRef<HTMLDivElement | null>(null);
   const quickCreateKeyboardAccessoryRef = useRef<HTMLDivElement | null>(null);
   const quickCreateDraftInputRef = useRef<HTMLInputElement | null>(null);
   const quickCreateDraftCreatedAtRef = useRef<number | null>(null);
@@ -9673,10 +9699,12 @@ export default function ScheduleTabContent({
       }
       const card = quickCreateDraftCardRef.current;
       const picker = quickCreateSkillPickerRef.current;
+      const priorityPicker = quickCreatePriorityPickerRef.current;
       const accessory = quickCreateKeyboardAccessoryRef.current;
       return (
         (!!card && card.contains(target)) ||
         (!!picker && picker.contains(target)) ||
+        (!!priorityPicker && priorityPicker.contains(target)) ||
         (!!accessory && accessory.contains(target))
       );
     },
@@ -9700,6 +9728,7 @@ export default function ScheduleTabContent({
     setQuickCreateSkillPickerAnchor("card");
     setQuickCreateSkillSearch("");
     setIsQuickCreateDurationPickerOpen(false);
+    setIsQuickCreatePriorityPickerOpen(false);
     quickCreateDraftEventRef.current = null;
     quickCreateDragRef.current = null;
     quickCreateResizeSessionRef.current = null;
@@ -9718,17 +9747,36 @@ export default function ScheduleTabContent({
     stopQuickCreateResizeTouchSuppression,
   ]);
 
-  const updateQuickCreatePrioritySymbol = useCallback((value: string) => {
-    const draft = quickCreateDraftEventRef.current;
-    if (!draft) return;
-    const nextDraft: QuickCreateDraftEvent = {
-      ...draft,
-      prioritySymbol: value.slice(0, 4),
-    };
-    setQuickCreateDraftEvent(nextDraft);
-    quickCreateDraftEventRef.current = nextDraft;
+  const toggleQuickCreatePriorityPicker = useCallback(() => {
     quickCreateDraftPointerInsideRef.current = true;
+    setIsQuickCreateSkillPickerOpen(false);
+    setIsQuickCreateDurationPickerOpen(false);
+    setIsQuickCreatePriorityPickerOpen((open) => !open);
   }, []);
+
+  const selectQuickCreatePriority = useCallback(
+    (priorityId: PriorityBucketId) => {
+      const draft = quickCreateDraftEventRef.current;
+      if (!draft) return;
+      const option =
+        QUICK_CREATE_PRIORITY_OPTIONS.find(
+          (candidate) => candidate.id === priorityId
+        ) ?? QUICK_CREATE_PRIORITY_OPTIONS[0];
+      if (!option) return;
+      const nextDraft: QuickCreateDraftEvent = {
+        ...draft,
+        priorityId: option.id,
+        priorityLabel: option.label,
+        prioritySymbol: option.symbol,
+      };
+      setQuickCreateDraftEvent(nextDraft);
+      quickCreateDraftEventRef.current = nextDraft;
+      quickCreateDraftPointerInsideRef.current = true;
+      setIsQuickCreatePriorityPickerOpen(false);
+      focusQuickCreateDraftInput();
+    },
+    [focusQuickCreateDraftInput]
+  );
 
   const cycleQuickCreateEnergy = useCallback(() => {
     const draft = quickCreateDraftEventRef.current;
@@ -9753,6 +9801,7 @@ export default function ScheduleTabContent({
   const toggleQuickCreateDurationPicker = useCallback(() => {
     quickCreateDraftPointerInsideRef.current = true;
     setIsQuickCreateSkillPickerOpen(false);
+    setIsQuickCreatePriorityPickerOpen(false);
     setIsQuickCreateDurationPickerOpen((open) => !open);
   }, []);
 
@@ -10397,6 +10446,7 @@ export default function ScheduleTabContent({
     (anchor: "card" | "accessory") => {
       quickCreateDraftPointerInsideRef.current = true;
       setIsQuickCreateDurationPickerOpen(false);
+      setIsQuickCreatePriorityPickerOpen(false);
       setQuickCreateSkillSearch("");
       setQuickCreateSkillPickerAnchor(anchor);
       setIsQuickCreateSkillPickerOpen((open) =>
@@ -10554,6 +10604,12 @@ export default function ScheduleTabContent({
           focusQuickCreateDraftInput();
           return;
         }
+        if (isQuickCreatePriorityPickerOpen) {
+          event.preventDefault();
+          setIsQuickCreatePriorityPickerOpen(false);
+          focusQuickCreateDraftInput();
+          return;
+        }
         if (isQuickCreateSkillPickerOpen) {
           event.preventDefault();
           setIsQuickCreateSkillPickerOpen(false);
@@ -10569,6 +10625,7 @@ export default function ScheduleTabContent({
     cancelQuickCreateDraft,
     focusQuickCreateDraftInput,
     isQuickCreateDurationPickerOpen,
+    isQuickCreatePriorityPickerOpen,
     isQuickCreateSkillPickerOpen,
     quickCreateDraftEvent,
   ]);
@@ -14017,11 +14074,29 @@ export default function ScheduleTabContent({
     : QUICK_CREATE_EVENT_DURATION_MIN;
   const quickCreateDraftEnergyLevel =
     quickCreateDraftEvent?.energyLevel ?? "MEDIUM";
+  const quickCreateSelectedPriority = quickCreateDraftEvent?.priorityId
+    ? QUICK_CREATE_PRIORITY_OPTIONS.find(
+        (option) => option.id === quickCreateDraftEvent.priorityId
+      )
+    : null;
+  const quickCreatePriorityButtonSymbol =
+    quickCreateSelectedPriority?.symbol ||
+    QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+  const quickCreatePriorityButtonLabel =
+    quickCreateSelectedPriority?.label ?? "Priority";
+  const quickCreatePriorityButtonText = quickCreateSelectedPriority
+    ? quickCreatePriorityButtonSymbol === QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL
+      ? quickCreateSelectedPriority.id === "NO"
+        ? "No"
+        : quickCreateSelectedPriority.label
+      : quickCreatePriorityButtonSymbol
+    : QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
 
   const quickCreateKeyboardAccessory =
     quickCreateDraftEvent &&
     (quickCreateTitleFocused ||
       isQuickCreateSkillPickerOpen ||
+      isQuickCreatePriorityPickerOpen ||
       isQuickCreateDurationPickerOpen) &&
     typeof document !== "undefined"
       ? createPortal(
@@ -14030,6 +14105,67 @@ export default function ScheduleTabContent({
             quickCreateSkillPickerAnchor === "accessory"
               ? renderQuickCreateSkillPicker("accessory")
               : null}
+            {isQuickCreatePriorityPickerOpen ? (
+              <div
+                ref={quickCreatePriorityPickerRef}
+                data-quick-create-priority-picker="true"
+                className="fixed inset-x-3 z-[2147483646] rounded-[1.15rem] border border-white/10 bg-zinc-950/92 p-2 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl md:hidden"
+                style={{
+                  bottom:
+                    quickCreateKeyboardInset +
+                    QUICK_CREATE_KEYBOARD_ACCESSORY_HEIGHT_PX +
+                    QUICK_CREATE_KEYBOARD_ACCESSORY_GAP_PX,
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                  quickCreateDraftPointerInsideRef.current = true;
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="max-h-[min(17rem,calc(100dvh-12rem))] touch-pan-y overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch]">
+                  <div className="grid gap-1">
+                    {QUICK_CREATE_PRIORITY_OPTIONS.map((option) => {
+                      const selected =
+                        quickCreateDraftEvent.priorityId === option.id;
+                      const symbol =
+                        option.symbol || QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            selectQuickCreatePriority(option.id);
+                          }}
+                          className={clsx(
+                            "flex h-9 w-full items-center gap-2 rounded-full border px-2.5 text-left text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                            selected
+                              ? "border-white/22 bg-white/[0.12] text-white"
+                              : "border-transparent bg-transparent text-white/70 hover:bg-white/[0.08] hover:text-white"
+                          )}
+                        >
+                          <span className="flex h-6 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/30 text-[11px] font-black leading-none text-white/78">
+                            {symbol}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {option.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {isQuickCreateDurationPickerOpen ? (
               <div
                 data-quick-create-duration-picker="true"
@@ -14136,19 +14272,23 @@ export default function ScheduleTabContent({
                   ? (quickCreateDraftEvent.relationIcon ?? "✦")
                   : "+"}
               </button>
-              <input
-                value={quickCreateDraftEvent.prioritySymbol ?? ""}
-                onChange={(event) =>
-                  updateQuickCreatePrioritySymbol(event.target.value)
-                }
-                onFocus={() => {
-                  quickCreateDraftPointerInsideRef.current = true;
-                }}
+              <button
+                type="button"
+                aria-label={`Choose priority: ${quickCreatePriorityButtonLabel}`}
+                aria-expanded={isQuickCreatePriorityPickerOpen}
+                className={clsx(
+                  "flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full border px-2 text-[11px] font-black leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                  isQuickCreatePriorityPickerOpen
+                    ? "border-white/24 bg-white/[0.14] text-white"
+                    : "border-white/10 bg-black/25 text-white/72 hover:bg-white/[0.08] hover:text-white"
+                )}
                 onPointerDown={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
-                  quickCreateDraftPointerInsideRef.current = true;
+                  toggleQuickCreatePriorityPicker();
                 }}
                 onMouseDown={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   quickCreateDraftPointerInsideRef.current = true;
                 }}
@@ -14156,12 +14296,12 @@ export default function ScheduleTabContent({
                   event.stopPropagation();
                   quickCreateDraftPointerInsideRef.current = true;
                 }}
-                maxLength={4}
-                inputMode="text"
-                aria-label="Priority marker"
-                placeholder="◇"
-                className="h-8 w-7 shrink-0 bg-transparent text-center text-sm font-semibold leading-none text-white/80 caret-white/80 outline-none placeholder:text-white/32 focus:text-white"
-              />
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span className="max-w-10 truncate">
+                  {quickCreatePriorityButtonText}
+                </span>
+              </button>
               <div className="min-w-0 flex-1 overflow-hidden">
                 <div className="truncate text-sm font-semibold leading-tight text-white">
                   {quickCreateDraftEvent.title.trim() || "New Event"}
@@ -14224,7 +14364,7 @@ export default function ScheduleTabContent({
                 <FlameEmber
                   level={quickCreateDraftEnergyLevel}
                   size="xs"
-                  className="pointer-events-none"
+                  className="pointer-events-none scale-[1.18]"
                 />
               </button>
             </div>

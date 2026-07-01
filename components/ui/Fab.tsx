@@ -178,6 +178,30 @@ type UnifiedEventNotificationTiming =
   | "ON_THE_DAY"
   | "ONE_DAY_BEFORE"
   | "ONE_WEEK_BEFORE";
+
+const UNIFIED_EVENT_TITLE_PLACEHOLDERS = [
+  "Dentist appointment",
+  "Client call",
+  "Studio session",
+  "Dinner with family",
+  "Flight to Austin",
+  "Rent due",
+  "Birthday dinner",
+  "Consultation",
+] as const;
+
+const UNIFIED_TASK_TITLE_PLACEHOLDERS = [
+  "Send invoice",
+  "Edit video",
+  "Order supplies",
+  "Clean the desk",
+  "Review roadmap",
+  "Book haircut",
+  "Write hook",
+  "Plan workout",
+] as const;
+
+const UNIFIED_TITLE_PLACEHOLDER_ROTATION_MS = 3200;
 type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
 type AddEventSubAction = {
   id: string;
@@ -5865,6 +5889,26 @@ export function Fab({
   > | null>(null);
   const projectTaskCompletingIdsRef = useRef<Set<string>>(new Set());
   const [habitName, setHabitName] = useState("");
+  const [
+    unifiedTitlePlaceholderIndex,
+    setUnifiedTitlePlaceholderIndex,
+  ] = useState(0);
+  const shouldRotateUnifiedTitlePlaceholder =
+    isUnifiedEventSheetOpen &&
+    ((unifiedCreationMode === "EVENTS" &&
+      unifiedEventTitle.trim().length === 0) ||
+      (unifiedCreationMode === "TASKS" &&
+        unifiedEventType === "TASK" &&
+        taskName.trim().length === 0));
+  useEffect(() => {
+    if (!shouldRotateUnifiedTitlePlaceholder) return;
+
+    const intervalId = window.setInterval(() => {
+      setUnifiedTitlePlaceholderIndex((current) => current + 1);
+    }, UNIFIED_TITLE_PLACEHOLDER_ROTATION_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [shouldRotateUnifiedTitlePlaceholder]);
   const [habitType, setHabitType] = useState(defaultHabitType);
   const [habitRecurrence, setHabitRecurrence] = useState(
     defaultHabitRecurrence,
@@ -23342,6 +23386,23 @@ export function Fab({
         : isTask
           ? setTaskName
           : setHabitName;
+    const titleSuggestion =
+      titleValue.length === 0 && isEventsMode
+        ? UNIFIED_EVENT_TITLE_PLACEHOLDERS[
+            unifiedTitlePlaceholderIndex %
+              UNIFIED_EVENT_TITLE_PLACEHOLDERS.length
+          ]
+        : titleValue.length === 0 && isTask
+          ? UNIFIED_TASK_TITLE_PLACEHOLDERS[
+              unifiedTitlePlaceholderIndex %
+                UNIFIED_TASK_TITLE_PLACEHOLDERS.length
+            ]
+          : null;
+    const titlePlaceholder = titleSuggestion
+      ? ""
+      : isEventsMode
+        ? "Title"
+        : "Event name";
     const energyValue = isProject
       ? projectEnergy
       : isTask
@@ -27465,7 +27526,7 @@ export function Fab({
 
                   <div
                     className={cn(
-                      "border border-zinc-700/30 bg-zinc-800/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors focus-within:border-zinc-500/45 focus-within:bg-zinc-800/34",
+                      "relative border border-zinc-700/30 bg-zinc-800/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors focus-within:border-zinc-500/45 focus-within:bg-zinc-800/34",
                       isTask
                         ? "rounded-[16px] px-3 py-2"
                         : "rounded-[18px] px-3.5 py-2.5",
@@ -27477,20 +27538,52 @@ export function Fab({
                     >
                       Event title
                     </Label>
-                    <Input
-                      id="unified-event-title"
-                      ref={
-                        isProject
-                          ? projectNameInputRef
-                          : isTask
-                            ? taskNameInputRef
-                            : habitNameInputRef
-                      }
-                      value={titleValue}
-                      onChange={(event) => titleSetter(event.target.value)}
-                      placeholder={isEventsMode ? "Title" : "Event name"}
-                      className="h-auto rounded-none !border-0 !bg-transparent px-0 py-0 text-[1.45rem] font-medium leading-tight text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:!border-0 focus-visible:!border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none sm:text-[1.65rem]"
-                    />
+                    <div className="relative">
+                      <AnimatePresence initial={false}>
+                        {titleSuggestion ? (
+                          <motion.span
+                            key={titleSuggestion}
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 flex items-center text-[1.45rem] font-medium leading-tight text-zinc-500 sm:text-[1.65rem]"
+                            initial={
+                              prefersReducedMotion
+                                ? { opacity: 0 }
+                                : { opacity: 0, y: 1, filter: "blur(2px)" }
+                            }
+                            animate={
+                              prefersReducedMotion
+                                ? { opacity: 1 }
+                                : { opacity: 1, y: 0, filter: "blur(0px)" }
+                            }
+                            exit={
+                              prefersReducedMotion
+                                ? { opacity: 0 }
+                                : { opacity: 0, y: -1, filter: "blur(2px)" }
+                            }
+                            transition={{
+                              duration: prefersReducedMotion ? 0.08 : 0.2,
+                              ease: "easeOut",
+                            }}
+                          >
+                            {titleSuggestion}
+                          </motion.span>
+                        ) : null}
+                      </AnimatePresence>
+                      <Input
+                        id="unified-event-title"
+                        ref={
+                          isProject
+                            ? projectNameInputRef
+                            : isTask
+                              ? taskNameInputRef
+                              : habitNameInputRef
+                        }
+                        value={titleValue}
+                        onChange={(event) => titleSetter(event.target.value)}
+                        placeholder={titlePlaceholder}
+                        className="relative h-auto rounded-none !border-0 !bg-transparent px-0 py-0 text-[1.45rem] font-medium leading-tight text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:!border-0 focus-visible:!border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none sm:text-[1.65rem]"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid gap-2">
