@@ -54,7 +54,9 @@ function arraysEqual(a: number[], b: number[]) {
 function resolveWindowKind(value: string | null | undefined): WindowKind {
   if (!value) return "DEFAULT";
   const normalized = value.toUpperCase();
-  return normalized === "BREAK" || normalized === "PRACTICE" ? normalized : "DEFAULT";
+  return normalized === "BREAK" || normalized === "MEAL" || normalized === "PRACTICE"
+    ? normalized
+    : "DEFAULT";
 }
 
 function mergeCrossMidnightWindows(rows: SupabaseWindowRow[]): WindowsStateItem[] {

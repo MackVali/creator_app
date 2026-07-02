@@ -57,7 +57,7 @@ export type AiSchedulerOp =
       start_local: string;
       end_local: string;
       constraints?: Record<string, string>;
-      block_type?: "FOCUS" | "PRACTICE" | "BREAK";
+      block_type?: "FOCUS" | "PRACTICE" | "BREAK" | "MEAL";
       energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
       days?: number[];
     };

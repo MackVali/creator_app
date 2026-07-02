@@ -202,8 +202,8 @@ export function describeEmptyWindowReport({
     return { summary, details: detailItems }
   }
 
-  if (window.window_kind === 'BREAK') {
-    return finalizeReport('Break', details, { includeConstraints: false })
+  if (window.window_kind === 'BREAK' || window.window_kind === 'MEAL') {
+    return finalizeReport(window.window_kind === 'MEAL' ? 'Meal' : 'Break', details, { includeConstraints: false })
   }
 
   const effectiveSegmentStart = segmentStart ?? windowStart

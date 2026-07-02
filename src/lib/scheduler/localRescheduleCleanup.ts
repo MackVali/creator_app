@@ -153,6 +153,10 @@ function windowContainsInstance(
   );
 }
 
+function isBreakLikeWindow(window: LocalRescheduleCleanupWindow) {
+  return window.window_kind === "BREAK" || window.window_kind === "MEAL";
+}
+
 function findContainingBreakWindowInWindows(
   instance: LocalRescheduleCleanupInstance,
   windows: LocalRescheduleCleanupWindow[],
@@ -162,7 +166,7 @@ function findContainingBreakWindowInWindows(
   return (
     windows.find(
       (window) =>
-        window.window_kind === "BREAK" &&
+        isBreakLikeWindow(window) &&
         windowContainsInstance(instance, window, localDay, timeZone)
     ) ?? null
   );
@@ -176,7 +180,7 @@ function findContainingBreakWindowByExplicitBounds(
 ) {
   for (const windows of windowsByDayKey.values()) {
     const match = windows.find((window) => {
-      if (window.window_kind !== "BREAK") return false;
+      if (!isBreakLikeWindow(window)) return false;
       if (
         typeof window.dayTypeStartUtcMs !== "number" ||
         !Number.isFinite(window.dayTypeStartUtcMs) ||

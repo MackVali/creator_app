@@ -28,6 +28,7 @@ import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
 import { ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { Icon } from "@iconify/react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -305,6 +306,8 @@ const SCHEDULE_SCHEDULER_RUNNING_EVENT =
 const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
 const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
   "schedule:open-quick-create-task-details";
+const SCHEDULE_OPEN_NUTRITION_MEAL_EVENT =
+  "schedule:open-nutrition-meal-event";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
@@ -682,7 +685,7 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
 };
 
 const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
-type TimeBlockConstraintKind = "FOCUS" | "BREAK" | "PRACTICE";
+type TimeBlockConstraintKind = "FOCUS" | "BREAK" | "PRACTICE" | "MEAL";
 
 type TimeBlockConstraintDraft = {
   block: RepoWindow;
@@ -700,11 +703,13 @@ type TimeBlockConstraintDraft = {
 const TIME_BLOCK_CONSTRAINT_KINDS: TimeBlockConstraintKind[] = [
   "FOCUS",
   "BREAK",
+  "MEAL",
   "PRACTICE",
 ];
 const TIME_BLOCK_CONSTRAINT_KIND_LABEL: Record<TimeBlockConstraintKind, string> = {
   FOCUS: "Focus",
   BREAK: "Break",
+  MEAL: "Meal",
   PRACTICE: "Practice",
 };
 const TIME_BLOCK_CONSTRAINT_FLAME_LEVELS = ENERGY.LIST as FlameLevel[];
@@ -732,6 +737,7 @@ function normalizeTimeBlockConstraintKind(
 ): TimeBlockConstraintKind {
   const normalized = (value ?? "").trim().toUpperCase();
   if (normalized === "BREAK") return "BREAK";
+  if (normalized === "MEAL") return "MEAL";
   if (normalized === "PRACTICE") return "PRACTICE";
   return "FOCUS";
 }
@@ -11462,6 +11468,29 @@ export default function ScheduleTabContent({
                   typeof w.label === "string" &&
                   w.label.trim().length > 0 &&
                   segmentHeightPx >= 24;
+                const isMealTimeBlock = w.window_kind === "MEAL";
+                const stopNutritionMealGesture = (
+                  event: ReactPointerEvent<HTMLButtonElement>
+                ) => {
+                  event.stopPropagation();
+                };
+                const openNutritionMealLog = (
+                  event: ReactMouseEvent<HTMLButtonElement>
+                ) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (typeof window === "undefined") return;
+                  window.dispatchEvent(
+                    new CustomEvent(SCHEDULE_OPEN_NUTRITION_MEAL_EVENT, {
+                      detail: {
+                        title: w.label?.trim() || "Meal",
+                        date: dayViewDateKey,
+                        startTime: w.start_local,
+                        endTime: w.end_local,
+                      },
+                    }),
+                  );
+                };
                 return (
                   <div
                     key={`${w.id}-${index}`}
@@ -11486,6 +11515,22 @@ export default function ScheduleTabContent({
                           availableHeight={segmentHeightPx}
                         />
                       )
+                    ) : null}
+                    {isMealTimeBlock && index === 0 && segmentHeightPx >= 28 ? (
+                      <button
+                        type="button"
+                        aria-label={`Log nutrition for ${w.label || "meal"}`}
+                        title="Log nutrition"
+                        className="ml-1 mt-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-zinc-700/80 bg-black/45 text-zinc-300 shadow-sm transition hover:border-zinc-500 hover:bg-zinc-900 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
+                        onPointerDown={stopNutritionMealGesture}
+                        onClick={openNutritionMealLog}
+                      >
+                        <Icon
+                          icon="game-icons:stomach"
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                      </button>
                     ) : null}
                   </div>
                 );

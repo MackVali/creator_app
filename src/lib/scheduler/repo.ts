@@ -181,9 +181,14 @@ function normalizeStageValue(
   return trimmed.length > 0 ? trimmed.toUpperCase() : fallback;
 }
 
-export type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE";
+export type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE" | "MEAL";
 
-const WINDOW_KIND_SET = new Set<WindowKind>(["DEFAULT", "BREAK", "PRACTICE"]);
+const WINDOW_KIND_SET = new Set<WindowKind>([
+  "DEFAULT",
+  "BREAK",
+  "PRACTICE",
+  "MEAL",
+]);
 
 export type WindowSkillDisplay = {
   id: string;
@@ -790,6 +795,7 @@ type TimeBlockRow = Database["public"]["Tables"] extends {
 export const normalizeBlockType = (value?: string | null): WindowKind => {
   const raw = typeof value === "string" ? value.toUpperCase().trim() : "FOCUS";
   if (raw === "BREAK") return "BREAK";
+  if (raw === "MEAL") return "MEAL";
   if (raw === "PRACTICE") return "PRACTICE";
   return "DEFAULT";
 };

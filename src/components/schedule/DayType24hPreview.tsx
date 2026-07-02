@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 const HOURS = Array.from({ length: 25 }, (_, idx) => idx);
 
-export type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
+export type BlockType = "FOCUS" | "BREAK" | "MEAL" | "PRACTICE";
 
 export type DayType24hPreviewBlock = {
   id?: string;
@@ -207,7 +207,7 @@ export function DayType24hPreview({
           {previewSegments.map((segment) => {
             const heightPct = ((segment.endMin - segment.startMin) / 1440) * 100;
             const topPct = (segment.startMin / 1440) * 100;
-            const isBreak = segment.blockType === "BREAK";
+            const isBreak = segment.blockType === "BREAK" || segment.blockType === "MEAL";
             const isPractice = segment.blockType === "PRACTICE";
             const isConstrained = !segment.overlapped && segment.hasConstraints;
             const isSelected = Boolean(

@@ -8,4 +8,4 @@ alter table public.day_type_time_blocks
 
 alter table public.day_type_time_blocks
   add constraint day_type_time_blocks_block_type_chk
-    check (block_type in ('FOCUS','BREAK','PRACTICE'));
+    check (block_type in ('FOCUS','BREAK','MEAL','PRACTICE'));

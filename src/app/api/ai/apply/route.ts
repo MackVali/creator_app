@@ -86,7 +86,7 @@ const NEEDS_CLARIFICATION_SCHEMA = BASE_INTENT_SCHEMA.extend({
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-const DAY_TYPE_BLOCK_TYPES = ["FOCUS", "PRACTICE", "BREAK"] as const;
+const DAY_TYPE_BLOCK_TYPES = ["FOCUS", "PRACTICE", "BREAK", "MEAL"] as const;
 const DAY_TYPE_BLOCK_ENERGY_LEVELS = [
   "NO",
   "LOW",
@@ -1485,7 +1485,7 @@ const derivePreviewCandidates = async (
               const blockType = op.block_type ?? "FOCUS";
               const energy =
                 op.energy ??
-                (blockType === "BREAK"
+                (blockType === "BREAK" || blockType === "MEAL"
                   ? "NO"
                   : blockType === "PRACTICE"
                   ? "LOW"

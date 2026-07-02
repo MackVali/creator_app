@@ -4,7 +4,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE";
+type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE" | "MEAL";
 export type HabitWindowKind = WindowKind;
 
 type WindowRow = {
@@ -28,7 +28,9 @@ export type HabitWindowSelectOption = {
 function normalizeWindowKind(value: string | null | undefined): WindowKind {
   if (!value) return "DEFAULT";
   const normalized = value.toUpperCase().trim();
-  return normalized === "BREAK" || normalized === "PRACTICE" ? normalized : "DEFAULT";
+  return normalized === "BREAK" || normalized === "PRACTICE" || normalized === "MEAL"
+    ? normalized
+    : "DEFAULT";
 }
 
 function formatTime(value: string | null) {

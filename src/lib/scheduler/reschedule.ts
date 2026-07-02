@@ -2530,7 +2530,7 @@ const doesWindowAllowHabitType = (
 ) => {
   if (!windowRecord) return true;
   const kind: WindowKind = windowRecord.window_kind ?? "DEFAULT";
-  if (kind === "BREAK") {
+  if (kind === "BREAK" || kind === "MEAL") {
     return normalizeHabitTypeValue(habit?.habitType) === "RELAXER";
   }
   if (kind === "PRACTICE") {

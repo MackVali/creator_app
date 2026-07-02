@@ -594,7 +594,8 @@ function buildStartNotificationBody(group: GroupedBlock, label: string) {
 function isBreakTimeBlock(
   block: ScheduleBlockLocalNotificationTimeBlock | null,
 ) {
-  return block?.kind?.trim().toUpperCase() === "BREAK";
+  const kind = block?.kind?.trim().toUpperCase();
+  return kind === "BREAK" || kind === "MEAL";
 }
 
 function formatEventPreview(instance: ScheduleBlockLocalNotificationInstance) {

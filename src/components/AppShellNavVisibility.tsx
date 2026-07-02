@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 
 import {
   isIndividualInboxThreadRoute,
+  isScheduleRoute,
   shouldHideBottomChrome,
 } from "@/components/appChromeVisibility";
 import AppMain from "@/components/AppMain";
@@ -36,16 +37,17 @@ export default function AppShellNavVisibility({
   const hideNav = isIndividualInboxThreadRoute(pathname);
   const hideTopNav = hideNav || isProfileViewRoute(pathname);
   const showBottomChrome = !hideNav && !shouldHideBottomChrome(pathname);
+  const showGlobalMyList =
+    showBottomChrome || (!hideNav && isScheduleRoute(pathname));
+  const isMainSchedulePage = pathname === "/schedule";
 
   return (
     <>
       {!hideTopNav && <TopNav />}
       <AppMain>{children}</AppMain>
-      {showBottomChrome && (
-        <>
-          <BottomNav />
-          <GlobalMyList />
-        </>
+      {showBottomChrome && <BottomNav />}
+      {showGlobalMyList && (
+        <GlobalMyList useFullExpandedHeight={!isMainSchedulePage} />
       )}
     </>
   );
