@@ -88,6 +88,7 @@ const BODY_DATABASE_SORT_ORDER = new Map([
   ["hydration", 1],
   ["fitness", 2],
 ]);
+const CREATOR_OPEN_NUTRITION_LOG_EVENT = "creator:open-nutrition-log";
 
 function normalizeBodyDatabaseKey(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
@@ -546,6 +547,7 @@ export default function TopNav() {
   const [isBodyPortalReady, setIsBodyPortalReady] = useState(false);
   const bodyMenuRef = useRef<HTMLDivElement | null>(null);
   const bodyMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const pendingNutritionLogOpenRef = useRef(false);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const {
     items,
@@ -615,7 +617,7 @@ export default function TopNav() {
   }, [isBodyMenuOpen]);
 
   useEffect(() => {
-    if (!supabase || shouldHideNav) {
+    if (!supabase) {
       setPinnedBodyDatabases([]);
       return;
     }
@@ -629,10 +631,10 @@ export default function TopNav() {
     };
 
     getUserEmail();
-  }, [shouldHideNav, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
-    if (!supabase || shouldHideNav || !currentUser?.id) {
+    if (!supabase || !currentUser?.id) {
       setPinnedBodyDatabases([]);
       return;
     }
@@ -685,10 +687,61 @@ export default function TopNav() {
         handlePinnedBodyDatabasesChanged,
       );
     };
-  }, [currentUser?.id, shouldHideNav, supabase]);
+  }, [currentUser?.id, supabase]);
+
+  const openPinnedBodyDatabaseQuickAdd = useCallback(
+    (database: PinnedBodyDatabase) => {
+      setIsBodyMenuOpen(false);
+      setQuickAddTarget({
+        ...database,
+        requestKey: Date.now(),
+      });
+    },
+    [],
+  );
+
+  const openPinnedNutritionLogQuickAdd = useCallback(() => {
+    const nutritionDatabase = pinnedBodyDatabases.find(
+      (database) =>
+        normalizeBodyDatabaseKey(database.systemDatabaseKey) === "nutrition" ||
+        normalizeBodyDatabaseKey(database.title) === "nutrition",
+    );
+
+    if (!nutritionDatabase || !isDefaultPinnedBodyDatabase(nutritionDatabase)) {
+      pendingNutritionLogOpenRef.current = true;
+      return;
+    }
+
+    pendingNutritionLogOpenRef.current = false;
+    openPinnedBodyDatabaseQuickAdd(nutritionDatabase);
+  }, [openPinnedBodyDatabaseQuickAdd, pinnedBodyDatabases]);
+
+  useEffect(() => {
+    if (!pendingNutritionLogOpenRef.current) return;
+
+    openPinnedNutritionLogQuickAdd();
+  }, [openPinnedNutritionLogQuickAdd]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    window.addEventListener(CREATOR_OPEN_NUTRITION_LOG_EVENT, openPinnedNutritionLogQuickAdd);
+    return () => {
+      window.removeEventListener(CREATOR_OPEN_NUTRITION_LOG_EVENT, openPinnedNutritionLogQuickAdd);
+    };
+  }, [openPinnedNutritionLogQuickAdd]);
 
   if (shouldHideNav) {
-    return null;
+    return isBodyPortalReady && quickAddTarget
+      ? createPortal(
+          <TopNavQuickAddEntrySheet
+            key={`${quickAddTarget.requestKey}:${quickAddTarget.noteId}:${quickAddTarget.databaseId}`}
+            target={quickAddTarget}
+            onClose={() => setQuickAddTarget(null)}
+          />,
+          document.body,
+        )
+      : null;
   }
 
   const isAdmin = userIsAdmin(currentUser);
@@ -705,13 +758,7 @@ export default function TopNav() {
             router.push(database.href);
           },
           onAddEntryClick: isDefaultPinnedBodyDatabase(database)
-            ? () => {
-                setIsBodyMenuOpen(false);
-                setQuickAddTarget({
-                  ...database,
-                  requestKey: Date.now(),
-                });
-              }
+            ? () => openPinnedBodyDatabaseQuickAdd(database)
             : undefined,
         }))
       : BODY_FALLBACK_ROWS.map((row) => ({
