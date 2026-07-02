@@ -306,13 +306,18 @@ const SCHEDULE_SCHEDULER_RUNNING_EVENT =
 const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
 const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
   "schedule:open-quick-create-task-details";
-const SCHEDULE_OPEN_NUTRITION_MEAL_EVENT =
-  "schedule:open-nutrition-meal-event";
+const CREATOR_OPEN_NUTRITION_LOG_EVENT =
+  "creator:open-nutrition-log";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
 const TIMELINE_OVERLAY_STACK_STEP = 20;
 const SCHEDULE_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
+
+function dispatchOpenNutritionLogEvent() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(CREATOR_OPEN_NUTRITION_LOG_EVENT));
+}
 
 function getProjectScheduleInstanceVisuals({
   heightPx,
@@ -11468,29 +11473,6 @@ export default function ScheduleTabContent({
                   typeof w.label === "string" &&
                   w.label.trim().length > 0 &&
                   segmentHeightPx >= 24;
-                const isMealTimeBlock = w.window_kind === "MEAL";
-                const stopNutritionMealGesture = (
-                  event: ReactPointerEvent<HTMLButtonElement>
-                ) => {
-                  event.stopPropagation();
-                };
-                const openNutritionMealLog = (
-                  event: ReactMouseEvent<HTMLButtonElement>
-                ) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (typeof window === "undefined") return;
-                  window.dispatchEvent(
-                    new CustomEvent(SCHEDULE_OPEN_NUTRITION_MEAL_EVENT, {
-                      detail: {
-                        title: w.label?.trim() || "Meal",
-                        date: dayViewDateKey,
-                        startTime: w.start_local,
-                        endTime: w.end_local,
-                      },
-                    }),
-                  );
-                };
                 return (
                   <div
                     key={`${w.id}-${index}`}
@@ -11515,22 +11497,6 @@ export default function ScheduleTabContent({
                           availableHeight={segmentHeightPx}
                         />
                       )
-                    ) : null}
-                    {isMealTimeBlock && index === 0 && segmentHeightPx >= 28 ? (
-                      <button
-                        type="button"
-                        aria-label={`Log nutrition for ${w.label || "meal"}`}
-                        title="Log nutrition"
-                        className="ml-1 mt-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-zinc-700/80 bg-black/45 text-zinc-300 shadow-sm transition hover:border-zinc-500 hover:bg-zinc-900 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
-                        onPointerDown={stopNutritionMealGesture}
-                        onClick={openNutritionMealLog}
-                      >
-                        <Icon
-                          icon="game-icons:stomach"
-                          className="h-3.5 w-3.5"
-                          aria-hidden="true"
-                        />
-                      </button>
                     ) : null}
                   </div>
                 );
@@ -11560,8 +11526,25 @@ export default function ScheduleTabContent({
               );
               if (visibleSegments.length === 0) return null;
 
+              const isMealTimeBlockReport = report.window.window_kind === "MEAL";
+              const stopNutritionReportShortcutGesture = (
+                event:
+                  | ReactPointerEvent<HTMLButtonElement>
+                  | ReactTouchEvent<HTMLButtonElement>
+                  | ReactMouseEvent<HTMLButtonElement>
+              ) => {
+                event.stopPropagation();
+              };
+              const openNutritionReportMealLog = (
+                event: ReactMouseEvent<HTMLButtonElement>
+              ) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dispatchOpenNutritionLogEvent();
+              };
+
               const reportContent = (
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none">
+                <div className="relative flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-transparent px-3 py-2 text-slate-50 shadow-none">
                   <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/70">
                     <FlameEmber
                       level={report.energyLabel}
@@ -11578,6 +11561,32 @@ export default function ScheduleTabContent({
                         : report.window.window_kind}
                     </span>
                   </div>
+                  {isMealTimeBlockReport ? (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <button
+                        type="button"
+                        aria-label={`Log nutrition for ${
+                          report.window.label || report.windowLabel || "meal"
+                        }`}
+                        title="Log nutrition"
+                        className="pointer-events-auto inline-flex min-h-9 min-w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1 text-zinc-700 transition hover:text-zinc-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500/70"
+                        onPointerDown={stopNutritionReportShortcutGesture}
+                        onPointerUp={stopNutritionReportShortcutGesture}
+                        onTouchStart={stopNutritionReportShortcutGesture}
+                        onTouchEnd={stopNutritionReportShortcutGesture}
+                        onClick={openNutritionReportMealLog}
+                      >
+                        <Icon
+                          icon="game-icons:stomach"
+                          className="h-4 w-4 text-zinc-500"
+                          aria-hidden="true"
+                        />
+                        <span className="text-[7px] font-semibold uppercase tracking-wide text-zinc-700">
+                          NUTRITION
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               );
 
