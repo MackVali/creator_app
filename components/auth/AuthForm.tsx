@@ -6,6 +6,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { parseSupabaseError } from "@/lib/error-handling";
 import RoleOption from "@/components/auth/RoleOption";
 import { cn } from "@/lib/utils";
+import { BloomingHexagonLoader } from "@/components/loading/BloomingHexagonLoader";
 
 // Password validation function - relaxed requirements
 const validatePassword = (password: string): string | null => {
@@ -366,6 +367,10 @@ export default function AuthForm() {
 
   return (
     <div className="relative z-10 mx-auto w-full max-w-[25rem]">
+      {tab === "signin" && loading && (
+        <BloomingHexagonLoader statusText="Syncing your system" />
+      )}
+
       {/* Header */}
       <div className="mb-6 text-center">
         <h1 className="mb-2 text-4xl font-black uppercase tracking-[0.16em] text-zinc-100 sm:text-[2.65rem]">
