@@ -164,6 +164,11 @@ export function MyListSheet({
   const sheetRootRef = useRef<HTMLElement | null>(null);
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchStartYRef = useRef<number | null>(null);
+  const editableFocusInsideSheetRef = useRef(false);
+  const focusVisibilityFrameRef = useRef<number | null>(null);
+  const focusVisibilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const lastMeasuredViewportRef = useRef<{ width: number; height: number } | null>(
     null
   );
@@ -457,7 +462,7 @@ export function MyListSheet({
           className={clsx(
             "flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent p-0 outline-none transition focus-visible:ring-2 focus-visible:ring-white/30",
             confirming
-              ? "text-emerald-200/72 hover:text-emerald-100"
+              ? "text-red-300/78 hover:text-red-200"
               : "text-white/24 hover:text-white/48"
           )}
         >
@@ -689,19 +694,88 @@ export function MyListSheet({
     );
   }, []);
 
+  const scrollActiveEditableIntoSheetView = useCallback(() => {
+    if (typeof document === "undefined") return;
+
+    const activeElement = document.activeElement;
+    const scrollElement = sheetScrollRef.current;
+    if (!(activeElement instanceof HTMLElement) || !scrollElement) return;
+    if (!sheetRootRef.current?.contains(activeElement)) return;
+    if (!activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)) return;
+
+    const elementRect = activeElement.getBoundingClientRect();
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const desiredScrollTop =
+      scrollElement.scrollTop +
+      elementRect.top -
+      scrollRect.top -
+      (scrollRect.height - elementRect.height) / 2;
+    const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
+
+    scrollElement.scrollTo({
+      top: Math.min(Math.max(desiredScrollTop, 0), Math.max(maxScrollTop, 0)),
+      behavior: "smooth",
+    });
+  }, []);
+
+  const scheduleActiveEditableVisibility = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    if (focusVisibilityFrameRef.current !== null) {
+      window.cancelAnimationFrame(focusVisibilityFrameRef.current);
+    }
+    if (focusVisibilityTimeoutRef.current !== null) {
+      clearTimeout(focusVisibilityTimeoutRef.current);
+    }
+
+    focusVisibilityFrameRef.current = window.requestAnimationFrame(() => {
+      focusVisibilityFrameRef.current = null;
+      scrollActiveEditableIntoSheetView();
+    });
+    focusVisibilityTimeoutRef.current = setTimeout(() => {
+      focusVisibilityTimeoutRef.current = null;
+      scrollActiveEditableIntoSheetView();
+    }, 180);
+  }, [scrollActiveEditableIntoSheetView]);
+
   const handleSheetFocusCapture = useCallback(
     (event: ReactFocusEvent<HTMLElement>) => {
-      if (!open || isExpanded || activeView !== "list") return;
-      if (!isMobileKeyboardFocus()) return;
-
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (!sheetRootRef.current?.contains(target)) return;
       if (!target.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)) return;
 
-      setIsExpanded(true);
+      editableFocusInsideSheetRef.current = true;
+      scheduleActiveEditableVisibility();
+
+      if (!open || activeView !== "list") return;
+      if (!isMobileKeyboardFocus()) return;
+
+      if (!isExpanded) setIsExpanded(true);
     },
-    [activeView, isExpanded, isMobileKeyboardFocus, open]
+    [
+      activeView,
+      isExpanded,
+      isMobileKeyboardFocus,
+      open,
+      scheduleActiveEditableVisibility,
+    ]
+  );
+
+  const handleSheetBlurCapture = useCallback(
+    (event: ReactFocusEvent<HTMLElement>) => {
+      const nextFocusedElement = event.relatedTarget;
+      if (
+        nextFocusedElement instanceof HTMLElement &&
+        sheetRootRef.current?.contains(nextFocusedElement) &&
+        nextFocusedElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)
+      ) {
+        return;
+      }
+
+      editableFocusInsideSheetRef.current = false;
+    },
+    []
   );
 
   const isEditableElementFocusedInsideSheet = useCallback(() => {
@@ -744,9 +818,8 @@ export function MyListSheet({
       const isKeyboardResizeInsideSheet =
         heightChanged &&
         !widthChanged &&
-        isEditableElementFocusedInsideSheet();
-
-      if (isKeyboardResizeInsideSheet) return;
+        (editableFocusInsideSheetRef.current ||
+          isEditableElementFocusedInsideSheet());
 
       lastMeasuredViewportRef.current = {
         width: viewportWidth,
@@ -779,6 +852,10 @@ export function MyListSheet({
 
         return { compact, expanded };
       });
+
+      if (isKeyboardResizeInsideSheet) {
+        scheduleActiveEditableVisibility();
+      }
     };
 
     calculateSheetHeights();
@@ -792,7 +869,55 @@ export function MyListSheet({
         calculateSheetHeights
       );
     };
-  }, [isEditableElementFocusedInsideSheet, useFullExpandedHeight]);
+  }, [
+    isEditableElementFocusedInsideSheet,
+    scheduleActiveEditableVisibility,
+    useFullExpandedHeight,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (
+        typeof window !== "undefined" &&
+        focusVisibilityFrameRef.current !== null
+      ) {
+        window.cancelAnimationFrame(focusVisibilityFrameRef.current);
+      }
+      if (focusVisibilityTimeoutRef.current !== null) {
+        clearTimeout(focusVisibilityTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open || !isExpanded || typeof document === "undefined") return;
+
+    const scrollY = window.scrollY;
+    const bodyStyle = document.body.style;
+    const previousPosition = bodyStyle.position;
+    const previousTop = bodyStyle.top;
+    const previousLeft = bodyStyle.left;
+    const previousRight = bodyStyle.right;
+    const previousWidth = bodyStyle.width;
+    const previousOverflow = bodyStyle.overflow;
+
+    bodyStyle.position = "fixed";
+    bodyStyle.top = `-${scrollY}px`;
+    bodyStyle.left = "0";
+    bodyStyle.right = "0";
+    bodyStyle.width = "100%";
+    bodyStyle.overflow = "hidden";
+
+    return () => {
+      bodyStyle.position = previousPosition;
+      bodyStyle.top = previousTop;
+      bodyStyle.left = previousLeft;
+      bodyStyle.right = previousRight;
+      bodyStyle.width = previousWidth;
+      bodyStyle.overflow = previousOverflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isExpanded, open]);
 
   useEffect(() => {
     if (!open) {
@@ -841,6 +966,7 @@ export function MyListSheet({
         event.stopPropagation();
       }}
       onFocusCapture={handleSheetFocusCapture}
+      onBlurCapture={handleSheetBlurCapture}
     >
       {!open ? (
         <button

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
+import { BloomingHexagonLoader } from "@/components/loading/BloomingHexagonLoader";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -37,7 +38,7 @@ export function ProtectedRoute({
   }, [ready, requiresPlus, user, isPlus, isReady, router]);
 
   if (!ready || !user) {
-    return null;
+    return <BloomingHexagonLoader statusText="Syncing your system" />;
   }
 
   return <>{children}</>;

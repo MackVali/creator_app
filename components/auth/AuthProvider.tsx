@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { initRevenueCatIfCapacitor } from "@/lib/revenuecat/initRevenueCat";
 import { registerCreatorPushNotifications } from "@/lib/notifications/registerPushNotifications";
+import { BloomingHexagonLoader } from "@/components/loading/BloomingHexagonLoader";
 import type { Session, User } from "@supabase/supabase-js";
 
 type AuthContextValue = {
@@ -134,7 +135,10 @@ export default function AuthProvider({
     void registerCreatorPushNotifications({ userId: user.id })
   }, [user?.id])
 
-  if (!canRender) return null;
+  if (!canRender) {
+    return <BloomingHexagonLoader statusText="Syncing your system" />;
+  }
+
   return (
     <AuthCtx.Provider value={{ session, user, ready, loading: !ready }}>
       {children}
