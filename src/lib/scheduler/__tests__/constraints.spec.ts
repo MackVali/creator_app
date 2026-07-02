@@ -44,6 +44,18 @@ describe("passesTimeBlockConstraints", () => {
     expect(result).toBe(false);
   });
 
+  it("treats MEAL windows like BREAK windows", () => {
+    expect(
+      passesTimeBlockConstraints({ habitType: "RELAXER" }, { window_kind: "MEAL" })
+    ).toBe(true);
+    expect(
+      passesTimeBlockConstraints({ habitType: "HABIT" }, { window_kind: "MEAL" })
+    ).toBe(false);
+    expect(
+      passesTimeBlockConstraints({ isProject: true }, { window_kind: "MEAL" })
+    ).toBe(false);
+  });
+
   it("fails when habit whitelist empty and allow_all_habit_types is false", () => {
     const result = passesTimeBlockConstraints(
       { habitType: "HABIT" },

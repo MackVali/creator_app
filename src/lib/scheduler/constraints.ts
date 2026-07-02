@@ -45,6 +45,9 @@ const extractWindowKind = (window: WindowConstraint): string | null => {
   return null;
 };
 
+const isBreakLikeWindowKind = (value: string | null) =>
+  value === "BREAK" || value === "MEAL";
+
 export const normalizeSet = (values?: string[] | null): Set<string> | null => {
   if (!Array.isArray(values) || values.length === 0) return null;
   const set = new Set<string>();
@@ -86,7 +89,7 @@ export function passesTimeBlockConstraints(
     ? item.habitType.trim().toUpperCase()
     : null;
 
-  if (windowKind === "BREAK") {
+  if (isBreakLikeWindowKind(windowKind)) {
     if (item.isProject) return false;
     if (normalizedHabitType !== "RELAXER") return false;
   }

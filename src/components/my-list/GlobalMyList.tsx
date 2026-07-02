@@ -13,7 +13,11 @@ import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 
-export function GlobalMyList() {
+export function GlobalMyList({
+  useFullExpandedHeight,
+}: {
+  useFullExpandedHeight: boolean;
+}) {
   const { user, ready } = useAuth();
   const [open, setOpen] = useState(false);
   const [tasks, setTasks] = useState<TaskLite[]>([]);
@@ -168,6 +172,7 @@ export function GlobalMyList() {
       skills={skills}
       skillCategories={skillCategories}
       pendingTaskIds={pendingTaskIds}
+      useFullExpandedHeight={useFullExpandedHeight}
       onToggleTask={handleToggleTask}
       onOpenChange={(nextOpen) => {
         void hapticPress();

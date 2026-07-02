@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent as ReactFocusEvent,
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
@@ -51,6 +52,8 @@ const LIST_COMPACT_ROW_HEIGHT = 42;
 const LIST_COMPACT_NOTES_ALLOWANCE = 120;
 const LIST_COMPACT_BOTTOM_ALLOWANCE = 36;
 const LIST_COMPACT_EXPAND_THRESHOLD_RATIO = 0.88;
+const MY_LIST_EDITABLE_TARGET_SELECTOR =
+  'input, textarea, [contenteditable="true"]';
 
 function resolveQuickCreateMediumPriorityMetadata() {
   return (
@@ -123,6 +126,7 @@ export function MyListSheet({
   skills,
   skillCategories,
   pendingTaskIds,
+  useFullExpandedHeight,
   onToggleTask,
 }: {
   open: boolean;
@@ -131,6 +135,7 @@ export function MyListSheet({
   skills: SkillRow[];
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
+  useFullExpandedHeight: boolean;
   onToggleTask: (taskId: string) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
@@ -156,8 +161,12 @@ export function MyListSheet({
     compact: 448,
     expanded: 720,
   }));
+  const sheetRootRef = useRef<HTMLElement | null>(null);
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchStartYRef = useRef<number | null>(null);
+  const lastMeasuredViewportRef = useRef<{ width: number; height: number } | null>(
+    null
+  );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => !hiddenTaskRowIds.has(task.id)),
     [hiddenTaskRowIds, tasks]
@@ -177,6 +186,7 @@ export function MyListSheet({
     listContentHeight >= myListSheetHeights.expanded ||
     listContentHeight >=
       myListSheetHeights.expanded * LIST_COMPACT_EXPAND_THRESHOLD_RATIO;
+  const shouldExpandOnOpen = shouldExpandListOnOpen;
   const compactSheetHeight =
     activeView === "list" ? listCompactHeight : myListSheetHeights.compact;
   const currentSheetHeight = isExpanded
@@ -667,6 +677,43 @@ export function MyListSheet({
     [expandSheet, isExpanded, open]
   );
 
+  const isMobileKeyboardFocus = useCallback(() => {
+    if (typeof window === "undefined") return false;
+
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const hasCoarsePointer =
+      window.matchMedia?.("(pointer: coarse)").matches ?? false;
+
+    return (
+      Boolean(window.visualViewport) && hasCoarsePointer && viewportWidth < 768
+    );
+  }, []);
+
+  const handleSheetFocusCapture = useCallback(
+    (event: ReactFocusEvent<HTMLElement>) => {
+      if (!open || isExpanded || activeView !== "list") return;
+      if (!isMobileKeyboardFocus()) return;
+
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (!sheetRootRef.current?.contains(target)) return;
+      if (!target.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)) return;
+
+      setIsExpanded(true);
+    },
+    [activeView, isExpanded, isMobileKeyboardFocus, open]
+  );
+
+  const isEditableElementFocusedInsideSheet = useCallback(() => {
+    if (typeof document === "undefined") return false;
+
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) return false;
+    if (!sheetRootRef.current?.contains(activeElement)) return false;
+
+    return activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR);
+  }, []);
+
   useEffect(() => {
     const measureSafeAreaTop = () => {
       if (typeof document === "undefined") return 0;
@@ -685,14 +732,41 @@ export function MyListSheet({
     };
 
     const calculateSheetHeights = () => {
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
       const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const lastMeasuredViewport = lastMeasuredViewportRef.current;
+      const widthChanged =
+        !lastMeasuredViewport ||
+        Math.abs(lastMeasuredViewport.width - viewportWidth) >= 0.5;
+      const heightChanged =
+        !lastMeasuredViewport ||
+        Math.abs(lastMeasuredViewport.height - viewportHeight) >= 0.5;
+      const isKeyboardResizeInsideSheet =
+        heightChanged &&
+        !widthChanged &&
+        isEditableElementFocusedInsideSheet();
+
+      if (isKeyboardResizeInsideSheet) return;
+
+      lastMeasuredViewportRef.current = {
+        width: viewportWidth,
+        height: viewportHeight,
+      };
+
       const rootFontSize =
         parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const compact = Math.min(viewportHeight * 0.58, 28 * rootFontSize);
-      const topReserve = Math.max(
+      const scheduleTopReserve = Math.max(
         4.75 * rootFontSize,
         measureSafeAreaTop() + 3.75 * rootFontSize
       );
+      const fullTopReserve = Math.max(
+        2.5 * rootFontSize,
+        measureSafeAreaTop() + 1.5 * rootFontSize
+      );
+      const topReserve = useFullExpandedHeight
+        ? fullTopReserve
+        : scheduleTopReserve;
       const expanded = Math.max(compact, viewportHeight - topReserve);
 
       setMyListSheetHeights((currentHeights) => {
@@ -718,7 +792,7 @@ export function MyListSheet({
         calculateSheetHeights
       );
     };
-  }, []);
+  }, [isEditableElementFocusedInsideSheet, useFullExpandedHeight]);
 
   useEffect(() => {
     if (!open) {
@@ -739,6 +813,7 @@ export function MyListSheet({
 
   return (
     <motion.aside
+      ref={sheetRootRef}
       aria-label="My List"
       data-no-tab-swipe
       data-my-list-sheet
@@ -765,6 +840,7 @@ export function MyListSheet({
       onClick={(event) => {
         event.stopPropagation();
       }}
+      onFocusCapture={handleSheetFocusCapture}
     >
       {!open ? (
         <button
@@ -776,7 +852,7 @@ export function MyListSheet({
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            if (shouldExpandListOnOpen) setIsExpanded(true);
+            if (shouldExpandOnOpen) setIsExpanded(true);
             onOpenChange(true);
           }}
           className="pointer-events-auto absolute left-1/2 top-0 flex h-[1.95rem] w-[4.75rem] -translate-x-1/2 -translate-y-[calc(1.35rem+0.375rem)] flex-col items-center justify-center gap-0.5 rounded-t-[1.25rem] border-x border-t border-white/14 bg-[#050507]/94 pb-1 pt-0.5 text-white/72 shadow-[0_-8px_28px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"

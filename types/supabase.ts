@@ -1870,7 +1870,7 @@ export interface Database {
           end_utc: string;
           label: string | null;
           mode: "MANUAL" | "DYNAMIC";
-          block_type: "FOCUS" | "BREAK" | "PRACTICE" | null;
+          block_type: "FOCUS" | "BREAK" | "MEAL" | "PRACTICE" | null;
           energy: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME" | null;
           location_context_id: string | null;
           allow_all_instance_types: boolean;
@@ -1887,7 +1887,7 @@ export interface Database {
           end_utc: string;
           label?: string | null;
           mode?: "MANUAL" | "DYNAMIC";
-          block_type?: "FOCUS" | "BREAK" | "PRACTICE" | null;
+          block_type?: "FOCUS" | "BREAK" | "MEAL" | "PRACTICE" | null;
           energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME" | null;
           location_context_id?: string | null;
           allow_all_instance_types?: boolean;
@@ -1904,7 +1904,7 @@ export interface Database {
           end_utc?: string;
           label?: string | null;
           mode?: "MANUAL" | "DYNAMIC";
-          block_type?: "FOCUS" | "BREAK" | "PRACTICE" | null;
+          block_type?: "FOCUS" | "BREAK" | "MEAL" | "PRACTICE" | null;
           energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME" | null;
           location_context_id?: string | null;
           allow_all_instance_types?: boolean;

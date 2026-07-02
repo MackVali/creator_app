@@ -276,6 +276,10 @@ describe("normalizeBlockType", () => {
     expect(normalizeBlockType("BREAK")).toBe("BREAK");
   });
 
+  it("maps MEAL block_type to MEAL windowKind", () => {
+    expect(normalizeBlockType("MEAL")).toBe("MEAL");
+  });
+
   it("defaults null/undefined block_type to FOCUS -> DEFAULT windowKind", () => {
     expect(normalizeBlockType(null)).toBe("DEFAULT");
     expect(normalizeBlockType(undefined)).toBe("DEFAULT");
@@ -289,6 +293,8 @@ describe("normalizeBlockType", () => {
     expect(normalizeBlockType("practice")).toBe("PRACTICE");
     expect(normalizeBlockType("BREAK")).toBe("BREAK");
     expect(normalizeBlockType("break")).toBe("BREAK");
+    expect(normalizeBlockType("MEAL")).toBe("MEAL");
+    expect(normalizeBlockType("meal")).toBe("MEAL");
   });
 });
 

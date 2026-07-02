@@ -102,10 +102,11 @@ type SkillGroup = {
   skills: Skill[];
 };
 
-const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
+const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "MEAL", "PRACTICE"];
 const BLOCK_TYPE_LABEL: Record<BlockType, string> = {
   FOCUS: "Focus",
   BREAK: "Break",
+  MEAL: "Meal",
   PRACTICE: "Practice",
 };
 const DEFAULT_WEEKDAY_LINK_ENERGY: FlameLevel = "MEDIUM";

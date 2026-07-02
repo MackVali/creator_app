@@ -810,19 +810,67 @@ struct CreatorFocusPomoActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.vertical, compact ? 7 : 9)
-            .foregroundStyle(primary ? .black : .white)
-            .background(
-                primary
-                    ? CreatorWidgetTheme.green.opacity(configuration.isPressed ? 0.78 : 0.96)
-                    : Color.white.opacity(configuration.isPressed ? 0.16 : 0.08),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay {
-                if !primary {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
-                }
+            .foregroundStyle(.white)
+            .background {
+                background(isPressed: configuration.isPressed)
             }
+            .overlay {
+                borderAndGlint(isPressed: configuration.isPressed)
+            }
+            .shadow(
+                color: primaryShadowColor(isPressed: configuration.isPressed),
+                radius: compact ? 4 : 6,
+                x: 0,
+                y: compact ? 2 : 3
+            )
+            .shadow(
+                color: primaryGlowColor(isPressed: configuration.isPressed),
+                radius: compact ? 6 : 9,
+                x: 0,
+                y: compact ? 2 : 4
+            )
+    }
+
+    @ViewBuilder
+    private func background(isPressed: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+
+        if primary {
+            shape
+                .fill(CreatorWidgetTheme.primaryActionGradient)
+                .opacity(isPressed ? 0.84 : 1)
+        } else {
+            shape
+                .fill(Color.white.opacity(isPressed ? 0.16 : 0.08))
+        }
+    }
+
+    @ViewBuilder
+    private func borderAndGlint(isPressed: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+
+        if primary {
+            shape
+                .fill(CreatorWidgetTheme.primaryActionGlint)
+                .blendMode(.screen)
+                .opacity(isPressed ? 0.30 : 0.52)
+                .clipShape(shape)
+            shape
+                .stroke(CreatorWidgetTheme.primaryActionBorder, lineWidth: 1)
+        } else {
+            shape
+                .stroke(CreatorWidgetTheme.hairline, lineWidth: 1)
+        }
+    }
+
+    private func primaryShadowColor(isPressed: Bool) -> Color {
+        primary ? Color.black.opacity(isPressed ? 0.18 : 0.28) : .clear
+    }
+
+    private func primaryGlowColor(isPressed: Bool) -> Color {
+        primary
+            ? Color(red: 0.012, green: 0.325, blue: 0.176).opacity(isPressed ? 0.10 : 0.18)
+            : .clear
     }
 }
 
@@ -1042,6 +1090,29 @@ private enum CreatorWidgetTheme {
     static let iconBackground = Color.white.opacity(0.09)
     static let hairline = Color.white.opacity(0.08)
     static let green = Color(red: 0.36, green: 0.92, blue: 0.56)
+    static let primaryActionGradient = LinearGradient(
+        stops: [
+            .init(color: Color(red: 0.133, green: 0.773, blue: 0.369).opacity(0.94), location: 0),
+            .init(color: Color(red: 0.086, green: 0.639, blue: 0.290).opacity(0.97), location: 0.48),
+            .init(color: Color(red: 0.082, green: 0.502, blue: 0.239).opacity(0.98), location: 1)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let primaryActionBorder = Color(red: 0.020, green: 0.184, blue: 0.118).opacity(0.45)
+    static let primaryActionGlint = LinearGradient(
+        stops: [
+            .init(color: .clear, location: 0),
+            .init(color: .clear, location: 0.36),
+            .init(color: Color(red: 0.925, green: 0.992, blue: 0.961).opacity(0.07), location: 0.43),
+            .init(color: Color.white.opacity(0.18), location: 0.48),
+            .init(color: Color(red: 0.655, green: 0.953, blue: 0.816).opacity(0.08), location: 0.53),
+            .init(color: .clear, location: 0.62),
+            .init(color: .clear, location: 1)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
     static let secondaryText = Color.white.opacity(0.66)
     static let mutedText = Color.white.opacity(0.45)
 }

@@ -88,7 +88,7 @@ interface JumpToDateSheetProps {
   onInlineEditorModeChange?: (isEditorMode: boolean) => void;
 }
 
-type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
+type BlockType = "FOCUS" | "BREAK" | "MEAL" | "PRACTICE";
 type PaintDayType = {
   id: string;
   name: string;
@@ -97,7 +97,13 @@ type PaintDayType = {
   schedulerMode?: string | null;
 };
 type PaintPicker = "dayType" | "mode";
-const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
+const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "MEAL", "PRACTICE"];
+const BLOCK_TYPE_LABEL: Record<BlockType, string> = {
+  FOCUS: "Focus",
+  BREAK: "Break",
+  MEAL: "Meal",
+  PRACTICE: "Practice",
+};
 const SCHEDULER_MODES = [
   "REGULAR",
   "RUSH",
@@ -802,7 +808,7 @@ export function JumpToDateSheet({
           const type = (
             (row as { block_type?: string | null })?.block_type ?? "FOCUS"
           ).toUpperCase();
-          if (type === "BREAK" || type === "PRACTICE" || type === "FOCUS") {
+          if (type === "BREAK" || type === "MEAL" || type === "PRACTICE" || type === "FOCUS") {
             typeMap.set(constraintKey, type);
           } else {
             typeMap.set(constraintKey, "FOCUS");
@@ -1963,7 +1969,7 @@ export function JumpToDateSheet({
           const upper = rawType.toUpperCase();
           next.set(
             `${newDayType.id}:${blockId}`,
-            upper === "BREAK" || upper === "PRACTICE"
+            upper === "BREAK" || upper === "MEAL" || upper === "PRACTICE"
               ? (upper as BlockType)
               : "FOCUS"
           );
@@ -2987,7 +2993,7 @@ export function JumpToDateSheet({
                                                                   : constraintOptionPillUnselectedClassName
                                                               )}
                                                             >
-                                                              {type}
+                                                              {BLOCK_TYPE_LABEL[type]}
                                                             </button>
                                                           );
                                                         }

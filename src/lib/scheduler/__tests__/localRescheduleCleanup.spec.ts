@@ -13,7 +13,7 @@ function buildWindow(dayTypeTimeBlockId: string | null, overrides: Record<string
     id: (overrides.id as string | undefined) ?? "window-1",
     start_local: "08:00",
     end_local: "10:00",
-    window_kind: (overrides.window_kind as "BREAK" | "DEFAULT" | "PRACTICE" | "FOCUS" | undefined) ?? "BREAK",
+    window_kind: (overrides.window_kind as "BREAK" | "MEAL" | "DEFAULT" | "PRACTICE" | "FOCUS" | undefined) ?? "BREAK",
     dayTypeTimeBlockId,
     dayTypeStartUtcMs: Date.parse("2024-01-02T08:00:00Z"),
     dayTypeEndUtcMs: Date.parse("2024-01-02T10:00:00Z"),

@@ -41,7 +41,7 @@ alter table public.overlay_windows
 
 alter table public.overlay_windows
   add constraint overlay_windows_block_type_chk
-    check (block_type is null or block_type in ('FOCUS', 'BREAK', 'PRACTICE'));
+    check (block_type is null or block_type in ('FOCUS', 'BREAK', 'MEAL', 'PRACTICE'));
 
 alter table public.overlay_windows
   drop constraint if exists overlay_windows_energy_chk;

@@ -35,7 +35,7 @@ function classNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ")
 }
 
-export type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE"
+export type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE" | "MEAL"
 type Energy = "no" | "low" | "medium" | "high" | "ultra" | "extreme"
 type Day = "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat"
 type SortOption = "az" | "start" | "end" | "active"
@@ -938,17 +938,19 @@ function DayWindowEntry({
           <div
             className={classNames(
               "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide",
-              kind === "BREAK"
+              kind === "BREAK" || kind === "MEAL"
                 ? "border-amber-400/40 bg-amber-500/15 text-amber-100"
                 : "border-sky-400/40 bg-sky-500/10 text-sky-100",
             )}
           >
-            {kind === "BREAK" ? (
+            {kind === "BREAK" || kind === "MEAL" ? (
               <SunMedium className="h-3 w-3" />
             ) : (
               <Sparkles className="h-3 w-3" />
             )}
-            <span>{kind === "BREAK" ? "Break" : "Practice"}</span>
+            <span>
+              {kind === "BREAK" ? "Break" : kind === "MEAL" ? "Meal" : "Practice"}
+            </span>
           </div>
         )}
         {window.energy && (
@@ -1078,6 +1080,7 @@ function Drawer({
   const windowKindOptions: Array<{ value: WindowKind; label: string; description: string }> = [
     { value: "DEFAULT", label: "Default", description: "Use this window for normal scheduling." },
     { value: "BREAK", label: "Break", description: "Reserve time so projects and habits skip this period." },
+    { value: "MEAL", label: "Meal", description: "Reserve meal time so projects and habits skip this period." },
     { value: "PRACTICE", label: "Practice", description: "Highlight a focused practice block without pausing scheduling." },
   ]
 

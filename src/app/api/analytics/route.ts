@@ -3255,7 +3255,7 @@ function normalizeOverviewWindowKind(
     return "DEFAULT";
   }
   const normalized = value.toUpperCase().trim();
-  if (normalized === "BREAK" || normalized === "PRACTICE") {
+  if (normalized === "BREAK" || normalized === "MEAL" || normalized === "PRACTICE") {
     return normalized;
   }
   return "DEFAULT";
@@ -3263,7 +3263,7 @@ function normalizeOverviewWindowKind(
 
 function isUsableOverviewWindow(window: Pick<WindowLite, "window_kind">) {
   // Preserve existing behavior for unknown kinds by treating them as usable.
-  return window.window_kind !== "BREAK";
+  return window.window_kind !== "BREAK" && window.window_kind !== "MEAL";
 }
 
 function isOverviewCompletedBreak(

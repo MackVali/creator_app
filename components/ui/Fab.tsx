@@ -187,6 +187,12 @@ type ScheduleQuickCreateTaskDetailsPayload = {
   priority?: string | null;
   energy?: string | null;
 };
+type ScheduleNutritionMealEventPayload = {
+  title?: string | null;
+  date?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+};
 
 const UNIFIED_EVENT_TITLE_PLACEHOLDERS = [
   "Dentist appointment",
@@ -213,6 +219,8 @@ const UNIFIED_TASK_TITLE_PLACEHOLDERS = [
 const UNIFIED_TITLE_PLACEHOLDER_ROTATION_MS = 3200;
 const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
   "schedule:open-quick-create-task-details";
+const SCHEDULE_OPEN_NUTRITION_MEAL_EVENT =
+  "schedule:open-nutrition-meal-event";
 type AddEventSourceType = "TASK" | "PROJECT" | "HABIT" | "ROUTINE";
 type AddEventSubAction = {
   id: string;
@@ -241,7 +249,7 @@ type AddEventTimingMode = "manual" | "dynamic";
 type ProjectScheduleTimingMode = "manual" | "dynamic";
 type HabitScheduleTimingMode = "manual" | "dynamic";
 type OverlayBlockMode = "MANUAL" | "DYNAMIC";
-type OverlayDynamicBlockType = "FOCUS" | "BREAK" | "PRACTICE";
+type OverlayDynamicBlockType = "FOCUS" | "BREAK" | "MEAL" | "PRACTICE";
 type OverlayDynamicEnergy = NonNullable<
   Database["public"]["Tables"]["overlay_windows"]["Insert"]["energy"]
 >;
@@ -1563,6 +1571,7 @@ const createDefaultOverlayDynamicExpandedConstraints =
 const OVERLAY_DYNAMIC_BLOCK_TYPE_OPTIONS: OverlayConstraintChipOption[] = [
   { id: "FOCUS", label: "Focus" },
   { id: "BREAK", label: "Break" },
+  { id: "MEAL", label: "Meal" },
   { id: "PRACTICE", label: "Practice" },
 ];
 
@@ -18060,6 +18069,114 @@ export function Fab({
     ],
   );
 
+  const openNutritionMealEventSheet = useCallback(
+    (payload: ScheduleNutritionMealEventPayload) => {
+      void hapticPress();
+      blurActiveEditableElement();
+      pendingFabSwipeRef.current = null;
+      isDraggingRef.current = false;
+      dragTargetPageRef.current = null;
+      dragDirectionRef.current = null;
+      pageDragAxisRef.current = null;
+      setTouchStartY(null);
+      setIsDragging(false);
+      setDragTargetPage(null);
+      setDragDirection(null);
+      setIsAnimatingPageChange(false);
+      pageX.set(0);
+      unifiedSheetSuppressClickUntilRef.current = 0;
+
+      resetFabViewportState();
+      resetTaskFormDraft();
+      resetHabitFormDraft();
+      resetUnifiedEventDraft();
+      setSaveError(null);
+      setGoalDeleteConfirmTarget(null);
+      setActiveCreationMode("main");
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedTimingMonthYearPickerOpen(false);
+      setFabAdvancedTimingPickerOpen(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedTagCreateOpen(false);
+      setUnifiedTagCreateValue("");
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
+      setIsGoalPickerOpen(false);
+      setIsUnifiedGoalPickerOpen(false);
+      setShowUnifiedGoalFilters(false);
+      setUnifiedGoalSearch("");
+      setUnifiedGoalFilterMonumentId("");
+      setUnifiedGoalSortMode("default");
+      setSelectedTagIds([]);
+      setAddEventSubActions([]);
+      setAddEventWorkspaceValue("PERSONAL");
+      setAddEventTimingMode("manual");
+      setAddEventDynamicDuration("60");
+      setProjectTaskStack(null);
+      setGoalProjectStack(null);
+      setUnifiedCreationMode("EVENTS");
+      setUnifiedEventType("TASK");
+      setSelected("TASK");
+      setNormalNexusExpanded(false);
+      setUnifiedEventAllDay(false);
+      setUnifiedEventTitle(
+        typeof payload.title === "string" && payload.title.trim()
+          ? payload.title.trim()
+          : "Meal",
+      );
+      setUnifiedEventBlocksTime("FREE");
+      setTaskHasExactDate(true);
+      setTaskExactTimingTouched(true);
+
+      const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+      const dateValue =
+        typeof payload.date === "string" && payload.date.trim()
+          ? payload.date.trim()
+          : defaultSchedule.date;
+      setTaskExactDate(dateValue);
+      setTaskExactFallbackDate(dateValue);
+      setTaskExactStartTime(
+        typeof payload.startTime === "string" && payload.startTime.trim()
+          ? payload.startTime.trim()
+          : defaultSchedule.startTime,
+      );
+      setTaskExactEndTime(
+        typeof payload.endTime === "string" && payload.endTime.trim()
+          ? payload.endTime.trim()
+          : defaultSchedule.endTime,
+      );
+      const viewedMonthDate = parseDateInputValueLocal(dateValue) ?? new Date();
+      setUnifiedTimingViewedMonth(
+        new Date(viewedMonthDate.getFullYear(), viewedMonthDate.getMonth(), 1),
+      );
+      setSelectedMemoDatabaseTargetId("nutrition");
+      setMemoCaptureActions((current) => ({
+        ...current,
+        form: true,
+      }));
+      setIsUnifiedFormsSheetOpen(true);
+
+      flushSync(() => {
+        setExpanded(false);
+        setIsDirectCreationOpen(false);
+        setIsOpen(false);
+      });
+      setIsUnifiedEventSheetOpen(true);
+    },
+    [
+      pageX,
+      resetFabViewportState,
+      resetHabitFormDraft,
+      resetTaskFormDraft,
+      resetUnifiedEventDraft,
+    ],
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -18082,6 +18199,29 @@ export function Fab({
       );
     };
   }, [openQuickCreateTaskDetailsSheet]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOpenNutritionMealEvent = (event: Event) => {
+      const payload =
+        event instanceof CustomEvent && event.detail
+          ? (event.detail as ScheduleNutritionMealEventPayload)
+          : {};
+      openNutritionMealEventSheet(payload);
+    };
+
+    window.addEventListener(
+      SCHEDULE_OPEN_NUTRITION_MEAL_EVENT,
+      handleOpenNutritionMealEvent,
+    );
+    return () => {
+      window.removeEventListener(
+        SCHEDULE_OPEN_NUTRITION_MEAL_EVENT,
+        handleOpenNutritionMealEvent,
+      );
+    };
+  }, [openNutritionMealEventSheet]);
 
   useEffect(() => {
     if (!isUnifiedEventSheetOpen) return;
