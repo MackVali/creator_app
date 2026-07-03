@@ -24,10 +24,7 @@ import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
-import {
-  dispatchCreatorXpBurstStatus,
-  type CreatorXpBurstRect,
-} from "@/lib/effects/creatorXpBurstBus";
+import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
 
 type MyListXpAwardResult = {
   success?: boolean;
@@ -54,12 +51,6 @@ const MY_LIST_TASK_XP_AMOUNT = 1;
 
 function buildMyListTaskOccurrenceStem(taskId: string) {
   return `my_list:task:${taskId}`;
-}
-
-function reportMyListXpDiagnostic(message: string, details?: unknown) {
-  if (process.env.NODE_ENV === "production") return;
-  dispatchCreatorXpBurstStatus(message);
-  console.info(message, details ?? {});
 }
 
 async function reverseMyListTaskXp(taskId: string) {
@@ -133,8 +124,10 @@ async function awardMyListTaskXp({
 
 export function GlobalMyList({
   useFullExpandedHeight,
+  enableScheduleTimelineDrag,
 }: {
   useFullExpandedHeight: boolean;
+  enableScheduleTimelineDrag?: boolean;
 }) {
   const { user, ready } = useAuth();
   const [open, setOpen] = useState(false);
@@ -240,11 +233,7 @@ export function GlobalMyList({
 
     void updateTaskSkill(taskId, skill.id).then(({ error }) => {
       if (error) {
-        reportMyListXpDiagnostic("MY LIST XP BLOCKED: failed to persist skill", {
-          taskId,
-          skillId: skill.id,
-          error,
-        });
+        console.error("Failed to persist My List task skill", error);
       }
     });
   }, []);
@@ -285,12 +274,6 @@ export function GlobalMyList({
 
       if (!isCurrentlyCompleted && !selectedSkillId) {
         snapshots.delete(taskId);
-        reportMyListXpDiagnostic("MY LIST XP BLOCKED: missing skill context", {
-          occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
-          taskId,
-          taskSkillId: task.skill_id ?? null,
-          selectedSkillId: xpContext.skillId ?? null,
-        });
         void hapticWarningPattern();
         return;
       }
@@ -310,13 +293,7 @@ export function GlobalMyList({
           );
           if (error) throw error;
 
-          const reverseResult = await reverseMyListTaskXp(taskId);
-          reportMyListXpDiagnostic("MY LIST XP: reversed", {
-            occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
-            taskId,
-            reversed: reverseResult?.reversed ?? 0,
-            activePositivesFound: reverseResult?.activePositivesFound ?? 0,
-          });
+          await reverseMyListTaskXp(taskId);
 
           snapshots.delete(taskId);
           setTasks((currentTasks) =>
@@ -330,7 +307,7 @@ export function GlobalMyList({
         await reverseMyListTaskXp(taskId);
 
         if (!selectedSkillId) {
-          throw new Error("MY LIST XP BLOCKED: missing skill context");
+          throw new Error("Missing skill context");
         }
 
         const skillIdForAward = selectedSkillId;
@@ -362,7 +339,7 @@ export function GlobalMyList({
           throw new Error(
             awardResult?.reason ??
               (awardResult?.deduped
-                ? "XP award deduped"
+                ? "XP award already exists"
                 : "XP award inserted no rows")
           );
         }
@@ -389,24 +366,12 @@ export function GlobalMyList({
             amount: MY_LIST_TASK_XP_AMOUNT,
             kind: "task_complete",
             burstId: `my-list:task:${taskId}:${completedAt}`,
-            debugLabel: "XP: my list visual helper",
-          });
-        } else {
-          reportMyListXpDiagnostic("MY LIST XP: inserted without surge", {
-            occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
-            taskId,
-            awardKeyBase: awardResult?.awardKeyBase ?? null,
           });
         }
 
         void hapticComplete();
       } catch (error) {
-        reportMyListXpDiagnostic("MY LIST XP: mutation failed", {
-          occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
-          taskId,
-          action: isCurrentlyCompleted ? "undo" : "complete",
-          error,
-        });
+        console.error("My List task completion failed", error);
         if (!isCurrentlyCompleted) {
           const { error: rollbackError } = await updateMyListTaskCompletion(
             taskId,
@@ -414,11 +379,7 @@ export function GlobalMyList({
             null
           );
           if (rollbackError) {
-            reportMyListXpDiagnostic("MY LIST XP: completion rollback failed", {
-              occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
-              taskId,
-              error: rollbackError,
-            });
+            console.error("My List completion rollback failed", rollbackError);
           }
         } else {
           const { error: rollbackError } = await updateMyListTaskCompletion(
@@ -427,11 +388,7 @@ export function GlobalMyList({
             new Date().toISOString()
           );
           if (rollbackError) {
-            reportMyListXpDiagnostic("MY LIST XP: undo rollback failed", {
-              occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
-              taskId,
-              error: rollbackError,
-            });
+            console.error("My List undo rollback failed", rollbackError);
           }
         }
         if (!isCurrentlyCompleted) snapshots.delete(taskId);
@@ -455,6 +412,7 @@ export function GlobalMyList({
       skillCategories={skillCategories}
       pendingTaskIds={pendingTaskIds}
       useFullExpandedHeight={useFullExpandedHeight}
+      enableScheduleTimelineDrag={enableScheduleTimelineDrag === true}
       onToggleTask={handleToggleTask}
       onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {

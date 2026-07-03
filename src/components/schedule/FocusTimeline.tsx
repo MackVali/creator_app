@@ -11,7 +11,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { LazyFab } from "@/components/ui/LazyFab";
-import type { FabEditTarget } from "@/components/ui/Fab";
+import type {
+  FabEditTarget,
+  FabTimeBlockAdjustmentRequest,
+} from "@/components/ui/Fab";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
 
@@ -19,17 +22,23 @@ interface FocusTimelineProps {
   children?: ReactNode;
   hideFab?: boolean;
   editTarget?: FabEditTarget | null;
+  timeBlockAdjustmentRequest?: FabTimeBlockAdjustmentRequest | null;
+  onTimeBlockAdjustmentRequestConsumed?: () => void;
   onEditClose?: () => void;
 }
 
 export function FocusTimelineFab({
   hidden = false,
   editTarget = null,
+  timeBlockAdjustmentRequest = null,
+  onTimeBlockAdjustmentRequestConsumed,
   onEditTargetConsumed,
   onEditClose,
 }: {
   hidden?: boolean;
   editTarget?: FabEditTarget | null;
+  timeBlockAdjustmentRequest?: FabTimeBlockAdjustmentRequest | null;
+  onTimeBlockAdjustmentRequestConsumed?: () => void;
   onEditTargetConsumed?: () => void;
   onEditClose?: () => void;
 }) {
@@ -50,6 +59,8 @@ export function FocusTimelineFab({
       menuVariant="timeline"
       swipeUpToOpen={false}
       editTarget={editTarget}
+      timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
+      onTimeBlockAdjustmentRequestConsumed={onTimeBlockAdjustmentRequestConsumed}
       onEditTargetConsumed={onEditTargetConsumed}
       onEditClose={onEditClose}
     />,
@@ -61,6 +72,8 @@ export function FocusTimeline({
   children,
   hideFab = false,
   editTarget = null,
+  timeBlockAdjustmentRequest = null,
+  onTimeBlockAdjustmentRequestConsumed,
   onEditClose,
 }: FocusTimelineProps) {
   const now = new Date();
@@ -87,6 +100,10 @@ export function FocusTimeline({
       <FocusTimelineFab
         hidden={hideFab}
         editTarget={editTarget}
+        timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
+        onTimeBlockAdjustmentRequestConsumed={
+          onTimeBlockAdjustmentRequestConsumed
+        }
         onEditClose={onEditClose}
       />
     </div>

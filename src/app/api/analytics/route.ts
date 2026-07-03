@@ -340,7 +340,7 @@ type DayTypeTimeBlockLabelRow = {
   } | null;
 };
 
-type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT";
+type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT" | "EVENT";
 type ScheduleSummaryType = AnalyticsScheduleSummary["byType"][number]["type"];
 type OverviewCompletionSummaryType = ScheduleSummaryType | "goal";
 type TodaySummaryType = AnalyticsTodaySummary["byType"][number]["type"];
@@ -1851,6 +1851,7 @@ const SCHEDULE_SOURCE_TYPE_MAP: Record<
   PROJECT: "project",
   TASK: "task",
   HABIT: "habit",
+  EVENT: "event",
 };
 
 function normalizeScheduleInstanceRows(
@@ -4125,7 +4126,8 @@ function normalizeScheduleSourceType(
   if (
     normalized === "PROJECT" ||
     normalized === "TASK" ||
-    normalized === "HABIT"
+    normalized === "HABIT" ||
+    normalized === "EVENT"
   ) {
     return normalized as ScheduleSourceType;
   }
@@ -4210,8 +4212,11 @@ function fallbackScheduleLabel(type: ScheduleSourceType) {
     case "TASK":
       return "Task event";
     case "HABIT":
-    default:
       return "Habit session";
+    case "EVENT":
+      return "Event";
+    default:
+      return "Event";
   }
 }
 

@@ -44,11 +44,13 @@ export async function findActivePositiveXpAwards({
   userId,
   occurrenceStem,
   legacyOccurrenceStems = [],
+  scheduleInstanceId = null,
 }: {
   client: Client;
   userId: string;
   occurrenceStem: string;
   legacyOccurrenceStems?: string[];
+  scheduleInstanceId?: string | null;
 }): Promise<ActiveXpLookupResult> {
   const stems = Array.from(
     new Set(
@@ -58,7 +60,7 @@ export async function findActivePositiveXpAwards({
     )
   );
 
-  if (stems.length === 0) {
+  if (stems.length === 0 && !scheduleInstanceId) {
     return {
       activePositiveEvents: [],
       activePositiveCount: 0,
@@ -85,6 +87,28 @@ export async function findActivePositiveXpAwards({
         !awardKey ||
         isReversalKey(awardKey) ||
         !isAwardForOccurrence(awardKey, stems)
+      ) {
+        continue;
+      }
+      positiveRows.push({ ...row, award_key: awardKey });
+    }
+  }
+  if (scheduleInstanceId) {
+    const { data, error } = await client
+      .from("xp_events")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("schedule_instance_id", scheduleInstanceId)
+      .gt("amount", 0);
+
+    if (error) throw error;
+
+    for (const row of (data ?? []) as XpEventRow[]) {
+      const awardKey = row.award_key;
+      if (
+        typeof awardKey !== "string" ||
+        !awardKey ||
+        isReversalKey(awardKey)
       ) {
         continue;
       }
@@ -137,17 +161,20 @@ export async function reverseActiveXpAwards({
   userId,
   occurrenceStem,
   legacyOccurrenceStems = [],
+  scheduleInstanceId = null,
 }: {
   client: Client;
   userId: string;
   occurrenceStem: string;
   legacyOccurrenceStems?: string[];
+  scheduleInstanceId?: string | null;
 }): Promise<ReverseXpAwardsResult> {
   const lookup = await findActivePositiveXpAwards({
     client,
     userId,
     occurrenceStem,
     legacyOccurrenceStems,
+    scheduleInstanceId,
   });
 
   const reversalRows: XpEventInsert[] = lookup.activePositiveEvents.map(
@@ -184,6 +211,7 @@ export async function reverseActiveXpAwards({
       userId,
       occurrenceStem,
       legacyOccurrenceStems,
+      scheduleInstanceId,
     });
     return {
       ...refreshed,
@@ -208,11 +236,13 @@ export async function resolveNextReversibleAwardKeyBase({
   userId,
   occurrenceStem,
   legacyOccurrenceStems = [],
+  scheduleInstanceId = null,
 }: {
   client: Client;
   userId: string;
   occurrenceStem: string;
   legacyOccurrenceStems?: string[];
+  scheduleInstanceId?: string | null;
 }) {
   const stem = normalizeStem(occurrenceStem);
   const lookup = await findActivePositiveXpAwards({
@@ -220,6 +250,7 @@ export async function resolveNextReversibleAwardKeyBase({
     userId,
     occurrenceStem: stem,
     legacyOccurrenceStems,
+    scheduleInstanceId,
   });
 
   if (lookup.activePositiveCount > 0) {

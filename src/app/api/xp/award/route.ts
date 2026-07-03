@@ -10,6 +10,10 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import { resolveNextReversibleAwardKeyBase } from "@/lib/xp/reversibleXpAwards";
+import {
+  buildScheduleXpOccurrenceStem,
+  resolveScheduleXpCompletionSemantics,
+} from "@/lib/xp/scheduleXpSemantics";
 import type { Database, Json } from "@/types/supabase";
 
 type XpEventInsert = Database["public"]["Tables"]["xp_events"]["Insert"];
@@ -27,7 +31,8 @@ type AwardEvent = Omit<XpEventInsert, "award_key"> & {
   award_key: NonNullable<XpEventInsert["award_key"]>;
 };
 
-type XpKind = Database["public"]["Enums"]["xp_kind"];
+type RequestXpKind = "task" | "habit" | "project" | "goal" | "event" | "manual";
+type LiveXpKind = Exclude<RequestXpKind, "event">;
 
 const xpKindValues = [
   "task",
@@ -36,7 +41,7 @@ const xpKindValues = [
   "goal",
   "event",
   "manual",
-] as const satisfies readonly XpKind[];
+] as const satisfies readonly RequestXpKind[];
 const xpKindSchema = z.enum(xpKindValues);
 const completionSourceTypeSchema = z.enum([
   "GOAL",
@@ -76,7 +81,7 @@ const awardRequestSchema = z.object({
     .optional(),
 });
 
-const DEFAULT_AMOUNTS: Record<Exclude<XpKind, "manual">, number> = {
+const DEFAULT_AMOUNTS: Record<Exclude<RequestXpKind, "manual">, number> = {
   task: 1,
   habit: 1,
   project: 3,
@@ -85,6 +90,7 @@ const DEFAULT_AMOUNTS: Record<Exclude<XpKind, "manual">, number> = {
 };
 
 type AwardRequest = z.infer<typeof awardRequestSchema>;
+type ResolvedAwardRequest = AwardRequest & { kind: LiveXpKind };
 
 type ScheduleAwardContext = {
   id: string;
@@ -93,6 +99,9 @@ type ScheduleAwardContext = {
   event_name: string | null;
   metadata: Json | null;
 };
+type ScheduleXpSemantics = NonNullable<
+  ReturnType<typeof resolveScheduleXpCompletionSemantics>
+>;
 
 type SkillAwardContext = {
   skillIds: string[];
@@ -109,15 +118,14 @@ type SkillAwardContext = {
 
 type SurgeSourceType = NonNullable<SkillAwardContext["surge"]>["sourceType"];
 
-const SURGE_SOURCE_TYPE_BY_KIND: Partial<Record<XpKind, SurgeSourceType>> = {
+const SURGE_SOURCE_TYPE_BY_KIND: Partial<Record<LiveXpKind, SurgeSourceType>> = {
   task: "TASK",
   habit: "HABIT",
   project: "PROJECT",
   goal: "GOAL",
-  event: "EVENT",
 };
 
-function resolveAmount(kind: XpKind, amount: AwardRequest["amount"]): number {
+function resolveAmount(kind: RequestXpKind, amount: AwardRequest["amount"]): number {
   if (typeof amount === "number") return amount;
   if (kind === "manual") {
     throw new Error("Manual awards require an explicit amount");
@@ -129,12 +137,8 @@ function buildAwardKeyBase({
   awardKeyBase,
   scheduleInstanceId,
   kind,
-  completion,
-}: AwardRequest): string | undefined {
+}: ResolvedAwardRequest): string | undefined {
   if (awardKeyBase) return awardKeyBase;
-  if (kind === "event" && completion?.sourceType === "EVENT" && completion.sourceId) {
-    return `event:${completion.sourceId}`;
-  }
   if (scheduleInstanceId) {
     return `sched:${scheduleInstanceId}:${kind}`;
   }
@@ -143,14 +147,14 @@ function buildAwardKeyBase({
 
 function buildEvents(
   userId: string,
-  request: AwardRequest,
+  request: ResolvedAwardRequest,
   amount: number,
   awardKeyBase: string,
   completionEventId: string | null
 ): AwardEvent[] {
   const base = {
     user_id: userId,
-    kind: request.kind,
+    kind: request.kind as XpEventInsert["kind"],
     amount,
     schedule_instance_id: request.scheduleInstanceId ?? null,
     completion_event_id: completionEventId,
@@ -201,18 +205,126 @@ async function loadScheduleAwardContext(
   return (data ?? null) as ScheduleAwardContext | null;
 }
 
+function mergeLegacyOccurrenceStems(...groups: (string[] | undefined)[]) {
+  return Array.from(
+    new Set(
+      groups
+        .flatMap((group) => group ?? [])
+        .map((stem) => stem.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function readJsonRecord(value: Json | null | undefined) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Json>)
+    : {};
+}
+
+function valuesMatch(left: Json | undefined, right: Json) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right);
+}
+
+async function persistScheduleXpAuditMetadata({
+  client,
+  userId,
+  schedule,
+  semantics,
+}: {
+  client: ServerClient;
+  userId: string;
+  schedule: ScheduleAwardContext | null;
+  semantics: ScheduleXpSemantics | null;
+}) {
+  if (!schedule || !semantics?.isMyListEventBacked) return;
+  const currentMetadata = readJsonRecord(schedule.metadata);
+  const auditMetadata = semantics.auditMetadata as Record<string, Json>;
+  const nextMetadata = {
+    ...currentMetadata,
+    ...auditMetadata,
+    xpCompletionSourceType: semantics.completionSourceType,
+    xpCompletionSourceId: semantics.completionSourceId,
+  } satisfies Record<string, Json>;
+
+  const changed = Object.entries(nextMetadata).some(([key, value]) => {
+    return !valuesMatch(currentMetadata[key], value);
+  });
+  if (!changed) return;
+
+  await client
+    .from("schedule_instances")
+    .update({ metadata: nextMetadata })
+    .eq("id", schedule.id)
+    .eq("user_id", userId);
+}
+
+function resolveAwardRequestForSchedule(
+  request: AwardRequest,
+  schedule: ScheduleAwardContext | null
+): ResolvedAwardRequest | { skippedReason: string } {
+  const semantics = resolveScheduleXpCompletionSemantics(schedule);
+  if (!semantics) {
+    if (
+      request.kind === "event" ||
+      request.completion?.sourceType === "EVENT" ||
+      schedule?.source_type === "EVENT"
+    ) {
+      return { skippedReason: "EVENT XP skipped: unsupported completion source" };
+    }
+    return request as ResolvedAwardRequest;
+  }
+
+  const scheduleInstanceId = request.scheduleInstanceId ?? schedule?.id;
+  const occurrenceStem = scheduleInstanceId
+    ? buildScheduleXpOccurrenceStem(scheduleInstanceId, semantics.xpKind)
+    : null;
+  const incomingOccurrenceStem = request.reversible?.occurrenceStem;
+  const legacyOccurrenceStems = mergeLegacyOccurrenceStems(
+    request.reversible?.legacyOccurrenceStems,
+    incomingOccurrenceStem && incomingOccurrenceStem !== occurrenceStem
+      ? [incomingOccurrenceStem]
+      : undefined,
+    semantics.legacyOccurrenceStems
+  );
+
+  return {
+    ...request,
+    kind: semantics.xpKind,
+    scheduleInstanceId,
+    awardKeyBase: occurrenceStem ?? request.awardKeyBase,
+    reversible: request.reversible
+      ? {
+          occurrenceStem: occurrenceStem ?? request.reversible.occurrenceStem,
+          legacyOccurrenceStems,
+        }
+      : request.reversible,
+    completion: {
+      ...request.completion,
+      action: request.completion?.action ?? "complete",
+      sourceType: semantics.completionSourceType,
+      sourceId: semantics.completionSourceId,
+      scheduleInstanceId:
+        request.completion?.scheduleInstanceId ?? scheduleInstanceId,
+      wasScheduled: request.completion?.wasScheduled ?? true,
+    },
+  };
+}
+
 async function resolveEventAwardContext({
   client,
   userId,
   request,
   amount,
   schedule,
+  surgeSourceType = "EVENT",
 }: {
   client: ServerClient;
   userId: string;
   request: AwardRequest;
   amount: number;
   schedule: ScheduleAwardContext | null;
+  surgeSourceType?: SurgeSourceType;
 }): Promise<SkillAwardContext | { skippedReason: string }> {
   const candidateSkillIds = new Set<string>();
   for (const id of request.skillIds ?? []) {
@@ -259,11 +371,11 @@ async function resolveEventAwardContext({
     primarySkillId: primarySkill.id,
     surge: primarySkill
       ? {
-          sourceType: "EVENT",
+          sourceType: surgeSourceType,
           title:
             primarySkill.name?.trim() ||
             schedule?.event_name?.trim() ||
-            "Event XP",
+            `${surgeSourceType[0]}${surgeSourceType.slice(1).toLowerCase()} XP`,
           sourceIcon: primarySkill.icon?.trim() || null,
           displayXp: amount,
           currentLevel: null,
@@ -281,7 +393,7 @@ async function resolveSkillBackedSurge({
 }: {
   client: ServerClient;
   userId: string;
-  request: AwardRequest;
+  request: ResolvedAwardRequest;
   amount: number;
   schedule: ScheduleAwardContext | null;
 }): Promise<Pick<SkillAwardContext, "primarySkillId" | "surge"> | null> {
@@ -338,7 +450,6 @@ function withResolvedEventContext(
   request: AwardRequest,
   context: SkillAwardContext
 ): AwardRequest {
-  if (request.kind !== "event") return request;
   return {
     ...request,
     skillIds: context.skillIds,
@@ -376,7 +487,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let awardRequest = parsed.data;
+    const scheduleAwardContext = await loadScheduleAwardContext(
+      db,
+      user.id,
+      parsed.data.scheduleInstanceId ??
+        parsed.data.completion?.scheduleInstanceId ??
+        null
+    );
+    const resolvedRequest = resolveAwardRequestForSchedule(
+      parsed.data,
+      scheduleAwardContext
+    );
+    if ("skippedReason" in resolvedRequest) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        inserted: 0,
+        reason: resolvedRequest.skippedReason,
+      });
+    }
+    let awardRequest: ResolvedAwardRequest = resolvedRequest;
 
     let amount: number;
     try {
@@ -388,27 +518,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const scheduleAwardContext = await loadScheduleAwardContext(
-      db,
-      user.id,
-      awardRequest.scheduleInstanceId ??
-        awardRequest.completion?.scheduleInstanceId ??
-        null
-    );
-
     let surgePayload: SkillAwardContext["surge"] = null;
     let surgeSkillId: string | null = null;
-    if (
-      awardRequest.kind === "event" ||
-      awardRequest.completion?.sourceType === "EVENT" ||
-      scheduleAwardContext?.source_type === "EVENT"
-    ) {
+    const scheduleSemantics =
+      resolveScheduleXpCompletionSemantics(scheduleAwardContext);
+    if (scheduleSemantics?.isMyListEventBacked) {
       const eventContext = await resolveEventAwardContext({
         client: db,
         userId: user.id,
         request: awardRequest,
         amount,
         schedule: scheduleAwardContext,
+        surgeSourceType: "TASK",
       });
       if ("skippedReason" in eventContext) {
         if (process.env.NODE_ENV !== "production") {
@@ -424,7 +545,10 @@ export async function POST(request: NextRequest) {
           reason: eventContext.skippedReason,
         });
       }
-      awardRequest = withResolvedEventContext(awardRequest, eventContext);
+      awardRequest = withResolvedEventContext(
+        awardRequest,
+        eventContext
+      ) as ResolvedAwardRequest;
       surgePayload = eventContext.surge;
       surgeSkillId = eventContext.primarySkillId;
     } else {
@@ -438,6 +562,12 @@ export async function POST(request: NextRequest) {
       surgePayload = skillBackedSurge?.surge ?? null;
       surgeSkillId = skillBackedSurge?.primarySkillId ?? null;
     }
+    await persistScheduleXpAuditMetadata({
+      client: db,
+      userId: user.id,
+      schedule: scheduleAwardContext,
+      semantics: scheduleSemantics,
+    });
 
     let awardKeyBase = buildAwardKeyBase(awardRequest);
 
@@ -457,6 +587,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         occurrenceStem: awardRequest.reversible.occurrenceStem,
         legacyOccurrenceStems: awardRequest.reversible.legacyOccurrenceStems,
+        scheduleInstanceId: awardRequest.scheduleInstanceId ?? null,
       });
       if (reversibleStatus.blockedByActivePositive) {
         return NextResponse.json({
@@ -472,20 +603,34 @@ export async function POST(request: NextRequest) {
     }
 
     let completionEventId: string | null = null;
-    const completionInput: CompletionEventInput | null = awardRequest.completion
-      ? {
-          ...awardRequest.completion,
-          scheduleInstanceId:
-            awardRequest.completion.scheduleInstanceId ??
-            awardRequest.scheduleInstanceId,
-        }
-      : awardRequest.scheduleInstanceId
-        ? {
-            action: amount < 0 ? "undo" : "complete",
-            scheduleInstanceId: awardRequest.scheduleInstanceId,
-            wasScheduled: true,
-          }
-        : null;
+    let completionInput: CompletionEventInput | null = null;
+    if (awardRequest.completion) {
+      const sourceType =
+        awardRequest.completion.sourceType &&
+        awardRequest.completion.sourceType !== "EVENT"
+          ? awardRequest.completion.sourceType
+          : undefined;
+      completionInput = {
+        action: awardRequest.completion.action,
+        sourceType,
+        sourceId: awardRequest.completion.sourceId,
+        completedAt: awardRequest.completion.completedAt,
+        scheduleInstanceId:
+          awardRequest.completion.scheduleInstanceId ??
+          awardRequest.scheduleInstanceId,
+        wasScheduled: awardRequest.completion.wasScheduled,
+        durationMin: awardRequest.completion.durationMin,
+        timeZone: awardRequest.completion.timeZone,
+        productivityDayKey: awardRequest.completion.productivityDayKey,
+        completionKey: awardRequest.completion.completionKey,
+      };
+    } else if (awardRequest.scheduleInstanceId) {
+      completionInput = {
+        action: amount < 0 ? "undo" : "complete",
+        scheduleInstanceId: awardRequest.scheduleInstanceId,
+        wasScheduled: true,
+      };
+    }
 
     if (completionInput) {
       try {

@@ -40,6 +40,8 @@ const FAB_ONLY_PROP_NAMES = new Set<string>([
   "portalToBody",
   "openOnMount",
   "creationRequest",
+  "timeBlockAdjustmentRequest",
+  "onTimeBlockAdjustmentRequestConsumed",
   "prewarm",
 ]);
 
@@ -50,6 +52,7 @@ export function LazyFab(props: LazyFabProps) {
     openOnMount = false,
     hideLauncher = false,
     creationRequest = null,
+    timeBlockAdjustmentRequest = null,
     prewarm = true,
     ...fabProps
   } = props;
@@ -57,7 +60,10 @@ export function LazyFab(props: LazyFabProps) {
     Object.entries(props).filter(([key]) => !FAB_ONLY_PROP_NAMES.has(key))
   ) as React.HTMLAttributes<HTMLDivElement>;
   const shouldOpenHeavyFab =
-    Boolean(editTarget) || openOnMount || Boolean(creationRequest);
+    Boolean(editTarget) ||
+    openOnMount ||
+    Boolean(creationRequest) ||
+    Boolean(timeBlockAdjustmentRequest);
   const [shouldLoadFab, setShouldLoadFab] = React.useState(shouldOpenHeavyFab);
   const [isFabReady, setIsFabReady] = React.useState(false);
   const [openWhenReady, setOpenWhenReady] = React.useState(false);
@@ -136,6 +142,10 @@ export function LazyFab(props: LazyFabProps) {
         onEditSaved={props.onEditSaved}
         hideLauncher={hideLauncher}
         creationRequest={creationRequest}
+        timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
+        onTimeBlockAdjustmentRequestConsumed={
+          props.onTimeBlockAdjustmentRequestConsumed
+        }
         openOnMount={openOnMount || openWhenReady || Boolean(editTarget)}
       />
     );
