@@ -5,9 +5,13 @@ import {
 } from "@/lib/scheduler/instanceRepo";
 import {
   resolveCreatorXpSurgeTitle,
-  showCreatorXpSurge,
   type CreatorXpSurgeTitleParts,
 } from "@/components/xp/CreatorXpSurgeHud";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
+import type {
+  CreatorXpBurstRect,
+  CreatorXpBurstSourceOrigin,
+} from "@/lib/effects/creatorXpBurstBus";
 
 const PROJECT_XP_AMOUNT = 3;
 
@@ -19,9 +23,33 @@ export interface ProjectCompletionContext {
     sourceIcon?: string | null;
     displayXp?: number | null;
   };
+  xpSourceRect?: CreatorXpBurstRect | DOMRect | null;
+  xpSourceOrigin?: CreatorXpBurstSourceOrigin;
 }
 
 export type ProjectCompletionAction = "complete" | "undo";
+
+type ProjectXpAwardResponse = {
+  success?: boolean;
+  deduped?: boolean;
+  inserted?: number;
+  surge?: {
+    title?: string | null;
+    sourceIcon?: string | null;
+    displayXp?: number | null;
+    currentLevel?: number | null;
+  } | null;
+  awardKeyBase?: string | null;
+};
+
+export type ProjectCompletionResult = {
+  ok: boolean;
+  completedAt: string | null;
+  scheduleInstanceId: string | null;
+  didAwardXp: boolean;
+  didDispatchVisual: boolean;
+  inserted: number;
+};
 
 function collectUniqueSkillIds(
   projectSkillIds?: string[] | null,
@@ -201,14 +229,12 @@ async function fetchProjectDurationMinutes(
 
 function buildAwardKeyBase(
   projectId: string,
-  scheduleInstanceId: string | null,
-  action: ProjectCompletionAction
+  scheduleInstanceId: string | null
 ) {
-  const kind = action === "complete" ? "project" : "project:undo";
   if (scheduleInstanceId) {
-    return `sched:${scheduleInstanceId}:${kind}`;
+    return `sched:${scheduleInstanceId}:project`;
   }
-  return `project:${projectId}:${kind}`;
+  return `project:${projectId}:project`;
 }
 
 async function awardProjectXp(
@@ -219,13 +245,16 @@ async function awardProjectXp(
   action: ProjectCompletionAction,
   completedAt: string | null,
   durationMin: number | null
-): Promise<boolean> {
-  const awardKeyBase = buildAwardKeyBase(projectId, scheduleInstanceId, action);
+): Promise<ProjectXpAwardResponse | null> {
+  const awardKeyBase = buildAwardKeyBase(projectId, scheduleInstanceId);
 
   const body: Record<string, unknown> = {
     kind: "project",
-    amount: action === "complete" ? PROJECT_XP_AMOUNT : -PROJECT_XP_AMOUNT,
+    amount: PROJECT_XP_AMOUNT,
     awardKeyBase,
+    reversible: {
+      occurrenceStem: awardKeyBase,
+    },
     completion: {
       action,
       sourceType: "PROJECT",
@@ -257,11 +286,39 @@ async function awardProjectXp(
     });
     if (!response.ok) {
       console.error("Failed to award XP for project completion", await response.text());
-      return false;
+      return null;
     }
-    return true;
+    return (await response.json().catch(() => null)) as ProjectXpAwardResponse | null;
   } catch (error) {
     console.error("Failed to award XP for project completion", error);
+    return null;
+  }
+}
+
+async function reverseProjectXp(
+  projectId: string,
+  scheduleInstanceId: string | null
+): Promise<boolean> {
+  const occurrenceStem = buildAwardKeyBase(projectId, scheduleInstanceId);
+
+  try {
+    const response = await fetch("/api/xp/reverse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        occurrenceStem,
+        legacyOccurrenceStems: [`project:${projectId}:project`],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to reverse project completion XP", await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Failed to reverse project completion XP", error);
     return false;
   }
 }
@@ -269,21 +326,30 @@ async function awardProjectXp(
 export async function recordProjectCompletion(
   context: ProjectCompletionContext,
   action: ProjectCompletionAction = "complete"
-) {
+): Promise<ProjectCompletionResult> {
+  const failedResult: ProjectCompletionResult = {
+    ok: false,
+    completedAt: null,
+    scheduleInstanceId: null,
+    didAwardXp: false,
+    didDispatchVisual: false,
+    inserted: 0,
+  };
+
   if (!context.projectId) {
-    return;
+    return failedResult;
   }
 
   const supabase = getSupabaseBrowser();
   if (!supabase) {
     console.warn("Supabase client not available for project completion");
-    return;
+    return failedResult;
   }
 
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user?.id) {
     console.warn("Unable to determine user for project completion:", authError);
-    return;
+    return failedResult;
   }
 
   const userId = authData.user.id;
@@ -316,7 +382,19 @@ export async function recordProjectCompletion(
   await updateProjectCompletionFlag(context.projectId, action, supabase, completionTimestamp);
   const monumentIds = await fetchMonumentIdsForSkills(userId, skillIds, supabase);
 
-  const didAwardXp = await awardProjectXp(
+  if (action === "undo") {
+    const didReverseXp = await reverseProjectXp(context.projectId, scheduleInstanceId);
+    return {
+      ok: didReverseXp,
+      completedAt: null,
+      scheduleInstanceId,
+      didAwardXp: false,
+      didDispatchVisual: false,
+      inserted: 0,
+    };
+  }
+
+  const awardPayload = await awardProjectXp(
     context.projectId,
     skillIds,
     monumentIds,
@@ -325,14 +403,47 @@ export async function recordProjectCompletion(
     completionTimestamp,
     durationMin
   );
-  if (action === "complete" && didAwardXp) {
-    showCreatorXpSurge({
-      sourceType: "PROJECT",
-      title: resolveCreatorXpSurgeTitle(context.xpSurge ?? {}),
-      sourceIcon: context.xpSurge?.sourceIcon ?? null,
-      displayXp: context.xpSurge?.displayXp ?? PROJECT_XP_AMOUNT,
-      progressFrom: 18,
-      progressTo: 78,
+  const inserted = awardPayload?.inserted ?? 0;
+  const didAwardXp = Boolean(
+    awardPayload?.success &&
+      !awardPayload.deduped &&
+      inserted > 0 &&
+      awardPayload.surge
+  );
+  if (didAwardXp) {
+    dispatchCreatorXpRewardVisual({
+      surge: {
+        sourceType: "PROJECT",
+        title:
+          awardPayload?.surge?.title ??
+          resolveCreatorXpSurgeTitle(context.xpSurge ?? {}),
+        sourceIcon:
+          awardPayload?.surge?.sourceIcon ?? context.xpSurge?.sourceIcon ?? null,
+        displayXp:
+          awardPayload?.surge?.displayXp ??
+          context.xpSurge?.displayXp ??
+          PROJECT_XP_AMOUNT,
+        currentLevel: awardPayload?.surge?.currentLevel ?? null,
+        progressFrom: 18,
+        progressTo: 78,
+      },
+      sourceRect: context.xpSourceRect,
+      sourceOrigin: context.xpSourceOrigin,
+      amount:
+        awardPayload?.surge?.displayXp ??
+        context.xpSurge?.displayXp ??
+        PROJECT_XP_AMOUNT,
+      kind: "project_complete",
+      burstId: `project:${context.projectId}:${completionTimestamp ?? "completed"}`,
     });
   }
+
+  return {
+    ok: didAwardXp,
+    completedAt: completionTimestamp,
+    scheduleInstanceId,
+    didAwardXp,
+    didDispatchVisual: didAwardXp,
+    inserted,
+  };
 }

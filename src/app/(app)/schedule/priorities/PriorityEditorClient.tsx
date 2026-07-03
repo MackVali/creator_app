@@ -50,8 +50,8 @@ import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
   resolveCreatorXpSurgeTitle,
-  showCreatorXpSurge,
 } from "@/components/xp/CreatorXpSurgeHud";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import {
   HABIT_TYPE_LABELS,
   HABIT_TYPE_ORDER,
@@ -908,14 +908,19 @@ export default function PriorityEditorClient({
 
         const didAwardXp = await awardPriorityEditorTaskCompletion(task, completedAt);
         if (didAwardXp) {
-          showCreatorXpSurge({
-            sourceType: "TASK",
-            title: resolveCreatorXpSurgeTitle({
-              skillName: task.skillName,
-              sourceTitle: task.name,
-            }),
-            sourceIcon: task.skillIcon ?? null,
-            displayXp: 1,
+          dispatchCreatorXpRewardVisual({
+            surge: {
+              sourceType: "TASK",
+              title: resolveCreatorXpSurgeTitle({
+                skillName: task.skillName,
+                sourceTitle: task.name,
+              }),
+              sourceIcon: task.skillIcon ?? null,
+              displayXp: 1,
+            },
+            amount: 1,
+            kind: "task_complete",
+            burstId: `priority-task:${task.id}:${completedAt}`,
           });
         }
         dispatchPriorityEditorEntitySaved("TASK", task.id);

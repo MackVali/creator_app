@@ -91,7 +91,8 @@ import {
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { useToastHelpers } from "@/components/ui/toast";
-import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
+import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 
 export type FocusPomoSourceType = "monument" | "skill";
 
@@ -3378,9 +3379,7 @@ async function completeFocusPomoItem({
   }
 
   if (scheduleInstanceId) {
-    showScheduledEventCreatorXpSurge({
-      scheduleInstanceId,
-      completedAt,
+    const surge = buildCreatorXpSurgePayload({
       sourceType: readFocusPomoCompletionSourceType(kind),
       sourceIcon:
         item.skillIcon ??
@@ -3391,6 +3390,14 @@ async function completeFocusPomoItem({
       skillName: item.skillName ?? null,
       monumentTitle: item.goalMonumentName ?? item.goal_monument_name ?? null,
       sourceTitle: item.title,
+    });
+    dispatchCreatorXpRewardVisual({
+      surge,
+      scheduleInstanceId,
+      completedAt,
+      amount: surge.displayXp ?? undefined,
+      kind: "schedule_instance_complete",
+      burstId: `focus-pomo:${scheduleInstanceId}:${completedAt}`,
     });
   }
 

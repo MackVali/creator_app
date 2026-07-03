@@ -119,6 +119,7 @@ import {
 import { SCHEDULER_PRIORITY_LABELS } from "@/lib/types/ai";
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
+import { buildScheduleEventSkillMetadata } from "@/lib/schedule/eventSkillContext";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import { PaywallModal } from "@/components/billing/PaywallModal";
 import {
@@ -142,7 +143,8 @@ import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
-import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
+import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import PriorityEditorClient, {
   type PriorityEditorClientProps,
 } from "@/app/(app)/schedule/priorities/PriorityEditorClient";
@@ -2052,7 +2054,7 @@ type OverlayPlacement = {
 };
 
 type FabSupabaseClient = NonNullable<ReturnType<typeof getSupabaseBrowser>>;
-type ExactScheduleSourceType = "PROJECT" | "TASK";
+type ExactScheduleSourceType = "PROJECT" | "TASK" | "EVENT";
 type UnifiedEventKind = "APPOINTMENT" | "MEETING" | "REMINDER" | "EVENT";
 const SCHEDULE_SAVED_EVENTS_UPDATED_EVENT = "schedule:saved-events-updated";
 
@@ -2452,6 +2454,7 @@ const upsertLockedScheduleInstance = async ({
   exactSchedule,
   removeWhenBlank,
   eventName,
+  metadata,
 }: {
   supabase: FabSupabaseClient;
   userId: string;
@@ -2460,6 +2463,7 @@ const upsertLockedScheduleInstance = async ({
   exactSchedule: ParsedExactSchedule | null;
   removeWhenBlank: boolean;
   eventName?: string | null;
+  metadata?: Database["public"]["Tables"]["schedule_instances"]["Insert"]["metadata"];
 }) => {
   if (!exactSchedule) {
     if (!removeWhenBlank) return;
@@ -2497,6 +2501,7 @@ const upsertLockedScheduleInstance = async ({
       day_type_time_block_id: null,
       time_block_id: null,
       ...(eventName !== undefined ? { event_name: eventName } : {}),
+      ...(metadata !== undefined ? { metadata: metadata ?? null } : {}),
     };
     const { error: updateError } = await supabase
       .from("schedule_instances")
@@ -2522,6 +2527,7 @@ const upsertLockedScheduleInstance = async ({
     weight_snapshot: 0,
     energy_resolved: "NO",
     ...(eventName !== undefined ? { event_name: eventName } : {}),
+    ...(metadata !== undefined ? { metadata: metadata ?? null } : {}),
   };
   const { error: insertError } = await supabase
     .from("schedule_instances")
@@ -6496,7 +6502,7 @@ export function Fab({
       task: EditProjectTaskChild,
       completedAt: string,
       action: "complete" | "undo" = "complete",
-    ) => {
+    ): Promise<boolean> => {
       const skill = task.skillId ? findSkillById(task.skillId) : null;
       const skillIds = task.skillId ? [task.skillId] : [];
       const monumentIds =
@@ -6545,12 +6551,15 @@ export function Fab({
             "Failed to award XP for project task completion change",
             await response.text(),
           );
+          return false;
         }
+        return action === "complete";
       } catch (error) {
         console.error(
           "Failed to award XP for project task completion change",
           error,
         );
+        return false;
       }
     },
     [findSkillById],
@@ -6694,6 +6703,9 @@ export function Fab({
           {
             projectId: project.id,
             projectSkillIds: project.skillIds,
+            xpSurge: {
+              sourceTitle: project.name,
+            },
           },
           "complete",
         );
@@ -7077,7 +7089,21 @@ export function Fab({
           action: "updated",
         });
         void hapticComplete();
-        void awardEditProjectTaskCompletion(task, completedAt);
+        const didAwardXp = await awardEditProjectTaskCompletion(task, completedAt);
+        if (didAwardXp) {
+          const skill = task.skillId ? findSkillById(task.skillId) : null;
+          dispatchCreatorXpRewardVisual({
+            surge: {
+              sourceType: "TASK",
+              title: skill?.name?.trim() || task.name,
+              sourceIcon: skill?.icon ?? null,
+              displayXp: 1,
+            },
+            amount: 1,
+            kind: "task_complete",
+            burstId: `fab-task:${task.id}:${completedAt}`,
+          });
+        }
       } catch (error) {
         console.error("Failed to complete project task", error);
         void hapticErrorPattern();
@@ -7085,7 +7111,7 @@ export function Fab({
         projectTaskCompletingIdsRef.current.delete(task.id);
       }
     },
-    [awardEditProjectTaskCompletion, isEditProjectTaskCompleted],
+    [awardEditProjectTaskCompletion, findSkillById, isEditProjectTaskCompleted],
   );
 
   const uncompleteEditProjectTask = useCallback(
@@ -18562,9 +18588,7 @@ export function Fab({
         const monument = monumentId
           ? monuments.find((item) => item.id === monumentId)
           : null;
-        showScheduledEventCreatorXpSurge({
-          scheduleInstanceId,
-          completedAt: nextCompletedAt,
+        const surge = buildCreatorXpSurgePayload({
           sourceType,
           sourceIcon:
             result.skillIcon ??
@@ -18591,6 +18615,14 @@ export function Fab({
             monument?.title ??
             null,
           sourceTitle: result.name,
+        });
+        dispatchCreatorXpRewardVisual({
+          surge,
+          scheduleInstanceId,
+          completedAt: nextCompletedAt,
+          amount: surge.displayXp ?? undefined,
+          kind: "schedule_instance_complete",
+          burstId: `nexus:${scheduleInstanceId}:${nextCompletedAt}`,
         });
         setSearchResults((prev) => {
           const nextResults = prev.map((item) =>
@@ -20588,8 +20620,42 @@ export function Fab({
         notification_timing: unifiedEventNotificationTiming || "NONE",
       };
 
-      const { error } = await supabase.from("events").insert(payload);
+      const { data: eventRow, error } = await supabase
+        .from("events")
+        .insert(payload)
+        .select("id")
+        .single();
       if (error) throw error;
+      const eventId =
+        typeof eventRow?.id === "string" && eventRow.id.trim().length > 0
+          ? eventRow.id
+          : null;
+      if (
+        eventId &&
+        !unifiedEventAllDay &&
+        (kind === "EVENT" || kind === "MEETING" || kind === "APPOINTMENT")
+      ) {
+        await upsertLockedScheduleInstance({
+          supabase,
+          userId: user.id,
+          sourceType: "EVENT",
+          sourceId: eventId,
+          exactSchedule: {
+            startIso: startAt,
+            endIso: endAt,
+            durationMin: Math.max(
+              1,
+              Math.round(
+                (new Date(endAt).getTime() - new Date(startAt).getTime()) /
+                  60000
+              )
+            ),
+          },
+          removeWhenBlank: false,
+          eventName: title,
+          metadata: buildScheduleEventSkillMetadata(taskSkillId),
+        });
+      }
 
       if (
         !unifiedEventAllDay &&
@@ -20618,6 +20684,7 @@ export function Fab({
     closeUnifiedEventSheet,
     isSavingFab,
     resetUnifiedEventDraft,
+    taskSkillId,
     taskExactDate,
     taskExactEndTime,
     taskExactStartTime,

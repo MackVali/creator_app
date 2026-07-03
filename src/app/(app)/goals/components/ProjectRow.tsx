@@ -22,9 +22,19 @@ import { useToastHelpers } from "@/components/ui/toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import {
+  CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY,
+  type CreatorXpBurstRect,
+} from "@/lib/effects/creatorXpBurstBus";
+import {
   hapticErrorPattern,
   hapticLongPress,
 } from "@/lib/haptics/creatorHaptics";
+import {
+  campaignDrawerTaskLayoutId,
+  campaignDrawerRowOverrideCompleted,
+  campaignDrawerTaskRowKey,
+  type CampaignDrawerRowLifecycleById,
+} from "./campaignDrawerRowState";
 
 export type ProjectCardMorphOrigin = {
   x: number;
@@ -53,14 +63,31 @@ interface ProjectRowProps {
     goalId: string,
     projectId: string,
     taskId: string,
-    currentCompletedAt: string | null
-  ) => void;
+    currentCompletedAt: string | null,
+    sourceRect?: DOMRect | null
+  ) => boolean | void | Promise<boolean | void>;
+  campaignDrawerXpSource?: boolean;
+  completionOverride?: boolean;
+  taskCompletionOverrides?: CampaignDrawerRowLifecycleById;
 }
 
 export const MAX_VISIBLE_PROJECT_TASKS = 12;
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
 const SINGLE_TAP_DELAY_MS = 160;
+
+function reportCampaignDrawerXpTiming(
+  label: string,
+  detail: Record<string, unknown>
+) {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
+    return;
+  }
+  if (window.localStorage.getItem(CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY) !== "1") {
+    return;
+  }
+  console.info(`Campaign drawer XP timing: ${label}`, detail);
+}
 
 const compactNestedTaskPanelMotion = {
   hidden: { opacity: 0, height: 0, y: -3 },
@@ -82,6 +109,11 @@ const compactNestedTaskPanelMotion = {
       ease: [0.4, 0, 0.2, 1],
     },
   },
+} as const;
+
+const campaignDrawerTaskLayoutTransition = {
+  duration: 0.34,
+  ease: [0.22, 1, 0.36, 1],
 } as const;
 
 type ProjectRowTaskInteractions = Pick<
@@ -116,6 +148,9 @@ export function getProjectTasksListClasses(isCompleted: boolean) {
   };
 }
 
+const focusPomoCompleteSurfaceClass =
+  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45 shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)]";
+
 const energyCodeToFlameLevel = (value?: string | null): FlameLevel => {
   switch (value?.toUpperCase()) {
     case "LOW":
@@ -143,6 +178,17 @@ const projectStageToStatus = (stage: string): Project["status"] => {
       return "In-Progress";
   }
 };
+
+function getIncompleteProjectProgress(project: Project) {
+  if (project.tasks.length === 0) return 0;
+
+  const completedCount = project.tasks.filter((task) =>
+    Boolean(task.completedAt)
+  ).length;
+  const progress = Math.round((completedCount / project.tasks.length) * 100);
+
+  return Math.min(progress, 99);
+}
 
 function buildProjectOrigin(
   element: HTMLElement | null,
@@ -194,6 +240,9 @@ export function ProjectRow({
   onUpdated,
   onTaskEditOpen: onTaskEditOpenProp,
   onTaskToggleCompletion: onTaskToggleCompletionProp,
+  campaignDrawerXpSource = false,
+  completionOverride,
+  taskCompletionOverrides,
 }: ProjectRowProps) {
   const taskInteractionContext = useContext(ProjectRowTaskInteractionsContext);
   const goalId = goalIdProp ?? taskInteractionContext.goalId;
@@ -222,6 +271,7 @@ export function ProjectRow({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef(false);
   const originElementRef = useRef<HTMLButtonElement | null>(null);
+  const cardElementRef = useRef<HTMLDivElement | null>(null);
   const skipClickRef = useRef(false);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskSingleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -229,6 +279,7 @@ export function ProjectRow({
   );
   const lastTapTimeRef = useRef(0);
   const tapSequenceRef = useRef(0);
+  const completionTapStartedAtRef = useRef<number | null>(null);
   const lastTaskTapRef = useRef<{ taskId: string; time: number } | null>(null);
   const lastActiveProgressRef = useRef(project.progress);
   const completionRejectedTimerRef = useRef<ReturnType<
@@ -399,7 +450,10 @@ export function ProjectRow({
             goalId,
             project.id,
             task.id,
-            task.completedAt ?? null
+            task.completedAt ?? null,
+            campaignDrawerXpSource
+              ? event.currentTarget.getBoundingClientRect()
+              : null
           );
         }
         return;
@@ -420,6 +474,7 @@ export function ProjectRow({
     },
     [
       cancelTaskSingleTap,
+      campaignDrawerXpSource,
       goalId,
       onTaskToggleCompletion,
       openTaskEditor,
@@ -458,7 +513,7 @@ export function ProjectRow({
     originElementRef.current = null;
   }, [onLongPress, project, toggle]);
 
-  const toggleCompletion = useCallback(async () => {
+  const toggleCompletion = useCallback(async (xpSourceRect?: CreatorXpBurstRect | null) => {
     if (completionPending) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) {
@@ -471,12 +526,25 @@ export function ProjectRow({
       completed_at?: string | null;
     };
     const isProjectAlreadyCompleted =
-      localStatus === "Done" ||
-      localStage === "RELEASE" ||
-      Number(project.progress ?? 0) >= 100 ||
-      Boolean(projectWithCompletion.completedAt) ||
-      Boolean(projectWithCompletion.completed_at);
+      completionOverride ??
+      (localStatus === "Done" ||
+        localStage === "RELEASE" ||
+        Number(project.progress ?? 0) >= 100 ||
+        Boolean(projectWithCompletion.completedAt) ||
+        Boolean(projectWithCompletion.completed_at));
     const shouldComplete = !isProjectAlreadyCompleted;
+    const tapStartedAt = completionTapStartedAtRef.current ?? performance.now();
+    reportCampaignDrawerXpTiming("project tap", {
+      projectId: project.id,
+      action: shouldComplete ? "complete" : "undo",
+      tapTime: tapStartedAt,
+    });
+    reportCampaignDrawerXpTiming("project source rect captured", {
+      projectId: project.id,
+      capturedAt: performance.now(),
+      elapsedMs: performance.now() - tapStartedAt,
+      hasRect: Boolean(xpSourceRect),
+    });
     if (
       shouldComplete &&
       project.tasks.length > 0 &&
@@ -489,18 +557,35 @@ export function ProjectRow({
     const fallbackStage = localStage && localStage !== "RELEASE" ? localStage : lastActiveStage;
     const nextStage = shouldComplete ? "RELEASE" : fallbackStage || "BUILD";
     const completedAt = shouldComplete ? new Date().toISOString() : null;
-    const nextProgress = shouldComplete ? 100 : lastActiveProgressRef.current;
+    const nextProgress = shouldComplete
+      ? 100
+      : Math.min(lastActiveProgressRef.current, getIncompleteProjectProgress(project));
+    const previousStatus = localStatus;
+    const previousStage = localStage;
 
     setCompletionPending(true);
+    setLocalStatus(projectStageToStatus(nextStage));
+    setLocalStage(nextStage);
+    const projectCompletionPayload = {
+      stage: nextStage,
+      completed_at: completedAt,
+    };
     const { error } = await supabase
       .from("projects")
-      .update({ stage: nextStage, completed_at: completedAt })
+      .update(projectCompletionPayload as never)
       .eq("id", project.id);
-    setCompletionPending(false);
     if (error) {
       console.error("Failed to toggle project completion", error);
+      setLocalStatus(previousStatus);
+      setLocalStage(previousStage);
+      setCompletionPending(false);
       return;
     }
+    reportCampaignDrawerXpTiming("project persistence complete", {
+      projectId: project.id,
+      completedAt: performance.now(),
+      elapsedMs: performance.now() - tapStartedAt,
+    });
 
     const nextStatus = projectStageToStatus(nextStage);
     if (shouldComplete && localStage && localStage !== "RELEASE") {
@@ -510,8 +595,6 @@ export function ProjectRow({
       setLastActiveStage(nextStage);
     }
 
-    setLocalStatus(nextStatus);
-    setLocalStage(nextStage);
     const completionUpdates: Partial<Project> & {
       completedAt?: string | null;
       completed_at?: string | null;
@@ -522,9 +605,11 @@ export function ProjectRow({
       completedAt,
       completed_at: completedAt,
     };
-    onUpdated?.(project.id, completionUpdates);
+    if (!shouldComplete) {
+      onUpdated?.(project.id, completionUpdates);
+    }
     if (shouldComplete) {
-      void recordProjectCompletion(
+      const result = await recordProjectCompletion(
         {
           projectId: project.id,
           projectSkillIds: project.skillIds,
@@ -533,11 +618,20 @@ export function ProjectRow({
             sourceTitle: project.name,
             sourceIcon: project.emoji ?? null,
           },
+          xpSourceRect,
+          xpSourceOrigin: xpSourceRect ? "card" : undefined,
         },
         "complete"
       );
+      reportCampaignDrawerXpTiming("project xp response", {
+        projectId: project.id,
+        responseAt: performance.now(),
+        elapsedMs: performance.now() - tapStartedAt,
+        inserted: result.inserted,
+        didDispatchVisual: result.didDispatchVisual,
+      });
     } else {
-      void recordProjectCompletion(
+      const result = await recordProjectCompletion(
         {
           projectId: project.id,
           projectSkillIds: project.skillIds,
@@ -549,9 +643,55 @@ export function ProjectRow({
         },
         "undo"
       );
+      reportCampaignDrawerXpTiming("project xp reverse response", {
+        projectId: project.id,
+        responseAt: performance.now(),
+        elapsedMs: performance.now() - tapStartedAt,
+        ok: result.ok,
+      });
+      if (!result.ok) {
+        const rollbackCompletedAt = new Date().toISOString();
+        const rollbackPersistencePayload = {
+          stage: "RELEASE",
+          completed_at: rollbackCompletedAt,
+        };
+        const { error: rollbackError } = await supabase
+          .from("projects")
+          .update(rollbackPersistencePayload as never)
+          .eq("id", project.id);
+        if (rollbackError) {
+          console.error("Failed to rollback project undo", rollbackError);
+        }
+        setLocalStatus(previousStatus);
+        setLocalStage(previousStage);
+        const rollbackUpdates: Partial<Project> & {
+          completedAt?: string | null;
+          completed_at?: string | null;
+        } = {
+          status: previousStatus,
+          stage: previousStage,
+          completedAt:
+            previousStage === "RELEASE"
+              ? rollbackCompletedAt
+              : null,
+          completed_at:
+            previousStage === "RELEASE"
+              ? rollbackCompletedAt
+              : null,
+        };
+        onUpdated?.(project.id, rollbackUpdates);
+        setCompletionPending(false);
+        return;
+      }
     }
+    setCompletionPending(false);
+    if (shouldComplete) {
+      onUpdated?.(project.id, completionUpdates);
+    }
+    completionTapStartedAtRef.current = null;
   }, [
     completionPending,
+    completionOverride,
     lastActiveStage,
     localStage,
     localStatus,
@@ -565,11 +705,12 @@ export function ProjectRow({
     completed_at?: string | null;
   };
   const isCompleted =
-    localStatus === "Done" ||
-    localStage === "RELEASE" ||
-    Number(project.progress ?? 0) >= 100 ||
-    Boolean(projectWithCompletion.completedAt) ||
-    Boolean(projectWithCompletion.completed_at);
+    completionOverride ??
+    (localStatus === "Done" ||
+      localStage === "RELEASE" ||
+      Number(project.progress ?? 0) >= 100 ||
+      Boolean(projectWithCompletion.completedAt) ||
+      Boolean(projectWithCompletion.completed_at));
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -620,7 +761,9 @@ export function ProjectRow({
         cancelSingleTap();
         skipClickRef.current = true;
         event?.preventDefault();
-        void toggleCompletion();
+        completionTapStartedAtRef.current = performance.now();
+        const xpSourceRect = cardElementRef.current?.getBoundingClientRect() ?? null;
+        void toggleCompletion(xpSourceRect);
         return;
       }
 
@@ -708,9 +851,7 @@ export function ProjectRow({
     ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
     : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
   const cardSurfaceClass = isCompleted
-    ? isCompactNested
-      ? "border-emerald-400/42 bg-[linear-gradient(135deg,rgba(30,204,163,0.72)_0%,rgba(16,185,129,0.58)_48%,rgba(4,120,87,0.68)_100%)] ring-1 ring-emerald-300/36 shadow-[0_14px_26px_rgba(2,32,24,0.32),inset_0_1px_0_rgba(255,255,255,0.1)] hover:border-emerald-300/55 hover:bg-emerald-500/[0.08]"
-      : "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+    ? focusPomoCompleteSurfaceClass
     : isCompactNested
       ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
@@ -740,6 +881,11 @@ export function ProjectRow({
   return (
     <>
       <div
+        ref={cardElementRef}
+        data-creator-xp-source={
+          campaignDrawerXpSource ? "campaign-drawer-card" : undefined
+        }
+        data-creator-xp-kind={campaignDrawerXpSource ? "project" : undefined}
         className={`relative border transition-transform select-none ${
           isCompactNested
             ? "rounded-lg px-2 py-1.5 sm:rounded-xl sm:px-2.5 sm:py-2"
@@ -867,11 +1013,19 @@ export function ProjectRow({
                   incompleteTaskRowClass={incompleteTaskRowClass}
                   completedTaskMarkerClass={completedTaskMarkerClass}
                   incompleteTaskMarkerClass={incompleteTaskMarkerClass}
-                  isTaskCompleted={isTaskComplete}
+                  isTaskCompleted={(task) => {
+                    const overrideCompleted = campaignDrawerRowOverrideCompleted(
+                      taskCompletionOverrides?.[
+                        campaignDrawerTaskRowKey(task.id)
+                      ]
+                    );
+                    return overrideCompleted ?? isTaskComplete(task);
+                  }}
                   onTaskPointerDown={handleTaskPointerDown}
                   onTaskPointerUp={handleTaskPointerUp}
                   onTaskPointerCancel={handleTaskPointerCancel}
                   onTaskClick={handleTaskClick}
+                  campaignDrawerXpSource={campaignDrawerXpSource}
                 />
               </motion.div>
             ) : null}
@@ -893,11 +1047,17 @@ export function ProjectRow({
                 incompleteTaskRowClass={incompleteTaskRowClass}
                 completedTaskMarkerClass={completedTaskMarkerClass}
                 incompleteTaskMarkerClass={incompleteTaskMarkerClass}
-                isTaskCompleted={isTaskComplete}
+                isTaskCompleted={(task) => {
+                  const overrideCompleted = campaignDrawerRowOverrideCompleted(
+                    taskCompletionOverrides?.[campaignDrawerTaskRowKey(task.id)]
+                  );
+                  return overrideCompleted ?? isTaskComplete(task);
+                }}
                 onTaskPointerDown={handleTaskPointerDown}
                 onTaskPointerUp={handleTaskPointerUp}
                 onTaskPointerCancel={handleTaskPointerCancel}
                 onTaskClick={handleTaskClick}
+                campaignDrawerXpSource={campaignDrawerXpSource}
               />
             )}
           </div>
@@ -947,6 +1107,7 @@ export interface ProjectTasksListProps {
     event: React.MouseEvent<HTMLButtonElement>,
     task: Task
   ) => void;
+  campaignDrawerXpSource?: boolean;
 }
 
 export function ProjectTasksList({
@@ -963,7 +1124,10 @@ export function ProjectTasksList({
   onTaskPointerCancel,
   onTaskPointerLeave,
   onTaskClick,
+  campaignDrawerXpSource = false,
 }: ProjectTasksListProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   return (
     <>
       <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
@@ -977,44 +1141,72 @@ export function ProjectTasksList({
               ? task.skillIcon.trim()
               : null;
           return (
-            <button
-              type="button"
-              key={task.id}
-              className={`flex w-full min-w-0 items-center gap-1.5 rounded-lg border px-1.5 py-1.5 text-left leading-4 transition sm:gap-2 sm:px-2.5 sm:py-2 ${
-                taskCompleted ? completedTaskRowClass : incompleteTaskRowClass
-              }`}
+            <motion.div
+              key={
+                campaignDrawerXpSource
+                  ? campaignDrawerTaskRowKey(task.id)
+                  : task.id
+              }
               role="listitem"
-              onPointerDown={onTaskPointerDown}
-              onPointerUp={(event) => onTaskPointerUp(event, task)}
-              onPointerCancel={onTaskPointerCancel}
-              onPointerLeave={onTaskPointerLeave}
-              onClick={(event) => onTaskClick(event, task)}
+              layout={
+                campaignDrawerXpSource && !prefersReducedMotion
+                  ? "position"
+                  : undefined
+              }
+              layoutId={
+                campaignDrawerXpSource && !prefersReducedMotion
+                  ? campaignDrawerTaskLayoutId(task.id)
+                  : undefined
+              }
+              transition={
+                campaignDrawerXpSource && !prefersReducedMotion
+                  ? { layout: campaignDrawerTaskLayoutTransition }
+                  : undefined
+              }
             >
-              <span
-                className={`flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-md border text-[9px] font-semibold leading-none transition sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px] ${
-                  taskCompleted
-                    ? completedTaskMarkerClass
-                    : incompleteTaskMarkerClass
+              <button
+                type="button"
+                data-creator-xp-source={
+                  campaignDrawerXpSource ? "campaign-drawer-card" : undefined
+                }
+                data-creator-xp-kind={
+                  campaignDrawerXpSource ? "task" : undefined
+                }
+                className={`flex w-full min-w-0 items-center gap-1.5 rounded-lg border px-1.5 py-1.5 text-left leading-4 transition sm:gap-2 sm:px-2.5 sm:py-2 ${
+                  taskCompleted ? completedTaskRowClass : incompleteTaskRowClass
                 }`}
-                aria-hidden="true"
+                onPointerDown={onTaskPointerDown}
+                onPointerUp={(event) => onTaskPointerUp(event, task)}
+                onPointerCancel={onTaskPointerCancel}
+                onPointerLeave={onTaskPointerLeave}
+                onClick={(event) => onTaskClick(event, task)}
               >
-                {taskSkillIcon ?? (
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                )}
-              </span>
-              <span
-                className={`min-w-0 flex-1 truncate font-medium ${
-                  taskCompleted ? "text-emerald-50/92" : "text-white/82"
-                } text-[11px] sm:text-[12px]`}
-              >
-                {task.name}
-              </span>
-              <FlameEmber
-                level={energyCodeToFlameLevel(task.energyCode)}
-                size="sm"
-                className="shrink-0 self-center"
-              />
-            </button>
+                <span
+                  className={`flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-md border text-[9px] font-semibold leading-none transition sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px] ${
+                    taskCompleted
+                      ? completedTaskMarkerClass
+                      : incompleteTaskMarkerClass
+                  }`}
+                  aria-hidden="true"
+                >
+                  {taskSkillIcon ?? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  )}
+                </span>
+                <span
+                  className={`min-w-0 flex-1 truncate font-medium ${
+                    taskCompleted ? "text-emerald-50/92" : "text-white/82"
+                  } text-[11px] sm:text-[12px]`}
+                >
+                  {task.name}
+                </span>
+                <FlameEmber
+                  level={energyCodeToFlameLevel(task.energyCode)}
+                  size="sm"
+                  className="shrink-0 self-center"
+                />
+              </button>
+            </motion.div>
           );
         })}
         {hiddenCount > 0 && (

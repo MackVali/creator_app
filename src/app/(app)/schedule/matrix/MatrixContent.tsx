@@ -39,6 +39,9 @@ import {
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { MemoCompletionDialog } from "@/components/schedule/MemoCompletionDialog";
 import { PullRefreshShell } from "@/components/ui/PullRefreshShell";
+import {
+  CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE,
+} from "@/components/xp/CreatorXpSurgeHud";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
@@ -47,7 +50,9 @@ import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
+import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
 import {
   addDaysInTimeZone,
   formatDateKeyInTimeZone,
@@ -59,6 +64,16 @@ import {
   hapticErrorPattern,
   hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
+import {
+  dispatchCreatorXpBurstStatus,
+  getCreatorXpRectFromPoint,
+  isCreatorMatrixXpDebugEnabled,
+  setCreatorMatrixXpDebugEnabled,
+  subscribeToCreatorMatrixXpDebug,
+  type CreatorXpBurstRect,
+  type CreatorXpBurstSourceOrigin,
+} from "@/lib/effects/creatorXpBurstBus";
 import { cn } from "@/lib/utils";
 
 type ScheduleInstance =
@@ -144,6 +159,7 @@ type MatrixEvent = {
   title: string;
   monumentId: string | null;
   skillIds: string[];
+  skillResolverSource: string | null;
   glyph: string;
   goal: Goal | null;
   habit: MatrixHabit | null;
@@ -234,6 +250,57 @@ type MatrixPreferences = {
 };
 type MatrixScheduledCompletionOptions = {
   hapticOnComplete?: boolean;
+  xpSourceRect?: CreatorXpBurstRect | null;
+  xpSourceOrigin?: CreatorXpBurstSourceOrigin;
+};
+type MatrixXpResultStatus =
+  | "inserted"
+  | "deduped"
+  | "reversed"
+  | "repaired"
+  | "blocked"
+  | "failed";
+type MatrixXpDiagnostic = {
+  matrixKind: string;
+  displayKind: string;
+  xpSourceType: string;
+  sourceId: string | null;
+  scheduleInstanceId?: string | null;
+  skillId: string | null;
+  awardKeyBase?: string | null;
+  legacyAwardKeyBase?: string | null;
+  completionKey?: string | null;
+  completionPersisted?: boolean | null;
+  activePositiveCount?: number | null;
+  reversedCount?: number | null;
+  repairedCount?: number | null;
+  cycleAwardKeyBase?: string | null;
+  path: string;
+  result: MatrixXpResultStatus;
+  reason?: string | null;
+};
+
+const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
+type MatrixXpAwardOutcome = {
+  ok: boolean;
+  status: MatrixXpResultStatus;
+  inserted?: boolean;
+  awardKeyBase?: string | null;
+  legacyAwardKeyBase?: string | null;
+  completionKey?: string | null;
+  reason?: string | null;
+  activePositiveCount?: number | null;
+  reversedCount?: number | null;
+  cycleAwardKeyBase?: string | null;
+};
+type MatrixXpReverseOutcome = {
+  ok: boolean;
+  status: MatrixXpResultStatus;
+  reversed: number;
+  alreadyReversed: number;
+  activePositivesFound: number;
+  insertedReversalKeys: string[];
+  reason?: string | null;
 };
 type MatrixTag = {
   id: string;
@@ -266,6 +333,10 @@ type MatrixState = {
   typeEventGroups: MonumentGroup<MatrixEvent>[];
   typeUnscheduledDueHabitGroups: MonumentGroup<MatrixDueItem>[];
   dayLabel: string;
+};
+
+type MatrixXpDiagnosticInput = Omit<MatrixXpDiagnostic, "result"> & {
+  result?: MatrixXpResultStatus;
 };
 
 const initialState: MatrixState = {
@@ -354,6 +425,222 @@ const MATRIX_REORDER_LAYOUT_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1] as const,
 };
+const MATRIX_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
+
+type MatrixXpSourceCapture = {
+  rect: CreatorXpBurstRect | null;
+  origin?: CreatorXpBurstSourceOrigin;
+};
+
+type MatrixDueOccurrenceIdentity = {
+  awardKeyBase: string;
+  legacyAwardKeyBase: string;
+  completionKey: string;
+  displayKind: "HABIT" | "ROUTINE_HABIT";
+  path: string;
+  routineId: string | null;
+  routineChildId: string | null;
+  routinePosition: number | null;
+};
+
+type MatrixXpCompletionKind = "habit" | "project" | "task" | "event";
+
+function buildMatrixScheduledOccurrenceStem(
+  instanceId: string,
+  kind: MatrixXpCompletionKind
+) {
+  return `sched:${instanceId}:${kind}`;
+}
+
+function getMatrixScheduledXpKind(event: MatrixEvent | null) {
+  if (!event) return null;
+  const sourceType = event.instance.source_type;
+  if (sourceType === "TASK") return "task";
+  if (sourceType === "PROJECT" || Boolean(event.goal)) return "project";
+  if (sourceType === "HABIT" || Boolean(event.habit)) return "habit";
+  if (sourceType === "EVENT") return "event";
+  return null;
+}
+
+function buildMatrixScheduledLegacyOccurrenceStems(event: MatrixEvent | null) {
+  if (
+    event?.instance.source_type === "EVENT" &&
+    typeof event.instance.source_id === "string" &&
+    event.instance.source_id.trim().length > 0
+  ) {
+    return [`event:${event.instance.source_id}`];
+  }
+  return [];
+}
+
+function toCreatorXpRect(rect: DOMRect): CreatorXpBurstRect {
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    left: rect.left,
+  };
+}
+
+function getUsableMatrixXpRect(element: Element | null) {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return toCreatorXpRect(rect);
+}
+
+function getMatrixXpSourceFromInteraction(
+  event:
+    | MouseEvent<HTMLDivElement>
+    | TouchEvent<HTMLDivElement>
+    | PointerEvent<HTMLDivElement>,
+  point?: { clientX: number; clientY: number } | null
+): MatrixXpSourceCapture {
+  const sourceCard = event.currentTarget.closest(
+    "[data-creator-xp-source='matrix-card']"
+  );
+  const cardRect = getUsableMatrixXpRect(sourceCard);
+  if (cardRect) {
+    dispatchCreatorXpBurstStatus("XP: matrix source card");
+    return { rect: cardRect, origin: "card" };
+  }
+
+  const currentTargetRect = getUsableMatrixXpRect(event.currentTarget);
+  if (currentTargetRect) {
+    return { rect: currentTargetRect, origin: "currentTarget" };
+  }
+
+  if (
+    point &&
+    Number.isFinite(point.clientX) &&
+    Number.isFinite(point.clientY)
+  ) {
+    return {
+      rect: getCreatorXpRectFromPoint(point.clientX, point.clientY),
+      origin: "pointer",
+    };
+  }
+
+  return { rect: null, origin: undefined };
+}
+
+function getMatrixXpDiagnosticKey(
+  scope: "scheduled" | "due" | "routine",
+  id: string | null | undefined
+) {
+  return `${scope}:${id?.trim() || "unknown"}`;
+}
+
+function dispatchMatrixXpDiagnosticStatus(diagnostic: MatrixXpDiagnostic) {
+  if (!IS_DEVELOPMENT || !isCreatorMatrixXpDebugEnabled()) return;
+
+  dispatchCreatorXpBurstStatus(
+    `MATRIX XP ${diagnostic.result.toUpperCase()}: ${diagnostic.matrixKind}/${diagnostic.path} source=${diagnostic.xpSourceType}:${diagnostic.sourceId ?? "NO SOURCE"} skill=${diagnostic.skillId ?? "NO SKILL"}${diagnostic.awardKeyBase ? ` key=${diagnostic.awardKeyBase}` : ""}${diagnostic.cycleAwardKeyBase ? ` cycle=${diagnostic.cycleAwardKeyBase}` : ""}${diagnostic.legacyAwardKeyBase ? ` old=${diagnostic.legacyAwardKeyBase}` : ""}${typeof diagnostic.activePositiveCount === "number" ? ` active=${diagnostic.activePositiveCount}` : ""}${typeof diagnostic.reversedCount === "number" ? ` reversed=${diagnostic.reversedCount}` : ""}${typeof diagnostic.repairedCount === "number" ? ` repaired=${diagnostic.repairedCount}` : ""}${diagnostic.completionPersisted === true ? " persisted=yes" : diagnostic.completionPersisted === false ? " persisted=no" : ""}${diagnostic.reason ? ` ${diagnostic.reason}` : ""}`
+  );
+}
+
+function shortenMatrixXpId(id: string | null | undefined) {
+  const trimmed = id?.trim();
+  if (!trimmed) return null;
+  return trimmed.length <= 10 ? trimmed : `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
+}
+
+function MatrixXpDevDiagnostic({
+  diagnostic,
+  enabled,
+}: {
+  diagnostic?: MatrixXpDiagnostic | null;
+  enabled: boolean;
+}) {
+  if (!IS_DEVELOPMENT || !enabled || !diagnostic) return null;
+
+  const sourceId = shortenMatrixXpId(diagnostic.sourceId) ?? "NO SOURCE";
+  const scheduleInstanceId =
+    shortenMatrixXpId(diagnostic.scheduleInstanceId) ?? "NO INSTANCE";
+  const skillId = shortenMatrixXpId(diagnostic.skillId) ?? "NO SKILL";
+  const awardKey = diagnostic.awardKeyBase ?? null;
+  const legacyAwardKey = diagnostic.legacyAwardKeyBase ?? null;
+  const cycleAwardKey = diagnostic.cycleAwardKeyBase ?? null;
+  const completionKey = diagnostic.completionKey ?? null;
+
+  return (
+    <div className="mt-1 rounded-md border border-emerald-300/15 bg-zinc-950/75 px-1.5 py-1 text-[8px] font-semibold leading-tight text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="flex flex-wrap gap-x-1.5 gap-y-0.5">
+        <span className="text-emerald-300/80">
+          {diagnostic.matrixKind}/{diagnostic.displayKind}
+        </span>
+        <span>{diagnostic.xpSourceType}</span>
+        <span>src:{sourceId}</span>
+        <span>inst:{scheduleInstanceId}</span>
+        <span>skill:{skillId}</span>
+        <span>path:{diagnostic.path}</span>
+        {awardKey ? <span>key:{awardKey}</span> : null}
+        {cycleAwardKey ? <span>cycle:{cycleAwardKey}</span> : null}
+        {legacyAwardKey ? <span>old:{legacyAwardKey}</span> : null}
+        {completionKey ? <span>comp:{completionKey}</span> : null}
+        {typeof diagnostic.activePositiveCount === "number" ? (
+          <span>active:{diagnostic.activePositiveCount}</span>
+        ) : null}
+        {typeof diagnostic.reversedCount === "number" ? (
+          <span>reversed:{diagnostic.reversedCount}</span>
+        ) : null}
+        {typeof diagnostic.repairedCount === "number" ? (
+          <span>repaired:{diagnostic.repairedCount}</span>
+        ) : null}
+        {typeof diagnostic.completionPersisted === "boolean" ? (
+          <span>persisted:{diagnostic.completionPersisted ? "yes" : "no"}</span>
+        ) : null}
+        <span className="text-emerald-200/75">
+          xp:{diagnostic.result}
+          {diagnostic.reason ? ` ${diagnostic.reason}` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function findMatrixEventInState(
+  currentState: MatrixState,
+  instanceId: string
+): MatrixEvent | null {
+  const groupSets = [
+    currentState.eventGroups,
+    currentState.skillEventGroups,
+    currentState.blockEventGroups,
+    currentState.typeEventGroups,
+  ];
+  for (const groups of groupSets) {
+    for (const group of groups) {
+      for (const event of group.items) {
+        if (event.instance.id === instanceId) return event;
+
+        const routineHabit = event.routine?.habits.find(
+          (habit) => habit.sourceInstance?.id === instanceId
+        );
+        if (routineHabit?.sourceInstance) {
+          return {
+            instance: routineHabit.sourceInstance,
+            title: routineHabit.sourceHabit.name,
+            monumentId: routineHabit.sourceHabit.monumentId,
+            skillIds: routineHabit.sourceHabit.skillIds,
+            skillResolverSource: routineHabit.sourceHabit.skillIds.length
+              ? "habit.skill_id"
+              : null,
+            glyph: routineHabit.sourceHabit.glyph,
+            goal: null,
+            habit: routineHabit.sourceHabit,
+            routine: null,
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
 
 function getMatrixCompleteShimmerStyle() {
   return {
@@ -1212,6 +1499,32 @@ function buildMatrixEvents({
   timeZone: string;
 }): MatrixEvent[] {
   return instances.flatMap((instance) => {
+    if (instance.source_type === "EVENT") {
+      const skillContext = resolveScheduleEventSkillContext(instance.metadata);
+      const skillIds = skillContext.skillIds;
+      const firstSkillId = skillIds[0] ?? null;
+      const monumentId = firstSkillId
+        ? (skillIdToMonumentId.get(firstSkillId) ?? null)
+        : null;
+      const glyph = firstSkillId
+        ? (skillIdToIcon.get(firstSkillId) ??
+          (monumentId ? (monumentIdToEmoji.get(monumentId) ?? null) : null) ??
+          "◇")
+        : "◇";
+      const event: MatrixEvent = {
+        instance,
+        title: instance.event_name ?? "Untitled event",
+        monumentId,
+        skillIds,
+        skillResolverSource: skillContext.source,
+        glyph,
+        goal: null,
+        habit: null,
+        routine: null,
+      };
+      return [event];
+    }
+
     if (instance.source_type === "PROJECT") {
       const project = projects.get(instance.source_id);
       const goal = project?.goal_id ? goals.get(project.goal_id) : null;
@@ -1219,7 +1532,7 @@ function buildMatrixEvents({
       const projectGoal = project
         ? buildProjectGoal({
             project,
-            goal,
+            goal: goal ?? null,
             skillIdToIcon,
             monumentIdToEmoji,
           })
@@ -1229,6 +1542,7 @@ function buildMatrixEvents({
         title: instance.event_name ?? project?.name ?? "Untitled project",
         monumentId,
         skillIds: project ? getProjectSkillIds(project) : [],
+        skillResolverSource: null,
         glyph: monumentId ? (monumentIdToEmoji.get(monumentId) ?? "◇") : "◇",
         goal: projectGoal,
         habit: null,
@@ -1254,6 +1568,7 @@ function buildMatrixEvents({
         skillIdToMonumentId,
       }),
       skillIds: habit?.skill_id ? [habit.skill_id] : [],
+      skillResolverSource: habit?.skill_id ? "habit.skill_id" : null,
       glyph: habitSkillIcon ?? getHabitFallbackGlyph(habit?.habit_type),
       goal: null,
       habit: habit
@@ -2550,6 +2865,8 @@ function ScheduledEventCard({
   onOpenChange,
   onComplete,
   density,
+  diagnostic,
+  xpDebugEnabled,
 }: {
   event: MatrixEvent;
   open: boolean;
@@ -2560,6 +2877,8 @@ function ScheduledEventCard({
     options?: MatrixScheduledCompletionOptions
   ): void;
   density: MatrixCardDensity;
+  diagnostic?: MatrixXpDiagnostic | null;
+  xpDebugEnabled: boolean;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -2583,7 +2902,16 @@ function ScheduledEventCard({
         ? event.instance.status.replaceAll("_", " ")
         : null;
 
-  const completeEvent = useCallback(() => {
+  const matrixXpKind: MatrixXpCompletionKind =
+    event.instance.source_type === "TASK"
+      ? "task"
+      : event.goal
+        ? "project"
+        : event.habit || event.routine
+          ? "habit"
+          : "event";
+
+  const completeEvent = useCallback((source?: MatrixXpSourceCapture | null) => {
     if (event.routine) {
       const nextStatus = isCompleted ? "scheduled" : "completed";
       let shouldFireCompletionHaptic = nextStatus === "completed";
@@ -2594,6 +2922,8 @@ function ScheduledEventCard({
 
         onComplete(instanceId, nextStatus, {
           hapticOnComplete: shouldFireCompletionHaptic,
+          xpSourceRect: source?.rect ?? null,
+          xpSourceOrigin: source?.origin,
         });
         validInstanceCount += 1;
         shouldFireCompletionHaptic = false;
@@ -2604,7 +2934,10 @@ function ScheduledEventCard({
       return;
     }
 
-    onComplete(event.instance.id, isCompleted ? "scheduled" : "completed");
+    onComplete(event.instance.id, isCompleted ? "scheduled" : "completed", {
+      xpSourceRect: source?.rect ?? null,
+      xpSourceOrigin: source?.origin,
+    });
   }, [event.instance.id, event.routine, isCompleted, onComplete]);
 
   const cancelLongPress = useCallback(
@@ -2733,9 +3066,14 @@ function ScheduledEventCard({
     }
   }, []);
 
-  const handleDoubleClick = useCallback(() => {
+  const handleDoubleClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (Date.now() < suppressTapUntilRef.current) return;
-    completeEvent();
+    completeEvent(
+      getMatrixXpSourceFromInteraction(event, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      })
+    );
   }, [completeEvent]);
 
   const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
@@ -2766,7 +3104,8 @@ function ScheduledEventCard({
       const now = Date.now();
       const lastTap = lastTapRef.current;
       if (
-        lastTap?.instanceId === event.currentTarget.dataset.instanceId &&
+        lastTap &&
+        lastTap.instanceId === event.currentTarget.dataset.instanceId &&
         now - lastTap.time <= SCHEDULED_EVENT_DOUBLE_TAP_MS
       ) {
         lastTapRef.current = null;
@@ -2774,7 +3113,12 @@ function ScheduledEventCard({
           event.preventDefault();
         }
         event.stopPropagation();
-        completeEvent();
+        completeEvent(
+          getMatrixXpSourceFromInteraction(event, {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+          })
+        );
         return;
       }
 
@@ -2802,7 +3146,9 @@ function ScheduledEventCard({
     <MatrixRoutineCard
       routine={event.routine}
       density={density}
-      onCompleteHabit={(habitId, completed) => {
+      diagnostic={diagnostic}
+      xpDebugEnabled={xpDebugEnabled}
+      onCompleteHabit={(habitId, completed, source) => {
         const routineHabit = event.routine?.habits.find(
           (habit) => habit.id === habitId
         );
@@ -2812,7 +3158,10 @@ function ScheduledEventCard({
           return;
         }
 
-        onComplete(instanceId, completed ? "scheduled" : "completed");
+        onComplete(instanceId, completed ? "scheduled" : "completed", {
+          xpSourceRect: source?.rect ?? null,
+          xpSourceOrigin: source?.origin,
+        });
       }}
     />
   ) : density === "row" && (scheduledGoal || event.habit) ? (
@@ -2840,7 +3189,7 @@ function ScheduledEventCard({
         showCreatedAt={false}
         showEmojiPrefix={false}
         variant="compact"
-        completionTheme="matrix"
+        completionTheme="emerald"
         projectDropdownMode="tasks-only"
         open={open}
         onOpenChange={onOpenChange}
@@ -2857,30 +3206,53 @@ function ScheduledEventCard({
       completed={isCompleted}
       density={density}
     />
+  ) : event.instance.source_type === "EVENT" ? (
+    <MatrixHabitCard
+      glyph={event.glyph}
+      title={event.title}
+      pill={isCompleted ? "COMPLETE" : (cleanStatus ?? "EVENT")}
+      habitType="EVENT"
+      overdue={false}
+      status={cleanStatus}
+      completed={isCompleted}
+      density={density}
+    />
   ) : null;
 
   return card ? (
-    <div
-      data-instance-id={event.instance.id}
-      onClickCapture={handleClickCapture}
-      onDoubleClick={handleDoubleClick}
-      onPointerDownCapture={handleCardPointerDown}
-      onPointerMoveCapture={handleCardPointerMove}
-      onPointerUpCapture={cancelLongPress}
-      onPointerCancelCapture={cancelLongPress}
-      onPointerLeave={(event) => {
-        if (event.pointerType === "mouse") {
-          cancelLongPress(event);
+    <div className="h-full min-w-0">
+      <div
+        data-instance-id={event.instance.id}
+        data-creator-xp-source="matrix-card"
+        data-creator-xp-kind={matrixXpKind}
+        data-creator-xp-source-id={event.instance.id}
+        data-matrix-entity-id={
+          event.goal?.id ?? event.habit?.id ?? event.instance.source_id
         }
-      }}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      className={cn(
-        "matrix-event-card-shell h-full",
-        isCompleted && event.goal ? "overflow-visible" : null
-      )}
-    >
-      {card}
+        onClickCapture={handleClickCapture}
+        onDoubleClick={handleDoubleClick}
+        onPointerDownCapture={handleCardPointerDown}
+        onPointerMoveCapture={handleCardPointerMove}
+        onPointerUpCapture={cancelLongPress}
+        onPointerCancelCapture={cancelLongPress}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") {
+            cancelLongPress(event);
+          }
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className={cn(
+          "matrix-event-card-shell h-full",
+          isCompleted && event.goal ? "overflow-visible" : null
+        )}
+      >
+        {card}
+      </div>
+      <MatrixXpDevDiagnostic
+        diagnostic={diagnostic}
+        enabled={xpDebugEnabled}
+      />
     </div>
   ) : null;
 }
@@ -2890,11 +3262,19 @@ function DueHabitCard({
   density,
   completing,
   onComplete,
+  diagnostic,
+  xpDebugEnabled,
 }: {
   habit: MatrixHabit;
   density: MatrixCardDensity;
   completing: boolean;
-  onComplete(habitId: string, completedToday: boolean): void;
+  onComplete(
+    habitId: string,
+    completedToday: boolean,
+    source?: MatrixXpSourceCapture | null
+  ): void;
+  diagnostic?: MatrixXpDiagnostic | null;
+  xpDebugEnabled: boolean;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -2996,16 +3376,21 @@ function DueHabitCard({
     }
   }, []);
 
-  const completeHabit = useCallback(() => {
+  const completeHabit = useCallback((source?: MatrixXpSourceCapture | null) => {
     if (completing || Date.now() < suppressTapUntilRef.current) return;
-    onComplete(habit.id, isCompletedToday);
+    onComplete(habit.id, isCompletedToday, source);
   }, [completing, habit.id, isCompletedToday, onComplete]);
 
   const handleDoubleClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
       event.stopPropagation();
       if (completing) return;
-      completeHabit();
+      completeHabit(
+        getMatrixXpSourceFromInteraction(event, {
+          clientX: event.clientX,
+          clientY: event.clientY,
+        })
+      );
     },
     [completeHabit, completing]
   );
@@ -3050,7 +3435,12 @@ function DueHabitCard({
           event.preventDefault();
         }
         event.stopPropagation();
-        completeHabit();
+        completeHabit(
+          getMatrixXpSourceFromInteraction(event, {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+          })
+        );
         return;
       }
 
@@ -3063,34 +3453,44 @@ function DueHabitCard({
   );
 
   return (
-    <div
-      data-habit-id={habit.id}
-      onClickCapture={handleClickCapture}
-      onDoubleClick={handleDoubleClick}
-      onPointerDownCapture={handleCardPointerDown}
-      onPointerMoveCapture={handleCardPointerMove}
-      onPointerUpCapture={cancelLongPress}
-      onPointerCancelCapture={cancelLongPress}
-      onPointerLeave={(event) => {
-        if (event.pointerType === "mouse") {
-          cancelLongPress(event);
-        }
-      }}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      className={cn(
-        "matrix-event-card-shell h-full",
-        completing ? "opacity-70" : null
-      )}
-    >
-      <MatrixHabitCard
-        glyph={habit.glyph}
-        title={habit.name}
-        pill={isCompletedToday ? "COMPLETE" : dueLabel}
-        habitType={habit.habit_type}
-        overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
-        completed={isCompletedToday}
-        density={density}
+    <div className="h-full min-w-0">
+      <div
+        data-habit-id={habit.id}
+        data-creator-xp-source="matrix-card"
+        data-creator-xp-kind="habit"
+        data-creator-xp-source-id={habit.id}
+        data-matrix-entity-id={habit.id}
+        onClickCapture={handleClickCapture}
+        onDoubleClick={handleDoubleClick}
+        onPointerDownCapture={handleCardPointerDown}
+        onPointerMoveCapture={handleCardPointerMove}
+        onPointerUpCapture={cancelLongPress}
+        onPointerCancelCapture={cancelLongPress}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") {
+            cancelLongPress(event);
+          }
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className={cn(
+          "matrix-event-card-shell h-full",
+          completing ? "opacity-70" : null
+        )}
+      >
+        <MatrixHabitCard
+          glyph={habit.glyph}
+          title={habit.name}
+          pill={isCompletedToday ? "COMPLETE" : dueLabel}
+          habitType={habit.habit_type}
+          overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
+          completed={isCompletedToday}
+          density={density}
+        />
+      </div>
+      <MatrixXpDevDiagnostic
+        diagnostic={diagnostic}
+        enabled={xpDebugEnabled}
       />
     </div>
   );
@@ -3100,85 +3500,136 @@ function MatrixRoutineCard({
   routine,
   density,
   onCompleteHabit,
+  diagnostic,
+  xpDebugEnabled,
 }: {
   routine: MatrixRoutine;
   density: MatrixCardDensity;
-  onCompleteHabit(habitId: string, completedToday: boolean): void;
+  onCompleteHabit(
+    habitId: string,
+    completedToday: boolean,
+    source?: MatrixXpSourceCapture | null
+  ): void;
+  diagnostic?: MatrixXpDiagnostic | null;
+  xpDebugEnabled: boolean;
 }) {
+  const routineCardRef = useRef<HTMLDivElement | null>(null);
   const habitCount = Math.max(0, routine.dueHabitCount);
   const habitCountLabel = `${habitCount} ${habitCount === 1 ? "habit" : "habits"}`;
   const routineName = routine.name?.trim() || "Routine";
   const routineGlyph = routine.glyph || routine.icon?.trim() || "🔁";
   const completed = routine.completed;
+  const getRoutineXpSource = useCallback((): MatrixXpSourceCapture => {
+    const rect = getUsableMatrixXpRect(routineCardRef.current);
+    if (rect) {
+      dispatchCreatorXpBurstStatus("XP: matrix source card");
+      return { rect, origin: "card" };
+    }
+    return { rect: null, origin: undefined };
+  }, []);
 
   if (density === "row") {
     return (
-      <div className="matrix-event-card-shell group/routine-card relative min-w-0 cursor-pointer">
+      <div className="min-w-0">
         <div
-          aria-hidden="true"
-          className="pointer-events-none transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+          ref={routineCardRef}
+          className="matrix-event-card-shell group/routine-card relative min-w-0 cursor-pointer"
+          data-creator-xp-source="matrix-card"
+          data-creator-xp-kind="habit"
+          data-creator-xp-source-id={routine.id}
+          data-matrix-entity-id={routine.id}
         >
-          <MatrixEventRowCard
-            glyph={routineGlyph}
-            title={routineName}
-            completed={completed}
-            className={getHabitRowTypeClass(null)}
-            meta={
-              <span
-                className={cn(
-                  "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
-                  completed
-                    ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
-                    : "border-white/10 bg-white/[0.06] text-white/65"
-                )}
-              >
-                {completed ? "COMPLETE" : habitCountLabel}
-              </span>
-            }
-          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+          >
+            <MatrixEventRowCard
+              glyph={routineGlyph}
+              title={routineName}
+              completed={completed}
+              className={getHabitRowTypeClass(null)}
+              meta={
+                <span
+                  className={cn(
+                    "w-fit max-w-full rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.08em] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+                    completed
+                      ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                      : "border-white/10 bg-white/[0.06] text-white/65"
+                  )}
+                >
+                  {completed ? "COMPLETE" : habitCountLabel}
+                </span>
+              }
+            />
+          </div>
+          <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
+            <RelatedRoutineCard
+              routine={routine}
+              density="small"
+              fallbackIcon={routineGlyph}
+              onHabitCompletionToggle={(habitId) => {
+                const habit = routine.habits.find((item) => item.id === habitId);
+                onCompleteHabit(
+                  habitId,
+                  Boolean(habit?.completed),
+                  getRoutineXpSource()
+                );
+              }}
+            />
+          </div>
         </div>
-        <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
-          <RelatedRoutineCard
-            routine={routine}
-            density="small"
-            fallbackIcon={routineGlyph}
-            onHabitCompletionToggle={(habitId) => {
-              const habit = routine.habits.find((item) => item.id === habitId);
-              onCompleteHabit(habitId, Boolean(habit?.completed));
-            }}
-          />
-        </div>
+        <MatrixXpDevDiagnostic
+          diagnostic={diagnostic}
+          enabled={xpDebugEnabled}
+        />
       </div>
     );
   }
 
   return (
-    <div className="matrix-event-card-shell group/routine-card relative h-full cursor-pointer">
+    <div className="h-full min-w-0">
       <div
-        aria-hidden="true"
-        className="pointer-events-none h-full transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+        ref={routineCardRef}
+        className="matrix-event-card-shell group/routine-card relative h-full cursor-pointer"
+        data-creator-xp-source="matrix-card"
+        data-creator-xp-kind="habit"
+        data-creator-xp-source-id={routine.id}
+        data-matrix-entity-id={routine.id}
       >
-        <MatrixHabitCard
-          glyph={routineGlyph}
-          title={routineName}
-          pill={completed ? "COMPLETE" : habitCountLabel}
-          habitType={null}
-          overdue={false}
-          completed={completed}
-          density={density}
-        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none h-full transform-gpu transition duration-200 group-hover/routine-card:-translate-y-px group-focus-within/routine-card:-translate-y-px"
+        >
+          <MatrixHabitCard
+            glyph={routineGlyph}
+            title={routineName}
+            pill={completed ? "COMPLETE" : habitCountLabel}
+            habitType={null}
+            overdue={false}
+            completed={completed}
+            density={density}
+          />
+        </div>
+        <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!aspect-auto [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
+          <RelatedRoutineCard
+            routine={routine}
+            density={density}
+            fallbackIcon={routineGlyph}
+            onHabitCompletionToggle={(habitId) => {
+              const habit = routine.habits.find((item) => item.id === habitId);
+              onCompleteHabit(
+                habitId,
+                Boolean(habit?.completed),
+                getRoutineXpSource()
+              );
+            }}
+          />
+        </div>
       </div>
-      <div className="absolute inset-0 z-[4] opacity-0 [&>.goal-card]:!aspect-auto [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
-        <RelatedRoutineCard
-          routine={routine}
-          density={density}
-          fallbackIcon={routineGlyph}
-          onHabitCompletionToggle={(habitId) => {
-            const habit = routine.habits.find((item) => item.id === habitId);
-            onCompleteHabit(habitId, Boolean(habit?.completed));
-          }}
-        />
-      </div>
+      <MatrixXpDevDiagnostic
+        diagnostic={diagnostic}
+        enabled={xpDebugEnabled}
+      />
     </div>
   );
 }
@@ -3536,6 +3987,8 @@ function MatrixGridCarousel({
   completingDueHabitIds,
   heldScheduledCompletionItemIds,
   heldDueCompletionItemIds,
+  xpDiagnostics,
+  xpDebugEnabled,
 }: {
   groups: MatrixMonumentGroup[];
   matrixView: MatrixView;
@@ -3545,10 +3998,16 @@ function MatrixGridCarousel({
     nextStatus: ScheduleInstance["status"],
     options?: MatrixScheduledCompletionOptions
   ): void;
-  onCompleteDueHabit(habitId: string, completedToday: boolean): void;
+  onCompleteDueHabit(
+    habitId: string,
+    completedToday: boolean,
+    source?: MatrixXpSourceCapture | null
+  ): void;
   completingDueHabitIds: Set<string>;
   heldScheduledCompletionItemIds: ReadonlySet<string>;
   heldDueCompletionItemIds: ReadonlySet<string>;
+  xpDiagnostics: Record<string, MatrixXpDiagnostic>;
+  xpDebugEnabled: boolean;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
@@ -4279,6 +4738,15 @@ function MatrixGridCarousel({
                                   event={event}
                                   density={cardDensity}
                                   onComplete={onCompleteScheduledEvent}
+                                  diagnostic={
+                                    xpDiagnostics[
+                                      getMatrixXpDiagnosticKey(
+                                        "scheduled",
+                                        event.instance.id
+                                      )
+                                    ] ?? null
+                                  }
+                                  xpDebugEnabled={xpDebugEnabled}
                                   open={
                                     Boolean(event.goal?.id) &&
                                     openGoalId === event.goal?.id
@@ -4342,6 +4810,15 @@ function MatrixGridCarousel({
                                     routine={item.routine}
                                     density={cardDensity}
                                     onCompleteHabit={onCompleteDueHabit}
+                                    diagnostic={
+                                      xpDiagnostics[
+                                        getMatrixXpDiagnosticKey(
+                                          "routine",
+                                          item.routine.id
+                                        )
+                                      ] ?? null
+                                    }
+                                    xpDebugEnabled={xpDebugEnabled}
                                   />
                                 ) : (
                                   <DueHabitCard
@@ -4351,6 +4828,15 @@ function MatrixGridCarousel({
                                       item.habit.id
                                     )}
                                     onComplete={onCompleteDueHabit}
+                                    diagnostic={
+                                      xpDiagnostics[
+                                        getMatrixXpDiagnosticKey(
+                                          "due",
+                                          item.habit.id
+                                        )
+                                      ] ?? null
+                                    }
+                                    xpDebugEnabled={xpDebugEnabled}
                                   />
                                 )}
                               </motion.div>
@@ -4432,12 +4918,18 @@ export function MatrixContent({
     scheduled: new Set(),
     due: new Set(),
   }));
+  const [matrixXpDiagnostics, setMatrixXpDiagnostics] = useState<
+    Record<string, MatrixXpDiagnostic>
+  >({});
+  const [matrixXpDebugEnabled, setMatrixXpDebugEnabled] = useState(false);
   const [memoCompletionState, setMemoCompletionState] = useState<{
     habit: MatrixHabit;
     source: "scheduled" | "due";
     instanceId?: string;
     completedToday?: boolean;
     completionDate: string;
+    xpSourceRect?: CreatorXpBurstRect | null;
+    xpSourceOrigin?: CreatorXpBurstSourceOrigin;
   } | null>(null);
   const matrixTrayRef = useRef<HTMLDivElement | null>(null);
   const matrixStateRef = useRef<MatrixState>(initialState);
@@ -4448,6 +4940,25 @@ export function MatrixContent({
   >(new Map());
   const bypassMemoCaptureRef = useRef(false);
 
+  const setMatrixXpDiagnostic = useCallback(
+    (
+      key: string,
+      diagnostic: MatrixXpDiagnosticInput,
+      result: MatrixXpResultStatus = diagnostic.result ?? "blocked"
+    ) => {
+      const nextDiagnostic: MatrixXpDiagnostic = {
+        ...diagnostic,
+        result,
+      };
+      setMatrixXpDiagnostics((current) => ({
+        ...current,
+        [key]: nextDiagnostic,
+      }));
+      dispatchMatrixXpDiagnosticStatus(nextDiagnostic);
+    },
+    []
+  );
+
   useEffect(() => {
     const { view: storedView, scope: storedScope } = readMatrixPreferences();
     if (storedView) {
@@ -4457,6 +4968,20 @@ export function MatrixContent({
       setMatrixScope(storedScope);
     }
   }, []);
+
+  useEffect(() => {
+    if (!IS_DEVELOPMENT) return;
+
+    setMatrixXpDebugEnabled(isCreatorMatrixXpDebugEnabled());
+    return subscribeToCreatorMatrixXpDebug(setMatrixXpDebugEnabled);
+  }, []);
+
+  const handleMatrixXpDebugToggle = useCallback(() => {
+    if (!IS_DEVELOPMENT) return;
+    const nextEnabled = !matrixXpDebugEnabled;
+    setMatrixXpDebugEnabled(nextEnabled);
+    setCreatorMatrixXpDebugEnabled(nextEnabled);
+  }, [matrixXpDebugEnabled]);
 
   const handleMatrixViewChange = useCallback((view: MatrixView) => {
     setMatrixView(view);
@@ -4629,6 +5154,184 @@ export function MatrixContent({
     return itemIds.size ? Array.from(itemIds) : [habitId];
   }, []);
 
+  const getDueOccurrenceIdentity = useCallback(
+    (habitId: string, dayKey: string): MatrixDueOccurrenceIdentity => {
+      const legacyAwardKeyBase = `habit:${habitId}:${dayKey}`;
+      const currentState = matrixStateRef.current;
+      const groupSets = [
+        currentState.unscheduledDueHabitGroups,
+        currentState.skillUnscheduledDueHabitGroups,
+        currentState.blockUnscheduledDueHabitGroups,
+        currentState.typeUnscheduledDueHabitGroups,
+      ];
+
+      let standaloneCardId: string | null = null;
+      for (const groups of groupSets) {
+        for (const group of groups) {
+          for (const item of group.items) {
+            if (item.kind === "habit" && item.habit.id === habitId) {
+              standaloneCardId = item.id;
+              continue;
+            }
+
+            if (item.kind !== "routine") continue;
+            const routineHabit = item.routine.habits.find(
+              (habit) => habit.id === habitId || habit.sourceHabit.id === habitId
+            );
+            if (!routineHabit) continue;
+
+            const routineId = item.routine.id;
+            const routineChildId = routineHabit.id || habitId;
+            const routinePosition =
+              typeof routineHabit.routinePosition === "number" &&
+              Number.isFinite(routineHabit.routinePosition)
+                ? routineHabit.routinePosition
+                : null;
+            const positionPart =
+              routinePosition === null ? "" : `:pos:${routinePosition}`;
+            const awardKeyBase = `matrix_due:routine:${routineId}:habit:${habitId}:day:${dayKey}:child:${routineChildId}${positionPart}`;
+
+            return {
+              awardKeyBase,
+              legacyAwardKeyBase,
+              completionKey: awardKeyBase,
+              displayKind: "ROUTINE_HABIT",
+              path: `routine:${routineId}/child:${routineChildId}`,
+              routineId,
+              routineChildId,
+              routinePosition,
+            };
+          }
+        }
+      }
+
+      const cardId = standaloneCardId ?? habitId;
+      const awardKeyBase = `matrix_due:habit:${habitId}:day:${dayKey}:card:${cardId}`;
+      return {
+        awardKeyBase,
+        legacyAwardKeyBase,
+        completionKey: awardKeyBase,
+        displayKind: "HABIT",
+        path: `due:${cardId}`,
+        routineId: null,
+        routineChildId: null,
+        routinePosition: null,
+      };
+    },
+    []
+  );
+
+  const buildScheduledXpDiagnostic = useCallback(
+    (
+      event: MatrixEvent | null,
+      path: string,
+      reason?: string | null
+    ): MatrixXpDiagnosticInput => {
+      const sourceType =
+        event?.instance.source_type?.trim().toUpperCase() || "UNKNOWN";
+      const displayKind = event?.routine
+        ? "ROUTINE"
+        : event?.goal
+          ? "PROJECT"
+          : event?.habit
+            ? "HABIT"
+            : sourceType;
+
+      return {
+        matrixKind: "scheduled",
+        displayKind,
+        xpSourceType: sourceType,
+        sourceId: event?.instance.source_id?.trim() || null,
+        scheduleInstanceId: event?.instance.id ?? null,
+        skillId: event?.skillIds[0] ?? null,
+        path,
+        reason,
+      };
+    },
+    []
+  );
+
+  const buildDueHabitXpDiagnostic = useCallback(
+    (
+      habit: MatrixHabit | null,
+      path: string,
+      reason?: string | null,
+      occurrence?: MatrixDueOccurrenceIdentity | null,
+      completionPersisted?: boolean | null
+    ): MatrixXpDiagnosticInput => ({
+      matrixKind: "unscheduled due",
+      displayKind: occurrence?.displayKind ?? "HABIT",
+      xpSourceType: "HABIT",
+      sourceId: habit?.id ?? null,
+      scheduleInstanceId: null,
+      skillId: habit?.skillIds[0] ?? null,
+      awardKeyBase: occurrence?.awardKeyBase ?? null,
+      legacyAwardKeyBase: occurrence?.legacyAwardKeyBase ?? null,
+      completionKey: occurrence?.completionKey ?? null,
+      completionPersisted: completionPersisted ?? null,
+      path: occurrence?.path ?? path,
+      reason,
+    }),
+    []
+  );
+
+  const reverseMatrixXpOccurrence = useCallback(
+    async (
+      occurrenceStem: string,
+      legacyOccurrenceStems: string[] = []
+    ): Promise<MatrixXpReverseOutcome> => {
+      try {
+        const response = await fetch("/api/xp/reverse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            occurrenceStem,
+            legacyOccurrenceStems,
+          }),
+        });
+        if (!response.ok) {
+          const responseText = await response.text();
+          return {
+            ok: false,
+            status: "failed",
+            reversed: 0,
+            alreadyReversed: 0,
+            activePositivesFound: 0,
+            insertedReversalKeys: [],
+            reason: responseText || "XP reverse request failed",
+          };
+        }
+
+        const result = (await response.json().catch(() => null)) as {
+          reversed?: number;
+          alreadyReversed?: number;
+          activePositivesFound?: number;
+          insertedReversalKeys?: string[];
+        } | null;
+        return {
+          ok: true,
+          status: (result?.reversed ?? 0) > 0 ? "reversed" : "deduped",
+          reversed: result?.reversed ?? 0,
+          alreadyReversed: result?.alreadyReversed ?? 0,
+          activePositivesFound: result?.activePositivesFound ?? 0,
+          insertedReversalKeys: result?.insertedReversalKeys ?? [],
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          status: "failed",
+          reversed: 0,
+          alreadyReversed: 0,
+          activePositivesFound: 0,
+          insertedReversalKeys: [],
+          reason:
+            error instanceof Error ? error.message : "XP reverse request failed",
+        };
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     const holdTimeouts = matrixReorderHoldTimeoutsRef.current;
     return () => {
@@ -4638,6 +5341,219 @@ export function MatrixContent({
       holdTimeouts.clear();
     };
   }, []);
+
+  const dispatchMatrixScheduledXpReward = useCallback(
+    async (
+      event: MatrixEvent | null,
+      completedAt: string,
+      sourceRect?: CreatorXpBurstRect | null,
+      sourceOrigin?: CreatorXpBurstSourceOrigin
+    ): Promise<MatrixXpAwardOutcome> => {
+      if (!event) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: "MATRIX XP BLOCKED: missing Matrix event",
+        };
+      }
+
+      const sourceType = event.instance.source_type;
+      const isTask = sourceType === "TASK";
+      const isProject = sourceType === "PROJECT" || Boolean(event.goal);
+      const isHabit = sourceType === "HABIT" || Boolean(event.habit);
+      const isEvent = sourceType === "EVENT";
+      if (!isTask && !isProject && !isHabit && !isEvent) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: `MATRIX XP BLOCKED: ${sourceType ?? "UNKNOWN"} has no XP source type`,
+        };
+      }
+      if (!event.instance.source_id?.trim()) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: "MATRIX XP BLOCKED: missing source id",
+        };
+      }
+
+      const awardKind = getMatrixScheduledXpKind(event);
+      if (!awardKind) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: `MATRIX XP BLOCKED: ${sourceType ?? "UNKNOWN"} has no XP source type`,
+        };
+      }
+      const surgeSourceType = isTask
+        ? "TASK"
+        : isProject
+          ? "PROJECT"
+          : isHabit
+            ? "HABIT"
+            : "EVENT";
+      const amount = isTask
+        ? MATRIX_XP_AWARD_AMOUNTS.TASK
+        : isProject
+          ? MATRIX_XP_AWARD_AMOUNTS.PROJECT
+          : isHabit
+            ? MATRIX_XP_AWARD_AMOUNTS.HABIT
+            : MATRIX_XP_AWARD_AMOUNTS.EVENT;
+      const uniqueSkillIds = Array.from(
+        new Set(
+          event.skillIds.filter(
+            (skillId): skillId is string =>
+              typeof skillId === "string" && skillId.length > 0
+          )
+        )
+      );
+      if (uniqueSkillIds.length === 0) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: `MATRIX XP BLOCKED: ${surgeSourceType} has no skill context`,
+        };
+      }
+      const monumentIds =
+        event.monumentId && event.monumentId.length > 0
+          ? [event.monumentId]
+          : [];
+      const durationMin =
+        typeof event.instance.duration_min === "number" &&
+        Number.isFinite(event.instance.duration_min)
+          ? Math.max(0, Math.round(event.instance.duration_min))
+          : null;
+      const occurrenceStem = buildMatrixScheduledOccurrenceStem(
+        event.instance.id,
+        awardKind
+      );
+      const legacyOccurrenceStems =
+        buildMatrixScheduledLegacyOccurrenceStems(event);
+
+      const body: Record<string, unknown> = {
+        scheduleInstanceId: event.instance.id,
+        kind: awardKind,
+        amount,
+        awardKeyBase: occurrenceStem,
+        reversible: {
+          occurrenceStem,
+          legacyOccurrenceStems,
+        },
+        source: "matrix",
+        completion: {
+          action: "complete",
+          sourceType: surgeSourceType,
+          sourceId: event.instance.source_id,
+          completedAt,
+          scheduleInstanceId: event.instance.id,
+          wasScheduled: true,
+          durationMin,
+          timeZone,
+        },
+      };
+      if (uniqueSkillIds.length > 0) {
+        body.skillIds = uniqueSkillIds;
+      }
+      if (monumentIds.length > 0) {
+        body.monumentIds = monumentIds;
+      }
+
+      try {
+        const response = await fetch("/api/xp/award", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          const responseText = await response.text();
+          console.error(
+            "Failed to award XP for Matrix scheduled completion",
+            responseText
+          );
+          return {
+            ok: false,
+            status: "failed",
+            reason: responseText || "XP award request failed",
+          };
+        }
+
+        const result = (await response.json().catch(() => null)) as {
+          inserted?: number;
+          deduped?: boolean;
+          skipped?: boolean;
+          reason?: string;
+          awardKeyBase?: string;
+          activePositiveCount?: number;
+          alreadyReversedCount?: number;
+          surge?: Parameters<typeof dispatchCreatorXpRewardVisual>[0]["surge"];
+        } | null;
+        if (!result || (result.inserted ?? 0) <= 0) {
+          if (isEvent && result?.reason) {
+            dispatchCreatorXpBurstStatus(result.reason);
+          }
+          return {
+            ok: false,
+            status: result?.deduped
+              ? "deduped"
+              : result?.skipped
+                ? "blocked"
+                : "failed",
+            inserted: false,
+            awardKeyBase: occurrenceStem,
+            activePositiveCount: result?.activePositiveCount ?? null,
+            cycleAwardKeyBase: result?.awardKeyBase ?? null,
+            reason:
+              result?.reason ??
+              (result?.deduped
+                ? "XP award deduped"
+                : "XP award inserted no rows"),
+          };
+        }
+
+        const surge = result.surge ?? null;
+        if (!surge) {
+          return {
+            ok: false,
+            status: "blocked",
+            inserted: true,
+            reason: "MATRIX XP BLOCKED: XP award returned no surge payload",
+          };
+        }
+        dispatchCreatorXpBurstStatus("XP: matrix visual helper");
+        dispatchCreatorXpRewardVisual({
+          surge,
+          scheduleInstanceId: event.instance.id,
+          completedAt,
+          sourceRect,
+          sourceOrigin,
+          amount,
+          kind: "schedule_instance_complete",
+          burstId: `matrix:${event.instance.id}:${completedAt}`,
+          topOffsetPx: 72,
+        });
+        return {
+          ok: true,
+          status: "inserted",
+          inserted: true,
+          awardKeyBase: occurrenceStem,
+          cycleAwardKeyBase: result.awardKeyBase ?? occurrenceStem,
+          activePositiveCount: result.activePositiveCount ?? null,
+        };
+      } catch (error) {
+        console.error("Failed to award XP for Matrix scheduled completion", error);
+        return {
+          ok: false,
+          status: "failed",
+          inserted: false,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Failed to award XP for Matrix scheduled completion",
+        };
+      }
+    },
+    [timeZone]
+  );
 
   const commitScheduledEventCompletion = useCallback(
     async (
@@ -4664,20 +5580,185 @@ export function MatrixContent({
       pendingScheduledCompletionIdsRef.current.add(instanceId);
 
       try {
-        const { error } = await supabase
-          .from("schedule_instances")
-          .update({ status: nextStatus })
-          .eq("id", instanceId)
-          .eq("user_id", user.id);
+        const persistedStatus =
+          nextStatus === "completed" ? "completed" : "scheduled";
+        const eventBeforeCompletion = findMatrixEventInState(
+          matrixStateRef.current,
+          instanceId
+        );
+        const scheduledDiagnosticKeys = getScheduledCompletionHoldIds(instanceId).map(
+          (itemId) => getMatrixXpDiagnosticKey("scheduled", itemId)
+        );
+        if (!scheduledDiagnosticKeys.includes(getMatrixXpDiagnosticKey("scheduled", instanceId))) {
+          scheduledDiagnosticKeys.push(getMatrixXpDiagnosticKey("scheduled", instanceId));
+        }
+        const setScheduledDiagnostics = (
+          diagnostic: MatrixXpDiagnosticInput,
+          status: MatrixXpResultStatus
+        ) => {
+          for (const key of scheduledDiagnosticKeys) {
+            setMatrixXpDiagnostic(key, diagnostic, status);
+          }
+        };
+        if (
+          persistedStatus === "completed" &&
+          (!eventBeforeCompletion?.instance.source_id?.trim() ||
+            !eventBeforeCompletion.skillIds.length)
+        ) {
+          const reason = !eventBeforeCompletion?.instance.source_id?.trim()
+            ? "MATRIX XP BLOCKED: missing source id"
+            : eventBeforeCompletion?.routine
+              ? "MATRIX XP BLOCKED: ROUTINE has no XP source type"
+              : `MATRIX XP BLOCKED: ${(eventBeforeCompletion?.instance.source_type ?? "UNKNOWN").toUpperCase()} has no skill context`;
+          setScheduledDiagnostics(
+            buildScheduledXpDiagnostic(
+              eventBeforeCompletion,
+              "schedule-instance xp",
+              reason
+            ),
+            "blocked"
+          );
+          void hapticWarningPattern();
+          return false;
+        }
+        const scheduledXpKind = getMatrixScheduledXpKind(eventBeforeCompletion);
+        const scheduledOccurrenceStem =
+          scheduledXpKind && eventBeforeCompletion
+            ? buildMatrixScheduledOccurrenceStem(instanceId, scheduledXpKind)
+            : null;
+        const scheduledLegacyOccurrenceStems =
+          buildMatrixScheduledLegacyOccurrenceStems(eventBeforeCompletion);
+        let repairResult: MatrixXpReverseOutcome | null = null;
+        if (persistedStatus === "completed" && scheduledOccurrenceStem) {
+          repairResult = await reverseMatrixXpOccurrence(
+            scheduledOccurrenceStem,
+            scheduledLegacyOccurrenceStems
+          );
+          if (!repairResult.ok) {
+            setScheduledDiagnostics(
+              {
+                ...buildScheduledXpDiagnostic(
+                  eventBeforeCompletion,
+                  "schedule-instance xp repair",
+                  repairResult.reason
+                ),
+                awardKeyBase: scheduledOccurrenceStem,
+                legacyAwardKeyBase: scheduledLegacyOccurrenceStems[0] ?? null,
+                activePositiveCount: repairResult.activePositivesFound,
+                reversedCount: repairResult.reversed,
+              },
+              "failed"
+            );
+            void hapticWarningPattern();
+            return false;
+          }
+        }
+        const completedAt =
+          persistedStatus === "completed" ? new Date().toISOString() : null;
+        const result = await updateInstanceStatus(
+          instanceId,
+          persistedStatus,
+          persistedStatus === "completed" && completedAt
+            ? { completedAtUTC: completedAt }
+            : undefined,
+          supabase as unknown as Parameters<typeof updateInstanceStatus>[3]
+        );
 
-        if (error) {
-          console.error("Failed to toggle scheduled Matrix Event", error);
+        if (result.error) {
+          console.error("Failed to toggle scheduled Matrix Event", result.error);
           void hapticErrorPattern();
           return false;
         }
 
         const heldItemIds = getScheduledCompletionHoldIds(instanceId);
-        if (nextStatus === "completed") {
+        if (persistedStatus === "completed" && completedAt) {
+          dispatchCreatorXpBurstStatus("XP: matrix completion");
+          const xpResult = await dispatchMatrixScheduledXpReward(
+            eventBeforeCompletion,
+            completedAt,
+            options?.xpSourceRect ?? null,
+            options?.xpSourceOrigin
+          );
+          setScheduledDiagnostics(
+            {
+              ...buildScheduledXpDiagnostic(
+                eventBeforeCompletion,
+                "schedule-instance xp",
+                xpResult.reason
+              ),
+              awardKeyBase: scheduledOccurrenceStem,
+              legacyAwardKeyBase: scheduledLegacyOccurrenceStems[0] ?? null,
+              activePositiveCount:
+                xpResult.activePositiveCount ??
+                repairResult?.activePositivesFound ??
+                null,
+              repairedCount: repairResult?.reversed ?? null,
+              cycleAwardKeyBase: xpResult.cycleAwardKeyBase ?? null,
+            },
+            xpResult.status
+          );
+          const shouldRollbackCompletion =
+            !xpResult.ok &&
+            xpResult.status !== "deduped" &&
+            xpResult.inserted !== true;
+          if (shouldRollbackCompletion) {
+            const rollback = await updateInstanceStatus(
+              instanceId,
+              "scheduled",
+              undefined,
+              supabase as unknown as Parameters<typeof updateInstanceStatus>[3]
+            );
+            if (rollback.error) {
+              console.error(
+                "Failed to rollback scheduled Matrix completion after XP failure",
+                rollback.error
+              );
+            }
+            void hapticWarningPattern();
+            return false;
+          }
+        } else if (persistedStatus !== "completed" && scheduledOccurrenceStem) {
+          const reverseResult = await reverseMatrixXpOccurrence(
+            scheduledOccurrenceStem,
+            scheduledLegacyOccurrenceStems
+          );
+          setScheduledDiagnostics(
+            {
+              ...buildScheduledXpDiagnostic(
+                eventBeforeCompletion,
+                "schedule-instance xp reverse",
+                reverseResult.reason
+              ),
+              awardKeyBase: scheduledOccurrenceStem,
+              legacyAwardKeyBase: scheduledLegacyOccurrenceStems[0] ?? null,
+              activePositiveCount: reverseResult.activePositivesFound,
+              reversedCount: reverseResult.reversed,
+            },
+            reverseResult.status
+          );
+          if (!reverseResult.ok) {
+            const rollback = await updateInstanceStatus(
+              instanceId,
+              "completed",
+              {
+                completedAtUTC:
+                  eventBeforeCompletion?.instance.completed_at ??
+                  new Date().toISOString(),
+              },
+              supabase as unknown as Parameters<typeof updateInstanceStatus>[3]
+            );
+            if (rollback.error) {
+              console.error(
+                "Failed to rollback scheduled Matrix undo after XP reverse failure",
+                rollback.error
+              );
+            }
+            void hapticWarningPattern();
+            return false;
+          }
+        }
+
+        if (persistedStatus === "completed") {
           holdMatrixReorderItems("scheduled", heldItemIds);
         } else {
           releaseMatrixReorderHold("scheduled", heldItemIds);
@@ -4695,7 +5776,8 @@ export function MatrixContent({
                       ...event,
                       instance: {
                         ...event.instance,
-                        status: nextStatus,
+                        status: persistedStatus,
+                        completed_at: completedAt,
                       },
                     }
                   : event;
@@ -4707,7 +5789,8 @@ export function MatrixContent({
 
                 const sourceInstance = {
                   ...habit.sourceInstance,
-                  status: nextStatus,
+                  status: persistedStatus,
+                  completed_at: completedAt,
                 };
 
                 return {
@@ -4743,7 +5826,7 @@ export function MatrixContent({
         }));
 
         if (
-          nextStatus === "completed" &&
+          persistedStatus === "completed" &&
           options?.hapticOnComplete !== false
         ) {
           void hapticComplete();
@@ -4759,8 +5842,12 @@ export function MatrixContent({
     },
     [
       getScheduledCompletionHoldIds,
+      buildScheduledXpDiagnostic,
+      dispatchMatrixScheduledXpReward,
       holdMatrixReorderItems,
       releaseMatrixReorderHold,
+      reverseMatrixXpOccurrence,
+      setMatrixXpDiagnostic,
       user?.id,
     ]
   );
@@ -4843,6 +5930,9 @@ export function MatrixContent({
                 title: routineHabit.sourceHabit.name,
                 monumentId: routineHabit.sourceHabit.monumentId,
                 skillIds: routineHabit.sourceHabit.skillIds,
+                skillResolverSource: routineHabit.sourceHabit.skillIds.length
+                  ? "habit.skill_id"
+                  : null,
                 glyph: routineHabit.sourceHabit.glyph,
                 goal: null,
                 habit: routineHabit.sourceHabit,
@@ -4879,6 +5969,8 @@ export function MatrixContent({
           source: "scheduled",
           instanceId,
           completionDate: new Date().toISOString(),
+          xpSourceRect: options?.xpSourceRect ?? null,
+          xpSourceOrigin: options?.xpSourceOrigin,
         });
         return;
       }
@@ -4887,8 +5979,185 @@ export function MatrixContent({
     [commitScheduledEventCompletion, findMatrixEvent]
   );
 
+  const dispatchMatrixDueHabitXpReward = useCallback(
+    async (
+      habit: MatrixHabit | null,
+      completedAt: string,
+      occurrence: MatrixDueOccurrenceIdentity,
+      sourceRect?: CreatorXpBurstRect | null,
+      sourceOrigin?: CreatorXpBurstSourceOrigin
+    ): Promise<MatrixXpAwardOutcome> => {
+      if (!habit?.id) {
+        return {
+          ok: false,
+          status: "blocked",
+          awardKeyBase: occurrence.awardKeyBase,
+          legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+          completionKey: occurrence.completionKey,
+          reason: "MATRIX XP BLOCKED: missing habit source id",
+        };
+      }
+
+      const uniqueSkillIds = Array.from(new Set(habit.skillIds));
+      if (uniqueSkillIds.length === 0) {
+        return {
+          ok: false,
+          status: "blocked",
+          awardKeyBase: occurrence.awardKeyBase,
+          legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+          completionKey: occurrence.completionKey,
+          reason: "MATRIX XP BLOCKED: HABIT has no skill context",
+        };
+      }
+
+      const completedAtDate = new Date(completedAt);
+      const dayKey = formatDateKeyInTimeZone(completedAtDate, timeZone);
+      const amount = MATRIX_XP_AWARD_AMOUNTS.HABIT;
+      const durationMin =
+        typeof habit.duration_minutes === "number" &&
+        Number.isFinite(habit.duration_minutes)
+          ? Math.max(0, Math.round(habit.duration_minutes))
+          : null;
+      const body: Record<string, unknown> = {
+        kind: "habit",
+        amount,
+        skillIds: uniqueSkillIds,
+        awardKeyBase: occurrence.awardKeyBase,
+        reversible: {
+          occurrenceStem: occurrence.awardKeyBase,
+          legacyOccurrenceStems: [occurrence.legacyAwardKeyBase],
+        },
+        source: "matrix",
+        completion: {
+          action: "complete",
+          sourceType: "HABIT",
+          sourceId: habit.id,
+          completedAt,
+          wasScheduled: false,
+          durationMin,
+          timeZone,
+          productivityDayKey: dayKey,
+          completionKey: occurrence.completionKey,
+        },
+      };
+      if (habit.monumentId) {
+        body.monumentIds = [habit.monumentId];
+      }
+
+      try {
+        const response = await fetch("/api/xp/award", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          const responseText = await response.text();
+          console.error(
+            "Failed to award XP for Matrix due habit completion",
+            responseText
+          );
+          return {
+            ok: false,
+            status: "failed",
+            awardKeyBase: occurrence.awardKeyBase,
+            legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+            completionKey: occurrence.completionKey,
+            reason: responseText || "XP award request failed",
+          };
+        }
+
+        const result = (await response.json().catch(() => null)) as {
+          inserted?: number;
+          deduped?: boolean;
+          skipped?: boolean;
+          reason?: string;
+          awardKeyBase?: string;
+          activePositiveCount?: number;
+          alreadyReversedCount?: number;
+          surge?: Parameters<typeof dispatchCreatorXpRewardVisual>[0]["surge"];
+        } | null;
+
+        if (!result || (result.inserted ?? 0) <= 0) {
+          return {
+            ok: false,
+            status: result?.deduped
+              ? "deduped"
+              : result?.skipped
+                ? "blocked"
+                : "failed",
+            inserted: false,
+            awardKeyBase: occurrence.awardKeyBase,
+            legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+            completionKey: occurrence.completionKey,
+            activePositiveCount: result?.activePositiveCount ?? null,
+            cycleAwardKeyBase: result?.awardKeyBase ?? null,
+            reason:
+              result?.reason ??
+              (result?.deduped
+                ? "XP already awarded for this occurrence"
+                : "XP award inserted no rows"),
+          };
+        }
+
+        if (!result.surge) {
+          return {
+            ok: false,
+            status: "blocked",
+            inserted: true,
+            awardKeyBase: occurrence.awardKeyBase,
+            legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+            completionKey: occurrence.completionKey,
+            reason: "MATRIX XP BLOCKED: XP award returned no surge payload",
+          };
+        }
+
+        dispatchCreatorXpBurstStatus("XP: matrix visual helper");
+        dispatchCreatorXpRewardVisual({
+          surge: result.surge,
+          completedAt,
+          sourceRect,
+          sourceOrigin,
+          amount,
+          kind: "xp_reward",
+          burstId: `matrix:${occurrence.awardKeyBase}:${completedAt}`,
+          topOffsetPx: 72,
+        });
+
+        return {
+          ok: true,
+          status: "inserted",
+          inserted: true,
+          awardKeyBase: occurrence.awardKeyBase,
+          legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+          completionKey: occurrence.completionKey,
+          cycleAwardKeyBase: result.awardKeyBase ?? occurrence.awardKeyBase,
+          activePositiveCount: result.activePositiveCount ?? null,
+        };
+      } catch (error) {
+        console.error("Failed to award XP for Matrix due habit completion", error);
+        return {
+          ok: false,
+          status: "failed",
+          inserted: false,
+          awardKeyBase: occurrence.awardKeyBase,
+          legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
+          completionKey: occurrence.completionKey,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Failed to award XP for Matrix due habit completion",
+        };
+      }
+    },
+    [timeZone]
+  );
+
   const handleCompleteDueHabit = useCallback(
-    async (habitId: string, completedToday: boolean) => {
+    async (
+      habitId: string,
+      completedToday: boolean,
+      source?: MatrixXpSourceCapture | null
+    ) => {
       if (!user?.id) return;
 
       const habit = findMatrixHabit(habitId);
@@ -4903,11 +6172,54 @@ export function MatrixContent({
           source: "due",
           completedToday,
           completionDate: new Date().toISOString(),
+          xpSourceRect: source?.rect ?? null,
+          xpSourceOrigin: source?.origin,
         });
         return;
       }
 
       if (completingDueHabitIdsRef.current.has(habitId)) return;
+      const dueDiagnosticKeys = new Set<string>([
+        getMatrixXpDiagnosticKey("due", habitId),
+      ]);
+      for (const itemId of getDueCompletionHoldIds(habitId)) {
+        if (itemId.startsWith("routine:")) {
+          dueDiagnosticKeys.add(
+            getMatrixXpDiagnosticKey("routine", itemId.slice("routine:".length))
+          );
+        } else {
+          dueDiagnosticKeys.add(getMatrixXpDiagnosticKey("due", itemId));
+        }
+      }
+      const setDueDiagnostics = (
+        diagnostic: MatrixXpDiagnosticInput,
+        status: MatrixXpResultStatus
+      ) => {
+        for (const key of dueDiagnosticKeys) {
+          setMatrixXpDiagnostic(key, diagnostic, status);
+        }
+      };
+      if (!completedToday && (!habit?.id || !habit.skillIds.length)) {
+        const dayKey = formatDateKeyInTimeZone(new Date(), timeZone);
+        const occurrence = habit?.id
+          ? getDueOccurrenceIdentity(habit.id, dayKey)
+          : null;
+        const reason = !habit?.id
+          ? "MATRIX XP BLOCKED: missing habit source id"
+          : "MATRIX XP BLOCKED: HABIT has no skill context";
+        setDueDiagnostics(
+          buildDueHabitXpDiagnostic(
+            habit,
+            "habit completion + xp",
+            reason,
+            occurrence,
+            false
+          ),
+          "blocked"
+        );
+        void hapticWarningPattern();
+        return;
+      }
       completingDueHabitIdsRef.current.add(habitId);
       setCompletingDueHabitIds((currentIds) => {
         const nextIds = new Set(currentIds);
@@ -4918,6 +6230,33 @@ export function MatrixContent({
       try {
         const action = completedToday ? "undo" : "complete";
         const completedAt = new Date().toISOString();
+        const dayKey = formatDateKeyInTimeZone(new Date(completedAt), timeZone);
+        const occurrence = getDueOccurrenceIdentity(habitId, dayKey);
+        let repairResult: MatrixXpReverseOutcome | null = null;
+        if (!completedToday) {
+          repairResult = await reverseMatrixXpOccurrence(
+            occurrence.awardKeyBase,
+            [occurrence.legacyAwardKeyBase]
+          );
+          if (!repairResult.ok) {
+            setDueDiagnostics(
+              {
+                ...buildDueHabitXpDiagnostic(
+                  habit,
+                  "habit completion xp repair",
+                  repairResult.reason,
+                  occurrence,
+                  false
+                ),
+                activePositiveCount: repairResult.activePositivesFound,
+                reversedCount: repairResult.reversed,
+              },
+              "failed"
+            );
+            void hapticWarningPattern();
+            return;
+          }
+        }
         const response = await fetch("/api/habits/completion", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -4933,6 +6272,95 @@ export function MatrixContent({
           throw new Error(
             `Habit completion toggle failed with status ${response.status}`
           );
+        }
+
+        if (!completedToday) {
+          const xpResult = await dispatchMatrixDueHabitXpReward(
+            habit,
+            completedAt,
+            occurrence,
+            source?.rect ?? null,
+            source?.origin
+          );
+          setDueDiagnostics(
+            {
+              ...buildDueHabitXpDiagnostic(
+                habit,
+                "habit completion + xp",
+                xpResult.reason,
+                occurrence,
+                true
+              ),
+              activePositiveCount:
+                xpResult.activePositiveCount ??
+                repairResult?.activePositivesFound ??
+                null,
+              repairedCount: repairResult?.reversed ?? null,
+              cycleAwardKeyBase: xpResult.cycleAwardKeyBase ?? null,
+            },
+            xpResult.status
+          );
+          const shouldRollbackCompletion =
+            !xpResult.ok &&
+            xpResult.status !== "deduped" &&
+            xpResult.inserted !== true;
+          if (shouldRollbackCompletion) {
+            await fetch("/api/habits/completion", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                habitId,
+                completedAt,
+                timeZone,
+                action: "undo",
+              }),
+            }).catch((rollbackError) => {
+              console.error(
+                "Failed to rollback Matrix due habit completion after XP failure",
+                rollbackError
+              );
+            });
+            void hapticWarningPattern();
+            return;
+          }
+        } else {
+          const reverseResult = await reverseMatrixXpOccurrence(
+            occurrence.awardKeyBase,
+            [occurrence.legacyAwardKeyBase]
+          );
+          setDueDiagnostics(
+            {
+              ...buildDueHabitXpDiagnostic(
+                habit,
+                "habit completion xp reverse",
+                reverseResult.reason,
+                occurrence,
+                true
+              ),
+              activePositiveCount: reverseResult.activePositivesFound,
+              reversedCount: reverseResult.reversed,
+            },
+            reverseResult.status
+          );
+          if (!reverseResult.ok) {
+            await fetch("/api/habits/completion", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                habitId,
+                completedAt,
+                timeZone,
+                action: "complete",
+              }),
+            }).catch((rollbackError) => {
+              console.error(
+                "Failed to rollback Matrix due habit undo after XP reverse failure",
+                rollbackError
+              );
+            });
+            void hapticWarningPattern();
+            return;
+          }
         }
 
         const heldItemIds = getDueCompletionHoldIds(habitId);
@@ -5083,9 +6511,14 @@ export function MatrixContent({
     },
     [
       findMatrixHabit,
+      buildDueHabitXpDiagnostic,
+      dispatchMatrixDueHabitXpReward,
       getDueCompletionHoldIds,
+      getDueOccurrenceIdentity,
       holdMatrixReorderItems,
       releaseMatrixReorderHold,
+      reverseMatrixXpOccurrence,
+      setMatrixXpDiagnostic,
       timeZone,
       user?.id,
     ]
@@ -5149,10 +6582,10 @@ export function MatrixContent({
         const { data: instanceData, error: instanceError } = await supabase
           .from("schedule_instances")
           .select(
-            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name, time_block_id, day_type_time_block_id, energy_resolved"
+            "id, source_id, source_type, start_utc, end_utc, status, weight_snapshot, event_name, time_block_id, day_type_time_block_id, energy_resolved, metadata"
           )
           .eq("user_id", userId)
-          .in("source_type", ["PROJECT", "HABIT"])
+          .in("source_type", ["PROJECT", "HABIT", "EVENT"])
           .in("status", ["scheduled", "in_progress", "completed"])
           .lt("start_utc", dayEnd.toISOString())
           .gt("end_utc", dayStart.toISOString())
@@ -5564,7 +6997,11 @@ export function MatrixContent({
       if (memoCompletionState.instanceId) {
         await commitScheduledEventCompletion(
           memoCompletionState.instanceId,
-          "completed"
+          "completed",
+          {
+            xpSourceRect: memoCompletionState.xpSourceRect ?? null,
+            xpSourceOrigin: memoCompletionState.xpSourceOrigin,
+          }
         );
       }
       setMemoCompletionState(null);
@@ -5575,7 +7012,11 @@ export function MatrixContent({
     try {
       await handleCompleteDueHabit(
         memoCompletionState.habit.id,
-        memoCompletionState.completedToday ?? false
+        memoCompletionState.completedToday ?? false,
+        {
+          rect: memoCompletionState.xpSourceRect ?? null,
+          origin: memoCompletionState.xpSourceOrigin,
+        }
       );
       setMemoCompletionState(null);
     } finally {
@@ -5636,6 +7077,31 @@ export function MatrixContent({
       />
     </button>
   );
+  const matrixXpDebugToggle = IS_DEVELOPMENT ? (
+    <button
+      type="button"
+      aria-label={
+        matrixXpDebugEnabled
+          ? "Hide Matrix XP diagnostics"
+          : "Show Matrix XP diagnostics"
+      }
+      aria-pressed={matrixXpDebugEnabled}
+      title={
+        matrixXpDebugEnabled
+          ? "Hide Matrix XP diagnostics"
+          : "Show Matrix XP diagnostics"
+      }
+      onClick={handleMatrixXpDebugToggle}
+      className={cn(
+        "inline-flex h-6 min-w-7 shrink-0 items-center justify-center rounded-md border px-1.5 text-[9px] font-black leading-none tracking-[0.08em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        matrixXpDebugEnabled
+          ? "border-emerald-300/35 bg-emerald-400/12 text-emerald-200"
+          : "border-zinc-800/80 bg-zinc-950/30 text-zinc-600 hover:border-zinc-700 hover:text-zinc-400"
+      )}
+    >
+      XP
+    </button>
+  ) : null;
 
   const matrixBody = (
     <>
@@ -5653,10 +7119,16 @@ export function MatrixContent({
               MATRIX
             </h1>
           </div>
-          {matrixSettingsToggle}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {matrixXpDebugToggle}
+            {matrixSettingsToggle}
+          </div>
         </header>
       ) : (
-        <div className="flex justify-end px-0.5">{matrixSettingsToggle}</div>
+        <div className="flex justify-end gap-1.5 px-0.5">
+          {matrixXpDebugToggle}
+          {matrixSettingsToggle}
+        </div>
       )}
 
         <AnimatePresence initial={false}>
@@ -5707,6 +7179,8 @@ export function MatrixContent({
                 heldMatrixReorderItemIds.scheduled
               }
               heldDueCompletionItemIds={heldMatrixReorderItemIds.due}
+              xpDiagnostics={matrixXpDiagnostics}
+              xpDebugEnabled={matrixXpDebugEnabled}
             />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">

@@ -25,6 +25,10 @@ import {
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
+import {
+  dispatchCreatorXpBurstStatus,
+  type CreatorXpBurstRect,
+} from "@/lib/effects/creatorXpBurstBus";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
 import {
   PRIORITY_LABELS,
@@ -54,6 +58,25 @@ const LIST_COMPACT_BOTTOM_ALLOWANCE = 36;
 const LIST_COMPACT_EXPAND_THRESHOLD_RATIO = 0.88;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
+
+function toCreatorXpBurstRect(rect: DOMRect): CreatorXpBurstRect {
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    left: rect.left,
+  };
+}
+
+function reportMyListSheetXpDiagnostic(message: string, details?: unknown) {
+  if (process.env.NODE_ENV === "production") return;
+  dispatchCreatorXpBurstStatus(message);
+  console.info(message, details ?? {});
+}
 
 function resolveQuickCreateMediumPriorityMetadata() {
   return (
@@ -107,6 +130,23 @@ type MyListManualRow = {
   text: string;
 };
 
+const EMPTY_DRAFT_MANUAL_ROW_ID = "empty-draft";
+
+function createManualRow(
+  id: string,
+  priorityId: PriorityBucketId
+): MyListManualRow {
+  return {
+    id,
+    done: false,
+    skillId: null,
+    skillName: null,
+    skillIcon: "",
+    priorityId,
+    text: "",
+  };
+}
+
 type MyListRowKey = `manual:${string}` | `task:${string}`;
 
 type MyListTaskOverride = {
@@ -118,6 +158,10 @@ type MyListTaskOverride = {
 };
 
 type MyListActiveView = "list" | "matrix";
+export type MyListTaskXpContext = {
+  skillId: string | null;
+  monumentId: string | null;
+};
 
 export function MyListSheet({
   open,
@@ -128,6 +172,7 @@ export function MyListSheet({
   pendingTaskIds,
   useFullExpandedHeight,
   onToggleTask,
+  onTaskSkillSelect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -136,7 +181,12 @@ export function MyListSheet({
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
   useFullExpandedHeight: boolean;
-  onToggleTask: (taskId: string) => void;
+  onToggleTask: (
+    taskId: string,
+    sourceRect: CreatorXpBurstRect | null,
+    xpContext: MyListTaskXpContext
+  ) => void;
+  onTaskSkillSelect: (taskId: string, skill: SkillRow) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const [note, setNote] = useState("");
@@ -172,12 +222,20 @@ export function MyListSheet({
   const lastMeasuredViewportRef = useRef<{ width: number; height: number } | null>(
     null
   );
+  const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
   const visibleTasks = useMemo(
     () => tasks.filter((task) => !hiddenTaskRowIds.has(task.id)),
     [hiddenTaskRowIds, tasks]
   );
-  const hasListRows = visibleTasks.length > 0 || manualRows.length > 0;
-  const visibleListRowCount = visibleTasks.length + manualRows.length;
+  const shouldShowEmptyDraftRow =
+    visibleTasks.length === 0 && manualRows.length === 0;
+  const hasListRows =
+    visibleTasks.length > 0 || manualRows.length > 0 || shouldShowEmptyDraftRow;
+  const visibleListRowCount =
+    visibleTasks.length + manualRows.length + (shouldShowEmptyDraftRow ? 1 : 0);
+  const visibleManualRows = shouldShowEmptyDraftRow
+    ? [createManualRow(EMPTY_DRAFT_MANUAL_ROW_ID, defaultPriority.id)]
+    : manualRows;
   const listContentHeight =
     LIST_COMPACT_HEADER_ALLOWANCE +
     visibleListRowCount * LIST_COMPACT_ROW_HEIGHT +
@@ -197,7 +255,6 @@ export function MyListSheet({
   const currentSheetHeight = isExpanded
     ? myListSheetHeights.expanded
     : compactSheetHeight;
-  const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
@@ -234,6 +291,7 @@ export function MyListSheet({
         skillId: sourceSkillId,
         skillName,
         skillIcon,
+        monumentId: skill?.monument_id ?? task.skill_monument_id ?? null,
       };
     },
     [skillLookup, taskOverrides]
@@ -244,15 +302,10 @@ export function MyListSheet({
     setActivePriorityPickerRowKey(null);
     setManualRows((currentRows) => [
       ...currentRows,
-      {
-        id: `manual-${Date.now()}-${currentRows.length}`,
-        done: false,
-        skillId: null,
-        skillName: null,
-        skillIcon: "",
-        priorityId: defaultPriority.id,
-        text: "",
-      },
+      createManualRow(
+        `manual-${Date.now()}-${currentRows.length}`,
+        defaultPriority.id
+      ),
     ]);
   }, [defaultPriority.id]);
 
@@ -262,12 +315,14 @@ export function MyListSheet({
         currentRowId === `manual:${rowId}` ? null : currentRowId
       );
       setManualRows((currentRows) =>
-        currentRows.map((row) =>
-          row.id === rowId ? { ...row, ...updates } : row
-        )
+        currentRows.length === 0 && rowId === EMPTY_DRAFT_MANUAL_ROW_ID
+          ? [{ ...createManualRow(rowId, defaultPriority.id), ...updates }]
+          : currentRows.map((row) =>
+              row.id === rowId ? { ...row, ...updates } : row
+            )
       );
     },
-    []
+    [defaultPriority.id]
   );
 
   const manualSkillGroups = useMemo<QuickCreateSkillGroup[]>(() => {
@@ -363,22 +418,44 @@ export function MyListSheet({
     [updateManualRow]
   );
 
-  const handleTaskSkillSelect = useCallback((taskId: string, skill: SkillRow) => {
-    setPendingDeleteRowId((currentRowId) =>
-      currentRowId === `task:${taskId}` ? null : currentRowId
-    );
-    setTaskOverrides((currentOverrides) => ({
-      ...currentOverrides,
-      [taskId]: {
-        ...currentOverrides[taskId],
-        skillId: skill.id,
-        skillName: skill.name?.trim() || "Untitled skill",
-        skillIcon: (skill.icon ?? "").trim() || "✦",
-      },
-    }));
-    setActiveSkillPickerRowKey(null);
-    setManualSkillSearch("");
-  }, []);
+  const handleTaskSkillSelect = useCallback(
+    (taskId: string, skill: SkillRow) => {
+      setPendingDeleteRowId((currentRowId) =>
+        currentRowId === `task:${taskId}` ? null : currentRowId
+      );
+      setTaskOverrides((currentOverrides) => ({
+        ...currentOverrides,
+        [taskId]: {
+          ...currentOverrides[taskId],
+          skillId: skill.id,
+          skillName: skill.name?.trim() || "Untitled skill",
+          skillIcon: (skill.icon ?? "").trim() || "✦",
+        },
+      }));
+      onTaskSkillSelect(taskId, skill);
+      setActiveSkillPickerRowKey(null);
+      setManualSkillSearch("");
+    },
+    [onTaskSkillSelect]
+  );
+
+  const handleManualCompletionToggle = useCallback(
+    (rowId: string, checked: boolean) => {
+      if (!checked) {
+        updateManualRow(rowId, { done: false });
+        return;
+      }
+
+      reportMyListSheetXpDiagnostic(
+        "MY LIST XP BLOCKED: manual row is not persisted",
+        {
+          rowId,
+          missing: "database-backed todo id and completion save path",
+        }
+      );
+    },
+    [updateManualRow]
+  );
 
   const handlePrioritySelect = useCallback(
     (
@@ -1169,6 +1246,8 @@ export function MyListSheet({
                   return (
                     <div
                       key={task.id}
+                      data-creator-xp-source="my-list-todo"
+                      data-creator-xp-kind="todo"
                       className={clsx(
                         "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
                         pending && "opacity-60"
@@ -1179,9 +1258,21 @@ export function MyListSheet({
                         type="checkbox"
                         checked={done}
                         disabled={pending}
-                        onChange={() => {
+                        onChange={(event) => {
                           setPendingDeleteRowId(null);
-                          onToggleTask(task.id);
+                          const sourceElement = event.currentTarget.closest(
+                            '[data-creator-xp-source="my-list-todo"]'
+                          );
+                          const sourceRect =
+                            sourceElement instanceof HTMLElement
+                              ? toCreatorXpBurstRect(
+                                  sourceElement.getBoundingClientRect()
+                                )
+                              : null;
+                          onToggleTask(task.id, sourceRect, {
+                            skillId: taskSkill.skillId,
+                            monumentId: taskSkill.monumentId,
+                          });
                         }}
                         tabIndex={open ? 0 : -1}
                         className="peer sr-only disabled:cursor-wait"
@@ -1296,9 +1387,11 @@ export function MyListSheet({
                     </div>
                   );
                 })}
-                {manualRows.map((row) => (
+                {visibleManualRows.map((row) => (
                   <div
                     key={row.id}
+                    data-creator-xp-source="my-list-todo"
+                    data-creator-xp-kind="todo"
                     className="flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
                   >
                     <input
@@ -1306,7 +1399,10 @@ export function MyListSheet({
                       type="checkbox"
                       checked={row.done}
                       onChange={(event) =>
-                        updateManualRow(row.id, { done: event.target.checked })
+                        handleManualCompletionToggle(
+                          row.id,
+                          event.target.checked
+                        )
                       }
                       tabIndex={open ? 0 : -1}
                       className="peer sr-only"

@@ -9,6 +9,7 @@ import {
 } from "@/components/appChromeVisibility";
 import AppMain from "@/components/AppMain";
 import BottomNav from "@/components/BottomNav";
+import CreatorXpBurstOverlay from "@/components/effects/CreatorXpBurstOverlay";
 import { GlobalMyList } from "@/components/my-list/GlobalMyList";
 import TopNav from "@/components/TopNav";
 
@@ -44,6 +45,7 @@ export default function AppShellNavVisibility({
   return (
     <>
       {!hideTopNav && <TopNav />}
+      <CreatorXpBurstOverlay />
       <AppMain>{children}</AppMain>
       {showBottomChrome && <BottomNav />}
       {showGlobalMyList && (

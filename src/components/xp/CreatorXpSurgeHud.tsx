@@ -12,14 +12,24 @@ import {
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import clsx from "clsx";
+import {
+  dispatchCreatorXpBurstStatus,
+  subscribeToCreatorXpBurstArrivals,
+} from "@/lib/effects/creatorXpBurstBus";
 
-export type CreatorXpSurgeSourceType = "TASK" | "HABIT" | "PROJECT" | "GOAL";
+export type CreatorXpSurgeSourceType =
+  | "TASK"
+  | "HABIT"
+  | "PROJECT"
+  | "GOAL"
+  | "EVENT";
 
 export type CreatorXpSurgePayload = {
   sourceType: CreatorXpSurgeSourceType;
   title: string;
   sourceIcon?: string | null;
   displayXp?: number | null;
+  currentLevel?: number | null;
   progressFrom?: number;
   progressTo?: number;
   topOffsetPx?: number | null;
@@ -41,18 +51,30 @@ export const CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE = {
   HABIT: 1,
   PROJECT: 3,
   GOAL: 5,
+  EVENT: 1,
 } as const satisfies Record<CreatorXpSurgeSourceType, number>;
 
 export type CreatorXpSurgeBuildInput = CreatorXpSurgeTitleParts & {
   sourceType?: string | null;
   sourceIcon?: string | null;
+  currentLevel?: number | null;
 };
 
 export type ScheduledEventCreatorXpSurgeInput = CreatorXpSurgeBuildInput & {
   scheduleInstanceId?: string | null;
   completedAt?: string | null;
   topOffsetPx?: number | null;
-};
+} & Partial<
+    Pick<
+      CreatorXpSurgePayload,
+      | "title"
+      | "displayXp"
+      | "currentLevel"
+      | "progressFrom"
+      | "progressTo"
+      | "levelBreak"
+    >
+  >;
 
 type CreatorXpSurgeHudData = CreatorXpSurgePayload & {
   id: number;
@@ -66,6 +88,17 @@ const DEFAULT_TOP_OFFSET_PX = 16;
 const DEFAULT_PROGRESS_FROM = 24;
 const DEFAULT_PROGRESS_TO = 72;
 const SCHEDULED_EVENT_SURGE_DEDUPE_TTL_MS = 5 * 60 * 1000;
+const CREATOR_XP_HEX_FILL_DURATION_MS = 1900;
+const CREATOR_XP_HEX_ACTIVE_COLOR = "rgb(74, 222, 128)";
+const CREATOR_XP_HEX_POINTS = [
+  { x: 50, y: 4 },
+  { x: 91, y: 27 },
+  { x: 91, y: 73 },
+  { x: 50, y: 96 },
+  { x: 9, y: 73 },
+  { x: 9, y: 27 },
+] as const;
+const CREATOR_XP_HEX_PATH = "M50 4 L91 27 L91 73 L50 96 L9 73 L9 27 Z";
 
 const listeners = new Set<CreatorXpSurgeListener>();
 const recentScheduledEventSurgeKeys = new Map<string, number>();
@@ -91,7 +124,7 @@ export function resolveCreatorXpSurgeTitle({
     clean(skillName) ??
     clean(monumentTitle) ??
     clean(sourceTitle) ??
-    "Progress gained"
+    "Skill XP"
   );
 }
 
@@ -102,7 +135,8 @@ function normalizeCreatorXpSurgeSourceType(
   return normalized === "TASK" ||
     normalized === "HABIT" ||
     normalized === "PROJECT" ||
-    normalized === "GOAL"
+    normalized === "GOAL" ||
+    normalized === "EVENT"
     ? normalized
     : "TASK";
 }
@@ -110,11 +144,16 @@ function normalizeCreatorXpSurgeSourceType(
 export function buildCreatorXpSurgePayload({
   sourceType,
   sourceIcon,
+  currentLevel,
   skillName,
   monumentTitle,
   sourceTitle,
 }: CreatorXpSurgeBuildInput): CreatorXpSurgePayload {
   const normalizedSourceType = normalizeCreatorXpSurgeSourceType(sourceType);
+  const normalizedLevel =
+    typeof currentLevel === "number" && Number.isFinite(currentLevel)
+      ? currentLevel
+      : null;
 
   return {
     sourceType: normalizedSourceType,
@@ -124,6 +163,7 @@ export function buildCreatorXpSurgePayload({
       sourceTitle,
     }),
     sourceIcon: sourceIcon?.trim() || null,
+    currentLevel: normalizedLevel,
     displayXp:
       CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE[normalizedSourceType] ?? null,
     progressFrom: normalizedSourceType === "PROJECT" ? 18 : 24,
@@ -144,6 +184,294 @@ function pruneScheduledEventSurgeKeys(now: number) {
   });
 }
 
+function easeCreatorXpHexFill(t: number) {
+  const clamped = Math.min(Math.max(t, 0), 1);
+  const smooth = clamped * clamped * (3 - 2 * clamped);
+  return Math.pow(smooth, 0.82);
+}
+
+function resolveCreatorXpHexPoint(progress: number) {
+  const clampedProgress = Math.min(Math.max(progress, 0), 100);
+  const points = CREATOR_XP_HEX_POINTS;
+  const segmentLengths = points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return Math.hypot(next.x - point.x, next.y - point.y);
+  });
+  const perimeter = segmentLengths.reduce((total, length) => total + length, 0);
+  let distance = (clampedProgress / 100) * perimeter;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const segmentLength = segmentLengths[index];
+    if (distance <= segmentLength || index === points.length - 1) {
+      const start = points[index];
+      const end = points[(index + 1) % points.length];
+      const segmentProgress =
+        segmentLength > 0 ? Math.min(Math.max(distance / segmentLength, 0), 1) : 0;
+      return {
+        x: start.x + (end.x - start.x) * segmentProgress,
+        y: start.y + (end.y - start.y) * segmentProgress,
+      };
+    }
+    distance -= segmentLength;
+  }
+
+  return points[0];
+}
+
+function CreatorXpHexBadge({
+  surge,
+  progressFrom,
+  progressTo,
+  isLevelBreak,
+  prefersReducedMotion,
+  skillIcon,
+  level,
+  burnActive,
+}: {
+  surge: CreatorXpSurgeHudData;
+  progressFrom: number;
+  progressTo: number;
+  isLevelBreak: boolean;
+  prefersReducedMotion: boolean | null;
+  skillIcon: string;
+  level: number | null;
+  burnActive: boolean;
+}) {
+  const initialProgress = prefersReducedMotion ? progressTo : progressFrom;
+  const [animatedProgress, setAnimatedProgress] = useState(initialProgress);
+  const burnHeadPoint = resolveCreatorXpHexPoint(animatedProgress);
+  const progressStrokeOffset = 100 - animatedProgress;
+  const showBurnHead = !prefersReducedMotion && animatedProgress > 0;
+  const fillDelayMs = 90;
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setAnimatedProgress(progressTo);
+      return;
+    }
+    if (!burnActive) {
+      setAnimatedProgress(progressFrom);
+      return;
+    }
+
+    let frame = 0;
+    let startTime: number | null = null;
+    const timeout = window.setTimeout(() => {
+      frame = window.requestAnimationFrame(function animate(timestamp) {
+        startTime ??= timestamp;
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(elapsed / CREATOR_XP_HEX_FILL_DURATION_MS, 1);
+        const easedProgress = easeCreatorXpHexFill(progress);
+        setAnimatedProgress(
+          progressFrom + (progressTo - progressFrom) * easedProgress
+        );
+
+        if (progress < 1) {
+          frame = window.requestAnimationFrame(animate);
+        }
+      });
+    }, fillDelayMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [burnActive, prefersReducedMotion, progressFrom, progressTo, surge.id]);
+
+  return (
+    <motion.div
+      initial={
+        prefersReducedMotion
+          ? { opacity: 0 }
+          : { opacity: 0, scale: 0.92 }
+      }
+      animate={
+        prefersReducedMotion
+          ? { opacity: 1 }
+          : { opacity: 1, scale: 1 }
+      }
+      transition={{ duration: 0.24, ease: [0.22, 0.72, 0.24, 1] }}
+      className="relative size-[118px] drop-shadow-[0_18px_34px_rgba(0,0,0,0.58)]"
+      data-creator-xp-target="surge-hex"
+    >
+      {!prefersReducedMotion && burnActive ? (
+        <motion.div
+          className={clsx(
+            "absolute inset-[-7px] opacity-70 blur-md",
+            isLevelBreak ? "bg-emerald-300/18" : "bg-emerald-400/12"
+          )}
+          style={{
+            clipPath:
+              "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
+          }}
+          animate={{ opacity: [0.34, 0.72, 0.42, 0.58] }}
+          transition={{
+            delay: fillDelayMs / 1000,
+            duration: CREATOR_XP_HEX_FILL_DURATION_MS / 1000,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+        />
+      ) : null}
+
+      <div
+        className="absolute inset-[8px] bg-[#050609]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-14px_30px_rgba(0,0,0,0.7),inset_0_10px_26px_rgba(255,255,255,0.045)] backdrop-blur-xl"
+        style={{
+          clipPath:
+            "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
+        }}
+      />
+      <div
+        className="absolute inset-[8px] bg-gradient-to-b from-white/[0.12] via-transparent to-emerald-950/30"
+        style={{
+          clipPath:
+            "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
+        }}
+      />
+
+      <svg
+        className="absolute inset-0 h-full w-full overflow-visible"
+        viewBox="0 0 100 100"
+        aria-hidden="true"
+      >
+        <defs>
+          <filter
+            id={`creator-xp-hex-glow-${surge.id}`}
+            x="-35%"
+            y="-35%"
+            width="170%"
+            height="170%"
+          >
+            <feGaussianBlur stdDeviation="2.2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter
+            id={`creator-xp-hex-burn-${surge.id}`}
+            x="-80%"
+            y="-80%"
+            width="260%"
+            height="260%"
+          >
+            <feGaussianBlur stdDeviation="2.8" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <path
+          d={CREATOR_XP_HEX_PATH}
+          pathLength="100"
+          fill="rgba(9, 9, 11, 0.66)"
+          stroke="rgba(113, 113, 122, 0.22)"
+          strokeWidth="4.2"
+          strokeLinejoin="round"
+        />
+        <path
+          d={CREATOR_XP_HEX_PATH}
+          pathLength="100"
+          fill="none"
+          stroke="rgba(34, 197, 94, 0.22)"
+          strokeWidth="6.2"
+          strokeLinejoin="round"
+        />
+        <path
+          d={CREATOR_XP_HEX_PATH}
+          pathLength="100"
+          fill="none"
+          stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+          strokeWidth="4.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="100"
+          strokeDashoffset={progressStrokeOffset}
+          filter={`url(#creator-xp-hex-glow-${surge.id})`}
+        />
+        {!prefersReducedMotion ? (
+          <path
+            d={CREATOR_XP_HEX_PATH}
+            pathLength="100"
+            fill="none"
+            stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+            strokeWidth="6.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray="8 100"
+            strokeDashoffset={100 - animatedProgress + 8}
+            filter={`url(#creator-xp-hex-burn-${surge.id})`}
+            opacity="0.58"
+          />
+        ) : null}
+        {showBurnHead ? (
+          <g filter={`url(#creator-xp-hex-burn-${surge.id})`}>
+            <circle
+              cx={burnHeadPoint.x}
+              cy={burnHeadPoint.y}
+              r="3.1"
+              fill={CREATOR_XP_HEX_ACTIVE_COLOR}
+              opacity="0.72"
+            />
+            <circle
+              cx={burnHeadPoint.x}
+              cy={burnHeadPoint.y}
+              r="1.35"
+              fill={CREATOR_XP_HEX_ACTIVE_COLOR}
+              opacity="0.92"
+            />
+          </g>
+        ) : null}
+        <path
+          d={CREATOR_XP_HEX_PATH}
+          fill="none"
+          stroke="rgba(255, 255, 255, 0.12)"
+          strokeWidth="1"
+          strokeLinejoin="round"
+        />
+      </svg>
+
+      <div className="absolute inset-0 grid place-items-center px-6">
+        <div className="min-w-0 translate-y-0.5">
+          <div className="text-[32px] leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.72)]">
+            {skillIcon}
+          </div>
+          {level != null ? (
+            <div className="mt-1 text-[13px] font-extrabold leading-none text-white">
+              LVL {level}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {!prefersReducedMotion && burnActive ? (
+        <motion.span
+          className="absolute inset-[5px] rounded-[2px] border border-emerald-200/0"
+          style={{
+            clipPath:
+              "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
+          }}
+          animate={{
+            opacity: [0, 0.34, 0.12, 0],
+            scale: [0.95, 1.04, 1.08, 1.12],
+            borderColor: [
+              "rgba(167, 243, 208, 0)",
+              "rgba(167, 243, 208, 0.26)",
+              "rgba(167, 243, 208, 0.14)",
+              "rgba(167, 243, 208, 0)",
+            ],
+          }}
+          transition={{
+            delay: fillDelayMs / 1000,
+            duration: CREATOR_XP_HEX_FILL_DURATION_MS / 1000,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+        />
+      ) : null}
+    </motion.div>
+  );
+}
+
 export function showScheduledEventCreatorXpSurge({
   scheduleInstanceId,
   completedAt,
@@ -159,8 +487,16 @@ export function showScheduledEventCreatorXpSurge({
     recentScheduledEventSurgeKeys.set(dedupeKey, now);
   }
 
+  const builtPayload = buildCreatorXpSurgePayload(input);
+
   showCreatorXpSurge({
-    ...buildCreatorXpSurgePayload(input),
+    ...builtPayload,
+    title: input.title?.trim() || builtPayload.title,
+    displayXp: input.displayXp ?? builtPayload.displayXp,
+    currentLevel: input.currentLevel ?? builtPayload.currentLevel,
+    progressFrom: input.progressFrom ?? builtPayload.progressFrom,
+    progressTo: input.progressTo ?? builtPayload.progressTo,
+    levelBreak: input.levelBreak ?? builtPayload.levelBreak,
     topOffsetPx,
   });
 }
@@ -177,25 +513,54 @@ function CreatorXpSurgeHud({
   onDismiss: (id: number) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
+  const [burnActive, setBurnActive] = useState(false);
+  const surgeId = surge?.id ?? null;
 
   useEffect(() => {
     if (!surge) return;
     const timeout = window.setTimeout(
       () => onDismiss(surge.id),
-      surge.levelBreak ? 1800 : 1550
+      surge.levelBreak ? 3400 : 3200
     );
     return () => window.clearTimeout(timeout);
   }, [onDismiss, surge]);
 
+  useEffect(() => {
+    if (surgeId === null) {
+      setBurnActive(false);
+      return;
+    }
+    if (prefersReducedMotion) {
+      setBurnActive(true);
+      return;
+    }
+
+    setBurnActive(false);
+    let hasIgnited = false;
+    const ignite = () => {
+      if (hasIgnited) return;
+      hasIgnited = true;
+      setBurnActive(true);
+      dispatchCreatorXpBurstStatus("XP: border ignite");
+    };
+    const fallback = window.setTimeout(ignite, 820);
+    const unsubscribe = subscribeToCreatorXpBurstArrivals(() => {
+      window.clearTimeout(fallback);
+      ignite();
+    });
+
+    return () => {
+      window.clearTimeout(fallback);
+      unsubscribe();
+    };
+  }, [prefersReducedMotion, surgeId]);
+
   const progressFrom = Math.min(Math.max(surge?.progressFrom ?? 0, 0), 100);
   const progressTo = Math.min(Math.max(surge?.progressTo ?? 0, 0), 100);
   const isLevelBreak = Boolean(surge?.levelBreak);
-  const fillDuration = isLevelBreak ? 0.62 : 0.52;
-  const fillDelay = 0.06;
-  const levelLabel =
-    surge?.levelBreak?.oldLevel != null && surge.levelBreak.newLevel != null
-      ? `${surge.levelBreak.oldLevel} -> ${surge.levelBreak.newLevel}`
-      : null;
+  const level =
+    surge?.currentLevel ??
+    surge?.levelBreak?.newLevel ?? surge?.levelBreak?.oldLevel ?? null;
   const showXpBadge = typeof surge?.displayXp === "number" && surge.displayXp > 0;
   const hasExplicitTopOffset =
     typeof surge?.topOffsetPx === "number" && Number.isFinite(surge.topOffsetPx);
@@ -205,6 +570,8 @@ function CreatorXpSurgeHud({
   const topStyle = hasExplicitTopOffset
     ? `${topOffsetPx}px`
     : `calc(env(safe-area-inset-top, 0px) + ${topOffsetPx}px)`;
+  const skillIcon = surge?.sourceIcon?.trim() || "✦";
+  const skillName = surge?.title?.trim() || "Skill XP";
 
   return (
     <div
@@ -233,128 +600,27 @@ function CreatorXpSurgeHud({
                 : { opacity: 0, y: -8, scale: 0.99 }
             }
             transition={{ duration: 0.18, ease: [0.22, 0.72, 0.24, 1] }}
-            className={clsx(
-              "w-full max-w-[min(92vw,390px)] overflow-hidden rounded-xl border bg-[#07080b]/92 text-white shadow-[0_16px_38px_rgba(0,0,0,0.54),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-xl",
-              isLevelBreak
-                ? "border-emerald-300/28 ring-1 ring-emerald-300/10"
-                : "border-white/10"
-            )}
+            className="flex w-full max-w-[min(84vw,210px)] flex-col items-center text-center text-white"
           >
-            <div className="relative px-3 py-2">
-              <div className="flex items-center gap-2.5">
-                <div className="relative grid size-8 shrink-0 place-items-center rounded-full border border-white/10 bg-black/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                  {!prefersReducedMotion ? (
-                    <motion.span
-                      className={clsx(
-                        "absolute inset-0 rounded-full border",
-                        isLevelBreak
-                          ? "border-emerald-300/35"
-                          : "border-white/16"
-                      )}
-                      animate={{
-                        scale: isLevelBreak ? [1, 1.34, 1.08] : [1, 1.18, 1],
-                        opacity: isLevelBreak ? [0.8, 0, 0] : [0.45, 0, 0],
-                      }}
-                      transition={{
-                        duration: isLevelBreak ? 0.72 : 0.9,
-                        ease: [0.22, 0.72, 0.24, 1],
-                      }}
-                    />
-                  ) : null}
-                  <span className="text-sm leading-none text-white/90">
-                    {surge.sourceIcon ?? "XP"}
-                  </span>
+            <CreatorXpHexBadge
+              key={surge.id}
+              surge={surge}
+              progressFrom={progressFrom}
+              progressTo={progressTo}
+              isLevelBreak={isLevelBreak}
+              prefersReducedMotion={prefersReducedMotion}
+              skillIcon={skillIcon}
+              level={level}
+              burnActive={burnActive}
+            />
+
+            <div className="mt-1 max-w-full rounded-full bg-black/20 px-3 py-1 text-[13px] font-semibold leading-tight text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)] backdrop-blur-md">
+              <div className="truncate">{skillName}</div>
+              {showXpBadge ? (
+                <div className="mt-0.5 text-[11px] font-bold leading-none text-emerald-300">
+                  +{surge.displayXp} XP
                 </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-white/92">
-                        {surge.title}
-                      </div>
-                    </div>
-                    {showXpBadge ? (
-                      <div className="shrink-0 rounded-full border border-white/[0.12] bg-white/[0.06] px-2 py-0.5 text-right leading-tight shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                        <div className="text-[12px] font-semibold text-white">
-                          +{surge.displayXp} XP
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {isLevelBreak && levelLabel ? (
-                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/75">
-                      LV {levelLabel}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="mt-2 h-[11px] overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45),inset_0_2px_5px_rgba(0,0,0,0.62)]">
-                <motion.div
-                  className="progress-bar-glint relative h-full overflow-hidden rounded-full border border-white/[0.14] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)]"
-                  initial={{
-                    width: `${prefersReducedMotion ? progressTo : progressFrom}%`,
-                  }}
-                  animate={{ width: `${progressTo}%` }}
-                  transition={
-                    prefersReducedMotion
-                      ? { duration: 0 }
-                      : {
-                          delay: fillDelay,
-                          duration: fillDuration,
-                          ease: [0.16, 0.92, 0.22, 1],
-                        }
-                  }
-                >
-                  <span
-                    className="progress-bar-glint-sweep level-progress-bar-glint-sweep"
-                    aria-hidden="true"
-                  />
-                  <div className="pointer-events-none absolute inset-x-1 top-[1px] z-[4] h-px rounded-full bg-white/35" />
-                  <div className="absolute inset-y-0 right-0 z-[5] w-1.5 rounded-full bg-emerald-200/80 shadow-[0_0_8px_rgba(110,231,183,0.42)]" />
-                  {!prefersReducedMotion ? (
-                    <>
-                      <motion.div
-                        className="absolute inset-y-[-3px] z-[6] w-10 bg-gradient-to-r from-transparent via-white/55 to-transparent"
-                        initial={{ left: "-18%", opacity: 0 }}
-                        animate={{ left: "100%", opacity: [0, 0.34, 0] }}
-                        transition={{
-                          delay: fillDelay + 0.03,
-                          duration: fillDuration * 0.82,
-                          ease: [0.2, 0.86, 0.22, 1],
-                        }}
-                      />
-                      <motion.div
-                        className="absolute -right-1 top-1/2 z-[7] h-4 w-4 -translate-y-1/2 rounded-full bg-emerald-200 shadow-[0_0_14px_rgba(110,231,183,0.58),0_0_5px_rgba(255,255,255,0.82)]"
-                        initial={{ opacity: 0, scale: 0.62 }}
-                        animate={{
-                          opacity: [0, 0.9, 0.72],
-                          scale: [0.62, 1.12, 0.88],
-                        }}
-                        transition={{
-                          delay: fillDelay + 0.05,
-                          duration: fillDuration,
-                          ease: [0.18, 0.78, 0.2, 1],
-                        }}
-                      />
-                      <motion.div
-                        className="absolute -right-2 top-1/2 z-[6] h-6 w-6 -translate-y-1/2 rounded-full border border-emerald-200/52"
-                        initial={{ opacity: 0, scale: 0.58 }}
-                        animate={{
-                          opacity: [0, 0, 0.46, 0],
-                          scale: [0.58, 0.58, 1.06, 1.58],
-                        }}
-                        transition={{
-                          delay: fillDelay + fillDuration - 0.04,
-                          duration: 0.34,
-                          ease: [0.16, 0.92, 0.22, 1],
-                        }}
-                      />
-                    </>
-                  ) : null}
-                </motion.div>
-              </div>
+              ) : null}
             </div>
           </motion.div>
         ) : null}

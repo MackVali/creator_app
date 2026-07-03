@@ -10,7 +10,12 @@ import {
   type PointerEvent,
 } from "react";
 import { Plus } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  LayoutGroup,
+  motion,
+  useReducedMotion,
+} from "framer-motion";
 import {
   getProjectTasksListClasses,
   MAX_VISIBLE_PROJECT_TASKS,
@@ -22,6 +27,14 @@ import {
 import type { Project, Task } from "../types";
 import { Progress } from "@/components/ui/Progress";
 import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
+import { CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY } from "@/lib/effects/creatorXpBurstBus";
+import {
+  campaignDrawerProjectLayoutId,
+  campaignDrawerProjectRowKey,
+  campaignDrawerRowOverrideCompleted,
+  campaignDrawerTaskRowKey,
+  type CampaignDrawerRowLifecycleById,
+} from "./campaignDrawerRowState";
 
 interface ProjectsDropdownProps {
   id: string;
@@ -34,41 +47,68 @@ interface ProjectsDropdownProps {
   projectTasksOnly?: boolean;
   onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
+  campaignDrawerXpSource?: boolean;
+  campaignDrawerRowOverrides?: CampaignDrawerRowLifecycleById;
+  newProjectRevealId?: string | null;
+  onNewProjectRevealComplete?: (projectId: string) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
     taskId: string,
-    currentStage: string
-  ) => void;
+    currentCompletedAt: string | null,
+    sourceRect?: DOMRect | null
+  ) => boolean | void | Promise<boolean | void>;
 }
 
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
+const COMPLETED_PROJECT_EXIT_DELAY_MS = 1150;
+const REDUCED_MOTION_COMPLETED_PROJECT_EXIT_DELAY_MS = 900;
 
-const completedProjectsRevealMotion = {
+function reportCampaignDrawerXpTiming(
+  label: string,
+  detail: Record<string, unknown>
+) {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
+    return;
+  }
+  if (window.localStorage.getItem(CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY) !== "1") {
+    return;
+  }
+  console.info(`Campaign drawer XP timing: ${label}`, detail);
+}
+
+const campaignDrawerProjectLayoutTransition = {
+  duration: 0.34,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
+
+const completedProjectActiveExitMotion = {
   hidden: {
     opacity: 0,
     height: 0,
-    y: -8,
+    y: -6,
   },
   visible: {
     opacity: 1,
     height: "auto",
     y: 0,
     transition: {
-      height: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
-      opacity: { duration: 0.32, ease: "easeOut", delay: 0.08 },
-      y: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
+      height: { duration: 0.32, ease: [0.16, 1, 0.3, 1] },
+      opacity: { duration: 0.18, ease: "easeOut" },
+      y: { duration: 0.28, ease: [0.16, 1, 0.3, 1] },
     },
   },
   exit: {
     opacity: 0,
     height: 0,
-    y: -6,
+    x: 14,
+    y: -8,
     transition: {
-      height: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
-      opacity: { duration: 0.24, ease: "easeOut" },
-      y: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
+      height: { duration: 0.34, ease: [0.33, 0, 0.2, 1] },
+      opacity: { duration: 0.22, ease: "easeOut" },
+      x: { duration: 0.34, ease: [0.33, 0, 0.2, 1] },
+      y: { duration: 0.34, ease: [0.33, 0, 0.2, 1] },
     },
   },
 } as const;
@@ -84,10 +124,18 @@ export function ProjectsDropdown({
   projectTasksOnly = false,
   onAddProject,
   addingProject = false,
+  campaignDrawerXpSource = false,
+  campaignDrawerRowOverrides,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
   const prefersReducedMotion = useReducedMotion();
   const [showCompletedProjects, setShowCompletedProjects] = useState(false);
+  const [pendingCompletedExitIds, setPendingCompletedExitIds] = useState<
+    Set<string>
+  >(new Set());
+  const pendingCompletedExitTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
   const selectedProject = useMemo(
     () => (projectTasksOnly ? projects[0] ?? null : null),
     [projectTasksOnly, projects]
@@ -97,7 +145,14 @@ export function ProjectsDropdown({
     const completed: Project[] = [];
 
     for (const project of projects) {
-      if (isProjectCompleted(project)) {
+      const rowKey = campaignDrawerProjectRowKey(project.id);
+      const effectiveCompleted =
+        campaignDrawerRowOverrideCompleted(campaignDrawerRowOverrides?.[rowKey]) ??
+        isProjectCompleted(project);
+      if (
+        effectiveCompleted &&
+        !pendingCompletedExitIds.has(rowKey)
+      ) {
         completed.push(project);
       } else {
         active.push(project);
@@ -105,7 +160,43 @@ export function ProjectsDropdown({
     }
 
     return [active, completed] as const;
-  }, [projects]);
+  }, [campaignDrawerRowOverrides, pendingCompletedExitIds, projects]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (
+      typeof window === "undefined" ||
+      window.localStorage.getItem(CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY) !== "1"
+    ) {
+      return;
+    }
+
+    console.debug(
+      "Campaign drawer project row diagnostics",
+      projects.map((project) => {
+        const rowKey = campaignDrawerProjectRowKey(project.id);
+        const canonicalCompleted = isProjectCompleted(project);
+        const override = campaignDrawerRowOverrides?.[rowKey];
+        const effectiveCompleted =
+          campaignDrawerRowOverrideCompleted(override) ?? canonicalCompleted;
+        return {
+          rowKey,
+          canonicalCompleted,
+          override: override?.status ?? null,
+          effectiveCompleted,
+          bucket:
+            effectiveCompleted && !pendingCompletedExitIds.has(rowKey)
+              ? "completed-hidden"
+              : "active",
+          lastAction: override?.lastAction ?? null,
+          undoResult:
+            override?.lastAction === "undo"
+              ? override.lastPersistenceResult ?? null
+              : null,
+        };
+      })
+    );
+  }, [campaignDrawerRowOverrides, pendingCompletedExitIds, projects]);
 
   useEffect(() => {
     if (completedProjects.length === 0) {
@@ -113,10 +204,147 @@ export function ProjectsDropdown({
     }
   }, [completedProjects.length]);
 
-  const completedProjectsRegionId = `${id}-completed-projects`;
+  useEffect(
+    () => () => {
+      pendingCompletedExitTimersRef.current.forEach((timer) => {
+        clearTimeout(timer);
+      });
+      pendingCompletedExitTimersRef.current.clear();
+    },
+    []
+  );
+
+  const releasePendingCompletedProject = useCallback((projectId: string) => {
+    const rowKey = campaignDrawerProjectRowKey(projectId);
+    const timer = pendingCompletedExitTimersRef.current.get(rowKey);
+    if (timer) {
+      clearTimeout(timer);
+      pendingCompletedExitTimersRef.current.delete(rowKey);
+    }
+    setPendingCompletedExitIds((current) => {
+      if (!current.has(rowKey)) return current;
+      const next = new Set(current);
+      next.delete(rowKey);
+      return next;
+    });
+  }, []);
+
+  const holdCompletedProjectBeforeExit = useCallback(
+    (projectId: string) => {
+      const rowKey = campaignDrawerProjectRowKey(projectId);
+      setPendingCompletedExitIds((current) => {
+        if (current.has(rowKey)) return current;
+        const next = new Set(current);
+        next.add(rowKey);
+        return next;
+      });
+
+      const existingTimer = pendingCompletedExitTimersRef.current.get(rowKey);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const delay = prefersReducedMotion
+        ? REDUCED_MOTION_COMPLETED_PROJECT_EXIT_DELAY_MS
+        : COMPLETED_PROJECT_EXIT_DELAY_MS;
+
+      const timer = setTimeout(() => {
+        pendingCompletedExitTimersRef.current.delete(rowKey);
+        setPendingCompletedExitIds((current) => {
+          if (!current.has(rowKey)) return current;
+          const next = new Set(current);
+          next.delete(rowKey);
+          return next;
+        });
+      }, delay);
+      pendingCompletedExitTimersRef.current.set(rowKey, timer);
+    },
+    [prefersReducedMotion]
+  );
+
+  const handleProjectUpdated = useCallback(
+    (projectId: string, updates: Partial<Project>) => {
+      const existingProject = projects.find(
+        (project) => project.id === projectId
+      );
+      const projectOverride = campaignDrawerRowOverrides?.[
+        campaignDrawerProjectRowKey(projectId)
+      ];
+      const wasCompleted = existingProject
+        ? campaignDrawerRowOverrideCompleted(projectOverride) ??
+          isProjectCompleted(existingProject)
+        : false;
+      const updatedProject = existingProject
+        ? ({ ...existingProject, ...updates } as Project)
+        : null;
+      const isNowCompleted = updatedProject
+        ? isProjectCompleted(updatedProject)
+        : isProjectCompletionUpdate(updates);
+
+      if (!wasCompleted && isNowCompleted) {
+        reportCampaignDrawerXpTiming("project exit start", {
+          projectId,
+          exitStartAt: performance.now(),
+        });
+        holdCompletedProjectBeforeExit(projectId);
+      } else if (wasCompleted && !isNowCompleted) {
+        releasePendingCompletedProject(projectId);
+      }
+
+      onProjectUpdated?.(projectId, updates);
+    },
+    [
+      holdCompletedProjectBeforeExit,
+      campaignDrawerRowOverrides,
+      onProjectUpdated,
+      projects,
+      releasePendingCompletedProject,
+    ]
+  );
+
   const completedProjectsToggleLabel = `${
     showCompletedProjects ? "Hide completed Projects" : "Show completed Projects"
   } (${completedProjects.length})`;
+  const renderProjectRow = (project: Project, index: number) => (
+    <motion.div
+      key={campaignDrawerProjectRowKey(project.id)}
+      className="overflow-hidden"
+      initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+      animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+      exit={prefersReducedMotion ? { opacity: 0, height: 0 } : "exit"}
+      variants={prefersReducedMotion ? undefined : completedProjectActiveExitMotion}
+      layout={prefersReducedMotion ? undefined : "position"}
+      layoutId={
+        prefersReducedMotion
+          ? undefined
+          : campaignDrawerProjectLayoutId(project.id)
+      }
+      transition={
+        prefersReducedMotion
+          ? { duration: 0.16 }
+          : { layout: campaignDrawerProjectLayoutTransition }
+      }
+    >
+      <ProjectRow
+        project={project}
+        projectOrder={index + 1}
+        variant="compactNested"
+        onLongPress={onProjectLongPress}
+        onUpdated={handleProjectUpdated}
+        goalId={goalId}
+        onTaskToggleCompletion={onTaskToggleCompletion}
+        campaignDrawerXpSource={campaignDrawerXpSource}
+        completionOverride={
+          campaignDrawerRowOverrideCompleted(
+            campaignDrawerRowOverrides?.[
+              campaignDrawerProjectRowKey(project.id)
+            ]
+          ) ?? undefined
+        }
+        taskCompletionOverrides={campaignDrawerRowOverrides}
+      />
+    </motion.div>
+  );
 
   return (
     <div
@@ -142,6 +370,8 @@ export function ProjectsDropdown({
               goalId={goalId ?? ""}
               onTaskToggleCompletion={onTaskToggleCompletion}
               onProjectLongPress={onProjectLongPress}
+              campaignDrawerXpSource={campaignDrawerXpSource}
+              campaignDrawerRowOverrides={campaignDrawerRowOverrides}
             />
           ) : (
             <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
@@ -149,59 +379,41 @@ export function ProjectsDropdown({
             </div>
           )
         ) : projects.length > 0 ? (
-          <div className="space-y-1 sm:space-y-1.5">
-            {activeProjects.map((p, index) => (
-              <ProjectRow
-                key={p.id}
-                project={p}
-                projectOrder={index + 1}
-                variant="compactNested"
-                onLongPress={onProjectLongPress}
-                onUpdated={onProjectUpdated}
-              />
-            ))}
-            {completedProjects.length > 0 ? (
-              <button
-                type="button"
-                aria-expanded={showCompletedProjects}
-                aria-controls={completedProjectsRegionId}
-                onClick={() =>
-                  setShowCompletedProjects((current) => !current)
-                }
-                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
-              >
-                <span>{completedProjectsToggleLabel}</span>
-              </button>
-            ) : null}
-            <AnimatePresence initial={false}>
-              {showCompletedProjects ? (
-                <motion.div
-                  id={completedProjectsRegionId}
-                  className="flex flex-col gap-1 overflow-hidden sm:gap-1.5"
-                  initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-                  animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-                  exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
-                  variants={
-                    prefersReducedMotion ? undefined : completedProjectsRevealMotion
-                  }
-                  transition={
-                    prefersReducedMotion ? { duration: 0.12 } : undefined
-                  }
-                >
-                  {completedProjects.map((p, index) => (
-                    <ProjectRow
-                      key={p.id}
-                      project={p}
-                      projectOrder={activeProjects.length + index + 1}
-                      variant="compactNested"
-                      onLongPress={onProjectLongPress}
-                      onUpdated={onProjectUpdated}
-                    />
-                  ))}
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </div>
+          <LayoutGroup id={`campaign-drawer-projects-${id}`}>
+            <div className="space-y-1 sm:space-y-1.5">
+              <AnimatePresence initial={false}>
+                {activeProjects.map((project, index) =>
+                  renderProjectRow(project, index)
+                )}
+
+                {completedProjects.length > 0 ? (
+                  <motion.button
+                    key="campaign-drawer-completed-projects-toggle"
+                    type="button"
+                    aria-expanded={showCompletedProjects}
+                    onClick={() =>
+                      setShowCompletedProjects((current) => !current)
+                    }
+                    className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+                    layout={prefersReducedMotion ? undefined : "position"}
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0.12 }
+                        : { layout: campaignDrawerProjectLayoutTransition }
+                    }
+                  >
+                    <span>{completedProjectsToggleLabel}</span>
+                  </motion.button>
+                ) : null}
+
+                {showCompletedProjects
+                  ? completedProjects.map((project, index) =>
+                      renderProjectRow(project, activeProjects.length + index)
+                    )
+                  : null}
+              </AnimatePresence>
+            </div>
+          </LayoutGroup>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
             No projects linked yet. Head to Projects to tether the first track.
@@ -247,12 +459,15 @@ interface ProjectTasksOnlyRowsProps {
     goalId: string,
     projectId: string,
     taskId: string,
-    currentStage: string
-  ) => void;
+    currentCompletedAt: string | null,
+    sourceRect?: DOMRect | null
+  ) => boolean | void | Promise<boolean | void>;
   onProjectLongPress?: (
     project: Project,
     origin: ProjectCardMorphOrigin | null
   ) => void;
+  campaignDrawerXpSource?: boolean;
+  campaignDrawerRowOverrides?: CampaignDrawerRowLifecycleById;
 }
 
 function ProjectTasksOnlyRows({
@@ -260,6 +475,8 @@ function ProjectTasksOnlyRows({
   project,
   onTaskToggleCompletion,
   onProjectLongPress,
+  campaignDrawerXpSource = false,
+  campaignDrawerRowOverrides,
 }: ProjectTasksOnlyRowsProps) {
   const taskInteractionContext = useProjectRowTaskInteractions();
   const resolvedGoalId = goalId || taskInteractionContext.goalId || "";
@@ -388,7 +605,10 @@ function ProjectTasksOnlyRows({
             resolvedGoalId,
             project.id,
             task.id,
-            task.stage
+            task.completedAt ?? null,
+            campaignDrawerXpSource
+              ? event.currentTarget.getBoundingClientRect()
+              : null
           );
         }
         return;
@@ -411,6 +631,7 @@ function ProjectTasksOnlyRows({
     [
       cancelTaskLongPress,
       cancelTaskSingleTap,
+      campaignDrawerXpSource,
       openTaskEditor,
       project.id,
       resolvedGoalId,
@@ -451,14 +672,21 @@ function ProjectTasksOnlyRows({
         incompleteTaskRowClass={incompleteTaskRowClass}
         completedTaskMarkerClass={completedTaskMarkerClass}
         incompleteTaskMarkerClass={incompleteTaskMarkerClass}
-        isTaskCompleted={(task) =>
-          Boolean(task.completedAt) || task.stage === "PERFECT"
-        }
+        isTaskCompleted={(task) => {
+          const overrideCompleted = campaignDrawerRowOverrideCompleted(
+            campaignDrawerRowOverrides?.[campaignDrawerTaskRowKey(task.id)]
+          );
+          return (
+            overrideCompleted ??
+            (Boolean(task.completedAt) || task.stage === "PERFECT")
+          );
+        }}
         onTaskPointerDown={handleTaskPointerDown}
         onTaskPointerUp={handleTaskPointerUp}
         onTaskPointerCancel={handleTaskPointerCancel}
         onTaskPointerLeave={handleTaskPointerCancel}
         onTaskClick={handleTaskClick}
+        campaignDrawerXpSource={campaignDrawerXpSource}
       />
     </div>
   );
@@ -484,6 +712,21 @@ function isProjectCompleted(project: Project) {
     Number(project.progress ?? 0) >= 100 ||
     Boolean(projectWithCompletion.completedAt) ||
     Boolean(projectWithCompletion.completed_at)
+  );
+}
+
+function isProjectCompletionUpdate(updates: Partial<Project>) {
+  const completion = updates as Partial<Project> & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+
+  return (
+    updates.status === "Done" ||
+    updates.stage === "RELEASE" ||
+    Number(updates.progress ?? Number.NaN) >= 100 ||
+    Boolean(completion.completedAt) ||
+    Boolean(completion.completed_at)
   );
 }
 

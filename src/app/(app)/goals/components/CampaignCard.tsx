@@ -13,7 +13,12 @@ import {
 } from "react";
 import { Check, ChevronDown, MoreVertical, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  LayoutGroup,
+  motion,
+  useReducedMotion,
+} from "framer-motion";
 import {
   DndContext,
   closestCenter,
@@ -39,14 +44,24 @@ import { normalizeGoalStatus } from "@/lib/goals/status";
 import { hapticErrorPattern } from "@/lib/haptics/creatorHaptics";
 import { useToastHelpers } from "@/components/ui/toast";
 import { teardownFabViewportState } from "@/components/ui/fabViewportCleanup";
+import { CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY } from "@/lib/effects/creatorXpBurstBus";
 
-import type { Goal, Project } from "../types";
+import type { Goal, Project, Task } from "../types";
 import { GoalCard } from "./GoalCard";
 import {
   ProjectRowTaskInteractionsProvider,
   type ProjectCardMorphOrigin,
 } from "./ProjectRow";
 import { ProjectsDropdown } from "./ProjectsDropdown";
+import {
+  campaignDrawerGoalLayoutId,
+  campaignDrawerGoalRowKey,
+  campaignDrawerProjectRowKey,
+  campaignDrawerRowOverrideCompleted,
+  campaignDrawerTaskRowKey,
+  type CampaignDrawerRowLifecycle,
+  type CampaignDrawerRowLifecycleById,
+} from "./campaignDrawerRowState";
 
 const cardSpringTransition = {
   type: "spring",
@@ -97,8 +112,8 @@ const goalExpansionTransition = {
 } as const;
 
 const campaignDrawerRowTransition = {
-  duration: 0.9,
-  ease: [0.33, 0, 0.67, 1],
+  duration: 0.34,
+  ease: [0.22, 1, 0.36, 1],
 } as const;
 
 const collapsedGoalMotion = {
@@ -158,33 +173,21 @@ const campaignDrawerOpenedGoalMotion = {
   },
 } as const;
 
-const completedGoalsRevealMotion = {
-  hidden: {
-    opacity: 0,
-    height: 0,
-    y: -8,
-  },
-  visible: {
-    opacity: 1,
-    height: "auto",
-    y: 0,
-    transition: {
-      height: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
-      opacity: { duration: 0.32, ease: "easeOut", delay: 0.08 },
-      y: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
-    },
-  },
-  exit: {
-    opacity: 0,
-    height: 0,
-    y: -6,
-    transition: {
-      height: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
-      opacity: { duration: 0.24, ease: "easeOut" },
-      y: { duration: 0.42, ease: [0.33, 0, 0.2, 1] },
-    },
+const completedDrawerGoalActiveExitMotion = {
+  opacity: 0,
+  height: 0,
+  x: 14,
+  y: -8,
+  transition: {
+    height: { duration: 0.34, ease: [0.33, 0, 0.2, 1] },
+    opacity: { duration: 0.22, ease: "easeOut" },
+    x: { duration: 0.34, ease: [0.33, 0, 0.2, 1] },
+    y: { duration: 0.34, ease: [0.33, 0, 0.2, 1] },
   },
 } as const;
+
+const COMPLETED_DRAWER_GOAL_EXIT_DELAY_MS = 1150;
+const REDUCED_MOTION_COMPLETED_DRAWER_GOAL_EXIT_DELAY_MS = 900;
 
 const newCampaignGoalRevealTransition = {
   duration: 0.56,
@@ -196,7 +199,27 @@ const goalManualCompleteRejectClass =
 const campaignDrawerNoSelectClass =
   "select-none [-webkit-user-select:none] [-webkit-touch-callout:none]";
 const focusPomoCompleteSurfaceClass =
-  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-visible border-transparent bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
+  "shimmer-border-complete focus-pomo-start-glint relative isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_22px_38px_rgba(0,0,0,0.34),0_9px_18px_rgba(3,83,45,0.22),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45 outline outline-1 outline-green-900/40";
+const campaignDrawerCompletedSurfaceClass =
+  focusPomoCompleteSurfaceClass;
+const campaignDrawerCompletingSurfaceClass =
+  focusPomoCompleteSurfaceClass;
+
+type CompletionMutationResult = boolean | void;
+type CampaignDrawerGoalBucket = "active" | "hold" | "completed-hidden";
+
+function reportCampaignDrawerXpTiming(
+  label: string,
+  detail: Record<string, unknown>
+) {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
+    return;
+  }
+  if (window.localStorage.getItem(CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY) !== "1") {
+    return;
+  }
+  console.info(`Campaign drawer XP timing: ${label}`, detail);
+}
 
 const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
   if (typeof window === "undefined") {
@@ -264,6 +287,119 @@ function isCampaignDrawerProjectCompleted(project: Project): boolean {
   );
 }
 
+function isCampaignDrawerTaskCompleted(task: Task): boolean {
+  return Boolean(task.completedAt) || task.stage === "PERFECT";
+}
+
+function getCampaignDrawerGoalBucket(
+  goal: Goal,
+  lifecycle: CampaignDrawerRowLifecycle | undefined,
+  pendingExit: boolean
+): CampaignDrawerGoalBucket {
+  if (pendingExit) return "hold";
+
+  switch (lifecycle?.status) {
+    case "completing":
+    case "completed":
+    case "rewarding":
+    case "exiting":
+      return "hold";
+    case "completed-hidden":
+      return "completed-hidden";
+    case "active":
+    case "undoing":
+      return "active";
+    default:
+      return isCampaignDrawerGoalCompleted(goal)
+        ? "completed-hidden"
+        : "active";
+  }
+}
+
+function getCampaignDrawerTaskActiveStage(task: Task) {
+  return task.stage === "PERFECT" ? "PRODUCE" : task.stage;
+}
+
+function getCampaignDrawerIncompleteProjectProgress(project: Project) {
+  if (project.tasks.length === 0) return 0;
+
+  const completedCount = project.tasks.filter((task) =>
+    Boolean(task.completedAt)
+  ).length;
+  const progress = Math.round((completedCount / project.tasks.length) * 100);
+
+  return Math.min(progress, 99);
+}
+
+function isCampaignDrawerProjectCompletionUpdate(updates: Partial<Project>) {
+  const completion = updates as Partial<Project> & {
+    completedAt?: string | null;
+    completed_at?: string | null;
+  };
+
+  return (
+    updates.status === "Done" ||
+    updates.stage === "RELEASE" ||
+    Number(updates.progress ?? Number.NaN) >= 100 ||
+    Boolean(completion.completedAt) ||
+    Boolean(completion.completed_at)
+  );
+}
+
+function getCampaignDrawerTaskCompletedAt(
+  goals: Goal[],
+  goalId: string,
+  projectId: string,
+  taskId: string
+) {
+  return (
+    goals
+      .find((goal) => goal.id === goalId)
+      ?.projects.find((project) => project.id === projectId)
+      ?.tasks.find((task) => task.id === taskId)?.completedAt ?? null
+  );
+}
+
+function applyCampaignDrawerTaskCompletion(
+  goals: Goal[],
+  goalId: string,
+  projectId: string,
+  taskId: string,
+  completedAt: string | null
+) {
+  return goals.map((goal) =>
+    goal.id === goalId
+      ? {
+          ...goal,
+          projects: goal.projects.map((project) => {
+            if (project.id !== projectId) return project;
+            const tasks = project.tasks.map((task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    completedAt,
+                    stage: completedAt
+                      ? task.stage
+                      : getCampaignDrawerTaskActiveStage(task),
+                  }
+                : task
+            );
+            const done = tasks.filter((task) => Boolean(task.completedAt)).length;
+            const progress = tasks.length
+              ? Math.round((done / tasks.length) * 100)
+              : project.progress;
+
+            return {
+              ...project,
+              tasks,
+              progress,
+            };
+          }),
+        }
+      : goal
+  );
+}
+
 function getFinitePriorityRank(goal: Goal): number | null {
   return typeof goal.priorityRank === "number" &&
     Number.isFinite(goal.priorityRank)
@@ -281,10 +417,13 @@ function DraggableGoalCard({
   onGoalDelete,
   onProjectEditOpen,
   onProjectUpdated,
+  onTaskToggleCompletion,
+  campaignDrawerRowOverrides,
   monumentContext,
   hideEnergyPill,
   campaignDrawerRow = false,
   onGoalManualComplete,
+  onGoalManualUndo,
   suppressReadyToast = false,
   sourceCampaignId = null,
   newGoalRevealId = null,
@@ -299,12 +438,24 @@ function DraggableGoalCard({
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
-  onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
+  onGoalManualComplete?: (
+    goal: Goal,
+    sourceRect?: DOMRect | null
+  ) => CompletionMutationResult | Promise<CompletionMutationResult>;
+  onGoalManualUndo?: (goal: Goal) => CompletionMutationResult | Promise<CompletionMutationResult>;
   onProjectUpdated?: (
     goalId: string,
     projectId: string,
     updates: Partial<Project>
   ) => void;
+  onTaskToggleCompletion?: (
+    goalId: string,
+    projectId: string,
+    taskId: string,
+    currentCompletedAt: string | null,
+    sourceRect?: DOMRect | null
+  ) => CompletionMutationResult | Promise<CompletionMutationResult>;
+  campaignDrawerRowOverrides?: CampaignDrawerRowLifecycleById;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -331,6 +482,7 @@ function DraggableGoalCard({
     isDragging,
   } = useSortable({ id: goal.id });
   const wasDraggingRef = useRef(false);
+  const goalElementRef = useRef<HTMLDivElement | null>(null);
   const rowClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closedRowLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -338,8 +490,10 @@ function DraggableGoalCard({
   const closedRowLongPressTriggeredRef = useRef(false);
   const lastRowClickAtRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const goalCompletionTapStartedAtRef = useRef<number | null>(null);
   const readyToastShownGoalIdsRef = useRef<Set<string>>(new Set());
   const [manualCompleteRejected, setManualCompleteRejected] = useState(false);
+  const [localCompleting, setLocalCompleting] = useState(false);
   const toast = useToastHelpers();
   const fabCreation = useFabCreation();
 
@@ -362,9 +516,19 @@ function DraggableGoalCard({
       : goal.title.slice(0, 2).toUpperCase();
   const allProjectsCompleted =
     goal.projects.length === 0 ||
-    goal.projects.every(isCampaignDrawerProjectCompleted);
+    goal.projects.every((project) => {
+      const overrideCompleted = campaignDrawerRowOverrideCompleted(
+        campaignDrawerRowOverrides?.[campaignDrawerProjectRowKey(project.id)]
+      );
+      return overrideCompleted ?? isCampaignDrawerProjectCompleted(project);
+    });
   const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
-  const isCompleted = normalizedStatus === "COMPLETED";
+  const isCompleted =
+    (campaignDrawerRowOverrideCompleted(
+      campaignDrawerRowOverrides?.[campaignDrawerGoalRowKey(goal.id)]
+    ) ??
+      (normalizedStatus === "COMPLETED")) ||
+    localCompleting;
   const isReadyToComplete = allProjectsCompleted && !isCompleted;
   const shellMotionProps = prefersReducedMotion
     ? {}
@@ -383,7 +547,7 @@ function DraggableGoalCard({
     newProjectRevealId !== null && isOpen === true;
   const [shouldRenderOpenGoal, setShouldRenderOpenGoal] = useState(Boolean(isOpen));
   const [controlledGoalOpen, setControlledGoalOpen] = useState(Boolean(isOpen));
-  const closeTimerRef = useRef<number | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -429,12 +593,18 @@ function DraggableGoalCard({
     toast.info("Goal ready to complete");
   }, [goal.id, isReadyToComplete, suppressReadyToast, toast]);
 
+  useEffect(() => {
+    if (normalizedStatus !== "COMPLETED") {
+      setLocalCompleting(false);
+    }
+  }, [normalizedStatus]);
+
   const triggerManualCompleteRejection = useCallback(() => {
     setManualCompleteRejected(true);
     if (rejectTimerRef.current !== null) {
-      window.clearTimeout(rejectTimerRef.current);
+      clearTimeout(rejectTimerRef.current);
     }
-    rejectTimerRef.current = window.setTimeout(() => {
+    rejectTimerRef.current = setTimeout(() => {
       rejectTimerRef.current = null;
       setManualCompleteRejected(false);
     }, 460);
@@ -442,9 +612,46 @@ function DraggableGoalCard({
     toast.error("Complete all projects first");
   }, [toast]);
 
+  const setGoalNodeRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      goalElementRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef]
+  );
+
   const handleManualCompleteAttempt = useCallback(() => {
+    if (isCompleted && onGoalManualUndo) {
+      void onGoalManualUndo(goal);
+      return;
+    }
     if (isReadyToComplete) {
-      void onGoalManualComplete?.(goal);
+      const tapTime = performance.now();
+      goalCompletionTapStartedAtRef.current = tapTime;
+      const sourceRect = goalElementRef.current?.getBoundingClientRect() ?? null;
+      reportCampaignDrawerXpTiming("goal tap", {
+        goalId: goal.id,
+        action: "complete",
+        tapTime,
+      });
+      reportCampaignDrawerXpTiming("goal source rect captured", {
+        goalId: goal.id,
+        capturedAt: performance.now(),
+        elapsedMs: performance.now() - tapTime,
+        hasRect: Boolean(sourceRect),
+      });
+      setLocalCompleting(true);
+      void Promise.resolve(onGoalManualComplete?.(goal, sourceRect)).then((result) => {
+        reportCampaignDrawerXpTiming("goal xp response", {
+          goalId: goal.id,
+          responseAt: performance.now(),
+          elapsedMs: performance.now() - tapTime,
+          ok: result !== false,
+        });
+        if (result === false) {
+          setLocalCompleting(false);
+        }
+      });
       return;
     }
     if (!isCompleted) {
@@ -455,6 +662,7 @@ function DraggableGoalCard({
     isCompleted,
     isReadyToComplete,
     onGoalManualComplete,
+    onGoalManualUndo,
     triggerManualCompleteRejection,
   ]);
 
@@ -474,7 +682,7 @@ function DraggableGoalCard({
 
     if (isDoubleTap) {
       if (rowClickTimerRef.current !== null) {
-        window.clearTimeout(rowClickTimerRef.current);
+        clearTimeout(rowClickTimerRef.current);
         rowClickTimerRef.current = null;
       }
       handleManualCompleteAttempt();
@@ -482,9 +690,9 @@ function DraggableGoalCard({
     }
 
     if (rowClickTimerRef.current !== null) {
-      window.clearTimeout(rowClickTimerRef.current);
+      clearTimeout(rowClickTimerRef.current);
     }
-    rowClickTimerRef.current = window.setTimeout(() => {
+    rowClickTimerRef.current = setTimeout(() => {
       rowClickTimerRef.current = null;
       onOpenChange?.(nextOpen);
     }, 330);
@@ -494,7 +702,7 @@ function DraggableGoalCard({
     (nextOpen: boolean) => {
       if (nextOpen) {
         if (closeTimerRef.current !== null) {
-          window.clearTimeout(closeTimerRef.current);
+          clearTimeout(closeTimerRef.current);
           closeTimerRef.current = null;
         }
         setShouldRenderOpenGoal(true);
@@ -512,10 +720,10 @@ function DraggableGoalCard({
           : 520;
 
       if (closeTimerRef.current !== null) {
-        window.clearTimeout(closeTimerRef.current);
+        clearTimeout(closeTimerRef.current);
       }
 
-      closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = setTimeout(() => {
         closeTimerRef.current = null;
         setShouldRenderOpenGoal(false);
         onOpenChange?.(false);
@@ -532,7 +740,7 @@ function DraggableGoalCard({
 
   const cancelClosedRowLongPress = useCallback(() => {
     if (closedRowLongPressTimerRef.current === null) return;
-    window.clearTimeout(closedRowLongPressTimerRef.current);
+    clearTimeout(closedRowLongPressTimerRef.current);
     closedRowLongPressTimerRef.current = null;
   }, []);
 
@@ -548,11 +756,11 @@ function DraggableGoalCard({
 
       cancelClosedRowLongPress();
       closedRowLongPressTriggeredRef.current = false;
-      closedRowLongPressTimerRef.current = window.setTimeout(() => {
+      closedRowLongPressTimerRef.current = setTimeout(() => {
         closedRowLongPressTimerRef.current = null;
         closedRowLongPressTriggeredRef.current = true;
         if (rowClickTimerRef.current !== null) {
-          window.clearTimeout(rowClickTimerRef.current);
+          clearTimeout(rowClickTimerRef.current);
           rowClickTimerRef.current = null;
         }
         handleGoalEdit();
@@ -589,10 +797,12 @@ function DraggableGoalCard({
   const campaignGoalContainerClass = `relative overflow-hidden rounded-lg border text-white transition hover:border-white/18 sm:rounded-xl ${
     campaignDrawerRow ? campaignDrawerNoSelectClass : ""
   } ${
-    manualCompleteRejected
-      ? goalManualCompleteRejectClass
+      manualCompleteRejected
+        ? goalManualCompleteRejectClass
       : isCompleted
-      ? focusPomoCompleteSurfaceClass
+      ? localCompleting
+        ? campaignDrawerCompletingSurfaceClass
+        : campaignDrawerCompletedSurfaceClass
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
   }`;
 
@@ -656,7 +866,9 @@ function DraggableGoalCard({
     >
       <div
         className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
-          "border border-white/12 bg-black/35 text-white/82"
+          isCompleted
+            ? "border border-emerald-50/24 bg-emerald-950/18 text-emerald-50"
+            : "border border-white/12 bg-black/35 text-white/82"
         }`}
         {...attributes}
         {...listeners}
@@ -668,12 +880,12 @@ function DraggableGoalCard({
           event.stopPropagation();
         }}
       >
-        {displayEmoji}
+        {isCompleted ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : displayEmoji}
       </div>
 
       <p
         className={`min-w-0 flex-1 truncate text-[12px] font-medium leading-tight sm:text-[13px] ${
-          isCompleted ? "text-emerald-50" : "text-white/84"
+          isCompleted ? "text-emerald-50/92" : "text-white/84"
         }`}
         title={goal.title}
       >
@@ -689,7 +901,9 @@ function DraggableGoalCard({
 
       <span
         className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
-          "border-white/10 bg-black/35 text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          isCompleted
+            ? "border-emerald-50/20 bg-emerald-950/18 text-emerald-50/78"
+            : "border-white/10 bg-black/35 text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         }`}
       >
         {index + 1}
@@ -698,8 +912,20 @@ function DraggableGoalCard({
   );
 
   return (
-    <div
-      ref={setNodeRef}
+    <motion.div
+      ref={setGoalNodeRef}
+      data-creator-xp-source={
+        campaignDrawerRow ? "campaign-drawer-card" : undefined
+      }
+      data-creator-xp-kind={campaignDrawerRow ? "goal" : undefined}
+      exit={
+        campaignDrawerRow
+          ? prefersReducedMotion
+            ? { opacity: 0, height: 0 }
+            : completedDrawerGoalActiveExitMotion
+          : undefined
+      }
+      transition={campaignDrawerRow && prefersReducedMotion ? { duration: 0.16 } : undefined}
       style={{
         transform: transform
           ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
@@ -707,6 +933,14 @@ function DraggableGoalCard({
         transition,
       }}
       className={`relative ${isDragging ? "scale-105 shadow-2xl z-50" : ""}`}
+      layout={
+        campaignDrawerRow && !prefersReducedMotion ? "position" : undefined
+      }
+      layoutId={
+        campaignDrawerRow && !prefersReducedMotion
+          ? campaignDrawerGoalLayoutId(goal.id)
+          : undefined
+      }
     >
       {/* Goal Card with inline expansion */}
       <motion.div
@@ -805,6 +1039,7 @@ function DraggableGoalCard({
                   <ProjectRowTaskInteractionsProvider
                     value={{
                       goalId: goal.id,
+                      onTaskToggleCompletion,
                     }}
                   >
                     <ProjectsDropdown
@@ -844,6 +1079,9 @@ function DraggableGoalCard({
                       onProjectUpdated={(projectId, updates) =>
                         onProjectUpdated?.(goal.id, projectId, updates)
                       }
+                      onTaskToggleCompletion={onTaskToggleCompletion}
+                      campaignDrawerXpSource
+                      campaignDrawerRowOverrides={campaignDrawerRowOverrides}
                       newProjectRevealId={newProjectRevealId}
                       onNewProjectRevealComplete={(projectId) =>
                         onNewProjectRevealComplete?.(goal.id, projectId)
@@ -918,7 +1156,6 @@ function DraggableGoalCard({
                   hideEnergyPill={hideEnergyPill}
                   variant="default"
                   drawerCompact
-                  campaignDrawerRowVisual
                   open={controlledGoalOpen}
                   onOpenChange={handleOpenedGoalChange}
                   onEdit={onGoalEdit ? handleGoalEdit : undefined}
@@ -937,18 +1174,9 @@ function DraggableGoalCard({
                   onProjectUpdated={(projectId, updates) =>
                     onProjectUpdated?.(goal.id, projectId, updates)
                   }
-                  newProjectRevealId={newProjectRevealId}
-                  onNewProjectRevealComplete={(projectId) =>
-                    onNewProjectRevealComplete?.(goal.id, projectId)
-                  }
-                  suppressDrawerOpenAnimation={
-                    shouldSuppressProjectRevealParentMotion
-                  }
                   monumentContext={monumentContext}
-                  onManualComplete={onGoalManualComplete}
                   completeWhenProjectsDone
                   completionTheme="emerald"
-                  suppressReadyToast={suppressReadyToast}
                 />
               </motion.div>
             ) : (
@@ -957,7 +1185,7 @@ function DraggableGoalCard({
           </AnimatePresence>
         )}
       </motion.div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -1003,12 +1231,23 @@ interface CampaignCardProps {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
-  onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
+  onGoalManualComplete?: (
+    goal: Goal,
+    sourceRect?: DOMRect | null
+  ) => CompletionMutationResult | Promise<CompletionMutationResult>;
+  onGoalManualUndo?: (goal: Goal) => CompletionMutationResult | Promise<CompletionMutationResult>;
   onProjectUpdated?: (
     goalId: string,
     projectId: string,
     updates: Partial<Project>
   ) => void;
+  onTaskToggleCompletion?: (
+    goalId: string,
+    projectId: string,
+    taskId: string,
+    currentCompletedAt: string | null,
+    sourceRect?: DOMRect | null
+  ) => CompletionMutationResult | Promise<CompletionMutationResult>;
   onRoadmapOrderSaved?: () => void | Promise<void>;
   onCampaignDetailsSaved?: (
     campaignId: string,
@@ -1041,7 +1280,9 @@ function CampaignCardImpl({
   onGoalToggleActive,
   onGoalDelete,
   onGoalManualComplete,
+  onGoalManualUndo,
   onProjectUpdated,
+  onTaskToggleCompletion,
   onProjectEditOpen,
   monumentContext = false,
   suppressReadyToast = false,
@@ -1236,7 +1477,9 @@ function CampaignCardImpl({
                 onGoalToggleActive={onGoalToggleActive}
                 onGoalDelete={onGoalDelete}
                 onGoalManualComplete={onGoalManualComplete}
+                onGoalManualUndo={onGoalManualUndo}
                 onProjectUpdated={handleProjectUpdated}
+                onTaskToggleCompletion={onTaskToggleCompletion}
                 onProjectEditOpen={onProjectEditOpen}
                 monumentContext={monumentContext}
                 suppressReadyToast={suppressReadyToast}
@@ -1378,12 +1621,23 @@ type CampaignDrawerProps = {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
-  onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
+  onGoalManualComplete?: (
+    goal: Goal,
+    sourceRect?: DOMRect | null
+  ) => CompletionMutationResult | Promise<CompletionMutationResult>;
+  onGoalManualUndo?: (goal: Goal) => CompletionMutationResult | Promise<CompletionMutationResult>;
   onProjectUpdated?: (
     goalId: string,
     projectId: string,
     updates: Partial<Project>
   ) => void;
+  onTaskToggleCompletion?: (
+    goalId: string,
+    projectId: string,
+    taskId: string,
+    currentCompletedAt: string | null,
+    sourceRect?: DOMRect | null
+  ) => CompletionMutationResult | Promise<CompletionMutationResult>;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -1415,7 +1669,9 @@ function CampaignDrawer({
   onGoalToggleActive,
   onGoalDelete,
   onGoalManualComplete,
+  onGoalManualUndo,
   onProjectUpdated,
+  onTaskToggleCompletion,
   onProjectEditOpen,
   monumentContext,
   suppressReadyToast = false,
@@ -1434,6 +1690,13 @@ function CampaignDrawer({
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [showCompletedGoals, setShowCompletedGoals] = useState(false);
+  const [pendingCompletedGoalExitIds, setPendingCompletedGoalExitIds] =
+    useState<Set<string>>(new Set());
+  const [campaignDrawerRowStateById, setCampaignDrawerRowStateById] =
+    useState<CampaignDrawerRowLifecycleById>({});
+  const pendingCompletedGoalExitTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map());
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isEditingCampaign, setIsEditingCampaign] = useState(false);
   const [displayCampaignName, setDisplayCampaignName] = useState(roadmap.title);
@@ -1478,8 +1741,144 @@ function CampaignDrawer({
   );
 
   useEffect(() => {
-    setLocalGoals(goals);
+    setLocalGoals((currentGoals) =>
+      goals.map((goal) => {
+        const goalState = campaignDrawerRowStateById[campaignDrawerGoalRowKey(goal.id)];
+        const localGoal = currentGoals.find((currentGoal) => currentGoal.id === goal.id);
+        const goalOverrideCompleted =
+          campaignDrawerRowOverrideCompleted(goalState);
+        const nextGoal =
+          goalOverrideCompleted === true
+            ? {
+                ...goal,
+                status: "COMPLETED" as const,
+                active: false,
+                progress: 100,
+              }
+            : goalOverrideCompleted === false
+              ? {
+                  ...goal,
+                  status: "ACTIVE" as const,
+                  active: true,
+                  progress: localGoal?.progress ?? goal.progress,
+                }
+              : goal;
+
+        return {
+          ...nextGoal,
+          projects: nextGoal.projects.map((project) => {
+            const projectState =
+              campaignDrawerRowStateById[campaignDrawerProjectRowKey(project.id)];
+            const localProject = localGoal?.projects.find(
+              (candidate) => candidate.id === project.id
+            );
+            const projectOverrideCompleted =
+              campaignDrawerRowOverrideCompleted(projectState);
+            const completedAt =
+              projectState?.completedAt ??
+              getProjectCompletedTimestamp(localProject ?? project);
+            const nextProject =
+              projectOverrideCompleted === true
+                ? {
+                    ...project,
+                    status: "Done" as const,
+                    stage: "RELEASE",
+                    progress: 100,
+                    completedAt: completedAt ?? new Date().toISOString(),
+                    completed_at: completedAt ?? new Date().toISOString(),
+                  }
+                : projectOverrideCompleted === false
+                  ? {
+                      ...project,
+                      status: localProject?.status === "Done" ? "In-Progress" : project.status,
+                      stage:
+                        project.stage === "RELEASE" ? "BUILD" : project.stage,
+                      completedAt: null,
+                      completed_at: null,
+                      progress: getCampaignDrawerIncompleteProjectProgress(
+                        localProject ?? project
+                      ),
+                    }
+                  : project;
+
+            return {
+              ...nextProject,
+              tasks: nextProject.tasks.map((task) => {
+                const taskState =
+                  campaignDrawerRowStateById[campaignDrawerTaskRowKey(task.id)];
+                if (!taskState) return task;
+                const taskOverrideCompleted =
+                  campaignDrawerRowOverrideCompleted(taskState);
+                return {
+                  ...task,
+                  completedAt:
+                    taskOverrideCompleted === false
+                      ? null
+                      : taskState.completedAt ?? task.completedAt ?? new Date().toISOString(),
+                  stage:
+                    taskOverrideCompleted === false
+                      ? getCampaignDrawerTaskActiveStage(task)
+                      : task.stage,
+                };
+              }),
+            };
+          }),
+        };
+      })
+    );
+  }, [campaignDrawerRowStateById, goals]);
+
+  useEffect(() => {
+    setCampaignDrawerRowStateById((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      for (const goal of goals) {
+        const goalRowKey = campaignDrawerGoalRowKey(goal.id);
+        if (
+          next[goalRowKey]?.status === "active" &&
+          !isCampaignDrawerGoalCompleted(goal)
+        ) {
+          delete next[goalRowKey];
+          changed = true;
+        }
+
+        for (const project of goal.projects) {
+          const projectRowKey = campaignDrawerProjectRowKey(project.id);
+          if (
+            next[projectRowKey]?.status === "active" &&
+            !isCampaignDrawerProjectCompleted(project)
+          ) {
+            delete next[projectRowKey];
+            changed = true;
+          }
+
+          for (const task of project.tasks) {
+            const taskRowKey = campaignDrawerTaskRowKey(task.id);
+            if (
+              next[taskRowKey]?.status === "active" &&
+              !isCampaignDrawerTaskCompleted(task)
+            ) {
+              delete next[taskRowKey];
+              changed = true;
+            }
+          }
+        }
+      }
+
+      return changed ? next : current;
+    });
   }, [goals]);
+
+  useEffect(
+    () => () => {
+      pendingCompletedGoalExitTimersRef.current.forEach((timer) => {
+        clearTimeout(timer);
+      });
+      pendingCompletedGoalExitTimersRef.current.clear();
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     if (
@@ -1492,13 +1891,109 @@ function CampaignDrawer({
     setOpenGoalId(restoreOpenGoalId);
   }, [localGoals, restoreOpen, restoreOpenGoalId]);
 
-  const activeGoals = localGoals.filter(
-    (goal) => !isCampaignDrawerGoalCompleted(goal)
+  const getGoalBucket = useCallback(
+    (goal: Goal) => {
+      const rowKey = campaignDrawerGoalRowKey(goal.id);
+      return getCampaignDrawerGoalBucket(
+        goal,
+        campaignDrawerRowStateById[rowKey],
+        pendingCompletedGoalExitIds.has(rowKey)
+      );
+    },
+    [campaignDrawerRowStateById, pendingCompletedGoalExitIds]
   );
-  const completedGoals = localGoals.filter(isCampaignDrawerGoalCompleted);
+
+  const activeGoals = localGoals.filter(
+    (goal) => getGoalBucket(goal) !== "completed-hidden"
+  );
+  const completedGoals = localGoals.filter(
+    (goal) => getGoalBucket(goal) === "completed-hidden"
+  );
   const visibleDrawerGoals = showCompletedGoals
     ? [...activeGoals, ...completedGoals]
     : activeGoals;
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (
+      typeof window === "undefined" ||
+      window.localStorage.getItem(CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY) !== "1"
+    ) {
+      return;
+    }
+
+    const diagnostics = localGoals.flatMap((goal) => {
+      const goalRowKey = campaignDrawerGoalRowKey(goal.id);
+      const goalOverride = campaignDrawerRowStateById[goalRowKey];
+      const goalCanonicalCompleted = isCampaignDrawerGoalCompleted(goal);
+      const goalEffectiveCompleted =
+        campaignDrawerRowOverrideCompleted(goalOverride) ??
+        goalCanonicalCompleted;
+      const goalBucket = getCampaignDrawerGoalBucket(
+        goal,
+        goalOverride,
+        pendingCompletedGoalExitIds.has(goalRowKey)
+      );
+      const rows: Array<Record<string, unknown>> = [
+        {
+          rowKey: goalRowKey,
+          canonicalCompleted: goalCanonicalCompleted,
+          override: goalOverride?.status ?? null,
+          effectiveCompleted: goalEffectiveCompleted,
+          bucket: goalBucket,
+          lastAction: goalOverride?.lastAction ?? null,
+          lastPersistenceResult: goalOverride?.lastPersistenceResult ?? null,
+          lastXpResult: goalOverride?.lastXpResult ?? null,
+        },
+      ];
+
+      for (const project of goal.projects) {
+        const projectRowKey = campaignDrawerProjectRowKey(project.id);
+        const projectOverride = campaignDrawerRowStateById[projectRowKey];
+        const projectCanonicalCompleted =
+          isCampaignDrawerProjectCompleted(project);
+        const projectEffectiveCompleted =
+          campaignDrawerRowOverrideCompleted(projectOverride) ??
+          projectCanonicalCompleted;
+        rows.push({
+          rowKey: projectRowKey,
+          canonicalCompleted: projectCanonicalCompleted,
+          override: projectOverride?.status ?? null,
+          effectiveCompleted: projectEffectiveCompleted,
+          bucket: projectEffectiveCompleted
+            ? "project-effective-completed"
+            : "active",
+          lastAction: projectOverride?.lastAction ?? null,
+          lastPersistenceResult:
+            projectOverride?.lastPersistenceResult ?? null,
+          lastXpResult: projectOverride?.lastXpResult ?? null,
+        });
+
+        for (const task of project.tasks) {
+          const taskRowKey = campaignDrawerTaskRowKey(task.id);
+          const taskOverride = campaignDrawerRowStateById[taskRowKey];
+          const taskCanonicalCompleted = isCampaignDrawerTaskCompleted(task);
+          const taskEffectiveCompleted =
+            campaignDrawerRowOverrideCompleted(taskOverride) ??
+            taskCanonicalCompleted;
+          rows.push({
+            rowKey: taskRowKey,
+            canonicalCompleted: taskCanonicalCompleted,
+            override: taskOverride?.status ?? null,
+            effectiveCompleted: taskEffectiveCompleted,
+            bucket: taskEffectiveCompleted ? "task-effective-completed" : "active",
+            lastAction: taskOverride?.lastAction ?? null,
+            lastPersistenceResult: taskOverride?.lastPersistenceResult ?? null,
+            lastXpResult: taskOverride?.lastXpResult ?? null,
+          });
+        }
+      }
+
+      return rows;
+    });
+
+    console.debug("Campaign drawer row diagnostics", diagnostics);
+  }, [campaignDrawerRowStateById, localGoals, pendingCompletedGoalExitIds]);
 
   useEffect(() => {
     if (completedGoals.length === 0) {
@@ -1528,14 +2023,120 @@ function CampaignDrawer({
   useEffect(() => {
     if (!openGoalId || showCompletedGoals) return;
     const openGoal = localGoals.find((goal) => goal.id === openGoalId);
-    if (openGoal && isCampaignDrawerGoalCompleted(openGoal)) {
+    if (
+      openGoal &&
+      getGoalBucket(openGoal) === "completed-hidden"
+    ) {
       setOpenGoalId(null);
     }
-  }, [localGoals, openGoalId, showCompletedGoals]);
+  }, [
+    getGoalBucket,
+    localGoals,
+    openGoalId,
+    showCompletedGoals,
+  ]);
+
+  const holdCompletedGoalBeforeExit = useCallback(
+    (goalId: string) => {
+      const rowKey = campaignDrawerGoalRowKey(goalId);
+      setPendingCompletedGoalExitIds((current) => {
+        if (current.has(rowKey)) return current;
+        const next = new Set(current);
+        next.add(rowKey);
+        return next;
+      });
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: "rewarding",
+          completedAt: current[rowKey]?.completedAt ?? new Date().toISOString(),
+          lastAction: "complete",
+          lastPersistenceResult: "success",
+          lastXpResult: current[rowKey]?.lastXpResult ?? "none",
+        },
+      }));
+
+      const existingTimer =
+        pendingCompletedGoalExitTimersRef.current.get(rowKey);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const delay = prefersReducedMotion
+        ? REDUCED_MOTION_COMPLETED_DRAWER_GOAL_EXIT_DELAY_MS
+        : COMPLETED_DRAWER_GOAL_EXIT_DELAY_MS;
+
+      const timer = setTimeout(() => {
+        reportCampaignDrawerXpTiming("goal exit timer end", {
+          goalId,
+          exitEndAt: performance.now(),
+        });
+        pendingCompletedGoalExitTimersRef.current.delete(rowKey);
+        setPendingCompletedGoalExitIds((current) => {
+          if (!current.has(rowKey)) return current;
+          const next = new Set(current);
+          next.delete(rowKey);
+          return next;
+        });
+        setCampaignDrawerRowStateById((current) => ({
+          ...current,
+          [rowKey]: {
+            ...current[rowKey],
+            status: "completed-hidden",
+            lastAction: "complete",
+            lastPersistenceResult: "success",
+            lastXpResult: current[rowKey]?.lastXpResult ?? "none",
+          },
+        }));
+        setOpenGoalId((current) => (current === goalId ? null : current));
+      }, delay);
+      reportCampaignDrawerXpTiming("goal exit timer start", {
+        goalId,
+        exitStartAt: performance.now(),
+      });
+      pendingCompletedGoalExitTimersRef.current.set(rowKey, timer);
+    },
+    [prefersReducedMotion]
+  );
+
+  const releasePendingCompletedGoal = useCallback((goalId: string) => {
+    const rowKey = campaignDrawerGoalRowKey(goalId);
+    const timer = pendingCompletedGoalExitTimersRef.current.get(rowKey);
+    if (timer) {
+      clearTimeout(timer);
+      pendingCompletedGoalExitTimersRef.current.delete(rowKey);
+    }
+    setPendingCompletedGoalExitIds((current) => {
+      if (!current.has(rowKey)) return current;
+      const next = new Set(current);
+      next.delete(rowKey);
+      return next;
+    });
+    setCampaignDrawerRowStateById((current) => ({
+      ...current,
+      [rowKey]: {
+        status: "active",
+        completedAt: null,
+        lastAction: "undo",
+        lastPersistenceResult: "success",
+        lastXpResult: "success",
+      },
+    }));
+  }, []);
 
   const handleGoalManualComplete = useCallback(
-    async (goal: Goal) => {
-      await onGoalManualComplete?.(goal);
+    async (goal: Goal, sourceRect?: DOMRect | null) => {
+      const rowKey = campaignDrawerGoalRowKey(goal.id);
+      const completedAt = new Date().toISOString();
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: "completing",
+          completedAt,
+          lastAction: "complete",
+          lastXpResult: "none",
+        },
+      }));
       setLocalGoals((currentGoals) =>
         currentGoals.map((currentGoal) =>
           currentGoal.id === goal.id
@@ -1548,28 +2149,289 @@ function CampaignDrawer({
             : currentGoal
         )
       );
-      setOpenGoalId((current) => (current === goal.id ? null : current));
+      const result = await onGoalManualComplete?.(goal, sourceRect);
+      if (result === false) {
+        setCampaignDrawerRowStateById((current) => ({
+          ...current,
+          [rowKey]: {
+            status: "active",
+            completedAt: null,
+            lastAction: "complete",
+            lastPersistenceResult: "failed",
+            lastXpResult: "failed",
+          },
+        }));
+        setLocalGoals((currentGoals) =>
+          currentGoals.map((currentGoal) =>
+            currentGoal.id === goal.id
+              ? {
+                  ...currentGoal,
+                  status: "ACTIVE",
+                  active: true,
+                  progress: goal.progress,
+                }
+              : currentGoal
+          )
+        );
+        return false;
+      }
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: "rewarding",
+          completedAt,
+          lastAction: "complete",
+          lastPersistenceResult: "success",
+          lastXpResult: "success",
+        },
+      }));
+      setLocalGoals((currentGoals) =>
+        currentGoals.map((currentGoal) =>
+          currentGoal.id === goal.id
+            ? {
+                ...currentGoal,
+                status: "COMPLETED",
+                active: false,
+                progress: 100,
+              }
+            : currentGoal
+        )
+      );
+      holdCompletedGoalBeforeExit(goal.id);
+      return true;
     },
-    [onGoalManualComplete]
+    [holdCompletedGoalBeforeExit, onGoalManualComplete]
+  );
+
+  const handleGoalManualUndo = useCallback(
+    async (goal: Goal) => {
+      const rowKey = campaignDrawerGoalRowKey(goal.id);
+      releasePendingCompletedGoal(goal.id);
+      const previousGoal = localGoals.find((currentGoal) => currentGoal.id === goal.id) ?? goal;
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: "undoing",
+          completedAt: null,
+          lastAction: "undo",
+        },
+      }));
+      setLocalGoals((currentGoals) =>
+        currentGoals.map((currentGoal) =>
+          currentGoal.id === goal.id
+            ? {
+                ...currentGoal,
+                status: "ACTIVE",
+                active: true,
+                progress:
+                  currentGoal.projects.length > 0
+                    ? Math.round(
+                        (currentGoal.projects.filter((project) =>
+                          Boolean(getProjectCompletedTimestamp(project)) ||
+                          project.status === "Done" ||
+                          project.stage === "RELEASE"
+                        ).length /
+                          currentGoal.projects.length) *
+                          100
+                      )
+                    : 0,
+              }
+            : currentGoal
+        )
+      );
+      const result = await onGoalManualUndo?.(goal);
+      if (result === false) {
+        setCampaignDrawerRowStateById((current) => ({
+          ...current,
+          [rowKey]: {
+            status: "exiting",
+            completedAt: current[rowKey]?.completedAt ?? new Date().toISOString(),
+            lastAction: "undo",
+            lastPersistenceResult: "failed",
+            lastXpResult: "failed",
+          },
+        }));
+        setLocalGoals((currentGoals) =>
+          currentGoals.map((currentGoal) =>
+            currentGoal.id === goal.id ? previousGoal : currentGoal
+          )
+        );
+        if (isCampaignDrawerGoalCompleted(previousGoal)) {
+          holdCompletedGoalBeforeExit(goal.id);
+        }
+        return false;
+      }
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: "active",
+          completedAt: null,
+          lastAction: "undo",
+          lastPersistenceResult: "success",
+          lastXpResult: "success",
+        },
+      }));
+      setOpenGoalId(goal.id);
+      return true;
+    },
+    [
+      holdCompletedGoalBeforeExit,
+      localGoals,
+      onGoalManualUndo,
+      releasePendingCompletedGoal,
+    ]
   );
 
   const handleProjectUpdated = useCallback(
     (goalId: string, projectId: string, updates: Partial<Project>) => {
+      const rowKey = campaignDrawerProjectRowKey(projectId);
+      const completedAt = getProjectCompletedTimestamp(updates as Project);
+      const isProjectNowCompleted =
+        isCampaignDrawerProjectCompletionUpdate(updates);
+      const isProjectCompletionRelatedUpdate =
+        "completedAt" in updates ||
+        "completed_at" in updates ||
+        "stage" in updates ||
+        "status" in updates ||
+        "progress" in updates;
+      const existingProject = localGoals
+        .find((goal) => goal.id === goalId)
+        ?.projects.find((project) => project.id === projectId);
+      const projectUpdates =
+        isProjectNowCompleted
+          ? updates
+          : !isProjectCompletionRelatedUpdate
+            ? updates
+          : ({
+              ...updates,
+              status:
+                updates.status === "Done"
+                  ? "In-Progress"
+                  : updates.status ?? existingProject?.status ?? "In-Progress",
+              stage:
+                updates.stage === "RELEASE"
+                  ? "BUILD"
+                  : updates.stage ?? existingProject?.stage ?? "BUILD",
+              completedAt: null,
+              completed_at: null,
+              progress: getCampaignDrawerIncompleteProjectProgress(
+                {
+                  ...(existingProject ?? {
+                    id: projectId,
+                    name: updates.name ?? "Project",
+                    status: updates.status ?? "In-Progress",
+                    progress: updates.progress ?? 0,
+                    energy: updates.energy ?? "No",
+                    tasks: updates.tasks ?? [],
+                    stage: updates.stage ?? "BUILD",
+                  }),
+                  ...updates,
+                } as Project
+              ),
+            } as Partial<Project>);
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: isProjectNowCompleted ? "rewarding" : "active",
+          completedAt: isProjectNowCompleted
+            ? completedAt ?? new Date().toISOString()
+            : null,
+          lastAction: isProjectNowCompleted ? "complete" : "undo",
+          lastPersistenceResult: "success",
+          lastXpResult: "none",
+        },
+      }));
       setLocalGoals((currentGoals) =>
         currentGoals.map((currentGoal) =>
           currentGoal.id === goalId
             ? {
                 ...currentGoal,
                 projects: currentGoal.projects.map((project) =>
-                  project.id === projectId ? { ...project, ...updates } : project
+                  project.id === projectId
+                    ? { ...project, ...projectUpdates }
+                    : project
                 ),
               }
             : currentGoal
         )
       );
-      onProjectUpdated?.(goalId, projectId, updates);
+      onProjectUpdated?.(goalId, projectId, projectUpdates);
     },
-    [onProjectUpdated]
+    [localGoals, onProjectUpdated]
+  );
+
+  const handleTaskToggleCompletion = useCallback(
+    async (
+      goalId: string,
+      projectId: string,
+      taskId: string,
+      currentCompletedAt: string | null,
+      sourceRect?: DOMRect | null
+    ) => {
+      const rowKey = campaignDrawerTaskRowKey(taskId);
+      const latestCompletedAt = getCampaignDrawerTaskCompletedAt(
+        localGoals,
+        goalId,
+        projectId,
+        taskId
+      );
+      const completionBase = latestCompletedAt ?? currentCompletedAt;
+      const nextCompletedAt = completionBase ? null : new Date().toISOString();
+
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: nextCompletedAt ? "completing" : "undoing",
+          completedAt: nextCompletedAt,
+          lastAction: nextCompletedAt ? "complete" : "undo",
+          lastXpResult: "none",
+        },
+      }));
+
+      const result = await onTaskToggleCompletion?.(
+        goalId,
+        projectId,
+        taskId,
+        completionBase,
+        sourceRect
+      );
+
+      if (result === false) {
+        setCampaignDrawerRowStateById((current) => ({
+          ...current,
+          [rowKey]: {
+            status: completionBase ? "rewarding" : "active",
+            completedAt: completionBase,
+            lastAction: nextCompletedAt ? "complete" : "undo",
+            lastPersistenceResult: "failed",
+            lastXpResult: "failed",
+          },
+        }));
+        return false;
+      }
+
+      setLocalGoals((currentGoals) =>
+        applyCampaignDrawerTaskCompletion(
+          currentGoals,
+          goalId,
+          projectId,
+          taskId,
+          nextCompletedAt
+        )
+      );
+      setCampaignDrawerRowStateById((current) => ({
+        ...current,
+        [rowKey]: {
+          status: nextCompletedAt ? "rewarding" : "active",
+          completedAt: nextCompletedAt,
+          lastAction: nextCompletedAt ? "complete" : "undo",
+          lastPersistenceResult: "success",
+          lastXpResult: "success",
+        },
+      }));
+      return true;
+    },
+    [localGoals, onTaskToggleCompletion]
   );
 
   const handleDrawerDragEnd = useCallback(
@@ -1582,8 +2444,9 @@ function CampaignDrawer({
       const overGoal = localGoals.find((goal) => goal.id === over.id);
       if (!draggedGoal || !overGoal) return;
 
-      const draggingCompleted = isCampaignDrawerGoalCompleted(draggedGoal);
-      const overCompleted = isCampaignDrawerGoalCompleted(overGoal);
+      const draggingCompleted =
+        getGoalBucket(draggedGoal) === "completed-hidden";
+      const overCompleted = getGoalBucket(overGoal) === "completed-hidden";
       if (draggingCompleted !== overCompleted) return;
 
       const goalsToReorder = draggingCompleted ? completedGoals : activeGoals;
@@ -1613,6 +2476,7 @@ function CampaignDrawer({
     [
       activeGoals,
       completedGoals,
+      getGoalBucket,
       localGoals,
       onGoalsReordered,
       saveCampaignGoalPositions,
@@ -1711,7 +2575,6 @@ function CampaignDrawer({
 
   const regionId = `roadmap-${roadmap.id}`;
   const headingId = `${regionId}-overlay-title`;
-  const completedGoalsRegionId = `${regionId}-completed-goals`;
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 640 : true;
   const computedMaxWidth =
@@ -1855,7 +2718,7 @@ function CampaignDrawer({
 
   const renderDrawerGoalCard = (goal: Goal, index: number) => (
     <DraggableGoalCard
-      key={goal.id}
+      key={campaignDrawerGoalRowKey(goal.id)}
       goal={goal}
       index={index}
       isOpen={openGoalId === goal.id}
@@ -1877,8 +2740,11 @@ function CampaignDrawer({
       onGoalToggleActive={onGoalToggleActive}
       onGoalDelete={onGoalDelete}
       onGoalManualComplete={handleGoalManualComplete}
+      onGoalManualUndo={handleGoalManualUndo}
       onProjectEditOpen={onProjectEditOpen}
       onProjectUpdated={handleProjectUpdated}
+      onTaskToggleCompletion={handleTaskToggleCompletion}
+      campaignDrawerRowOverrides={campaignDrawerRowStateById}
       monumentContext={monumentContext}
       hideEnergyPill
       campaignDrawerRow
@@ -1907,47 +2773,43 @@ function CampaignDrawer({
           onDragEnd={handleDrawerDragEnd}
         >
           <SortableContext items={visibleDrawerGoals.map((g) => g.id)}>
-            <div className="flex flex-col gap-1 sm:gap-1.5">
-              {activeGoals.map((goal, index) =>
-                renderDrawerGoalCard(goal, index)
-              )}
+            <LayoutGroup id={`campaign-drawer-goals-${roadmap.id}`}>
+              <div className="flex flex-col gap-1 sm:gap-1.5">
+                <AnimatePresence initial={false}>
+                  {activeGoals.map((goal, index) =>
+                    renderDrawerGoalCard(goal, index)
+                  )}
 
-              {completedGoals.length > 0 ? (
-                <button
-                  type="button"
-                  aria-expanded={showCompletedGoals}
-                  aria-controls={completedGoalsRegionId}
-                  onClick={() =>
-                    setShowCompletedGoals((current) => !current)
-                  }
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
-                >
-                  <span>{completedGoalsToggleLabel}</span>
-                </button>
-              ) : null}
+                  {completedGoals.length > 0 ? (
+                    <motion.button
+                      key="campaign-drawer-completed-goals-toggle"
+                      type="button"
+                      aria-expanded={showCompletedGoals}
+                      onClick={() =>
+                        setShowCompletedGoals((current) => !current)
+                      }
+                      className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/45 transition hover:bg-white/[0.03] hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+                      layout={
+                        prefersReducedMotion ? undefined : "position"
+                      }
+                      transition={
+                        prefersReducedMotion
+                          ? { duration: 0.12 }
+                          : { layout: campaignDrawerRowTransition }
+                      }
+                    >
+                      <span>{completedGoalsToggleLabel}</span>
+                    </motion.button>
+                  ) : null}
 
-              <AnimatePresence initial={false}>
-                {showCompletedGoals ? (
-                  <motion.div
-                    id={completedGoalsRegionId}
-                    className="flex flex-col gap-1 overflow-hidden sm:gap-1.5"
-                    initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
-                    animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
-                    exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
-                    variants={
-                      prefersReducedMotion ? undefined : completedGoalsRevealMotion
-                    }
-                    transition={
-                      prefersReducedMotion ? { duration: 0.12 } : undefined
-                    }
-                  >
-                    {completedGoals.map((goal, index) =>
-                      renderDrawerGoalCard(goal, activeGoals.length + index)
-                    )}
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-            </div>
+                  {showCompletedGoals
+                    ? completedGoals.map((goal, index) =>
+                        renderDrawerGoalCard(goal, activeGoals.length + index)
+                      )
+                    : null}
+                </AnimatePresence>
+              </div>
+            </LayoutGroup>
           </SortableContext>
         </DndContext>
       </div>
@@ -2033,8 +2895,10 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.newGoalRevealId === next.newGoalRevealId &&
     prev.newProjectReveal === next.newProjectReveal &&
     prev.onProjectUpdated === next.onProjectUpdated &&
+    prev.onTaskToggleCompletion === next.onTaskToggleCompletion &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onGoalManualComplete === next.onGoalManualComplete &&
+    prev.onGoalManualUndo === next.onGoalManualUndo &&
     prev.onAddGoal === next.onAddGoal &&
     prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved &&
     prev.onNewGoalRevealComplete === next.onNewGoalRevealComplete &&

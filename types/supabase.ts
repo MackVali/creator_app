@@ -2153,6 +2153,7 @@ export interface Database {
           event_name: string | null;
           practice_context_monument_id: string | null;
           overlay_window_id: string | null;
+          metadata: Json | null;
         };
         Insert: {
           id?: string;
@@ -2177,6 +2178,7 @@ export interface Database {
           event_name?: string | null;
           practice_context_monument_id?: string | null;
           overlay_window_id?: string | null;
+          metadata?: Json | null;
         };
         Update: {
           id?: string;
@@ -2201,6 +2203,7 @@ export interface Database {
           event_name?: string | null;
           practice_context_monument_id?: string | null;
           overlay_window_id?: string | null;
+          metadata?: Json | null;
         };
       };
       schedule_sync_pairings: {
@@ -2575,13 +2578,13 @@ export interface Database {
     };
     Enums: {
       schedule_instance_placement_source: "scheduler" | "manual";
-      schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT";
+      schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT" | "EVENT";
       schedule_instance_status:
         | "scheduled"
         | "completed"
         | "missed"
         | "canceled";
-      xp_kind: "task" | "habit" | "project" | "goal" | "manual";
+      xp_kind: "task" | "habit" | "project" | "goal" | "event" | "manual";
     };
     CompositeTypes: Record<string, unknown>;
   };
