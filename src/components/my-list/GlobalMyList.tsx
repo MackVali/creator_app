@@ -3,15 +3,133 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { MyListSheet } from "@/components/my-list/MyListSheet";
-import { hapticPress, hapticWarningPattern } from "@/lib/haptics/creatorHaptics";
+import {
+  MyListSheet,
+  type MyListTaskXpContext,
+} from "@/components/my-list/MyListSheet";
+import {
+  hapticComplete,
+  hapticPress,
+  hapticWarningPattern,
+} from "@/lib/haptics/creatorHaptics";
 import { getCatsForUser } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { fetchReadyTasks, updateTaskStage } from "@/lib/scheduler/repo";
+import {
+  fetchReadyTasks,
+  updateMyListTaskCompletion,
+  updateTaskSkill,
+} from "@/lib/scheduler/repo";
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
+import {
+  dispatchCreatorXpBurstStatus,
+  type CreatorXpBurstRect,
+} from "@/lib/effects/creatorXpBurstBus";
+
+type MyListXpAwardResult = {
+  success?: boolean;
+  inserted?: number;
+  deduped?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  awardKeyBase?: string;
+  activePositiveCount?: number;
+  alreadyReversedCount?: number;
+  surge?: Parameters<typeof dispatchCreatorXpRewardVisual>[0]["surge"];
+};
+
+type MyListXpReverseResult = {
+  success?: boolean;
+  reversed?: number;
+  alreadyReversed?: number;
+  activePositivesFound?: number;
+  insertedReversalKeys?: string[];
+  error?: string;
+};
+
+const MY_LIST_TASK_XP_AMOUNT = 1;
+
+function buildMyListTaskOccurrenceStem(taskId: string) {
+  return `my_list:task:${taskId}`;
+}
+
+function reportMyListXpDiagnostic(message: string, details?: unknown) {
+  if (process.env.NODE_ENV === "production") return;
+  dispatchCreatorXpBurstStatus(message);
+  console.info(message, details ?? {});
+}
+
+async function reverseMyListTaskXp(taskId: string) {
+  const occurrenceStem = buildMyListTaskOccurrenceStem(taskId);
+  const response = await fetch("/api/xp/reverse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ occurrenceStem }),
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | MyListXpReverseResult
+    | null;
+  if (!response.ok) {
+    throw new Error(
+      result?.error ?? `XP reverse request failed (${response.status})`
+    );
+  }
+  return result;
+}
+
+async function awardMyListTaskXp({
+  task,
+  skillId,
+  monumentId,
+  completedAt,
+}: {
+  task: TaskLite;
+  skillId: string;
+  monumentId: string | null;
+  completedAt: string;
+}) {
+  const occurrenceStem = buildMyListTaskOccurrenceStem(task.id);
+  const body: Record<string, unknown> = {
+    kind: "task",
+    amount: MY_LIST_TASK_XP_AMOUNT,
+    skillIds: [skillId],
+    awardKeyBase: occurrenceStem,
+    reversible: { occurrenceStem },
+    source: "my-list",
+    completion: {
+      action: "complete",
+      sourceType: "TASK",
+      sourceId: task.id,
+      completedAt,
+      wasScheduled: false,
+      durationMin:
+        typeof task.duration_min === "number" && Number.isFinite(task.duration_min)
+          ? Math.max(0, Math.round(task.duration_min))
+          : null,
+    },
+  };
+  if (monumentId) {
+    body.monumentIds = [monumentId];
+  }
+
+  const response = await fetch("/api/xp/award", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | MyListXpAwardResult
+    | null;
+  if (!response.ok) {
+    throw new Error(result?.reason ?? `XP award request failed (${response.status})`);
+  }
+  return result;
+}
 
 export function GlobalMyList({
   useFullExpandedHeight,
@@ -106,8 +224,37 @@ export function GlobalMyList({
     [scheduledTaskIds, tasks]
   );
 
+  const handleTaskSkillSelect = useCallback((taskId: string, skill: SkillRow) => {
+    setTasks((currentTasks) =>
+      currentTasks.map((item) =>
+        item.id === taskId
+          ? {
+              ...item,
+              skill_id: skill.id,
+              skill_icon: skill.icon ?? null,
+              skill_monument_id: skill.monument_id ?? null,
+            }
+          : item
+      )
+    );
+
+    void updateTaskSkill(taskId, skill.id).then(({ error }) => {
+      if (error) {
+        reportMyListXpDiagnostic("MY LIST XP BLOCKED: failed to persist skill", {
+          taskId,
+          skillId: skill.id,
+          error,
+        });
+      }
+    });
+  }, []);
+
   const handleToggleTask = useCallback(
-    async (taskId: string) => {
+    async (
+      taskId: string,
+      sourceRect: CreatorXpBurstRect | null,
+      xpContext: MyListTaskXpContext
+    ) => {
       const task = tasks.find((item) => item.id === taskId);
       if (!task) return;
       if (pendingTaskIds.has(taskId)) {
@@ -132,28 +279,163 @@ export function GlobalMyList({
         return;
       }
 
+      const selectedSkillId = xpContext.skillId?.trim() || task.skill_id?.trim();
+      const selectedMonumentId =
+        xpContext.monumentId?.trim() || task.skill_monument_id?.trim() || null;
+
+      if (!isCurrentlyCompleted && !selectedSkillId) {
+        snapshots.delete(taskId);
+        reportMyListXpDiagnostic("MY LIST XP BLOCKED: missing skill context", {
+          occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
+          taskId,
+          taskSkillId: task.skill_id ?? null,
+          selectedSkillId: xpContext.skillId ?? null,
+        });
+        void hapticWarningPattern();
+        return;
+      }
+
       setPendingTaskIds((currentIds) => {
         const nextIds = new Set(currentIds);
         nextIds.add(taskId);
         return nextIds;
       });
-      setTasks((currentTasks) =>
-        currentTasks.map((item) =>
-          item.id === taskId ? { ...item, stage: nextStage } : item
-        )
-      );
 
       try {
-        const { error } = await updateTaskStage(taskId, nextStage);
+        if (isCurrentlyCompleted) {
+          const { error } = await updateMyListTaskCompletion(
+            taskId,
+            nextStage,
+            null
+          );
+          if (error) throw error;
+
+          const reverseResult = await reverseMyListTaskXp(taskId);
+          reportMyListXpDiagnostic("MY LIST XP: reversed", {
+            occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
+            taskId,
+            reversed: reverseResult?.reversed ?? 0,
+            activePositivesFound: reverseResult?.activePositivesFound ?? 0,
+          });
+
+          snapshots.delete(taskId);
+          setTasks((currentTasks) =>
+            currentTasks.map((item) =>
+              item.id === taskId ? { ...item, stage: nextStage } : item
+            )
+          );
+          return;
+        }
+
+        await reverseMyListTaskXp(taskId);
+
+        if (!selectedSkillId) {
+          throw new Error("MY LIST XP BLOCKED: missing skill context");
+        }
+
+        const skillIdForAward = selectedSkillId;
+
+        if (skillIdForAward !== task.skill_id) {
+          const { error: skillError } = await updateTaskSkill(
+            taskId,
+            skillIdForAward
+          );
+          if (skillError) throw skillError;
+        }
+
+        const completedAt = new Date().toISOString();
+        const { error } = await updateMyListTaskCompletion(
+          taskId,
+          "PERFECT",
+          completedAt
+        );
         if (error) throw error;
-        if (isCurrentlyCompleted) snapshots.delete(taskId);
-      } catch {
+
+        const awardResult = await awardMyListTaskXp({
+          task,
+          skillId: skillIdForAward,
+          monumentId: selectedMonumentId,
+          completedAt,
+        });
+
+        if ((awardResult?.inserted ?? 0) <= 0) {
+          throw new Error(
+            awardResult?.reason ??
+              (awardResult?.deduped
+                ? "XP award deduped"
+                : "XP award inserted no rows")
+          );
+        }
+
         setTasks((currentTasks) =>
           currentTasks.map((item) =>
-            item.id === taskId ? { ...item, stage: currentStage } : item
+            item.id === taskId
+              ? {
+                  ...item,
+                  stage: "PERFECT",
+                  skill_id: skillIdForAward,
+                  skill_monument_id: selectedMonumentId,
+                }
+              : item
           )
         );
+
+        if (awardResult?.surge) {
+          dispatchCreatorXpRewardVisual({
+            surge: awardResult.surge,
+            completedAt,
+            sourceRect,
+            sourceOrigin: "card",
+            amount: MY_LIST_TASK_XP_AMOUNT,
+            kind: "task_complete",
+            burstId: `my-list:task:${taskId}:${completedAt}`,
+            debugLabel: "XP: my list visual helper",
+          });
+        } else {
+          reportMyListXpDiagnostic("MY LIST XP: inserted without surge", {
+            occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
+            taskId,
+            awardKeyBase: awardResult?.awardKeyBase ?? null,
+          });
+        }
+
+        void hapticComplete();
+      } catch (error) {
+        reportMyListXpDiagnostic("MY LIST XP: mutation failed", {
+          occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
+          taskId,
+          action: isCurrentlyCompleted ? "undo" : "complete",
+          error,
+        });
+        if (!isCurrentlyCompleted) {
+          const { error: rollbackError } = await updateMyListTaskCompletion(
+            taskId,
+            currentStage,
+            null
+          );
+          if (rollbackError) {
+            reportMyListXpDiagnostic("MY LIST XP: completion rollback failed", {
+              occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
+              taskId,
+              error: rollbackError,
+            });
+          }
+        } else {
+          const { error: rollbackError } = await updateMyListTaskCompletion(
+            taskId,
+            "PERFECT",
+            new Date().toISOString()
+          );
+          if (rollbackError) {
+            reportMyListXpDiagnostic("MY LIST XP: undo rollback failed", {
+              occurrenceStem: buildMyListTaskOccurrenceStem(taskId),
+              taskId,
+              error: rollbackError,
+            });
+          }
+        }
         if (!isCurrentlyCompleted) snapshots.delete(taskId);
+        void hapticWarningPattern();
       } finally {
         setPendingTaskIds((currentIds) => {
           const nextIds = new Set(currentIds);
@@ -174,6 +456,7 @@ export function GlobalMyList({
       pendingTaskIds={pendingTaskIds}
       useFullExpandedHeight={useFullExpandedHeight}
       onToggleTask={handleToggleTask}
+      onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {
         void hapticPress();
         setOpen(nextOpen);

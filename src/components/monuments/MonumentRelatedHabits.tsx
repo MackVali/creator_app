@@ -42,7 +42,8 @@ import {
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { hapticLongPress } from "@/lib/haptics/creatorHaptics";
-import { showScheduledEventCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
+import type { CreatorXpBurstSourceOrigin } from "@/lib/effects/creatorXpBurstBus";
 
 interface MonumentRelatedHabitsProps {
   monumentId: string;
@@ -1584,7 +1585,11 @@ export function MonumentRelatedHabits({
   }, [currentDateKey, currentUserId, relatedHabitIdsKey, supabase]);
 
   const handleRelatedHabitCompletionToggle = useCallback(
-    async (habitId: string) => {
+    async (
+      habitId: string,
+      sourceRect?: DOMRect | null,
+      sourceOrigin?: CreatorXpBurstSourceOrigin
+    ) => {
       const isPendingCompletedMove =
         pendingCompletedRelatedHabitIdsRef.current.has(habitId) ||
         collapsingCompletedRelatedHabitIdsRef.current.has(habitId);
@@ -1697,12 +1702,21 @@ export function MonumentRelatedHabits({
         if (action === "undo") {
           previousRelatedHabitStateRef.current.delete(habitId);
         } else {
-          showScheduledEventCreatorXpSurge({
+          dispatchCreatorXpRewardVisual({
+            surge: {
+              sourceType: "HABIT",
+              title:
+                habitBeforeUpdate.skillName?.trim() ||
+                habitBeforeUpdate.name,
+              sourceIcon: habitBeforeUpdate.skillIcon,
+              displayXp: 1,
+            },
             completedAt,
-            sourceType: "HABIT",
-            sourceIcon: habitBeforeUpdate.skillIcon,
-            skillName: habitBeforeUpdate.skillName,
-            sourceTitle: habitBeforeUpdate.name,
+            sourceRect,
+            sourceOrigin,
+            amount: 1,
+            kind: "habit_complete",
+            burstId: `related-habit:${habitId}:${completedAt}`,
           });
         }
         setRefreshVersion((current) => current + 1);
@@ -1793,7 +1807,11 @@ export function MonumentRelatedHabits({
       ) {
         event.preventDefault();
         lastRelatedHabitTapRef.current = null;
-        void handleRelatedHabitCompletionToggle(habitId);
+        void handleRelatedHabitCompletionToggle(
+          habitId,
+          event.currentTarget.getBoundingClientRect(),
+          "currentTarget"
+        );
         return;
       }
 
@@ -1898,7 +1916,11 @@ export function MonumentRelatedHabits({
         return;
       }
 
-      void handleRelatedHabitCompletionToggle(habitId);
+      void handleRelatedHabitCompletionToggle(
+        habitId,
+        event.currentTarget.getBoundingClientRect(),
+        "currentTarget"
+      );
     },
     [handleRelatedHabitCompletionToggle]
   );
@@ -2374,6 +2396,9 @@ export function MonumentRelatedHabits({
                                 isHabitCompletedToday ? "undo" : "complete"
                               }.`}
                               draggable={false}
+                              data-creator-xp-source="completion-card"
+                              data-creator-xp-kind="habit"
+                              data-creator-xp-source-id={habit.id}
                               style={{
                                 userSelect: "none",
                                 WebkitUserSelect: "none",

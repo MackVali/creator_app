@@ -4984,7 +4984,7 @@ export type Database = {
       schedule_instance_placement_source: "scheduler" | "manual"
       schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT"
       task_stage_enum: "PREPARE" | "PRODUCE" | "PERFECT"
-      xp_kind: "task" | "habit" | "project" | "goal" | "manual"
+      xp_kind: "task" | "habit" | "project" | "goal" | "event" | "manual"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -5138,7 +5138,7 @@ export const Constants = {
       schedule_instance_placement_source: ["scheduler", "manual"],
       schedule_instance_source_type: ["PROJECT", "TASK", "HABIT"],
       task_stage_enum: ["PREPARE", "PRODUCE", "PERFECT"],
-      xp_kind: ["task", "habit", "project", "goal", "manual"],
+      xp_kind: ["task", "habit", "project", "goal", "event", "manual"],
     },
   },
 } as const

@@ -7,7 +7,12 @@ import {
 } from "@/lib/scheduler/timezone";
 import type { Database } from "@/types/supabase";
 
-export type CompletionSourceType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
+export type CompletionSourceType =
+  | "GOAL"
+  | "PROJECT"
+  | "TASK"
+  | "HABIT"
+  | "EVENT";
 export type CompletionAction = "complete" | "undo";
 
 export type CompletionEventInput = {
@@ -40,6 +45,7 @@ const COMPLETION_SOURCE_TYPES = new Set<CompletionSourceType>([
   "PROJECT",
   "TASK",
   "HABIT",
+  "EVENT",
 ]);
 
 export function isCompletionSchemaMissing(error: unknown) {
@@ -151,6 +157,21 @@ async function loadSourceDuration(
       .maybeSingle();
     if (error) return null;
     return normalizeDuration((data as { duration_minutes?: number | null })?.duration_minutes);
+  }
+
+  if (sourceType === "EVENT") {
+    const { data, error } = await client
+      .from("events")
+      .select("start_at, end_at")
+      .eq("id", sourceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return null;
+    return deriveDurationMinutes(
+      null,
+      (data as { start_at?: string | null })?.start_at,
+      (data as { end_at?: string | null })?.end_at
+    );
   }
 
   // Goals do not have a reliable duration source today, so leave analytics minutes empty.

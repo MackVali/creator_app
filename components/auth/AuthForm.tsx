@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { parseSupabaseError } from "@/lib/error-handling";
@@ -31,6 +31,7 @@ const authSegmentedToggleInactiveClassName =
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const GENERIC_SIGN_IN_ERROR = "Invalid email or username or password";
+const SIGNIN_LOADER_MINIMUM_MS = 1100;
 
 export default function AuthForm() {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
@@ -43,8 +44,11 @@ export default function AuthForm() {
   );
   const [stay, setStay] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [signinLoaderMinimumActive, setSigninLoaderMinimumActive] =
+    useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const signinLoaderTimerRef = useRef<number | null>(null);
 
   // Rate limiting state
   const [attempts, setAttempts] = useState(0);
@@ -87,6 +91,30 @@ export default function AuthForm() {
   useEffect(() => {
     setSignupStep(1);
   }, [tab]);
+
+  useEffect(() => {
+    if (!(tab === "signin" && loading)) {
+      return;
+    }
+
+    setSigninLoaderMinimumActive(true);
+    if (signinLoaderTimerRef.current) {
+      window.clearTimeout(signinLoaderTimerRef.current);
+    }
+
+    signinLoaderTimerRef.current = window.setTimeout(() => {
+      setSigninLoaderMinimumActive(false);
+      signinLoaderTimerRef.current = null;
+    }, SIGNIN_LOADER_MINIMUM_MS);
+  }, [tab, loading]);
+
+  useEffect(() => {
+    return () => {
+      if (signinLoaderTimerRef.current) {
+        window.clearTimeout(signinLoaderTimerRef.current);
+      }
+    };
+  }, []);
 
   // Add this check at the beginning of your component
   if (!supabase) {
@@ -365,9 +393,12 @@ export default function AuthForm() {
     setTab(nextTab);
   };
 
+  const shouldShowSigninLoader =
+    tab === "signin" && (loading || signinLoaderMinimumActive);
+
   return (
     <div className="relative z-10 mx-auto w-full max-w-[25rem]">
-      {tab === "signin" && loading && (
+      {tab === "signin" && shouldShowSigninLoader && (
         <BloomingHexagonLoader statusText="Syncing your system" />
       )}
 

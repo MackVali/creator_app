@@ -25,6 +25,7 @@ import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import MixedRoadmapCard from "@/app/(app)/goals/components/MixedRoadmapCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
+import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
 import type { Goal, Project, Task } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
@@ -59,6 +60,11 @@ import {
 } from "@/lib/queries/roadmap-reconciliation";
 import { computeGoalWeight } from "@/lib/goals/weight";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
+import {
+  CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY,
+  type CreatorXpBurstRect,
+} from "@/lib/effects/creatorXpBurstBus";
 import {
   HABIT_TYPE_LABELS,
   HABIT_TYPE_ORDER,
@@ -244,7 +250,16 @@ function updateGoalTaskCompletion(
     if (project.id !== projectId) return project;
     projectChanged = true;
     const updatedTasks = project.tasks.map((task) =>
-      task.id === taskId ? { ...task, completedAt: nextCompletedAt } : task
+      task.id === taskId
+        ? {
+            ...task,
+            completedAt: nextCompletedAt,
+            stage:
+              nextCompletedAt || task.stage !== "PERFECT"
+                ? task.stage
+                : "PRODUCE",
+          }
+        : task
     );
     const total = updatedTasks.length;
     const done = updatedTasks.filter((task) => Boolean(task.completedAt)).length;
@@ -333,6 +348,244 @@ function removeGoalFromPriorityRoadmapItems(
       };
     })
     .filter((item): item is GlobalPriorityRoadmapItem => Boolean(item));
+}
+
+type GoalXpAwardResponse = {
+  success?: boolean;
+  deduped?: boolean;
+  inserted?: number;
+  surge?: {
+    sourceType?: string | null;
+    title?: string | null;
+    sourceIcon?: string | null;
+    displayXp?: number | null;
+    currentLevel?: number | null;
+  } | null;
+};
+
+function reportCampaignDrawerXpTiming(
+  label: string,
+  detail: Record<string, unknown>
+) {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
+    return;
+  }
+  if (window.localStorage.getItem(CREATOR_MATRIX_XP_DEBUG_STORAGE_KEY) !== "1") {
+    return;
+  }
+  console.info(`Campaign drawer XP timing: ${label}`, detail);
+}
+
+function collectGoalCompletionSkillIds(goal: Goal): string[] {
+  const skillIds = new Set<string>();
+
+  for (const project of goal.projects ?? []) {
+    for (const skillId of project.skillIds ?? []) {
+      if (typeof skillId === "string" && skillId.trim()) {
+        skillIds.add(skillId.trim());
+      }
+    }
+    for (const task of project.tasks ?? []) {
+      if (typeof task.skillId === "string" && task.skillId.trim()) {
+        skillIds.add(task.skillId.trim());
+      }
+    }
+  }
+
+  return Array.from(skillIds);
+}
+
+async function awardGoalCompletionXp({
+  goal,
+  completedAt,
+  monumentId,
+  sourceRect,
+}: {
+  goal: Goal;
+  completedAt: string;
+  monumentId: string | null;
+  sourceRect?: CreatorXpBurstRect | DOMRect | null;
+}): Promise<boolean> {
+  const body: Record<string, unknown> = {
+    kind: "goal",
+    awardKeyBase: `goal:${goal.id}:goal`,
+    reversible: {
+      occurrenceStem: `goal:${goal.id}:goal`,
+    },
+    completion: {
+      action: "complete",
+      sourceType: "GOAL",
+      sourceId: goal.id,
+      completedAt,
+      wasScheduled: false,
+    },
+  };
+
+  const skillIds = collectGoalCompletionSkillIds(goal);
+  if (skillIds.length > 0) {
+    body.skillIds = skillIds;
+  }
+  if (monumentId) {
+    body.monumentIds = [monumentId];
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      console.error("Failed to award XP for goal completion", await response.text());
+      return false;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | GoalXpAwardResponse
+      | null;
+    if (!payload?.success) {
+      return false;
+    }
+    if (payload.deduped || (payload.inserted ?? 0) <= 0) {
+      return true;
+    }
+
+    const fallbackGoalSurge = buildCreatorXpSurgePayload({
+      sourceType: "GOAL",
+      sourceTitle: goal.title,
+      sourceIcon: goal.emoji ?? goal.monumentEmoji ?? null,
+    });
+    const goalSurge = payload.surge
+      ? {
+          ...fallbackGoalSurge,
+          title: payload.surge.title ?? fallbackGoalSurge.title,
+          sourceIcon:
+            payload.surge.sourceIcon ??
+            fallbackGoalSurge.sourceIcon ??
+            goal.emoji ??
+            goal.monumentEmoji ??
+            null,
+          displayXp: payload.surge.displayXp ?? fallbackGoalSurge.displayXp,
+          currentLevel:
+            payload.surge.currentLevel ?? fallbackGoalSurge.currentLevel ?? null,
+        }
+      : fallbackGoalSurge;
+
+    dispatchCreatorXpRewardVisual({
+      surge: goalSurge,
+      completedAt,
+      sourceRect,
+      sourceOrigin: sourceRect ? "card" : undefined,
+      amount: goalSurge.displayXp ?? undefined,
+      kind: "goal_complete",
+      burstId: `goal:${goal.id}:${completedAt}`,
+    });
+    reportCampaignDrawerXpTiming("goal visual dispatch", {
+      goalId: goal.id,
+      visualDispatchAt: performance.now(),
+      inserted: payload.inserted ?? 0,
+      hasServerSurge: Boolean(payload.surge),
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to award XP for goal completion", error);
+    return false;
+  }
+}
+
+async function reverseCampaignDrawerXp(occurrenceStem: string) {
+  try {
+    const response = await fetch("/api/xp/reverse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ occurrenceStem }),
+    });
+    if (!response.ok) {
+      console.error("Failed to reverse campaign drawer XP", await response.text());
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Failed to reverse campaign drawer XP", error);
+    return false;
+  }
+}
+
+async function awardCampaignDrawerTaskCompletionXp({
+  task,
+  completedAt,
+  sourceRect,
+}: {
+  task: Task;
+  completedAt: string;
+  sourceRect?: CreatorXpBurstRect | DOMRect | null;
+}) {
+  const body: Record<string, unknown> = {
+    kind: "task",
+    amount: 1,
+    awardKeyBase: `task:${task.id}:complete`,
+    reversible: {
+      occurrenceStem: `task:${task.id}:complete`,
+    },
+    completion: {
+      action: "complete",
+      sourceType: "TASK",
+      sourceId: task.id,
+      completedAt,
+      wasScheduled: false,
+    },
+  };
+
+  if (task.skillId) {
+    body.skillIds = [task.skillId];
+  }
+
+  try {
+    const response = await fetch("/api/xp/award", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      console.error("Failed to award XP for campaign drawer task completion", await response.text());
+      return false;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | GoalXpAwardResponse
+      | null;
+    if (!payload?.success) {
+      return false;
+    }
+    if (payload.deduped || (payload.inserted ?? 0) <= 0 || !payload.surge) {
+      return true;
+    }
+
+    dispatchCreatorXpRewardVisual({
+      surge: {
+        sourceType: "TASK",
+        title: payload.surge.title ?? task.name,
+        sourceIcon: payload.surge.sourceIcon ?? task.skillIcon ?? null,
+        displayXp: payload.surge.displayXp ?? undefined,
+        currentLevel: payload.surge.currentLevel ?? null,
+      },
+      completedAt,
+      sourceRect,
+      sourceOrigin: sourceRect ? "card" : undefined,
+      amount: payload.surge.displayXp ?? undefined,
+      kind: "task_complete",
+      burstId: `campaign-drawer:task:${task.id}:${completedAt}`,
+    });
+    reportCampaignDrawerXpTiming("task visual dispatch", {
+      taskId: task.id,
+      visualDispatchAt: performance.now(),
+      inserted: payload.inserted ?? 0,
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to award XP for campaign drawer task completion", error);
+    return false;
+  }
 }
 
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
@@ -4082,9 +4335,9 @@ export function MonumentGoalsList({
   }, [creationContext, resolvedMonumentId]);
 
   const handleManualGoalComplete = useCallback(
-    async (goal: Goal) => {
+    async (goal: Goal, sourceRect?: DOMRect | null) => {
       const supabase = getSupabaseBrowser();
-      if (!supabase) return;
+      if (!supabase) return false;
       const completedAt = new Date().toISOString();
 
       const applyCompletedStatus = (currentGoal: Goal): Goal =>
@@ -4111,26 +4364,27 @@ export function MonumentGoalsList({
         if (error) {
           throw error;
         }
+        reportCampaignDrawerXpTiming("goal persistence complete", {
+          goalId: goal.id,
+          completedAt: performance.now(),
+        });
 
-        try {
-          const response = await fetch("/api/completions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sourceType: "GOAL",
-              sourceId: goal.id,
-              completedAt,
-              wasScheduled: false,
-            }),
-          });
-          if (!response.ok) {
-            console.error(
-              "Failed to record goal completion",
-              await response.text()
-            );
+        const didAwardXp = await awardGoalCompletionXp({
+          goal,
+          completedAt,
+          monumentId: resolvedMonumentId,
+          sourceRect,
+        });
+        if (!didAwardXp) {
+          const { error: rollbackError } = await supabase
+            .from("goals")
+            .update({ status: "ACTIVE", active: true })
+            .eq("id", goal.id);
+          if (rollbackError) {
+            console.error("Failed to rollback goal completion after XP failure", rollbackError);
           }
-        } catch (completionError) {
-          console.error("Failed to record goal completion", completionError);
+          toast.error("Goal completion failed", "XP was not awarded.");
+          return false;
         }
 
         setGoals((prev) => prev.map(applyCompletedStatus));
@@ -4146,13 +4400,96 @@ export function MonumentGoalsList({
         );
         holdRecentlyCompletedGoal(goal.id);
         setOpenGoalId((current) => (current === goal.id ? null : current));
+        return true;
       } catch (err) {
         console.error("Failed to manually complete goal:", err);
         toast.error("Goal completion failed", "Try again in a moment.");
-        throw err;
+        return false;
       }
     },
-    [holdRecentlyCompletedGoal, toast, userId]
+    [holdRecentlyCompletedGoal, resolvedMonumentId, toast, userId]
+  );
+
+  const handleManualGoalUndo = useCallback(
+    async (goal: Goal) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return false;
+
+      const previousGoal: Goal = {
+        ...goal,
+        status: "COMPLETED",
+        active: false,
+        progress: 100,
+      };
+      const reopenedGoal: Goal = decorate({
+        ...goal,
+        status: "ACTIVE",
+        active: true,
+        progress:
+          goal.projects.length > 0
+            ? Math.round(
+                (goal.projects.filter((project) =>
+                  Boolean(
+                    (project as Project & {
+                      completedAt?: string | null;
+                      completed_at?: string | null;
+                    }).completedAt ??
+                      (project as Project & {
+                        completedAt?: string | null;
+                        completed_at?: string | null;
+                      }).completed_at
+                  ) || project.status === "Done" || project.stage === "RELEASE"
+                ).length /
+                  goal.projects.length) *
+                  100
+              )
+            : 0,
+      });
+
+      setGoals((prev) =>
+        prev.map((currentGoal) => (currentGoal.id === goal.id ? reopenedGoal : currentGoal))
+      );
+      setRoadmapOpenGoal((current) =>
+        current?.id === goal.id ? reopenedGoal : current
+      );
+
+      try {
+        let query = supabase
+          .from("goals")
+          .update({ status: "ACTIVE", active: true })
+          .eq("id", goal.id);
+
+        if (userId) {
+          query = query.eq("user_id", userId);
+        }
+
+        const { error } = await query;
+        if (error) {
+          throw error;
+        }
+
+        const didReverseXp = await reverseCampaignDrawerXp(`goal:${goal.id}:goal`);
+        if (!didReverseXp) {
+          throw new Error("Goal XP reverse failed");
+        }
+
+        setMonumentRoadmapsWithItems((current) => current);
+        return true;
+      } catch (err) {
+        console.error("Failed to undo campaign drawer goal completion:", err);
+        setGoals((prev) =>
+          prev.map((currentGoal) =>
+            currentGoal.id === goal.id ? previousGoal : currentGoal
+          )
+        );
+        setRoadmapOpenGoal((current) =>
+          current?.id === goal.id ? previousGoal : current
+        );
+        toast.error("Goal undo failed", "Try again in a moment.");
+        return false;
+      }
+    },
+    [decorate, toast, userId]
   );
 
   const handleRoadmapGoalOpen = useCallback(
@@ -4510,7 +4847,8 @@ export function MonumentGoalsList({
       goalId: string,
       projectId: string,
       taskId: string,
-      currentCompletedAt: string | null
+      currentCompletedAt: string | null,
+      sourceRect?: DOMRect | null
     ) => {
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
@@ -4518,6 +4856,10 @@ export function MonumentGoalsList({
       const nextCompletedAt = currentCompletedAt
         ? null
         : new Date().toISOString();
+      const task = goals
+        .find((goal) => goal.id === goalId)
+        ?.projects.find((project) => project.id === projectId)
+        ?.tasks.find((candidate) => candidate.id === taskId);
       const updateGoal = (completedAt: string | null) => (goal: Goal) => {
         const updatedGoal = updateGoalTaskCompletion(
           goal,
@@ -4545,17 +4887,59 @@ export function MonumentGoalsList({
         if (error) {
           throw error;
         }
+        if (sourceRect) {
+          reportCampaignDrawerXpTiming("task persistence complete", {
+            taskId,
+            completedAt: performance.now(),
+          });
+        }
+
+        if (sourceRect && task) {
+          if (nextCompletedAt) {
+            const didAwardXp = await awardCampaignDrawerTaskCompletionXp({
+              task,
+              completedAt: nextCompletedAt,
+              sourceRect,
+            });
+            if (!didAwardXp) {
+              const { error: rollbackError } = await supabase
+                .from("tasks")
+                .update({ completed_at: currentCompletedAt })
+                .eq("id", taskId);
+              if (rollbackError) {
+                console.error("Failed to rollback campaign drawer task completion", rollbackError);
+              }
+              throw new Error("Campaign drawer task XP award failed");
+            }
+          } else {
+            const didReverseXp = await reverseCampaignDrawerXp(
+              `task:${taskId}:complete`
+            );
+            if (!didReverseXp) {
+              const { error: rollbackError } = await supabase
+                .from("tasks")
+                .update({ completed_at: currentCompletedAt })
+                .eq("id", taskId);
+              if (rollbackError) {
+                console.error("Failed to rollback campaign drawer task undo", rollbackError);
+              }
+              throw new Error("Campaign drawer task XP reverse failed");
+            }
+          }
+        }
 
         void refreshGoalStatus(goalId);
+        return true;
       } catch (err) {
         console.error("Failed to toggle monument task completion", err);
         setGoals((prev) => prev.map(revertTaskCompletion));
         setRoadmapOpenGoal((current) =>
           current?.id === goalId ? revertTaskCompletion(current) : current
         );
+        return false;
       }
     },
-    [decorate, refreshGoalStatus]
+    [decorate, goals, refreshGoalStatus]
   );
 
   useEffect(() => {
@@ -5278,7 +5662,9 @@ export function MonumentGoalsList({
                   onGoalEdit={handleRoadmapGoalEdit}
                   onProjectEditOpen={handleProjectEditOpen}
                   onProjectUpdated={handleProjectUpdated}
+                  onTaskToggleCompletion={handleTaskToggleCompletion}
                   onGoalManualComplete={handleManualGoalComplete}
+                  onGoalManualUndo={handleManualGoalUndo}
                   // Opens the Campaign Drawer ADD GOAL flow through the shared FAB creation request.
                   onAddGoal={handleCampaignAddGoal}
                   onCampaignDetailsSaved={() =>
@@ -5545,6 +5931,7 @@ export function MonumentGoalsList({
     handleGoalEdit,
     handleGoalLongPressEdit,
     handleManualGoalComplete,
+    handleManualGoalUndo,
     handleGoalOpenChange,
     handleCampaignAddGoal,
     handleMonumentAddGoal,

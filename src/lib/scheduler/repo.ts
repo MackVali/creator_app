@@ -542,6 +542,31 @@ export async function updateTaskStage(
   return await supabase.from("tasks").update({ stage }).eq("id", taskId);
 }
 
+export async function updateMyListTaskCompletion(
+  taskId: string,
+  stage: TaskLite["stage"],
+  completedAt: string | null,
+  client?: Client
+) {
+  const supabase = ensureClient(client);
+  return await supabase
+    .from("tasks")
+    .update({ stage, completed_at: completedAt } as never)
+    .eq("id", taskId);
+}
+
+export async function updateTaskSkill(
+  taskId: string,
+  skillId: string | null,
+  client?: Client
+) {
+  const supabase = ensureClient(client);
+  return await supabase
+    .from("tasks")
+    .update({ skill_id: skillId } as never)
+    .eq("id", taskId);
+}
+
 const crossesMidnight = (w: WindowLite) => {
   const [sh = 0, sm = 0] = w.start_local.split(":").map(Number);
   const [eh = 0, em = 0] = w.end_local.split(":").map(Number);
