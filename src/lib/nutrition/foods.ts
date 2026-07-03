@@ -145,6 +145,23 @@ const FOOD_BRAND_MAX_LENGTH = 120;
 const SERVING_UNIT_MAX_LENGTH = 24;
 const MAX_SERVING_SIZE = 10000;
 const MAX_SERVING_GRAMS = 5000;
+const VALID_NORMALIZED_BARCODE_PATTERN = /^(\d{8}|\d{12}|\d{13}|\d{14})$/;
+const PLACEHOLDER_FOOD_NAMES = new Set([
+  "unknown",
+  "unknown product",
+  "unidentified product",
+  "unnamed product",
+  "product",
+  "food",
+  "no name",
+  "not available",
+  "n a",
+  "na",
+  "null",
+  "undefined",
+  "test",
+  "fake",
+]);
 const FOOD_BROWSE_DEPARTMENT_LOOKUP = new Map<string, FoodBrowseDepartmentLabel>();
 const FOOD_BROWSE_AISLE_LOOKUP = new Map<string, FoodBrowseAisleLabel>();
 const FOOD_BROWSE_PLACEMENT_LOOKUP = new Map<string, FoodBrowsePlacement>();
@@ -451,6 +468,12 @@ export function normalizeFoodBarcode(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
+export function isValidNormalizedFoodBarcode(
+  value: string | null | undefined,
+): value is string {
+  return Boolean(value && VALID_NORMALIZED_BARCODE_PATTERN.test(value));
+}
+
 export function parseOpenFoodFactsNumber(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value !== "string") return null;
@@ -470,7 +493,10 @@ function compactOpenFoodFactsString(value: unknown, maxLength: number) {
   const coerced = coerceOpenFoodFactsString(value);
   if (!coerced) return null;
 
-  const compacted = coerced.replace(/\s+/g, " ").trim();
+  const compacted = coerced
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return compacted.length > maxLength ? compacted.slice(0, maxLength).trim() : compacted;
 }
 
@@ -525,6 +551,37 @@ function isValidNutritionNumber(
 function sanitizePositiveNumber(value: number | null, max: number) {
   if (value === null || !Number.isFinite(value) || value <= 0 || value > max) return null;
   return roundFoodNutritionNumber(value);
+}
+
+function isUsableSharedFoodName(value: string | null | undefined) {
+  const normalized = normalizeFoodSearchText(value);
+  if (!normalized || normalized.length < 2) return false;
+  if (PLACEHOLDER_FOOD_NAMES.has(normalized)) return false;
+  if (/^(?:unknown|unnamed|unidentified|generic)\b/.test(normalized)) return false;
+  if (/^(?:test|fake|sample|dummy)\b/.test(normalized)) return false;
+  if (/^(?:barcode|ean|upc|gtin)\s*\d*$/.test(normalized)) return false;
+  if (/^\d+$/.test(normalized.replace(/\s+/g, ""))) return false;
+  if (!/[a-z]/.test(normalized)) return false;
+
+  return true;
+}
+
+function hasUsefulOpenFoodFactsNutrition(
+  nutrition: {
+    calories: number;
+    carbs_g: number;
+    protein_g: number;
+    fat_g: number;
+  } | null,
+) {
+  if (!nutrition) return false;
+
+  return (
+    nutrition.calories > 0 ||
+    nutrition.carbs_g > 0 ||
+    nutrition.protein_g > 0 ||
+    nutrition.fat_g > 0
+  );
 }
 
 export function extractOpenFoodFactsNutrition(product: OpenFoodFactsProduct) {
@@ -616,14 +673,19 @@ export function mapOpenFoodFactsProductToFoodInsert(
   input: { barcode: string; createdByUserId?: string | null },
 ): FoodInsert | null {
   const normalizedInputBarcode = normalizeFoodBarcode(input.barcode);
-  if (!normalizedInputBarcode) return null;
+  if (!isValidNormalizedFoodBarcode(normalizedInputBarcode)) return null;
 
   const productBarcode = coerceOpenFoodFactsString(product.code);
   const normalizedProductBarcode = productBarcode
     ? normalizeFoodBarcode(productBarcode)
     : normalizedInputBarcode;
 
-  if (normalizedProductBarcode !== normalizedInputBarcode) return null;
+  if (
+    !isValidNormalizedFoodBarcode(normalizedProductBarcode) ||
+    normalizedProductBarcode !== normalizedInputBarcode
+  ) {
+    return null;
+  }
 
   const barcode = normalizedInputBarcode;
   const normalizedBarcode = normalizedInputBarcode;
@@ -634,10 +696,10 @@ export function mapOpenFoodFactsProductToFoodInsert(
     compactOpenFoodFactsString(product.product_name_en, FOOD_NAME_MAX_LENGTH) ??
     compactOpenFoodFactsString(product.abbreviated_product_name, FOOD_NAME_MAX_LENGTH) ??
     compactOpenFoodFactsString(product.generic_name, FOOD_NAME_MAX_LENGTH);
-  if (!name) return null;
+  if (!isUsableSharedFoodName(name)) return null;
 
   const nutrition = extractOpenFoodFactsNutrition(product);
-  if (!nutrition) return null;
+  if (!hasUsefulOpenFoodFactsNutrition(nutrition)) return null;
 
   const brandName = compactOpenFoodFactsString(product.brands, FOOD_BRAND_MAX_LENGTH);
   const normalizedName = normalizeFoodSearchText(name);
@@ -648,7 +710,7 @@ export function mapOpenFoodFactsProductToFoodInsert(
     nutrition.basis === "serving"
       ? parseOpenFoodFactsServing(product)
       : { serving_size: 100, serving_unit: "g", serving_grams: 100 };
-  const externalId = coerceOpenFoodFactsString(product.code) ?? normalizedBarcode;
+  const externalId = normalizedBarcode;
   const metadata: Json = {
     source: "open_food_facts",
     source_summary: {

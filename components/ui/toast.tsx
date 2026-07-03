@@ -71,7 +71,7 @@ function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[2147483647] w-[min(calc(100vw-1.5rem),20rem)] space-y-1.5 sm:right-5 sm:top-[calc(env(safe-area-inset-top)+1rem)] sm:w-80">
+    <div className="pointer-events-none fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[2147483647] flex w-[min(calc(100vw-1.5rem),22rem)] flex-col gap-2 sm:right-5 sm:top-[calc(env(safe-area-inset-top)+1rem)] sm:w-[22rem]">
       {toasts.map((toast) => (
         <Toast key={toast.id} toast={toast} onRemove={removeToast} />
       ))}
@@ -89,50 +89,55 @@ function Toast({
   const getIcon = () => {
     switch (toast.type) {
       case "success":
-        return <CheckCircle className="h-4 w-4 text-emerald-300" />;
+        return <CheckCircle className="h-3.5 w-3.5 text-emerald-200" />;
       case "error":
-        return <AlertCircle className="h-4 w-4 text-rose-300" />;
+        return <AlertCircle className="h-3.5 w-3.5 text-rose-200" />;
       case "warning":
-        return <AlertTriangle className="h-4 w-4 text-amber-300" />;
+        return <AlertTriangle className="h-3.5 w-3.5 text-amber-200" />;
       case "info":
-        return <Info className="h-4 w-4 text-sky-300" />;
+        return <Info className="h-3.5 w-3.5 text-sky-200" />;
     }
   };
 
   const getToneClasses = () => {
     switch (toast.type) {
       case "success":
-        return "border-emerald-300/20 bg-emerald-300/[0.07]";
+        return "from-emerald-300/10";
       case "error":
-        return "border-rose-300/20 bg-rose-300/[0.07]";
+        return "from-rose-300/10";
       case "warning":
-        return "border-amber-300/20 bg-amber-300/[0.07]";
+        return "from-amber-300/10";
       case "info":
-        return "border-zinc-600/35 bg-zinc-800/[0.18]";
+        return "from-sky-300/10";
     }
   };
 
   return (
     <div
       className={cn(
-        "rounded-lg border px-3 py-2.5 shadow-lg shadow-black/25 backdrop-blur-xl transition-all duration-300 ease-in-out",
-        "bg-zinc-950/75 text-zinc-100 ring-1 ring-white/[0.08] supports-[backdrop-filter]:bg-zinc-950/60",
+        "pointer-events-auto relative overflow-hidden rounded-xl border border-white/[0.09] px-3 py-2.5 text-zinc-100 shadow-[0_18px_45px_rgba(0,0,0,0.34),0_2px_8px_rgba(0,0,0,0.22)] ring-1 ring-black/30 backdrop-blur-2xl transition-all duration-300 ease-out",
+        "bg-gradient-to-r via-zinc-950/90 to-zinc-950/80 supports-[backdrop-filter]:via-zinc-950/75 supports-[backdrop-filter]:to-zinc-950/70",
+        "before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/15 before:content-[''] after:absolute after:inset-y-1.5 after:left-0 after:w-px after:bg-white/20 after:content-['']",
         getToneClasses()
       )}
     >
-      <div className="flex items-start space-x-2.5">
-        {getIcon()}
-        <div className="flex-1 space-y-1">
-          <h4 className="text-sm font-medium text-zinc-50">{toast.title}</h4>
+      <div className="relative flex items-start gap-2.5">
+        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.06] shadow-inner shadow-white/[0.03]">
+          {getIcon()}
+        </div>
+        <div className="min-w-0 flex-1 space-y-0.5 pr-1">
+          <h4 className="break-words text-[13px] font-medium leading-5 text-zinc-50">
+            {toast.title}
+          </h4>
           {toast.description && (
-            <p className="text-xs leading-5 text-zinc-300">
+            <p className="break-words text-xs leading-5 text-zinc-300/90">
               {toast.description}
             </p>
           )}
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className="text-sm font-medium text-white/90 underline-offset-4 transition-colors hover:text-white hover:underline"
+              className="mt-1 inline-flex h-7 items-center rounded-md border border-white/[0.1] bg-white/[0.06] px-2 text-xs font-medium text-zinc-100 transition-colors hover:border-white/[0.16] hover:bg-white/[0.1] focus:outline-none focus:ring-2 focus:ring-white/20"
             >
               {toast.action.label}
             </button>
@@ -140,10 +145,10 @@ function Toast({
         </div>
         <button
           onClick={() => onRemove(toast.id)}
-          className="rounded-md p-0.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
+          className="-mr-1 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-white/20"
           aria-label="Close toast"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>

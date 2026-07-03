@@ -232,6 +232,15 @@ const ANALYTICS_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> =
   { value: "90d", label: "90D" },
 ];
 
+const XP_CHART_RANGE_OPTIONS: Array<{
+  value: Extract<AnalyticsRange, "7d" | "30d" | "90d">;
+  label: string;
+}> = [
+  { value: "90d", label: "90D" },
+  { value: "30d", label: "30D" },
+  { value: "7d", label: "7D" },
+];
+
 async function fetchAnalyticsRange(
   range: AnalyticsRange,
   signal: AbortSignal
@@ -431,6 +440,7 @@ export default function AnalyticsDashboard({
               points={overviewTrend}
               comparison={analytics?.overviewComparison}
               range={analytics?.range ?? selectedRange}
+              onRangeChange={setSelectedRange}
               isRefreshing={analyticsRefreshing}
               statusMessage={error}
             />
@@ -1784,12 +1794,14 @@ function OverviewDiagnosticsSection({
   points,
   comparison,
   range,
+  onRangeChange,
   isRefreshing,
   statusMessage,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   comparison?: AnalyticsOverviewComparison;
   range: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
   isRefreshing: boolean;
   statusMessage: string | null;
 }) {
@@ -1940,6 +1952,8 @@ function OverviewDiagnosticsSection({
         <OverviewLineChart
           points={points}
           range={range}
+          onRangeChange={onRangeChange}
+          isRefreshing={isRefreshing}
           selectedPointIndex={selectedPointIndex}
           onSelectedPointIndexChange={setSelectedPointIndex}
         />
@@ -2128,39 +2142,56 @@ function getOverviewComparisonClass(
   return "text-zinc-500";
 }
 
+type OverviewXpSeries = {
+  label: string;
+  stroke: string;
+  fillId: string;
+  fillStops: readonly [string, string, string];
+};
+
+const TOTAL_XP_SERIES: OverviewXpSeries = {
+  label: "Total XP",
+  stroke: "#86efac",
+  fillId: "overviewTotalXpArea",
+  fillStops: [
+    "rgba(134,239,172,0.22)",
+    "rgba(52,211,153,0.09)",
+    "rgba(16,185,129,0)",
+  ],
+};
+
 function OverviewLineChart({
   points,
   range,
+  onRangeChange,
+  isRefreshing,
   selectedPointIndex,
   onSelectedPointIndexChange,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   range: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
+  isRefreshing: boolean;
   selectedPointIndex: number | null;
   onSelectedPointIndexChange: (index: number | null) => void;
 }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
 
   const width = 720;
-  const height = 318;
-  const padding = { top: 32, right: 24, bottom: 54, left: 42 };
+  const height = 278;
+  const padding = { top: 30, right: 22, bottom: 52, left: 44 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const contextHeight = 42;
-  const trendHeight = chartHeight - contextHeight;
-  const trendBaselineY = padding.top + trendHeight;
-  const contextTopY = trendBaselineY + 12;
-  const contextBottomY = padding.top + chartHeight - 8;
-  const values = points.map((point) => point.xpGained);
-  const rawMaxValue = values.length > 0 ? Math.max(...values) : 0;
+  const baselineY = padding.top + chartHeight;
+  const totalXp = points.reduce((sum, point) => sum + point.xpGained, 0);
+  const rawMaxValue = Math.max(
+    0,
+    ...points.map((point) => getOverviewXpValue(point))
+  );
   const yMax = getTrendYAxisMax(rawMaxValue);
   const isEmpty = rawMaxValue <= 0;
   const hasEfficiencyBuckets = points.some(
     (point) => point.usableWindowMinutes > 0
-  );
-  const maxCompletedEvents = Math.max(
-    1,
-    ...points.map((point) => point.completedEvents)
   );
   const activeIndex =
     selectedPointIndex == null
@@ -2172,34 +2203,34 @@ function OverviewLineChart({
     .filter((value) => value > 0)
     .map((value) => {
       const ratio = yMax === 0 ? 0 : value / yMax;
-      const y = padding.top + trendHeight - ratio * trendHeight;
+      const y = padding.top + chartHeight - ratio * chartHeight;
 
       return {
         value,
         top: (y / height) * 100,
       };
     });
-  const svgPoints = points.map((point, index) => {
+  const chartPoints = points.map((point, index) => {
     const x =
       points.length === 1
         ? padding.left + chartWidth / 2
         : padding.left + (index / (points.length - 1)) * chartWidth;
-    const y =
-      padding.top + trendHeight - (point.xpGained / yMax) * trendHeight;
+    const y = getOverviewChartY(
+      getOverviewXpValue(point),
+      yMax,
+      padding.top,
+      chartHeight
+    );
     return { x, y, point };
   });
-  const bucketWidth = chartWidth / Math.max(points.length, 1);
-  const completionBarWidth = Math.max(
-    2,
-    Math.min(12, bucketWidth * (points.length > 30 ? 0.42 : 0.52))
-  );
-  const linePath = buildSmoothLinePath(svgPoints);
-  const areaPath = [
-    linePath,
-    `L${padding.left + chartWidth},${trendBaselineY}`,
-    `L${padding.left},${trendBaselineY}`,
-    "Z",
-  ].join(" ");
+  const areaLayer = buildOverviewAreaLayer({
+    points,
+    chartWidth,
+    chartHeight,
+    paddingLeft: padding.left,
+    paddingTop: padding.top,
+    yMax,
+  });
   const xLabels = getTrendAxisLabelIndices(range, points)
     .map((index) => ({
       x:
@@ -2210,6 +2241,12 @@ function OverviewLineChart({
       weekday: formatTrendWeekdayLabel(points[index]?.date, range),
     }));
   const yAxisLabelLeft = ((padding.left - 10) / width) * 100;
+  const activeXPercent =
+    activeIndex >= 0 ? ((chartPoints[activeIndex]?.x ?? 0) / width) * 100 : 50;
+  const activeYPercent =
+    activeIndex >= 0 ? ((chartPoints[activeIndex]?.y ?? 0) / height) * 100 : 30;
+  const tooltipLeftPercent = Math.max(18, Math.min(82, activeXPercent));
+  const tooltipTopPercent = Math.max(9, Math.min(56, activeYPercent - 20));
   const selectPoint = (index: number) => {
     onSelectedPointIndexChange(index);
   };
@@ -2241,44 +2278,56 @@ function OverviewLineChart({
   }, [onSelectedPointIndexChange, selectedPointIndex]);
 
   return (
-    <div className="px-3 py-3.5 sm:px-4 sm:py-4">
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="text-sm font-medium text-zinc-100 sm:text-base">
-          XP over time
+    <div className="overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-white/[0.06] px-3 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:px-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <div className="text-sm font-medium text-zinc-100 sm:text-base">
+              Total XP over time
+            </div>
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+              {formatAnalyticsRangeLabel(range)} · {formatCompactNumber(totalXp)} XP
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-medium text-zinc-500 sm:text-[11px]">
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="h-1.5 w-4 rounded-full shadow-[0_0_12px_rgba(255,255,255,0.12)]"
+                style={{ backgroundColor: TOTAL_XP_SERIES.stroke }}
+              />
+              {TOTAL_XP_SERIES.label}
+            </span>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-[10px] text-zinc-500 sm:gap-2.5 sm:text-[11px]">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-1 w-5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.28)]" />
-            Daily XP
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-300/25" />
-            Events
-          </span>
-        </div>
+        <XpChartRangeSelector
+          range={range}
+          onRangeChange={onRangeChange}
+          isRefreshing={isRefreshing}
+        />
       </div>
 
-      <div className="mt-3 space-y-2.5 sm:mt-3.5">
-        <div ref={chartRef} className="relative" data-overview-line-chart>
+      <div className="space-y-2.5 px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
+        <div ref={chartRef} className="relative" data-overview-area-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             preserveAspectRatio="none"
-            className="h-[236px] w-full sm:h-[258px] md:h-[280px]"
+            className="h-[214px] w-full sm:h-[230px] md:h-[238px]"
           >
             <defs>
-              <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(110,231,183,0.18)" />
-                <stop offset="52%" stopColor="rgba(52,211,153,0.07)" />
-                <stop offset="100%" stopColor="rgba(16,185,129,0)" />
-              </linearGradient>
-              <linearGradient id="overviewDailyLine" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0%" stopColor="#86efac" />
-                <stop offset="52%" stopColor="#6ee7b7" />
-                <stop offset="100%" stopColor="#34d399" />
-              </linearGradient>
               <linearGradient id="overviewDailySurface" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="rgba(255,255,255,0.022)" />
                 <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+              </linearGradient>
+              <linearGradient
+                id={TOTAL_XP_SERIES.fillId}
+                x1="0"
+                x2="0"
+                y1="0"
+                y2="1"
+              >
+                <stop offset="0%" stopColor={TOTAL_XP_SERIES.fillStops[0]} />
+                <stop offset="58%" stopColor={TOTAL_XP_SERIES.fillStops[1]} />
+                <stop offset="100%" stopColor={TOTAL_XP_SERIES.fillStops[2]} />
               </linearGradient>
             </defs>
 
@@ -2286,14 +2335,14 @@ function OverviewLineChart({
               x={padding.left}
               y={padding.top}
               width={chartWidth}
-              height={trendHeight}
+              height={chartHeight}
               rx={18}
               fill="url(#overviewDailySurface)"
             />
 
             {yTickValues.filter((value) => value > 0).map((value) => {
               const ratio = yMax === 0 ? 0 : value / yMax;
-              const y = padding.top + trendHeight - ratio * trendHeight;
+              const y = padding.top + chartHeight - ratio * chartHeight;
               return (
                 <g key={`grid-${value}`}>
                   <line
@@ -2312,92 +2361,37 @@ function OverviewLineChart({
             <line
               x1={padding.left}
               x2={padding.left + chartWidth}
-              y1={trendBaselineY}
-              y2={trendBaselineY}
+              y1={baselineY}
+              y2={baselineY}
               stroke="rgba(212,212,216,0.14)"
               vectorEffect="non-scaling-stroke"
             />
 
-            <line
-              x1={padding.left}
-              x2={padding.left + chartWidth}
-              y1={contextTopY}
-              y2={contextTopY}
-              stroke="rgba(212,212,216,0.07)"
-              vectorEffect="non-scaling-stroke"
-            />
-
-            {points.map((point, index) => {
-              const x =
-                points.length === 1
-                  ? padding.left + chartWidth / 2
-                  : padding.left + (index / (points.length - 1)) * chartWidth;
-              const barHeight =
-                point.completedEvents > 0
-                  ? Math.max(
-                      2,
-                      (point.completedEvents / maxCompletedEvents) *
-                        (contextBottomY - contextTopY - 10)
-                    )
-                  : 0;
-              const efficiencyWidth =
-                hasEfficiencyBuckets && point.usableWindowMinutes > 0
-                  ? Math.max(
-                      1,
-                      Math.min(
-                        bucketWidth * 0.72,
-                        bucketWidth * 0.72 * (point.efficiencyRate / 100)
-                      )
-                    )
-                  : 0;
-
-              return (
-                <g key={`${point.date}-context`}>
-                  {hasEfficiencyBuckets && point.usableWindowMinutes > 0 ? (
-                    <rect
-                      x={x - (bucketWidth * 0.72) / 2}
-                      y={contextTopY + 4}
-                      width={efficiencyWidth}
-                      height={2}
-                      rx={1}
-                      fill="rgba(245,158,11,0.15)"
-                    />
-                  ) : null}
-                  {barHeight > 0 ? (
-                    <rect
-                      x={x - completionBarWidth / 2}
-                      y={contextBottomY - barHeight}
-                      width={completionBarWidth}
-                      height={barHeight}
-                      rx={completionBarWidth / 2}
-                      fill="rgba(110,231,183,0.13)"
-                    />
-                  ) : null}
-                </g>
-              );
-            })}
-
             {!isEmpty ? (
               <>
-                <path d={areaPath} fill="url(#overviewDailyArea)" />
+                <path
+                  d={areaLayer.areaPath}
+                  fill={`url(#${TOTAL_XP_SERIES.fillId})`}
+                />
                 {activePoint ? (
                   <line
-                    x1={svgPoints[activeIndex]?.x ?? 0}
-                    x2={svgPoints[activeIndex]?.x ?? 0}
+                    x1={chartPoints[activeIndex]?.x ?? 0}
+                    x2={chartPoints[activeIndex]?.x ?? 0}
                     y1={padding.top}
-                    y2={contextBottomY}
+                    y2={baselineY}
                     stroke="rgba(244,244,245,0.14)"
                     strokeDasharray="1 9"
                     vectorEffect="non-scaling-stroke"
                   />
                 ) : null}
                 <path
-                  d={linePath}
+                  d={areaLayer.linePath}
                   fill="none"
-                  stroke="url(#overviewDailyLine)"
-                  strokeWidth={3}
+                  stroke={TOTAL_XP_SERIES.stroke}
+                  strokeWidth={2.75}
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  strokeOpacity={0.94}
                   vectorEffect="non-scaling-stroke"
                 />
               </>
@@ -2406,8 +2400,8 @@ function OverviewLineChart({
                 <line
                   x1={padding.left}
                   x2={padding.left + chartWidth}
-                  y1={padding.top + trendHeight * 0.55}
-                  y2={padding.top + trendHeight * 0.55}
+                  y1={padding.top + chartHeight * 0.54}
+                  y2={padding.top + chartHeight * 0.54}
                   stroke="rgba(161,161,170,0.25)"
                   strokeDasharray="1 10"
                   vectorEffect="non-scaling-stroke"
@@ -2423,7 +2417,7 @@ function OverviewLineChart({
                 className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-medium text-zinc-400/90"
                 style={{
                   left: `${((padding.left + chartWidth / 2) / width) * 100}%`,
-                  top: `${((padding.top + trendHeight * 0.46) / height) * 100}%`,
+                  top: `${((padding.top + chartHeight * 0.46) / height) * 100}%`,
                 }}
               >
                 No XP recorded in this range
@@ -2465,10 +2459,10 @@ function OverviewLineChart({
               <div
                 className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-200/80"
                 style={{
-                  left: `${(((svgPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
+                  left: `${(((chartPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
                     4
                   )}%`,
-                  top: `${(((svgPoints[activeIndex]?.y ?? 0) / height) * 100).toFixed(
+                  top: `${(((chartPoints[activeIndex]?.y ?? 0) / height) * 100).toFixed(
                     4
                   )}%`,
                 }}
@@ -2476,10 +2470,54 @@ function OverviewLineChart({
             ) : null}
           </div>
 
+          {activePoint && !isEmpty ? (
+            <div
+              className="pointer-events-none absolute z-10 w-[220px] max-w-[calc(100%-1rem)] -translate-x-1/2 rounded-2xl border border-zinc-700/70 bg-zinc-950/95 p-3 text-xs shadow-[0_18px_42px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md sm:w-[240px]"
+              style={{
+                left: `${tooltipLeftPercent.toFixed(3)}%`,
+                top: `${tooltipTopPercent.toFixed(3)}%`,
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    {formatTrendActiveLabel(activePoint.date, range)}
+                  </div>
+                  <div className="mt-1 text-lg font-semibold leading-none text-zinc-50 tabular-nums">
+                    {formatCompactNumber(activePoint.xpGained)} XP
+                  </div>
+                </div>
+                <div className="rounded-full border border-emerald-400/15 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-100/80">
+                  Total XP
+                </div>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-3 text-[11px]">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-400">
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: TOTAL_XP_SERIES.stroke }}
+                    />
+                    <span className="truncate">{TOTAL_XP_SERIES.label}</span>
+                  </span>
+                  <span className="font-medium text-zinc-100 tabular-nums">
+                    {formatCompactNumber(activePoint.xpGained)}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 border-t border-white/[0.06] pt-2 text-[11px] leading-relaxed text-zinc-500">
+                {formatCompactNumber(activePoint.completedEvents)} completed ·{" "}
+                {formatCompactNumber(activePoint.completedProjects)} projects ·{" "}
+                {formatCompactNumber(activePoint.completedTasks)} tasks ·{" "}
+                {formatCompactNumber(activePoint.completedHabits)} habits
+              </div>
+            </div>
+          ) : null}
+
           <div className="pointer-events-none absolute inset-0">
             <div className="relative h-full">
               {!isEmpty
-                ? svgPoints.map((point, index) => (
+                ? chartPoints.map((point, index) => (
                     <button
                       key={`${point.point.date}-hitbox`}
                       type="button"
@@ -2521,6 +2559,121 @@ function OverviewLineChart({
       </div>
     </div>
   );
+}
+
+function XpChartRangeSelector({
+  range,
+  onRangeChange,
+  isRefreshing,
+}: {
+  range: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
+  isRefreshing: boolean;
+}) {
+  return (
+    <div className="w-full shrink-0 sm:w-auto" aria-label="XP chart range">
+      <div className="grid grid-cols-3 rounded-full border border-zinc-800 bg-zinc-950/80 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:inline-grid sm:min-w-[184px]">
+        {XP_CHART_RANGE_OPTIONS.map((option) => {
+          const isActive = option.value === range;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onRangeChange(option.value)}
+              aria-pressed={isActive}
+              aria-busy={isRefreshing && isActive}
+              className={classNames(
+                "min-h-8 rounded-full px-3 text-[10px] font-semibold uppercase leading-none tracking-[0.12em] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-300/60 sm:min-h-7",
+                isActive
+                  ? "border border-zinc-700/80 bg-zinc-800/85 text-zinc-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                  : "border border-transparent text-zinc-500 hover:text-zinc-300",
+                isRefreshing && isActive && "opacity-70"
+              )}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function getOverviewXpValue(point: AnalyticsOverviewDailyPoint) {
+  return Math.max(0, Number(point.xpGained ?? 0));
+}
+
+function getOverviewChartY(
+  value: number,
+  yMax: number,
+  paddingTop: number,
+  chartHeight: number
+) {
+  const ratio = yMax === 0 ? 0 : value / yMax;
+  return paddingTop + chartHeight - ratio * chartHeight;
+}
+
+function buildOverviewAreaLayer({
+  points,
+  chartWidth,
+  chartHeight,
+  paddingLeft,
+  paddingTop,
+  yMax,
+}: {
+  points: AnalyticsOverviewDailyPoint[];
+  chartWidth: number;
+  chartHeight: number;
+  paddingLeft: number;
+  paddingTop: number;
+  yMax: number;
+}) {
+  const upperPoints: Array<{ x: number; y: number }> = [];
+  const lowerPoints: Array<{ x: number; y: number }> = [];
+
+  points.forEach((point, index) => {
+    const x =
+      points.length === 1
+        ? paddingLeft + chartWidth / 2
+        : paddingLeft + (index / (points.length - 1)) * chartWidth;
+
+    lowerPoints.push({
+      x,
+      y: getOverviewChartY(0, yMax, paddingTop, chartHeight),
+    });
+    upperPoints.push({
+      x,
+      y: getOverviewChartY(
+        getOverviewXpValue(point),
+        yMax,
+        paddingTop,
+        chartHeight
+      ),
+    });
+  });
+
+  return {
+    areaPath: buildSmoothAreaPath(upperPoints, lowerPoints),
+    linePath: buildSmoothLinePath(upperPoints),
+  };
+}
+
+function buildSmoothAreaPath(
+  upperPoints: Array<{ x: number; y: number }>,
+  lowerPoints: Array<{ x: number; y: number }>
+) {
+  if (upperPoints.length === 0 || lowerPoints.length === 0) {
+    return "";
+  }
+
+  const upperPath = buildSmoothLinePath(upperPoints);
+  const lowerPath = buildSmoothLinePath([...lowerPoints].reverse()).replace(
+    /^M/,
+    "L"
+  );
+
+  return `${upperPath} ${lowerPath} Z`;
 }
 
 function formatCompactNumber(value: number) {
@@ -2574,7 +2727,9 @@ function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
 
   const segmentSlopes = points.slice(0, -1).map((point, index) => {
     const next = points[index + 1];
-    const deltaX = Math.max(1, next.x - point.x);
+    const rawDeltaX = next.x - point.x;
+    const deltaX =
+      Math.abs(rawDeltaX) < 1 ? (rawDeltaX < 0 ? -1 : 1) : rawDeltaX;
     return (next.y - point.y) / deltaX;
   });
   const tangents = points.map((_, index) => {
