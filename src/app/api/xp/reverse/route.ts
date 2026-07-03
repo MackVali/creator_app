@@ -4,15 +4,54 @@ import { z } from "zod";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { reverseActiveXpAwards } from "@/lib/xp/reversibleXpAwards";
-import type { Database } from "@/types/supabase";
+import {
+  buildScheduleXpOccurrenceStem,
+  resolveScheduleXpCompletionSemantics,
+} from "@/lib/xp/scheduleXpSemantics";
+import type { Database, Json } from "@/types/supabase";
 
 type ServerClient = SupabaseClient<Database>;
+type ScheduleReverseContext = {
+  id: string;
+  source_type: string | null;
+  source_id: string | null;
+  event_name: string | null;
+  metadata: Json | null;
+};
 
 const reverseRequestSchema = z.object({
   occurrenceStem: z.string().min(1),
   legacyOccurrenceStems: z.array(z.string().min(1)).optional(),
+  scheduleInstanceId: z.string().min(1).optional(),
   strict: z.boolean().optional(),
 });
+
+async function loadScheduleReverseContext(
+  client: ServerClient,
+  userId: string,
+  scheduleInstanceId: string | null | undefined
+) {
+  if (!scheduleInstanceId) return null;
+  const { data, error } = await client
+    .from("schedule_instances")
+    .select("id, source_type, source_id, event_name, metadata")
+    .eq("id", scheduleInstanceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as ScheduleReverseContext | null;
+}
+
+function mergeLegacyOccurrenceStems(...groups: (string[] | undefined)[]) {
+  return Array.from(
+    new Set(
+      groups
+        .flatMap((group) => group ?? [])
+        .map((stem) => stem.trim())
+        .filter(Boolean)
+    )
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,11 +82,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const scheduleContext = await loadScheduleReverseContext(
+      db,
+      user.id,
+      parsed.data.scheduleInstanceId ?? null
+    );
+    const scheduleSemantics =
+      resolveScheduleXpCompletionSemantics(scheduleContext);
+    const resolvedOccurrenceStem =
+      scheduleContext && scheduleSemantics
+        ? buildScheduleXpOccurrenceStem(
+            scheduleContext.id,
+            scheduleSemantics.xpKind
+          )
+        : parsed.data.occurrenceStem;
+    const legacyOccurrenceStems = mergeLegacyOccurrenceStems(
+      parsed.data.legacyOccurrenceStems,
+      parsed.data.occurrenceStem !== resolvedOccurrenceStem
+        ? [parsed.data.occurrenceStem]
+        : undefined,
+      scheduleSemantics?.legacyOccurrenceStems
+    );
+
     const result = await reverseActiveXpAwards({
       client: db,
       userId: user.id,
-      occurrenceStem: parsed.data.occurrenceStem,
-      legacyOccurrenceStems: parsed.data.legacyOccurrenceStems,
+      occurrenceStem: resolvedOccurrenceStem,
+      legacyOccurrenceStems,
+      scheduleInstanceId:
+        parsed.data.scheduleInstanceId ?? scheduleContext?.id ?? null,
     });
 
     if (parsed.data.strict && result.activePositiveCount === 0) {

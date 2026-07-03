@@ -3,10 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   dispatchCreatorXpBurstArrived,
-  isCreatorMatrixXpDebugEnabled,
-  subscribeToCreatorMatrixXpDebug,
   subscribeToCreatorXpBursts,
-  subscribeToCreatorXpBurstStatus,
   type CreatorXpBurstDetail,
   type CreatorXpBurstRect,
 } from "@/lib/effects/creatorXpBurstBus";
@@ -42,12 +39,6 @@ type FloatingXp = {
   amount: number;
 };
 
-type DebugSourceMarker = {
-  id: number;
-  x: number;
-  y: number;
-};
-
 type ResolvedCreatorXpBurstDetail = Omit<
   CreatorXpBurstDetail,
   "sourceRect" | "targetRect"
@@ -60,7 +51,6 @@ const PARTICLE_COLORS = ["#22c55e", "#86efac", "#4ade80", "#052e16", "#dcfce7"];
 const DPR_CAP = 2;
 const MAGNET_DURATION_MS = 820;
 const ARRIVAL_DISTANCE_PX = 16;
-const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 const TARGET_SELECTOR_BY_ORIGIN = {
   "surge hex": '[data-creator-xp-target="surge-hex"]',
   avatar: '[data-creator-xp-target="profile-avatar"]',
@@ -90,27 +80,29 @@ function pulseTarget(detail: ResolvedCreatorXpBurstDetail) {
     selector
   );
   if (!target) return;
-  target.animate(
-    [
+  if (detail.targetOrigin !== "surge hex") {
+    target.animate(
+      [
+        {
+          boxShadow: "0 0 0 0 rgba(134, 239, 172, 0)",
+          transform: "scale(1)",
+        },
+        {
+          boxShadow:
+            "0 0 0 7px rgba(134, 239, 172, 0.24), 0 0 22px rgba(74, 222, 128, 0.58)",
+          transform: "scale(1.08)",
+        },
+        {
+          boxShadow: "0 0 0 13px rgba(134, 239, 172, 0)",
+          transform: "scale(1)",
+        },
+      ],
       {
-        boxShadow: "0 0 0 0 rgba(134, 239, 172, 0)",
-        transform: "scale(1)",
-      },
-      {
-        boxShadow:
-          "0 0 0 7px rgba(134, 239, 172, 0.24), 0 0 22px rgba(74, 222, 128, 0.58)",
-        transform: "scale(1.08)",
-      },
-      {
-        boxShadow: "0 0 0 13px rgba(134, 239, 172, 0)",
-        transform: "scale(1)",
-      },
-    ],
-    {
-      duration: 560,
-      easing: "cubic-bezier(0.22, 0.72, 0.24, 1)",
-    }
-  );
+        duration: 560,
+        easing: "cubic-bezier(0.22, 0.72, 0.24, 1)",
+      }
+    );
+  }
 
   const { x, y } = rectCenter(detail.targetRect);
   target.dispatchEvent(
@@ -219,25 +211,7 @@ export default function CreatorXpBurstOverlay() {
   const arrivalDispatchedRef = useRef(false);
   const lastFrameRef = useRef(0);
   const [floatingXp, setFloatingXp] = useState<FloatingXp | null>(null);
-  const [debugSourceMarker, setDebugSourceMarker] =
-    useState<DebugSourceMarker | null>(null);
-  const [debugStatus, setDebugStatus] = useState<string | null>(null);
-  const [matrixXpDebugEnabled, setMatrixXpDebugEnabled] = useState(false);
   const floatingXpIdRef = useRef(0);
-  const debugSourceMarkerIdRef = useRef(0);
-  const debugStatusTimeoutRef = useRef<number | null>(null);
-
-  const showDebugStatus = (message: string) => {
-    if (!IS_DEVELOPMENT || !isCreatorMatrixXpDebugEnabled()) return;
-    setDebugStatus(message);
-    if (debugStatusTimeoutRef.current !== null) {
-      window.clearTimeout(debugStatusTimeoutRef.current);
-    }
-    debugStatusTimeoutRef.current = window.setTimeout(() => {
-      setDebugStatus(null);
-      debugStatusTimeoutRef.current = null;
-    }, 1800);
-  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -342,49 +316,20 @@ export default function CreatorXpBurstOverlay() {
       }, 850);
     };
 
-    const showDebugSourceMarker = (sourceRect: CreatorXpBurstRect) => {
-      if (!IS_DEVELOPMENT || !isCreatorMatrixXpDebugEnabled()) return;
-      const source = rectCenter(sourceRect);
-      debugSourceMarkerIdRef.current += 1;
-      const markerId = debugSourceMarkerIdRef.current;
-      setDebugSourceMarker({
-        id: markerId,
-        x: source.x,
-        y: source.y,
-      });
-      window.setTimeout(() => {
-        setDebugSourceMarker((current) =>
-          current?.id === markerId ? null : current
-        );
-      }, 400);
-    };
-
     const handleBurst = (detail: CreatorXpBurstDetail) => {
       if (!detail.sourceRect) {
-        showDebugStatus("XP: skipped missing source");
         return;
       }
       if (!detail.targetRect) {
-        showDebugStatus("XP: skipped missing target");
         return;
       }
 
-      const fallbackLabel =
-        detail.fallbackUsed && detail.fallbackUsed.length > 0
-          ? ` (${detail.fallbackUsed.join("+")} fallback)`
-          : "";
-      showDebugStatus(
-        detail.sourceOrigin
-          ? `XP: source ${detail.sourceOrigin}`
-          : `XP: event received${fallbackLabel}`
-      );
       const resolvedDetail: ResolvedCreatorXpBurstDetail = {
         ...detail,
         sourceRect: detail.sourceRect,
         targetRect: detail.targetRect,
       };
 
-      showDebugSourceMarker(resolvedDetail.sourceRect);
       pulseTarget(resolvedDetail);
       showFloatingXp(resolvedDetail);
 
@@ -398,15 +343,8 @@ export default function CreatorXpBurstOverlay() {
       targetRef.current = rectCenter(resolvedDetail.targetRect);
       activeBurstIdRef.current = detail.burstId;
       arrivalDispatchedRef.current = false;
-      const particles = spawnParticles(
-        resolvedDetail,
-        now,
-        { exaggerated: detail.debugLabel === "XP TEST" }
-      );
+      const particles = spawnParticles(resolvedDetail, now);
       particlesRef.current.push(...particles);
-      if (!detail.sourceOrigin) {
-        showDebugStatus(`XP: particles spawned ${particles.length}`);
-      }
       if (animationRef.current === null) {
         lastFrameRef.current = now;
         animationRef.current = window.requestAnimationFrame(tick);
@@ -414,33 +352,14 @@ export default function CreatorXpBurstOverlay() {
     };
 
     resize();
-    showDebugStatus("XP: overlay mounted");
     window.addEventListener("resize", resize);
     const unsubscribe = subscribeToCreatorXpBursts(handleBurst);
-    const unsubscribeStatus = subscribeToCreatorXpBurstStatus(showDebugStatus);
-    const unsubscribeMatrixDebug = subscribeToCreatorMatrixXpDebug((enabled) => {
-      setMatrixXpDebugEnabled(enabled);
-      if (!enabled) {
-        setDebugStatus(null);
-        setDebugSourceMarker(null);
-      }
-    });
 
     return () => {
       unsubscribe();
-      unsubscribeStatus();
-      unsubscribeMatrixDebug();
       window.removeEventListener("resize", resize);
-      if (debugStatusTimeoutRef.current !== null) {
-        window.clearTimeout(debugStatusTimeoutRef.current);
-      }
       stop();
     };
-  }, []);
-
-  useEffect(() => {
-    if (!IS_DEVELOPMENT) return;
-    setMatrixXpDebugEnabled(isCreatorMatrixXpDebugEnabled());
   }, []);
 
   return (
@@ -463,26 +382,6 @@ export default function CreatorXpBurstOverlay() {
         >
           +{floatingXp.amount} XP
         </span>
-      ) : null}
-      {IS_DEVELOPMENT && matrixXpDebugEnabled ? (
-        <>
-          {debugStatus ? (
-            <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+64px)] right-3 z-[2147483640] rounded-full border border-emerald-300/50 bg-black/85 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 shadow-[0_0_24px_rgba(34,197,94,0.35)]">
-              {debugStatus}
-            </div>
-          ) : null}
-          {debugSourceMarker ? (
-            <div
-              key={debugSourceMarker.id}
-              className="pointer-events-none fixed z-[2147483639] h-4 w-4 rounded-full border-2 border-emerald-300 shadow-[0_0_12px_rgba(34,197,94,0.85)]"
-              style={{
-                left: debugSourceMarker.x,
-                top: debugSourceMarker.y,
-                transform: "translate(-50%, -50%)",
-              }}
-            />
-          ) : null}
-        </>
       ) : null}
       <style jsx>{`
         .creator-xp-burst-label {

@@ -324,91 +324,69 @@ function CreatorXpHexBadge({
           : { opacity: 1, scale: 1 }
       }
       transition={{ duration: 0.24, ease: [0.22, 0.72, 0.24, 1] }}
-      className="relative size-[118px] drop-shadow-[0_18px_34px_rgba(0,0,0,0.58)]"
+      className="relative size-[118px]"
       data-creator-xp-target="surge-hex"
     >
-      <div
-        className="absolute inset-[8px] bg-[#050609]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-14px_30px_rgba(0,0,0,0.7),inset_0_10px_26px_rgba(255,255,255,0.045)] backdrop-blur-xl"
-        style={{
-          clipPath:
-            "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
-        }}
-      />
-      <div
-        className="absolute inset-[8px] bg-gradient-to-b from-white/[0.12] via-transparent to-emerald-950/30"
-        style={{
-          clipPath:
-            "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
-        }}
-      />
-
       <svg
         className="absolute inset-0 h-full w-full overflow-visible"
         viewBox="0 0 100 100"
         aria-hidden="true"
       >
-        <defs>
-          <filter
-            id={`creator-xp-hex-glow-${surge.id}`}
-            x="-35%"
-            y="-35%"
-            width="170%"
-            height="170%"
-          >
-            <feGaussianBlur stdDeviation="2.2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter
-            id={`creator-xp-hex-burn-${surge.id}`}
-            x="-80%"
-            y="-80%"
-            width="260%"
-            height="260%"
-          >
-            <feGaussianBlur stdDeviation="2.8" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter
-            id={`creator-xp-hex-ignition-${surge.id}`}
-            x="-45%"
-            y="-45%"
-            width="190%"
-            height="190%"
-          >
-            <feGaussianBlur stdDeviation="2.4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
         {showHexIgnition ? (
-          <motion.path
-            d={CREATOR_XP_HEX_PATH}
-            pathLength="100"
-            fill="none"
-            stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
-            strokeWidth="4.8"
-            strokeLinejoin="round"
-            filter={`url(#creator-xp-hex-ignition-${surge.id})`}
-            initial={{ opacity: 0 }}
+          <motion.g
+            initial={{ opacity: 0, scale: 1 }}
             animate={{
-              opacity: [0, ignitionOpacityPeak, 0.08, 0],
-              strokeWidth: [4.8, 7.4, 5.8, 4.8],
+              opacity: [0, 1, 0.34, 0],
+              scale: [1, 1.012, 1.004, 1],
             }}
             transition={{
               delay: fillDelayMs / 1000,
               duration: CREATOR_XP_HEX_IGNITION_DURATION_MS / 1000,
               ease: [0.22, 1, 0.36, 1],
             }}
-          />
+            style={{
+              transformBox: "fill-box",
+              transformOrigin: "center",
+            }}
+          >
+            <motion.path
+              d={CREATOR_XP_HEX_PATH}
+              pathLength="100"
+              fill="none"
+              stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+              strokeWidth="6.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="24 76"
+              initial={{ strokeDashoffset: -progressFrom }}
+              animate={{ strokeDashoffset: -progressFrom - 68 }}
+              transition={{
+                delay: fillDelayMs / 1000,
+                duration: CREATOR_XP_HEX_IGNITION_DURATION_MS / 1000,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              opacity={ignitionOpacityPeak}
+            />
+            <path
+              d={CREATOR_XP_HEX_PATH}
+              pathLength="100"
+              fill="none"
+              stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={isLevelBreak ? 0.2 : 0.16}
+            />
+          </motion.g>
         ) : null}
+        <path
+          d={CREATOR_XP_HEX_PATH}
+          pathLength="100"
+          fill="none"
+          stroke="rgba(0, 0, 0, 0.42)"
+          strokeWidth="7.2"
+          strokeLinejoin="round"
+        />
         <path
           d={CREATOR_XP_HEX_PATH}
           pathLength="100"
@@ -448,7 +426,20 @@ function CreatorXpHexBadge({
             strokeLinejoin="round"
             strokeDasharray={gainStrokeDasharray}
             strokeDashoffset={gainStrokeDashoffset}
-            filter={`url(#creator-xp-hex-glow-${surge.id})`}
+            opacity="0.28"
+          />
+        ) : null}
+        {showAnimatedGain ? (
+          <path
+            d={CREATOR_XP_HEX_PATH}
+            pathLength="100"
+            fill="none"
+            stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+            strokeWidth="4.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={gainStrokeDasharray}
+            strokeDashoffset={gainStrokeDashoffset}
             opacity="0.96"
           />
         ) : null}
@@ -463,25 +454,24 @@ function CreatorXpHexBadge({
             strokeLinejoin="round"
             strokeDasharray={burnTailDasharray}
             strokeDashoffset={burnTailDashoffset}
-            filter={`url(#creator-xp-hex-burn-${surge.id})`}
-            opacity="0.48"
+            opacity="0.26"
           />
         ) : null}
         {showBurnHead ? (
-          <g filter={`url(#creator-xp-hex-burn-${surge.id})`}>
+          <g>
             <circle
               cx={burnHeadPoint.x}
               cy={burnHeadPoint.y}
-              r="3.1"
+              r="2.6"
               fill={CREATOR_XP_HEX_ACTIVE_COLOR}
-              opacity="0.72"
+              opacity="0.38"
             />
             <circle
               cx={burnHeadPoint.x}
               cy={burnHeadPoint.y}
-              r="1.35"
+              r="1.15"
               fill={CREATOR_XP_HEX_ACTIVE_COLOR}
-              opacity="0.92"
+              opacity="0.82"
             />
           </g>
         ) : null}
@@ -496,7 +486,7 @@ function CreatorXpHexBadge({
 
       <div className="absolute inset-0 grid place-items-center px-6">
         <div className="min-w-0 translate-y-0.5">
-          <div className="text-[32px] leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.72)]">
+          <div className="text-[32px] leading-none">
             {skillIcon}
           </div>
           {level != null ? (
@@ -652,7 +642,7 @@ function CreatorXpSurgeHud({
               burnActive={burnActive}
             />
 
-            <div className="mt-1 max-w-full rounded-full bg-black/20 px-3 py-1 text-[13px] font-semibold leading-tight text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)] backdrop-blur-md">
+            <div className="mt-1 max-w-full text-[13px] font-semibold leading-tight text-white">
               <div className="truncate">{skillName}</div>
               {showXpBadge ? (
                 <div className="mt-0.5 text-[11px] font-bold leading-none text-emerald-300">

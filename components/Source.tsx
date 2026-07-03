@@ -18,6 +18,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import Image from "next/image"
+import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   ExternalLink,
@@ -1521,6 +1522,8 @@ const socialConnectorOptions: {
 
 export default function Source() {
   const queryClient = useQueryClient()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
   const [, setListingForm] = useState(defaultListingForm)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
@@ -1798,37 +1801,37 @@ export default function Source() {
     previousOverviewSectionRef.current = selectedOverviewSection
   }, [selectedOverviewSection])
 
-  const clearProductImagePreview = () => {
+  const clearProductImagePreview = useCallback(() => {
     setProductImagePreview((previous) => {
       if (previous && typeof window !== "undefined") {
         URL.revokeObjectURL(previous)
       }
       return null
     })
-  }
+  }, [])
 
-  const resetProductImageState = () => {
+  const resetProductImageState = useCallback(() => {
     clearProductImagePreview()
     setProductImageUrl(null)
     setProductImageUploadError(null)
     setIsProductImageUploading(false)
-  }
+  }, [clearProductImagePreview])
 
-  const clearServiceImagePreview = () => {
+  const clearServiceImagePreview = useCallback(() => {
     setServiceImagePreview((previous) => {
       if (previous && typeof window !== "undefined") {
         URL.revokeObjectURL(previous)
       }
       return null
     })
-  }
+  }, [])
 
-  const resetServiceImageState = () => {
+  const resetServiceImageState = useCallback(() => {
     clearServiceImagePreview()
     setServiceImageUrl(null)
     setServiceImageUploadError(null)
     setIsServiceImageUploading(false)
-  }
+  }, [clearServiceImagePreview])
 
   const clearProductDetailImagePreview = useCallback(() => {
     setProductDetailImagePreview((previous) => {
@@ -2542,7 +2545,7 @@ export default function Source() {
   const integrationAdvancedForced = integrationForm.authMode === "oauth2"
   const integrationAdvancedVisible = integrationAdvancedForced || showIntegrationAdvanced
 
-  const handleProductSheetOpenChange = (next: boolean) => {
+  const handleProductSheetOpenChange = useCallback((next: boolean) => {
     if (next) {
       setSelectedProductId(null)
       setProductSheetForm(defaultProductSheetForm)
@@ -2554,9 +2557,9 @@ export default function Source() {
       setProductSheetError(null)
     }
     setIsProductSheetOpen(next)
-  }
+  }, [resetProductImageState])
 
-  const handleServiceSheetOpenChange = (next: boolean) => {
+  const handleServiceSheetOpenChange = useCallback((next: boolean) => {
     if (next) {
       setSelectedServiceId(null)
       setServiceSheetForm(defaultServiceSheetForm)
@@ -2568,7 +2571,26 @@ export default function Source() {
       setServiceSheetError(null)
     }
     setIsServiceSheetOpen(next)
-  }
+  }, [resetServiceImageState])
+
+  useEffect(() => {
+    const createTarget = searchParams.get("create")
+
+    if (createTarget === "product") {
+      setSelectedOverviewSection("products")
+      handleProductSheetOpenChange(true)
+      router.replace("/source", { scroll: false })
+    } else if (createTarget === "service") {
+      setSelectedOverviewSection("services")
+      handleServiceSheetOpenChange(true)
+      router.replace("/source", { scroll: false })
+    }
+  }, [
+    handleProductSheetOpenChange,
+    handleServiceSheetOpenChange,
+    router,
+    searchParams,
+  ])
 
   const handleProductSheetSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

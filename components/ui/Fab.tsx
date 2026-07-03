@@ -142,7 +142,9 @@ import {
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
-import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
+import {
+  type FabCreationRequest,
+} from "@/components/ui/FabCreationContext";
 import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import PriorityEditorClient, {
@@ -163,9 +165,12 @@ export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   portalToBody?: boolean;
   openOnMount?: boolean;
   creationRequest?: FabCreationRequest | null;
+  timeBlockAdjustmentRequest?: FabTimeBlockAdjustmentRequest | null;
+  onTimeBlockAdjustmentRequestConsumed?: () => void;
 }
 
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
+type FabEditEntityType = CreationType | "EVENT";
 type UnifiedCreationMode = "EVENTS" | "TASKS";
 type UnifiedEventType = Extract<CreationType, "TASK" | "HABIT">;
 type UnifiedEventDraftBlocksTime = "DEFAULT" | "BLOCKS" | "FREE";
@@ -255,6 +260,75 @@ type OverlayConstraintChipOption = {
   label: string;
   icon?: string | null;
   detail?: string | null;
+};
+
+export type FabTimeBlockAdjustmentPlacement = {
+  id: string;
+  type: "PROJECT" | "HABIT" | "TASK" | "EVENT";
+  name: string;
+  start: Date;
+  end: Date;
+  locked: true;
+  sourceCategory?: string | null;
+  habitType?: string | null;
+  goalName?: string | null;
+  energy?: string | null;
+  status?: string | null;
+  completedAt?: string | null;
+  sourceId: string;
+  scheduledStart?: Date | null;
+  scheduledEnd?: Date | null;
+  visibleStart?: Date | null;
+  visibleEnd?: Date | null;
+  scheduleInstanceId?: string | null;
+  timeBlockId?: string | null;
+  windowId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  isExistingScheduleInstance?: boolean;
+  isSavedEventOnly?: boolean;
+};
+
+export type FabTimeBlockAdjustmentSavePayload = {
+  energy: string;
+  blockType: "FOCUS" | "BREAK" | "MEAL" | "PRACTICE";
+  locationContextId: string | null;
+  allowAllInstanceTypes: boolean;
+  allowedInstanceTypes: string[];
+  allowAllSkills: boolean;
+  allowedSkillIds: string[];
+  allowAllMonuments: boolean;
+  allowedMonumentIds: string[];
+};
+
+export type FabTimeBlockAdjustmentManualSavePayload = {
+  placements: FabTimeBlockAdjustmentPlacement[];
+};
+
+export type FabTimeBlockAdjustmentRequest = {
+  requestId: number;
+  timeBlockId: string;
+  windowId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  label: string;
+  dateLabel: string;
+  selectedDate: Date;
+  timeZone?: string | null;
+  startTime: Date;
+  endTime: Date;
+  energy: string;
+  blockType: "FOCUS" | "BREAK" | "MEAL" | "PRACTICE";
+  locationContextId: string | null;
+  allowAllInstanceTypes: boolean;
+  allowedInstanceTypes: string[];
+  allowAllSkills: boolean;
+  allowedSkillIds: string[];
+  allowAllMonuments: boolean;
+  allowedMonumentIds: string[];
+  manualPlacements: FabTimeBlockAdjustmentPlacement[];
+  onSave: (payload: FabTimeBlockAdjustmentSavePayload) => Promise<void>;
+  onManualSave?: (
+    payload: FabTimeBlockAdjustmentManualSavePayload,
+  ) => Promise<void> | void;
 };
 type OverlayDynamicExpandedConstraintState = Record<
   OverlayDynamicConstraintGroup,
@@ -530,9 +604,19 @@ const getFabHabitEffectiveNextDueFallback = ({
   return nextDue ? formatDateTimeLocalInputValue(nextDue.toISOString()) : "";
 };
 export type FabEditTarget = {
-  entityType: CreationType;
+  entityType: FabEditEntityType;
   entityId: string;
   instanceId?: string | null;
+  eventId?: string | null;
+  sourceType?: Database["public"]["Enums"]["schedule_instance_source_type"] | null;
+  sourceId?: string | null;
+  startIso?: string | null;
+  endIso?: string | null;
+  durationMin?: number | null;
+  skillId?: string | null;
+  priority?: string | null;
+  energy?: string | null;
+  metadata?: Database["public"]["Tables"]["schedule_instances"]["Insert"]["metadata"];
   title?: string | null;
   layoutId?: string | null;
   originRect?: FabEditOriginRect | null;
@@ -544,6 +628,33 @@ export type FabEditTarget = {
   completed?: boolean | null;
   completed_at?: string | null;
   completedAt?: string | null;
+};
+type FabEventEditHydrationEventRow = {
+  id: string;
+  title: string | null;
+  notes: string | null;
+  kind: string | null;
+  all_day: boolean | null;
+  start_at: string | null;
+  end_at: string | null;
+  location_name: string | null;
+  meeting_provider: string | null;
+  meeting_url: string | null;
+  recurrence: string | null;
+  notification_timing: string | null;
+};
+type FabEventEditHydrationInstanceRow = {
+  id: string;
+  source_type:
+    | Database["public"]["Enums"]["schedule_instance_source_type"]
+    | null;
+  source_id: string | null;
+  start_utc: string | null;
+  end_utc: string | null;
+  duration_min: number | null;
+  energy_resolved: string | null;
+  event_name: string | null;
+  metadata: Database["public"]["Tables"]["schedule_instances"]["Row"]["metadata"];
 };
 type TagEntityType = CreationType;
 type CreationFormMode =
@@ -1224,9 +1335,9 @@ function FabHabitRoutineCreateRow({
   );
 }
 
-const FAB_PAGES = ["primary", "nexus"] as const;
+const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
 const FAB_PRIMARY_PAGE_INDEX = 0;
-const FAB_NEXUS_PAGE_INDEX = 1;
+const FAB_NEXUS_PAGE_INDEX = 2;
 
 const FLAME_LEVELS: FlameLevel[] = [
   "NO",
@@ -2039,10 +2150,11 @@ const MAX_OVERLAY_DURATION_MS = 24 * 60 * 60 * 1000;
 const OVERLAY_DRAG_SNAP_INTERVAL_MINUTES = 5;
 const OVERLAY_PLACEMENT_DEFAULT_DURATION_MINUTES = 30;
 const OVERLAY_TIMELINE_PX_PER_MIN = 280 / DEFAULT_OVERLAY_DURATION_MINUTES;
+const OVERLAY_TIMELINE_TOP_INSET_PX = 3;
 
 type OverlayPlacement = {
   id: string;
-  type: "PROJECT" | "HABIT";
+  type: "PROJECT" | "HABIT" | "TASK" | "EVENT";
   name: string;
   start: Date;
   end: Date;
@@ -2050,7 +2162,20 @@ type OverlayPlacement = {
   habitType?: string | null;
   goalName?: string | null;
   energy?: string | null;
+  status?: string | null;
+  completedAt?: string | null;
   sourceId: string;
+  sourceCategory?: string | null;
+  scheduledStart?: Date | null;
+  scheduledEnd?: Date | null;
+  visibleStart?: Date | null;
+  visibleEnd?: Date | null;
+  scheduleInstanceId?: string | null;
+  timeBlockId?: string | null;
+  windowId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  isExistingScheduleInstance?: boolean;
+  isSavedEventOnly?: boolean;
 };
 
 type FabSupabaseClient = NonNullable<ReturnType<typeof getSupabaseBrowser>>;
@@ -2078,6 +2203,247 @@ const createOverlayPlacementId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `overlay-place-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+const normalizeTimeBlockScopeId = (value: string | null | undefined) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const getTimeBlockAdjustmentScheduleInstanceId = (
+  placement: Pick<
+    OverlayPlacement,
+    "scheduleInstanceId" | "isExistingScheduleInstance" | "id"
+  >,
+) => {
+  const explicitId = normalizeTimeBlockScopeId(placement.scheduleInstanceId);
+  if (explicitId) return explicitId;
+  if (!placement.isExistingScheduleInstance) return null;
+  return placement.id.startsWith("time-block-")
+    ? normalizeTimeBlockScopeId(placement.id.slice("time-block-".length))
+    : normalizeTimeBlockScopeId(placement.id);
+};
+
+const getOverlayPlacementDurationMin = (placement: OverlayPlacement) =>
+  Math.max(
+    1,
+    Math.round((placement.end.getTime() - placement.start.getTime()) / 60000),
+  );
+
+const hasPlacementTimeChanged = (
+  initial: OverlayPlacement,
+  current: OverlayPlacement,
+) =>
+  initial.start.getTime() !== current.start.getTime() ||
+  initial.end.getTime() !== current.end.getTime() ||
+  getOverlayPlacementDurationMin(initial) !==
+    getOverlayPlacementDurationMin(current);
+
+const isTimeBlockAdjustmentLockedEventPlacement = (
+  placement: Pick<OverlayPlacement, "type">,
+) => placement.type === "EVENT";
+
+const getTimeBlockAdjustmentLockedEventTimes = (
+  placements: OverlayPlacement[],
+) => {
+  const lockedTimes = new Map<string, { start: Date; end: Date }>();
+  for (const placement of placements) {
+    if (!isTimeBlockAdjustmentLockedEventPlacement(placement)) continue;
+    lockedTimes.set(placement.id, {
+      start: placement.start,
+      end: placement.end,
+    });
+  }
+  return lockedTimes;
+};
+
+const restoreTimeBlockAdjustmentLockedEventTimes = (
+  placements: OverlayPlacement[],
+  lockedTimes: Map<string, { start: Date; end: Date }>,
+) => {
+  if (lockedTimes.size === 0) return placements;
+  return placements.map((placement) => {
+    const locked = lockedTimes.get(placement.id);
+    if (!locked) return placement;
+    if (
+      placement.start.getTime() === locked.start.getTime() &&
+      placement.end.getTime() === locked.end.getTime()
+    ) {
+      return placement;
+    }
+    return {
+      ...placement,
+      start: locked.start,
+      end: locked.end,
+    };
+  });
+};
+
+const toTimeBlockAdjustmentPlacement = (
+  placement: OverlayPlacement,
+): FabTimeBlockAdjustmentPlacement => ({
+  ...placement,
+  scheduleInstanceId: getTimeBlockAdjustmentScheduleInstanceId(placement),
+});
+
+const readScheduleInstanceMutationError = async (response: Response) => {
+  const fallback = "Unable to save schedule changes.";
+  const text = await response.text().catch(() => "");
+  if (!text) return fallback;
+  try {
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    const parts = [payload.message, payload.error, payload.details, payload.hint]
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join(" ") : fallback;
+  } catch {
+    return text.trim() || fallback;
+  }
+};
+
+const resolveTimeBlockAdjustmentScope = (
+  request: FabTimeBlockAdjustmentRequest,
+  placement?: OverlayPlacement,
+) => {
+  const dayTypeTimeBlockId =
+    normalizeTimeBlockScopeId(placement?.dayTypeTimeBlockId) ??
+    normalizeTimeBlockScopeId(request.dayTypeTimeBlockId);
+  const windowId =
+    normalizeTimeBlockScopeId(placement?.windowId) ??
+    normalizeTimeBlockScopeId(request.windowId) ??
+    normalizeTimeBlockScopeId(request.timeBlockId);
+  const timeBlockId =
+    normalizeTimeBlockScopeId(placement?.timeBlockId) ??
+    (dayTypeTimeBlockId
+      ? normalizeTimeBlockScopeId(request.timeBlockId)
+      : null);
+
+  return {
+    timeBlockId,
+    windowId,
+    dayTypeTimeBlockId,
+  };
+};
+
+const saveTimeBlockAdjustmentManualPlacements = async (
+  request: FabTimeBlockAdjustmentRequest,
+  currentPlacements: OverlayPlacement[],
+) => {
+  const initialByScheduleInstanceId = new Map<string, OverlayPlacement>();
+  const initialSavedEventOnlyPlacementIds = new Set<string>();
+  for (const placement of request.manualPlacements) {
+    if (placement.isSavedEventOnly) {
+      initialSavedEventOnlyPlacementIds.add(placement.id);
+    }
+    const scheduleInstanceId =
+      getTimeBlockAdjustmentScheduleInstanceId(placement);
+    if (!scheduleInstanceId) continue;
+    initialByScheduleInstanceId.set(scheduleInstanceId, placement);
+  }
+  const lockedInitialEventTimes =
+    getTimeBlockAdjustmentLockedEventTimes(request.manualPlacements);
+  const placementsForSave = restoreTimeBlockAdjustmentLockedEventTimes(
+    currentPlacements,
+    lockedInitialEventTimes,
+  );
+
+  const currentExistingByScheduleInstanceId = new Map<
+    string,
+    OverlayPlacement
+  >();
+  const newPlacements: OverlayPlacement[] = [];
+  for (const placement of placementsForSave) {
+    const scheduleInstanceId =
+      getTimeBlockAdjustmentScheduleInstanceId(placement);
+    if (
+      scheduleInstanceId &&
+      (initialByScheduleInstanceId.has(scheduleInstanceId) ||
+        isTimeBlockAdjustmentLockedEventPlacement(placement))
+    ) {
+      currentExistingByScheduleInstanceId.set(scheduleInstanceId, placement);
+    } else {
+      if (initialSavedEventOnlyPlacementIds.has(placement.id)) continue;
+      newPlacements.push(placement);
+    }
+  }
+
+  for (const [scheduleInstanceId] of initialByScheduleInstanceId) {
+    if (currentExistingByScheduleInstanceId.has(scheduleInstanceId)) continue;
+    const result = await updateInstanceStatus(scheduleInstanceId, "canceled");
+    if (
+      result.error ||
+      (typeof result.status === "number" && result.status >= 400)
+    ) {
+      throw new Error(
+        result.error?.message ?? "Unable to remove scheduled Event.",
+      );
+    }
+  }
+
+  for (const [
+    scheduleInstanceId,
+    placement,
+  ] of currentExistingByScheduleInstanceId) {
+    const initial = initialByScheduleInstanceId.get(scheduleInstanceId);
+    if (isTimeBlockAdjustmentLockedEventPlacement(placement)) continue;
+    if (initial && !hasPlacementTimeChanged(initial, placement)) continue;
+
+    const scope = resolveTimeBlockAdjustmentScope(request, placement);
+    const response = await fetch(`/api/schedule/instances/${scheduleInstanceId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        startUtc: placement.start.toISOString(),
+        durationMin: getOverlayPlacementDurationMin(placement),
+        scopedTimeBlockAdjustment: true,
+        timeBlockId: scope.timeBlockId,
+        windowId: scope.windowId,
+        dayTypeTimeBlockId: scope.dayTypeTimeBlockId,
+        overlayWindowId: null,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readScheduleInstanceMutationError(response));
+    }
+  }
+
+  for (const placement of newPlacements) {
+    const scope = resolveTimeBlockAdjustmentScope(request, placement);
+    const response = await fetch("/api/schedule/instances", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceType: placement.type,
+        sourceId: placement.sourceId,
+        startUtc: placement.start.toISOString(),
+        durationMin: getOverlayPlacementDurationMin(placement),
+        energyResolved: placement.energy ?? "NO",
+        eventName: placement.name,
+        timeZone:
+          normalizeTimeBlockScopeId(request.timeZone) ??
+          Intl.DateTimeFormat().resolvedOptions().timeZone ??
+          "UTC",
+        metadata: null,
+        timeBlockId: scope.timeBlockId,
+        windowId: scope.windowId,
+        dayTypeTimeBlockId: scope.dayTypeTimeBlockId,
+        overlayWindowId: null,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readScheduleInstanceMutationError(response));
+    }
+  }
+
+  await request.onManualSave?.({
+    placements: placementsForSave.map(toTimeBlockAdjustmentPlacement),
+  });
+};
 
 const roundToNearestMinutes = (date: Date, step = 5): Date => {
   const msStep = step * 60 * 1000;
@@ -2445,6 +2811,83 @@ const getSplitExactScheduleInputValues = (
     endTime: formatTimeInputValue(endDate),
   };
 };
+
+function readFabScheduleMetadataRecord(
+  metadata:
+    | Database["public"]["Tables"]["schedule_instances"]["Insert"]["metadata"]
+    | undefined,
+) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata
+    : null;
+}
+
+function readFabScheduleMetadataString(
+  metadata:
+    | Database["public"]["Tables"]["schedule_instances"]["Insert"]["metadata"]
+    | undefined,
+  key: string,
+) {
+  const record = readFabScheduleMetadataRecord(metadata);
+  const value = record?.[key];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function buildEditedScheduleEventMetadata({
+  metadata,
+  title,
+  startIso,
+  endIso,
+  durationMin,
+  skillId,
+  priority,
+  energy,
+}: {
+  metadata:
+    | Database["public"]["Tables"]["schedule_instances"]["Insert"]["metadata"]
+    | undefined;
+  title: string;
+  startIso: string;
+  endIso: string;
+  durationMin: number;
+  skillId?: string | null;
+  priority?: string | null;
+  energy?: string | null;
+}) {
+  const baseMetadata = readFabScheduleMetadataRecord(metadata) ?? {};
+  const normalizedEnergy =
+    normalizeFabEnergy(energy) ||
+    readFabScheduleMetadataString(baseMetadata, "energy") ||
+    readFabScheduleMetadataString(baseMetadata, "energy_resolved") ||
+    "MEDIUM";
+  const normalizedPriority = normalizeFabPriority(
+    priority ??
+      readFabScheduleMetadataString(baseMetadata, "priority") ??
+      readFabScheduleMetadataString(baseMetadata, "priorityId") ??
+      readFabScheduleMetadataString(baseMetadata, "priority_id"),
+  );
+  const normalizedSkillId =
+    skillId?.trim() ||
+    readFabScheduleMetadataString(baseMetadata, "skillId") ||
+    readFabScheduleMetadataString(baseMetadata, "skill_id");
+
+  return {
+    ...baseMetadata,
+    title,
+    name: title,
+    start: startIso,
+    end: endIso,
+    durationMinutes: durationMin,
+    duration_min: durationMin,
+    energy: normalizedEnergy,
+    energy_resolved: normalizedEnergy,
+    priority: normalizedPriority,
+    priorityId: normalizedPriority,
+    ...(normalizedSkillId ? { skillId: normalizedSkillId } : {}),
+  };
+}
 
 const upsertLockedScheduleInstance = async ({
   supabase,
@@ -3002,6 +3445,18 @@ const resolveOverlayPlacementLayout = ({
   });
 };
 
+const resolveOverlayPlacementLayoutForMode = (
+  params: ResolveOverlayLayoutParams,
+  lockEventPlacements: boolean,
+) => {
+  if (!lockEventPlacements) return resolveOverlayPlacementLayout(params);
+  const lockedTimes = getTimeBlockAdjustmentLockedEventTimes(params.placements);
+  return restoreTimeBlockAdjustmentLockedEventTimes(
+    resolveOverlayPlacementLayout(params),
+    lockedTimes,
+  );
+};
+
 const OVERLAY_DRAG_AXIS_THRESHOLD_PX = 8;
 const OVERLAY_DRAG_HORIZONTAL_AXIS_SWITCH_RATIO = 1.35;
 
@@ -3043,6 +3498,18 @@ type OverlayTimelineResizeMeta = {
   pxPerMin: number;
 };
 
+type OverlayPlacementResizeMeta = {
+  pointerId: number;
+  captureElement: HTMLElement | null;
+  placementId: string;
+  startClientY: number;
+  baseDurationMinutes: number;
+  placementStartMinutes: number;
+  minDurationMinutes: number;
+  maxDurationMinutes: number;
+  pxPerMin: number;
+};
+
 const normalizeOverlayPlacements = (
   placements: OverlayPlacement[],
   overlayStartTime: Date,
@@ -3080,16 +3547,38 @@ const normalizeOverlayPlacements = (
   });
 };
 
+const normalizeOverlayPlacementsForMode = (
+  placements: OverlayPlacement[],
+  overlayStartTime: Date,
+  overlayEndTime: Date,
+  lockEventPlacements: boolean,
+) => {
+  if (!lockEventPlacements) {
+    return normalizeOverlayPlacements(
+      placements,
+      overlayStartTime,
+      overlayEndTime,
+    );
+  }
+  const lockedTimes = getTimeBlockAdjustmentLockedEventTimes(placements);
+  return restoreTimeBlockAdjustmentLockedEventTimes(
+    normalizeOverlayPlacements(placements, overlayStartTime, overlayEndTime),
+    lockedTimes,
+  );
+};
+
 const removeOverlayPlacement = (
   placements: OverlayPlacement[],
   id: string,
   overlayStartTime: Date,
   overlayEndTime: Date,
+  lockEventPlacements = false,
 ) =>
-  normalizeOverlayPlacements(
+  normalizeOverlayPlacementsForMode(
     placements.filter((placement) => placement.id !== id),
     overlayStartTime,
     overlayEndTime,
+    lockEventPlacements,
   );
 
 const getNextSequentialStartMinutes = (
@@ -3111,6 +3600,13 @@ const getNextSequentialStartMinutes = (
 
 const OVERLAY_BORDER_COLOR = "rgba(0, 0, 0, 0.95)";
 const OVERLAY_PROJECT_BACKGROUND = `radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)`;
+const OVERLAY_COMPLETED_BACKGROUND =
+  "linear-gradient(155deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 48%, rgb(21, 128, 61) 100%)";
+const OVERLAY_COMPLETED_SHADOW =
+  "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -2px 8px rgba(0, 0, 0, 0.11), inset 0 0 0 1px rgba(0, 0, 0, 0.08)";
+const OVERLAY_COMPLETED_OUTLINE = "1px solid rgba(22, 101, 52, 0.42)";
+const OVERLAY_COMPLETED_CARD_CLASS =
+  "shimmer-border-complete focus-pomo-start-glint !absolute isolate z-0 max-w-full overflow-hidden border-green-900/45 ring-1 ring-green-900/45 before:!inset-0 after:!inset-0";
 const HABIT_TYPE_BACKGROUND_MAP: Record<string, string> = {
   HABIT: `radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)`,
   CHORE: `radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)`,
@@ -3129,6 +3625,12 @@ const getOverlayPlacementTheme = (
       borderColor: OVERLAY_BORDER_COLOR,
     };
   }
+  if (placement.type === "TASK" || placement.type === "EVENT") {
+    return {
+      background: OVERLAY_PROJECT_BACKGROUND,
+      borderColor: OVERLAY_BORDER_COLOR,
+    };
+  }
 
   const habitTypeKey = normalizeHabitType(placement.habitType);
   return {
@@ -3138,6 +3640,9 @@ const getOverlayPlacementTheme = (
     borderColor: OVERLAY_BORDER_COLOR,
   };
 };
+
+const isCompletedOverlayPlacement = (placement: OverlayPlacement) =>
+  placement.status?.trim().toLowerCase() === "completed";
 
 type OverlayPlacementTheme = {
   background: string;
@@ -3705,6 +4210,8 @@ export function Fab({
   portalToBody = false,
   openOnMount = false,
   creationRequest = null,
+  timeBlockAdjustmentRequest = null,
+  onTimeBlockAdjustmentRequestConsumed,
   ...wrapperProps
 }: FabProps) {
   void onEditTargetConsumed;
@@ -3832,6 +4339,9 @@ export function Fab({
   const openingCreationRequestIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (!editTarget) {
+      return;
+    }
+    if (editTarget.entityType === "EVENT") {
       return;
     }
 
@@ -4095,6 +4605,9 @@ export function Fab({
     ),
   );
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayAdjustmentRequest, setOverlayAdjustmentRequest] =
+    useState<FabTimeBlockAdjustmentRequest | null>(null);
+  const handledTimeBlockAdjustmentRequestIdRef = useRef<number | null>(null);
   const [overlayConfigExpanded, setOverlayConfigExpanded] = useState(false);
   const [overlayPickerOpen, setOverlayPickerOpen] = useState(false);
   const [overlayPickerSelected, setOverlayPickerSelected] =
@@ -4159,11 +4672,21 @@ export function Fab({
   const overlayTimelineResizeCleanupRef = useRef<(() => void) | null>(null);
   const [isOverlayTimelineResizing, setIsOverlayTimelineResizing] =
     useState(false);
+  const overlayPlacementResizeMetaRef =
+    useRef<OverlayPlacementResizeMeta | null>(null);
+  const overlayPlacementResizeCleanupRef = useRef<(() => void) | null>(null);
+  const [activeOverlayResizeId, setActiveOverlayResizeId] = useState<
+    string | null
+  >(null);
+  const disableOverlayManualTimelineResize = true;
+  const isTimeBlockAdjustmentMode = Boolean(overlayAdjustmentRequest);
   const overlayWindowMinutes = Math.max(
     overlayDateToMinutes(overlayEndTime, overlayStartTime),
     1,
   );
-  const overlayDurationMinutes = Math.max(overlayWindowMinutes, 15);
+  const overlayDurationMinutes = isTimeBlockAdjustmentMode
+    ? overlayWindowMinutes
+    : Math.max(overlayWindowMinutes, 15);
   const overlayDurationLabel = formatDurationLabel(overlayDurationMinutes);
   const overlayTimelineDurationForLayout = Math.max(1, overlayDurationMinutes);
   const overlayTimelinePxPerMin = OVERLAY_TIMELINE_PX_PER_MIN;
@@ -4175,6 +4698,8 @@ export function Fab({
     overlayEndTime.getTime() > overlayStartTime.getTime();
   const minutesToTimelineStyle = (minutes: number) =>
     `calc(var(--timeline-minute-unit) * ${Math.max(0, minutes)})`;
+  const timeBlockAdjustmentManualPlacements =
+    isTimeBlockAdjustmentMode ? overlayPlacedItems : [];
   const renderOverlayPlacements = useMemo(() => {
     if (!overlayDragCandidate) {
       return overlayPlacedItems;
@@ -4183,17 +4708,21 @@ export function Fab({
       overlayDragCandidate.startMinutes - overlayDragCandidate.baseStartMinutes;
     const direction: OverlayLayoutDirection =
       delta > 0 ? "forward" : delta < 0 ? "backward" : "none";
-    return resolveOverlayPlacementLayout({
-      placements: overlayPlacedItems,
-      overlayStartTime,
-      overlayWindowMinutes,
-      movingPlacementId: overlayDragCandidate.placementId,
-      durationMinutes: overlayDragCandidate.durationMinutes,
-      targetStartMinutes: overlayDragCandidate.startMinutes,
-      rawTargetStartMinutes: overlayDragCandidate.startMinutes,
-      direction,
-    });
+    return resolveOverlayPlacementLayoutForMode(
+      {
+        placements: overlayPlacedItems,
+        overlayStartTime,
+        overlayWindowMinutes,
+        movingPlacementId: overlayDragCandidate.placementId,
+        durationMinutes: overlayDragCandidate.durationMinutes,
+        targetStartMinutes: overlayDragCandidate.startMinutes,
+        rawTargetStartMinutes: overlayDragCandidate.startMinutes,
+        direction,
+      },
+      isTimeBlockAdjustmentMode,
+    );
   }, [
+    isTimeBlockAdjustmentMode,
     overlayDragCandidate,
     overlayPlacedItems,
     overlayStartTime,
@@ -4257,6 +4786,18 @@ export function Fab({
     overlayTimelineResizeMetaRef.current = null;
     setIsOverlayTimelineResizing(false);
   }, []);
+  const stopOverlayPlacementResize = useCallback(() => {
+    const cleanup = overlayPlacementResizeCleanupRef.current;
+    overlayPlacementResizeCleanupRef.current = null;
+    cleanup?.();
+    const meta = overlayPlacementResizeMetaRef.current;
+    overlayPlacementResizeMetaRef.current = null;
+    setActiveOverlayResizeId(null);
+
+    if (meta) {
+      releaseOverlayDragPointerCapture(meta.captureElement, meta.pointerId);
+    }
+  }, [releaseOverlayDragPointerCapture]);
   const applyOverlayTimelineResize = useCallback((clientY: number) => {
     const meta = overlayTimelineResizeMetaRef.current;
     if (!meta) return;
@@ -4275,6 +4816,51 @@ export function Fab({
 
     setOverlayEndTime(new Date(meta.overlayStartMs + clampedDurationMs));
   }, []);
+  const applyOverlayPlacementResize = useCallback(
+    (clientY: number) => {
+      const meta = overlayPlacementResizeMetaRef.current;
+      if (!meta) return;
+
+      const deltaMinutes =
+        (clientY - meta.startClientY) / Math.max(0.01, meta.pxPerMin);
+      const rawDurationMinutes = meta.baseDurationMinutes + deltaMinutes;
+      const snappedDurationMinutes = snapMinutesToFive(rawDurationMinutes);
+      const boundedDurationMinutes = Math.min(
+        meta.maxDurationMinutes,
+        Math.max(meta.minDurationMinutes, snappedDurationMinutes),
+      );
+      const placementStart = overlayMinutesToDate(
+        meta.placementStartMinutes,
+        overlayStartTime,
+      );
+      const placementEnd = overlayMinutesToDate(
+        meta.placementStartMinutes + boundedDurationMinutes,
+        overlayStartTime,
+      );
+
+      setOverlayPlacedItems((previous) =>
+        normalizeOverlayPlacementsForMode(
+          previous.map((placement) =>
+            placement.id === meta.placementId &&
+            !(
+              isTimeBlockAdjustmentMode &&
+              isTimeBlockAdjustmentLockedEventPlacement(placement)
+            )
+              ? {
+                  ...placement,
+                  start: placementStart,
+                  end: placementEnd,
+                }
+              : placement,
+          ),
+          overlayStartTime,
+          overlayEndTime,
+          isTimeBlockAdjustmentMode,
+        ),
+      );
+    },
+    [isTimeBlockAdjustmentMode, overlayEndTime, overlayStartTime],
+  );
   const handleOverlayTimelineResizePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -4374,6 +4960,108 @@ export function Fab({
   useEffect(() => () => stopOverlayTimelineResize(), [
     stopOverlayTimelineResize,
   ]);
+  const handleOverlayPlacementResizePointerDown = useCallback(
+    (
+      placement: OverlayPlacement,
+      event: React.PointerEvent<HTMLButtonElement>,
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (disableOverlayManualTimelineResize) {
+        return;
+      }
+      if (
+        isTimeBlockAdjustmentMode &&
+        isTimeBlockAdjustmentLockedEventPlacement(placement)
+      ) {
+        return;
+      }
+      clearOverlayCardDragState();
+      stopOverlayPlacementResize();
+
+      const placementStartMinutes = clampOverlayPlacementStart(
+        overlayDateToMinutes(placement.start, overlayStartTime),
+        1,
+        overlayWindowMinutes,
+      );
+      const baseDurationMinutes = Math.max(
+        1,
+        overlayDateToMinutes(placement.end, placement.start),
+      );
+      const maxDurationMinutes = Math.max(
+        1,
+        overlayWindowMinutes - placementStartMinutes,
+      );
+      const minDurationMinutes = Math.min(
+        maxDurationMinutes,
+        OVERLAY_DRAG_SNAP_INTERVAL_MINUTES,
+      );
+      overlayPlacementResizeMetaRef.current = {
+        pointerId: event.pointerId,
+        captureElement: event.currentTarget,
+        placementId: placement.id,
+        startClientY: event.clientY,
+        baseDurationMinutes: Math.min(baseDurationMinutes, maxDurationMinutes),
+        placementStartMinutes,
+        minDurationMinutes,
+        maxDurationMinutes,
+        pxPerMin: Math.max(0.01, overlayTimelinePxPerMin),
+      };
+      setActiveOverlayResizeId(placement.id);
+
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can fail if the browser cancels this contact early.
+      }
+
+      const pointerId = event.pointerId;
+      const handlePointerMove = (pointerEvent: PointerEvent) => {
+        if (overlayPlacementResizeMetaRef.current?.pointerId !== pointerId) {
+          return;
+        }
+        pointerEvent.preventDefault();
+        applyOverlayPlacementResize(pointerEvent.clientY);
+      };
+      const handlePointerEnd = (pointerEvent: PointerEvent) => {
+        if (overlayPlacementResizeMetaRef.current?.pointerId !== pointerId) {
+          return;
+        }
+        pointerEvent.preventDefault();
+        stopOverlayPlacementResize();
+      };
+
+      document.addEventListener("pointermove", handlePointerMove, {
+        passive: false,
+      });
+      document.addEventListener("pointerup", handlePointerEnd, {
+        passive: false,
+      });
+      document.addEventListener("pointercancel", handlePointerEnd, {
+        passive: false,
+      });
+      overlayPlacementResizeCleanupRef.current = () => {
+        document.removeEventListener("pointermove", handlePointerMove);
+        document.removeEventListener("pointerup", handlePointerEnd);
+        document.removeEventListener("pointercancel", handlePointerEnd);
+      };
+    },
+    [
+      applyOverlayPlacementResize,
+      clearOverlayCardDragState,
+      disableOverlayManualTimelineResize,
+      isTimeBlockAdjustmentMode,
+      overlayStartTime,
+      overlayTimelinePxPerMin,
+      overlayWindowMinutes,
+      stopOverlayPlacementResize,
+    ],
+  );
+  useEffect(() => () => stopOverlayPlacementResize(), [
+    stopOverlayPlacementResize,
+  ]);
   const stopOverlayBuilderEventPropagation = useCallback(
     (event: React.SyntheticEvent<HTMLElement>) => {
       event.stopPropagation();
@@ -4390,23 +5078,32 @@ export function Fab({
     if (!overlayOpen) {
       clearOverlayCardDragState();
       stopOverlayTimelineResize();
+      stopOverlayPlacementResize();
     } else {
-      setOverlayConfigExpanded(false);
-      setOverlayBlockMode("MANUAL");
-      setOverlayDynamicBlockType("FOCUS");
-      setOverlayDynamicLocationContextId("");
-      setOverlayDynamicEnergy("HIGH");
-      setOverlayDynamicAllowAllInstanceTypes(true);
-      setOverlayDynamicAllowedInstanceTypes([]);
-      setOverlayDynamicExpandedConstraints(
-        createDefaultOverlayDynamicExpandedConstraints(),
-      );
-      setOverlayDynamicAllowAllSkills(true);
-      setOverlayDynamicAllowedSkillIds([]);
-      setOverlayDynamicAllowAllMonuments(true);
-      setOverlayDynamicAllowedMonumentIds([]);
+      if (!overlayAdjustmentRequest) {
+        setOverlayConfigExpanded(false);
+        setOverlayBlockMode("MANUAL");
+        setOverlayDynamicBlockType("FOCUS");
+        setOverlayDynamicLocationContextId("");
+        setOverlayDynamicEnergy("HIGH");
+        setOverlayDynamicAllowAllInstanceTypes(true);
+        setOverlayDynamicAllowedInstanceTypes([]);
+        setOverlayDynamicExpandedConstraints(
+          createDefaultOverlayDynamicExpandedConstraints(),
+        );
+        setOverlayDynamicAllowAllSkills(true);
+        setOverlayDynamicAllowedSkillIds([]);
+        setOverlayDynamicAllowAllMonuments(true);
+        setOverlayDynamicAllowedMonumentIds([]);
+      }
     }
-  }, [clearOverlayCardDragState, overlayOpen, stopOverlayTimelineResize]);
+  }, [
+    clearOverlayCardDragState,
+    overlayAdjustmentRequest,
+    overlayOpen,
+    stopOverlayPlacementResize,
+    stopOverlayTimelineResize,
+  ]);
 
   const resetOverlayDraft = useCallback(() => {
     const nextStart = roundToNearestMinutes(new Date(), 5);
@@ -4436,8 +5133,66 @@ export function Fab({
   }, []);
 
   useEffect(() => {
+    if (!timeBlockAdjustmentRequest) return;
+    if (
+      handledTimeBlockAdjustmentRequestIdRef.current ===
+      timeBlockAdjustmentRequest.requestId
+    ) {
+      return;
+    }
+
+    handledTimeBlockAdjustmentRequestIdRef.current =
+      timeBlockAdjustmentRequest.requestId;
+    clearOverlayCardDragState();
+    stopOverlayTimelineResize();
+    stopOverlayPlacementResize();
+    setOverlayAdjustmentRequest(timeBlockAdjustmentRequest);
+    setOverlayStartTime(timeBlockAdjustmentRequest.startTime);
+    setOverlayEndTime(timeBlockAdjustmentRequest.endTime);
+    setOverlayStartInputValue(formatTimeInputValue(timeBlockAdjustmentRequest.startTime));
+    setOverlayEndInputValue(formatTimeInputValue(timeBlockAdjustmentRequest.endTime));
+    setOverlayPlacedItems(timeBlockAdjustmentRequest.manualPlacements);
+    setOverlayPickerSelected(null);
+    setOverlayPickerOpen(false);
+    setOverlayConfigExpanded(true);
+    setOverlayBlockMode("DYNAMIC");
+    setOverlayDynamicBlockType(timeBlockAdjustmentRequest.blockType);
+    setOverlayDynamicLocationContextId(
+      timeBlockAdjustmentRequest.locationContextId ?? "",
+    );
+    setOverlayDynamicEnergy(timeBlockAdjustmentRequest.energy);
+    setOverlayDynamicAllowAllInstanceTypes(
+      timeBlockAdjustmentRequest.allowAllInstanceTypes,
+    );
+    setOverlayDynamicAllowedInstanceTypes(
+      timeBlockAdjustmentRequest.allowedInstanceTypes,
+    );
+    setOverlayDynamicExpandedConstraints(
+      createDefaultOverlayDynamicExpandedConstraints(),
+    );
+    setOverlayDynamicAllowAllSkills(timeBlockAdjustmentRequest.allowAllSkills);
+    setOverlayDynamicAllowedSkillIds(timeBlockAdjustmentRequest.allowedSkillIds);
+    setOverlayDynamicAllowAllMonuments(
+      timeBlockAdjustmentRequest.allowAllMonuments,
+    );
+    setOverlayDynamicAllowedMonumentIds(
+      timeBlockAdjustmentRequest.allowedMonumentIds,
+    );
+    setOverlaySaveError(null);
+    setOverlayOpen(true);
+    onTimeBlockAdjustmentRequestConsumed?.();
+  }, [
+    clearOverlayCardDragState,
+    onTimeBlockAdjustmentRequestConsumed,
+    stopOverlayPlacementResize,
+    stopOverlayTimelineResize,
+    timeBlockAdjustmentRequest,
+  ]);
+
+  useEffect(() => {
     if (!overlayOpen) {
       setOverlaySaveError(null);
+      setOverlayAdjustmentRequest(null);
     }
   }, [overlayOpen]);
 
@@ -4472,6 +5227,9 @@ export function Fab({
       const intent = overlayDragIntentRef.current;
       const meta = overlayDragMetaRef.current;
       if (!intent.startPoint || !meta) return;
+      const isTimeLockedEvent =
+        isTimeBlockAdjustmentMode &&
+        isTimeBlockAdjustmentLockedEventPlacement(placement);
 
       const deltaX = clientX - intent.startPoint.x;
       const deltaY = clientY - intent.startPoint.y;
@@ -4504,12 +5262,19 @@ export function Fab({
       }
 
       const overTrashZone = isPointerOverTrashZone({ x: clientX, y: clientY });
-      const nextMode: OverlayDragMode = overTrashZone ? "remove" : "reorder";
+      const nextMode: OverlayDragMode = overTrashZone
+        ? "remove"
+        : isTimeLockedEvent
+          ? null
+          : "reorder";
       if (nextMode !== overlayDragModeRef.current) {
         setOverlayRemovalCandidateId(
           nextMode === "remove" ? placement.id : null,
         );
         setOverlayDragModeWithRef(nextMode);
+      }
+      if (isTimeLockedEvent) {
+        return;
       }
       const timelineRect = getOverlayTimelineContentRect();
       if (!timelineRect) return;
@@ -4546,16 +5311,19 @@ export function Fab({
           : clampedMinutes < meta.baseStartMinutes
             ? "backward"
             : "none";
-      const preview = resolveOverlayPlacementLayout({
-        placements: overlayPlacedItems,
-        overlayStartTime,
-        overlayWindowMinutes,
-        movingPlacementId: placement.id,
-        durationMinutes: meta.durationMinutes,
-        targetStartMinutes: clampedMinutes,
-        rawTargetStartMinutes: rawMinutes,
-        direction,
-      });
+      const preview = resolveOverlayPlacementLayoutForMode(
+        {
+          placements: overlayPlacedItems,
+          overlayStartTime,
+          overlayWindowMinutes,
+          movingPlacementId: placement.id,
+          durationMinutes: meta.durationMinutes,
+          targetStartMinutes: clampedMinutes,
+          rawTargetStartMinutes: rawMinutes,
+          direction,
+        },
+        isTimeBlockAdjustmentMode,
+      );
       const previewPlacement = preview.find(
         (entry) => entry.id === placement.id,
       );
@@ -4574,6 +5342,7 @@ export function Fab({
       }
     },
     [
+      isTimeBlockAdjustmentMode,
       overlayTimelinePxPerMin,
       overlayWindowMinutes,
       setOverlayDragModeWithRef,
@@ -10554,6 +11323,25 @@ export function Fab({
   const MENU_BOX_SHADOW =
     "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 
+  type FabCreationMenuItem =
+    | {
+        label: "EVENT";
+        action: "unified-event";
+        color: string;
+      }
+    | {
+        label: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+        action: "creation";
+        creationType: CreationType;
+        color: string;
+      }
+    | {
+        label: "NOTE" | "POST" | "SERVICE" | "PRODUCT" | "OFFER";
+        action: "extra";
+        color: string;
+      };
+
+  const FAB_MENU_ROW_HEIGHT = 56;
   const menuConfigs = {
     default: {
       primary: [
@@ -10563,7 +11351,33 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "OFFER",
+          label: "GOAL",
+          action: "creation",
+          creationType: "GOAL",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "PROJECT",
+          action: "creation",
+          creationType: "PROJECT",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "TASK",
+          action: "creation",
+          creationType: "TASK",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "HABIT",
+          action: "creation",
+          creationType: "HABIT",
+          color: "hover:bg-gray-600",
+        },
+      ],
+      secondary: [
+        {
+          label: "NOTE",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -10573,7 +11387,17 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "NOTE",
+          label: "SERVICE",
+          action: "extra",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "PRODUCT",
+          action: "extra",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "OFFER",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -10589,12 +11413,48 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
+          label: "GOAL",
+          action: "creation",
+          creationType: "GOAL",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "PROJECT",
+          action: "creation",
+          creationType: "PROJECT",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "TASK",
+          action: "creation",
+          creationType: "TASK",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "HABIT",
+          action: "creation",
+          creationType: "HABIT",
+          color: "hover:bg-gray-600",
+        },
+      ],
+      secondary: [
+        {
           label: "NOTE",
           action: "extra",
           color: "hover:bg-gray-600",
         },
         {
           label: "POST",
+          action: "extra",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "SERVICE",
+          action: "extra",
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "PRODUCT",
           action: "extra",
           color: "hover:bg-gray-600",
         },
@@ -10609,9 +11469,10 @@ export function Fab({
     },
   } as const;
 
-  const { primary, menuClassName, itemAlignmentClass } =
+  const { primary, secondary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
-  const menuContainerHeight = primary.length * 56;
+  const menuContainerHeight =
+    Math.max(primary.length, secondary.length) * FAB_MENU_ROW_HEIGHT;
   const compactFabPanelHeight = menuContainerHeight;
   const shouldRenderTimelineOverlayButton =
     !expanded &&
@@ -10648,6 +11509,9 @@ export function Fab({
   const handleOverlayPickerResult = (result: FabSearchResult) => {
     const durationMinutes = getOverlayPlacementDurationMinutes(result);
     setOverlayPlacedItems((previous) => {
+      const adjustmentScope = overlayAdjustmentRequest
+        ? resolveTimeBlockAdjustmentScope(overlayAdjustmentRequest)
+        : null;
       const sequentialStartMinutes = getNextSequentialStartMinutes(
         previous,
         overlayStartTime,
@@ -10662,7 +11526,7 @@ export function Fab({
         sequentialStartMinutes + durationMinutes,
         overlayStartTime,
       );
-      return normalizeOverlayPlacements(
+      return normalizeOverlayPlacementsForMode(
         [
           ...previous,
           {
@@ -10676,10 +11540,15 @@ export function Fab({
             goalName: result.goalName ?? null,
             energy: result.energy ?? null,
             sourceId: result.id,
+            timeBlockId: adjustmentScope?.timeBlockId ?? null,
+            windowId: adjustmentScope?.windowId ?? null,
+            dayTypeTimeBlockId: adjustmentScope?.dayTypeTimeBlockId ?? null,
+            isExistingScheduleInstance: false,
           },
         ],
         overlayStartTime,
         overlayEndTime,
+        isTimeBlockAdjustmentMode,
       );
     });
     setOverlayPickerSelected(null);
@@ -10720,7 +11589,7 @@ export function Fab({
       overlayStartTime,
     );
     setOverlayPlacedItems((previous) =>
-      normalizeOverlayPlacements(
+      normalizeOverlayPlacementsForMode(
         [
           ...previous,
           {
@@ -10731,11 +11600,20 @@ export function Fab({
             end: placementEnd,
             locked: true,
             habitType: overlayPickerSelected.habitType ?? null,
+            goalName: overlayPickerSelected.goalName ?? null,
+            energy: overlayPickerSelected.energy ?? null,
             sourceId: overlayPickerSelected.id,
+            ...(overlayAdjustmentRequest
+              ? {
+                  ...resolveTimeBlockAdjustmentScope(overlayAdjustmentRequest),
+                  isExistingScheduleInstance: false,
+                }
+              : {}),
           },
         ],
         overlayStartTime,
         overlayEndTime,
+        isTimeBlockAdjustmentMode,
       ),
     );
     setOverlayPickerSelected(null);
@@ -10743,10 +11621,54 @@ export function Fab({
   const handleLiveOverlaySave = useCallback(async () => {
     if (isSavingLiveOverlay) return;
     if (overlayEndTime.getTime() <= overlayStartTime.getTime()) {
-      setOverlaySaveError("Overlay end time must be after the start time.");
+      setOverlaySaveError(
+        overlayAdjustmentRequest
+          ? "Time Block end time must be after the start time."
+          : "Overlay end time must be after the start time.",
+      );
       return;
     }
     setOverlaySaveError(null);
+    if (overlayAdjustmentRequest) {
+      setIsSavingLiveOverlay(true);
+      try {
+        if (overlayBlockMode === "MANUAL") {
+          await saveTimeBlockAdjustmentManualPlacements(
+            overlayAdjustmentRequest,
+            overlayPlacedItems,
+          );
+        } else {
+          const dynamicLocationContextId =
+            overlayDynamicLocationContextId.trim().length > 0 &&
+            overlayDynamicLocationContextId !== "__overlay_dynamic_all__"
+              ? overlayDynamicLocationContextId
+              : null;
+          await overlayAdjustmentRequest.onSave({
+            energy: overlayDynamicEnergy,
+            blockType: overlayDynamicBlockType,
+            locationContextId: dynamicLocationContextId,
+            allowAllInstanceTypes: overlayDynamicAllowAllInstanceTypes,
+            allowedInstanceTypes: overlayDynamicAllowedInstanceTypes,
+            allowAllSkills: overlayDynamicAllowAllSkills,
+            allowedSkillIds: overlayDynamicAllowedSkillIds,
+            allowAllMonuments: overlayDynamicAllowAllMonuments,
+            allowedMonumentIds: overlayDynamicAllowedMonumentIds,
+          });
+        }
+        setOverlayOpen(false);
+        setOverlayAdjustmentRequest(null);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to save Time Block.";
+        console.error("Failed to save Time Block adjustment", error);
+        setOverlaySaveError(message);
+      } finally {
+        setIsSavingLiveOverlay(false);
+      }
+      return;
+    }
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       setOverlaySaveError("Unable to reach Supabase.");
@@ -10976,6 +11898,7 @@ export function Fab({
     }
   }, [
     isSavingLiveOverlay,
+    overlayAdjustmentRequest,
     overlayBlockMode,
     overlayDynamicAllowAllInstanceTypes,
     overlayDynamicAllowAllMonuments,
@@ -11011,6 +11934,9 @@ export function Fab({
         x: clientX,
         y: clientY,
       });
+      const isTimeLockedEvent =
+        isTimeBlockAdjustmentMode &&
+        isTimeBlockAdjustmentLockedEventPlacement(placement);
 
       clearOverlayCardDragState();
 
@@ -11021,8 +11947,12 @@ export function Fab({
             placement.id,
             overlayStartTime,
             overlayEndTime,
+            isTimeBlockAdjustmentMode,
           ),
         );
+        return true;
+      }
+      if (isTimeLockedEvent) {
         return true;
       }
       if (!meta.hasMoved) {
@@ -11043,21 +11973,25 @@ export function Fab({
             ? "backward"
             : "none";
       setOverlayPlacedItems((previous) => {
-        return resolveOverlayPlacementLayout({
-          placements: previous,
-          overlayStartTime,
-          overlayWindowMinutes,
-          movingPlacementId: placement.id,
-          durationMinutes,
-          targetStartMinutes: clampedMinutes,
-          rawTargetStartMinutes: desiredStartMinutes,
-          direction,
-        });
+        return resolveOverlayPlacementLayoutForMode(
+          {
+            placements: previous,
+            overlayStartTime,
+            overlayWindowMinutes,
+            movingPlacementId: placement.id,
+            durationMinutes,
+            targetStartMinutes: clampedMinutes,
+            rawTargetStartMinutes: desiredStartMinutes,
+            direction,
+          },
+          isTimeBlockAdjustmentMode,
+        );
       });
       return true;
     },
     [
       clearOverlayCardDragState,
+      isTimeBlockAdjustmentMode,
       isPointerOverTrashZone,
       overlayEndTime,
       overlayStartTime,
@@ -11071,13 +12005,16 @@ export function Fab({
       event.preventDefault();
       event.stopPropagation();
       clearOverlayCardDragState();
+      const isTimeLockedEvent =
+        isTimeBlockAdjustmentMode &&
+        isTimeBlockAdjustmentLockedEventPlacement(placement);
 
       const timelineRect = getOverlayTimelineContentRect();
       if (!timelineRect) return;
 
       setActiveOverlayDragId(placement.id);
       setOverlayRemovalCandidateId(null);
-      setOverlayDragModeWithRef("reorder");
+      setOverlayDragModeWithRef(isTimeLockedEvent ? null : "reorder");
 
       const startMinutes = overlayDateToMinutes(
         placement.start,
@@ -11113,13 +12050,15 @@ export function Fab({
         startPoint: { x: event.clientX, y: event.clientY },
         lastSnappedMinutes: clampedStartMinutes,
       };
-      setOverlayDragVisualStartMinutes(clampedStartMinutes);
-      setOverlayDragCandidate({
-        placementId: placement.id,
-        startMinutes: clampedStartMinutes,
-        durationMinutes,
-        baseStartMinutes: clampedStartMinutes,
-      });
+      if (!isTimeLockedEvent) {
+        setOverlayDragVisualStartMinutes(clampedStartMinutes);
+        setOverlayDragCandidate({
+          placementId: placement.id,
+          startMinutes: clampedStartMinutes,
+          durationMinutes,
+          baseStartMinutes: clampedStartMinutes,
+        });
+      }
 
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -11160,6 +12099,7 @@ export function Fab({
       clearOverlayCardDragState,
       finalizeOverlayCardDrag,
       getOverlayTimelineContentRect,
+      isTimeBlockAdjustmentMode,
       overlayStartTime,
       overlayWindowMinutes,
       setOverlayDragModeWithRef,
@@ -14740,6 +15680,81 @@ export function Fab({
     );
   };
 
+  const renderFabMenuPage = (
+    pageItems: readonly FabCreationMenuItem[],
+    pageKey: string,
+  ) => (
+    <motion.div
+      key={pageKey}
+      className="col-start-1 row-start-1 flex w-full flex-col px-4 py-2"
+      initial={false}
+      animate={{ opacity: 1, y: 0 }}
+      exit={
+        prefersReducedMotion
+          ? { opacity: 0 }
+          : {
+              opacity: 0,
+              transition: {
+                type: "tween",
+                ease: "easeIn",
+                duration: 0.08,
+              },
+            }
+      }
+      transition={{
+        type: "tween",
+        ease: "easeOut",
+        duration: prefersReducedMotion ? 0.08 : 0.12,
+      }}
+    >
+      {pageItems.map((menuItem) => {
+        return (
+          <motion.button
+            key={menuItem.label}
+            variants={itemVariants}
+            onClick={(clickEvent) => {
+              if (menuItem.action === "unified-event") {
+                openUnifiedEventSheet({
+                  deferUntilAfterLauncherClose: true,
+                });
+                return;
+              }
+
+              if (menuItem.action === "creation") {
+                handleEventClick(
+                  menuItem.creationType,
+                  clickEvent.currentTarget,
+                );
+                return;
+              }
+
+              handleExtraClick(menuItem.label, clickEvent);
+            }}
+            animate={{
+              backgroundColor: "rgba(255,255,255,0)",
+            }}
+            whileTap={
+              prefersReducedMotion ? undefined : { y: 1, opacity: 0.9 }
+            }
+            transition={{
+              type: "tween",
+              ease: "easeOut",
+              duration: 0.1,
+            }}
+            className={cn(
+              "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+              itemAlignmentClass,
+              menuItem.color,
+            )}
+          >
+            <span className="text-sm opacity-80">add</span>{" "}
+            <span className="text-lg font-bold">{menuItem.label}</span>
+          </motion.button>
+        );
+      })}
+    </motion.div>
+  );
+
   const renderPrimaryPage = () => (
     <div
       className={cn(
@@ -14750,66 +15765,7 @@ export function Fab({
       <div className="grid w-full">
         <AnimatePresence initial={false}>
           {!expanded ? (
-            <motion.div
-              key="fab-add-event-selection"
-              className="col-start-1 row-start-1 flex w-full flex-col px-4 py-2"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              exit={
-                prefersReducedMotion
-                  ? { opacity: 0 }
-                  : {
-                      opacity: 0,
-                      transition: {
-                        type: "tween",
-                        ease: "easeIn",
-                        duration: 0.08,
-                      },
-                    }
-              }
-              transition={{
-                type: "tween",
-                ease: "easeOut",
-                duration: prefersReducedMotion ? 0.08 : 0.12,
-              }}
-            >
-              {primary.map((event) => {
-                return (
-                  <motion.button
-                    key={event.label}
-                    variants={itemVariants}
-                    onClick={() => {
-                      if (event.action === "unified-event") {
-                        openUnifiedEventSheet({
-                          deferUntilAfterLauncherClose: true,
-                        });
-                        return;
-                      }
-                      handleExtraClick(event.label);
-                    }}
-                    animate={{
-                      backgroundColor: "rgba(255,255,255,0)",
-                    }}
-                    whileTap={
-                      prefersReducedMotion ? undefined : { y: 1, opacity: 0.9 }
-                    }
-                    transition={{
-                      type: "tween",
-                      ease: "easeOut",
-                      duration: 0.1,
-                    }}
-                    className={cn(
-                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-                      itemAlignmentClass,
-                      event.color,
-                    )}
-                  >
-                    <span className="text-sm opacity-80">add</span>{" "}
-                    <span className="text-lg font-bold">{event.label}</span>
-                  </motion.button>
-                );
-              })}
-            </motion.div>
+            renderFabMenuPage(primary, "fab-primary-selection")
           ) : (
             <motion.div
               key={`fab-creation-${selected ?? "none"}`}
@@ -17405,6 +18361,27 @@ export function Fab({
     </div>
   );
 
+  const renderSecondaryPage = () => {
+    if (expanded) {
+      return renderPrimaryPage();
+    }
+
+    return (
+      <div
+        className={cn(
+          "flex w-full flex-col",
+          expanded ? "min-h-full p-0" : "",
+        )}
+      >
+        <div className="grid w-full">
+          <AnimatePresence initial={false}>
+            {renderFabMenuPage(secondary, "fab-secondary-selection")}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  };
+
   const handleNormalNexusExpandedChange = useCallback(
     (nextExpanded: boolean) => {
       setNormalNexusExpanded(nextExpanded);
@@ -17566,6 +18543,9 @@ export function Fab({
     if (page === "primary") {
       return renderPrimaryPage();
     }
+    if (page === "secondary") {
+      return renderSecondaryPage();
+    }
     return renderNexusPage();
   };
 
@@ -17577,6 +18557,8 @@ export function Fab({
     if (!options?.skipLauncher) {
       void hapticPress();
     }
+    const originRect = options?.originRect ?? null;
+    setActiveFabPage(FAB_PRIMARY_PAGE_INDEX);
     const shouldAttemptNameFocus = !editTarget;
     const shouldFocusImmediatelyForMobile =
       shouldAttemptNameFocus &&
@@ -17607,10 +18589,10 @@ export function Fab({
         setIsDirectCreationOpen(true);
         setPressedCreationType(null);
         setCreationSpawnOrigin(
-          options.originRect
+          originRect
             ? {
                 type: eventType,
-                rect: options.originRect,
+                rect: originRect,
                 nonce: Date.now(),
               }
             : null,
@@ -17642,10 +18624,10 @@ export function Fab({
       const updateSelection = () => {
         setPressedCreationType(null);
         setCreationSpawnOrigin(
-          options.originRect
+          originRect
             ? {
                 type: eventType,
-                rect: options.originRect,
+                rect: originRect,
                 nonce: Date.now(),
               }
             : null,
@@ -17849,16 +18831,31 @@ export function Fab({
     setIsDirectCreationOpen(false);
   }, [isOpen]);
 
-  const handleExtraClick = (label: string) => {
+  const handleExtraClick = (
+    label: string,
+    event?: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     void hapticPress();
-    setIsOpen(false);
     if (label === "NOTE") {
+      setIsOpen(false);
       setShowNote(true);
     } else if (label === "POST") {
+      setIsOpen(false);
       setShowPost(true);
+    } else if (label === "OFFER") {
+      if (!isPlus) {
+        flushSync(() => {
+          setIsOpen(false);
+          setActiveLimitCode("GOAL_LIMIT_REACHED");
+        });
+      }
     } else if (label === "SERVICE" || label === "PRODUCT") {
+      setIsOpen(false);
       router.push(`/source?create=${label.toLowerCase()}`);
     } else {
+      setIsOpen(false);
       setComingSoon(label);
     }
   };
@@ -17954,6 +18951,268 @@ export function Fab({
     pageX,
     resetUnifiedEventInviteDraft,
     taskExactDate,
+  ]);
+
+  useEffect(() => {
+    if (editTarget?.entityType !== "EVENT") return;
+
+    let cancelled = false;
+    const target = editTarget;
+
+    const hydrateUnifiedEventEditSheet = async () => {
+      const instanceId =
+        typeof target.instanceId === "string" &&
+        target.instanceId.trim().length > 0
+          ? target.instanceId.trim()
+          : null;
+      const eventId =
+        (typeof target.eventId === "string" &&
+        target.eventId.trim().length > 0
+          ? target.eventId.trim()
+          : null) ??
+        (target.sourceType === "EVENT" &&
+        typeof target.sourceId === "string" &&
+        target.sourceId.trim().length > 0
+          ? target.sourceId.trim()
+          : null) ??
+        (target.sourceType === "EVENT" &&
+        target.entityId.trim().length > 0
+          ? target.entityId.trim()
+          : null);
+
+      setEditHydrating(true);
+      setSaveError(null);
+
+      let eventRow: FabEventEditHydrationEventRow | null = null;
+      let instanceRow: FabEventEditHydrationInstanceRow | null = null;
+
+      try {
+        const supabase = getSupabaseBrowser();
+        if (supabase) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user) {
+            const [eventResult, instanceResult] = await Promise.all([
+              eventId
+                ? supabase
+                    .from("events")
+                    .select(
+                      "id,title,notes,kind,all_day,start_at,end_at,location_name,meeting_provider,meeting_url,recurrence,notification_timing",
+                    )
+                    .eq("id", eventId)
+                    .eq("user_id", user.id)
+                    .maybeSingle()
+                : Promise.resolve({ data: null, error: null }),
+              instanceId
+                ? supabase
+                    .from("schedule_instances")
+                    .select(
+                      "id,source_type,source_id,start_utc,end_utc,duration_min,energy_resolved,event_name,metadata",
+                    )
+                    .eq("id", instanceId)
+                    .eq("user_id", user.id)
+                    .maybeSingle()
+                : Promise.resolve({ data: null, error: null }),
+            ]);
+
+            if (eventResult.error) throw eventResult.error;
+            if (instanceResult.error) throw instanceResult.error;
+            eventRow =
+              eventResult.data as FabEventEditHydrationEventRow | null;
+            instanceRow =
+              instanceResult.data as FabEventEditHydrationInstanceRow | null;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to hydrate Event edit target", error);
+      }
+
+      if (cancelled) return;
+
+      const metadata = instanceRow?.metadata ?? target.metadata ?? null;
+      const metadataTitle =
+        readFabScheduleMetadataString(metadata, "title") ??
+        readFabScheduleMetadataString(metadata, "name");
+      const title =
+        eventRow?.title?.trim() ||
+        instanceRow?.event_name?.trim() ||
+        target.title?.trim() ||
+        metadataTitle ||
+        "Untitled Event";
+      const startIso =
+        instanceRow?.start_utc ??
+        target.startIso ??
+        eventRow?.start_at ??
+        null;
+      const endIso =
+        instanceRow?.end_utc ?? target.endIso ?? eventRow?.end_at ?? null;
+      const startDate = startIso ? new Date(startIso) : null;
+      const endDate = endIso ? new Date(endIso) : null;
+      const hasSchedule = Boolean(
+        startDate &&
+        endDate &&
+        !Number.isNaN(startDate.getTime()) &&
+        !Number.isNaN(endDate.getTime()) &&
+        endDate.getTime() > startDate.getTime(),
+      );
+      const scheduledStartDate = hasSchedule && startDate ? startDate : null;
+      const scheduledEndDate = hasSchedule && endDate ? endDate : null;
+      const defaultSchedule = getNextSolidHourEventDefaults(new Date());
+      const scheduleDate = scheduledStartDate
+        ? formatDateInputValue(scheduledStartDate)
+        : defaultSchedule.date;
+      const startTime = scheduledStartDate
+        ? formatTimeInputValue(scheduledStartDate)
+        : defaultSchedule.startTime;
+      const endTime = scheduledEndDate
+        ? formatTimeInputValue(scheduledEndDate)
+        : defaultSchedule.endTime;
+      const formattedEndDate = scheduledEndDate
+        ? formatDateInputValue(scheduledEndDate)
+        : "";
+      const endDateValue =
+        scheduledEndDate && formattedEndDate !== scheduleDate
+          ? formattedEndDate
+          : "";
+      const recurrence =
+        eventRow?.recurrence && eventRow.recurrence !== "NONE"
+          ? eventRow.recurrence
+          : "__never__";
+      const notificationTiming = ([
+        "NONE",
+        "AT_TIME",
+        "TEN_MIN_BEFORE",
+        "THIRTY_MIN_BEFORE",
+        "ONE_HOUR_BEFORE",
+        "ON_THE_DAY",
+        "ONE_DAY_BEFORE",
+        "ONE_WEEK_BEFORE",
+      ] as const).includes(
+        eventRow?.notification_timing as UnifiedEventNotificationTiming,
+      )
+        ? (eventRow?.notification_timing as UnifiedEventNotificationTiming)
+        : "NONE";
+      const skillId =
+        target.skillId?.trim() ||
+        readFabScheduleMetadataString(metadata, "skillId") ||
+        readFabScheduleMetadataString(metadata, "skill_id") ||
+        "";
+      const priority =
+        target.priority ??
+        readFabScheduleMetadataString(metadata, "priority") ??
+        readFabScheduleMetadataString(metadata, "priorityId") ??
+        readFabScheduleMetadataString(metadata, "priority_id");
+      const energy =
+        target.energy ??
+        instanceRow?.energy_resolved ??
+        readFabScheduleMetadataString(metadata, "energy") ??
+        readFabScheduleMetadataString(metadata, "energy_resolved") ??
+        "MEDIUM";
+
+      pendingFabSwipeRef.current = null;
+      isDraggingRef.current = false;
+      dragTargetPageRef.current = null;
+      dragDirectionRef.current = null;
+      pageDragAxisRef.current = null;
+      setTouchStartY(null);
+      setIsDragging(false);
+      setDragTargetPage(null);
+      setDragDirection(null);
+      setIsAnimatingPageChange(false);
+      pageX.set(0);
+      unifiedSheetSuppressClickUntilRef.current = 0;
+
+      resetFabViewportState();
+      resetTaskFormDraft();
+      resetUnifiedEventDraft();
+      setGoalDeleteConfirmTarget(null);
+      setActiveCreationMode("main");
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
+      setUnifiedTimingPickerOpen(null);
+      setIsUnifiedTimingMonthYearPickerOpen(false);
+      setFabAdvancedTimingPickerOpen(null);
+      setShowTaskDurationPicker(false);
+      setTaskDurationPosition(null);
+      setShowDraftTaskDurationPicker(false);
+      setDraftTaskDurationPosition(null);
+      setShowHabitDurationPicker(false);
+      setHabitDurationPosition(null);
+      setIsUnifiedNotesSheetOpen(false);
+      setIsUnifiedTagsSheetOpen(false);
+      setIsUnifiedFormsSheetOpen(false);
+      setIsUnifiedTagCreateOpen(false);
+      setUnifiedTagCreateValue("");
+      setIsAddEventMoreOpen(false);
+      setIsUnifiedEventLocationSheetOpen(false);
+      setIsUnifiedEventLinkSheetOpen(false);
+      setIsGoalPickerOpen(false);
+      setIsUnifiedGoalPickerOpen(false);
+      setShowUnifiedGoalFilters(false);
+      setUnifiedGoalSearch("");
+      setUnifiedGoalFilterMonumentId("");
+      setUnifiedGoalSortMode("default");
+      setSelectedTagIds([]);
+      setAddEventSubActions([]);
+      setAddEventWorkspaceValue("PERSONAL");
+      setAddEventTimingMode("manual");
+      setAddEventDynamicDuration("60");
+      setProjectTaskStack(null);
+      setGoalProjectStack(null);
+      setUnifiedCreationMode("EVENTS");
+      setUnifiedEventType("TASK");
+      setSelected("TASK");
+      setNormalNexusExpanded(false);
+      setUnifiedEventAllDay(eventRow?.all_day === true);
+      setUnifiedEventTitle(title);
+      setUnifiedEventDescription(eventRow?.notes ?? "");
+      setUnifiedEventLocationName(eventRow?.location_name ?? "");
+      setUnifiedEventLocationAddress("");
+      setUnifiedEventVirtualUrl(eventRow?.meeting_url ?? "");
+      setUnifiedEventMeetingProvider(
+        eventRow?.meeting_provider === "CREATOR_VIDEO"
+          ? "CREATOR_VIDEO"
+          : "URL",
+      );
+      setUnifiedEventRecurrence(recurrence);
+      setUnifiedEventNotificationTiming(notificationTiming);
+      setUnifiedEventEndDate(endDateValue);
+      setTaskHasExactDate(true);
+      setTaskExactDate(scheduleDate);
+      setTaskExactFallbackDate(scheduleDate);
+      setTaskExactStartTime(startTime);
+      setTaskExactEndTime(endTime);
+      setTaskExactTimingTouched(true);
+      setTaskSkillId(skillId);
+      setTaskPriority(normalizeFabPriority(priority));
+      setTaskEnergy(normalizeFabEnergy(energy) ?? "MEDIUM");
+      const viewedMonthDate = scheduledStartDate ?? new Date();
+      setUnifiedTimingViewedMonth(
+        new Date(viewedMonthDate.getFullYear(), viewedMonthDate.getMonth(), 1),
+      );
+
+      flushSync(() => {
+        setExpanded(false);
+        setIsDirectCreationOpen(false);
+        setIsOpen(false);
+      });
+      setIsUnifiedEventSheetOpen(true);
+      setEditHydrating(false);
+    };
+
+    void hydrateUnifiedEventEditSheet();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    editTarget,
+    pageX,
+    resetFabViewportState,
+    resetTaskFormDraft,
+    resetUnifiedEventDraft,
   ]);
 
   const openQuickCreateTaskDetailsSheet = useCallback(
@@ -18224,6 +19483,7 @@ export function Fab({
 
   const closeUnifiedEventSheet = useCallback(() => {
     void hapticSnap();
+    const wasEventEdit = editTarget?.entityType === "EVENT";
     setSaveError(null);
     setShowTaskDurationPicker(false);
     setTaskDurationPosition(null);
@@ -18244,7 +19504,11 @@ export function Fab({
     setUnifiedGoalSortMode("default");
     setIsUnifiedEventSheetOpen(false);
     setSelected(null);
-  }, []);
+    if (wasEventEdit) {
+      setInternalEditTarget(null);
+      onEditClose?.();
+    }
+  }, [editTarget?.entityType, onEditClose]);
 
   const requestCloseUnifiedEventSheet = useCallback(() => {
     const hasDraftChanges = isUnifiedEventDraftDirty();
@@ -20599,6 +21863,109 @@ export function Fab({
         return;
       }
 
+      const activeEventEditTarget =
+        editTarget?.entityType === "EVENT" ? editTarget : null;
+      const durationMin = Math.max(
+        1,
+        Math.round(
+          (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60000,
+        ),
+      );
+
+      if (activeEventEditTarget) {
+        const instanceId =
+          typeof activeEventEditTarget.instanceId === "string" &&
+          activeEventEditTarget.instanceId.trim().length > 0
+            ? activeEventEditTarget.instanceId.trim()
+            : null;
+        if (!instanceId) {
+          setEventSaveError("Scheduled Event instance is missing.");
+          return;
+        }
+
+        const eventId =
+          (typeof activeEventEditTarget.eventId === "string" &&
+          activeEventEditTarget.eventId.trim().length > 0
+            ? activeEventEditTarget.eventId.trim()
+            : null) ??
+          (activeEventEditTarget.sourceType === "EVENT" &&
+          typeof activeEventEditTarget.sourceId === "string" &&
+          activeEventEditTarget.sourceId.trim().length > 0
+            ? activeEventEditTarget.sourceId.trim()
+            : null);
+
+        if (eventId) {
+          const eventUpdatePayload: Database["public"]["Tables"]["events"]["Update"] =
+            {
+              title,
+              notes,
+              kind,
+              all_day: unifiedEventAllDay,
+              start_at: startAt,
+              end_at: endAt,
+              timezone: getBrowserTimeZone(),
+              start_date: startDateForRow,
+              end_date: endDateForRow,
+              recurrence,
+              location_name: locationName,
+              location_address: null,
+              meeting_provider: hasEventVideo ? unifiedEventMeetingProvider : null,
+              meeting_url: meetingUrl,
+              blocks_time: blocksTime,
+              visibility: "PRIVATE",
+              notification_timing: unifiedEventNotificationTiming || "NONE",
+            };
+          const { error: eventUpdateError } = await supabase
+            .from("events")
+            .update(eventUpdatePayload)
+            .eq("id", eventId)
+            .eq("user_id", user.id);
+          if (eventUpdateError) throw eventUpdateError;
+        }
+
+        const scheduleMetadata = buildEditedScheduleEventMetadata({
+          metadata: activeEventEditTarget.metadata,
+          title,
+          startIso: startAt,
+          endIso: endAt,
+          durationMin,
+          skillId: taskSkillId,
+          priority: taskPriority,
+          energy: taskEnergy,
+        });
+        const scheduleUpdatePayload: Database["public"]["Tables"]["schedule_instances"]["Update"] =
+          {
+            start_utc: startAt,
+            end_utc: endAt,
+            duration_min: durationMin,
+            locked: true,
+            placement_source: "manual",
+            window_id: null,
+            day_type_time_block_id: null,
+            time_block_id: null,
+            overlay_window_id: null,
+            event_name: title,
+            energy_resolved: normalizeFabEnergy(taskEnergy) ?? "MEDIUM",
+            metadata: scheduleMetadata,
+          };
+        const { error: scheduleUpdateError } = await supabase
+          .from("schedule_instances")
+          .update(scheduleUpdatePayload)
+          .eq("id", instanceId)
+          .eq("user_id", user.id);
+        if (scheduleUpdateError) throw scheduleUpdateError;
+
+        if (typeof window !== "undefined") {
+          dispatchScheduleSavedEventsUpdated();
+        }
+        resetUnifiedEventDraft();
+        onEditSaved?.(activeEventEditTarget);
+        closeUnifiedEventSheet();
+        void hapticComplete();
+        toast.success("Event updated");
+        return;
+      }
+
       const payload: Database["public"]["Tables"]["events"]["Insert"] = {
         user_id: user.id,
         title,
@@ -20643,13 +22010,7 @@ export function Fab({
           exactSchedule: {
             startIso: startAt,
             endIso: endAt,
-            durationMin: Math.max(
-              1,
-              Math.round(
-                (new Date(endAt).getTime() - new Date(startAt).getTime()) /
-                  60000
-              )
-            ),
+            durationMin,
           },
           removeWhenBlank: false,
           eventName: title,
@@ -20682,12 +22043,16 @@ export function Fab({
     }
   }, [
     closeUnifiedEventSheet,
+    editTarget,
     isSavingFab,
+    onEditSaved,
     resetUnifiedEventDraft,
+    taskEnergy,
     taskSkillId,
     taskExactDate,
     taskExactEndTime,
     taskExactStartTime,
+    taskPriority,
     toast,
     unifiedEventAllDay,
     unifiedEventBlocksTime,
@@ -22558,12 +23923,14 @@ export function Fab({
           }
         }
 
-        dispatchCreatorEntitySaved({
-          entityType,
-          entityId,
-          action: "deleted",
-          monumentId: null,
-        });
+        if (entityType !== "EVENT") {
+          dispatchCreatorEntitySaved({
+            entityType,
+            entityId,
+            action: "deleted",
+            monumentId: null,
+          });
+        }
         if (entityType === "TASK") {
           dispatchScheduleSavedEventsUpdated();
         }
@@ -29395,7 +30762,11 @@ export function Fab({
         onClose={() => setShowNote(false)}
         forceTopLevel
       />
-      <PostModal isOpen={showPost} onClose={() => setShowPost(false)} />
+      <PostModal
+        isOpen={showPost}
+        onClose={() => setShowPost(false)}
+        surface="fab"
+      />
       <ComingSoonModal
         isOpen={comingSoon !== null}
         onClose={() => setComingSoon(null)}
@@ -29412,6 +30783,7 @@ export function Fab({
               onClick={() => {
                 void hapticPress();
                 setOverlayOpen(false);
+                setOverlayAdjustmentRequest(null);
               }}
             />
             <motion.div
@@ -29422,7 +30794,11 @@ export function Fab({
               className="relative w-full max-w-[520px] overflow-visible"
               role="dialog"
               aria-modal="true"
-              aria-label="Overlay Builder"
+              aria-label={
+                overlayAdjustmentRequest
+                  ? "Time Block adjustment"
+                  : "Overlay Builder"
+              }
               onPointerDown={stopOverlayBuilderEventPropagation}
               onPointerUp={stopOverlayBuilderEventPropagation}
               onMouseDown={stopOverlayBuilderEventPropagation}
@@ -29451,7 +30827,9 @@ export function Fab({
                       }
                     >
                       <span className="text-[11px] font-semibold tracking-[0.18em] text-white/75">
-                        Overlay Block
+                        {overlayAdjustmentRequest
+                          ? "Time Block"
+                          : "Overlay Block"}
                       </span>
                       <ChevronDown
                         className={cn(
@@ -29461,6 +30839,13 @@ export function Fab({
                         aria-hidden="true"
                       />
                     </button>
+
+                    {overlayAdjustmentRequest ? (
+                      <div className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-white/45">
+                        {overlayAdjustmentRequest.label} ·{" "}
+                        {overlayAdjustmentRequest.dateLabel}
+                      </div>
+                    ) : null}
 
                     {overlayConfigExpanded ? (
                       <>
@@ -29475,8 +30860,13 @@ export function Fab({
                       <input
                         id={startTimeInputId}
                         type="time"
-                        aria-label="Set overlay start time"
-                        className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                        disabled={Boolean(overlayAdjustmentRequest)}
+                        aria-label={
+                          overlayAdjustmentRequest
+                            ? "Set Time Block start time"
+                            : "Set overlay start time"
+                        }
+                        className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent disabled:opacity-60"
                         value={overlayStartInputValue}
                         onChange={handleStartTimeInputChange}
                         onFocus={() => setStartInputFocused(true)}
@@ -29498,8 +30888,13 @@ export function Fab({
                       <input
                         id={endTimeInputId}
                         type="time"
-                        aria-label="Set overlay end time"
-                        className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                        disabled={Boolean(overlayAdjustmentRequest)}
+                        aria-label={
+                          overlayAdjustmentRequest
+                            ? "Set Time Block end time"
+                            : "Set overlay end time"
+                        }
+                        className="h-8 w-full min-w-0 rounded-md border border-black/70 bg-zinc-950/35 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-black focus-visible:border-black focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent disabled:opacity-60"
                         value={overlayEndInputValue}
                         onChange={handleEndTimeInputChange}
                         onFocus={() => setEndInputFocused(true)}
@@ -29513,7 +30908,8 @@ export function Fab({
                     </div>
                   </div>
                   <div className="mt-1 text-[9px] uppercase tracking-[0.4em] text-white/40">
-                    {overlayDurationLabel} window
+                    {overlayDurationLabel}{" "}
+                    {overlayAdjustmentRequest ? "Time Block" : "window"}
                   </div>
 
                   <div className="mt-2 flex w-full items-end justify-between gap-2">
@@ -29523,7 +30919,9 @@ export function Fab({
                       </div>
                       <button
                         type="button"
-                        aria-label={`Switch overlay mode to ${
+                        aria-label={`Switch ${
+                          overlayAdjustmentRequest ? "Time Block" : "overlay"
+                        } mode to ${
                           overlayBlockMode === "DYNAMIC"
                             ? "Manual"
                             : "Dynamic"
@@ -29564,7 +30962,11 @@ export function Fab({
                       <EnergyCycleButton
                         value={overlayDynamicEnergy}
                         onChange={setOverlayDynamicEnergy}
-                        ariaLabel="Overlay dynamic energy"
+                        ariaLabel={
+                          overlayAdjustmentRequest
+                            ? "Time Block dynamic energy"
+                            : "Overlay dynamic energy"
+                        }
                         size="sm"
                         className="h-6 w-6 rounded-[4px] border-black/60 bg-black/40 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_6px_14px_rgba(0,0,0,0.28)] hover:border-black/40 hover:bg-white/[0.08]"
                       />
@@ -29718,7 +31120,8 @@ export function Fab({
                   <div
                     ref={overlayTimelineRef}
                     className={cn(
-                      "relative -mx-6 -mb-6 mt-0 w-[calc(100%+3rem)] pb-0",
+                      "relative -mx-6 -mb-6 w-[calc(100%+3rem)]",
+                      overlayAdjustmentRequest ? "pb-4" : "pb-0",
                       overlayPickerSelected
                         ? "cursor-pointer"
                         : "cursor-default",
@@ -29726,35 +31129,75 @@ export function Fab({
                     onClick={handleTimelineClick}
                   >
                     <DayTimeline
-                      className="w-full"
+                      className="w-full rounded-t-none rounded-b-[28px] [&_.timeline-content]:top-[var(--fab-overlay-timeline-top-inset)] [&_.timeline-content]:!h-[calc(100%_-_var(--fab-overlay-timeline-top-inset))] [&_.timeline-content>div.left-0]:!pl-2 [&_.timeline-content>div.left-0]:!pr-1 [&_.timeline-content>div.left-0]:!text-left [&_.timeline-content>div.left-0]:!text-[9px] [&_.timeline-content>div.left-0]:!font-medium [&_.timeline-content>div.left-0]:!leading-none [&_.timeline-content>div.left-0]:!tracking-tight [&_.timeline-content>div.left-0]:!text-zinc-400/45 [&_.timeline-content>div.left-0]:tabular-nums"
+                      style={{
+                        "--fab-overlay-timeline-top-inset": `${OVERLAY_TIMELINE_TOP_INSET_PX}px`,
+                      }}
                       date={overlayStartTime}
                       startHour={overlayTimelineStartHour}
                       endHour={overlayTimelineEndHour}
                       pxPerMin={overlayTimelinePxPerMin}
                     >
                       {renderOverlayPlacements.map((placement) => {
-                        const startMinutes = Math.max(
-                          0,
-                          (placement.start.getTime() -
-                            overlayStartTime.getTime()) /
-                            60000,
-                        );
-                        const durationMinutes = Math.max(
-                          1,
-                          (placement.end.getTime() -
-                            placement.start.getTime()) /
-                            60000,
-                        );
-                        const normalizedStartMinutes =
-                          clampOverlayPlacementStart(
-                            startMinutes,
-                            durationMinutes,
-                            overlayWindowMinutes,
-                          );
+                        const placementStartMs = placement.start.getTime();
+                        const placementEndMs = placement.end.getTime();
+                        const timeBlockStartMs = overlayStartTime.getTime();
+                        const placementStartMinutes =
+                          (placementStartMs - timeBlockStartMs) / 60000;
+                        const placementEndMinutes =
+                          (placementEndMs - timeBlockStartMs) / 60000;
+                        if (
+                          !Number.isFinite(placementStartMinutes) ||
+                          !Number.isFinite(placementEndMinutes)
+                        ) {
+                          return null;
+                        }
+                        const visibleStartMinutes = isTimeBlockAdjustmentMode
+                          ? Math.max(
+                              0,
+                              Math.min(overlayWindowMinutes, placementStartMinutes),
+                            )
+                          : Math.max(0, placementStartMinutes);
+                        const visibleEndMinutes = isTimeBlockAdjustmentMode
+                          ? Math.max(
+                              visibleStartMinutes,
+                              Math.min(overlayWindowMinutes, placementEndMinutes),
+                            )
+                          : placementEndMinutes;
+                        if (
+                          isTimeBlockAdjustmentMode &&
+                          visibleEndMinutes <= visibleStartMinutes
+                        ) {
+                          return null;
+                        }
+                        const durationMinutes =
+                          visibleEndMinutes - visibleStartMinutes;
+                        if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                          return null;
+                        }
+                        const normalizedStartMinutes = isTimeBlockAdjustmentMode
+                          ? visibleStartMinutes
+                          : clampOverlayPlacementStart(
+                              visibleStartMinutes,
+                              durationMinutes,
+                              overlayWindowMinutes,
+                            );
                         const placementTheme =
                           getOverlayPlacementTheme(placement);
+                        const isCompletedTimeBlockPlacement =
+                          isTimeBlockAdjustmentMode &&
+                          isCompletedOverlayPlacement(placement);
+                        const isTimeLockedEventPlacement =
+                          isTimeBlockAdjustmentMode &&
+                          isTimeBlockAdjustmentLockedEventPlacement(placement);
+                        const canResizePlacement =
+                          !disableOverlayManualTimelineResize &&
+                          !isTimeLockedEventPlacement;
                         const overlayIsDragging = Boolean(activeOverlayDragId);
                         const isDragging = activeOverlayDragId === placement.id;
+                        const isResizing =
+                          canResizePlacement &&
+                          activeOverlayResizeId === placement.id;
                         const isRemovalCandidate =
                           overlayRemovalCandidateId === placement.id;
                         const visualStartMinutes =
@@ -29773,15 +31216,23 @@ export function Fab({
                           height: minutesToTimelineStyle(durationMinutes),
                           left: "var(--timeline-card-left)",
                           right: "var(--timeline-card-right)",
-                          background: placementTheme.background,
-                          borderColor: placementTheme.borderColor,
-                          outline: "1px solid rgba(255, 255, 255, 0.08)",
+                          background: isCompletedTimeBlockPlacement
+                            ? OVERLAY_COMPLETED_BACKGROUND
+                            : placementTheme.background,
+                          borderColor: isCompletedTimeBlockPlacement
+                            ? "rgba(20, 83, 45, 0.45)"
+                            : placementTheme.borderColor,
+                          outline: isCompletedTimeBlockPlacement
+                            ? OVERLAY_COMPLETED_OUTLINE
+                            : "1px solid rgba(255, 255, 255, 0.08)",
                           outlineOffset: "-1px",
                         };
-                        const baseShadow = isDragging
-                          ? "0 0 42px rgba(0,0,0,0.42),0 12px 24px rgba(0,0,0,0.34)"
-                          : "0 0 0 1px rgba(255,255,255,0.035),0 5px 14px rgba(0,0,0,0.22)";
-                        const filterValue = isDragging
+                        const baseShadow = isCompletedTimeBlockPlacement
+                          ? OVERLAY_COMPLETED_SHADOW
+                          : isDragging || isResizing
+                            ? "0 0 42px rgba(0,0,0,0.42),0 12px 24px rgba(0,0,0,0.34)"
+                            : "0 0 0 1px rgba(255,255,255,0.035),0 5px 14px rgba(0,0,0,0.22)";
+                        const filterValue = isDragging || isResizing
                           ? "brightness(1.09)"
                           : overlayIsDragging
                             ? "brightness(0.92)"
@@ -29821,10 +31272,18 @@ export function Fab({
                               event.stopPropagation();
                             }}
                             className={cn(
-                              "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto cursor-grab active:cursor-grabbing",
-                              !isDragging && "transition-all duration-200 ease-out",
-                              isDragging && "cursor-grabbing",
+                              "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto",
+                              isTimeLockedEventPlacement
+                                ? "cursor-default"
+                                : "cursor-grab active:cursor-grabbing",
+                              !isDragging &&
+                                "transition-all duration-200 ease-out",
+                              isDragging &&
+                                !isTimeLockedEventPlacement &&
+                                "cursor-grabbing",
                               isRemovalCandidate && "ring-2 ring-red-400/70",
+                              isCompletedTimeBlockPlacement &&
+                                OVERLAY_COMPLETED_CARD_CLASS,
                             )}
                             style={{
                               ...activeStyle,
@@ -29869,32 +31328,70 @@ export function Fab({
                                 </div>
                               );
                             })()}
+                            {canResizePlacement ? (
+                              <button
+                                type="button"
+                                aria-label={`Resize ${placement.name}`}
+                                className={cn(
+                                  "absolute inset-x-0 bottom-0 z-20 flex h-3 cursor-ns-resize items-end justify-center rounded-b-[var(--schedule-instance-radius)] text-white/35 transition hover:text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                                  isResizing && "text-white/80",
+                                )}
+                                onPointerDown={(event) =>
+                                  handleOverlayPlacementResizePointerDown(
+                                    placement,
+                                    event,
+                                  )
+                                }
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                }}
+                              >
+                                <span
+                                  className="mb-1 h-0.5 w-8 rounded-full bg-current shadow-[0_1px_3px_rgba(0,0,0,0.35)]"
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            ) : null}
                           </motion.div>
                         );
                       })}
-                      <button
-                        type="button"
-                        aria-label="Drag bottom edge to extend overlay end time"
-                        onPointerDown={handleOverlayTimelineResizePointerDown}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        className={cn(
-                          "absolute bottom-0 left-1/2 z-40 flex h-8 w-24 -translate-x-1/2 items-end justify-center touch-none select-none rounded-t-full text-white/45 transition [touch-action:none] [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] cursor-ns-resize hover:text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
-                          isOverlayTimelineResizing &&
-                            "text-white/85",
-                        )}
-                      >
-                        <span
+                      {isTimeBlockAdjustmentMode &&
+                      timeBlockAdjustmentManualPlacements.length === 0 ? (
+                        <div className="absolute inset-x-6 top-1/2 z-10 -translate-y-1/2 rounded-lg border border-white/10 bg-black/35 px-4 py-3 text-center shadow-[0_10px_24px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/65">
+                            No scheduled Events
+                          </div>
+                          <div className="mt-1 text-xs text-white/45">
+                            This Time Block has no Events for{" "}
+                            {overlayAdjustmentRequest?.dateLabel ?? "this day"}.
+                          </div>
+                        </div>
+                      ) : null}
+                      {!isTimeBlockAdjustmentMode ? (
+                        <button
+                          type="button"
+                          aria-label="Drag bottom edge to extend overlay end time"
+                          onPointerDown={handleOverlayTimelineResizePointerDown}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
                           className={cn(
-                            "h-1.5 w-10 rounded-t-full border-x border-t border-white/15 bg-white/35 shadow-[0_2px_8px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition",
-                            isOverlayTimelineResizing &&
-                              "w-12 border-white/25 bg-white/55 shadow-[0_3px_10px_rgba(0,0,0,0.42)]",
+                            "absolute bottom-0 left-1/2 z-40 flex h-8 w-24 -translate-x-1/2 items-end justify-center touch-none select-none rounded-t-full text-white/45 transition [touch-action:none] [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] cursor-ns-resize hover:text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                            isOverlayTimelineResizing && "text-white/85",
                           )}
-                          aria-hidden="true"
-                        />
-                      </button>
+                        >
+                          <span
+                            className={cn(
+                              "h-1.5 w-10 rounded-t-full border-x border-t border-white/15 bg-white/35 shadow-[0_2px_8px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.25)] backdrop-blur-sm transition",
+                              isOverlayTimelineResizing &&
+                                "w-12 border-white/25 bg-white/55 shadow-[0_3px_10px_rgba(0,0,0,0.42)]",
+                            )}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      ) : null}
                     </DayTimeline>
                     {(() => {
                       const isTrashMode = overlayDragMode === "remove";
@@ -29935,7 +31432,11 @@ export function Fab({
               <div className="pointer-events-auto -mt-px flex justify-end gap-2 pr-3">
                 <Button
                   type="button"
-                  aria-label="Close overlay draft"
+                  aria-label={
+                    overlayAdjustmentRequest
+                      ? "Close Time Block adjustment"
+                      : "Close overlay draft"
+                  }
                   variant="ghost"
                   size="iconSquare"
                   haptic={false}
@@ -29943,6 +31444,7 @@ export function Fab({
                   onClick={() => {
                     void hapticPress();
                     setOverlayOpen(false);
+                    setOverlayAdjustmentRequest(null);
                   }}
                 >
                   <span
@@ -29954,7 +31456,11 @@ export function Fab({
                 </Button>
                 <Button
                   type="button"
-                  aria-label="Save overlay"
+                  aria-label={
+                    overlayAdjustmentRequest
+                      ? "Save Time Block"
+                      : "Save overlay"
+                  }
                   variant="ghost"
                   size="iconSquare"
                   onClick={handleLiveOverlaySave}

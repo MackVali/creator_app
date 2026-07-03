@@ -68,9 +68,6 @@ import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisu
 import {
   dispatchCreatorXpBurstStatus,
   getCreatorXpRectFromPoint,
-  isCreatorMatrixXpDebugEnabled,
-  setCreatorMatrixXpDebugEnabled,
-  subscribeToCreatorMatrixXpDebug,
   type CreatorXpBurstRect,
   type CreatorXpBurstSourceOrigin,
 } from "@/lib/effects/creatorXpBurstBus";
@@ -280,7 +277,6 @@ type MatrixXpDiagnostic = {
   reason?: string | null;
 };
 
-const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 type MatrixXpAwardOutcome = {
   ok: boolean;
   status: MatrixXpResultStatus;
@@ -533,74 +529,6 @@ function getMatrixXpDiagnosticKey(
   id: string | null | undefined
 ) {
   return `${scope}:${id?.trim() || "unknown"}`;
-}
-
-function dispatchMatrixXpDiagnosticStatus(diagnostic: MatrixXpDiagnostic) {
-  if (!IS_DEVELOPMENT || !isCreatorMatrixXpDebugEnabled()) return;
-
-  dispatchCreatorXpBurstStatus(
-    `MATRIX XP ${diagnostic.result.toUpperCase()}: ${diagnostic.matrixKind}/${diagnostic.path} source=${diagnostic.xpSourceType}:${diagnostic.sourceId ?? "NO SOURCE"} skill=${diagnostic.skillId ?? "NO SKILL"}${diagnostic.awardKeyBase ? ` key=${diagnostic.awardKeyBase}` : ""}${diagnostic.cycleAwardKeyBase ? ` cycle=${diagnostic.cycleAwardKeyBase}` : ""}${diagnostic.legacyAwardKeyBase ? ` old=${diagnostic.legacyAwardKeyBase}` : ""}${typeof diagnostic.activePositiveCount === "number" ? ` active=${diagnostic.activePositiveCount}` : ""}${typeof diagnostic.reversedCount === "number" ? ` reversed=${diagnostic.reversedCount}` : ""}${typeof diagnostic.repairedCount === "number" ? ` repaired=${diagnostic.repairedCount}` : ""}${diagnostic.completionPersisted === true ? " persisted=yes" : diagnostic.completionPersisted === false ? " persisted=no" : ""}${diagnostic.reason ? ` ${diagnostic.reason}` : ""}`
-  );
-}
-
-function shortenMatrixXpId(id: string | null | undefined) {
-  const trimmed = id?.trim();
-  if (!trimmed) return null;
-  return trimmed.length <= 10 ? trimmed : `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
-}
-
-function MatrixXpDevDiagnostic({
-  diagnostic,
-  enabled,
-}: {
-  diagnostic?: MatrixXpDiagnostic | null;
-  enabled: boolean;
-}) {
-  if (!IS_DEVELOPMENT || !enabled || !diagnostic) return null;
-
-  const sourceId = shortenMatrixXpId(diagnostic.sourceId) ?? "NO SOURCE";
-  const scheduleInstanceId =
-    shortenMatrixXpId(diagnostic.scheduleInstanceId) ?? "NO INSTANCE";
-  const skillId = shortenMatrixXpId(diagnostic.skillId) ?? "NO SKILL";
-  const awardKey = diagnostic.awardKeyBase ?? null;
-  const legacyAwardKey = diagnostic.legacyAwardKeyBase ?? null;
-  const cycleAwardKey = diagnostic.cycleAwardKeyBase ?? null;
-  const completionKey = diagnostic.completionKey ?? null;
-
-  return (
-    <div className="mt-1 rounded-md border border-emerald-300/15 bg-zinc-950/75 px-1.5 py-1 text-[8px] font-semibold leading-tight text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="flex flex-wrap gap-x-1.5 gap-y-0.5">
-        <span className="text-emerald-300/80">
-          {diagnostic.matrixKind}/{diagnostic.displayKind}
-        </span>
-        <span>{diagnostic.xpSourceType}</span>
-        <span>src:{sourceId}</span>
-        <span>inst:{scheduleInstanceId}</span>
-        <span>skill:{skillId}</span>
-        <span>path:{diagnostic.path}</span>
-        {awardKey ? <span>key:{awardKey}</span> : null}
-        {cycleAwardKey ? <span>cycle:{cycleAwardKey}</span> : null}
-        {legacyAwardKey ? <span>old:{legacyAwardKey}</span> : null}
-        {completionKey ? <span>comp:{completionKey}</span> : null}
-        {typeof diagnostic.activePositiveCount === "number" ? (
-          <span>active:{diagnostic.activePositiveCount}</span>
-        ) : null}
-        {typeof diagnostic.reversedCount === "number" ? (
-          <span>reversed:{diagnostic.reversedCount}</span>
-        ) : null}
-        {typeof diagnostic.repairedCount === "number" ? (
-          <span>repaired:{diagnostic.repairedCount}</span>
-        ) : null}
-        {typeof diagnostic.completionPersisted === "boolean" ? (
-          <span>persisted:{diagnostic.completionPersisted ? "yes" : "no"}</span>
-        ) : null}
-        <span className="text-emerald-200/75">
-          xp:{diagnostic.result}
-          {diagnostic.reason ? ` ${diagnostic.reason}` : ""}
-        </span>
-      </div>
-    </div>
-  );
 }
 
 function findMatrixEventInState(
@@ -2865,8 +2793,6 @@ function ScheduledEventCard({
   onOpenChange,
   onComplete,
   density,
-  diagnostic,
-  xpDebugEnabled,
 }: {
   event: MatrixEvent;
   open: boolean;
@@ -2877,8 +2803,6 @@ function ScheduledEventCard({
     options?: MatrixScheduledCompletionOptions
   ): void;
   density: MatrixCardDensity;
-  diagnostic?: MatrixXpDiagnostic | null;
-  xpDebugEnabled: boolean;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3146,8 +3070,6 @@ function ScheduledEventCard({
     <MatrixRoutineCard
       routine={event.routine}
       density={density}
-      diagnostic={diagnostic}
-      xpDebugEnabled={xpDebugEnabled}
       onCompleteHabit={(habitId, completed, source) => {
         const routineHabit = event.routine?.habits.find(
           (habit) => habit.id === habitId
@@ -3249,10 +3171,6 @@ function ScheduledEventCard({
       >
         {card}
       </div>
-      <MatrixXpDevDiagnostic
-        diagnostic={diagnostic}
-        enabled={xpDebugEnabled}
-      />
     </div>
   ) : null;
 }
@@ -3262,8 +3180,6 @@ function DueHabitCard({
   density,
   completing,
   onComplete,
-  diagnostic,
-  xpDebugEnabled,
 }: {
   habit: MatrixHabit;
   density: MatrixCardDensity;
@@ -3273,8 +3189,6 @@ function DueHabitCard({
     completedToday: boolean,
     source?: MatrixXpSourceCapture | null
   ): void;
-  diagnostic?: MatrixXpDiagnostic | null;
-  xpDebugEnabled: boolean;
 }) {
   const fabCreation = useFabCreation();
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -3488,10 +3402,6 @@ function DueHabitCard({
           density={density}
         />
       </div>
-      <MatrixXpDevDiagnostic
-        diagnostic={diagnostic}
-        enabled={xpDebugEnabled}
-      />
     </div>
   );
 }
@@ -3500,8 +3410,6 @@ function MatrixRoutineCard({
   routine,
   density,
   onCompleteHabit,
-  diagnostic,
-  xpDebugEnabled,
 }: {
   routine: MatrixRoutine;
   density: MatrixCardDensity;
@@ -3510,8 +3418,6 @@ function MatrixRoutineCard({
     completedToday: boolean,
     source?: MatrixXpSourceCapture | null
   ): void;
-  diagnostic?: MatrixXpDiagnostic | null;
-  xpDebugEnabled: boolean;
 }) {
   const routineCardRef = useRef<HTMLDivElement | null>(null);
   const habitCount = Math.max(0, routine.dueHabitCount);
@@ -3578,10 +3484,6 @@ function MatrixRoutineCard({
             />
           </div>
         </div>
-        <MatrixXpDevDiagnostic
-          diagnostic={diagnostic}
-          enabled={xpDebugEnabled}
-        />
       </div>
     );
   }
@@ -3626,10 +3528,6 @@ function MatrixRoutineCard({
           />
         </div>
       </div>
-      <MatrixXpDevDiagnostic
-        diagnostic={diagnostic}
-        enabled={xpDebugEnabled}
-      />
     </div>
   );
 }
@@ -3987,8 +3885,6 @@ function MatrixGridCarousel({
   completingDueHabitIds,
   heldScheduledCompletionItemIds,
   heldDueCompletionItemIds,
-  xpDiagnostics,
-  xpDebugEnabled,
 }: {
   groups: MatrixMonumentGroup[];
   matrixView: MatrixView;
@@ -4006,8 +3902,6 @@ function MatrixGridCarousel({
   completingDueHabitIds: Set<string>;
   heldScheduledCompletionItemIds: ReadonlySet<string>;
   heldDueCompletionItemIds: ReadonlySet<string>;
-  xpDiagnostics: Record<string, MatrixXpDiagnostic>;
-  xpDebugEnabled: boolean;
 }) {
   const [matrixPanel, setMatrixPanel] = useState<MatrixPanel>("scheduled");
   const [cardDensity, setCardDensity] = useState<MatrixCardDensity>("large");
@@ -4738,15 +4632,6 @@ function MatrixGridCarousel({
                                   event={event}
                                   density={cardDensity}
                                   onComplete={onCompleteScheduledEvent}
-                                  diagnostic={
-                                    xpDiagnostics[
-                                      getMatrixXpDiagnosticKey(
-                                        "scheduled",
-                                        event.instance.id
-                                      )
-                                    ] ?? null
-                                  }
-                                  xpDebugEnabled={xpDebugEnabled}
                                   open={
                                     Boolean(event.goal?.id) &&
                                     openGoalId === event.goal?.id
@@ -4810,15 +4695,6 @@ function MatrixGridCarousel({
                                     routine={item.routine}
                                     density={cardDensity}
                                     onCompleteHabit={onCompleteDueHabit}
-                                    diagnostic={
-                                      xpDiagnostics[
-                                        getMatrixXpDiagnosticKey(
-                                          "routine",
-                                          item.routine.id
-                                        )
-                                      ] ?? null
-                                    }
-                                    xpDebugEnabled={xpDebugEnabled}
                                   />
                                 ) : (
                                   <DueHabitCard
@@ -4828,15 +4704,6 @@ function MatrixGridCarousel({
                                       item.habit.id
                                     )}
                                     onComplete={onCompleteDueHabit}
-                                    diagnostic={
-                                      xpDiagnostics[
-                                        getMatrixXpDiagnosticKey(
-                                          "due",
-                                          item.habit.id
-                                        )
-                                      ] ?? null
-                                    }
-                                    xpDebugEnabled={xpDebugEnabled}
                                   />
                                 )}
                               </motion.div>
@@ -4918,10 +4785,9 @@ export function MatrixContent({
     scheduled: new Set(),
     due: new Set(),
   }));
-  const [matrixXpDiagnostics, setMatrixXpDiagnostics] = useState<
+  const [, setMatrixXpDiagnostics] = useState<
     Record<string, MatrixXpDiagnostic>
   >({});
-  const [matrixXpDebugEnabled, setMatrixXpDebugEnabled] = useState(false);
   const [memoCompletionState, setMemoCompletionState] = useState<{
     habit: MatrixHabit;
     source: "scheduled" | "due";
@@ -4954,7 +4820,6 @@ export function MatrixContent({
         ...current,
         [key]: nextDiagnostic,
       }));
-      dispatchMatrixXpDiagnosticStatus(nextDiagnostic);
     },
     []
   );
@@ -4968,20 +4833,6 @@ export function MatrixContent({
       setMatrixScope(storedScope);
     }
   }, []);
-
-  useEffect(() => {
-    if (!IS_DEVELOPMENT) return;
-
-    setMatrixXpDebugEnabled(isCreatorMatrixXpDebugEnabled());
-    return subscribeToCreatorMatrixXpDebug(setMatrixXpDebugEnabled);
-  }, []);
-
-  const handleMatrixXpDebugToggle = useCallback(() => {
-    if (!IS_DEVELOPMENT) return;
-    const nextEnabled = !matrixXpDebugEnabled;
-    setMatrixXpDebugEnabled(nextEnabled);
-    setCreatorMatrixXpDebugEnabled(nextEnabled);
-  }, [matrixXpDebugEnabled]);
 
   const handleMatrixViewChange = useCallback((view: MatrixView) => {
     setMatrixView(view);
@@ -5353,7 +5204,7 @@ export function MatrixContent({
         return {
           ok: false,
           status: "blocked",
-          reason: "MATRIX XP BLOCKED: missing Matrix event",
+          reason: "Missing Matrix event",
         };
       }
 
@@ -5366,14 +5217,14 @@ export function MatrixContent({
         return {
           ok: false,
           status: "blocked",
-          reason: `MATRIX XP BLOCKED: ${sourceType ?? "UNKNOWN"} has no XP source type`,
+          reason: `${sourceType ?? "UNKNOWN"} has no XP source type`,
         };
       }
       if (!event.instance.source_id?.trim()) {
         return {
           ok: false,
           status: "blocked",
-          reason: "MATRIX XP BLOCKED: missing source id",
+          reason: "Missing source id",
         };
       }
 
@@ -5382,7 +5233,7 @@ export function MatrixContent({
         return {
           ok: false,
           status: "blocked",
-          reason: `MATRIX XP BLOCKED: ${sourceType ?? "UNKNOWN"} has no XP source type`,
+          reason: `${sourceType ?? "UNKNOWN"} has no XP source type`,
         };
       }
       const surgeSourceType = isTask
@@ -5411,7 +5262,7 @@ export function MatrixContent({
         return {
           ok: false,
           status: "blocked",
-          reason: `MATRIX XP BLOCKED: ${surgeSourceType} has no skill context`,
+          reason: `${surgeSourceType} has no skill context`,
         };
       }
       const monumentIds =
@@ -5505,7 +5356,7 @@ export function MatrixContent({
             reason:
               result?.reason ??
               (result?.deduped
-                ? "XP award deduped"
+                ? "XP award already exists"
                 : "XP award inserted no rows"),
           };
         }
@@ -5516,7 +5367,7 @@ export function MatrixContent({
             ok: false,
             status: "blocked",
             inserted: true,
-            reason: "MATRIX XP BLOCKED: XP award returned no surge payload",
+            reason: "XP award returned no surge payload",
           };
         }
         dispatchCreatorXpBurstStatus("XP: matrix visual helper");
@@ -5606,10 +5457,10 @@ export function MatrixContent({
             !eventBeforeCompletion.skillIds.length)
         ) {
           const reason = !eventBeforeCompletion?.instance.source_id?.trim()
-            ? "MATRIX XP BLOCKED: missing source id"
+            ? "Missing source id"
             : eventBeforeCompletion?.routine
-              ? "MATRIX XP BLOCKED: ROUTINE has no XP source type"
-              : `MATRIX XP BLOCKED: ${(eventBeforeCompletion?.instance.source_type ?? "UNKNOWN").toUpperCase()} has no skill context`;
+              ? "Routine has no XP source type"
+              : `${(eventBeforeCompletion?.instance.source_type ?? "UNKNOWN").toUpperCase()} has no skill context`;
           setScheduledDiagnostics(
             buildScheduledXpDiagnostic(
               eventBeforeCompletion,
@@ -5994,7 +5845,7 @@ export function MatrixContent({
           awardKeyBase: occurrence.awardKeyBase,
           legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
           completionKey: occurrence.completionKey,
-          reason: "MATRIX XP BLOCKED: missing habit source id",
+          reason: "Missing habit source id",
         };
       }
 
@@ -6006,7 +5857,7 @@ export function MatrixContent({
           awardKeyBase: occurrence.awardKeyBase,
           legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
           completionKey: occurrence.completionKey,
-          reason: "MATRIX XP BLOCKED: HABIT has no skill context",
+          reason: "Habit has no skill context",
         };
       }
 
@@ -6107,7 +5958,7 @@ export function MatrixContent({
             awardKeyBase: occurrence.awardKeyBase,
             legacyAwardKeyBase: occurrence.legacyAwardKeyBase,
             completionKey: occurrence.completionKey,
-            reason: "MATRIX XP BLOCKED: XP award returned no surge payload",
+            reason: "XP award returned no surge payload",
           };
         }
 
@@ -6205,8 +6056,8 @@ export function MatrixContent({
           ? getDueOccurrenceIdentity(habit.id, dayKey)
           : null;
         const reason = !habit?.id
-          ? "MATRIX XP BLOCKED: missing habit source id"
-          : "MATRIX XP BLOCKED: HABIT has no skill context";
+          ? "Missing habit source id"
+          : "Habit has no skill context";
         setDueDiagnostics(
           buildDueHabitXpDiagnostic(
             habit,
@@ -7077,32 +6928,6 @@ export function MatrixContent({
       />
     </button>
   );
-  const matrixXpDebugToggle = IS_DEVELOPMENT ? (
-    <button
-      type="button"
-      aria-label={
-        matrixXpDebugEnabled
-          ? "Hide Matrix XP diagnostics"
-          : "Show Matrix XP diagnostics"
-      }
-      aria-pressed={matrixXpDebugEnabled}
-      title={
-        matrixXpDebugEnabled
-          ? "Hide Matrix XP diagnostics"
-          : "Show Matrix XP diagnostics"
-      }
-      onClick={handleMatrixXpDebugToggle}
-      className={cn(
-        "inline-flex h-6 min-w-7 shrink-0 items-center justify-center rounded-md border px-1.5 text-[9px] font-black leading-none tracking-[0.08em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
-        matrixXpDebugEnabled
-          ? "border-emerald-300/35 bg-emerald-400/12 text-emerald-200"
-          : "border-zinc-800/80 bg-zinc-950/30 text-zinc-600 hover:border-zinc-700 hover:text-zinc-400"
-      )}
-    >
-      XP
-    </button>
-  ) : null;
-
   const matrixBody = (
     <>
       {variant === "page" ? (
@@ -7120,13 +6945,11 @@ export function MatrixContent({
             </h1>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {matrixXpDebugToggle}
             {matrixSettingsToggle}
           </div>
         </header>
       ) : (
         <div className="flex justify-end gap-1.5 px-0.5">
-          {matrixXpDebugToggle}
           {matrixSettingsToggle}
         </div>
       )}
@@ -7179,8 +7002,6 @@ export function MatrixContent({
                 heldMatrixReorderItemIds.scheduled
               }
               heldDueCompletionItemIds={heldMatrixReorderItemIds.due}
-              xpDiagnostics={matrixXpDiagnostics}
-              xpDebugEnabled={matrixXpDebugEnabled}
             />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">

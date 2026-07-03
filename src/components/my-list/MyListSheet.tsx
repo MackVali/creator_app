@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type FocusEvent as ReactFocusEvent,
+  type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
@@ -25,10 +26,7 @@ import {
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
-import {
-  dispatchCreatorXpBurstStatus,
-  type CreatorXpBurstRect,
-} from "@/lib/effects/creatorXpBurstBus";
+import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
 import {
   PRIORITY_LABELS,
@@ -58,6 +56,21 @@ const LIST_COMPACT_BOTTOM_ALLOWANCE = 36;
 const LIST_COMPACT_EXPAND_THRESHOLD_RATIO = 0.88;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
+const MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS = 500;
+const MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX = 14;
+const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
+const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
+const MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR = [
+  "input",
+  "textarea",
+  "button",
+  "select",
+  "label",
+  "[role='button']",
+  "[role='listbox']",
+  "[contenteditable='true']",
+  "[data-my-list-no-schedule-drag]",
+].join(",");
 
 function toCreatorXpBurstRect(rect: DOMRect): CreatorXpBurstRect {
   return {
@@ -70,12 +83,6 @@ function toCreatorXpBurstRect(rect: DOMRect): CreatorXpBurstRect {
     bottom: rect.bottom,
     left: rect.left,
   };
-}
-
-function reportMyListSheetXpDiagnostic(message: string, details?: unknown) {
-  if (process.env.NODE_ENV === "production") return;
-  dispatchCreatorXpBurstStatus(message);
-  console.info(message, details ?? {});
 }
 
 function resolveQuickCreateMediumPriorityMetadata() {
@@ -158,6 +165,43 @@ type MyListTaskOverride = {
 };
 
 type MyListActiveView = "list" | "matrix";
+type MyListScheduleMetadata = {
+  source: "my-list";
+  rowType: "manual" | "task";
+  rowId: string;
+  presentationKind: typeof MY_LIST_SCHEDULE_PRESENTATION_KIND;
+  taskId?: string;
+  skillId?: string | null;
+  skillName?: string | null;
+  skillIcon?: string | null;
+  priorityId: PriorityBucketId;
+  priorityLabel: string;
+  prioritySymbol: string;
+};
+type MyListScheduleDragRow = {
+  rowType: "manual" | "task";
+  rowId: string;
+  title: string;
+  sourceId: string | null;
+  sourceType: "EVENT" | "TASK";
+  energy: string | null;
+  skillId: string | null;
+  metadata: MyListScheduleMetadata;
+};
+type MyListScheduleDragPress = {
+  inputType: "pointer" | "touch";
+  pointerId: number;
+  pointerType: string | null;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  row: MyListScheduleDragRow;
+  rowWidth: number;
+  timer: ReturnType<typeof setTimeout>;
+  dragStarted: boolean;
+  restoreExpanded: boolean;
+};
 export type MyListTaskXpContext = {
   skillId: string | null;
   monumentId: string | null;
@@ -171,6 +215,7 @@ export function MyListSheet({
   skillCategories,
   pendingTaskIds,
   useFullExpandedHeight,
+  enableScheduleTimelineDrag = false,
   onToggleTask,
   onTaskSkillSelect,
 }: {
@@ -181,6 +226,7 @@ export function MyListSheet({
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
   useFullExpandedHeight: boolean;
+  enableScheduleTimelineDrag?: boolean;
   onToggleTask: (
     taskId: string,
     sourceRect: CreatorXpBurstRect | null,
@@ -207,6 +253,7 @@ export function MyListSheet({
   const [hiddenTaskRowIds, setHiddenTaskRowIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [isScheduleDragActive, setIsScheduleDragActive] = useState(false);
   const [myListSheetHeights, setMyListSheetHeights] = useState(() => ({
     compact: 448,
     expanded: 720,
@@ -214,6 +261,7 @@ export function MyListSheet({
   const sheetRootRef = useRef<HTMLElement | null>(null);
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchStartYRef = useRef<number | null>(null);
+  const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
   const focusVisibilityFrameRef = useRef<number | null>(null);
   const focusVisibilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -295,6 +343,284 @@ export function MyListSheet({
       };
     },
     [skillLookup, taskOverrides]
+  );
+
+  const resolvePriorityScheduleMetadata = useCallback(
+    (priorityId: PriorityBucketId) => {
+      const option =
+        QUICK_CREATE_PRIORITY_OPTIONS.find((item) => item.id === priorityId) ??
+        defaultPriority;
+      return {
+        priorityId,
+        priorityLabel: option.label,
+        prioritySymbol:
+          option.symbol || QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL,
+      };
+    },
+    [defaultPriority]
+  );
+
+  const canStartScheduleTimelineDrag =
+    open && activeView === "list" && enableScheduleTimelineDrag;
+
+  const clearScheduleDragPress = useCallback(() => {
+    const press = scheduleDragPressRef.current;
+    if (press) {
+      clearTimeout(press.timer);
+    }
+    setIsScheduleDragActive(false);
+    scheduleDragPressRef.current = null;
+  }, []);
+
+  const shouldIgnoreScheduleDragTarget = useCallback((target: EventTarget) => {
+    return (
+      target instanceof HTMLElement &&
+      Boolean(target.closest(MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR))
+    );
+  }, []);
+
+  const dispatchScheduleTimelineDrag = useCallback(
+    (press: MyListScheduleDragPress) => {
+      if (typeof window === "undefined") return;
+
+      const activeElement = document.activeElement;
+      if (
+        activeElement instanceof HTMLElement &&
+        sheetRootRef.current?.contains(activeElement) &&
+        activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)
+      ) {
+        activeElement.blur();
+      }
+
+      setActiveSkillPickerRowKey(null);
+      setActivePriorityPickerRowKey(null);
+      setPendingDeleteRowId(null);
+
+      onOpenChange(false);
+
+      if (press.restoreExpanded) {
+        setIsExpanded(false);
+      }
+
+      window.dispatchEvent(
+        new CustomEvent("schedule:manual-placement-requested", {
+          detail: {
+            result: {
+              id: press.row.sourceId ?? undefined,
+              name: press.row.title,
+              type: press.row.sourceType,
+              durationMinutes: MY_LIST_SCHEDULE_EVENT_DURATION_MIN,
+              energy: press.row.energy ?? undefined,
+              skillId: press.row.skillId,
+              priority: press.row.metadata.priorityId,
+              metadata: press.row.metadata,
+            },
+            source: "my-list",
+            requireTimelineHit: true,
+            pointer: {
+              clientX: press.lastX,
+              clientY: press.lastY,
+              pointerId: press.pointerId,
+              pointerType: press.pointerType,
+              width: press.rowWidth,
+            },
+          },
+        })
+      );
+    },
+    [onOpenChange]
+  );
+
+  const beginScheduleDragLongPress = useCallback(
+    (press: MyListScheduleDragPress) => {
+      if (scheduleDragPressRef.current !== press) return;
+      if (!canStartScheduleTimelineDrag) {
+        clearScheduleDragPress();
+        return;
+      }
+      press.dragStarted = true;
+      setIsScheduleDragActive(true);
+      dispatchScheduleTimelineDrag(press);
+    },
+    [
+      canStartScheduleTimelineDrag,
+      clearScheduleDragPress,
+      dispatchScheduleTimelineDrag,
+    ]
+  );
+
+  const startScheduleDragPress = useCallback(
+    (
+      event: ReactPointerEvent<HTMLElement>,
+      row: MyListScheduleDragRow
+    ) => {
+      if (!canStartScheduleTimelineDrag) return;
+      if (event.button !== 0) return;
+      if (shouldIgnoreScheduleDragTarget(event.target)) return;
+      if (!row.title.trim()) return;
+
+      clearScheduleDragPress();
+
+      const rowRect = event.currentTarget.getBoundingClientRect();
+      const press: MyListScheduleDragPress = {
+        inputType: "pointer",
+        pointerId: event.pointerId,
+        pointerType: event.pointerType ?? null,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        row,
+        rowWidth: rowRect.width,
+        timer: setTimeout(() => {
+          beginScheduleDragLongPress(press);
+        }, MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS),
+        dragStarted: false,
+        restoreExpanded: isExpanded,
+      };
+
+      scheduleDragPressRef.current = press;
+    },
+    [
+      beginScheduleDragLongPress,
+      canStartScheduleTimelineDrag,
+      clearScheduleDragPress,
+      isExpanded,
+      shouldIgnoreScheduleDragTarget,
+    ]
+  );
+
+  const handleScheduleDragPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const press = scheduleDragPressRef.current;
+      if (
+        !press ||
+        press.inputType !== "pointer" ||
+        press.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+      press.lastX = event.clientX;
+      press.lastY = event.clientY;
+      if (press.dragStarted) {
+        event.preventDefault();
+        return;
+      }
+
+      const moved = Math.hypot(
+        event.clientX - press.startX,
+        event.clientY - press.startY
+      );
+      if (moved > MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX) {
+        clearScheduleDragPress();
+      }
+    },
+    [clearScheduleDragPress]
+  );
+
+  const handleScheduleDragPointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const press = scheduleDragPressRef.current;
+      if (
+        !press ||
+        press.inputType !== "pointer" ||
+        press.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+      clearScheduleDragPress();
+    },
+    [clearScheduleDragPress]
+  );
+
+  const startScheduleDragTouchPress = useCallback(
+    (
+      event: ReactTouchEvent<HTMLElement>,
+      row: MyListScheduleDragRow
+    ) => {
+      if (!canStartScheduleTimelineDrag) return;
+      if (shouldIgnoreScheduleDragTarget(event.target)) return;
+      if (!row.title.trim()) return;
+      if (event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      if (!touch) return;
+      clearScheduleDragPress();
+
+      const rowRect = event.currentTarget.getBoundingClientRect();
+      const press: MyListScheduleDragPress = {
+        inputType: "touch",
+        pointerId: touch.identifier,
+        pointerType: "touch",
+        startX: touch.clientX,
+        startY: touch.clientY,
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        row,
+        rowWidth: rowRect.width,
+        timer: setTimeout(() => {
+          beginScheduleDragLongPress(press);
+        }, MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS),
+        dragStarted: false,
+        restoreExpanded: isExpanded,
+      };
+
+      scheduleDragPressRef.current = press;
+    },
+    [
+      beginScheduleDragLongPress,
+      canStartScheduleTimelineDrag,
+      clearScheduleDragPress,
+      isExpanded,
+      shouldIgnoreScheduleDragTarget,
+    ]
+  );
+
+  const getTrackedScheduleDragTouch = useCallback(
+    (event: ReactTouchEvent<HTMLElement>, pointerId: number) => {
+      const touches = Array.from(event.touches);
+      const changedTouches = Array.from(event.changedTouches);
+      return (
+        touches.find((touch) => touch.identifier === pointerId) ??
+        changedTouches.find((touch) => touch.identifier === pointerId) ??
+        null
+      );
+    },
+    []
+  );
+
+  const handleScheduleDragTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLElement>) => {
+      const press = scheduleDragPressRef.current;
+      if (!press || press.inputType !== "touch") return;
+      const touch = getTrackedScheduleDragTouch(event, press.pointerId);
+      if (!touch) return;
+
+      press.lastX = touch.clientX;
+      press.lastY = touch.clientY;
+      if (press.dragStarted) {
+        return;
+      }
+
+      const moved = Math.hypot(
+        touch.clientX - press.startX,
+        touch.clientY - press.startY
+      );
+      if (moved > MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX) {
+        clearScheduleDragPress();
+      }
+    },
+    [clearScheduleDragPress, getTrackedScheduleDragTouch]
+  );
+
+  const handleScheduleDragTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLElement>) => {
+      const press = scheduleDragPressRef.current;
+      if (!press || press.inputType !== "touch") return;
+      if (!getTrackedScheduleDragTouch(event, press.pointerId)) return;
+      clearScheduleDragPress();
+    },
+    [clearScheduleDragPress, getTrackedScheduleDragTouch]
   );
 
   const addManualRow = useCallback(() => {
@@ -445,14 +771,6 @@ export function MyListSheet({
         updateManualRow(rowId, { done: false });
         return;
       }
-
-      reportMyListSheetXpDiagnostic(
-        "MY LIST XP BLOCKED: manual row is not persisted",
-        {
-          rowId,
-          missing: "database-backed todo id and completion save path",
-        }
-      );
     },
     [updateManualRow]
   );
@@ -724,6 +1042,7 @@ export function MyListSheet({
 
   const handleSheetTouchMove = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (isScheduleDragActive) return;
       event.stopPropagation();
       if (!open || isExpanded) return;
 
@@ -736,7 +1055,7 @@ export function MyListSheet({
         expandSheet();
       }
     },
-    [expandSheet, isExpanded, open]
+    [expandSheet, isExpanded, isScheduleDragActive, open]
   );
 
   const handleSheetTouchEnd = useCallback(() => {
@@ -954,6 +1273,7 @@ export function MyListSheet({
 
   useEffect(() => {
     return () => {
+      clearScheduleDragPress();
       if (
         typeof window !== "undefined" &&
         focusVisibilityFrameRef.current !== null
@@ -964,7 +1284,7 @@ export function MyListSheet({
         clearTimeout(focusVisibilityTimeoutRef.current);
       }
     };
-  }, []);
+  }, [clearScheduleDragPress]);
 
   useEffect(() => {
     if (!open || !isExpanded || typeof document === "undefined") return;
@@ -1008,6 +1328,29 @@ export function MyListSheet({
   }, [open]);
 
   useEffect(() => {
+    if (!canStartScheduleTimelineDrag) {
+      clearScheduleDragPress();
+    }
+  }, [canStartScheduleTimelineDrag, clearScheduleDragPress]);
+
+  useEffect(() => {
+    if (!isScheduleDragActive || typeof window === "undefined") return;
+    const clearActiveDrag = () => {
+      clearScheduleDragPress();
+    };
+    window.addEventListener("pointerup", clearActiveDrag);
+    window.addEventListener("pointercancel", clearActiveDrag);
+    window.addEventListener("touchend", clearActiveDrag);
+    window.addEventListener("touchcancel", clearActiveDrag);
+    return () => {
+      window.removeEventListener("pointerup", clearActiveDrag);
+      window.removeEventListener("pointercancel", clearActiveDrag);
+      window.removeEventListener("touchend", clearActiveDrag);
+      window.removeEventListener("touchcancel", clearActiveDrag);
+    };
+  }, [clearScheduleDragPress, isScheduleDragActive]);
+
+  useEffect(() => {
     if (open && activeView === "list" && shouldExpandListOnOpen) {
       setIsExpanded(true);
     }
@@ -1021,7 +1364,8 @@ export function MyListSheet({
       data-my-list-sheet
       className={clsx(
         "fixed inset-x-0 bottom-0 z-[150] w-full sm:mx-auto sm:max-w-[34rem] sm:px-4",
-        open ? "pointer-events-auto" : "pointer-events-none"
+        open ? "pointer-events-auto" : "pointer-events-none",
+        isScheduleDragActive && "pointer-events-none"
       )}
       initial={false}
       animate={{ y: open ? 0 : "calc(100% - 2px)" }}
@@ -1037,6 +1381,7 @@ export function MyListSheet({
         event.stopPropagation();
       }}
       onTouchMove={(event) => {
+        if (isScheduleDragActive) return;
         if (open) event.stopPropagation();
       }}
       onClick={(event) => {
@@ -1128,7 +1473,10 @@ export function MyListSheet({
       )}
       <motion.div
         aria-hidden={!open}
-        className="flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl"
+        className={clsx(
+          "flex flex-col overflow-hidden rounded-t-[1.65rem] border border-b-0 border-white/[0.095] bg-[#070708]/90 text-white shadow-[0_-24px_70px_-18px_rgba(0,0,0,0.95),0_-8px_28px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.075)] backdrop-blur-2xl",
+          isScheduleDragActive && "opacity-[0.82]"
+        )}
         initial={false}
         animate={{
           height: currentSheetHeight,
@@ -1240,16 +1588,58 @@ export function MyListSheet({
                     priorityOption.symbol ||
                     QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
                   const taskText = taskOverrides[task.id]?.text ?? task.name;
+                  const taskTitle = taskText.trim() || task.name.trim();
                   const checkboxId = `my-list-task-${task.id}`;
                   const rowKey = `task:${task.id}` as const;
+                  const priorityMetadata =
+                    resolvePriorityScheduleMetadata(priorityId);
+                  const taskScheduleDragRow: MyListScheduleDragRow = {
+                    rowType: "task",
+                    rowId: task.id,
+                    title: taskTitle,
+                    sourceId: task.id,
+                    sourceType: "TASK",
+                    energy: task.energy ?? "MEDIUM",
+                    skillId: taskSkill.skillId ?? null,
+                    metadata: {
+                      source: "my-list",
+                      rowType: "task",
+                      rowId: task.id,
+                      presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
+                      taskId: task.id,
+                      skillId: taskSkill.skillId ?? null,
+                      skillName: taskSkill.skillName ?? null,
+                      skillIcon: taskSkill.skillIcon ?? null,
+                      ...priorityMetadata,
+                    },
+                  };
 
                   return (
                     <div
                       key={task.id}
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
+                      data-my-list-schedule-drag-row={
+                        canStartScheduleTimelineDrag ? "true" : undefined
+                      }
+                      onPointerDown={(event) =>
+                        startScheduleDragPress(event, taskScheduleDragRow)
+                      }
+                      onPointerMove={handleScheduleDragPointerMove}
+                      onPointerUp={handleScheduleDragPointerEnd}
+                      onPointerCancel={handleScheduleDragPointerEnd}
+                      onTouchStart={(event) =>
+                        startScheduleDragTouchPress(event, taskScheduleDragRow)
+                      }
+                      onTouchMove={handleScheduleDragTouchMove}
+                      onTouchEnd={handleScheduleDragTouchEnd}
+                      onTouchCancel={handleScheduleDragTouchEnd}
                       className={clsx(
                         "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
+                        canStartScheduleTimelineDrag &&
+                          (isScheduleDragActive
+                            ? "cursor-grabbing"
+                            : "cursor-grab"),
                         pending && "opacity-60"
                       )}
                     >
@@ -1387,13 +1777,55 @@ export function MyListSheet({
                     </div>
                   );
                 })}
-                {visibleManualRows.map((row) => (
-                  <div
-                    key={row.id}
-                    data-creator-xp-source="my-list-todo"
-                    data-creator-xp-kind="todo"
-                    className="flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
-                  >
+                {visibleManualRows.map((row) => {
+                  const priorityMetadata = resolvePriorityScheduleMetadata(
+                    row.priorityId
+                  );
+                  const manualScheduleDragRow: MyListScheduleDragRow = {
+                    rowType: "manual",
+                    rowId: row.id,
+                    title: row.text.trim(),
+                    sourceId: null,
+                    sourceType: "EVENT",
+                    energy: "MEDIUM",
+                    skillId: row.skillId,
+                    metadata: {
+                      source: "my-list",
+                      rowType: "manual",
+                      rowId: row.id,
+                      presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
+                      skillId: row.skillId,
+                      skillName: row.skillName,
+                      skillIcon: row.skillIcon,
+                      ...priorityMetadata,
+                    },
+                  };
+
+                  return (
+                    <div
+                      key={row.id}
+                      data-creator-xp-source="my-list-todo"
+                      data-creator-xp-kind="todo"
+                      data-my-list-schedule-drag-row={
+                        canStartScheduleTimelineDrag ? "true" : undefined
+                      }
+                      onPointerDown={(event) =>
+                        startScheduleDragPress(event, manualScheduleDragRow)
+                      }
+                      onPointerMove={handleScheduleDragPointerMove}
+                      onPointerUp={handleScheduleDragPointerEnd}
+                      onPointerCancel={handleScheduleDragPointerEnd}
+                      onTouchStart={(event) =>
+                        startScheduleDragTouchPress(event, manualScheduleDragRow)
+                      }
+                      onTouchMove={handleScheduleDragTouchMove}
+                      onTouchEnd={handleScheduleDragTouchEnd}
+                      onTouchCancel={handleScheduleDragTouchEnd}
+                      className={clsx(
+                        "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
+                        canStartScheduleTimelineDrag && "cursor-grab"
+                      )}
+                    >
                     <input
                       id={`my-list-${row.id}`}
                       type="checkbox"
@@ -1535,8 +1967,9 @@ export function MyListSheet({
                         );
                       })()}
                     </div>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </>
             ) : (
               <div className="rounded-lg bg-transparent px-3 py-2.5 text-sm text-white/42">

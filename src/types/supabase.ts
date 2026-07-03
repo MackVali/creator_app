@@ -4982,7 +4982,7 @@ export type Database = {
         | "every x days"
         | "none"
       schedule_instance_placement_source: "scheduler" | "manual"
-      schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT"
+      schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT" | "EVENT"
       task_stage_enum: "PREPARE" | "PRODUCE" | "PERFECT"
       xp_kind: "task" | "habit" | "project" | "goal" | "event" | "manual"
     }
@@ -5136,7 +5136,7 @@ export const Constants = {
         "none",
       ],
       schedule_instance_placement_source: ["scheduler", "manual"],
-      schedule_instance_source_type: ["PROJECT", "TASK", "HABIT"],
+      schedule_instance_source_type: ["PROJECT", "TASK", "HABIT", "EVENT"],
       task_stage_enum: ["PREPARE", "PRODUCE", "PERFECT"],
       xp_kind: ["task", "habit", "project", "goal", "event", "manual"],
     },

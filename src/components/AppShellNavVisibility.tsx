@@ -41,6 +41,7 @@ export default function AppShellNavVisibility({
   const showGlobalMyList =
     showBottomChrome || (!hideNav && isScheduleRoute(pathname));
   const isMainSchedulePage = pathname === "/schedule";
+  const enableScheduleTimelineDrag = pathname === "/schedule";
 
   return (
     <>
@@ -49,7 +50,10 @@ export default function AppShellNavVisibility({
       <AppMain>{children}</AppMain>
       {showBottomChrome && <BottomNav />}
       {showGlobalMyList && (
-        <GlobalMyList useFullExpandedHeight={!isMainSchedulePage} />
+        <GlobalMyList
+          useFullExpandedHeight={!isMainSchedulePage}
+          enableScheduleTimelineDrag={enableScheduleTimelineDrag}
+        />
       )}
     </>
   );

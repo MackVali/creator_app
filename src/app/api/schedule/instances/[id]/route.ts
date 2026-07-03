@@ -33,10 +33,48 @@ type RouteContext = {
 };
 
 type Supabase = SupabaseClient<Database>;
+type ScheduleInstanceUpdate =
+  Database["public"]["Tables"]["schedule_instances"]["Update"];
 type PatchRequestPayload = {
   startUtc?: string;
+  start_utc?: string;
+  endUtc?: string;
+  end_utc?: string;
+  durationMin?: number;
+  duration_min?: number;
   skipConflictResolution?: boolean;
+  scopedTimeBlockAdjustment?: boolean;
+  scoped_time_block_adjustment?: boolean;
+  timeBlockId?: string | null;
+  time_block_id?: string | null;
+  windowId?: string | null;
+  window_id?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  day_type_time_block_id?: string | null;
+  overlayWindowId?: string | null;
+  overlay_window_id?: string | null;
 };
+
+function normalizePayloadString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function getPayloadValue(
+  payload: PatchRequestPayload | null,
+  primaryKey: keyof PatchRequestPayload,
+  fallbackKey: keyof PatchRequestPayload
+) {
+  return payload?.[primaryKey] ?? payload?.[fallbackKey] ?? null;
+}
+
+function normalizeDuration(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.round(value);
+}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
@@ -53,15 +91,30 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   const payload = (await request.json().catch(() => null)) as PatchRequestPayload | null;
-  const startUtc = payload?.startUtc;
+  const startUtc = normalizePayloadString(
+    getPayloadValue(payload, "startUtc", "start_utc")
+  );
   if (!startUtc || typeof startUtc !== "string") {
     return NextResponse.json({ error: "Missing startUtc" }, { status: 400 });
   }
   const skipConflictResolution = payload?.skipConflictResolution === true;
+  const scopedTimeBlockAdjustment =
+    payload?.scopedTimeBlockAdjustment === true ||
+    payload?.scoped_time_block_adjustment === true;
+  const payloadDurationMin = normalizeDuration(
+    getPayloadValue(payload, "durationMin", "duration_min")
+  );
+  const endUtc = normalizePayloadString(
+    getPayloadValue(payload, "endUtc", "end_utc")
+  );
 
   const parsedStart = new Date(startUtc);
   if (Number.isNaN(parsedStart.getTime())) {
     return NextResponse.json({ error: "Invalid start time" }, { status: 400 });
+  }
+  const parsedEnd = endUtc ? new Date(endUtc) : null;
+  if (endUtc && (!parsedEnd || Number.isNaN(parsedEnd.getTime()))) {
+    return NextResponse.json({ error: "Invalid end time" }, { status: 400 });
   }
 
   const { data: instance, error: fetchError } = await supabase
@@ -98,14 +151,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ? instance.duration_min
       : (Date.parse(instance.end_utc ?? "") - Date.parse(instance.start_utc ?? "")) / 60000;
 
-  const validDuration =
-    typeof durationMinutes === "number" && Number.isFinite(durationMinutes) && durationMinutes > 0
-      ? durationMinutes
-      : 60;
+  const validDuration = payloadDurationMin ??
+    (typeof durationMinutes === "number" && Number.isFinite(durationMinutes) && durationMinutes > 0
+      ? Math.round(durationMinutes)
+      : 60);
 
   const nextStartIso = parsedStart.toISOString();
-  const nextEnd = new Date(parsedStart.getTime() + validDuration * 60_000);
+  const nextEnd = parsedEnd ?? new Date(parsedStart.getTime() + validDuration * 60_000);
+  if (nextEnd.getTime() <= parsedStart.getTime()) {
+    return NextResponse.json(
+      { error: "End time must be after start time" },
+      { status: 400 }
+    );
+  }
   const nextEndIso = nextEnd.toISOString();
+  const nextDurationMin = Math.max(
+    1,
+    Math.round((nextEnd.getTime() - parsedStart.getTime()) / 60000)
+  );
 
   if (
     instance.source_type === "PROJECT" &&
@@ -122,20 +185,40 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
   }
 
+  const updatePayload: ScheduleInstanceUpdate = {
+    start_utc: nextStartIso,
+    end_utc: nextEndIso,
+    locked: true,
+    placement_source: "manual",
+  };
+  if (scopedTimeBlockAdjustment || payloadDurationMin !== null || endUtc) {
+    updatePayload.duration_min = nextDurationMin;
+  }
+  if (scopedTimeBlockAdjustment) {
+    updatePayload.window_id = normalizePayloadString(
+      getPayloadValue(payload, "windowId", "window_id")
+    );
+    updatePayload.day_type_time_block_id = normalizePayloadString(
+      getPayloadValue(payload, "dayTypeTimeBlockId", "day_type_time_block_id")
+    );
+    updatePayload.time_block_id = normalizePayloadString(
+      getPayloadValue(payload, "timeBlockId", "time_block_id")
+    );
+    updatePayload.overlay_window_id = normalizePayloadString(
+      getPayloadValue(payload, "overlayWindowId", "overlay_window_id")
+    );
+  } else {
+    // Manual placement and explicit reschedules both make the exact interval
+    // authoritative, so stale scheduler slot ownership must not follow.
+    updatePayload.window_id = null;
+    updatePayload.day_type_time_block_id = null;
+    updatePayload.time_block_id = null;
+    updatePayload.overlay_window_id = null;
+  }
+
   const { error: updateError } = await supabase
     .from("schedule_instances")
-    .update({
-      start_utc: nextStartIso,
-      end_utc: nextEndIso,
-      locked: true,
-      placement_source: "manual",
-      // Manual placement and explicit reschedules both make the exact interval
-      // authoritative, so stale scheduler slot ownership must not follow.
-      window_id: null,
-      day_type_time_block_id: null,
-      time_block_id: null,
-      overlay_window_id: null,
-    })
+    .update(updatePayload)
     .eq("id", instance.id)
     .eq("user_id", user.id);
 
@@ -165,7 +248,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     error: string;
   }> = [];
 
-  if (skipConflictResolution) {
+  if (skipConflictResolution && !scopedTimeBlockAdjustment) {
     const cascadeResult = await persistManualPlacementCascade({
       userId: user.id,
       pivotId: instance.id,
@@ -184,7 +267,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
   }
 
-  if (!skipConflictResolution) {
+  if (!skipConflictResolution && !scopedTimeBlockAdjustment) {
     await resolveConflictsAfterUpdate(supabase, {
       userId: user.id,
       pivotId: instance.id,
@@ -201,7 +284,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       id: instance.id,
       start_utc: nextStartIso,
       end_utc: nextEndIso,
-      duration_min: validDuration,
+      duration_min: nextDurationMin,
       locked: true,
       placement_source: "manual",
     },

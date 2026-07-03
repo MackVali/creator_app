@@ -27,7 +27,7 @@ import {
 import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
-import { ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Lock, X } from "lucide-react";
 import { Icon } from "@iconify/react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -44,6 +44,11 @@ import {
   FocusTimeline,
   FocusTimelineFab,
 } from "@/components/schedule/FocusTimeline";
+import type {
+  FabTimeBlockAdjustmentPlacement,
+  FabTimeBlockAdjustmentRequest,
+  FabTimeBlockAdjustmentSavePayload,
+} from "@/components/ui/Fab";
 import FlameEmber, {
   FlameLevel,
   type FlameEmberProps,
@@ -87,6 +92,11 @@ import {
 } from "@/lib/scheduler/instanceRepo";
 import { resolveScheduleEventSkillContext } from "@/lib/schedule/eventSkillContext";
 import {
+  buildScheduleXpOccurrenceStem,
+  resolveScheduleXpCompletionSemantics,
+  type ScheduleXpKind,
+} from "@/lib/xp/scheduleXpSemantics";
+import {
   syncScheduleBlockLocalNotifications,
   type ScheduleBlockLocalNotificationInstance,
   type ScheduleBlockLocalNotificationTimeBlock,
@@ -118,6 +128,7 @@ import {
 } from "@/lib/scheduler/syncLayout";
 import type { ScheduleEventDataset } from "@/lib/scheduler/dataset";
 import type { CatRow } from "@/lib/types/cat";
+import type { Json } from "@/types/supabase";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import { formatLocalDateKey, toLocal, dayKeyFromUtc } from "@/lib/time/tz";
 import {
@@ -284,6 +295,7 @@ const TIMELINE_RESTING_CARD_SHADOW =
   "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const PROJECT_SCHEDULE_INSTANCE_CARD_CLASS =
   "relative flex h-full w-full items-center justify-between text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none";
+const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
 const FOCUS_POMO_COMPLETE_BACKGROUND =
   "linear-gradient(155deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 48%, rgb(21, 128, 61) 100%)";
 const FOCUS_POMO_COMPLETE_SHADOW =
@@ -293,8 +305,6 @@ const FOCUS_POMO_COMPLETE_EFFECT_CLASSES =
   "shimmer-border-complete focus-pomo-start-glint z-0 [&>.absolute]:!absolute";
 const TIMELINE_DARK_EVENT_BACKGROUND =
   "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgb(8, 8, 10) 0%, rgb(22, 22, 26) 42%, rgb(34, 35, 42) 100%)";
-const TIMELINE_NEUTRAL_EVENT_BACKGROUND =
-  "linear-gradient(135deg, rgb(46, 46, 52) 0%, rgb(58, 58, 66) 45%, rgb(82, 82, 92) 100%)";
 const TIMELINE_SHINY_TASK_BACKGROUND =
   "linear-gradient(135deg, rgb(52, 52, 60) 0%, rgb(82, 84, 94) 40%, rgb(158, 162, 174) 100%)";
 const TIMELINE_FALLBACK_TASK_BACKGROUND =
@@ -320,7 +330,6 @@ const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
 const TIMELINE_OVERLAY_STACK_STEP = 20;
 const SCHEDULE_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
 
-type ScheduleXpKind = "task" | "project" | "habit" | "event";
 type ScheduleXpResultStatus =
   | "inserted"
   | "deduped"
@@ -352,36 +361,26 @@ type ScheduleXpReverseOutcome = {
 };
 
 function getScheduleXpKindFromInstance(
-  instance: Pick<ScheduleInstance, "source_type"> | null | undefined
+  instance:
+    | Pick<
+        ScheduleInstance,
+        "id" | "source_type" | "source_id" | "event_name" | "metadata"
+      >
+    | null
+    | undefined
 ): ScheduleXpKind | null {
-  if (!instance) return null;
-  if (instance.source_type === "TASK") return "task";
-  if (instance.source_type === "PROJECT") return "project";
-  if (instance.source_type === "HABIT") return "habit";
-  if (instance.source_type === "EVENT") return "event";
-  return null;
-}
-
-function buildScheduleXpOccurrenceStem(
-  instanceId: string,
-  kind: ScheduleXpKind
-) {
-  return `sched:${instanceId}:${kind}`;
+  return resolveScheduleXpCompletionSemantics(instance)?.xpKind ?? null;
 }
 
 function buildScheduleXpLegacyOccurrenceStems(
-  instance: Pick<ScheduleInstance, "source_type" | "source_id">,
+  instance: Pick<
+    ScheduleInstance,
+    "id" | "source_type" | "source_id" | "event_name" | "metadata"
+  >,
   kind: ScheduleXpKind
 ) {
-  if (
-    kind === "event" &&
-    instance.source_type === "EVENT" &&
-    typeof instance.source_id === "string" &&
-    instance.source_id.trim().length > 0
-  ) {
-    return [`event:${instance.source_id.trim()}`];
-  }
-  return [];
+  void kind;
+  return resolveScheduleXpCompletionSemantics(instance)?.legacyOccurrenceStems ?? [];
 }
 
 function logScheduleXpDebug(detail: Record<string, unknown>) {
@@ -661,12 +660,16 @@ type ManualPlacementCandidate = {
   sourceId?: string | null;
   durationMinutes: number;
   title?: string | null;
-  sourceType?: "PROJECT" | "HABIT" | "TASK" | null;
+  sourceType?: "PROJECT" | "HABIT" | "TASK" | "EVENT" | null;
+  rowType?: "manual" | "task" | null;
+  rowId?: string | null;
   energy?: string | null;
   goalName?: string | null;
   habitType?: string | null;
   currentStreakDays?: number | null;
   globalRank?: number | null;
+  metadata?: Json | null;
+  requireTimelineHit?: boolean;
 };
 
 type ManualPlacementRequestDetail = {
@@ -679,6 +682,11 @@ type ManualPlacementRequestDetail = {
     name?: string;
     type?: string;
     energy?: string;
+    skillId?: string | null;
+    priority?: string | null;
+    rowType?: "manual" | "task" | null;
+    rowId?: string | null;
+    metadata?: Json | null;
     goalName?: string;
     habitType?: string;
     habit_type?: string;
@@ -695,10 +703,13 @@ type ManualPlacementRequestDetail = {
     currentStreakDays?: number;
     global_rank?: number;
   };
+  source?: string;
+  requireTimelineHit?: boolean;
   pointer?: {
     clientX?: number;
     clientY?: number;
     pointerId?: number;
+    pointerType?: string | null;
     width?: number;
   };
 };
@@ -717,6 +728,17 @@ type OptimisticManualPlacement = {
   previousInstances: ScheduleInstance[];
   previousAllInstances: ScheduleInstance[];
 };
+
+type MyListPendingManualPlacement = {
+  candidate: ManualPlacementCandidate;
+  start: Date;
+  end: Date;
+  title: string;
+  isSaving: boolean;
+  error: string | null;
+};
+
+type MyListOptimisticManualPlacement = MyListPendingManualPlacement;
 
 type QuickCreateDraftEvent = {
   id: string;
@@ -753,7 +775,8 @@ function normalizeManualPlacementSourceType(
   const normalized = value.trim().toUpperCase();
   return normalized === "PROJECT" ||
     normalized === "HABIT" ||
-    normalized === "TASK"
+    normalized === "TASK" ||
+    normalized === "EVENT"
     ? normalized
     : null;
 }
@@ -783,6 +806,188 @@ function readManualPlacementHabitType(
     }
   }
   return null;
+}
+
+function normalizeManualPlacementMetadata(value: unknown) {
+  return typeof value === "object" && value !== undefined
+    ? (value as Json)
+    : null;
+}
+
+function readScheduleMetadataRecord(metadata: Json | null | undefined) {
+  return metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata)
+    ? metadata
+    : null;
+}
+
+function readScheduleMetadataString(
+  metadata: Json | null | undefined,
+  key: string
+) {
+  const record = readScheduleMetadataRecord(metadata);
+  const value = record?.[key];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function getScheduleLikeMetadata(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  return (value as { metadata?: Json | null }).metadata ?? null;
+}
+
+function readScheduleLikeString(value: unknown, key: string) {
+  if (!value || typeof value !== "object") return null;
+  const rawValue = (value as Record<string, unknown>)[key];
+  return typeof rawValue === "string" && rawValue.trim().length > 0
+    ? rawValue.trim()
+    : null;
+}
+
+function getScheduleLikeSourceType(value: unknown) {
+  return (
+    readScheduleLikeString(value, "sourceType") ??
+    readScheduleLikeString(value, "source_type")
+  );
+}
+
+function getSchedulePresentationKind(
+  metadata: Json | null | undefined,
+  value?: unknown
+) {
+  const presentationKind =
+    readScheduleMetadataString(metadata, "presentationKind") ??
+    readScheduleMetadataString(metadata, "presentation_kind") ??
+    readScheduleMetadataString(metadata, "visualKind") ??
+    readScheduleMetadataString(metadata, "visual_kind") ??
+    readScheduleLikeString(value, "presentationKind") ??
+    readScheduleLikeString(value, "presentation_kind") ??
+    readScheduleLikeString(value, "visualKind") ??
+    readScheduleLikeString(value, "visual_kind");
+  return presentationKind;
+}
+
+function hasMyListRowMarker(
+  metadata: Json | null | undefined,
+  value?: unknown
+) {
+  const rowType =
+    readScheduleMetadataString(metadata, "rowType") ??
+    readScheduleMetadataString(metadata, "row_type") ??
+    readScheduleLikeString(value, "rowType") ??
+    readScheduleLikeString(value, "row_type");
+  const rowId =
+    readScheduleMetadataString(metadata, "rowId") ??
+    readScheduleMetadataString(metadata, "row_id") ??
+    readScheduleLikeString(value, "rowId") ??
+    readScheduleLikeString(value, "row_id");
+  return (
+    (rowType === "manual" || rowType === "task") &&
+    typeof rowId === "string" &&
+    rowId.length > 0
+  );
+}
+
+function isMyListScheduleInstanceLike(value: unknown) {
+  const metadata = getScheduleLikeMetadata(value);
+  const metadataSource = readScheduleMetadataString(metadata, "source");
+  const directSource = readScheduleLikeString(value, "source");
+  if (metadataSource === "my-list" || directSource === "my-list") return true;
+
+  const presentationKind = getSchedulePresentationKind(metadata, value);
+  if (presentationKind === MY_LIST_SCHEDULE_PRESENTATION_KIND) {
+    return true;
+  }
+
+  const sourceType = getScheduleLikeSourceType(value);
+  if (
+    (sourceType === "EVENT" || sourceType === "TASK") &&
+    hasMyListRowMarker(metadata, value)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function readMyListRowType(
+  metadata: Json | null | undefined,
+  value?: unknown
+): "manual" | "task" | null {
+  const rowType =
+    readScheduleLikeString(value, "rowType") ??
+    readScheduleLikeString(value, "row_type") ??
+    readScheduleMetadataString(metadata, "rowType") ??
+    readScheduleMetadataString(metadata, "row_type");
+  return rowType === "manual" || rowType === "task" ? rowType : null;
+}
+
+function isMyListManualPlacementCandidate(
+  candidate: ManualPlacementCandidate | null | undefined
+) {
+  return isMyListScheduleInstanceLike(candidate);
+}
+
+function getScheduleMetadataSkillIcon(metadata: Json | null | undefined) {
+  return readScheduleMetadataString(metadata, "skillIcon");
+}
+
+function getScheduleMetadataSkillId(metadata: Json | null | undefined) {
+  return (
+    readScheduleMetadataString(metadata, "skillId") ??
+    readScheduleMetadataString(metadata, "skill_id")
+  );
+}
+
+function getScheduleMetadataPriority(metadata: Json | null | undefined) {
+  return (
+    readScheduleMetadataString(metadata, "priority") ??
+    readScheduleMetadataString(metadata, "priorityId") ??
+    readScheduleMetadataString(metadata, "priority_id")
+  );
+}
+
+function getScheduleMetadataEnergy(metadata: Json | null | undefined) {
+  return (
+    readScheduleMetadataString(metadata, "energy") ??
+    readScheduleMetadataString(metadata, "energy_resolved")
+  );
+}
+
+function isMyListScheduleInstance(
+  instance:
+    | (Pick<ScheduleInstance, "metadata" | "source_type"> & {
+        presentationKind?: unknown;
+      })
+    | null
+    | undefined
+) {
+  return isMyListScheduleInstanceLike(instance);
+}
+
+function getMyListScheduleInstanceTitle(
+  instance: Pick<ScheduleInstance, "event_name" | "metadata"> | null | undefined,
+  fallback?: string | null
+) {
+  return (
+    instance?.event_name?.trim() ||
+    readScheduleMetadataString(instance?.metadata, "title") ||
+    readScheduleMetadataString(instance?.metadata, "name") ||
+    fallback?.trim() ||
+    "Untitled Event"
+  );
+}
+
+function canToggleMyListScheduleStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  return (
+    normalized === "scheduled" ||
+    normalized === "missed" ||
+    normalized === "unscheduled" ||
+    normalized === "completed"
+  );
 }
 
 async function readScheduleApiError(response: Response): Promise<string> {
@@ -991,6 +1196,23 @@ type SavedScheduleEvent = {
   meetingUrl: string | null;
 };
 
+type RenderedSavedScheduleEventCard = {
+  renderKey: string;
+  stableId: string;
+  title: string;
+  sourceCategory: SavedScheduleEventKind;
+  status: string | null;
+  completedAt: string | null;
+  scheduledStart: Date;
+  scheduledEnd: Date;
+  visibleStart: Date;
+  visibleEnd: Date;
+  locationName: string | null;
+  meetingUrl: string | null;
+  projectStyleEventInstance: ScheduleInstance | null;
+  projectStyleEventCard: boolean;
+};
+
 type SavedScheduleEventRow = {
   id: string;
   title: string | null;
@@ -1085,6 +1307,277 @@ function buildSavedScheduleEvent(row: SavedScheduleEventRow) {
     locationName: row.location_name?.trim() || null,
     meetingUrl: row.meeting_url?.trim() || null,
   } satisfies SavedScheduleEvent;
+}
+
+function getEventBackedScheduleInstanceSourceId(instance: ScheduleInstance) {
+  const sourceType = instance.source_type?.trim().toUpperCase();
+  if (sourceType !== "EVENT") return null;
+  const sourceId = instance.source_id?.trim();
+  return sourceId && sourceId.length > 0 ? sourceId : null;
+}
+
+function getMyListPlacementEventSourceId(
+  placement: MyListPendingManualPlacement | null | undefined
+) {
+  const candidate = placement?.candidate;
+  if (candidate?.sourceType !== "EVENT") return null;
+  const sourceId = candidate.sourceId?.trim();
+  return sourceId && sourceId.length > 0 ? sourceId : null;
+}
+
+function normalizeReturnedScheduleInstance(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const instance = value as Partial<ScheduleInstance>;
+  if (typeof instance.id !== "string" || instance.id.trim().length === 0) {
+    return null;
+  }
+  if (
+    instance.source_type !== "PROJECT" &&
+    instance.source_type !== "HABIT" &&
+    instance.source_type !== "TASK" &&
+    instance.source_type !== "EVENT"
+  ) {
+    return null;
+  }
+  if (
+    typeof instance.source_id !== "string" ||
+    instance.source_id.trim().length === 0
+  ) {
+    return null;
+  }
+  return instance as ScheduleInstance;
+}
+
+function buildRenderedSavedScheduleEventCards({
+  savedEvents,
+  instances,
+  instancesReadyForEventDedupe = true,
+  suppressedEventIds,
+  renderDayStart,
+  renderDayEnd,
+}: {
+  savedEvents: SavedScheduleEvent[];
+  instances: ScheduleInstance[];
+  instancesReadyForEventDedupe?: boolean;
+  suppressedEventIds?: ReadonlySet<string>;
+  renderDayStart: Date;
+  renderDayEnd: Date;
+}): RenderedSavedScheduleEventCard[] {
+  const eventInstancesBySourceId = new Map<string, ScheduleInstance[]>();
+  const projectStyleEventInstanceBySourceId = new Map<
+    string,
+    ScheduleInstance
+  >();
+
+  for (const instance of instances) {
+    const eventSourceId = getEventBackedScheduleInstanceSourceId(instance);
+    if (!eventSourceId) continue;
+    const bucket = eventInstancesBySourceId.get(eventSourceId) ?? [];
+    bucket.push(instance);
+    eventInstancesBySourceId.set(eventSourceId, bucket);
+    if (isMyListScheduleInstanceLike(instance)) {
+      projectStyleEventInstanceBySourceId.set(eventSourceId, instance);
+    }
+  }
+  const eventIdsRepresentedByScheduleInstances = new Set(
+    eventInstancesBySourceId.keys()
+  );
+
+  const getInstanceScheduledRange = (instance: ScheduleInstance | null) => {
+    if (!instance) return null;
+    const start = toLocal(instance.start_utc);
+    const end = toLocal(instance.end_utc);
+    if (!isValidDate(start) || !isValidDate(end) || end <= start) {
+      return null;
+    }
+    return { start, end };
+  };
+
+  const chooseEventInstance = (
+    event: SavedScheduleEvent,
+    rendered: { start: Date; end: Date }
+  ) => {
+    const candidates = eventInstancesBySourceId.get(event.id) ?? [];
+    if (candidates.length === 0) return null;
+    const scored = candidates
+      .map((instance, index) => {
+        const range = getInstanceScheduledRange(instance);
+        const overlapsBlock = range
+          ? range.end > renderDayStart && range.start < renderDayEnd
+          : false;
+        const overlapsRendered = range
+          ? range.end > rendered.start && range.start < rendered.end
+          : false;
+        const completed = instance.status === "completed";
+        return { instance, index, overlapsBlock, overlapsRendered, completed };
+      })
+      .sort((a, b) => {
+        if (a.overlapsBlock !== b.overlapsBlock) {
+          return a.overlapsBlock ? -1 : 1;
+        }
+        if (a.overlapsRendered !== b.overlapsRendered) {
+          return a.overlapsRendered ? -1 : 1;
+        }
+        if (a.completed !== b.completed) return a.completed ? -1 : 1;
+        return b.index - a.index;
+      });
+    return scored[0]?.instance ?? null;
+  };
+
+  return savedEvents
+    .map((event) => {
+      const clipped = clipSegmentToDay(
+        event.start,
+        event.end,
+        renderDayStart,
+        renderDayEnd
+      );
+      if (!clipped) return null;
+      if (!instancesReadyForEventDedupe) return null;
+      const projectStyleEventInstance =
+        projectStyleEventInstanceBySourceId.get(event.id) ??
+        chooseEventInstance(event, {
+          start: clipped.segStart,
+          end: clipped.segEnd,
+        });
+      if (suppressedEventIds?.has(event.id) && !projectStyleEventInstance) {
+        return null;
+      }
+      if (
+        eventIdsRepresentedByScheduleInstances.has(event.id) &&
+        !projectStyleEventInstance
+      ) {
+        return null;
+      }
+
+      return {
+        renderKey: `saved-event-${event.id}`,
+        stableId: event.id,
+        title: event.title,
+        sourceCategory: event.kind,
+        status: projectStyleEventInstance?.status ?? "scheduled",
+        completedAt: projectStyleEventInstance?.completed_at ?? null,
+        scheduledStart: event.start,
+        scheduledEnd: event.end,
+        visibleStart: clipped.segStart,
+        visibleEnd: clipped.segEnd,
+        locationName: event.locationName,
+        meetingUrl: event.meetingUrl,
+        projectStyleEventInstance,
+        projectStyleEventCard: Boolean(projectStyleEventInstance),
+      } satisfies RenderedSavedScheduleEventCard;
+    })
+    .filter(
+      (card): card is RenderedSavedScheduleEventCard => card !== null
+    );
+}
+
+type TimeBlockAdjustmentIdentity = {
+  timeBlockId: string | null;
+  windowId: string | null;
+  dayTypeTimeBlockId: string | null;
+};
+
+type TimeBlockAdjustmentInstance = ScheduleInstance & {
+  project_name?: string | null;
+  event_name?: string | null;
+};
+
+function resolveTimeBlockAdjustmentInstanceEnd(instance: ScheduleInstance) {
+  if (!instance.start_utc) return null;
+  const start = toLocal(instance.start_utc);
+  if (!isValidDate(start)) return null;
+
+  const resolvedEnd = instance.end_utc ? toLocal(instance.end_utc) : null;
+  if (isValidDate(resolvedEnd) && resolvedEnd.getTime() > start.getTime()) {
+    return resolvedEnd;
+  }
+
+  const durationMin =
+    typeof instance.duration_min === "number" && Number.isFinite(instance.duration_min)
+      ? Math.max(0, instance.duration_min)
+      : 0;
+  if (durationMin <= 0) return null;
+
+  return new Date(start.getTime() + durationMin * 60_000);
+}
+
+function matchesTimeBlockAdjustmentIdentity(
+  instance: ScheduleInstance,
+  identity: TimeBlockAdjustmentIdentity
+) {
+  const matchesTimeBlockId = Boolean(
+    identity.timeBlockId &&
+      (instance.time_block_id === identity.timeBlockId ||
+        instance.window_id === identity.timeBlockId)
+  );
+  const matchesWindowId = Boolean(
+    identity.windowId && instance.window_id === identity.windowId
+  );
+  const matchesDayTypeTimeBlockId = Boolean(
+    identity.dayTypeTimeBlockId &&
+      instance.day_type_time_block_id === identity.dayTypeTimeBlockId
+  );
+
+  return matchesTimeBlockId || matchesWindowId || matchesDayTypeTimeBlockId;
+}
+
+function resolveTimeBlockAdjustmentInstanceTitle(
+  instance: TimeBlockAdjustmentInstance,
+  {
+    taskMap,
+    projectMap,
+    habitMap,
+  }: {
+    taskMap: Record<string, TaskLite>;
+    projectMap: Record<string, ProjectItem>;
+    habitMap: Record<string, HabitScheduleItem>;
+  }
+) {
+  const eventTitle = instance.event_name?.trim();
+  if (eventTitle) return eventTitle;
+
+  const projectTitle = instance.project_name?.trim();
+  if (projectTitle) return projectTitle;
+
+  const sourceId = instance.source_id ?? "";
+  if (instance.source_type === "TASK") {
+    const task = taskMap[sourceId];
+    if (task?.name?.trim()) return task.name.trim();
+    const parent =
+      task?.project_id && projectMap[task.project_id]
+        ? projectMap[task.project_id]
+        : null;
+    if (parent?.name?.trim()) return parent.name.trim();
+  }
+
+  if (instance.source_type === "PROJECT") {
+    const project = projectMap[sourceId];
+    if (project?.name?.trim()) return project.name.trim();
+  }
+
+  if (instance.source_type === "HABIT") {
+    const habit = habitMap[sourceId];
+    if (habit?.name?.trim()) return habit.name.trim();
+  }
+
+  return sourceId || "Scheduled event";
+}
+
+function resolveTimeBlockAdjustmentPlacementType(
+  sourceType?: string | null
+): FabTimeBlockAdjustmentPlacement["type"] {
+  const normalized = sourceType?.trim().toUpperCase() ?? "";
+  if (
+    normalized === "PROJECT" ||
+    normalized === "TASK" ||
+    normalized === "HABIT" ||
+    normalized === "EVENT"
+  ) {
+    return normalized;
+  }
+
+  return "EVENT";
 }
 
 const getScheduleInstanceLayoutId = (instanceId: string) =>
@@ -1273,6 +1766,401 @@ function ManualPlacementProjectCard({
   );
 }
 
+type TimelineResizeHandlesProps = {
+  onStartPointerDown?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onEndPointerDown?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onStartPointerMove?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onStartPointerUp?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onStartPointerCancel?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onEndPointerMove?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onEndPointerUp?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onEndPointerCancel?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  disabled?: boolean;
+};
+
+function TimelineResizeHandles({
+  onStartPointerDown,
+  onEndPointerDown,
+  onStartPointerMove,
+  onStartPointerUp,
+  onStartPointerCancel,
+  onEndPointerMove,
+  onEndPointerUp,
+  onEndPointerCancel,
+  disabled = false,
+}: TimelineResizeHandlesProps) {
+  const stopEvent = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+  }, []);
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Resize event start"
+        disabled={disabled}
+        className="absolute left-1/2 top-0 z-10 flex h-5 w-10 -translate-x-1/2 items-start justify-center bg-transparent p-0 text-white/65 outline-none disabled:cursor-default disabled:opacity-60"
+        style={{
+          touchAction: "none",
+          WebkitTapHighlightColor: "transparent",
+        }}
+        onPointerDown={onStartPointerDown}
+        onPointerMove={onStartPointerMove ?? stopEvent}
+        onPointerUp={onStartPointerUp ?? stopEvent}
+        onPointerCancel={onStartPointerCancel ?? stopEvent}
+        onClick={stopEvent}
+      >
+        <ChevronUp
+          className="pointer-events-none mt-0.5 block h-3 w-3 shrink-0"
+          strokeWidth={2.4}
+          aria-hidden="true"
+        />
+      </button>
+      <button
+        type="button"
+        aria-label="Resize event end"
+        disabled={disabled}
+        className="absolute bottom-0 left-1/2 z-10 flex h-5 w-10 -translate-x-1/2 items-end justify-center bg-transparent p-0 text-white/65 outline-none disabled:cursor-default disabled:opacity-60"
+        style={{
+          touchAction: "none",
+          WebkitTapHighlightColor: "transparent",
+        }}
+        onPointerDown={onEndPointerDown}
+        onPointerMove={onEndPointerMove ?? stopEvent}
+        onPointerUp={onEndPointerUp ?? stopEvent}
+        onPointerCancel={onEndPointerCancel ?? stopEvent}
+        onClick={stopEvent}
+      >
+        <ChevronDown
+          className="pointer-events-none mb-0.5 block h-3 w-3 shrink-0"
+          strokeWidth={2.4}
+          aria-hidden="true"
+        />
+      </button>
+    </>
+  );
+}
+
+function applyTimelineResizeToMinutes({
+  mode,
+  snappedMinute,
+  fixedStartMinute,
+  fixedEndMinute,
+  minDurationMinutes,
+  dayStartMinute = 0,
+  dayEndMinute = 24 * 60,
+}: {
+  mode: QuickCreateResizeMode;
+  snappedMinute: number;
+  fixedStartMinute: number;
+  fixedEndMinute: number;
+  minDurationMinutes: number;
+  dayStartMinute?: number;
+  dayEndMinute?: number;
+}) {
+  const safeDayStartMinute = Math.max(0, Math.round(dayStartMinute));
+  const safeDayEndMinute = Math.max(
+    safeDayStartMinute + minDurationMinutes,
+    Math.round(dayEndMinute)
+  );
+  const safeMinDuration = Math.max(1, Math.round(minDurationMinutes));
+
+  if (mode === "start") {
+    const endMinute = Math.min(
+      Math.max(Math.round(fixedEndMinute), safeDayStartMinute + safeMinDuration),
+      safeDayEndMinute
+    );
+    const startMinute = Math.min(
+      Math.max(Math.round(snappedMinute), safeDayStartMinute),
+      Math.max(safeDayStartMinute, endMinute - safeMinDuration)
+    );
+    return {
+      startMinute,
+      endMinute,
+    };
+  }
+
+  const startMinute = Math.max(
+    Math.min(Math.round(fixedStartMinute), safeDayEndMinute - safeMinDuration),
+    safeDayStartMinute
+  );
+  const endMinute = Math.max(
+    Math.min(Math.round(snappedMinute), safeDayEndMinute),
+    Math.min(safeDayEndMinute, startMinute + safeMinDuration)
+  );
+
+  return {
+    startMinute,
+    endMinute,
+  };
+}
+
+type ProjectStyleScheduleInstanceCardInstance = Pick<
+  ScheduleInstance,
+  "metadata" | "status" | "energy_resolved"
+>;
+
+function buildMyListProjectStyleMetadata({
+  metadata,
+  title,
+  start,
+  end,
+  durationMinutes,
+  energyResolved,
+}: {
+  metadata: Json | null | undefined;
+  title: string;
+  start: Date;
+  end: Date;
+  durationMinutes: number;
+  energyResolved?: string | null;
+}) {
+  const baseMetadata = readScheduleMetadataRecord(metadata) ?? {};
+  const energy =
+    resolveEnergyLevel(
+      energyResolved ??
+        readScheduleMetadataString(baseMetadata, "energy") ??
+        readScheduleMetadataString(baseMetadata, "energy_resolved")
+    ) ?? "MEDIUM";
+  const skillId =
+    readScheduleMetadataString(baseMetadata, "skillId") ??
+    readScheduleMetadataString(baseMetadata, "skill_id");
+  const skillName =
+    readScheduleMetadataString(baseMetadata, "skillName") ??
+    readScheduleMetadataString(baseMetadata, "skill_name");
+  const skillIcon =
+    readScheduleMetadataString(baseMetadata, "skillIcon") ??
+    readScheduleMetadataString(baseMetadata, "skill_icon");
+  const priority =
+    readScheduleMetadataString(baseMetadata, "priority") ??
+    readScheduleMetadataString(baseMetadata, "priorityId") ??
+    readScheduleMetadataString(baseMetadata, "priority_id");
+  const priorityLabel =
+    readScheduleMetadataString(baseMetadata, "priorityLabel") ??
+    readScheduleMetadataString(baseMetadata, "priority_label");
+  const prioritySymbol =
+    readScheduleMetadataString(baseMetadata, "prioritySymbol") ??
+    readScheduleMetadataString(baseMetadata, "priority_symbol");
+  return {
+    ...baseMetadata,
+    source: "my-list",
+    presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
+    title,
+    name: title,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    durationMinutes,
+    duration_min: durationMinutes,
+    energy,
+    energy_resolved: energy,
+    ...(skillId ? { skillId } : {}),
+    ...(skillName ? { skillName } : {}),
+    ...(skillIcon ? { skillIcon } : {}),
+    ...(priority ? { priority } : {}),
+    ...(priorityLabel ? { priorityLabel } : {}),
+    ...(prioritySymbol ? { prioritySymbol } : {}),
+  } satisfies Json;
+}
+
+function buildMyListProjectStyleScheduleInstance({
+  metadata,
+  title,
+  start,
+  end,
+  durationMinutes,
+  status = "scheduled",
+  energyResolved,
+}: {
+  metadata: Json | null | undefined;
+  title: string;
+  start: Date;
+  end: Date;
+  durationMinutes: number;
+  status?: ScheduleInstance["status"] | null;
+  energyResolved?: string | null;
+}): ProjectStyleScheduleInstanceCardInstance {
+  const normalizedEnergy = resolveEnergyLevel(
+    energyResolved ??
+      readScheduleMetadataString(metadata, "energy") ??
+      readScheduleMetadataString(metadata, "energy_resolved")
+  );
+  return {
+    status: status ?? "scheduled",
+    energy_resolved: normalizedEnergy ?? "MEDIUM",
+    metadata: buildMyListProjectStyleMetadata({
+      metadata,
+      title,
+      start,
+      end,
+      durationMinutes,
+      energyResolved,
+    }),
+  };
+}
+
+function normalizeMyListProjectStyleScheduleInstance({
+  instance,
+  title,
+  start,
+  end,
+  durationMinutes,
+  status,
+}: {
+  instance: ScheduleInstance;
+  title: string;
+  start: Date;
+  end: Date;
+  durationMinutes: number;
+  status?: ScheduleInstance["status"] | null;
+}): ProjectStyleScheduleInstanceCardInstance {
+  return buildMyListProjectStyleScheduleInstance({
+    metadata: instance.metadata,
+    title,
+    start,
+    end,
+    durationMinutes,
+    status: status ?? instance.status ?? "scheduled",
+    energyResolved: instance.energy_resolved,
+  });
+}
+
+type ProjectScheduleInstanceCardProps = {
+  instance: ProjectStyleScheduleInstanceCardInstance;
+  title: string;
+  durationMinutes: number;
+  heightPx: number;
+  showDurationLabel?: boolean;
+  showResizeHandles?: boolean;
+  onResizeStartPointerDown?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeStartPointerMove?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeStartPointerUp?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeStartPointerCancel?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerDown?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerMove?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerUp?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerCancel?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+};
+
+function ProjectScheduleInstanceCard({
+  instance,
+  title,
+  durationMinutes,
+  heightPx,
+  showDurationLabel = false,
+  showResizeHandles = false,
+  onResizeStartPointerDown,
+  onResizeStartPointerMove,
+  onResizeStartPointerUp,
+  onResizeStartPointerCancel,
+  onResizeEndPointerDown,
+  onResizeEndPointerMove,
+  onResizeEndPointerUp,
+  onResizeEndPointerCancel,
+}: ProjectScheduleInstanceCardProps) {
+  const energyLevel =
+    resolveEnergyLevel(instance.energy_resolved) ?? "MEDIUM";
+  const skillIcon = getScheduleMetadataSkillIcon(instance.metadata);
+  const cardVisuals = getProjectScheduleInstanceVisuals({
+    heightPx,
+    completed: instance.status === "completed",
+  });
+  const isCompact =
+    Number.isFinite(heightPx) &&
+    heightPx > 0 &&
+    heightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
+  const titleClass = isCompact
+    ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
+    : "min-w-0 leading-tight truncate";
+
+  return (
+    <div
+      className={clsx(
+        PROJECT_SCHEDULE_INSTANCE_CARD_CLASS,
+        "gap-3 overflow-hidden px-3 py-2",
+        getTimelineCardCornerClass("full"),
+        cardVisuals.borderClass,
+        instance.status === "completed" && FOCUS_POMO_COMPLETE_EFFECT_CLASSES
+      )}
+      style={{
+        ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+        boxShadow: cardVisuals.boxShadow,
+        outline: cardVisuals.outline,
+        outlineOffset: "-1px",
+        background: cardVisuals.background,
+      }}
+    >
+      {showResizeHandles ? (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          <TimelineResizeHandles
+            onStartPointerDown={onResizeStartPointerDown}
+            onStartPointerMove={onResizeStartPointerMove}
+            onStartPointerUp={onResizeStartPointerUp}
+            onStartPointerCancel={onResizeStartPointerCancel}
+            onEndPointerDown={onResizeEndPointerDown}
+            onEndPointerMove={onResizeEndPointerMove}
+            onEndPointerUp={onResizeEndPointerUp}
+            onEndPointerCancel={onResizeEndPointerCancel}
+            disabled={false}
+          />
+        </div>
+      ) : null}
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className="min-w-0 space-y-1">
+          <motion.span className="block text-sm font-medium">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={titleClass}>{title}</span>
+            </span>
+          </motion.span>
+          {showDurationLabel ? (
+            <div className="text-xs text-zinc-200/70">
+              {Math.round(durationMinutes)}m
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <SkillEnergyBadge
+        energyLevel={energyLevel}
+        skillIcon={skillIcon}
+        className="flex flex-shrink-0 items-center gap-2"
+        iconClassName="text-lg leading-none"
+        flameClassName="flex-shrink-0"
+      />
+    </div>
+  );
+}
+
 function ManualPlacementHabitCard({
   title,
   practiceContextLabel,
@@ -1327,11 +2215,45 @@ function ManualPlacementTimelineCard({
   label,
   mode,
   heightPx,
+  showResizeHandles = false,
+  onResizeStartPointerDown,
+  onResizeStartPointerMove,
+  onResizeStartPointerUp,
+  onResizeStartPointerCancel,
+  onResizeEndPointerDown,
+  onResizeEndPointerMove,
+  onResizeEndPointerUp,
+  onResizeEndPointerCancel,
 }: {
   candidate: ManualPlacementCandidate;
   label: string;
   mode: ManualPlacementDragGhost["mode"];
   heightPx: number;
+  showResizeHandles?: boolean;
+  onResizeStartPointerDown?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeStartPointerMove?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeStartPointerUp?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeStartPointerCancel?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerDown?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerMove?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerUp?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  onResizeEndPointerCancel?: (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
 }) {
   const title = candidate.title ?? label;
   const wrapTitle = candidate.durationMinutes >= 30;
@@ -1396,31 +2318,61 @@ function ManualPlacementTimelineCard({
       : null;
   const energyLevel = resolveEnergyLevel(candidate.energy) ?? "NO";
   const collapsedCardPaddingClass = goalName ? "pt-4 pb-2" : "py-2";
-  const isTaskGhost = candidate.sourceType === "TASK";
+  const projectStyleMetadata = isMyListManualPlacementCandidate(candidate);
+
+  if (projectStyleMetadata) {
+    const manualPlacementProjectStyleInstance =
+      buildMyListProjectStyleScheduleInstance({
+        metadata: candidate.metadata,
+        title,
+        start: new Date(),
+        end: new Date(
+          Date.now() + Math.max(1, candidate.durationMinutes) * 60_000
+        ),
+        durationMinutes: Math.max(1, Math.round(candidate.durationMinutes)),
+      });
+    return (
+      <ProjectScheduleInstanceCard
+        instance={manualPlacementProjectStyleInstance}
+        title={title}
+        durationMinutes={candidate.durationMinutes}
+        heightPx={heightPx}
+        showDurationLabel={false}
+        showResizeHandles={showResizeHandles}
+        onResizeStartPointerDown={onResizeStartPointerDown}
+        onResizeStartPointerMove={onResizeStartPointerMove}
+        onResizeStartPointerUp={onResizeStartPointerUp}
+        onResizeStartPointerCancel={onResizeStartPointerCancel}
+        onResizeEndPointerDown={onResizeEndPointerDown}
+        onResizeEndPointerMove={onResizeEndPointerMove}
+        onResizeEndPointerUp={onResizeEndPointerUp}
+        onResizeEndPointerCancel={onResizeEndPointerCancel}
+      />
+    );
+  }
 
   return (
     <div
       className={clsx(
-        "relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white backdrop-blur-sm transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
+        PROJECT_SCHEDULE_INSTANCE_CARD_CLASS,
+        "gap-3 px-3",
         getTimelineCardCornerClass("full"),
         collapsedCardPaddingClass,
-        isTaskGhost ? "border-white/10" : "border-black/70",
+        "border-black/70",
         opacityClass
       )}
       style={{
         ...baseStyle,
-        outline: isTaskGhost
-          ? "1px solid var(--event-border)"
-          : baseStyle.outline,
-        background: isTaskGhost
-          ? TIMELINE_NEUTRAL_EVENT_BACKGROUND
-          : TIMELINE_DARK_EVENT_BACKGROUND,
+        boxShadow: baseStyle.boxShadow,
+        outline: baseStyle.outline,
+        background: TIMELINE_DARK_EVENT_BACKGROUND,
       }}
     >
       <ManualPlacementProjectCard
         title={title}
         goalName={goalName}
         energyLevel={energyLevel}
+        skillIcon={getScheduleMetadataSkillIcon(candidate.metadata)}
         rankDisplay={rankDisplay}
         wrapTitle={wrapTitle}
       />
@@ -1793,6 +2745,45 @@ type ProjectTaskCard = {
   displayDurationMinutes: number;
 };
 
+function buildScheduledProjectTaskCardsByInstanceId(
+  dayProjectInstances: ProjectInstance[],
+  taskInstancesByProject: Record<string, TaskInstanceInfo[]>
+) {
+  const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
+  for (const projectInstance of dayProjectInstances) {
+    const projectTasks =
+      taskInstancesByProject[projectInstance.project.id] ?? [];
+    const scheduledCards = projectTasks
+      .filter((taskInfo) =>
+        taskMatchesProjectInstance(
+          taskInfo,
+          projectInstance.instance,
+          projectInstance.start,
+          projectInstance.end
+        )
+      )
+      .map((taskInfo) => ({
+        key: `scheduled:${taskInfo.instance.id}`,
+        kind: "scheduled" as const,
+        task: taskInfo.task,
+        start: taskInfo.start,
+        end: taskInfo.end,
+        instanceId: taskInfo.instance.id,
+        displayDurationMinutes: Math.max(
+          1,
+          Math.round((taskInfo.end.getTime() - taskInfo.start.getTime()) / 60000)
+        ),
+      }));
+    if (scheduledCards.length > 0) {
+      scheduledCardsByInstanceId.set(
+        projectInstance.instance.id,
+        scheduledCards
+      );
+    }
+  }
+  return scheduledCardsByInstanceId;
+}
+
 function buildScheduleBlockNotificationInstances(
   instances: ScheduleInstance[],
   dataset: Pick<
@@ -2114,15 +3105,19 @@ type MemoCompletionDraftState = {
 };
 
 type EditingSnapshot = {
-  source_type: "PROJECT" | "HABIT" | "TASK";
+  source_type: "PROJECT" | "HABIT" | "TASK" | "EVENT";
   projectId: string | null;
   habitId: string | null;
   taskId: string | null;
+  eventId?: string | null;
   habitSnapshot?: HabitEditSnapshot | null;
   originData?: ScheduleEditOrigin | null;
 };
 
-type EditableScheduleSourceType = EditingSnapshot["source_type"];
+type EditableScheduleSourceType = Exclude<
+  EditingSnapshot["source_type"],
+  "EVENT"
+>;
 
 type HabitEditSnapshot = {
   name: string;
@@ -2186,6 +3181,7 @@ const describeEditingSnapshot = (snapshot: EditingSnapshot | null) => ({
   projectId: snapshot?.projectId ?? null,
   habitId: snapshot?.habitId ?? null,
   taskId: snapshot?.taskId ?? null,
+  eventId: snapshot?.eventId ?? null,
 });
 
 type EditingSnapshotWithInstance = EditingSnapshot & {
@@ -4017,6 +5013,8 @@ export default function ScheduleTabContent({
   const [windows, setWindows] = useState<RepoWindow[]>([]);
   const [selectedTimeBlockForConstraints, setSelectedTimeBlockForConstraints] =
     useState<TimeBlockConstraintDraft | null>(null);
+  const [timeBlockAdjustmentRequest, setTimeBlockAdjustmentRequest] =
+    useState<FabTimeBlockAdjustmentRequest | null>(null);
   const [isSavingTimeBlockConstraints, setIsSavingTimeBlockConstraints] =
     useState(false);
   const [timeBlockConstraintsError, setTimeBlockConstraintsError] = useState<
@@ -4037,6 +5035,12 @@ export default function ScheduleTabContent({
     previewTime: Date | null;
     pushPreview: ManualPlacementPushPreviewResult | null;
   } | null>(null);
+  const [myListPendingPlacement, setMyListPendingPlacement] =
+    useState<MyListPendingManualPlacement | null>(null);
+  const [myListOptimisticPlacement, setMyListOptimisticPlacement] =
+    useState<MyListOptimisticManualPlacement | null>(null);
+  const [myListCommitSuppressedEventIds, setMyListCommitSuppressedEventIds] =
+    useState<Set<string>>(() => new Set());
   const manualPlacementSessionRef = useRef<typeof manualPlacementSession>(null);
   const manualPlacementPointerIdRef = useRef<number | null>(null);
   const [quickCreateDraftEvent, setQuickCreateDraftEvent] =
@@ -4091,6 +5095,24 @@ export default function ScheduleTabContent({
   const quickCreateResizeTouchSuppressCleanupRef = useRef<
     (() => void) | null
   >(null);
+  const myListResizeSessionRef = useRef<{
+    pointerId: number;
+    mode: QuickCreateResizeMode;
+    fixedStartMinute: number;
+    fixedEndMinute: number;
+  } | null>(null);
+  const myListIsResizingRef = useRef(false);
+  const myListResizeLastClientYRef = useRef<number | null>(null);
+  const myListResizeAutoScrollFrameRef = useRef<number | null>(null);
+  const myListResizeAutoScrollDirectionRef = useRef<"up" | "down" | null>(
+    null
+  );
+  const myListResizeAutoScrollSpeedRef = useRef(0);
+  const myListResizeTouchSuppressCleanupRef = useRef<
+    (() => void) | null
+  >(null);
+  const myListPendingPlacementRef =
+    useRef<MyListPendingManualPlacement | null>(null);
   const updateManualPlacementSession = useCallback(
     (
       updater: (
@@ -4111,6 +5133,9 @@ export default function ScheduleTabContent({
   useEffect(() => {
     quickCreateDraftEventRef.current = quickCreateDraftEvent;
   }, [quickCreateDraftEvent]);
+  useEffect(() => {
+    myListPendingPlacementRef.current = myListPendingPlacement;
+  }, [myListPendingPlacement]);
   useEffect(() => {
     if (quickCreateDraftEvent) {
       setQuickCreateDebugPhase("draft rendered");
@@ -4252,6 +5277,25 @@ export default function ScheduleTabContent({
     }
     return ids;
   }, [allInstances]);
+  useEffect(() => {
+    if (myListCommitSuppressedEventIds.size === 0) return;
+    const representedEventIds = new Set<string>();
+    for (const instance of allInstances) {
+      const eventSourceId = getEventBackedScheduleInstanceSourceId(instance);
+      if (eventSourceId) representedEventIds.add(eventSourceId);
+    }
+    setMyListCommitSuppressedEventIds((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const eventId of current) {
+        if (representedEventIds.has(eventId)) {
+          next.delete(eventId);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [allInstances, myListCommitSuppressedEventIds.size]);
   const [overlayVisibilityNowMs, setOverlayVisibilityNowMs] = useState(() =>
     Date.now()
   );
@@ -5212,7 +6256,7 @@ export default function ScheduleTabContent({
           time_block_id: null,
           overlay_window_id: null,
           practice_context_monument_id: null,
-          metadata: null,
+          metadata: candidate.metadata ?? null,
           canceled_reason: null,
           completed_at: null,
           updated_at: nowIso,
@@ -5241,9 +6285,28 @@ export default function ScheduleTabContent({
   );
 
   const reconcileOptimisticManualPlacement = useCallback(
-    (optimistic: OptimisticManualPlacement | null, serverId: string | null) => {
-      if (!optimistic?.tempId || !serverId) return;
+    (
+      optimistic: OptimisticManualPlacement | null,
+      serverId: string | null,
+      serverInstance?: ScheduleInstance | null
+    ) => {
+      if (!optimistic?.tempId && !serverInstance) return;
       const replaceTempId = (list: ScheduleInstance[]) => {
+        if (serverInstance) {
+          const withoutTemp = optimistic?.tempId
+            ? list.filter((instance) => instance.id !== optimistic.tempId)
+            : list;
+          const serverIndex = withoutTemp.findIndex(
+            (instance) => instance.id === serverInstance.id
+          );
+          if (serverIndex === -1) {
+            return [...withoutTemp, serverInstance];
+          }
+          return withoutTemp.map((instance, index) =>
+            index === serverIndex ? { ...instance, ...serverInstance } : instance
+          );
+        }
+        if (!optimistic?.tempId || !serverId) return list;
         const hasServerInstance = list.some(
           (instance) => instance.id === serverId
         );
@@ -5272,10 +6335,140 @@ export default function ScheduleTabContent({
     []
   );
 
+  const suppressMyListCommitEventId = useCallback((eventId: string | null) => {
+    const normalized = eventId?.trim();
+    if (!normalized) return;
+    setMyListCommitSuppressedEventIds((current) => {
+      if (current.has(normalized)) return current;
+      const next = new Set(current);
+      next.add(normalized);
+      return next;
+    });
+  }, []);
+
   const commitManualPlacement = useCallback(
-    async (candidate: ManualPlacementCandidate, previewStart: Date) => {
+    async (
+      candidate: ManualPlacementCandidate,
+      previewStart: Date,
+      options?: { durationMinutes?: number }
+    ) => {
       const snappedStart = snapToFiveMinuteGrid(previewStart);
       const startUtc = snappedStart.toISOString();
+      const durationMinutes = Math.max(
+        1,
+        Math.round(options?.durationMinutes ?? candidate.durationMinutes)
+      );
+      const snappedEnd = new Date(
+        snappedStart.getTime() + durationMinutes * 60_000
+      );
+
+      const shouldCreateEventThroughInstancesApi =
+        candidate.sourceType === "EVENT" &&
+        !candidate.sourceId &&
+        isMyListManualPlacementCandidate(candidate);
+
+      if (
+        candidate.sourceType === "EVENT" &&
+        !candidate.sourceId &&
+        !shouldCreateEventThroughInstancesApi
+      ) {
+        if (!userId) {
+          toast.error("Manual placement failed", "You need to be signed in.");
+          return false;
+        }
+
+        const title = candidate.title?.trim() || "Untitled Event";
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          toast.error("Manual placement failed", "Supabase client unavailable.");
+          return false;
+        }
+
+        try {
+          const eventEndUtc = snappedEnd.toISOString();
+          const localDateKey = formatLocalDateKey(
+            snappedStart,
+            effectiveTimeZone
+          );
+          const { data: eventRow, error: eventError } = await supabase
+            .from("events")
+            .insert({
+              user_id: userId,
+              title,
+              notes: null,
+              kind: "EVENT",
+              all_day: false,
+              start_at: startUtc,
+              end_at: eventEndUtc,
+              timezone: effectiveTimeZone,
+              start_date: localDateKey,
+              end_date: localDateKey,
+              recurrence: "NONE",
+              location_name: null,
+              location_address: null,
+              meeting_provider: null,
+              meeting_url: null,
+              blocks_time: "DEFAULT",
+              visibility: "PRIVATE",
+              notification_timing: "NONE",
+            })
+            .select("id")
+            .single();
+
+          if (eventError) throw eventError;
+          const eventId =
+            typeof eventRow?.id === "string" &&
+            eventRow.id.trim().length > 0
+              ? eventRow.id.trim()
+              : null;
+          if (!eventId) {
+            throw new Error("Event was created without an id.");
+          }
+
+          const { error: instanceError } = await supabase
+            .from("schedule_instances")
+            .insert({
+              user_id: userId,
+              source_type: "EVENT",
+              source_id: eventId,
+              start_utc: startUtc,
+              end_utc: eventEndUtc,
+              duration_min: durationMinutes,
+              status: "scheduled",
+              locked: true,
+              placement_source: "manual",
+              window_id: null,
+              day_type_time_block_id: null,
+              time_block_id: null,
+              overlay_window_id: null,
+              practice_context_monument_id: null,
+              metadata: candidate.metadata ?? null,
+              weight_snapshot: 0,
+              energy_resolved: candidate.energy ?? "NO",
+              event_name: title,
+            });
+          if (instanceError) throw instanceError;
+
+          setManualPlacementSession(null);
+          manualPlacementSessionRef.current = null;
+          manualPlacementPointerIdRef.current = null;
+          toast.success("Event placed", "Manual placement committed.");
+          window.dispatchEvent(
+            new CustomEvent(SCHEDULE_SAVED_EVENTS_UPDATED_EVENT)
+          );
+          await refreshScheduleData();
+          return true;
+        } catch (error) {
+          toast.error(
+            "Manual placement failed",
+            error instanceof Error
+              ? error.message
+              : "Please try again or pick another time."
+          );
+          return false;
+        }
+      }
+
       const optimistic = applyOptimisticManualPlacement(candidate, snappedStart);
       try {
         const response = candidate.instanceId
@@ -5298,9 +6491,11 @@ export default function ScheduleTabContent({
                 sourceType: candidate.sourceType,
                 sourceId: candidate.sourceId,
                 startUtc,
-                durationMin: candidate.durationMinutes,
+                durationMin: durationMinutes,
                 energyResolved: candidate.energy,
                 eventName: candidate.title,
+                timeZone: effectiveTimeZone,
+                metadata: candidate.metadata ?? null,
               }),
             });
         if (!response.ok) {
@@ -5315,16 +6510,30 @@ export default function ScheduleTabContent({
           | {
               success?: boolean;
               startUtc?: string;
-              instance?: { id?: string | null } | null;
+              eventId?: string | null;
+              instance?: unknown;
               displacedProjectWarnings?: Array<unknown>;
             }
           | null;
-        const serverInstanceId =
-          typeof successPayload?.instance?.id === "string" &&
-          successPayload.instance.id.trim().length > 0
-            ? successPayload.instance.id.trim()
-            : null;
-        reconcileOptimisticManualPlacement(optimistic, serverInstanceId);
+        const serverInstance = normalizeReturnedScheduleInstance(
+          successPayload?.instance
+        );
+        const serverInstanceId = serverInstance?.id ?? null;
+        const returnedEventId =
+          typeof successPayload?.eventId === "string" &&
+          successPayload.eventId.trim().length > 0
+            ? successPayload.eventId.trim()
+            : serverInstance?.source_type === "EVENT"
+              ? serverInstance.source_id
+              : null;
+        if (isMyListManualPlacementCandidate(candidate)) {
+          suppressMyListCommitEventId(returnedEventId);
+        }
+        reconcileOptimisticManualPlacement(
+          optimistic,
+          serverInstanceId,
+          serverInstance
+        );
         setManualPlacementSession(null);
         manualPlacementSessionRef.current = null;
         manualPlacementPointerIdRef.current = null;
@@ -5339,6 +6548,7 @@ export default function ScheduleTabContent({
           );
         }
         await refreshScheduleData();
+        return true;
       } catch (error) {
         console.error("Manual placement failed", error);
         rollbackOptimisticManualPlacement(optimistic);
@@ -5346,134 +6556,25 @@ export default function ScheduleTabContent({
           "Manual placement failed",
           error instanceof Error ? error.message : "Please try again or pick another time."
         );
+        return false;
       }
     },
     [
       applyOptimisticManualPlacement,
+      effectiveTimeZone,
       reconcileOptimisticManualPlacement,
       refreshScheduleData,
       rollbackOptimisticManualPlacement,
       snapToFiveMinuteGrid,
+      suppressMyListCommitEventId,
       toast,
+      userId,
     ]
   );
 
-  useEffect(() => {
-    const handleManualPlacementRequest = (event: Event) => {
-      const detail = (event as CustomEvent<ManualPlacementRequestDetail>).detail;
-      const result = detail?.result;
-      const sourceType = normalizeManualPlacementSourceType(result?.type);
-      const sourceId =
-        typeof result?.id === "string" && result.id.trim().length > 0
-          ? result.id.trim()
-          : null;
-      const instanceId =
-        typeof result?.scheduleInstanceId === "string" &&
-        result.scheduleInstanceId.trim().length > 0
-          ? result.scheduleInstanceId.trim()
-          : typeof result?.schedule_instance_id === "string" &&
-              result.schedule_instance_id.trim().length > 0
-            ? result.schedule_instance_id.trim()
-          : null;
-      if (!result || (!instanceId && (!sourceType || !sourceId))) {
-        toast.error(
-          "Manual placement unavailable",
-          "No schedulable Event source was provided."
-        );
-        return;
-      }
-      const safeDuration =
-        typeof result.durationMinutes === "number" &&
-        Number.isFinite(result.durationMinutes) &&
-        result.durationMinutes > 0
-          ? result.durationMinutes
-          : 60;
+  const activeMyListPlacement =
+    myListPendingPlacement ?? myListOptimisticPlacement;
 
-      const nextStart = (() => {
-        if (result.nextScheduledAt) {
-          const parsed = new Date(result.nextScheduledAt);
-          if (!Number.isNaN(parsed.getTime())) return parsed;
-        }
-        return new Date();
-      })();
-
-      const pointer = detail?.pointer;
-      const initialX =
-        typeof pointer?.clientX === "number"
-          ? pointer.clientX
-          : window.innerWidth / 2;
-      const initialY =
-        typeof pointer?.clientY === "number"
-          ? pointer.clientY
-          : window.innerHeight / 2;
-      const pointerId =
-        typeof pointer?.pointerId === "number" ? pointer.pointerId : null;
-      manualPlacementPointerIdRef.current = pointerId;
-      const initialWidth =
-        typeof pointer?.width === "number" &&
-        Number.isFinite(pointer.width) &&
-        pointer.width > 0
-          ? pointer.width
-          : Math.min(320, Math.max(240, window.innerWidth - 48));
-
-      const candidate: ManualPlacementCandidate = {
-        instanceId,
-        sourceId,
-        durationMinutes: safeDuration,
-        title: result.name ?? null,
-        sourceType,
-        energy:
-          typeof result.energy === "string" ? result.energy : null,
-        goalName:
-          typeof result.goalName === "string" ? result.goalName : null,
-        habitType: readManualPlacementHabitType(result),
-        currentStreakDays:
-          typeof result.currentStreakDays === "number" &&
-          Number.isFinite(result.currentStreakDays)
-            ? result.currentStreakDays
-            : null,
-        globalRank:
-          typeof result.global_rank === "number" &&
-          Number.isFinite(result.global_rank)
-            ? result.global_rank
-            : null,
-      };
-      const snappedPreview = snapToFiveMinuteGrid(nextStart);
-      const session = {
-        candidate,
-        pointerId,
-        ghost: {
-          x: initialX,
-          y: initialY,
-          label: result.name ?? "Manual placement",
-          mode: "pickup" as const,
-          pointerId,
-          width: initialWidth,
-        },
-        previewTime: snappedPreview,
-        pushPreview: computeManualPlacementPushPreview(
-          candidate,
-          snappedPreview,
-          currentDayProjectInstancesRef.current
-        ),
-      };
-      setManualPlacementSession(session);
-      manualPlacementSessionRef.current = session;
-      setSkipNextDayAnimation(true);
-      navigate("day");
-    };
-
-    window.addEventListener(
-      "schedule:manual-placement-requested",
-      handleManualPlacementRequest as EventListener
-    );
-    return () => {
-      window.removeEventListener(
-        "schedule:manual-placement-requested",
-        handleManualPlacementRequest as EventListener
-      );
-    };
-  }, [navigate, snapToFiveMinuteGrid, toast]);
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null);
   const PRIMARY_WRITE_WINDOW_DAYS = 28;
   const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
@@ -6677,19 +7778,78 @@ export default function ScheduleTabContent({
       };
     }
 
+    if (editingSnapshot?.source_type === "EVENT" && editingInstance?.id) {
+      const eventId =
+        editingSnapshot.eventId ??
+        (editingInstance.source_type === "EVENT"
+          ? editingInstance.source_id
+          : null);
+      const savedEvent = eventId
+        ? (savedEvents.find((event) => event.id === eventId) ?? null)
+        : null;
+      const startIso =
+        editingInstance.start_utc ??
+        (savedEvent ? savedEvent.start.toISOString() : null);
+      const endIso =
+        editingInstance.end_utc ??
+        (savedEvent ? savedEvent.end.toISOString() : null);
+      const title = getMyListScheduleInstanceTitle(
+        editingInstance,
+        savedEvent?.title ?? editingEventTitle
+      );
+      const durationMin =
+        typeof editingInstance.duration_min === "number" &&
+        Number.isFinite(editingInstance.duration_min)
+          ? editingInstance.duration_min
+          : startIso && endIso
+            ? Math.max(
+                1,
+                Math.round(
+                  (new Date(endIso).getTime() -
+                    new Date(startIso).getTime()) /
+                    60000
+                )
+              )
+            : null;
+
+      return {
+        entityType: "EVENT" as const,
+        entityId: eventId ?? editingInstance.id,
+        eventId,
+        sourceType: editingInstance.source_type,
+        sourceId: editingInstance.source_id,
+        instanceId: editingInstance.id,
+        title,
+        layoutId: editingLayoutId,
+        originRect,
+        startIso,
+        endIso,
+        durationMin,
+        skillId: getScheduleMetadataSkillId(editingInstance.metadata),
+        priority: getScheduleMetadataPriority(editingInstance.metadata),
+        energy:
+          getScheduleMetadataEnergy(editingInstance.metadata) ??
+          editingInstance.energy_resolved ??
+          "MEDIUM",
+        metadata: editingInstance.metadata ?? null,
+      };
+    }
+
     return null;
   }, [
     editingEventTitle,
     editingHabitId,
-    editingInstance?.id,
     editingLayoutId,
     editingProjectId,
     editingTaskId,
+    editingInstance,
     editingSnapshot?.source_type,
+    editingSnapshot?.eventId,
     editingSnapshot?.originData,
     editingSnapshot?.habitSnapshot,
     habitMap,
     projectMap,
+    savedEvents,
     taskMap,
   ]);
 
@@ -7147,17 +8307,24 @@ export default function ScheduleTabContent({
       }
 
       if (instance.source_type === "EVENT") {
-        const uniqueSkillIds = collectSkillIds(
-          resolveScheduleEventSkillContext(instance.metadata).skillIds
-        );
+        const semantics = resolveScheduleXpCompletionSemantics(instance);
+        if (!semantics) return null;
+        const task =
+          semantics.completionSourceType === "TASK"
+            ? taskMap[semantics.completionSourceId]
+            : null;
+        const uniqueSkillIds = collectSkillIds([
+          task?.skill_id,
+          ...resolveScheduleEventSkillContext(instance.metadata).skillIds,
+        ]);
         const monumentIds = uniqueSkillIds
           .map((id) => skillMonumentMap[id])
           .filter(
             (id): id is string => typeof id === "string" && id.length > 0
           );
         return {
-          kind: "event" as const,
-          amount: SCHEDULE_XP_AWARD_AMOUNTS.EVENT,
+          kind: semantics.xpKind,
+          amount: SCHEDULE_XP_AWARD_AMOUNTS.TASK,
           skillIds: uniqueSkillIds,
           monumentIds,
         };
@@ -7171,7 +8338,8 @@ export default function ScheduleTabContent({
   const reverseScheduleXpOccurrence = useCallback(
     async (
       occurrenceStem: string,
-      legacyOccurrenceStems: string[] = []
+      legacyOccurrenceStems: string[] = [],
+      scheduleInstanceId?: string | null
     ): Promise<ScheduleXpReverseOutcome> => {
       try {
         const response = await fetch("/api/xp/reverse", {
@@ -7180,6 +8348,7 @@ export default function ScheduleTabContent({
           body: JSON.stringify({
             occurrenceStem,
             legacyOccurrenceStems,
+            ...(scheduleInstanceId ? { scheduleInstanceId } : {}),
           }),
         });
         if (!response.ok) {
@@ -7255,23 +8424,29 @@ export default function ScheduleTabContent({
           reason: "Schedule XP blocked: missing source type",
         };
       }
+      const semantics = resolveScheduleXpCompletionSemantics(instance);
+      if (!semantics) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: "Schedule XP blocked: unsupported source type",
+        };
+      }
 
       const completion: Record<string, unknown> = {
         action: "complete",
-        sourceType: instance.source_type,
+        sourceType: semantics.completionSourceType,
+        sourceId: semantics.completionSourceId,
         completedAt,
         scheduleInstanceId: instance.id,
         wasScheduled: true,
         durationMin,
         timeZone: stableTimeZone ?? effectiveTimeZone,
       };
-      if (typeof instance.source_id === "string" && instance.source_id.trim()) {
-        completion.sourceId = instance.source_id.trim();
-      }
 
       const body: Record<string, unknown> = {
         scheduleInstanceId: instance.id,
-        kind: payload.kind,
+        kind: semantics.xpKind,
         amount: payload.amount,
         awardKeyBase: occurrenceStem,
         reversible: {
@@ -7565,7 +8740,8 @@ export default function ScheduleTabContent({
         ) {
           const repairResult = await reverseScheduleXpOccurrence(
             occurrenceStem,
-            legacyOccurrenceStems
+            legacyOccurrenceStems,
+            instance?.id ?? instanceId
           );
           logScheduleXpDebug({
             action: "complete",
@@ -7685,7 +8861,8 @@ export default function ScheduleTabContent({
         } else if (isUndo && instance && occurrenceStem) {
           const reverseResult = await reverseScheduleXpOccurrence(
             occurrenceStem,
-            legacyOccurrenceStems
+            legacyOccurrenceStems,
+            instance.id
           );
           logScheduleXpDebug({
             action: "undo",
@@ -9229,6 +10406,84 @@ export default function ScheduleTabContent({
     [habitMap]
   );
 
+  const getScheduleEditOriginFromElement = useCallback(
+    (element: HTMLElement | null): ScheduleEditOrigin | null => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      const computed = window.getComputedStyle(element);
+      const fallbackRadius = [
+        computed.borderTopLeftRadius,
+        computed.borderTopRightRadius,
+        computed.borderBottomRightRadius,
+        computed.borderBottomLeftRadius,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      const radius =
+        (computed.borderRadius && computed.borderRadius.trim().length > 0
+          ? computed.borderRadius
+          : fallbackRadius) || "0px";
+      const backgroundImage =
+        computed.backgroundImage && computed.backgroundImage !== "none"
+          ? computed.backgroundImage
+          : undefined;
+      const backgroundColorRaw = computed.backgroundColor;
+      const backgroundColor =
+        backgroundColorRaw &&
+        backgroundColorRaw !== "rgba(0, 0, 0, 0)" &&
+        backgroundColorRaw.toLowerCase() !== "transparent"
+          ? backgroundColorRaw
+          : undefined;
+      const boxShadow =
+        computed.boxShadow && computed.boxShadow !== "none"
+          ? computed.boxShadow
+          : undefined;
+      return {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+        borderRadius: radius,
+        backgroundColor,
+        backgroundImage,
+        boxShadow,
+      };
+    },
+    []
+  );
+
+  const openMyListScheduleEventEditor = useCallback(
+    (
+      instance: ScheduleInstance,
+      originData: ScheduleEditOrigin | null,
+      fallbackTitle?: string | null
+    ) => {
+      if (!isMyListScheduleInstance(instance)) return;
+      triggerLongPressFeedback(instance.id);
+      const nextSnapshot: EditingSnapshot = {
+        source_type: "EVENT",
+        projectId: null,
+        habitId: null,
+        taskId: instance.source_type === "TASK" ? instance.source_id : null,
+        eventId: instance.source_type === "EVENT" ? instance.source_id : null,
+        originData,
+      };
+      logEditingSnapshotEvent("my-list-event-card", nextSnapshot, {
+        instanceId: instance.id,
+        sourceType: instance.source_type,
+        sourceId: instance.source_id,
+        title: getMyListScheduleInstanceTitle(instance, fallbackTitle),
+        hasOrigin: Boolean(originData),
+      });
+      setEditingSnapshot({
+        ...nextSnapshot,
+        instance,
+      } as EditingSnapshot & { instance?: ScheduleInstance });
+    },
+    [triggerLongPressFeedback]
+  );
+
   const preventTimelineCardSelectStart = useCallback((event: Event) => {
     event.preventDefault();
   }, []);
@@ -9627,11 +10882,10 @@ export default function ScheduleTabContent({
     return false;
   }, []);
 
-  const handleOpenDayTypeBlockConstraints = useCallback(
-    (block: RepoWindow) => {
-      if (!block.dayTypeTimeBlockId) return;
-      setTimeBlockConstraintsError(null);
-      setSelectedTimeBlockForConstraints({
+  const buildTimeBlockConstraintDraft = useCallback(
+    (block: RepoWindow): TimeBlockConstraintDraft | null => {
+      if (!block.dayTypeTimeBlockId) return null;
+      return {
         block,
         energy: resolveEnergyLevel(block.energy) ?? "NO",
         windowKind: normalizeTimeBlockConstraintKind(block.window_kind),
@@ -9648,18 +10902,16 @@ export default function ScheduleTabContent({
         allowedMonumentIds: normalizeConstraintSet(
           block.allowedMonumentIdsSet ?? block.allowedMonumentIds
         ),
-      });
+      };
     },
     []
   );
 
-  const handleSaveTimeBlockConstraints = useCallback(async () => {
-    const draft = selectedTimeBlockForConstraints;
-    if (!draft) return;
+  const persistTimeBlockConstraintDraft = useCallback(async (draft: TimeBlockConstraintDraft) => {
     const dayTypeTimeBlockId = draft.block.dayTypeTimeBlockId;
     if (!dayTypeTimeBlockId) {
       setTimeBlockConstraintsError("This Time Block cannot be edited here.");
-      return;
+      throw new Error("This Time Block cannot be edited here.");
     }
 
     setIsSavingTimeBlockConstraints(true);
@@ -9768,7 +11020,306 @@ export default function ScheduleTabContent({
     } finally {
       setIsSavingTimeBlockConstraints(false);
     }
-  }, [refreshDayTypeWindows, selectedTimeBlockForConstraints, toast]);
+  }, [refreshDayTypeWindows, toast]);
+
+  const handleSaveTimeBlockConstraints = useCallback(async () => {
+    const draft = selectedTimeBlockForConstraints;
+    if (!draft) return;
+    await persistTimeBlockConstraintDraft(draft);
+  }, [persistTimeBlockConstraintDraft, selectedTimeBlockForConstraints]);
+
+  const dayTimelineModel = useMemo(() => {
+    return buildDayTimelineModel({
+      date: currentDate,
+      windows,
+      savedEvents,
+      instances: visibleInstances,
+      projectMap,
+      taskMap,
+      tasksByProjectId,
+      habits,
+      startHour,
+      pxPerMin,
+      unscheduledProjects,
+      schedulerFailureByProjectId,
+      schedulerDebug,
+      schedulerTimelinePlacements,
+      timeZoneShortName,
+      friendlyTimeZone,
+      localTimeZone: effectiveTimeZone,
+      todayDateKey: canonicalTodayDateKey,
+    });
+  }, [
+    currentDate,
+    windows,
+    savedEvents,
+    visibleInstances,
+    projectMap,
+    taskMap,
+    tasksByProjectId,
+    habits,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    timeZoneShortName,
+    friendlyTimeZone,
+    effectiveTimeZone,
+    canonicalTodayDateKey,
+  ]);
+
+  const buildTimeBlockAdjustmentManualPlacements = useCallback(
+    (
+      instancesForDay: ScheduleInstance[],
+      savedEventsForDay: SavedScheduleEvent[],
+      blockStart: Date,
+      blockEnd: Date,
+      identity: TimeBlockAdjustmentIdentity
+    ): FabTimeBlockAdjustmentPlacement[] => {
+      const overlapsTimeBlock = (start: Date, end: Date) => {
+        if (!isValidDate(start) || !isValidDate(end)) return false;
+        if (end <= blockStart || start >= blockEnd) return false;
+        return end > start;
+      };
+      const manualPlacementByInstanceId = new Map<
+        string,
+        FabTimeBlockAdjustmentPlacement
+      >();
+      const eventSourceIdsWithPlacement = new Set<string>();
+      for (const rawInstance of instancesForDay) {
+        const sourceType = rawInstance.source_type?.trim().toUpperCase();
+        if (
+          sourceType !== "EVENT" &&
+          !matchesTimeBlockAdjustmentIdentity(rawInstance, identity)
+        ) {
+          continue;
+        }
+
+        const start = toLocal(rawInstance.start_utc);
+        const end = resolveTimeBlockAdjustmentInstanceEnd(rawInstance);
+        if (!isValidDate(start) || !isValidDate(end)) continue;
+        if (!overlapsTimeBlock(start, end)) continue;
+        if (
+          sourceType === "EVENT" &&
+          !matchesTimeBlockAdjustmentIdentity(rawInstance, identity)
+        ) {
+          continue;
+        }
+
+        const instance = rawInstance as TimeBlockAdjustmentInstance;
+        if (manualPlacementByInstanceId.has(instance.id)) continue;
+
+        const type = resolveTimeBlockAdjustmentPlacementType(
+          instance.source_type
+        );
+        const title = resolveTimeBlockAdjustmentInstanceTitle(instance, {
+          taskMap,
+          projectMap,
+          habitMap,
+        });
+        if (type === "EVENT" && instance.source_id) {
+          eventSourceIdsWithPlacement.add(instance.source_id);
+        }
+
+        manualPlacementByInstanceId.set(instance.id, {
+          id: `time-block-${instance.id}`,
+          type,
+          name: title,
+          start,
+          end,
+          locked: true as const,
+          habitType: null,
+          goalName: null,
+          energy: instance.energy_resolved ?? null,
+          status: instance.status ?? null,
+          completedAt: instance.completed_at ?? null,
+          sourceId: instance.source_id ?? instance.id,
+          scheduleInstanceId: instance.id,
+          timeBlockId:
+            instance.time_block_id ??
+            (identity.dayTypeTimeBlockId ? identity.timeBlockId : null),
+          windowId: instance.window_id ?? identity.windowId ?? identity.timeBlockId,
+          dayTypeTimeBlockId:
+            instance.day_type_time_block_id ?? identity.dayTypeTimeBlockId,
+          isExistingScheduleInstance: true,
+        });
+      }
+
+      const eventInstancesForTimeBlock = instancesForDay.filter((instance) => {
+        if (instance.source_type !== "EVENT") return false;
+        const start = toLocal(instance.start_utc);
+        const end = resolveTimeBlockAdjustmentInstanceEnd(instance);
+        if (!isValidDate(start) || !isValidDate(end)) return false;
+        return overlapsTimeBlock(start, end);
+      });
+      const renderedSavedEventCards = buildRenderedSavedScheduleEventCards({
+        savedEvents: savedEventsForDay,
+        instances: eventInstancesForTimeBlock,
+        suppressedEventIds: myListCommitSuppressedEventIds,
+        renderDayStart: blockStart,
+        renderDayEnd: blockEnd,
+      });
+      for (const card of renderedSavedEventCards) {
+        if (eventSourceIdsWithPlacement.has(card.stableId)) continue;
+        const eventInstance = card.projectStyleEventInstance ?? null;
+        const scheduleInstanceId = eventInstance?.id ?? null;
+        if (scheduleInstanceId && manualPlacementByInstanceId.has(scheduleInstanceId)) {
+          continue;
+        }
+        const displayStart = card.visibleStart;
+        const displayEnd = card.visibleEnd;
+        if (!overlapsTimeBlock(displayStart, displayEnd)) continue;
+
+        if (scheduleInstanceId) {
+          eventSourceIdsWithPlacement.add(card.stableId);
+          manualPlacementByInstanceId.set(scheduleInstanceId, {
+            id: `time-block-${scheduleInstanceId}`,
+            type: "EVENT",
+            name: card.title,
+            start: displayStart,
+            end: displayEnd,
+            locked: true as const,
+            sourceCategory: card.sourceCategory,
+            habitType: null,
+            goalName: null,
+            energy: eventInstance?.energy_resolved ?? null,
+            status: card.status ?? null,
+            completedAt: card.completedAt ?? null,
+            sourceId: card.stableId,
+            scheduledStart: card.scheduledStart,
+            scheduledEnd: card.scheduledEnd,
+            visibleStart: card.visibleStart,
+            visibleEnd: card.visibleEnd,
+            scheduleInstanceId,
+            timeBlockId:
+              eventInstance?.time_block_id ??
+              (identity.dayTypeTimeBlockId ? identity.timeBlockId : null),
+            windowId:
+              eventInstance?.window_id ?? identity.windowId ?? identity.timeBlockId,
+            dayTypeTimeBlockId:
+              eventInstance?.day_type_time_block_id ?? identity.dayTypeTimeBlockId,
+            isExistingScheduleInstance: true,
+          });
+          continue;
+        }
+
+        eventSourceIdsWithPlacement.add(card.stableId);
+        manualPlacementByInstanceId.set(`saved-event:${card.stableId}`, {
+          id: `saved-event-${card.stableId}`,
+          type: "EVENT",
+          name: card.title,
+          start: displayStart,
+          end: displayEnd,
+          locked: true as const,
+          sourceCategory: card.sourceCategory,
+          habitType: null,
+          goalName: null,
+          energy: null,
+          status: card.status ?? "scheduled",
+          completedAt: card.completedAt ?? null,
+          sourceId: card.stableId,
+          scheduledStart: card.scheduledStart,
+          scheduledEnd: card.scheduledEnd,
+          visibleStart: card.visibleStart,
+          visibleEnd: card.visibleEnd,
+          scheduleInstanceId: null,
+          timeBlockId: identity.dayTypeTimeBlockId ? identity.timeBlockId : null,
+          windowId: identity.windowId ?? identity.timeBlockId,
+          dayTypeTimeBlockId: identity.dayTypeTimeBlockId,
+          isExistingScheduleInstance: false,
+          isSavedEventOnly: true,
+        });
+      }
+
+      return Array.from(manualPlacementByInstanceId.values()).sort(
+        (left, right) =>
+          left.start.getTime() - right.start.getTime() ||
+          left.id.localeCompare(right.id)
+      );
+    },
+    [habitMap, myListCommitSuppressedEventIds, projectMap, taskMap]
+  );
+
+  const handleOpenTimelineTimeBlockAdjustment = useCallback(
+    (block: RepoWindow) => {
+      const draft = buildTimeBlockConstraintDraft(block);
+      if (!draft) return;
+      const timeZone = effectiveTimeZone ?? "UTC";
+      const { start: blockStart, end: blockEnd } =
+        resolveWindowBoundsForRenderDay(block, currentDate, timeZone);
+      if (
+        !isValidDate(blockStart) ||
+        !isValidDate(blockEnd) ||
+        blockEnd <= blockStart
+      ) {
+        return;
+      }
+      const manualPlacements = buildTimeBlockAdjustmentManualPlacements(
+        allInstances,
+        savedEvents,
+        blockStart,
+        blockEnd,
+        {
+          timeBlockId: block.id,
+          windowId: block.id,
+          dayTypeTimeBlockId: block.dayTypeTimeBlockId ?? null,
+        }
+      );
+      const onSave = async (payload: FabTimeBlockAdjustmentSavePayload) => {
+        await persistTimeBlockConstraintDraft({
+          ...draft,
+          energy: resolveEnergyLevel(payload.energy) ?? draft.energy,
+          windowKind: normalizeTimeBlockConstraintKind(payload.blockType),
+          locationContextId: payload.locationContextId,
+          allowAllHabitTypes: payload.allowAllInstanceTypes,
+          allowedHabitTypes: normalizeConstraintSet(payload.allowedInstanceTypes),
+          allowAllSkills: payload.allowAllSkills,
+          allowedSkillIds: normalizeConstraintSet(payload.allowedSkillIds),
+          allowAllMonuments: payload.allowAllMonuments,
+          allowedMonumentIds: normalizeConstraintSet(payload.allowedMonumentIds),
+        });
+      };
+      setTimeBlockConstraintsError(null);
+      setTimeBlockAdjustmentRequest({
+        requestId: Date.now(),
+        timeBlockId: block.id,
+        windowId: block.id,
+        dayTypeTimeBlockId: block.dayTypeTimeBlockId ?? null,
+        label: block.label || "Untitled Time Block",
+        dateLabel: formatDayViewLabel(currentDate, timeZone),
+        selectedDate: currentDate,
+        timeZone,
+        startTime: blockStart,
+        endTime: blockEnd,
+        energy: draft.energy,
+        blockType: draft.windowKind,
+        locationContextId: draft.locationContextId,
+        allowAllInstanceTypes: draft.allowAllHabitTypes,
+        allowedInstanceTypes: Array.from(draft.allowedHabitTypes),
+        allowAllSkills: draft.allowAllSkills,
+        allowedSkillIds: Array.from(draft.allowedSkillIds),
+        allowAllMonuments: draft.allowAllMonuments,
+        allowedMonumentIds: Array.from(draft.allowedMonumentIds),
+        manualPlacements,
+        onSave,
+        onManualSave: async () => {
+          await refreshScheduleData();
+        },
+      });
+    },
+    [
+      buildTimeBlockConstraintDraft,
+      buildTimeBlockAdjustmentManualPlacements,
+      currentDate,
+      effectiveTimeZone,
+      persistTimeBlockConstraintDraft,
+      refreshScheduleData,
+      allInstances,
+      savedEvents,
+    ]
+  );
 
   const timeBlockConstraintSkillOptions = useMemo(
     () =>
@@ -9834,48 +11385,6 @@ export default function ScheduleTabContent({
       },
     ];
   }, [selectedTimeBlockForConstraints, timeBlockLocationOptions]);
-
-  const dayTimelineModel = useMemo(() => {
-    return buildDayTimelineModel({
-      date: currentDate,
-      windows,
-      savedEvents,
-      instances: visibleInstances,
-      projectMap,
-      taskMap,
-      tasksByProjectId,
-      habits,
-      startHour,
-      pxPerMin,
-      unscheduledProjects,
-      schedulerFailureByProjectId,
-      schedulerDebug,
-      schedulerTimelinePlacements,
-      timeZoneShortName,
-      friendlyTimeZone,
-      localTimeZone: effectiveTimeZone,
-      todayDateKey: canonicalTodayDateKey,
-    });
-  }, [
-    currentDate,
-    windows,
-    savedEvents,
-    visibleInstances,
-    projectMap,
-    taskMap,
-    tasksByProjectId,
-    habits,
-    startHour,
-    pxPerMin,
-    unscheduledProjects,
-    schedulerFailureByProjectId,
-    schedulerDebug,
-    schedulerTimelinePlacements,
-    timeZoneShortName,
-    friendlyTimeZone,
-    effectiveTimeZone,
-    canonicalTodayDateKey,
-  ]);
 
   const currentDayProjectInstances = useMemo(() => {
     if (!dayTimelineModel) return [];
@@ -10005,7 +11514,10 @@ export default function ScheduleTabContent({
   }, [measuredTimelineContainerHeight, baseTimelineHeight]);
 
   const resolveManualPlacementTime = useCallback(
-    (clientY: number) => {
+    (
+      clientY: number,
+      options?: { clientX?: number | null; requireHit?: boolean }
+    ) => {
       if (!dayTimelineModel) return null;
       const container = dayTimelineContainerRef.current;
       const timelineEl = container?.querySelector(
@@ -10013,6 +11525,18 @@ export default function ScheduleTabContent({
       ) as HTMLElement | null;
       if (!timelineEl) return null;
       const rect = timelineEl.getBoundingClientRect();
+      if (options?.requireHit) {
+        const clientX = options.clientX;
+        if (
+          clientY < rect.top ||
+          clientY > rect.bottom ||
+          (typeof clientX === "number" &&
+            Number.isFinite(clientX) &&
+            (clientX < rect.left || clientX > rect.right))
+        ) {
+          return null;
+        }
+      }
       const offsetY = clientY - rect.top;
       if (!Number.isFinite(offsetY)) return null;
       const minutesFromStart =
@@ -10022,6 +11546,478 @@ export default function ScheduleTabContent({
     },
     [dayTimelineModel, pxPerMin, renderDayStart]
   );
+
+  const stopMyListResizeAutoScroll = useCallback(() => {
+    if (myListResizeAutoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(myListResizeAutoScrollFrameRef.current);
+      myListResizeAutoScrollFrameRef.current = null;
+    }
+    myListResizeAutoScrollDirectionRef.current = null;
+  }, []);
+
+  const stopMyListResizeTouchSuppression = useCallback(() => {
+    myListResizeTouchSuppressCleanupRef.current?.();
+    myListResizeTouchSuppressCleanupRef.current = null;
+  }, []);
+
+  const startMyListResizeTouchSuppression = useCallback(() => {
+    if (
+      typeof window === "undefined" ||
+      myListResizeTouchSuppressCleanupRef.current
+    ) {
+      return;
+    }
+    const suppressNativeResizeScroll = (event: TouchEvent) => {
+      if (!myListIsResizingRef.current) return;
+      event.stopPropagation();
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+    };
+    const options: AddEventListenerOptions = {
+      capture: true,
+      passive: false,
+    };
+    window.addEventListener("touchmove", suppressNativeResizeScroll, options);
+    myListResizeTouchSuppressCleanupRef.current = () => {
+      window.removeEventListener(
+        "touchmove",
+        suppressNativeResizeScroll,
+        options
+      );
+    };
+  }, []);
+
+  const updateMyListResizeFromPointer = useCallback(
+    (clientY: number) => {
+      const session = myListResizeSessionRef.current;
+      const placement = myListPendingPlacementRef.current;
+      if (!session || !placement) return;
+      const resolved = resolveManualPlacementTime(clientY);
+      if (!resolved) return;
+      const snapped = snapToFiveMinuteGrid(resolved);
+      const snappedMinute = Math.round(
+        getDayMinuteOffset(snapped, renderDayStart)
+      );
+      const nextRange = applyTimelineResizeToMinutes({
+        mode: session.mode,
+        snappedMinute,
+        fixedStartMinute: session.fixedStartMinute,
+        fixedEndMinute: session.fixedEndMinute,
+        minDurationMinutes: QUICK_CREATE_EVENT_MIN_DURATION_MIN,
+      });
+      const nextStart = new Date(
+        renderDayStart.getTime() + nextRange.startMinute * 60_000
+      );
+      const nextEnd = new Date(
+        renderDayStart.getTime() + nextRange.endMinute * 60_000
+      );
+      setMyListPendingPlacement((current) =>
+        current
+          ? {
+              ...current,
+              candidate: {
+                ...current.candidate,
+                durationMinutes:
+                  nextRange.endMinute - nextRange.startMinute,
+              },
+              start: nextStart,
+              end: nextEnd,
+            }
+          : current
+      );
+      myListPendingPlacementRef.current = placement
+        ? {
+            ...placement,
+            candidate: {
+              ...placement.candidate,
+              durationMinutes:
+                nextRange.endMinute - nextRange.startMinute,
+            },
+            start: nextStart,
+            end: nextEnd,
+          }
+        : placement;
+    },
+    [renderDayStart, resolveManualPlacementTime, snapToFiveMinuteGrid]
+  );
+
+  const updateMyListResizeAutoScroll = useCallback(
+    (clientY: number) => {
+      myListResizeLastClientYRef.current = clientY;
+      const container = dayTimelineContainerRef.current;
+      if (!container || typeof window === "undefined") {
+        stopMyListResizeAutoScroll();
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight ?? 0;
+      if (
+        !(viewportHeight > 0) ||
+        rect.bottom <= 0 ||
+        rect.top >= viewportHeight
+      ) {
+        stopMyListResizeAutoScroll();
+        return;
+      }
+
+      const visibleTop = Math.max(rect.top, 0);
+      const visibleBottom = Math.min(rect.bottom, viewportHeight);
+      const activationZone = 64;
+      const topDistance = clientY - visibleTop;
+      const bottomDistance = visibleBottom - clientY;
+      const withinTop = topDistance >= 0 && topDistance <= activationZone;
+      const withinBottom =
+        bottomDistance >= 0 && bottomDistance <= activationZone;
+
+      if (!withinTop && !withinBottom) {
+        stopMyListResizeAutoScroll();
+        return;
+      }
+
+      const direction = withinTop ? "up" : "down";
+      const distance = withinTop ? topDistance : bottomDistance;
+      const intensity = 1 - Math.min(Math.max(distance / activationZone, 0), 1);
+      const minSpeed = 48;
+      const maxSpeed = 180;
+      myListResizeAutoScrollDirectionRef.current = direction;
+      myListResizeAutoScrollSpeedRef.current =
+        minSpeed + (maxSpeed - minSpeed) * intensity;
+
+      const step = () => {
+        if (!myListIsResizingRef.current) {
+          stopMyListResizeAutoScroll();
+          return;
+        }
+
+        const currentDirection = myListResizeAutoScrollDirectionRef.current;
+        if (!currentDirection) {
+          stopMyListResizeAutoScroll();
+          return;
+        }
+
+        const frameMs = 16;
+        const delta =
+          (myListResizeAutoScrollSpeedRef.current * frameMs) / 1000;
+        const sign = currentDirection === "up" ? -1 : 1;
+        const scrollDelta = sign * delta;
+
+        if (container.scrollHeight > container.clientHeight + 1) {
+          container.scrollTop += scrollDelta;
+        } else {
+          window.scrollBy({ top: scrollDelta, behavior: "auto" });
+        }
+
+        const lastY = myListResizeLastClientYRef.current;
+        if (lastY !== null) {
+          updateMyListResizeFromPointer(lastY);
+        }
+        myListResizeAutoScrollFrameRef.current = requestAnimationFrame(step);
+      };
+
+      if (myListResizeAutoScrollFrameRef.current === null) {
+        myListResizeAutoScrollFrameRef.current = requestAnimationFrame(step);
+      }
+    },
+    [stopMyListResizeAutoScroll, updateMyListResizeFromPointer]
+  );
+
+  const handleMyListResizePointerDown = useCallback(
+    (
+      mode: QuickCreateResizeMode,
+      event: ReactPointerEvent<HTMLButtonElement>
+    ) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const placement = myListPendingPlacementRef.current;
+      if (!placement) return;
+      event.stopPropagation();
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      myListResizeSessionRef.current = null;
+      myListIsResizingRef.current = true;
+      myListResizeLastClientYRef.current = event.clientY;
+      const fixedStartMinute = Math.round(
+        getDayMinuteOffset(placement.start, renderDayStart)
+      );
+      const fixedEndMinute = Math.round(
+        getDayMinuteOffset(placement.end, renderDayStart)
+      );
+      myListResizeSessionRef.current = {
+        pointerId: event.pointerId,
+        mode,
+        fixedStartMinute,
+        fixedEndMinute,
+      };
+      startMyListResizeTouchSuppression();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {}
+    },
+    [renderDayStart, startMyListResizeTouchSuppression]
+  );
+
+  const handleMyListResizePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const session = myListResizeSessionRef.current;
+      if (!session || session.pointerId !== event.pointerId) return;
+      event.stopPropagation();
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      myListResizeLastClientYRef.current = event.clientY;
+      updateMyListResizeFromPointer(event.clientY);
+      updateMyListResizeAutoScroll(event.clientY);
+    },
+    [updateMyListResizeAutoScroll, updateMyListResizeFromPointer]
+  );
+
+  const handleMyListResizePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const session = myListResizeSessionRef.current;
+      if (session?.pointerId === event.pointerId) {
+        event.stopPropagation();
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+        updateMyListResizeFromPointer(event.clientY);
+        myListResizeSessionRef.current = null;
+        myListIsResizingRef.current = false;
+        myListResizeLastClientYRef.current = null;
+        stopMyListResizeAutoScroll();
+        stopMyListResizeTouchSuppression();
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {}
+    },
+    [
+      stopMyListResizeAutoScroll,
+      stopMyListResizeTouchSuppression,
+      updateMyListResizeFromPointer,
+    ]
+  );
+
+  const confirmMyListPendingPlacement = useCallback(async () => {
+    const placement = myListPendingPlacement ?? myListOptimisticPlacement;
+    if (!placement || placement.isSaving) return;
+    const durationMinutes = Math.max(
+      1,
+      Math.round((placement.end.getTime() - placement.start.getTime()) / 60_000)
+    );
+
+    myListResizeSessionRef.current = null;
+    myListIsResizingRef.current = false;
+    myListResizeLastClientYRef.current = null;
+    stopMyListResizeAutoScroll();
+    stopMyListResizeTouchSuppression();
+
+    if (myListPendingPlacement) {
+      setMyListPendingPlacement(null);
+    }
+    myListPendingPlacementRef.current = null;
+
+    setMyListOptimisticPlacement({
+      ...placement,
+      isSaving: true,
+      error: null,
+    });
+
+    void (async () => {
+      const success = await commitManualPlacement(
+        placement.candidate,
+        placement.start,
+        { durationMinutes }
+      );
+      if (success) {
+        setMyListOptimisticPlacement((current) =>
+          current &&
+          current.start.getTime() === placement.start.getTime() &&
+          current.title === placement.title &&
+          current.candidate.rowType === placement.candidate.rowType
+            ? null
+            : current
+        );
+        return;
+      }
+
+      setMyListOptimisticPlacement((current) =>
+        current &&
+        current.start.getTime() === placement.start.getTime() &&
+        current.title === placement.title &&
+        current.candidate.rowType === placement.candidate.rowType
+          ? {
+              ...current,
+              isSaving: false,
+              error: "Save failed. Tap confirm to retry.",
+            }
+          : current
+      );
+    })();
+  }, [
+    commitManualPlacement,
+    myListOptimisticPlacement,
+    myListPendingPlacement,
+    stopMyListResizeAutoScroll,
+    stopMyListResizeTouchSuppression,
+  ]);
+
+  const cancelMyListPendingPlacement = useCallback(() => {
+    myListResizeSessionRef.current = null;
+    myListIsResizingRef.current = false;
+    myListResizeLastClientYRef.current = null;
+    stopMyListResizeAutoScroll();
+    stopMyListResizeTouchSuppression();
+    setMyListPendingPlacement(null);
+    myListPendingPlacementRef.current = null;
+    setMyListOptimisticPlacement(null);
+  }, [stopMyListResizeAutoScroll, stopMyListResizeTouchSuppression]);
+
+  useEffect(() => {
+    const handleManualPlacementRequest = (event: Event) => {
+      const detail = (event as CustomEvent<ManualPlacementRequestDetail>).detail;
+      const result = detail?.result;
+      const sourceType = normalizeManualPlacementSourceType(result?.type);
+      const sourceId =
+        typeof result?.id === "string" && result.id.trim().length > 0
+          ? result.id.trim()
+          : null;
+      const isTitleOnlyEvent =
+        sourceType === "EVENT" &&
+        typeof result?.name === "string" &&
+        result.name.trim().length > 0;
+      const instanceId =
+        typeof result?.scheduleInstanceId === "string" &&
+        result.scheduleInstanceId.trim().length > 0
+          ? result.scheduleInstanceId.trim()
+          : typeof result?.schedule_instance_id === "string" &&
+              result.schedule_instance_id.trim().length > 0
+            ? result.schedule_instance_id.trim()
+            : null;
+      if (
+        !result ||
+        (!instanceId && (!sourceType || (!sourceId && !isTitleOnlyEvent)))
+      ) {
+        toast.error(
+          "Manual placement unavailable",
+          "No schedulable Event source was provided."
+        );
+        return;
+      }
+      const safeDuration =
+        typeof result.durationMinutes === "number" &&
+        Number.isFinite(result.durationMinutes) &&
+        result.durationMinutes > 0
+          ? result.durationMinutes
+          : 60;
+
+      const nextStart = (() => {
+        if (result.nextScheduledAt) {
+          const parsed = new Date(result.nextScheduledAt);
+          if (!Number.isNaN(parsed.getTime())) return parsed;
+        }
+        return new Date();
+      })();
+
+      const pointer = detail?.pointer;
+      const initialX =
+        typeof pointer?.clientX === "number"
+          ? pointer.clientX
+          : window.innerWidth / 2;
+      const initialY =
+        typeof pointer?.clientY === "number"
+          ? pointer.clientY
+          : window.innerHeight / 2;
+      const pointerId =
+        typeof pointer?.pointerId === "number" ? pointer.pointerId : null;
+      manualPlacementPointerIdRef.current = pointerId;
+      const initialWidth =
+        typeof pointer?.width === "number" &&
+        Number.isFinite(pointer.width) &&
+        pointer.width > 0
+          ? pointer.width
+          : Math.min(320, Math.max(240, window.innerWidth - 48));
+
+      const metadata = normalizeManualPlacementMetadata(result.metadata);
+      const rowType = readMyListRowType(metadata, result);
+      const rowId =
+        readScheduleLikeString(result, "rowId") ??
+        readScheduleLikeString(result, "row_id") ??
+        readScheduleMetadataString(metadata, "rowId") ??
+        readScheduleMetadataString(metadata, "row_id");
+      const candidate: ManualPlacementCandidate = {
+        instanceId,
+        sourceId,
+        durationMinutes: safeDuration,
+        title: result.name ?? null,
+        sourceType,
+        rowType,
+        rowId,
+        energy: typeof result.energy === "string" ? result.energy : null,
+        goalName:
+          typeof result.goalName === "string" ? result.goalName : null,
+        habitType: readManualPlacementHabitType(result),
+        currentStreakDays:
+          typeof result.currentStreakDays === "number" &&
+          Number.isFinite(result.currentStreakDays)
+            ? result.currentStreakDays
+            : null,
+        globalRank:
+          typeof result.global_rank === "number" &&
+          Number.isFinite(result.global_rank)
+            ? result.global_rank
+            : null,
+        metadata,
+        requireTimelineHit: detail?.requireTimelineHit === true,
+      };
+      const pointerPreview = resolveManualPlacementTime(initialY, {
+        clientX: initialX,
+        requireHit: candidate.requireTimelineHit === true,
+      });
+      const snappedPreview = pointerPreview
+        ? snapToFiveMinuteGrid(pointerPreview)
+        : candidate.requireTimelineHit
+          ? null
+          : snapToFiveMinuteGrid(nextStart);
+      const session = {
+        candidate,
+        pointerId,
+        ghost: {
+          x: initialX,
+          y: initialY,
+          label: result.name ?? "Manual placement",
+          mode: "pickup" as const,
+          pointerId,
+          width: initialWidth,
+        },
+        previewTime: snappedPreview,
+        pushPreview: snappedPreview
+          ? computeManualPlacementPushPreview(
+              candidate,
+              snappedPreview,
+              currentDayProjectInstancesRef.current
+            )
+          : null,
+      };
+      setManualPlacementSession(session);
+      manualPlacementSessionRef.current = session;
+      setSkipNextDayAnimation(true);
+      navigate("day");
+    };
+
+    window.addEventListener(
+      "schedule:manual-placement-requested",
+      handleManualPlacementRequest as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "schedule:manual-placement-requested",
+        handleManualPlacementRequest as EventListener
+      );
+    };
+  }, [navigate, resolveManualPlacementTime, snapToFiveMinuteGrid, toast]);
 
   const resolveTimelineTimeFromSurface = useCallback(
     (clientY: number, surface: HTMLElement | null) => {
@@ -11222,8 +13218,12 @@ export default function ScheduleTabContent({
       stopAutoScroll();
       stopQuickCreateResizeAutoScroll();
       stopQuickCreateResizeTouchSuppression();
+      stopMyListResizeAutoScroll();
+      stopMyListResizeTouchSuppression();
       quickCreateIsResizingRef.current = false;
+      myListIsResizingRef.current = false;
       quickCreateResizeLastClientYRef.current = null;
+      myListResizeLastClientYRef.current = null;
       clearQuickCreateLongPressTimer();
     };
   }, [
@@ -11231,12 +13231,18 @@ export default function ScheduleTabContent({
     stopAutoScroll,
     stopQuickCreateResizeAutoScroll,
     stopQuickCreateResizeTouchSuppression,
+    stopMyListResizeAutoScroll,
+    stopMyListResizeTouchSuppression,
   ]);
 
   const updatePreviewAndScrollIntent = useCallback(
-    (clientY: number) => {
+    (clientY: number, clientX?: number | null) => {
       lastPointerClientYRef.current = clientY;
-      const next = resolveManualPlacementTime(clientY);
+      const activeSession = manualPlacementSessionRef.current;
+      const next = resolveManualPlacementTime(clientY, {
+        clientX,
+        requireHit: activeSession?.candidate.requireTimelineHit === true,
+      });
       const preview = next ? snapToFiveMinuteGrid(next) : null;
       updateManualPlacementSession((prev) =>
         prev
@@ -11286,7 +13292,11 @@ export default function ScheduleTabContent({
         window.scrollBy({ top: sign * delta, behavior: "auto" });
         const lastY = lastPointerClientYRef.current;
         if (lastY !== null) {
-          const refreshed = resolveManualPlacementTime(lastY);
+          const refreshed = resolveManualPlacementTime(lastY, {
+            requireHit:
+              manualPlacementSessionRef.current?.candidate
+                .requireTimelineHit === true,
+          });
           const preview = refreshed ? snapToFiveMinuteGrid(refreshed) : null;
           updateManualPlacementSession((prev) =>
             prev
@@ -11326,17 +13336,38 @@ export default function ScheduleTabContent({
 
   useEffect(() => {
     if (!manualPlacementSession) return;
-    const finishManualPlacementAt = (clientY: number) => {
+    const finishManualPlacementAt = (clientY: number, clientX?: number | null) => {
       const session = manualPlacementSessionRef.current;
       if (!session) return;
-      const next = resolveManualPlacementTime(clientY);
+      const next = resolveManualPlacementTime(clientY, {
+        clientX,
+        requireHit: session.candidate.requireTimelineHit === true,
+      });
       const preview =
         next ??
-        (session.previewTime
+        (!session.candidate.requireTimelineHit && session.previewTime
           ? snapToFiveMinuteGrid(session.previewTime)
           : null);
       if (preview) {
-        void commitManualPlacement(session.candidate, preview);
+        const snappedPreview = snapToFiveMinuteGrid(preview);
+        if (isMyListManualPlacementCandidate(session.candidate)) {
+          setMyListPendingPlacement({
+            candidate: session.candidate,
+            start: snappedPreview,
+            end: new Date(
+              snappedPreview.getTime() +
+                session.candidate.durationMinutes * 60_000
+            ),
+            title:
+              session.candidate.title?.trim() ||
+              session.ghost.label ||
+              "Untitled Event",
+            isSaving: false,
+            error: null,
+          });
+        } else {
+          void commitManualPlacement(session.candidate, snappedPreview);
+        }
       }
       setManualPlacementSession(null);
       manualPlacementSessionRef.current = null;
@@ -11360,13 +13391,13 @@ export default function ScheduleTabContent({
           },
         };
       });
-      updatePreviewAndScrollIntent(clientY);
+      updatePreviewAndScrollIntent(clientY, event.clientX);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
-      finishManualPlacementAt(event.clientY);
+      finishManualPlacementAt(event.clientY, event.clientX);
     };
 
     const handlePointerCancel = (event: PointerEvent) => {
@@ -11406,7 +13437,7 @@ export default function ScheduleTabContent({
         };
       });
       lastPointerClientYRef.current = touch.clientY;
-      updatePreviewAndScrollIntent(touch.clientY);
+      updatePreviewAndScrollIntent(touch.clientY, touch.clientX);
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
@@ -11417,7 +13448,7 @@ export default function ScheduleTabContent({
           ? touches.find((item) => item.identifier === pointerId)
           : null) ?? (touches.length === 1 ? touches[0] : null);
       if (!touch) return;
-      finishManualPlacementAt(touch.clientY);
+      finishManualPlacementAt(touch.clientY, touch.clientX);
     };
 
     const handleTouchCancel = (event: TouchEvent) => {
@@ -11674,37 +13705,11 @@ export default function ScheduleTabContent({
         0,
         TIMELINE_STACK_BASE_Z_INDEX - 5
       );
-      const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
-      for (const projectInstance of dayProjectInstances) {
-        const projectTasks =
-          modelTaskInstancesByProject[projectInstance.project.id] ?? [];
-        const scheduledCards = projectTasks
-          .filter((taskInfo) =>
-            taskMatchesProjectInstance(
-              taskInfo,
-              projectInstance.instance,
-              projectInstance.start,
-              projectInstance.end
-            )
-          )
-          .map((taskInfo) => ({
-            key: `scheduled:${taskInfo.instance.id}`,
-            kind: "scheduled" as const,
-            task: taskInfo.task,
-            start: taskInfo.start,
-            end: taskInfo.end,
-            instanceId: taskInfo.instance.id,
-            displayDurationMinutes: Math.max(
-              1,
-              Math.round(
-                (taskInfo.end.getTime() - taskInfo.start.getTime()) / 60000
-              )
-            ),
-          }));
-        if (scheduledCards.length > 0) {
-          scheduledCardsByInstanceId.set(projectInstance.instance.id, scheduledCards);
-        }
-      }
+      const scheduledCardsByInstanceId =
+        buildScheduledProjectTaskCardsByInstanceId(
+          dayProjectInstances,
+          modelTaskInstancesByProject
+        );
       const occupiedSegments: Array<{ start: Date; end: Date }> = [];
       const addOccupiedSegment = (segmentStart: Date, segmentEnd: Date) => {
         if (
@@ -11821,6 +13826,92 @@ export default function ScheduleTabContent({
           heightPx,
         };
       })();
+  const myListPendingTimelineCard = (() => {
+    if (!myListPendingPlacement) return null;
+        const clipped = clipSegmentToDay(
+          myListPendingPlacement.start,
+          myListPendingPlacement.end,
+          renderDayStart,
+          renderDayEnd
+        );
+        if (!clipped) return null;
+        const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+        const durationMinutes =
+          (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
+        if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+          return null;
+        }
+        const startOffsetMinutes = Math.max(
+          0,
+          startMin - modelStartHour * 60
+        );
+        const heightPx = Math.max(durationMinutes * modelPxPerMin, 1);
+        return {
+          top: toTimelinePosition(startOffsetMinutes),
+          height: toTimelinePosition(durationMinutes),
+      heightPx,
+    };
+  })();
+  const myListPendingProjectStyleInstance =
+    myListPendingPlacement && myListPendingTimelineCard
+      ? buildMyListProjectStyleScheduleInstance({
+          metadata: myListPendingPlacement.candidate.metadata,
+          title: myListPendingPlacement.title,
+          start: myListPendingPlacement.start,
+          end: myListPendingPlacement.end,
+          durationMinutes: Math.max(
+            1,
+            Math.round(
+              (myListPendingPlacement.end.getTime() -
+                myListPendingPlacement.start.getTime()) /
+                60_000
+            )
+          ),
+        })
+      : null;
+  const myListOptimisticTimelineCard = (() => {
+    if (!myListOptimisticPlacement) return null;
+        const clipped = clipSegmentToDay(
+          myListOptimisticPlacement.start,
+          myListOptimisticPlacement.end,
+          renderDayStart,
+          renderDayEnd
+        );
+        if (!clipped) return null;
+        const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+        const durationMinutes =
+          (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
+        if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+          return null;
+        }
+        const startOffsetMinutes = Math.max(
+          0,
+          startMin - modelStartHour * 60
+        );
+        const heightPx = Math.max(durationMinutes * modelPxPerMin, 1);
+        return {
+          top: toTimelinePosition(startOffsetMinutes),
+          height: toTimelinePosition(durationMinutes),
+      heightPx,
+    };
+  })();
+  const myListOptimisticProjectStyleInstance =
+    myListOptimisticPlacement && myListOptimisticTimelineCard
+      ? buildMyListProjectStyleScheduleInstance({
+          metadata: myListOptimisticPlacement.candidate.metadata,
+          title: myListOptimisticPlacement.title,
+          start: myListOptimisticPlacement.start,
+          end: myListOptimisticPlacement.end,
+          durationMinutes: Math.max(
+            1,
+            Math.round(
+              (myListOptimisticPlacement.end.getTime() -
+                myListOptimisticPlacement.start.getTime()) /
+                60_000
+            )
+          ),
+        })
+      : null;
       const quickCreateTimelineDraft = (() => {
         if (!quickCreateDraftEvent) return null;
         const startMinute = quickCreateDraftEvent.startMinute;
@@ -11849,6 +13940,26 @@ export default function ScheduleTabContent({
             draggedInstanceId === instanceId
         );
       };
+      const suppressedSavedEventIds = new Set(myListCommitSuppressedEventIds);
+      const pendingMyListEventId = getMyListPlacementEventSourceId(
+        myListPendingPlacement
+      );
+      const optimisticMyListEventId = getMyListPlacementEventSourceId(
+        myListOptimisticPlacement
+      );
+      if (pendingMyListEventId) suppressedSavedEventIds.add(pendingMyListEventId);
+      if (optimisticMyListEventId) {
+        suppressedSavedEventIds.add(optimisticMyListEventId);
+      }
+      const renderedSavedEventCards = buildRenderedSavedScheduleEventCards({
+        savedEvents: modelSavedEvents,
+        instances,
+        instancesReadyForEventDedupe:
+          instancesStatus === "loaded" || instances.length > 0,
+        suppressedEventIds: suppressedSavedEventIds,
+        renderDayStart,
+        renderDayEnd,
+      });
 
       return (
         <div
@@ -11944,7 +14055,9 @@ export default function ScheduleTabContent({
                         <DayTypeBlockLabel
                           label={w.label ?? ""}
                           availableHeight={segmentHeightPx}
-                          onActivate={() => handleOpenDayTypeBlockConstraints(w)}
+                          onActivate={() =>
+                            handleOpenTimelineTimeBlockAdjustment(w)
+                          }
                         />
                       ) : (
                         <WindowLabel
@@ -12157,19 +14270,15 @@ export default function ScheduleTabContent({
                 });
               })}
             </div>
-            {modelSavedEvents.map((event) => {
-              const clipped = clipSegmentToDay(
-                event.start,
-                event.end,
-                renderDayStart,
-                renderDayEnd
-              );
-              if (!clipped) return null;
+            {renderedSavedEventCards.map((card) => {
               const startMin = getDayMinuteOffset(
-                clipped.segStart,
+                card.visibleStart,
                 renderDayStart
               );
-              const endMin = getDayMinuteOffset(clipped.segEnd, renderDayStart);
+              const endMin = getDayMinuteOffset(
+                card.visibleEnd,
+                renderDayStart
+              );
               const startOffsetMinutes = Math.max(
                 0,
                 startMin - modelStartHour * 60
@@ -12184,18 +14293,181 @@ export default function ScheduleTabContent({
               );
               const showMeta = eventHeightPx >= 42;
               const showLocation =
-                showMeta && event.locationName && eventHeightPx >= 58;
+                showMeta && card.locationName && eventHeightPx >= 58;
               const rangeLabel = `${formatTimeForWindow(
-                clipped.segStart,
+                card.visibleStart,
                 viewTimeZone
-              )} - ${formatTimeForWindow(clipped.segEnd, viewTimeZone)}`;
+              )} - ${formatTimeForWindow(card.visibleEnd, viewTimeZone)}`;
               const stackingZIndex =
                 computeTimelineStackingIndex(startOffsetMinutes) + 2;
+              const projectStyleEventInstance =
+                card.projectStyleEventInstance ?? null;
+              const useProjectStyleEventCard = card.projectStyleEventCard;
+
+              if (useProjectStyleEventCard && projectStyleEventInstance) {
+                const isInteractiveMyListEvent =
+                  isMyListScheduleInstance(projectStyleEventInstance);
+                if (!isInteractiveMyListEvent) {
+                  return (
+                    <div
+                      key={card.renderKey}
+                      aria-label={`Event ${card.title}`}
+                      className="pointer-events-none absolute select-none"
+                      style={{
+                        ...TIMELINE_CARD_BOUNDS,
+                        top: toTimelinePosition(startOffsetMinutes),
+                        height: toTimelinePosition(durationMinutes),
+                        zIndex: stackingZIndex,
+                      }}
+                    >
+                      <ProjectScheduleInstanceCard
+                        instance={projectStyleEventInstance}
+                        title={card.title}
+                        durationMinutes={durationMinutes}
+                        heightPx={eventHeightPx}
+                        showDurationLabel={false}
+                      />
+                    </div>
+                  );
+                }
+
+                const pendingStatus = pendingInstanceStatuses.get(
+                  projectStyleEventInstance.id
+                );
+                const effectiveStatus =
+                  pendingStatus ??
+                  projectStyleEventInstance.status ??
+                  card.status ??
+                  "scheduled";
+                const isPending = pendingStatus !== undefined;
+                const isCompleted = effectiveStatus === "completed";
+                const canToggle =
+                  canToggleMyListScheduleStatus(effectiveStatus) && !isPending;
+                const eventLongPressActive =
+                  longPressBounceId === projectStyleEventInstance.id;
+                const eventCompletionBounceActive =
+                  completionBounceId === projectStyleEventInstance.id;
+                const renderedProjectStyleEventInstance =
+                  normalizeMyListProjectStyleScheduleInstance({
+                    instance: projectStyleEventInstance,
+                    title: card.title,
+                    start: card.scheduledStart,
+                    end: card.scheduledEnd,
+                    durationMinutes,
+                    status: effectiveStatus,
+                  });
+                const handleMyListEventPrimaryAction = (
+                  source?: ScheduleXpSourceCapture | null
+                ) => {
+                  if (!canToggle) return;
+                  triggerCompletionBounce(projectStyleEventInstance.id);
+                  const nextStatus = isCompleted ? "scheduled" : "completed";
+                  void handleToggleInstanceCompletion(
+                    projectStyleEventInstance.id,
+                    nextStatus,
+                    source?.rect ?? null,
+                    source?.origin
+                  );
+                };
+
+                return (
+                  <motion.div
+                    key={card.renderKey}
+                    data-schedule-instance-id={projectStyleEventInstance.id}
+                    data-creator-xp-source="schedule-instance"
+                    data-creator-xp-source-id={projectStyleEventInstance.id}
+                    aria-label={`Event ${card.title}`}
+                    role="button"
+                    tabIndex={canToggle ? 0 : -1}
+                    aria-pressed={isCompleted}
+                    aria-disabled={!canToggle}
+                    className={clsx(
+                      "absolute select-none",
+                      canToggle ? "cursor-pointer" : "cursor-default"
+                    )}
+                    style={{
+                      ...TIMELINE_CARD_BOUNDS,
+                      top: toTimelinePosition(startOffsetMinutes),
+                      height: toTimelinePosition(durationMinutes),
+                      zIndex: stackingZIndex,
+                      touchAction: TIMELINE_TOUCH_ACTION,
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                    onPointerDown={(event) => {
+                      if (options?.disableInteractions || !canToggle) return;
+                      handleInstancePointerDown(
+                        event,
+                        projectStyleEventInstance,
+                        handleMyListEventPrimaryAction,
+                        () => {
+                          openMyListScheduleEventEditor(
+                            projectStyleEventInstance,
+                            getScheduleEditOriginFromElement(
+                              event.currentTarget
+                            ),
+                            card.title
+                          );
+                        }
+                      );
+                    }}
+                    onPointerUp={canToggle ? handleInstancePointerUp : undefined}
+                    onPointerCancel={
+                      canToggle ? handleInstancePointerCancel : undefined
+                    }
+                    onClick={(event) => {
+                      if (shouldBlockClickFromLongPress()) return;
+                      handleMyListEventPrimaryAction(
+                        captureScheduleXpSourceFromInteraction(
+                          projectStyleEventInstance.id,
+                          event
+                        )
+                      );
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      handleMyListEventPrimaryAction(
+                        captureScheduleXpSourceFromInteraction(
+                          projectStyleEventInstance.id,
+                          event
+                        )
+                      );
+                    }}
+                    animate={
+                      prefersReducedMotion
+                        ? undefined
+                        : {
+                            scale: eventCompletionBounceActive
+                              ? [1, 0.99, 1.004, 1]
+                              : eventLongPressActive
+                                ? 1.03
+                                : 1,
+                            transition: eventCompletionBounceActive
+                              ? {
+                                  scale: {
+                                    duration: 0.42,
+                                    ease: [0.22, 0.72, 0.24, 1] as const,
+                                  },
+                                }
+                              : undefined,
+                          }
+                    }
+                  >
+                    <ProjectScheduleInstanceCard
+                      instance={renderedProjectStyleEventInstance}
+                      title={card.title}
+                      durationMinutes={durationMinutes}
+                      heightPx={eventHeightPx}
+                      showDurationLabel={false}
+                    />
+                  </motion.div>
+                );
+              }
 
               return (
                 <div
-                  key={`saved-event-${event.id}`}
-                  aria-label={`Event ${event.title}`}
+                  key={card.renderKey}
+                  aria-label={`Event ${card.title}`}
                   className="pointer-events-none absolute select-none"
                   style={{
                     ...TIMELINE_CARD_BOUNDS,
@@ -12204,20 +14476,12 @@ export default function ScheduleTabContent({
                     zIndex: stackingZIndex,
                   }}
                 >
-                  <div
-                    className="flex h-full min-h-0 w-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border border-white/[0.12] px-3 py-2 text-white shadow-[0_18px_36px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl"
-                    style={{
-                      background:
-                        "radial-gradient(circle at 12% -18%, rgba(255,255,255,0.16), transparent 48%), linear-gradient(145deg, rgba(12,12,16,0.92), rgba(28,29,36,0.74))",
-                      outline: "1px solid rgba(0, 0, 0, 0.55)",
-                      outlineOffset: "-1px",
-                    }}
-                  >
+                  <div className="flex h-full min-h-0 w-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border border-white/[0.12] px-3 py-2 text-white shadow-[0_18px_36px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="min-w-0 truncate text-sm font-semibold leading-tight text-white">
-                        {event.title}
+                        {card.title}
                       </span>
-                      {event.meetingUrl ? (
+                      {card.meetingUrl ? (
                         <span className="shrink-0 text-[10px] font-semibold uppercase tracking-normal text-white/55">
                           link
                         </span>
@@ -12226,7 +14490,7 @@ export default function ScheduleTabContent({
                     {showMeta ? (
                       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] font-medium leading-tight text-white/60">
                         <span className="shrink-0 uppercase tracking-normal">
-                          {event.kind}
+                          {card.sourceCategory}
                         </span>
                         <span className="shrink-0 text-white/35">-</span>
                         <span className="min-w-0 truncate">{rangeLabel}</span>
@@ -12234,7 +14498,7 @@ export default function ScheduleTabContent({
                     ) : null}
                     {showLocation ? (
                       <div className="mt-0.5 truncate text-[10px] font-medium leading-tight text-white/48">
-                        {event.locationName}
+                        {card.locationName}
                       </div>
                     ) : null}
                   </div>
@@ -12735,6 +14999,73 @@ export default function ScheduleTabContent({
                 />
               </div>
             ) : null}
+            {myListPendingPlacement && myListPendingTimelineCard ? (
+              <div
+                className="pointer-events-none absolute select-none"
+                style={{
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: myListPendingTimelineCard.top,
+                  height: myListPendingTimelineCard.height,
+                  zIndex: TIMELINE_STACK_BASE_Z_INDEX + 990,
+                }}
+              >
+                {myListPendingProjectStyleInstance ? (
+                  <ProjectScheduleInstanceCard
+                    instance={myListPendingProjectStyleInstance}
+                    title={myListPendingPlacement.title}
+                    durationMinutes={Math.max(
+                      1,
+                      Math.round(
+                        (myListPendingPlacement.end.getTime() -
+                          myListPendingPlacement.start.getTime()) /
+                          60_000
+                      )
+                    )}
+                    heightPx={myListPendingTimelineCard.heightPx}
+                    showResizeHandles
+                    onResizeStartPointerDown={(event) =>
+                      handleMyListResizePointerDown("start", event)
+                    }
+                    onResizeStartPointerMove={handleMyListResizePointerMove}
+                    onResizeStartPointerUp={handleMyListResizePointerEnd}
+                    onResizeStartPointerCancel={handleMyListResizePointerEnd}
+                    onResizeEndPointerDown={(event) =>
+                      handleMyListResizePointerDown("end", event)
+                    }
+                    onResizeEndPointerMove={handleMyListResizePointerMove}
+                    onResizeEndPointerUp={handleMyListResizePointerEnd}
+                    onResizeEndPointerCancel={handleMyListResizePointerEnd}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            {myListOptimisticPlacement && myListOptimisticTimelineCard ? (
+              <div
+                className="pointer-events-none absolute select-none"
+                style={{
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: myListOptimisticTimelineCard.top,
+                  height: myListOptimisticTimelineCard.height,
+                  zIndex: TIMELINE_STACK_BASE_Z_INDEX + 991,
+                }}
+              >
+                {myListOptimisticProjectStyleInstance ? (
+                  <ProjectScheduleInstanceCard
+                    instance={myListOptimisticProjectStyleInstance}
+                    title={myListOptimisticPlacement.title}
+                    durationMinutes={Math.max(
+                      1,
+                      Math.round(
+                        (myListOptimisticPlacement.end.getTime() -
+                          myListOptimisticPlacement.start.getTime()) /
+                          60_000
+                      )
+                    )}
+                    heightPx={myListOptimisticTimelineCard.heightPx}
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {quickCreateDraftEvent && quickCreateTimelineDraft
               ? (() => {
                   const quickCreateDraftVisuals =
@@ -12800,50 +15131,20 @@ export default function ScheduleTabContent({
                           WebkitTapHighlightColor: "transparent",
                         }}
                       >
-                        <button
-                          type="button"
-                          aria-label="Resize draft start"
-                          className="absolute left-1/2 top-0 z-10 flex h-5 w-10 -translate-x-1/2 items-start justify-center bg-transparent p-0 text-white/65 outline-none"
-                          style={{
-                            touchAction: "none",
-                            WebkitTapHighlightColor: "transparent",
-                          }}
-                          onPointerDown={(event) =>
+                        <TimelineResizeHandles
+                          onStartPointerDown={(event) =>
                             handleQuickCreateResizePointerDown("start", event)
                           }
-                          onPointerMove={handleQuickCreateResizePointerMove}
-                          onPointerUp={handleQuickCreateResizePointerEnd}
-                          onPointerCancel={handleQuickCreateResizePointerEnd}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <ChevronUp
-                            className="pointer-events-none mt-0.5 block h-3 w-3 shrink-0"
-                            strokeWidth={2.4}
-                            aria-hidden="true"
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Resize draft end"
-                          className="absolute bottom-0 left-1/2 z-10 flex h-5 w-10 -translate-x-1/2 items-end justify-center bg-transparent p-0 text-white/65 outline-none"
-                          style={{
-                            touchAction: "none",
-                            WebkitTapHighlightColor: "transparent",
-                          }}
-                          onPointerDown={(event) =>
+                          onStartPointerMove={handleQuickCreateResizePointerMove}
+                          onStartPointerUp={handleQuickCreateResizePointerEnd}
+                          onStartPointerCancel={handleQuickCreateResizePointerEnd}
+                          onEndPointerDown={(event) =>
                             handleQuickCreateResizePointerDown("end", event)
                           }
-                          onPointerMove={handleQuickCreateResizePointerMove}
-                          onPointerUp={handleQuickCreateResizePointerEnd}
-                          onPointerCancel={handleQuickCreateResizePointerEnd}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <ChevronDown
-                            className="pointer-events-none mb-0.5 block h-3 w-3 shrink-0"
-                            strokeWidth={2.4}
-                            aria-hidden="true"
-                          />
-                        </button>
+                          onEndPointerMove={handleQuickCreateResizePointerMove}
+                          onEndPointerUp={handleQuickCreateResizePointerEnd}
+                          onEndPointerCancel={handleQuickCreateResizePointerEnd}
+                        />
                         <button
                           type="button"
                           className={clsx(
@@ -13577,6 +15878,21 @@ export default function ScheduleTabContent({
                                   kind === "scheduled" && instanceId
                                     ? pendingInstanceStatuses.get(instanceId)
                                     : undefined;
+                                const scheduledTaskInstance =
+                                  kind === "scheduled" && instanceId
+                                    ? (instancesById.get(instanceId) ?? null)
+                                    : null;
+                                const isMyListScheduledTaskInstance =
+                                  isMyListScheduleInstance(
+                                    scheduledTaskInstance
+                                  );
+                                const taskDisplayName =
+                                  isMyListScheduledTaskInstance
+                                    ? getMyListScheduleInstanceTitle(
+                                        scheduledTaskInstance,
+                                        task.name
+                                      )
+                                    : task.name;
                                 const scheduledIsPending =
                                   pendingStatus !== undefined;
                                 const status =
@@ -13588,8 +15904,10 @@ export default function ScheduleTabContent({
                                 const scheduledCanToggle =
                                   kind === "scheduled" &&
                                   !!instanceId &&
-                                  (status === "completed" ||
-                                    status === "scheduled");
+                                  (isMyListScheduledTaskInstance
+                                    ? canToggleMyListScheduleStatus(status)
+                                    : status === "completed" ||
+                                      status === "scheduled");
                                 const scheduledCompleted =
                                   status === "completed";
                                 const canToggle = isFallbackCard
@@ -13727,7 +16045,7 @@ export default function ScheduleTabContent({
                                     data-backlog-task-id={
                                       isFallbackCard ? task.id : undefined
                                     }
-                                    aria-label={`Task ${task.name}`}
+                                    aria-label={`Task ${taskDisplayName}`}
                                     role={
                                       hasInteractiveRole ? "button" : undefined
                                     }
@@ -13754,13 +16072,27 @@ export default function ScheduleTabContent({
                                     onPointerDown={(event) => {
                                       if (!instanceId) return;
                                       const taskInstance =
-                                        instances.find(
+                                        scheduledTaskInstance ??
+                                        (instances.find(
                                           (inst) => inst.id === instanceId
-                                        ) || null;
+                                        ) ||
+                                          null);
                                       handleInstancePointerDown(
                                         event,
                                         taskInstance,
-                                        handleTaskCardPrimaryAction
+                                        handleTaskCardPrimaryAction,
+                                        taskInstance &&
+                                          isMyListScheduleInstance(taskInstance)
+                                          ? () => {
+                                              openMyListScheduleEventEditor(
+                                                taskInstance,
+                                                getScheduleEditOriginFromElement(
+                                                  event.currentTarget
+                                                ),
+                                                taskDisplayName
+                                              );
+                                            }
+                                          : undefined
                                       );
                                     }}
                                     onPointerUp={handleInstancePointerUp}
@@ -13861,7 +16193,7 @@ export default function ScheduleTabContent({
                                         layoutId={nestedLayoutTokens?.title}
                                         className={taskTitleClass}
                                       >
-                                        {task.name}
+                                        {taskDisplayName}
                                       </motion.span>
                                     </div>
                                     <SkillEnergyBadge
@@ -13925,27 +16257,39 @@ export default function ScheduleTabContent({
                     });
                   }
 
+                  const isMyListStandaloneTaskInstance =
+                    isMyListScheduleInstance(instance);
+                  const standaloneDisplayTitle = isMyListStandaloneTaskInstance
+                    ? getMyListScheduleInstanceTitle(instance, task.name)
+                    : task.name;
                   const standaloneEnergyLevel: FlameLevel =
-                    resolveEnergyLevel(task.energy) ?? "NO";
+                    (isMyListStandaloneTaskInstance
+                      ? (resolveEnergyLevel(instance.energy_resolved) ??
+                        resolveEnergyLevel(
+                          getScheduleMetadataEnergy(instance.metadata)
+                        ))
+                      : null) ??
+                    resolveEnergyLevel(task.energy) ??
+                    "NO";
                   const pendingStatus = pendingInstanceStatuses.get(
                     instance.id
                   );
                   const isPending = pendingStatus !== undefined;
                   const status =
                     pendingStatus ?? instance.status ?? "scheduled";
-                  const canToggle =
-                    status === "completed" || status === "scheduled";
+                  const canToggle = isMyListStandaloneTaskInstance
+                    ? canToggleMyListScheduleStatus(status)
+                    : status === "completed" || status === "scheduled";
                   const isCompleted = status === "completed";
                   const layoutMode = taskLayouts[index] ?? "full";
                   const standaloneHeightPx = Math.max(
                     durationMinutes * modelPxPerMin,
                     1
                   );
-                  const useCompactStandaloneShadow =
-                    standaloneHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
-                  const standaloneShadow = useCompactStandaloneShadow
-                    ? TIMELINE_COMPACT_CARD_SHADOW
-                    : TIMELINE_RESTING_CARD_SHADOW;
+                  const standaloneVisuals = getProjectScheduleInstanceVisuals({
+                    heightPx: standaloneHeightPx,
+                    completed: isCompleted,
+                  });
                   const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                     {
                       ...TIMELINE_CARD_BOUNDS,
@@ -13974,16 +16318,10 @@ export default function ScheduleTabContent({
                     getTimelineCardCornerClass(layoutMode);
                   const standaloneCardStyle: CSSProperties = {
                     ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
-                    boxShadow: isCompleted
-                      ? FOCUS_POMO_COMPLETE_SHADOW
-                      : standaloneShadow,
-                    outline: isCompleted
-                      ? FOCUS_POMO_COMPLETE_OUTLINE
-                      : "1px solid rgba(10, 10, 12, 0.85)",
+                    boxShadow: standaloneVisuals.boxShadow,
+                    outline: standaloneVisuals.outline,
                     outlineOffset: "-1px",
-                    background: isCompleted
-                      ? FOCUS_POMO_COMPLETE_BACKGROUND
-                      : TIMELINE_DARK_EVENT_BACKGROUND,
+                    background: standaloneVisuals.background,
                     touchAction: TIMELINE_TOUCH_ACTION,
                     WebkitTapHighlightColor: "transparent",
                   };
@@ -14038,7 +16376,7 @@ export default function ScheduleTabContent({
                       data-schedule-instance-id={instance.id}
                       data-creator-xp-source="schedule-instance"
                       data-creator-xp-source-id={instance.id}
-                      aria-label={`Task ${task.name}`}
+                      aria-label={`Task ${standaloneDisplayTitle}`}
                       role="button"
                       tabIndex={canToggle ? 0 : -1}
                       aria-pressed={isCompleted}
@@ -14050,7 +16388,18 @@ export default function ScheduleTabContent({
                         handleInstancePointerDown(
                           event,
                           instance,
-                          handleStandaloneTaskPrimaryAction
+                          handleStandaloneTaskPrimaryAction,
+                          isMyListStandaloneTaskInstance
+                            ? () => {
+                                openMyListScheduleEventEditor(
+                                  instance,
+                                  getScheduleEditOriginFromElement(
+                                    event.currentTarget
+                                  ),
+                                  standaloneDisplayTitle
+                                );
+                              }
+                            : undefined
                         );
                       }}
                       onPointerUp={handleInstancePointerUp}
@@ -14112,11 +16461,11 @@ export default function ScheduleTabContent({
                         data-creator-xp-source="schedule-instance"
                         data-creator-xp-source-id={instance.id}
                         className={clsx(
-                          "relative flex h-full w-full items-center justify-between px-3 py-2 text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
+                          PROJECT_SCHEDULE_INSTANCE_CARD_CLASS,
+                          "px-3 py-2",
                           standaloneCornerClass,
-                          isCompleted
-                            ? `border-green-900/45 ${FOCUS_POMO_COMPLETE_EFFECT_CLASSES}`
-                            : "border-black/70",
+                          standaloneVisuals.borderClass,
+                          isCompleted && FOCUS_POMO_COMPLETE_EFFECT_CLASSES,
                           canToggle && !isPending && "cursor-pointer"
                         )}
                         style={standaloneCardStyle}
@@ -14129,7 +16478,7 @@ export default function ScheduleTabContent({
                             >
                               <span className="flex min-w-0 items-center gap-2">
                                 <span className={standaloneTitleClass}>
-                                  {task.name}
+                                  {standaloneDisplayTitle}
                                 </span>
                               </span>
                             </motion.span>
@@ -14175,6 +16524,9 @@ export default function ScheduleTabContent({
       pendingInstanceStatuses,
       pendingBacklogTaskIds,
       manualPlacementSession,
+      myListCommitSuppressedEventIds,
+      myListPendingPlacement,
+      myListOptimisticPlacement,
       quickCreateDraftEvent,
       isQuickCreateSkillPickerOpen,
       quickCreateSkillPickerAnchor,
@@ -14189,6 +16541,8 @@ export default function ScheduleTabContent({
       handleInstancePointerDown,
       handleInstancePointerUp,
       handleInstancePointerCancel,
+      getScheduleEditOriginFromElement,
+      openMyListScheduleEventEditor,
       handleQuickCreateSurfacePointerDown,
       handleQuickCreateSurfacePointerMove,
       handleQuickCreateSurfacePointerEnd,
@@ -14201,6 +16555,9 @@ export default function ScheduleTabContent({
       handleQuickCreateResizePointerDown,
       handleQuickCreateResizePointerMove,
       handleQuickCreateResizePointerEnd,
+      handleMyListResizePointerDown,
+      handleMyListResizePointerMove,
+      handleMyListResizePointerEnd,
       toggleQuickCreateSkillPicker,
       cancelQuickCreateDraft,
       isQuickCreateDraftInteractionInside,
@@ -14215,8 +16572,9 @@ export default function ScheduleTabContent({
       editingProjectId,
       editingHabitId,
       habitMap,
-      handleOpenDayTypeBlockConstraints,
+      handleOpenTimelineTimeBlockAdjustment,
       instances,
+      instancesStatus,
       instancesById,
       practiceContextDisplayById,
       syncPairings,
@@ -15367,6 +17725,10 @@ export default function ScheduleTabContent({
                         <FocusTimelineFab
                           hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
                           editTarget={fabEditTarget}
+                          timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
+                          onTimeBlockAdjustmentRequestConsumed={() =>
+                            setTimeBlockAdjustmentRequest(null)
+                          }
                           onEditClose={handleCloseEditSheet}
                         />
                       </ScheduleViewShell>
@@ -15376,6 +17738,10 @@ export default function ScheduleTabContent({
                         <FocusTimeline
                           hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
                           editTarget={fabEditTarget}
+                          timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
+                          onTimeBlockAdjustmentRequestConsumed={() =>
+                            setTimeBlockAdjustmentRequest(null)
+                          }
                           onEditClose={handleCloseEditSheet}
                         />
                       </ScheduleViewShell>
@@ -15433,11 +17799,6 @@ export default function ScheduleTabContent({
         monuments={monuments}
         skills={skills}
       />
-      {console.log("[SchedulePage] edit sheet props", {
-        snapshot: describeEditingSnapshot(editingSnapshot),
-        isProjectEditing,
-        isHabitEditing,
-      })}
       {!fabEditTarget ? (
         <>
           <ProjectEditSheet
@@ -15457,6 +17818,52 @@ export default function ScheduleTabContent({
           />
         </>
       ) : null}
+      {activeMyListPlacement && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed right-3 top-1/2 z-[2147483645] flex -translate-y-1/2 flex-col items-center gap-2">
+              <button
+                type="button"
+                aria-label={
+                  activeMyListPlacement.error
+                    ? "Retry scheduled Event"
+                    : "Confirm scheduled Event"
+                }
+                disabled={activeMyListPlacement.isSaving}
+                onClick={() => {
+                  void confirmMyListPendingPlacement();
+                }}
+                className={clsx(
+                  "flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-zinc-950/88 text-white shadow-[0_18px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition",
+                  activeMyListPlacement.isSaving
+                    ? "cursor-wait opacity-65"
+                    : "hover:bg-white/[0.14] active:scale-95"
+                )}
+              >
+                <Check className="h-5 w-5" strokeWidth={2.5} />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel scheduled Event"
+                disabled={activeMyListPlacement.isSaving}
+                onClick={cancelMyListPendingPlacement}
+                className={clsx(
+                  "flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-zinc-950/78 text-white/72 shadow-[0_12px_28px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl transition",
+                  activeMyListPlacement.isSaving
+                    ? "cursor-wait opacity-45"
+                    : "hover:bg-white/[0.12] hover:text-white active:scale-95"
+                )}
+              >
+                <X className="h-4 w-4" strokeWidth={2.3} />
+              </button>
+              {activeMyListPlacement.error ? (
+                <div className="w-40 rounded-[0.8rem] border border-white/10 bg-zinc-950/88 px-3 py-2 text-center text-[11px] font-medium leading-snug text-white/70 shadow-[0_12px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+                  {activeMyListPlacement.error}
+                </div>
+              ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </LayoutGroup>
   );
 }

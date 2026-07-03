@@ -1,21 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import type { Database } from "@/types/supabase";
+import type { Database, Json } from "@/types/supabase";
 import { enforceManualProjectGoalState } from "@/lib/scheduler/manualPlacementCascade";
+import { formatLocalDateKey } from "@/lib/time/tz";
 
 type ScheduleInstanceInsert =
   Database["public"]["Tables"]["schedule_instances"]["Insert"];
 type ManualSourceType =
   Database["public"]["Enums"]["schedule_instance_source_type"];
-type ManualInstanceCreateResult = {
-  id: string;
-  start_utc: string | null;
-  end_utc: string | null;
-  duration_min: number;
-  locked: boolean;
-  placement_source: "scheduler" | "manual";
-};
+type ManualInstanceCreateResult =
+  Database["public"]["Tables"]["schedule_instances"]["Row"];
 type ScheduleInstancesTable = {
   insert: (values: ScheduleInstanceInsert) => {
     select: (columns: string) => {
@@ -45,13 +40,50 @@ type CreateManualInstancePayload = {
   energy_resolved?: unknown;
   eventName?: unknown;
   event_name?: unknown;
+  timeZone?: unknown;
+  timezone?: unknown;
+  metadata?: unknown;
+  timeBlockId?: unknown;
+  time_block_id?: unknown;
+  windowId?: unknown;
+  window_id?: unknown;
+  dayTypeTimeBlockId?: unknown;
+  day_type_time_block_id?: unknown;
+  overlayWindowId?: unknown;
+  overlay_window_id?: unknown;
 };
 
 const MANUAL_SOURCE_TYPES = new Set<ManualSourceType>([
   "PROJECT",
   "HABIT",
   "TASK",
+  "EVENT",
 ]);
+
+const MANUAL_INSTANCE_CREATE_PROJECTION = [
+  "id",
+  "updated_at",
+  "user_id",
+  "source_type",
+  "source_id",
+  "window_id",
+  "day_type_time_block_id",
+  "time_block_id",
+  "start_utc",
+  "end_utc",
+  "duration_min",
+  "status",
+  "weight_snapshot",
+  "energy_resolved",
+  "canceled_reason",
+  "completed_at",
+  "locked",
+  "placement_source",
+  "event_name",
+  "practice_context_monument_id",
+  "overlay_window_id",
+  "metadata",
+].join(", ");
 
 function normalizeSourceType(value: unknown): ManualSourceType | null {
   if (typeof value !== "string") return null;
@@ -72,6 +104,12 @@ function normalizeDuration(value: unknown) {
     return null;
   }
   return Math.round(value);
+}
+
+function normalizeMetadata(value: unknown): Json | null {
+  return typeof value === "object" && value !== undefined
+    ? (value as Json)
+    : null;
 }
 
 function getPayloadValue(
@@ -123,7 +161,7 @@ export async function POST(request: NextRequest) {
   );
   const invalidFields = [
     !sourceType ? "sourceType" : null,
-    !sourceId ? "sourceId" : null,
+    !sourceId && sourceType !== "EVENT" ? "sourceId" : null,
     !startUtc ? "startUtc" : null,
     !durationMin ? "durationMin" : null,
   ].filter((field): field is string => field !== null);
@@ -168,23 +206,82 @@ export async function POST(request: NextRequest) {
   const eventName = normalizeString(
     getPayloadValue(payload, "eventName", "event_name")
   );
+  const timeZone =
+    normalizeString(getPayloadValue(payload, "timeZone", "timezone")) ?? "UTC";
+  const metadata = normalizeMetadata(payload.metadata);
+  const timeBlockId = normalizeString(
+    getPayloadValue(payload, "timeBlockId", "time_block_id")
+  );
+  const windowId = normalizeString(
+    getPayloadValue(payload, "windowId", "window_id")
+  );
+  const dayTypeTimeBlockId = normalizeString(
+    getPayloadValue(payload, "dayTypeTimeBlockId", "day_type_time_block_id")
+  );
+  const overlayWindowId = normalizeString(
+    getPayloadValue(payload, "overlayWindowId", "overlay_window_id")
+  );
+  let resolvedSourceId = sourceId;
+
+  if (sourceType === "EVENT" && !resolvedSourceId) {
+    const title = eventName ?? "Untitled Event";
+    const eventId = crypto.randomUUID();
+    const { error: eventError } = await supabase
+      .from("events")
+      .insert({
+        id: eventId,
+        user_id: user.id,
+        title,
+        notes: null,
+        kind: "EVENT",
+        all_day: false,
+        start_at: nextStartIso,
+        end_at: nextEndIso,
+        timezone: timeZone,
+        start_date: formatLocalDateKey(parsedStart, timeZone),
+        end_date: formatLocalDateKey(new Date(nextEndIso), timeZone),
+        recurrence: "NONE",
+        location_name: null,
+        location_address: null,
+        meeting_provider: null,
+        meeting_url: null,
+        blocks_time: "DEFAULT",
+        visibility: "PRIVATE",
+        notification_timing: "NONE",
+      });
+
+    if (eventError) {
+      return NextResponse.json(
+        {
+          error: "Unable to create manual Event",
+          message: eventError.message,
+          details: eventError.details,
+          hint: eventError.hint,
+          code: eventError.code,
+        },
+        { status: 500 }
+      );
+    }
+
+    resolvedSourceId = eventId;
+  }
 
   const insertPayload: ScheduleInstanceInsert = {
     user_id: user.id,
     source_type: sourceType,
-    source_id: sourceId,
+    source_id: resolvedSourceId,
     start_utc: nextStartIso,
     end_utc: nextEndIso,
     duration_min: durationMin,
     status: "scheduled",
     locked: true,
     placement_source: "manual",
-    window_id: null,
-    day_type_time_block_id: null,
-    time_block_id: null,
-    overlay_window_id: null,
+    window_id: windowId,
+    day_type_time_block_id: dayTypeTimeBlockId,
+    time_block_id: timeBlockId,
+    overlay_window_id: overlayWindowId,
     practice_context_monument_id: null,
-    metadata: null,
+    metadata,
     weight_snapshot: 0,
     energy_resolved: energyResolved,
     event_name: eventName,
@@ -195,7 +292,7 @@ export async function POST(request: NextRequest) {
   ) as unknown as ScheduleInstancesTable;
   const { data, error } = await scheduleInstances
     .insert(insertPayload)
-    .select("id,start_utc,end_utc,duration_min,locked,placement_source")
+    .select(MANUAL_INSTANCE_CREATE_PROJECTION)
     .single();
 
   if (error) {
@@ -204,6 +301,20 @@ export async function POST(request: NextRequest) {
       details: error.details,
       hint: error.hint,
       code: error.code,
+      insertShape: {
+        source_type: insertPayload.source_type,
+        source_id: insertPayload.source_id,
+        start_utc: insertPayload.start_utc,
+        end_utc: insertPayload.end_utc,
+        duration_min: insertPayload.duration_min,
+        placement_source: insertPayload.placement_source,
+        locked: insertPayload.locked,
+        event_name: insertPayload.event_name,
+        metadataKeys:
+          insertPayload.metadata && typeof insertPayload.metadata === "object"
+            ? Object.keys(insertPayload.metadata as Record<string, unknown>)
+            : [],
+      },
     });
     return NextResponse.json(
       {
@@ -220,6 +331,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     instance: data,
+    eventId: sourceType === "EVENT" ? resolvedSourceId : null,
     startUtc: nextStartIso,
     endUtc: nextEndIso,
   });
