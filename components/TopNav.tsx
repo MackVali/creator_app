@@ -89,6 +89,9 @@ const BODY_DATABASE_SORT_ORDER = new Map([
   ["fitness", 2],
 ]);
 const CREATOR_OPEN_NUTRITION_LOG_EVENT = "creator:open-nutrition-log";
+const CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT =
+  "creator:schedule-nutrition-log-overlay-open-changed";
+const SCHEDULE_QUICK_ADD_OVERLAY_CLASS_NAME = "!z-[2147483647]";
 
 function normalizeBodyDatabaseKey(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
@@ -358,13 +361,17 @@ function toQuickAddNote(note: {
 function QuickAddStatusDialog({
   message,
   onClose,
+  overlayClassName,
 }: {
   message: string;
   onClose: () => void;
+  overlayClassName?: string;
 }) {
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-black/58 p-3 backdrop-blur-sm sm:p-6"
+      className={`fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-black/58 p-3 backdrop-blur-sm sm:p-6 ${
+        overlayClassName ?? ""
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="Database entry form"
@@ -395,9 +402,11 @@ function QuickAddStatusDialog({
 function TopNavQuickAddEntrySheet({
   target,
   onClose,
+  overlayClassName,
 }: {
   target: QuickAddBodyDatabaseTarget;
   onClose: () => void;
+  overlayClassName?: string;
 }) {
   const [note, setNote] = useState<QuickAddNote | null>(null);
   const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
@@ -511,7 +520,13 @@ function TopNavQuickAddEntrySheet({
   }
 
   if (isLoading) {
-    return <QuickAddStatusDialog message="Opening form..." onClose={onClose} />;
+    return (
+      <QuickAddStatusDialog
+        message="Opening form..."
+        onClose={onClose}
+        overlayClassName={overlayClassName}
+      />
+    );
   }
 
   if (loadError || !databaseDefinition) {
@@ -519,6 +534,7 @@ function TopNavQuickAddEntrySheet({
       <QuickAddStatusDialog
         message={loadError ?? "Database not found."}
         onClose={onClose}
+        overlayClassName={overlayClassName}
       />
     );
   }
@@ -529,6 +545,7 @@ function TopNavQuickAddEntrySheet({
       databaseDefinition={databaseDefinition}
       onClose={onClose}
       onSaveEntry={saveQuickAddEntry}
+      overlayClassName={overlayClassName}
     />
   );
 }
@@ -731,6 +748,38 @@ export default function TopNav() {
     };
   }, [openPinnedNutritionLogQuickAdd]);
 
+  const isScheduleNutritionQuickAddOpen =
+    shouldHideNav &&
+    Boolean(
+      quickAddTarget &&
+        (normalizeBodyDatabaseKey(quickAddTarget.systemDatabaseKey) === "nutrition" ||
+          normalizeBodyDatabaseKey(quickAddTarget.title) === "nutrition"),
+    );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const detail = { open: isScheduleNutritionQuickAddOpen };
+    if (isScheduleNutritionQuickAddOpen) {
+      document.body.dataset.creatorScheduleNutritionLogOverlayOpen = "true";
+    } else {
+      delete document.body.dataset.creatorScheduleNutritionLogOverlayOpen;
+    }
+    window.dispatchEvent(
+      new CustomEvent(CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT, { detail }),
+    );
+
+    return () => {
+      if (!isScheduleNutritionQuickAddOpen) return;
+      delete document.body.dataset.creatorScheduleNutritionLogOverlayOpen;
+      window.dispatchEvent(
+        new CustomEvent(CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT, {
+          detail: { open: false },
+        }),
+      );
+    };
+  }, [isScheduleNutritionQuickAddOpen]);
+
   if (shouldHideNav) {
     return isBodyPortalReady && quickAddTarget
       ? createPortal(
@@ -738,6 +787,9 @@ export default function TopNav() {
             key={`${quickAddTarget.requestKey}:${quickAddTarget.noteId}:${quickAddTarget.databaseId}`}
             target={quickAddTarget}
             onClose={() => setQuickAddTarget(null)}
+            overlayClassName={
+              isScheduleNutritionQuickAddOpen ? SCHEDULE_QUICK_ADD_OVERLAY_CLASS_NAME : undefined
+            }
           />,
           document.body,
         )

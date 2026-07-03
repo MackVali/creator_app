@@ -98,6 +98,11 @@ import {
   normalizeHabitType,
   type HabitScheduleItem,
 } from "@/lib/scheduler/habits";
+import {
+  computeTimelineLayoutForSyncHabits,
+  type TimelineCardLaneLayout,
+  type TimelineCardLayoutMode,
+} from "@/lib/scheduler/syncLayout";
 import { getHabitNextDue } from "@/lib/scheduler/habitRecurrence";
 import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
@@ -3025,9 +3030,120 @@ const clampOverlayPlacementStart = (
 const sortOverlayPlacements = (placements: OverlayPlacement[]) =>
   [...placements].sort((a, b) => a.start.getTime() - b.start.getTime());
 
+const normalizeOverlayHabitTypeKey = (value?: string | null): string => {
+  const normalized = normalizeHabitType(value?.trim() || null);
+  return normalized === "ASYNC" ? "SYNC" : normalized;
+};
+
 const isSyncOverlayPlacement = (placement: OverlayPlacement) =>
   placement.type === "HABIT" &&
-  normalizeHabitType(placement.habitType) === "SYNC";
+  normalizeOverlayHabitTypeKey(placement.habitType) === "SYNC";
+
+const OVERLAY_TIMELINE_PAIR_WIDTH =
+  "calc((100% - var(--timeline-card-left) - var(--timeline-card-right)) / 2)";
+const OVERLAY_TIMELINE_PAIR_RIGHT_LEFT = `calc(var(--timeline-card-left) + ${OVERLAY_TIMELINE_PAIR_WIDTH})`;
+
+type OverlayTimelinePlacementLayout = {
+  mode: TimelineCardLayoutMode;
+  laneLayout?: TimelineCardLaneLayout | null;
+};
+
+const computeOverlayTimelineLaneLeft = (lane: number) => {
+  if (lane <= 0) return OVERLAY_TIMELINE_PAIR_RIGHT_LEFT;
+  const offsets = Array.from(
+    { length: lane },
+    () => `(${OVERLAY_TIMELINE_PAIR_WIDTH} / var(--overlay-sync-lane-count))`,
+  ).join(" + ");
+  return `calc(${OVERLAY_TIMELINE_PAIR_RIGHT_LEFT} + ${offsets})`;
+};
+
+const applyOverlayTimelinePlacementLayout = (
+  style: React.CSSProperties,
+  layout?: OverlayTimelinePlacementLayout | null,
+) => {
+  const mode = layout?.mode ?? "full";
+  if (mode === "paired-left") {
+    return {
+      ...style,
+      left: "var(--timeline-card-left)",
+      right: undefined,
+      width: OVERLAY_TIMELINE_PAIR_WIDTH,
+    };
+  }
+  if (mode === "paired-right") {
+    const laneCount = Math.max(1, layout?.laneLayout?.laneCount ?? 1);
+    const lane = Math.min(
+      Math.max(0, layout?.laneLayout?.lane ?? 0),
+      laneCount - 1,
+    );
+    return {
+      ...style,
+      "--overlay-sync-lane-count": laneCount,
+      left: computeOverlayTimelineLaneLeft(lane),
+      right: undefined,
+      width:
+        laneCount > 1
+          ? `calc(${OVERLAY_TIMELINE_PAIR_WIDTH} / ${laneCount})`
+          : OVERLAY_TIMELINE_PAIR_WIDTH,
+    } as React.CSSProperties;
+  }
+  return style;
+};
+
+const computeOverlayTimelinePlacementLayouts = (
+  placements: OverlayPlacement[],
+) => {
+  const habitPlacements: OverlayPlacement[] = [];
+  const projectPlacements: OverlayPlacement[] = [];
+  const taskLikePlacements: OverlayPlacement[] = [];
+  const habitIds: string[] = [];
+  const projectIds: string[] = [];
+  const taskLikeIds: string[] = [];
+
+  placements.forEach((placement) => {
+    if (placement.type === "HABIT") {
+      habitIds.push(placement.id);
+      habitPlacements.push({
+        ...placement,
+        habitType: normalizeOverlayHabitTypeKey(placement.habitType),
+      });
+    } else if (placement.type === "PROJECT") {
+      projectIds.push(placement.id);
+      projectPlacements.push(placement);
+    } else {
+      taskLikeIds.push(placement.id);
+      taskLikePlacements.push(placement);
+    }
+  });
+
+  const {
+    habitLayouts,
+    projectLayouts,
+    taskLayouts,
+    syncHabitLaneLayouts,
+  } = computeTimelineLayoutForSyncHabits({
+    habitPlacements,
+    projectInstances: projectPlacements,
+    taskInstances: taskLikePlacements,
+  });
+
+  const layouts = new Map<string, OverlayTimelinePlacementLayout>();
+
+  habitIds.forEach((id, index) => {
+    layouts.set(id, {
+      mode: habitLayouts[index] ?? "full",
+      laneLayout: syncHabitLaneLayouts.get(index) ?? null,
+    });
+  });
+  projectIds.forEach((id, index) => {
+    layouts.set(id, { mode: projectLayouts[index] ?? "full" });
+  });
+  taskLikeIds.forEach((id, index) => {
+    layouts.set(id, { mode: taskLayouts[index] ?? "full" });
+  });
+
+  return layouts;
+};
 
 type OverlayLayoutDirection = "forward" | "backward" | "none";
 
@@ -3616,37 +3732,16 @@ const HABIT_TYPE_BACKGROUND_MAP: Record<string, string> = {
   MEMO: `radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)`,
 };
 
-const getOverlayPlacementTheme = (
-  placement: OverlayPlacement,
-): OverlayPlacementTheme => {
-  if (placement.type === "PROJECT") {
-    return {
-      background: OVERLAY_PROJECT_BACKGROUND,
-      borderColor: OVERLAY_BORDER_COLOR,
-    };
-  }
-  if (placement.type === "TASK" || placement.type === "EVENT") {
-    return {
-      background: OVERLAY_PROJECT_BACKGROUND,
-      borderColor: OVERLAY_BORDER_COLOR,
-    };
-  }
-
-  const habitTypeKey = normalizeHabitType(placement.habitType);
-  return {
-    background:
-      HABIT_TYPE_BACKGROUND_MAP[habitTypeKey] ??
-      HABIT_TYPE_BACKGROUND_MAP.HABIT,
-    borderColor: OVERLAY_BORDER_COLOR,
-  };
-};
-
 const isCompletedOverlayPlacement = (placement: OverlayPlacement) =>
   placement.status?.trim().toLowerCase() === "completed";
 
 type OverlayPlacementTheme = {
   background: string;
   borderColor: string;
+  className?: string;
+  boxShadow?: string;
+  outline?: string;
+  outlineOffset?: string;
 };
 
 type NexusScheduleTheme = OverlayPlacementTheme & {
@@ -3755,6 +3850,27 @@ const getNexusTimelineHabitTheme = (
   };
 };
 
+const getOverlayPlacementTheme = (
+  placement: OverlayPlacement,
+): OverlayPlacementTheme => {
+  if (placement.type === "PROJECT") {
+    return {
+      background: OVERLAY_PROJECT_BACKGROUND,
+      borderColor: OVERLAY_BORDER_COLOR,
+    };
+  }
+  if (placement.type === "TASK" || placement.type === "EVENT") {
+    return {
+      background: OVERLAY_PROJECT_BACKGROUND,
+      borderColor: OVERLAY_BORDER_COLOR,
+    };
+  }
+
+  return getNexusTimelineHabitTheme(
+    normalizeOverlayHabitTypeKey(placement.habitType),
+  );
+};
+
 const NEXUS_SCHEDULE_SOURCE_TYPE_FIELDS = [
   "sourceType",
   "source_type",
@@ -3783,8 +3899,7 @@ const NEXUS_HABIT_TYPE_FIELDS = [
 ] as const;
 
 const normalizeNexusHabitTypeKey = (value?: string | null): string => {
-  const normalized = normalizeHabitType(value?.trim() || null);
-  return normalized === "ASYNC" ? "SYNC" : normalized;
+  return normalizeOverlayHabitTypeKey(value);
 };
 
 const NEXUS_HABIT_SUBTYPE_KEYS = new Set([
@@ -4728,6 +4843,10 @@ export function Fab({
     overlayStartTime,
     overlayWindowMinutes,
   ]);
+  const overlayTimelinePlacementLayouts = useMemo(
+    () => computeOverlayTimelinePlacementLayouts(renderOverlayPlacements),
+    [renderOverlayPlacements],
+  );
   const setOverlayDragModeWithRef = useCallback(
     (mode: OverlayDragMode) => {
       overlayDragModeRef.current = mode;
@@ -11298,11 +11417,23 @@ export function Fab({
       border: [39, 39, 42],
     },
   ];
+  const FAB_PAGE_PALETTE_INDEXES: Record<(typeof FAB_PAGES)[number], number> = {
+    primary: 0,
+    secondary: 1,
+    nexus: 1,
+  };
+  const DEFAULT_MENU_PALETTE = MENU_PALETTES[FAB_PRIMARY_PAGE_INDEX];
 
   const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
-  const getMenuPalette = (pageIndex: number): MenuPalette =>
-    MENU_PALETTES[pageIndex];
+  const getMenuPalette = (pageIndex: number): MenuPalette => {
+    const pageType = FAB_PAGES[pageIndex];
+    const paletteIndex =
+      pageType !== undefined
+        ? FAB_PAGE_PALETTE_INDEXES[pageType]
+        : FAB_PRIMARY_PAGE_INDEX;
+    return MENU_PALETTES[paletteIndex] ?? DEFAULT_MENU_PALETTE;
+  };
 
   const lerp = (start: number, end: number, t: number) =>
     start + (end - start) * t;
@@ -11341,7 +11472,7 @@ export function Fab({
         color: string;
       };
 
-  const FAB_MENU_ROW_HEIGHT = 56;
+  const FAB_MENU_ROW_HEIGHT = 48;
   const menuConfigs = {
     default: {
       primary: [
@@ -11508,6 +11639,8 @@ export function Fab({
 
   const handleOverlayPickerResult = (result: FabSearchResult) => {
     const durationMinutes = getOverlayPlacementDurationMinutes(result);
+    const resultHabitType =
+      result.type === "HABIT" ? getNexusResultHabitTypeKey(result) : null;
     setOverlayPlacedItems((previous) => {
       const adjustmentScope = overlayAdjustmentRequest
         ? resolveTimeBlockAdjustmentScope(overlayAdjustmentRequest)
@@ -11536,7 +11669,7 @@ export function Fab({
             start: placementStart,
             end: placementEnd,
             locked: true,
-            habitType: result.habitType ?? null,
+            habitType: resultHabitType,
             goalName: result.goalName ?? null,
             energy: result.energy ?? null,
             sourceId: result.id,
@@ -11588,6 +11721,10 @@ export function Fab({
       clampedMinutes + placementDurationMinutes,
       overlayStartTime,
     );
+    const selectedHabitType =
+      overlayPickerSelected.type === "HABIT"
+        ? getNexusResultHabitTypeKey(overlayPickerSelected)
+        : null;
     setOverlayPlacedItems((previous) =>
       normalizeOverlayPlacementsForMode(
         [
@@ -11599,7 +11736,7 @@ export function Fab({
             start: placementStart,
             end: placementEnd,
             locked: true,
-            habitType: overlayPickerSelected.habitType ?? null,
+            habitType: selectedHabitType,
             goalName: overlayPickerSelected.goalName ?? null,
             energy: overlayPickerSelected.energy ?? null,
             sourceId: overlayPickerSelected.id,
@@ -15742,7 +15879,7 @@ export function Fab({
               duration: 0.1,
             }}
             className={cn(
-              "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+              "w-full px-6 py-2 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
               itemAlignmentClass,
               menuItem.color,
             )}
@@ -31200,6 +31337,9 @@ export function Fab({
                           activeOverlayResizeId === placement.id;
                         const isRemovalCandidate =
                           overlayRemovalCandidateId === placement.id;
+                        const placementLayout =
+                          overlayTimelinePlacementLayouts.get(placement.id) ??
+                          null;
                         const visualStartMinutes =
                           isDragging && overlayDragVisualStartMinutes !== null
                             ? overlayDragVisualStartMinutes
@@ -31211,27 +31351,34 @@ export function Fab({
                                 "0 0 0 10px rgba(248, 113, 113, 0.25),0 18px 38px rgba(6,6,10,0.48),0 8px 16px rgba(0,0,0,0.35)",
                             }
                           : {};
-                        const staticCardStyle = {
-                          top: minutesToTimelineStyle(visualStartMinutes),
-                          height: minutesToTimelineStyle(durationMinutes),
-                          left: "var(--timeline-card-left)",
-                          right: "var(--timeline-card-right)",
-                          background: isCompletedTimeBlockPlacement
-                            ? OVERLAY_COMPLETED_BACKGROUND
-                            : placementTheme.background,
-                          borderColor: isCompletedTimeBlockPlacement
-                            ? "rgba(20, 83, 45, 0.45)"
-                            : placementTheme.borderColor,
-                          outline: isCompletedTimeBlockPlacement
-                            ? OVERLAY_COMPLETED_OUTLINE
-                            : "1px solid rgba(255, 255, 255, 0.08)",
-                          outlineOffset: "-1px",
-                        };
+                        const staticCardStyle =
+                          applyOverlayTimelinePlacementLayout(
+                            {
+                              top: minutesToTimelineStyle(visualStartMinutes),
+                              height: minutesToTimelineStyle(durationMinutes),
+                              left: "var(--timeline-card-left)",
+                              right: "var(--timeline-card-right)",
+                              background: isCompletedTimeBlockPlacement
+                                ? OVERLAY_COMPLETED_BACKGROUND
+                                : placementTheme.background,
+                              borderColor: isCompletedTimeBlockPlacement
+                                ? "rgba(20, 83, 45, 0.45)"
+                                : placementTheme.borderColor,
+                              outline: isCompletedTimeBlockPlacement
+                                ? OVERLAY_COMPLETED_OUTLINE
+                                : (placementTheme.outline ??
+                                  "1px solid rgba(255, 255, 255, 0.08)"),
+                              outlineOffset:
+                                placementTheme.outlineOffset ?? "-1px",
+                            },
+                            placementLayout,
+                          );
                         const baseShadow = isCompletedTimeBlockPlacement
                           ? OVERLAY_COMPLETED_SHADOW
                           : isDragging || isResizing
                             ? "0 0 42px rgba(0,0,0,0.42),0 12px 24px rgba(0,0,0,0.34)"
-                            : "0 0 0 1px rgba(255,255,255,0.035),0 5px 14px rgba(0,0,0,0.22)";
+                            : (placementTheme.boxShadow ??
+                              "0 0 0 1px rgba(255,255,255,0.035),0 5px 14px rgba(0,0,0,0.22)");
                         const filterValue = isDragging || isResizing
                           ? "brightness(1.09)"
                           : overlayIsDragging
@@ -31243,11 +31390,22 @@ export function Fab({
                           ? 32
                           : isRemovalCandidate
                             ? 10
-                            : 2;
+                            : isSyncOverlayPlacement(placement) &&
+                                placementLayout?.mode === "paired-right"
+                              ? 3
+                              : 2;
                         const transitionStyle = isDragging
                           ? "filter 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease"
                           : "top 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease, opacity 0.2s ease";
                         const activeStyle = staticCardStyle;
+                        const overlayHabitTypeClass =
+                          placement.type === "HABIT"
+                            ? getNexusTimelineHabitTypeClass(
+                                normalizeOverlayHabitTypeKey(
+                                  placement.habitType,
+                                ),
+                              )
+                            : null;
 
                         return (
                           <motion.div
@@ -31273,6 +31431,12 @@ export function Fab({
                             }}
                             className={cn(
                               "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto",
+                              placement.type === "HABIT" && "habit-card",
+                              overlayHabitTypeClass,
+                              placement.type === "HABIT" &&
+                                (isCompletedTimeBlockPlacement
+                                  ? "habit-card--completed"
+                                  : "habit-card--scheduled"),
                               isTimeLockedEventPlacement
                                 ? "cursor-default"
                                 : "cursor-grab active:cursor-grabbing",
