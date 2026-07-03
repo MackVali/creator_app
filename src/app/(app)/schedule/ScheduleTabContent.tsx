@@ -204,6 +204,7 @@ import {
 } from "./priorities/utils";
 
 const DEBUG_DAY_SHIFT = true;
+const DEBUG_SCHEDULE_XP = DEBUG_DAY_SHIFT;
 
 function formatScheduleDateKey(date: Date, timeZone: string) {
   return dayKeyFromUtc(date, timeZone);
@@ -318,6 +319,75 @@ const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
 const TIMELINE_OVERLAY_STACK_STEP = 20;
 const SCHEDULE_XP_AWARD_AMOUNTS = CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE;
+
+type ScheduleXpKind = "task" | "project" | "habit" | "event";
+type ScheduleXpResultStatus =
+  | "inserted"
+  | "deduped"
+  | "reversed"
+  | "blocked"
+  | "failed";
+type ScheduleXpAwardPayload = {
+  kind: ScheduleXpKind;
+  amount: number;
+  skillIds: string[];
+  monumentIds: string[];
+};
+type ScheduleXpAwardOutcome = {
+  ok: boolean;
+  status: ScheduleXpResultStatus;
+  inserted?: boolean;
+  reason?: string | null;
+  activePositiveCount?: number | null;
+  cycleAwardKeyBase?: string | null;
+};
+type ScheduleXpReverseOutcome = {
+  ok: boolean;
+  status: ScheduleXpResultStatus;
+  reversed: number;
+  alreadyReversed: number;
+  activePositivesFound: number;
+  insertedReversalKeys: string[];
+  reason?: string | null;
+};
+
+function getScheduleXpKindFromInstance(
+  instance: Pick<ScheduleInstance, "source_type"> | null | undefined
+): ScheduleXpKind | null {
+  if (!instance) return null;
+  if (instance.source_type === "TASK") return "task";
+  if (instance.source_type === "PROJECT") return "project";
+  if (instance.source_type === "HABIT") return "habit";
+  if (instance.source_type === "EVENT") return "event";
+  return null;
+}
+
+function buildScheduleXpOccurrenceStem(
+  instanceId: string,
+  kind: ScheduleXpKind
+) {
+  return `sched:${instanceId}:${kind}`;
+}
+
+function buildScheduleXpLegacyOccurrenceStems(
+  instance: Pick<ScheduleInstance, "source_type" | "source_id">,
+  kind: ScheduleXpKind
+) {
+  if (
+    kind === "event" &&
+    instance.source_type === "EVENT" &&
+    typeof instance.source_id === "string" &&
+    instance.source_id.trim().length > 0
+  ) {
+    return [`event:${instance.source_id.trim()}`];
+  }
+  return [];
+}
+
+function logScheduleXpDebug(detail: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production" || !DEBUG_SCHEDULE_XP) return;
+  console.debug("[Schedule XP]", detail);
+}
 
 function toCreatorXpRect(rect: DOMRect): CreatorXpBurstRect {
   return {
@@ -7012,7 +7082,7 @@ export default function ScheduleTabContent({
   }, [instanceStatusById]);
 
   const buildXpAwardPayload = useCallback(
-    (instance: ScheduleInstance) => {
+    (instance: ScheduleInstance): ScheduleXpAwardPayload | null => {
       const collectSkillIds = (ids: (string | null | undefined)[]) =>
         Array.from(
           new Set(
@@ -7098,6 +7168,232 @@ export default function ScheduleTabContent({
     [habitMap, projectSkillIds, skillMonumentMap, taskMap, tasksByProjectId]
   );
 
+  const reverseScheduleXpOccurrence = useCallback(
+    async (
+      occurrenceStem: string,
+      legacyOccurrenceStems: string[] = []
+    ): Promise<ScheduleXpReverseOutcome> => {
+      try {
+        const response = await fetch("/api/xp/reverse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            occurrenceStem,
+            legacyOccurrenceStems,
+          }),
+        });
+        if (!response.ok) {
+          const responseText = await response.text();
+          return {
+            ok: false,
+            status: "failed",
+            reversed: 0,
+            alreadyReversed: 0,
+            activePositivesFound: 0,
+            insertedReversalKeys: [],
+            reason: responseText || "Schedule XP reverse request failed",
+          };
+        }
+
+        const result = (await response.json().catch(() => null)) as {
+          reversed?: number;
+          alreadyReversed?: number;
+          activePositivesFound?: number;
+          insertedReversalKeys?: string[];
+        } | null;
+
+        return {
+          ok: true,
+          status: (result?.reversed ?? 0) > 0 ? "reversed" : "deduped",
+          reversed: result?.reversed ?? 0,
+          alreadyReversed: result?.alreadyReversed ?? 0,
+          activePositivesFound: result?.activePositivesFound ?? 0,
+          insertedReversalKeys: result?.insertedReversalKeys ?? [],
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          status: "failed",
+          reversed: 0,
+          alreadyReversed: 0,
+          activePositivesFound: 0,
+          insertedReversalKeys: [],
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Schedule XP reverse request failed",
+        };
+      }
+    },
+    []
+  );
+
+  const awardScheduleInstanceXpCompletion = useCallback(
+    async ({
+      instance,
+      payload,
+      occurrenceStem,
+      legacyOccurrenceStems,
+      completedAt,
+      durationMin,
+      sourceRect,
+      sourceOrigin,
+    }: {
+      instance: ScheduleInstance;
+      payload: ScheduleXpAwardPayload;
+      occurrenceStem: string;
+      legacyOccurrenceStems: string[];
+      completedAt: string;
+      durationMin: number | null;
+      sourceRect?: CreatorXpBurstRect | null;
+      sourceOrigin?: CreatorXpBurstSourceOrigin;
+    }): Promise<ScheduleXpAwardOutcome> => {
+      if (!instance.source_type) {
+        return {
+          ok: false,
+          status: "blocked",
+          reason: "Schedule XP blocked: missing source type",
+        };
+      }
+
+      const completion: Record<string, unknown> = {
+        action: "complete",
+        sourceType: instance.source_type,
+        completedAt,
+        scheduleInstanceId: instance.id,
+        wasScheduled: true,
+        durationMin,
+        timeZone: stableTimeZone ?? effectiveTimeZone,
+      };
+      if (typeof instance.source_id === "string" && instance.source_id.trim()) {
+        completion.sourceId = instance.source_id.trim();
+      }
+
+      const body: Record<string, unknown> = {
+        scheduleInstanceId: instance.id,
+        kind: payload.kind,
+        amount: payload.amount,
+        awardKeyBase: occurrenceStem,
+        reversible: {
+          occurrenceStem,
+          legacyOccurrenceStems,
+        },
+        source: "schedule",
+        completion,
+      };
+      if (payload.skillIds.length > 0) {
+        body.skillIds = payload.skillIds;
+      }
+      if (payload.monumentIds.length > 0) {
+        body.monumentIds = payload.monumentIds;
+      }
+
+      try {
+        const response = await fetch("/api/xp/award", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          const responseText = await response.text();
+          return {
+            ok: false,
+            status: "failed",
+            reason: responseText || "Schedule XP award request failed",
+          };
+        }
+
+        const result = (await response.json().catch(() => null)) as {
+          inserted?: number;
+          deduped?: boolean;
+          skipped?: boolean;
+          reason?: string;
+          awardKeyBase?: string;
+          activePositiveCount?: number;
+          surge?: Parameters<typeof dispatchCreatorXpRewardVisual>[0]["surge"];
+        } | null;
+        if (result?.reason) {
+          logScheduleXpDebug({
+            action: "complete",
+            phase: "award-response",
+            scheduleInstanceId: instance.id,
+            kind: payload.kind,
+            sourceType: instance.source_type,
+            occurrenceStem,
+            legacyOccurrenceStems,
+            reason: result.reason,
+          });
+        }
+
+        if (!result) {
+          return {
+            ok: false,
+            status: "failed",
+            reason: "Schedule XP award returned no payload",
+          };
+        }
+
+        if ((result.inserted ?? 0) <= 0) {
+          return {
+            ok: result.deduped === true || result.skipped === true,
+            status: result.deduped
+              ? "deduped"
+              : result.skipped
+                ? "blocked"
+                : "failed",
+            inserted: false,
+            activePositiveCount: result.activePositiveCount ?? null,
+            cycleAwardKeyBase: result.awardKeyBase ?? null,
+            reason:
+              result.reason ??
+              (result.deduped
+                ? "Active positive XP already exists for this occurrence"
+                : "Schedule XP award inserted no rows"),
+          };
+        }
+
+        if (result.surge) {
+          dispatchCreatorXpBurstStatus("XP: completed instance dispatched");
+          dispatchCreatorXpRewardVisual({
+            surge: result.surge,
+            scheduleInstanceId: instance.id,
+            completedAt,
+            sourceRect,
+            sourceOrigin,
+            amount:
+              typeof result.surge.displayXp === "number"
+                ? result.surge.displayXp
+                : payload.amount,
+            kind: "schedule_instance_complete",
+            burstId: `schedule:${instance.id}:${completedAt}`,
+            topOffsetPx:
+              topBarHeight !== null && Number.isFinite(topBarHeight)
+                ? Math.max(0, topBarHeight) + 8
+                : 72,
+          });
+        }
+
+        return {
+          ok: true,
+          status: "inserted",
+          inserted: true,
+          activePositiveCount: result.activePositiveCount ?? null,
+          cycleAwardKeyBase: result.awardKeyBase ?? occurrenceStem,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          status: "failed",
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Schedule XP award request failed",
+        };
+      }
+    },
+    [effectiveTimeZone, stableTimeZone, topBarHeight]
+  );
+
   const computeTrimmedHabitTiming = useCallback(
     (instance: ScheduleInstance | undefined) => {
       if (!instance) return null;
@@ -7133,7 +7429,7 @@ export default function ScheduleTabContent({
     ) => {
       if (!userId) {
         console.warn("No authenticated user available for status update");
-        return;
+        return false;
       }
 
       const instance = instancesById.get(instanceId);
@@ -7178,7 +7474,7 @@ export default function ScheduleTabContent({
         logOverlayStage(4, { reason: "pending block" });
         console.log(`[SKIP] reason=pending instanceId=${instanceId}`);
         void hapticWarningPattern();
-        return;
+        return false;
       }
       logOverlayStage(4, { reason: "guards pass" });
       logOverlayStage(5, { previousStatus, dayKey });
@@ -7220,6 +7516,21 @@ export default function ScheduleTabContent({
             ? null
             : trimCandidate
           : null;
+      const scheduleXpKind = getScheduleXpKindFromInstance(instance);
+      const occurrenceStem =
+        instance && scheduleXpKind
+          ? buildScheduleXpOccurrenceStem(instance.id, scheduleXpKind)
+          : null;
+      const legacyOccurrenceStems =
+        instance && scheduleXpKind
+          ? buildScheduleXpLegacyOccurrenceStems(instance, scheduleXpKind)
+          : [];
+      const xpPayload = instance ? buildXpAwardPayload(instance) : null;
+      const xpDurationMin =
+        trimResult?.durationMin ??
+        (typeof instance?.duration_min === "number"
+          ? instance.duration_min
+          : null);
       const targets: StatusTarget[] = mutationTargetIds.map((id) => ({
         id,
         status: nextStatus,
@@ -7247,6 +7558,36 @@ export default function ScheduleTabContent({
       logOverlayStage(7, { reason: "optimistic applied" });
 
       try {
+        if (
+          nextStatus === "completed" &&
+          previousStatus !== "completed" &&
+          occurrenceStem
+        ) {
+          const repairResult = await reverseScheduleXpOccurrence(
+            occurrenceStem,
+            legacyOccurrenceStems
+          );
+          logScheduleXpDebug({
+            action: "complete",
+            phase: "stale-repair",
+            scheduleInstanceId: instanceId,
+            kind: scheduleXpKind,
+            sourceType: instance?.source_type ?? null,
+            occurrenceStem,
+            legacyOccurrenceStems,
+            status: repairResult.status,
+            activePositiveCount: repairResult.activePositivesFound,
+            reversedCount: repairResult.reversed,
+            alreadyReversed: repairResult.alreadyReversed,
+            reason: repairResult.reason ?? null,
+          });
+          if (!repairResult.ok) {
+            throw new Error(
+              repairResult.reason ?? "Schedule XP stale repair failed"
+            );
+          }
+        }
+
         logOverlayStage(5, { reason: "sending update" });
         console.log(
           `[MUTATE] instanceId=${instanceId} next=${nextStatus} completed_at=${
@@ -7283,103 +7624,108 @@ export default function ScheduleTabContent({
           throw result.error;
         }
 
-        const previousStatus = instance?.status ?? null;
         const isUndo =
           nextStatus === "scheduled" && previousStatus === "completed";
-        const shouldAwardXp = nextStatus === "completed" || isUndo;
-
-        if (shouldAwardXp && instance) {
-          const payload = buildXpAwardPayload(instance);
-          if (payload) {
-            const isEventAward = payload.kind === "event";
-            const baseAwardKey = isEventAward
-              ? `event:${instance.source_id}`
-              : `sched:${instance.id}:${payload.kind}`;
-            const body: Record<string, unknown> = {
+        if (nextStatus === "completed" && instance && occurrenceStem) {
+          if (xpPayload) {
+            const completedAtForXp =
+              trimResult?.endUTC ?? completionIso ?? new Date().toISOString();
+            const awardResult = await awardScheduleInstanceXpCompletion({
+              instance,
+              payload: xpPayload,
+              occurrenceStem,
+              legacyOccurrenceStems,
+              completedAt: completedAtForXp,
+              durationMin: xpDurationMin,
+              sourceRect: xpBurstSourceRect,
+              sourceOrigin: xpBurstSourceOrigin,
+            });
+            logScheduleXpDebug({
+              action: "complete",
+              phase: "award",
               scheduleInstanceId: instance.id,
-              kind: payload.kind,
-              amount: isUndo ? -payload.amount : payload.amount,
-              awardKeyBase: isUndo ? `${baseAwardKey}:undo` : baseAwardKey,
-              completion: {
-                action: isUndo ? "undo" : "complete",
-                sourceType: instance.source_type,
-                sourceId: instance.source_id,
-                completedAt:
-                  nextStatus === "completed"
-                    ? (trimResult?.endUTC ?? completionIso)
-                    : instance.completed_at ?? completionIso,
-                scheduleInstanceId: instance.id,
-                wasScheduled: true,
-                durationMin:
-                  trimResult?.durationMin ??
-                  (typeof instance.duration_min === "number"
-                    ? instance.duration_min
-                    : null),
-                timeZone: stableTimeZone ?? effectiveTimeZone,
-              },
-            };
-            if (payload.skillIds.length > 0) {
-              body.skillIds = payload.skillIds;
-            }
-            if (payload.monumentIds.length > 0) {
-              body.monumentIds = payload.monumentIds;
-            }
-            try {
-              const response = await fetch("/api/xp/award", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-              });
-              if (!response.ok) {
+              kind: xpPayload.kind,
+              sourceType: instance.source_type,
+              occurrenceStem,
+              legacyOccurrenceStems,
+              status: awardResult.status,
+              inserted: awardResult.inserted ?? null,
+              activePositiveCount: awardResult.activePositiveCount ?? null,
+              cycleAwardKeyBase: awardResult.cycleAwardKeyBase ?? null,
+              reason: awardResult.reason ?? null,
+            });
+            if (!awardResult.ok) {
+              const rollback = await updateInstanceStatus(
+                instanceId,
+                "scheduled"
+              );
+              if (rollback.error) {
                 console.error(
-                  "Failed to award XP for schedule completion",
-                  await response.text()
+                  "Failed to rollback schedule completion after XP award failure",
+                  rollback.error
                 );
-                throw new Error("Schedule XP award request failed");
               }
-              const awardResult = (await response.json().catch(() => null)) as {
-                inserted?: number;
-                skipped?: boolean;
-                reason?: string;
-                surge?: Parameters<typeof dispatchCreatorXpRewardVisual>[0]["surge"];
-              } | null;
-              if (awardResult?.reason && process.env.NODE_ENV !== "production") {
-                dispatchCreatorXpBurstStatus(awardResult.reason);
-              }
-              if (
-                nextStatus === "completed" &&
-                awardResult &&
-                (awardResult.inserted ?? 0) > 0 &&
-                awardResult.surge
-              ) {
-                dispatchCreatorXpBurstStatus("XP: completed instance dispatched");
-                dispatchCreatorXpRewardVisual({
-                  surge: awardResult.surge,
-                  scheduleInstanceId: instance.id,
-                  completedAt: trimResult?.endUTC ?? completionIso,
-                  sourceRect: xpBurstSourceRect,
-                  sourceOrigin: xpBurstSourceOrigin,
-                  amount:
-                    typeof awardResult.surge.displayXp === "number"
-                      ? awardResult.surge.displayXp
-                      : payload.amount,
-                  kind: "schedule_instance_complete",
-                  burstId: `schedule:${instance.id}:${
-                    trimResult?.endUTC ?? completionIso ?? "completed"
-                  }`,
-                  topOffsetPx:
-                    topBarHeight !== null && Number.isFinite(topBarHeight)
-                      ? Math.max(0, topBarHeight) + 8
-                      : 72,
-                });
-              }
-            } catch (awardError) {
-              console.error(
-                "Failed to award XP for schedule completion",
-                awardError
+              throw new Error(
+                awardResult.reason ?? "Schedule XP award request failed"
               );
             }
+          } else {
+            logScheduleXpDebug({
+              action: "complete",
+              phase: "award",
+              scheduleInstanceId: instance.id,
+              kind: scheduleXpKind,
+              sourceType: instance.source_type,
+              occurrenceStem,
+              legacyOccurrenceStems,
+              status: "blocked",
+              reason: "No Schedule XP payload for this instance",
+            });
           }
+        } else if (isUndo && instance && occurrenceStem) {
+          const reverseResult = await reverseScheduleXpOccurrence(
+            occurrenceStem,
+            legacyOccurrenceStems
+          );
+          logScheduleXpDebug({
+            action: "undo",
+            phase: "reverse",
+            scheduleInstanceId: instance.id,
+            kind: scheduleXpKind,
+            sourceType: instance.source_type,
+            occurrenceStem,
+            legacyOccurrenceStems,
+            status: reverseResult.status,
+            activePositiveCount: reverseResult.activePositivesFound,
+            reversedCount: reverseResult.reversed,
+            alreadyReversed: reverseResult.alreadyReversed,
+            reason: reverseResult.reason ?? null,
+          });
+          if (!reverseResult.ok) {
+            const rollbackCompletedAt =
+              instance.completed_at ?? new Date().toISOString();
+            const rollback = await updateInstanceStatus(instanceId, "completed", {
+              completedAtUTC: rollbackCompletedAt,
+            });
+            if (rollback.error) {
+              console.error(
+                "Failed to rollback schedule undo after XP reverse failure",
+                rollback.error
+              );
+            }
+            throw new Error(
+              reverseResult.reason ?? "Schedule XP reverse request failed"
+            );
+          }
+        } else if (isUndo && instance && !occurrenceStem) {
+          logScheduleXpDebug({
+            action: "undo",
+            phase: "reverse",
+            scheduleInstanceId: instance.id,
+            sourceType: instance.source_type,
+            status: "blocked",
+            reason: "No Schedule XP occurrence stem for this instance",
+          });
         }
 
         if (instance?.source_type === "HABIT" && instance.source_id) {
@@ -7406,6 +7752,7 @@ export default function ScheduleTabContent({
         if (nextStatus === "completed") {
           void hapticComplete();
         }
+        return true;
       } catch (error) {
         console.error(error);
         void hapticErrorPattern();
@@ -7415,6 +7762,7 @@ export default function ScheduleTabContent({
         if (previousAllInstances) {
           setAllInstances(previousAllInstances);
         }
+        return false;
       } finally {
         setPendingInstanceStatuses((prev) => {
           const next = new Map(prev);
@@ -7429,6 +7777,8 @@ export default function ScheduleTabContent({
       setInstances,
       instancesById,
       buildXpAwardPayload,
+      awardScheduleInstanceXpCompletion,
+      reverseScheduleXpOccurrence,
       recordHabitCompletionRemote,
       computeTrimmedHabitTiming,
       logInstanceStatusChange,
@@ -7436,9 +7786,7 @@ export default function ScheduleTabContent({
       setPendingInstanceStatuses,
       pendingInstanceStatuses,
       stableTimeZone,
-      effectiveTimeZone,
       canonicalTodayDateKey,
-      topBarHeight,
     ]
   );
 
@@ -7544,6 +7892,7 @@ export default function ScheduleTabContent({
         typeof placement.end.toISOString === "function"
           ? placement.end.toISOString()
           : completionTimestampForDateKey(dateKey);
+      const completionKey = getHabitCompletionStateKey(placement);
       if (placement.habitType === "MEMO" && plannedNextStatus === "completed") {
         setMemoCompletionState({
           habitId: placement.habitId,
@@ -7563,21 +7912,23 @@ export default function ScheduleTabContent({
       if (placement.instanceId && isPending) {
         return;
       }
-      const nextStatus = toggleHabitCompletionStatus(
-        dateKey,
-        getHabitCompletionStateKey(placement)
-      );
+      const nextStatus = toggleHabitCompletionStatus(dateKey, completionKey);
       const instanceId = placement.instanceId;
       if (instanceId) {
         triggerCompletionBounce(instanceId);
         const targetStatus: "completed" | "scheduled" =
           nextStatus === "completed" ? "completed" : "scheduled";
-        void handleToggleInstanceCompletion(
-          instanceId,
-          targetStatus,
-          source?.rect ?? null,
-          source?.origin
-        );
+        void (async () => {
+          const ok = await handleToggleInstanceCompletion(
+            instanceId,
+            targetStatus,
+            source?.rect ?? null,
+            source?.origin
+          );
+          if (!ok) {
+            updateHabitCompletionStatus(dateKey, completionKey, currentStatus);
+          }
+        })();
       } else {
         const action = nextStatus === "completed" ? "complete" : "undo";
         void recordHabitCompletionRemote({
@@ -7594,6 +7945,7 @@ export default function ScheduleTabContent({
       completionTimestampForDateKey,
       recordHabitCompletionRemote,
       getHabitCompletionStatus,
+      updateHabitCompletionStatus,
       pendingInstanceStatuses,
     ]
   );
@@ -7615,12 +7967,19 @@ export default function ScheduleTabContent({
     );
     if (memoCompletionState.instanceId) {
       triggerCompletionBounce(memoCompletionState.instanceId);
-      await handleToggleInstanceCompletion(
+      const ok = await handleToggleInstanceCompletion(
         memoCompletionState.instanceId,
         "completed",
         memoCompletionState.sourceRect,
         memoCompletionState.sourceOrigin
       );
+      if (!ok) {
+        updateHabitCompletionStatus(
+          memoCompletionState.dateKey,
+          getHabitCompletionStateKey(memoCompletionState),
+          "scheduled"
+        );
+      }
     } else {
       await recordHabitCompletionRemote({
         habitId: memoCompletionState.habitId,

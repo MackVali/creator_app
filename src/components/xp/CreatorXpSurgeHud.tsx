@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import clsx from "clsx";
 import {
   dispatchCreatorXpBurstStatus,
   subscribeToCreatorXpBurstArrivals,
@@ -89,7 +88,9 @@ const DEFAULT_PROGRESS_FROM = 24;
 const DEFAULT_PROGRESS_TO = 72;
 const SCHEDULED_EVENT_SURGE_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const CREATOR_XP_HEX_FILL_DURATION_MS = 1900;
+const CREATOR_XP_HEX_IGNITION_DURATION_MS = 720;
 const CREATOR_XP_HEX_ACTIVE_COLOR = "rgb(74, 222, 128)";
+const CREATOR_XP_HEX_GAIN_EPSILON = 0.35;
 const CREATOR_XP_HEX_POINTS = [
   { x: 50, y: 4 },
   { x: 91, y: 27 },
@@ -237,20 +238,45 @@ function CreatorXpHexBadge({
   level: number | null;
   burnActive: boolean;
 }) {
-  const initialProgress = prefersReducedMotion ? progressTo : progressFrom;
+  const progressTarget = progressTo < progressFrom ? 100 : progressTo;
+  const hasGain =
+    progressTarget - progressFrom > CREATOR_XP_HEX_GAIN_EPSILON;
+  const initialProgress = prefersReducedMotion ? progressTarget : progressFrom;
   const [animatedProgress, setAnimatedProgress] = useState(initialProgress);
   const burnHeadPoint = resolveCreatorXpHexPoint(animatedProgress);
-  const progressStrokeOffset = 100 - animatedProgress;
-  const showBurnHead = !prefersReducedMotion && animatedProgress > 0;
+  const baseProgress = prefersReducedMotion ? progressTarget : progressFrom;
+  const baseProgressStrokeOffset = 100 - baseProgress;
+  const animatedGainLength = Math.min(
+    Math.max(animatedProgress - progressFrom, 0),
+    100 - progressFrom
+  );
+  const showAnimatedGain =
+    !prefersReducedMotion &&
+    animatedGainLength > CREATOR_XP_HEX_GAIN_EPSILON;
+  const showHexIgnition = !prefersReducedMotion && burnActive && hasGain;
+  const showBurnHead = showAnimatedGain && animatedProgress > 0;
+  const gainStrokeDasharray = `${animatedGainLength} 100`;
+  const gainStrokeDashoffset = -progressFrom;
+  const burnTailLength = Math.min(8, animatedGainLength);
+  const burnTailDasharray = `${burnTailLength} 100`;
+  const burnTailDashoffset = -Math.max(
+    progressFrom,
+    animatedProgress - burnTailLength
+  );
+  const ignitionOpacityPeak = isLevelBreak ? 0.18 : 0.14;
   const fillDelayMs = 90;
 
   useEffect(() => {
     if (prefersReducedMotion) {
-      setAnimatedProgress(progressTo);
+      setAnimatedProgress(progressTarget);
       return;
     }
     if (!burnActive) {
       setAnimatedProgress(progressFrom);
+      return;
+    }
+    if (!hasGain) {
+      setAnimatedProgress(progressTarget);
       return;
     }
 
@@ -263,7 +289,7 @@ function CreatorXpHexBadge({
         const progress = Math.min(elapsed / CREATOR_XP_HEX_FILL_DURATION_MS, 1);
         const easedProgress = easeCreatorXpHexFill(progress);
         setAnimatedProgress(
-          progressFrom + (progressTo - progressFrom) * easedProgress
+          progressFrom + (progressTarget - progressFrom) * easedProgress
         );
 
         if (progress < 1) {
@@ -276,7 +302,14 @@ function CreatorXpHexBadge({
       window.clearTimeout(timeout);
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [burnActive, prefersReducedMotion, progressFrom, progressTo, surge.id]);
+  }, [
+    burnActive,
+    hasGain,
+    prefersReducedMotion,
+    progressFrom,
+    progressTarget,
+    surge.id,
+  ]);
 
   return (
     <motion.div
@@ -294,25 +327,6 @@ function CreatorXpHexBadge({
       className="relative size-[118px] drop-shadow-[0_18px_34px_rgba(0,0,0,0.58)]"
       data-creator-xp-target="surge-hex"
     >
-      {!prefersReducedMotion && burnActive ? (
-        <motion.div
-          className={clsx(
-            "absolute inset-[-7px] opacity-70 blur-md",
-            isLevelBreak ? "bg-emerald-300/18" : "bg-emerald-400/12"
-          )}
-          style={{
-            clipPath:
-              "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
-          }}
-          animate={{ opacity: [0.34, 0.72, 0.42, 0.58] }}
-          transition={{
-            delay: fillDelayMs / 1000,
-            duration: CREATOR_XP_HEX_FILL_DURATION_MS / 1000,
-            ease: [0.22, 1, 0.36, 1],
-          }}
-        />
-      ) : null}
-
       <div
         className="absolute inset-[8px] bg-[#050609]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-14px_30px_rgba(0,0,0,0.7),inset_0_10px_26px_rgba(255,255,255,0.045)] backdrop-blur-xl"
         style={{
@@ -360,7 +374,41 @@ function CreatorXpHexBadge({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          <filter
+            id={`creator-xp-hex-ignition-${surge.id}`}
+            x="-45%"
+            y="-45%"
+            width="190%"
+            height="190%"
+          >
+            <feGaussianBlur stdDeviation="2.4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
+        {showHexIgnition ? (
+          <motion.path
+            d={CREATOR_XP_HEX_PATH}
+            pathLength="100"
+            fill="none"
+            stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+            strokeWidth="4.8"
+            strokeLinejoin="round"
+            filter={`url(#creator-xp-hex-ignition-${surge.id})`}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: [0, ignitionOpacityPeak, 0.08, 0],
+              strokeWidth: [4.8, 7.4, 5.8, 4.8],
+            }}
+            transition={{
+              delay: fillDelayMs / 1000,
+              duration: CREATOR_XP_HEX_IGNITION_DURATION_MS / 1000,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+          />
+        ) : null}
         <path
           d={CREATOR_XP_HEX_PATH}
           pathLength="100"
@@ -386,10 +434,25 @@ function CreatorXpHexBadge({
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray="100"
-          strokeDashoffset={progressStrokeOffset}
-          filter={`url(#creator-xp-hex-glow-${surge.id})`}
+          strokeDashoffset={baseProgressStrokeOffset}
+          opacity="0.72"
         />
-        {!prefersReducedMotion ? (
+        {showAnimatedGain ? (
+          <path
+            d={CREATOR_XP_HEX_PATH}
+            pathLength="100"
+            fill="none"
+            stroke={CREATOR_XP_HEX_ACTIVE_COLOR}
+            strokeWidth="4.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={gainStrokeDasharray}
+            strokeDashoffset={gainStrokeDashoffset}
+            filter={`url(#creator-xp-hex-glow-${surge.id})`}
+            opacity="0.96"
+          />
+        ) : null}
+        {showAnimatedGain ? (
           <path
             d={CREATOR_XP_HEX_PATH}
             pathLength="100"
@@ -398,10 +461,10 @@ function CreatorXpHexBadge({
             strokeWidth="6.6"
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeDasharray="8 100"
-            strokeDashoffset={100 - animatedProgress + 8}
+            strokeDasharray={burnTailDasharray}
+            strokeDashoffset={burnTailDashoffset}
             filter={`url(#creator-xp-hex-burn-${surge.id})`}
-            opacity="0.58"
+            opacity="0.48"
           />
         ) : null}
         {showBurnHead ? (
@@ -443,31 +506,6 @@ function CreatorXpHexBadge({
           ) : null}
         </div>
       </div>
-
-      {!prefersReducedMotion && burnActive ? (
-        <motion.span
-          className="absolute inset-[5px] rounded-[2px] border border-emerald-200/0"
-          style={{
-            clipPath:
-              "polygon(50% 3%, 91% 26.5%, 91% 73.5%, 50% 97%, 9% 73.5%, 9% 26.5%)",
-          }}
-          animate={{
-            opacity: [0, 0.34, 0.12, 0],
-            scale: [0.95, 1.04, 1.08, 1.12],
-            borderColor: [
-              "rgba(167, 243, 208, 0)",
-              "rgba(167, 243, 208, 0.26)",
-              "rgba(167, 243, 208, 0.14)",
-              "rgba(167, 243, 208, 0)",
-            ],
-          }}
-          transition={{
-            delay: fillDelayMs / 1000,
-            duration: CREATOR_XP_HEX_FILL_DURATION_MS / 1000,
-            ease: [0.22, 1, 0.36, 1],
-          }}
-        />
-      ) : null}
     </motion.div>
   );
 }
