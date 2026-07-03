@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   extractOpenFoodFactsNutrition,
+  isValidNormalizedFoodBarcode,
   mapOpenFoodFactsProductToFoodInsert,
   normalizeFoodBarcode,
   type FoodBarcodeLookupResult,
@@ -106,10 +107,6 @@ function rateLimitedBarcodeResponse(limit: ApiRateLimitDecision) {
       },
     },
   );
-}
-
-function isValidNormalizedBarcode(value: string | null): value is string {
-  return Boolean(value && /^(\d{8}|\d{12}|\d{13}|\d{14})$/.test(value));
 }
 
 async function findFoodByBarcode(supabase: SupabaseClient, normalizedBarcode: string) {
@@ -268,7 +265,7 @@ export async function GET(request: NextRequest) {
 
   const normalizedBarcode = normalizeFoodBarcode(request.nextUrl.searchParams.get("barcode"));
 
-  if (!isValidNormalizedBarcode(normalizedBarcode)) {
+  if (!isValidNormalizedFoodBarcode(normalizedBarcode)) {
     return barcodeResponse({
       food: null,
       source: null,

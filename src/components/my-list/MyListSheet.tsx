@@ -56,6 +56,13 @@ const LIST_COMPACT_ROW_HEIGHT = 42;
 const LIST_COMPACT_NOTES_ALLOWANCE = 120;
 const LIST_COMPACT_BOTTOM_ALLOWANCE = 36;
 const LIST_COMPACT_EXPAND_THRESHOLD_RATIO = 0.88;
+const MY_LIST_MIN_SAFE_SHEET_HEIGHT = 96;
+const MY_LIST_MIN_EDITABLE_SHEET_HEIGHT =
+  LIST_COMPACT_HEADER_ALLOWANCE +
+  LIST_COMPACT_ROW_HEIGHT +
+  LIST_COMPACT_NOTES_ALLOWANCE +
+  LIST_COMPACT_BOTTOM_ALLOWANCE;
+const MY_LIST_KEYBOARD_RECALC_DELAYS_MS = [80, 220, 420] as const;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
 const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
@@ -96,6 +103,19 @@ function resolveQuickCreateMediumPriorityMetadata() {
       symbol: QUICK_CREATE_PRIORITY_SYMBOLS.MEDIUM,
     }
   );
+}
+
+function clampMyListSheetHeight(height: number, minimumHeight: number) {
+  const safeMinimum =
+    Number.isFinite(minimumHeight) && minimumHeight > 0
+      ? minimumHeight
+      : MY_LIST_MIN_SAFE_SHEET_HEIGHT;
+
+  if (!Number.isFinite(height) || height <= 0) {
+    return safeMinimum;
+  }
+
+  return Math.max(height, safeMinimum);
 }
 
 const QUICK_CREATE_UNCATEGORIZED_SKILL_GROUP_ID = "uncategorized";
@@ -277,6 +297,10 @@ export function MyListSheet({
   const sheetTouchStartYRef = useRef<number | null>(null);
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
+  const recalculateSheetHeightsRef = useRef<(() => void) | null>(null);
+  const keyboardRecalculationTimeoutsRef = useRef<
+    ReturnType<typeof setTimeout>[]
+  >([]);
   const focusVisibilityFrameRef = useRef<number | null>(null);
   const focusVisibilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -378,9 +402,15 @@ export function MyListSheet({
   const shouldExpandOnOpen = shouldExpandListOnOpen;
   const compactSheetHeight =
     activeView === "list" ? listCompactHeight : myListSheetHeights.compact;
-  const currentSheetHeight = isExpanded
+  const rawCurrentSheetHeight = isExpanded
     ? myListSheetHeights.expanded
     : compactSheetHeight;
+  const currentSheetHeight = clampMyListSheetHeight(
+    rawCurrentSheetHeight,
+    editableFocusInsideSheetRef.current
+      ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
+      : MY_LIST_MIN_SAFE_SHEET_HEIGHT
+  );
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
@@ -1139,6 +1169,10 @@ export function MyListSheet({
         >
           <input
             value={manualSkillSearch}
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
             onChange={(event) => setManualSkillSearch(event.target.value)}
             placeholder="Search skills"
             className="h-8 w-full rounded-full border border-white/10 bg-black/35 px-3 text-xs text-white placeholder:text-white/35 outline-none focus:border-white/25"
@@ -1307,18 +1341,6 @@ export function MyListSheet({
     [expandSheet, isExpanded, open]
   );
 
-  const isMobileKeyboardFocus = useCallback(() => {
-    if (typeof window === "undefined") return false;
-
-    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-    const hasCoarsePointer =
-      window.matchMedia?.("(pointer: coarse)").matches ?? false;
-
-    return (
-      Boolean(window.visualViewport) && hasCoarsePointer && viewportWidth < 768
-    );
-  }, []);
-
   const scrollActiveEditableIntoSheetView = useCallback(() => {
     if (typeof document === "undefined") return;
 
@@ -1362,6 +1384,34 @@ export function MyListSheet({
       scrollActiveEditableIntoSheetView();
     }, 180);
   }, [scrollActiveEditableIntoSheetView]);
+
+  const clearKeyboardRecalculationTimeouts = useCallback(() => {
+    keyboardRecalculationTimeoutsRef.current.forEach((timeout) => {
+      clearTimeout(timeout);
+    });
+    keyboardRecalculationTimeoutsRef.current = [];
+  }, []);
+
+  const scheduleKeyboardSettledRecalculation = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    clearKeyboardRecalculationTimeouts();
+    recalculateSheetHeightsRef.current?.();
+    scheduleActiveEditableVisibility();
+
+    MY_LIST_KEYBOARD_RECALC_DELAYS_MS.forEach((delay) => {
+      const timeout = setTimeout(() => {
+        keyboardRecalculationTimeoutsRef.current =
+          keyboardRecalculationTimeoutsRef.current.filter(
+            (currentTimeout) => currentTimeout !== timeout
+          );
+        recalculateSheetHeightsRef.current?.();
+        scheduleActiveEditableVisibility();
+      }, delay);
+
+      keyboardRecalculationTimeoutsRef.current.push(timeout);
+    });
+  }, [clearKeyboardRecalculationTimeouts, scheduleActiveEditableVisibility]);
 
   useEffect(() => {
     if (!pendingTitleFocusRowId || !open || activeView !== "list") return;
@@ -1409,6 +1459,16 @@ export function MyListSheet({
     scheduleActiveEditableVisibility,
   ]);
 
+  const isEditableElementFocusedInsideSheet = useCallback(() => {
+    if (typeof document === "undefined") return false;
+
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) return false;
+    if (!sheetRootRef.current?.contains(activeElement)) return false;
+
+    return activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR);
+  }, []);
+
   const handleSheetFocusCapture = useCallback(
     (event: ReactFocusEvent<HTMLElement>) => {
       const target = event.target;
@@ -1420,16 +1480,18 @@ export function MyListSheet({
       scheduleActiveEditableVisibility();
 
       if (!open || activeView !== "list") return;
-      if (!isMobileKeyboardFocus()) return;
 
+      onOpenChange(true);
       if (!isExpanded) setIsExpanded(true);
+      scheduleKeyboardSettledRecalculation();
     },
     [
       activeView,
       isExpanded,
-      isMobileKeyboardFocus,
+      onOpenChange,
       open,
       scheduleActiveEditableVisibility,
+      scheduleKeyboardSettledRecalculation,
     ]
   );
 
@@ -1438,26 +1500,23 @@ export function MyListSheet({
       const nextFocusedElement = event.relatedTarget;
       if (
         nextFocusedElement instanceof HTMLElement &&
-        sheetRootRef.current?.contains(nextFocusedElement) &&
-        nextFocusedElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)
+        sheetRootRef.current?.contains(nextFocusedElement)
       ) {
         return;
       }
 
-      editableFocusInsideSheetRef.current = false;
+      if (typeof window === "undefined") {
+        editableFocusInsideSheetRef.current = false;
+        return;
+      }
+
+      setTimeout(() => {
+        editableFocusInsideSheetRef.current =
+          isEditableElementFocusedInsideSheet();
+      }, 120);
     },
-    []
+    [isEditableElementFocusedInsideSheet]
   );
-
-  const isEditableElementFocusedInsideSheet = useCallback(() => {
-    if (typeof document === "undefined") return false;
-
-    const activeElement = document.activeElement;
-    if (!(activeElement instanceof HTMLElement)) return false;
-    if (!sheetRootRef.current?.contains(activeElement)) return false;
-
-    return activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR);
-  }, []);
 
   useEffect(() => {
     const measureSafeAreaTop = () => {
@@ -1477,8 +1536,26 @@ export function MyListSheet({
     };
 
     const calculateSheetHeights = () => {
-      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const fallbackViewportWidth =
+        window.innerWidth > 0 ? window.innerWidth : 1;
+      const fallbackViewportHeight =
+        window.innerHeight > 0
+          ? window.innerHeight
+          : MY_LIST_MIN_SAFE_SHEET_HEIGHT;
+      const rawViewportWidth = window.visualViewport?.width;
+      const rawViewportHeight = window.visualViewport?.height;
+      const viewportWidth =
+        typeof rawViewportWidth === "number" &&
+        Number.isFinite(rawViewportWidth) &&
+        rawViewportWidth > 0
+          ? rawViewportWidth
+          : fallbackViewportWidth;
+      const viewportHeight =
+        typeof rawViewportHeight === "number" &&
+        Number.isFinite(rawViewportHeight) &&
+        rawViewportHeight > 0
+          ? rawViewportHeight
+          : fallbackViewportHeight;
       const lastMeasuredViewport = lastMeasuredViewportRef.current;
       const widthChanged =
         !lastMeasuredViewport ||
@@ -1486,11 +1563,11 @@ export function MyListSheet({
       const heightChanged =
         !lastMeasuredViewport ||
         Math.abs(lastMeasuredViewport.height - viewportHeight) >= 0.5;
+      const editableFocusedInsideSheet =
+        editableFocusInsideSheetRef.current ||
+        isEditableElementFocusedInsideSheet();
       const isKeyboardResizeInsideSheet =
-        heightChanged &&
-        !widthChanged &&
-        (editableFocusInsideSheetRef.current ||
-          isEditableElementFocusedInsideSheet());
+        heightChanged && !widthChanged && editableFocusedInsideSheet;
 
       lastMeasuredViewportRef.current = {
         width: viewportWidth,
@@ -1499,7 +1576,13 @@ export function MyListSheet({
 
       const rootFontSize =
         parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const compact = Math.min(viewportHeight * 0.58, 28 * rootFontSize);
+      const minimumSheetHeight = editableFocusedInsideSheet
+        ? MY_LIST_MIN_EDITABLE_SHEET_HEIGHT
+        : MY_LIST_MIN_SAFE_SHEET_HEIGHT;
+      const compact = clampMyListSheetHeight(
+        Math.min(viewportHeight * 0.58, 28 * rootFontSize),
+        minimumSheetHeight
+      );
       const scheduleTopReserve = Math.max(
         4.75 * rootFontSize,
         measureSafeAreaTop() + 3.75 * rootFontSize
@@ -1511,7 +1594,10 @@ export function MyListSheet({
       const topReserve = useFullExpandedHeight
         ? fullTopReserve
         : scheduleTopReserve;
-      const expanded = Math.max(compact, viewportHeight - topReserve);
+      const expanded = clampMyListSheetHeight(
+        Math.max(compact, viewportHeight - topReserve),
+        minimumSheetHeight
+      );
 
       setMyListSheetHeights((currentHeights) => {
         if (
@@ -1529,11 +1615,15 @@ export function MyListSheet({
       }
     };
 
+    recalculateSheetHeightsRef.current = calculateSheetHeights;
     calculateSheetHeights();
     window.addEventListener("resize", calculateSheetHeights);
     window.visualViewport?.addEventListener("resize", calculateSheetHeights);
 
     return () => {
+      if (recalculateSheetHeightsRef.current === calculateSheetHeights) {
+        recalculateSheetHeightsRef.current = null;
+      }
       window.removeEventListener("resize", calculateSheetHeights);
       window.visualViewport?.removeEventListener(
         "resize",
@@ -1549,6 +1639,7 @@ export function MyListSheet({
   useEffect(() => {
     return () => {
       clearScheduleDragPress();
+      clearKeyboardRecalculationTimeouts();
       if (
         typeof window !== "undefined" &&
         focusVisibilityFrameRef.current !== null
@@ -1559,7 +1650,7 @@ export function MyListSheet({
         clearTimeout(focusVisibilityTimeoutRef.current);
       }
     };
-  }, [clearScheduleDragPress]);
+  }, [clearKeyboardRecalculationTimeouts, clearScheduleDragPress]);
 
   useEffect(() => {
     if (!open || !isExpanded || typeof document === "undefined") return;
@@ -1593,6 +1684,8 @@ export function MyListSheet({
 
   useEffect(() => {
     if (!open) {
+      editableFocusInsideSheetRef.current = false;
+      clearKeyboardRecalculationTimeouts();
       setIsExpanded(false);
       setActiveSkillPickerRowKey(null);
       setActivePriorityPickerRowKey(null);
@@ -1601,7 +1694,7 @@ export function MyListSheet({
       setPendingTitleFocusRowId(null);
       setActiveView("list");
     }
-  }, [open]);
+  }, [clearKeyboardRecalculationTimeouts, open]);
 
   useEffect(() => {
     if (!canStartScheduleTimelineDrag) {
@@ -2271,6 +2364,10 @@ export function MyListSheet({
           <div className="border-t border-white/[0.055] pt-2">
             <textarea
               value={note}
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
               onChange={handleNoteChange}
               placeholder="Notes..."
               tabIndex={open ? 0 : -1}

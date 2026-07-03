@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 
 const MIN_SELECTED_SKILLS = 5;
 const MAX_SELECTED_SKILLS = 12;
-const MAX_INTENTIONS = 3;
+const MAX_IDENTITY_DIRECTIONS = 9;
 const MAX_SETUP_MONUMENTS = 3;
 const FALLBACK_CATEGORY_COLOR = "#6366f1";
 const CATEGORY_COLORS = [
@@ -25,10 +25,10 @@ const CATEGORY_COLORS = [
 ];
 
 const payloadSchema = z.object({
-  intentions: z
+  identityDirections: z
     .array(z.string().trim().min(1).max(96))
     .min(1)
-    .max(MAX_INTENTIONS),
+    .max(MAX_IDENTITY_DIRECTIONS),
   selectedSkillIds: z
     .array(z.string().uuid())
     .min(MIN_SELECTED_SKILLS)
@@ -46,6 +46,7 @@ const payloadSchema = z.object({
     )
     .min(1)
     .max(MAX_SETUP_MONUMENTS),
+  starterPath: z.string().trim().max(64).optional(),
 });
 
 type ParsedPayload = z.infer<typeof payloadSchema>;
@@ -118,9 +119,11 @@ function uniqueValues(values: string[]) {
 }
 
 function getValidationError(payload: ParsedPayload) {
-  const uniqueIntentions = new Set(payload.intentions.map(normalizeName));
-  if (uniqueIntentions.size !== payload.intentions.length) {
-    return "Intentions must be unique.";
+  const uniqueIdentityDirections = new Set(
+    payload.identityDirections.map(normalizeName),
+  );
+  if (uniqueIdentityDirections.size !== payload.identityDirections.length) {
+    return "Identity directions must be unique.";
   }
 
   const uniqueSkillIds = uniqueValues(payload.selectedSkillIds);
