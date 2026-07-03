@@ -324,6 +324,8 @@ const SCHEDULE_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
   "schedule:open-quick-create-task-details";
 const CREATOR_OPEN_NUTRITION_LOG_EVENT =
   "creator:open-nutrition-log";
+const CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT =
+  "creator:schedule-nutrition-log-overlay-open-changed";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 const TIMELINE_OVERLAY_STACK_BASE_Z_INDEX = 20000;
@@ -5388,11 +5390,38 @@ export default function ScheduleTabContent({
   const [jumpToDateSnapshot, setJumpToDateSnapshot] =
     useState<JumpToDateSnapshot | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isNutritionQuickAddOverlayOpen, setIsNutritionQuickAddOverlayOpen] =
+    useState(
+      () =>
+        typeof document !== "undefined" &&
+        document.body.dataset.creatorScheduleNutritionLogOverlayOpen === "true"
+    );
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null);
   const [editingInstance, setEditingInstance] =
     useState<ScheduleInstance | null>(null);
   const [editingSnapshot, setEditingSnapshot] =
     useState<EditingSnapshot | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleNutritionQuickAddOverlayChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ open?: unknown }>).detail;
+      setIsNutritionQuickAddOverlayOpen(detail?.open === true);
+    };
+
+    window.addEventListener(
+      CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT,
+      handleNutritionQuickAddOverlayChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT,
+        handleNutritionQuickAddOverlayChange
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const snapshotWithInstance =
@@ -11119,6 +11148,10 @@ export default function ScheduleTabContent({
           projectMap,
           habitMap,
         });
+        const habitType =
+          type === "HABIT"
+            ? habitMap[instance.source_id ?? ""]?.habitType ?? null
+            : null;
         if (type === "EVENT" && instance.source_id) {
           eventSourceIdsWithPlacement.add(instance.source_id);
         }
@@ -11130,7 +11163,7 @@ export default function ScheduleTabContent({
           start,
           end,
           locked: true as const,
-          habitType: null,
+          habitType,
           goalName: null,
           energy: instance.energy_resolved ?? null,
           status: instance.status ?? null,
@@ -17541,39 +17574,41 @@ export default function ScheduleTabContent({
         </div>
       ) : null}
       <ProtectedRoute>
-        <ScheduleTopBar
-          year={year}
-          weekdayLabel={dayTimelineModel?.dayViewDetails.weekday}
-          monthLabel={
-            dayTimelineModel
-              ? format(
-                  toZonedTime(dayTimelineModel.date, dayTimelineModel.viewTimeZone),
-                  "MMM"
-                ).toUpperCase()
-              : undefined
-          }
-          onBack={handleBack}
-          onToday={handleToday}
-          onOpenJumpToDate={openInlineJumpToDateFromButton}
-          onOpenSearch={() => {
-            void hapticPress();
-            setIsSearchOpen(true);
-          }}
-          onReschedule={handleRescheduleClick}
-          canReschedule={!isScheduling}
-          isRescheduling={isScheduling}
-          onClearUncompletedScheduleInstances={
-            handleClearUncompletedScheduleInstances
-          }
-          isClearingUncompletedScheduleInstances={
-            isClearingUncompletedScheduleInstances
-          }
-          onRecycleManualEvents={handleRecycleManualEvents}
-          isRecyclingManualEvents={isRecyclingManualEvents}
-          isManualSchedulingMode={isManualSchedulingMode}
-          onToggleManualSchedulingMode={handleToggleManualSchedulingMode}
-          onHeightChange={setTopBarHeight}
-        />
+        {!isNutritionQuickAddOverlayOpen ? (
+          <ScheduleTopBar
+            year={year}
+            weekdayLabel={dayTimelineModel?.dayViewDetails.weekday}
+            monthLabel={
+              dayTimelineModel
+                ? format(
+                    toZonedTime(dayTimelineModel.date, dayTimelineModel.viewTimeZone),
+                    "MMM"
+                  ).toUpperCase()
+                : undefined
+            }
+            onBack={handleBack}
+            onToday={handleToday}
+            onOpenJumpToDate={openInlineJumpToDateFromButton}
+            onOpenSearch={() => {
+              void hapticPress();
+              setIsSearchOpen(true);
+            }}
+            onReschedule={handleRescheduleClick}
+            canReschedule={!isScheduling}
+            isRescheduling={isScheduling}
+            onClearUncompletedScheduleInstances={
+              handleClearUncompletedScheduleInstances
+            }
+            isClearingUncompletedScheduleInstances={
+              isClearingUncompletedScheduleInstances
+            }
+            onRecycleManualEvents={handleRecycleManualEvents}
+            isRecyclingManualEvents={isRecyclingManualEvents}
+            isManualSchedulingMode={isManualSchedulingMode}
+            onToggleManualSchedulingMode={handleToggleManualSchedulingMode}
+            onHeightChange={setTopBarHeight}
+          />
+        ) : null}
         <div
           className="space-y-4 text-[var(--text)]"
           style={{ paddingTop: scheduleContentPaddingTop }}
@@ -17723,7 +17758,11 @@ export default function ScheduleTabContent({
                           </AnimatePresence>
                         )}
                         <FocusTimelineFab
-                          hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
+                          hidden={
+                            isNutritionQuickAddOverlayOpen ||
+                            isJumpToDateOpen ||
+                            isInlineJumpToDateOpen
+                          }
                           editTarget={fabEditTarget}
                           timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
                           onTimeBlockAdjustmentRequestConsumed={() =>
@@ -17736,7 +17775,11 @@ export default function ScheduleTabContent({
                     {view === "focus" && (
                       <ScheduleViewShell key="focus">
                         <FocusTimeline
-                          hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
+                          hideFab={
+                            isNutritionQuickAddOverlayOpen ||
+                            isJumpToDateOpen ||
+                            isInlineJumpToDateOpen
+                          }
                           editTarget={fabEditTarget}
                           timeBlockAdjustmentRequest={timeBlockAdjustmentRequest}
                           onTimeBlockAdjustmentRequestConsumed={() =>

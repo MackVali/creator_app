@@ -2,11 +2,13 @@
 
 import {
   useCallback,
+  type ChangeEvent as ReactChangeEvent,
   useEffect,
   useMemo,
   useRef,
   useState,
   type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
@@ -56,6 +58,7 @@ const LIST_COMPACT_BOTTOM_ALLOWANCE = 36;
 const LIST_COMPACT_EXPAND_THRESHOLD_RATIO = 0.88;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
+const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
 const MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS = 500;
 const MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX = 14;
 const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
@@ -127,6 +130,8 @@ function compareQuickCreateOrderThenName(
   return (leftName ?? "").localeCompare(rightName ?? "");
 }
 
+type MyListRowKey = `manual:${string}` | `task:${string}`;
+
 type MyListManualRow = {
   id: string;
   done: boolean;
@@ -135,6 +140,7 @@ type MyListManualRow = {
   skillIcon: string;
   priorityId: PriorityBucketId;
   text: string;
+  insertAfterRowKey: MyListRowKey | null;
 };
 
 const EMPTY_DRAFT_MANUAL_ROW_ID = "empty-draft";
@@ -151,10 +157,9 @@ function createManualRow(
     skillIcon: "",
     priorityId,
     text: "",
+    insertAfterRowKey: null,
   };
 }
-
-type MyListRowKey = `manual:${string}` | `task:${string}`;
 
 type MyListTaskOverride = {
   skillId?: string | null;
@@ -163,6 +168,10 @@ type MyListTaskOverride = {
   priorityId?: PriorityBucketId;
   text?: string;
 };
+
+type MyListVisibleTodoRow =
+  | { rowType: "task"; task: TaskLite }
+  | { rowType: "manual"; row: MyListManualRow };
 
 type MyListActiveView = "list" | "matrix";
 type MyListScheduleMetadata = {
@@ -254,12 +263,17 @@ export function MyListSheet({
     () => new Set()
   );
   const [isScheduleDragActive, setIsScheduleDragActive] = useState(false);
+  const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
+    string | null
+  >(null);
   const [myListSheetHeights, setMyListSheetHeights] = useState(() => ({
     compact: 448,
     expanded: 720,
   }));
   const sheetRootRef = useRef<HTMLElement | null>(null);
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
+  const manualTitleInputRefs = useRef(new Map<string, HTMLInputElement>());
+  const manualRowIdCounterRef = useRef(0);
   const sheetTouchStartYRef = useRef<number | null>(null);
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
@@ -281,9 +295,73 @@ export function MyListSheet({
     visibleTasks.length > 0 || manualRows.length > 0 || shouldShowEmptyDraftRow;
   const visibleListRowCount =
     visibleTasks.length + manualRows.length + (shouldShowEmptyDraftRow ? 1 : 0);
-  const visibleManualRows = shouldShowEmptyDraftRow
-    ? [createManualRow(EMPTY_DRAFT_MANUAL_ROW_ID, defaultPriority.id)]
-    : manualRows;
+  const visibleManualRows = useMemo(
+    () =>
+      shouldShowEmptyDraftRow
+        ? [createManualRow(EMPTY_DRAFT_MANUAL_ROW_ID, defaultPriority.id)]
+        : manualRows,
+    [defaultPriority.id, manualRows, shouldShowEmptyDraftRow]
+  );
+  const visibleManualRowsByAnchor = useMemo(() => {
+    const rowsByAnchor = new Map<MyListRowKey, MyListManualRow[]>();
+
+    visibleManualRows.forEach((row) => {
+      if (!row.insertAfterRowKey) return;
+
+      const currentRows = rowsByAnchor.get(row.insertAfterRowKey) ?? [];
+      currentRows.push(row);
+      rowsByAnchor.set(row.insertAfterRowKey, currentRows);
+    });
+
+    return rowsByAnchor;
+  }, [visibleManualRows]);
+  const unanchoredVisibleManualRows = useMemo(
+    () => visibleManualRows.filter((row) => !row.insertAfterRowKey),
+    [visibleManualRows]
+  );
+  const visibleTodoRows = useMemo<MyListVisibleTodoRow[]>(() => {
+    const rows: MyListVisibleTodoRow[] = [];
+    const renderedManualRowIds = new Set<string>();
+
+    const appendAnchoredManualRows = (anchorKey: MyListRowKey) => {
+      const anchoredRows = visibleManualRowsByAnchor.get(anchorKey) ?? [];
+
+      anchoredRows.forEach((row) => {
+        if (renderedManualRowIds.has(row.id)) return;
+
+        renderedManualRowIds.add(row.id);
+        rows.push({ rowType: "manual", row });
+        appendAnchoredManualRows(`manual:${row.id}`);
+      });
+    };
+
+    visibleTasks.forEach((task) => {
+      rows.push({ rowType: "task", task });
+      appendAnchoredManualRows(`task:${task.id}`);
+    });
+
+    unanchoredVisibleManualRows.forEach((row) => {
+      if (renderedManualRowIds.has(row.id)) return;
+
+      renderedManualRowIds.add(row.id);
+      rows.push({ rowType: "manual", row });
+      appendAnchoredManualRows(`manual:${row.id}`);
+    });
+
+    visibleManualRows.forEach((row) => {
+      if (renderedManualRowIds.has(row.id)) return;
+
+      renderedManualRowIds.add(row.id);
+      rows.push({ rowType: "manual", row });
+    });
+
+    return rows;
+  }, [
+    unanchoredVisibleManualRows,
+    visibleManualRows,
+    visibleManualRowsByAnchor,
+    visibleTasks,
+  ]);
   const listContentHeight =
     LIST_COMPACT_HEADER_ALLOWANCE +
     visibleListRowCount * LIST_COMPACT_ROW_HEIGHT +
@@ -306,6 +384,35 @@ export function MyListSheet({
   const skillLookup = useMemo(
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const storedNote = window.localStorage.getItem(MY_LIST_NOTES_STORAGE_KEY);
+      if (storedNote !== null) {
+        setNote(storedNote);
+      }
+    } catch {
+      // Ignore unavailable storage so the sheet remains usable.
+    }
+  }, []);
+
+  const handleNoteChange = useCallback(
+    (event: ReactChangeEvent<HTMLTextAreaElement>) => {
+      const nextNote = event.target.value;
+      setNote(nextNote);
+
+      if (typeof window === "undefined") return;
+
+      try {
+        window.localStorage.setItem(MY_LIST_NOTES_STORAGE_KEY, nextNote);
+      } catch {
+        // Ignore unavailable storage so typing notes is never blocked.
+      }
+    },
+    []
   );
 
   const resolveTaskPriorityId = useCallback(
@@ -623,17 +730,56 @@ export function MyListSheet({
     [clearScheduleDragPress, getTrackedScheduleDragTouch]
   );
 
+  const createManualRowId = useCallback(() => {
+    manualRowIdCounterRef.current += 1;
+    return `manual-${Date.now()}-${manualRowIdCounterRef.current}`;
+  }, []);
+
+  const insertManualRowAfterAnchor = useCallback(
+    (
+      currentRows: MyListManualRow[],
+      anchorKey: MyListRowKey,
+      newRow: MyListManualRow
+    ) => {
+      const anchorManualId = anchorKey.startsWith("manual:")
+        ? anchorKey.slice("manual:".length)
+        : null;
+
+      if (anchorManualId) {
+        const anchorIndex = currentRows.findIndex(
+          (row) => row.id === anchorManualId
+        );
+
+        if (anchorIndex >= 0) {
+          const nextRows = [...currentRows];
+          nextRows.splice(anchorIndex + 1, 0, newRow);
+          return nextRows;
+        }
+      }
+
+      const firstSameAnchorIndex = currentRows.findIndex(
+        (row) => row.insertAfterRowKey === anchorKey
+      );
+
+      if (firstSameAnchorIndex >= 0) {
+        const nextRows = [...currentRows];
+        nextRows.splice(firstSameAnchorIndex, 0, newRow);
+        return nextRows;
+      }
+
+      return [...currentRows, newRow];
+    },
+    []
+  );
+
   const addManualRow = useCallback(() => {
     setPendingDeleteRowId(null);
     setActivePriorityPickerRowKey(null);
     setManualRows((currentRows) => [
       ...currentRows,
-      createManualRow(
-        `manual-${Date.now()}-${currentRows.length}`,
-        defaultPriority.id
-      ),
+      createManualRow(createManualRowId(), defaultPriority.id),
     ]);
-  }, [defaultPriority.id]);
+  }, [createManualRowId, defaultPriority.id]);
 
   const updateManualRow = useCallback(
     (rowId: string, updates: Partial<Omit<MyListManualRow, "id">>) => {
@@ -649,6 +795,89 @@ export function MyListSheet({
       );
     },
     [defaultPriority.id]
+  );
+
+  const handleTodoTitleKeyDown = useCallback(
+    (
+      event: ReactKeyboardEvent<HTMLInputElement>,
+      rowType: "manual" | "task",
+      rowId: string
+    ) => {
+      event.stopPropagation();
+
+      const nativeEvent = event.nativeEvent;
+      if (nativeEvent.isComposing) return;
+      if (event.key !== "Enter" && event.key !== "Return") return;
+
+      event.preventDefault();
+      if (activeView !== "list") return;
+
+      setPendingDeleteRowId(null);
+      setActiveSkillPickerRowKey(null);
+      setActivePriorityPickerRowKey(null);
+      setManualSkillSearch("");
+
+      if (rowType === "manual" && rowId === EMPTY_DRAFT_MANUAL_ROW_ID) {
+        const realDraftRowId = createManualRowId();
+        const blankRowId = createManualRowId();
+        const draftText = event.currentTarget.value;
+        const blankRow = {
+          ...createManualRow(blankRowId, defaultPriority.id),
+          insertAfterRowKey: `manual:${realDraftRowId}` as const,
+        };
+
+        setPendingTitleFocusRowId(blankRowId);
+        setManualRows((currentRows) => {
+          const draftRow =
+            currentRows.find((row) => row.id === EMPTY_DRAFT_MANUAL_ROW_ID) ??
+            createManualRow(realDraftRowId, defaultPriority.id);
+          const realDraftRow = {
+            ...draftRow,
+            id: realDraftRowId,
+            text: draftText,
+            insertAfterRowKey: draftRow.insertAfterRowKey ?? null,
+          };
+
+          if (currentRows.length === 0) {
+            return [realDraftRow, blankRow];
+          }
+
+          const draftIndex = currentRows.findIndex(
+            (row) => row.id === EMPTY_DRAFT_MANUAL_ROW_ID
+          );
+
+          if (draftIndex < 0) {
+            return insertManualRowAfterAnchor(
+              currentRows,
+              `manual:${rowId}`,
+              blankRow
+            );
+          }
+
+          const nextRows = [...currentRows];
+          nextRows.splice(draftIndex, 1, realDraftRow, blankRow);
+          return nextRows;
+        });
+        return;
+      }
+
+      const anchorKey = `${rowType}:${rowId}` as MyListRowKey;
+      const blankRow = {
+        ...createManualRow(createManualRowId(), defaultPriority.id),
+        insertAfterRowKey: anchorKey,
+      };
+
+      setPendingTitleFocusRowId(blankRow.id);
+      setManualRows((currentRows) =>
+        insertManualRowAfterAnchor(currentRows, anchorKey, blankRow)
+      );
+    },
+    [
+      activeView,
+      createManualRowId,
+      defaultPriority.id,
+      insertManualRowAfterAnchor,
+    ]
   );
 
   const manualSkillGroups = useMemo<QuickCreateSkillGroup[]>(() => {
@@ -1134,6 +1363,52 @@ export function MyListSheet({
     }, 180);
   }, [scrollActiveEditableIntoSheetView]);
 
+  useEffect(() => {
+    if (!pendingTitleFocusRowId || !open || activeView !== "list") return;
+    if (typeof window === "undefined") return;
+
+    let focused = false;
+    let focusFrame: number | null = null;
+    let focusTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const focusPendingTitleInput = () => {
+      if (focused) return;
+
+      const input = manualTitleInputRefs.current.get(pendingTitleFocusRowId);
+      if (!input) return;
+
+      focused = true;
+      try {
+        input.focus({ preventScroll: true });
+      } catch {
+        input.focus();
+      }
+
+      const caretPosition = input.value.length;
+      input.setSelectionRange(caretPosition, caretPosition);
+      scheduleActiveEditableVisibility();
+      setPendingTitleFocusRowId(null);
+    };
+
+    focusFrame = window.requestAnimationFrame(focusPendingTitleInput);
+    focusTimeout = setTimeout(focusPendingTitleInput, 80);
+
+    return () => {
+      focused = true;
+      if (focusFrame !== null) {
+        window.cancelAnimationFrame(focusFrame);
+      }
+      if (focusTimeout !== null) {
+        clearTimeout(focusTimeout);
+      }
+    };
+  }, [
+    activeView,
+    open,
+    pendingTitleFocusRowId,
+    scheduleActiveEditableVisibility,
+  ]);
+
   const handleSheetFocusCapture = useCallback(
     (event: ReactFocusEvent<HTMLElement>) => {
       const target = event.target;
@@ -1323,6 +1598,7 @@ export function MyListSheet({
       setActivePriorityPickerRowKey(null);
       setManualSkillSearch("");
       setPendingDeleteRowId(null);
+      setPendingTitleFocusRowId(null);
       setActiveView("list");
     }
   }, [open]);
@@ -1512,6 +1788,7 @@ export function MyListSheet({
               setActiveSkillPickerRowKey(null);
               setActivePriorityPickerRowKey(null);
               setPendingDeleteRowId(null);
+              setPendingTitleFocusRowId(null);
               if (activeView === "list") {
                 onOpenChange(true);
                 setIsExpanded(true);
@@ -1574,49 +1851,51 @@ export function MyListSheet({
           <div className="space-y-1.5">
             {hasListRows ? (
               <>
-                {visibleTasks.map((task) => {
-                  const done =
-                    task.stage?.toString().toUpperCase() === "PERFECT";
-                  const pending = pendingTaskIds.has(task.id);
-                  const taskSkill = resolveTaskSkillMetadata(task);
-                  const priorityId = resolveTaskPriorityId(task);
-                  const priorityOption =
-                    QUICK_CREATE_PRIORITY_OPTIONS.find(
-                      (option) => option.id === priorityId
-                    ) ?? defaultPriority;
-                  const prioritySymbol =
-                    priorityOption.symbol ||
-                    QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
-                  const taskText = taskOverrides[task.id]?.text ?? task.name;
-                  const taskTitle = taskText.trim() || task.name.trim();
-                  const checkboxId = `my-list-task-${task.id}`;
-                  const rowKey = `task:${task.id}` as const;
-                  const priorityMetadata =
-                    resolvePriorityScheduleMetadata(priorityId);
-                  const taskScheduleDragRow: MyListScheduleDragRow = {
-                    rowType: "task",
-                    rowId: task.id,
-                    title: taskTitle,
-                    sourceId: task.id,
-                    sourceType: "TASK",
-                    energy: task.energy ?? "MEDIUM",
-                    skillId: taskSkill.skillId ?? null,
-                    metadata: {
-                      source: "my-list",
+                {visibleTodoRows.map((visibleRow) => {
+                  if (visibleRow.rowType === "task") {
+                    const task = visibleRow.task;
+                    const done =
+                      task.stage?.toString().toUpperCase() === "PERFECT";
+                    const pending = pendingTaskIds.has(task.id);
+                    const taskSkill = resolveTaskSkillMetadata(task);
+                    const priorityId = resolveTaskPriorityId(task);
+                    const priorityOption =
+                      QUICK_CREATE_PRIORITY_OPTIONS.find(
+                        (option) => option.id === priorityId
+                      ) ?? defaultPriority;
+                    const prioritySymbol =
+                      priorityOption.symbol ||
+                      QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+                    const taskText = taskOverrides[task.id]?.text ?? task.name;
+                    const taskTitle = taskText.trim() || task.name.trim();
+                    const checkboxId = `my-list-task-${task.id}`;
+                    const rowKey = `task:${task.id}` as const;
+                    const priorityMetadata =
+                      resolvePriorityScheduleMetadata(priorityId);
+                    const taskScheduleDragRow: MyListScheduleDragRow = {
                       rowType: "task",
                       rowId: task.id,
-                      presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
-                      taskId: task.id,
+                      title: taskTitle,
+                      sourceId: task.id,
+                      sourceType: "TASK",
+                      energy: task.energy ?? "MEDIUM",
                       skillId: taskSkill.skillId ?? null,
-                      skillName: taskSkill.skillName ?? null,
-                      skillIcon: taskSkill.skillIcon ?? null,
-                      ...priorityMetadata,
-                    },
-                  };
+                      metadata: {
+                        source: "my-list",
+                        rowType: "task",
+                        rowId: task.id,
+                        presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
+                        taskId: task.id,
+                        skillId: taskSkill.skillId ?? null,
+                        skillName: taskSkill.skillName ?? null,
+                        skillIcon: taskSkill.skillIcon ?? null,
+                        ...priorityMetadata,
+                      },
+                    };
 
                   return (
                     <div
-                      key={task.id}
+                      key={rowKey}
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-schedule-drag-row={
@@ -1724,7 +2003,9 @@ export function MyListSheet({
                         onTouchStart={(event) => event.stopPropagation()}
                         onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
+                        onKeyDown={(event) =>
+                          handleTodoTitleKeyDown(event, "task", task.id)
+                        }
                         onChange={(event) => {
                           const nextText = event.target.value;
                           setTaskOverrides((currentOverrides) => ({
@@ -1776,8 +2057,9 @@ export function MyListSheet({
                       </div>
                     </div>
                   );
-                })}
-                {visibleManualRows.map((row) => {
+                  }
+
+                  const row = visibleRow.row;
                   const priorityMetadata = resolvePriorityScheduleMetadata(
                     row.priorityId
                   );
@@ -1803,7 +2085,7 @@ export function MyListSheet({
 
                   return (
                     <div
-                      key={row.id}
+                      key={`manual:${row.id}`}
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-schedule-drag-row={
@@ -1897,13 +2179,22 @@ export function MyListSheet({
                       )}
                     </div>
                     <input
+                      ref={(input) => {
+                        if (input) {
+                          manualTitleInputRefs.current.set(row.id, input);
+                        } else {
+                          manualTitleInputRefs.current.delete(row.id);
+                        }
+                      }}
                       type="text"
                       value={row.text}
                       onPointerDown={(event) => event.stopPropagation()}
                       onTouchStart={(event) => event.stopPropagation()}
                       onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
+                      onKeyDown={(event) =>
+                        handleTodoTitleKeyDown(event, "manual", row.id)
+                      }
                       onChange={(event) =>
                         updateManualRow(row.id, { text: event.target.value })
                       }
@@ -1980,7 +2271,7 @@ export function MyListSheet({
           <div className="border-t border-white/[0.055] pt-2">
             <textarea
               value={note}
-              onChange={(event) => setNote(event.target.value)}
+              onChange={handleNoteChange}
               placeholder="Notes..."
               tabIndex={open ? 0 : -1}
               className="min-h-24 w-full resize-none rounded-lg bg-transparent px-3 py-2 text-sm leading-relaxed text-white/86 outline-none placeholder:text-white/30 focus:bg-white/[0.025]"

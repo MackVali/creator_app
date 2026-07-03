@@ -4478,11 +4478,13 @@ export function NoteDatabaseEntrySheet({
   databaseDefinition,
   onClose,
   onSaveEntry,
+  overlayClassName,
 }: {
   databaseDefinition: NoteDatabaseDefinition;
   entries?: NoteDatabaseEntry[];
   onClose: () => void;
   onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
+  overlayClassName?: string;
 }) {
   const [openedAt] = useState(() => new Date().toISOString());
   const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>(() =>
@@ -5690,8 +5692,8 @@ export function NoteDatabaseEntrySheet({
         selectNutritionFood(payload.food);
         setNutritionBarcodeLookupStatus(
           payload.status === "created"
-            ? "Added from Open Food Facts."
-            : "Found in foods catalog.",
+            ? "Added to foods catalog. Save entry to log it."
+            : "Found in foods catalog. Save entry to log it.",
         );
         return;
       }
@@ -6294,12 +6296,47 @@ export function NoteDatabaseEntrySheet({
             const { food } = item;
             const meta = getNutritionSelectedFoodLineMeta(item);
             const quantityBadgeLabel = getNutritionSelectedFoodQuantityBadgeLabel(item);
-            const shouldShowQuantityEditor = selectedNutritionFoodAction === "scan";
+            const isScannedSelection = selectedNutritionFoodAction === "scan";
             const favoriteTarget: NutritionFavoriteTarget = {
               itemType: "food",
               itemId: food.id,
               label: food.name,
             };
+
+            if (isScannedSelection) {
+              return (
+                <div
+                  key={food.id}
+                  className="w-full rounded-lg border border-white/[0.055] bg-black/28 px-2.5 py-2.5"
+                >
+                  <div className="flex w-full items-start gap-2">
+                    {renderNutritionFavoriteButton(favoriteTarget)}
+                    <NutritionFoodIcon food={food} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold leading-snug text-white/86">
+                        {food.name}
+                      </span>
+                      {meta ? (
+                        <span className="mt-1 block text-[11px] font-medium leading-snug text-white/40">
+                          {meta}
+                        </span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${food.name}`}
+                      onClick={() => removeNutritionSelectedFood(food)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="mt-2 flex w-full justify-start pl-16">
+                    {renderNutritionFoodQuantityControl(item)}
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div
@@ -6325,13 +6362,9 @@ export function NoteDatabaseEntrySheet({
                     </span>
                   ) : null}
                 </span>
-                {shouldShowQuantityEditor ? (
-                  renderNutritionFoodQuantityControl(item)
-                ) : (
-                  <div className="hidden sm:block">
-                    {renderNutritionFoodQuantityControl(item)}
-                  </div>
-                )}
+                <div className="hidden sm:block">
+                  {renderNutritionFoodQuantityControl(item)}
+                </div>
                 <button
                   type="button"
                   aria-label={`Remove ${food.name}`}
@@ -7545,7 +7578,9 @@ export function NoteDatabaseEntrySheet({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6"
+      className={`fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6 ${
+        overlayClassName ?? ""
+      }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="note-database-entry-form-title"
@@ -7628,23 +7663,33 @@ export function NoteDatabaseEntrySheet({
           </p>
         ) : null}
 
-        <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
-          <button
-            type="button"
-            onClick={() => {
-              void hapticSnap();
-              onClose();
-            }}
-            disabled={isSubmitting}
-            className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:text-white/28"
-          >
-            Cancel
-          </button>
+        <div
+          className={`border-t border-white/[0.04] p-3 sm:p-4 ${
+            isDefaultNutritionDatabase ? "flex" : "flex gap-2"
+          }`}
+        >
+          {!isDefaultNutritionDatabase ? (
+            <button
+              type="button"
+              onClick={() => {
+                void hapticSnap();
+                onClose();
+              }}
+              disabled={isSubmitting}
+              className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:text-white/28"
+            >
+              Cancel
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={databaseFields.length === 0 || isSubmitting}
             onClick={saveDatabaseEntry}
-            className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+            className={
+              isDefaultNutritionDatabase
+                ? "flex h-11 w-full items-center justify-center rounded-2xl border border-zinc-50/35 bg-zinc-200/72 px-5 text-sm font-semibold text-zinc-950 shadow-[0_12px_28px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.46),inset_0_-1px_0_rgba(113,113,122,0.16)] outline-none backdrop-blur-xl transition hover:border-white/45 hover:bg-zinc-200/84 active:bg-zinc-300/78 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
+                : "flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+            }
           >
             {isSubmitting ? "Saving..." : "Save entry"}
           </button>
