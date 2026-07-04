@@ -150,7 +150,10 @@ import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import {
   type FabCreationRequest,
 } from "@/components/ui/FabCreationContext";
-import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
+import {
+  buildCreatorXpSurgePayload,
+  type CreatorXpSurgePayload,
+} from "@/components/xp/CreatorXpSurgeHud";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import PriorityEditorClient, {
   type PriorityEditorClientProps,
@@ -1450,6 +1453,14 @@ function CompactNativeDateTimeField({
 
 const FAB_NEXUS_EXPANDED_SIZE_CLASS =
   "h-[min(78vh,640px)] min-h-[min(420px,78vh)]";
+
+type FabXpAwardResponse = {
+  success?: boolean;
+  deduped?: boolean;
+  inserted?: number;
+  surge?: CreatorXpSurgePayload | null;
+  reason?: string | null;
+};
 
 type FabCarouselChevronButtonProps = {
   direction: "previous" | "next";
@@ -7390,7 +7401,7 @@ export function Fab({
       task: EditProjectTaskChild,
       completedAt: string,
       action: "complete" | "undo" = "complete",
-    ): Promise<boolean> => {
+    ): Promise<FabXpAwardResponse | null> => {
       const skill = task.skillId ? findSkillById(task.skillId) : null;
       const skillIds = task.skillId ? [task.skillId] : [];
       const monumentIds =
@@ -7439,15 +7450,18 @@ export function Fab({
             "Failed to award XP for project task completion change",
             await response.text(),
           );
-          return false;
+          return null;
         }
-        return action === "complete";
+        if (action !== "complete") return null;
+        return (await response.json().catch(() => null)) as
+          | FabXpAwardResponse
+          | null;
       } catch (error) {
         console.error(
           "Failed to award XP for project task completion change",
           error,
         );
-        return false;
+        return null;
       }
     },
     [findSkillById],
@@ -7977,17 +7991,29 @@ export function Fab({
           action: "updated",
         });
         void hapticComplete();
-        const didAwardXp = await awardEditProjectTaskCompletion(task, completedAt);
+        const awardPayload = await awardEditProjectTaskCompletion(
+          task,
+          completedAt,
+        );
+        const didAwardXp = Boolean(
+          awardPayload?.success &&
+            !awardPayload.deduped &&
+            (awardPayload.inserted ?? 0) > 0,
+        );
         if (didAwardXp) {
           const skill = task.skillId ? findSkillById(task.skillId) : null;
           dispatchCreatorXpRewardVisual({
             surge: {
               sourceType: "TASK",
-              title: skill?.name?.trim() || task.name,
-              sourceIcon: skill?.icon ?? null,
-              displayXp: 1,
+              ...awardPayload?.surge,
+              title:
+                awardPayload?.surge?.title ??
+                skill?.name?.trim() ??
+                task.name,
+              sourceIcon: awardPayload?.surge?.sourceIcon ?? skill?.icon ?? null,
+              displayXp: awardPayload?.surge?.displayXp ?? 1,
             },
-            amount: 1,
+            amount: awardPayload?.surge?.displayXp ?? 1,
             kind: "task_complete",
             burstId: `fab-task:${task.id}:${completedAt}`,
           });

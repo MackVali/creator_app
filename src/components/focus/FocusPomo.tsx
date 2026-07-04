@@ -91,7 +91,10 @@ import {
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { useToastHelpers } from "@/components/ui/toast";
-import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
+import {
+  buildCreatorXpSurgePayload,
+  type CreatorXpSurgePayload,
+} from "@/components/xp/CreatorXpSurgeHud";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 
 export type FocusPomoSourceType = "monument" | "skill";
@@ -3079,7 +3082,12 @@ async function awardFocusPomoCompletionXp({
   durationMin: number | null;
   scheduleInstanceId: string | null;
   productivityDayKey: string;
-}) {
+}): Promise<{
+  success?: boolean;
+  deduped?: boolean;
+  inserted?: number;
+  surge?: CreatorXpSurgePayload | null;
+} | null> {
   const sourceType = readFocusPomoCompletionSourceType(kind);
   const skillIds = getFocusPomoCompletionSkillIds(item);
   const monumentIds = getFocusPomoCompletionMonumentIds(item);
@@ -3127,9 +3135,17 @@ async function awardFocusPomoCompletionXp({
         "FocusPomo failed to award completion XP",
         await response.text()
       );
+      return null;
     }
+    return (await response.json().catch(() => null)) as {
+      success?: boolean;
+      deduped?: boolean;
+      inserted?: number;
+      surge?: CreatorXpSurgePayload | null;
+    } | null;
   } catch (error) {
     console.error("FocusPomo failed to award completion XP", error);
+    return null;
   }
 }
 
@@ -3364,8 +3380,9 @@ async function completeFocusPomoItem({
     }
   }
 
+  let awardPayload: Awaited<ReturnType<typeof awardFocusPomoCompletionXp>> = null;
   try {
-    await awardFocusPomoCompletionXp({
+    awardPayload = await awardFocusPomoCompletionXp({
       item,
       kind,
       completedAt,
@@ -3379,7 +3396,7 @@ async function completeFocusPomoItem({
   }
 
   if (scheduleInstanceId) {
-    const surge = buildCreatorXpSurgePayload({
+    const fallbackSurge = buildCreatorXpSurgePayload({
       sourceType: readFocusPomoCompletionSourceType(kind),
       sourceIcon:
         item.skillIcon ??
@@ -3391,6 +3408,21 @@ async function completeFocusPomoItem({
       monumentTitle: item.goalMonumentName ?? item.goal_monument_name ?? null,
       sourceTitle: item.title,
     });
+    const surge = awardPayload?.surge
+      ? {
+          ...fallbackSurge,
+          ...awardPayload.surge,
+          title: awardPayload.surge.title ?? fallbackSurge.title,
+          sourceIcon: awardPayload.surge.sourceIcon ?? fallbackSurge.sourceIcon,
+          displayXp: awardPayload.surge.displayXp ?? fallbackSurge.displayXp,
+          currentLevel:
+            awardPayload.surge.currentLevel ?? fallbackSurge.currentLevel,
+          progressFrom:
+            awardPayload.surge.progressFrom ?? fallbackSurge.progressFrom,
+          progressTo: awardPayload.surge.progressTo ?? fallbackSurge.progressTo,
+          levelBreak: awardPayload.surge.levelBreak ?? fallbackSurge.levelBreak,
+        }
+      : fallbackSurge;
     dispatchCreatorXpRewardVisual({
       surge,
       scheduleInstanceId,

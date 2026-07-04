@@ -50,6 +50,7 @@ import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import {
   resolveCreatorXpSurgeTitle,
+  type CreatorXpSurgePayload,
 } from "@/components/xp/CreatorXpSurgeHud";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import {
@@ -268,10 +269,18 @@ function isRoadmapTaskComplete(task: RoadmapPriorityTask) {
   );
 }
 
+type PriorityEditorTaskXpAwardResponse = {
+  success?: boolean;
+  deduped?: boolean;
+  inserted?: number;
+  surge?: CreatorXpSurgePayload | null;
+  reason?: string | null;
+};
+
 async function awardPriorityEditorTaskCompletion(
   task: RoadmapPriorityTask,
   completedAt: string
-) {
+): Promise<PriorityEditorTaskXpAwardResponse | null> {
   const body: Record<string, unknown> = {
     kind: "task",
     awardKeyBase: `task:${task.id}:complete`,
@@ -304,12 +313,14 @@ async function awardPriorityEditorTaskCompletion(
         "Failed to award XP for priority roadmap task completion",
         await response.text()
       );
-      return false;
+      return null;
     }
-    return true;
+    return (await response.json().catch(() => null)) as
+      | PriorityEditorTaskXpAwardResponse
+      | null;
   } catch (error) {
     console.error("Failed to award XP for priority roadmap task completion", error);
-    return false;
+    return null;
   }
 }
 
@@ -906,19 +917,30 @@ export default function PriorityEditorClient({
           throw updateError;
         }
 
-        const didAwardXp = await awardPriorityEditorTaskCompletion(task, completedAt);
+        const awardPayload = await awardPriorityEditorTaskCompletion(
+          task,
+          completedAt
+        );
+        const didAwardXp = Boolean(
+          awardPayload?.success &&
+            !awardPayload.deduped &&
+            (awardPayload.inserted ?? 0) > 0
+        );
         if (didAwardXp) {
           dispatchCreatorXpRewardVisual({
             surge: {
               sourceType: "TASK",
-              title: resolveCreatorXpSurgeTitle({
-                skillName: task.skillName,
-                sourceTitle: task.name,
-              }),
-              sourceIcon: task.skillIcon ?? null,
-              displayXp: 1,
+              ...awardPayload?.surge,
+              title:
+                awardPayload?.surge?.title ??
+                resolveCreatorXpSurgeTitle({
+                  skillName: task.skillName,
+                  sourceTitle: task.name,
+                }),
+              sourceIcon: awardPayload?.surge?.sourceIcon ?? task.skillIcon ?? null,
+              displayXp: awardPayload?.surge?.displayXp ?? 1,
             },
-            amount: 1,
+            amount: awardPayload?.surge?.displayXp ?? 1,
             kind: "task_complete",
             burstId: `priority-task:${task.id}:${completedAt}`,
           });

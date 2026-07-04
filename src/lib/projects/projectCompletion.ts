@@ -5,6 +5,7 @@ import {
 } from "@/lib/scheduler/instanceRepo";
 import {
   resolveCreatorXpSurgeTitle,
+  type CreatorXpSurgePayload,
   type CreatorXpSurgeTitleParts,
 } from "@/components/xp/CreatorXpSurgeHud";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
@@ -33,12 +34,7 @@ type ProjectXpAwardResponse = {
   success?: boolean;
   deduped?: boolean;
   inserted?: number;
-  surge?: {
-    title?: string | null;
-    sourceIcon?: string | null;
-    displayXp?: number | null;
-    currentLevel?: number | null;
-  } | null;
+  surge?: CreatorXpSurgePayload | null;
   awardKeyBase?: string | null;
 };
 
@@ -411,28 +407,36 @@ export async function recordProjectCompletion(
       awardPayload.surge
   );
   if (didAwardXp) {
+    const fallbackSurge: CreatorXpSurgePayload = {
+      sourceType: "PROJECT",
+      title: resolveCreatorXpSurgeTitle(context.xpSurge ?? {}),
+      sourceIcon: context.xpSurge?.sourceIcon ?? null,
+      displayXp: context.xpSurge?.displayXp ?? PROJECT_XP_AMOUNT,
+      currentLevel: null,
+      progressFrom: 18,
+      progressTo: 78,
+    };
+    const surge = awardPayload?.surge
+      ? {
+          ...fallbackSurge,
+          ...awardPayload.surge,
+          title: awardPayload.surge.title ?? fallbackSurge.title,
+          sourceIcon: awardPayload.surge.sourceIcon ?? fallbackSurge.sourceIcon,
+          displayXp: awardPayload.surge.displayXp ?? fallbackSurge.displayXp,
+          currentLevel:
+            awardPayload.surge.currentLevel ?? fallbackSurge.currentLevel,
+          progressFrom:
+            awardPayload.surge.progressFrom ?? fallbackSurge.progressFrom,
+          progressTo: awardPayload.surge.progressTo ?? fallbackSurge.progressTo,
+          levelBreak: awardPayload.surge.levelBreak ?? fallbackSurge.levelBreak,
+        }
+      : fallbackSurge;
+
     dispatchCreatorXpRewardVisual({
-      surge: {
-        sourceType: "PROJECT",
-        title:
-          awardPayload?.surge?.title ??
-          resolveCreatorXpSurgeTitle(context.xpSurge ?? {}),
-        sourceIcon:
-          awardPayload?.surge?.sourceIcon ?? context.xpSurge?.sourceIcon ?? null,
-        displayXp:
-          awardPayload?.surge?.displayXp ??
-          context.xpSurge?.displayXp ??
-          PROJECT_XP_AMOUNT,
-        currentLevel: awardPayload?.surge?.currentLevel ?? null,
-        progressFrom: 18,
-        progressTo: 78,
-      },
+      surge,
       sourceRect: context.xpSourceRect,
       sourceOrigin: context.xpSourceOrigin,
-      amount:
-        awardPayload?.surge?.displayXp ??
-        context.xpSurge?.displayXp ??
-        PROJECT_XP_AMOUNT,
+      amount: surge.displayXp ?? PROJECT_XP_AMOUNT,
       kind: "project_complete",
       burstId: `project:${context.projectId}:${completionTimestamp ?? "completed"}`,
     });

@@ -25,7 +25,10 @@ import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import MixedRoadmapCard from "@/app/(app)/goals/components/MixedRoadmapCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
-import { buildCreatorXpSurgePayload } from "@/components/xp/CreatorXpSurgeHud";
+import {
+  buildCreatorXpSurgePayload,
+  type CreatorXpSurgePayload,
+} from "@/components/xp/CreatorXpSurgeHud";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
 import type { Goal, Project, Task } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
@@ -354,13 +357,7 @@ type GoalXpAwardResponse = {
   success?: boolean;
   deduped?: boolean;
   inserted?: number;
-  surge?: {
-    sourceType?: string | null;
-    title?: string | null;
-    sourceIcon?: string | null;
-    displayXp?: number | null;
-    currentLevel?: number | null;
-  } | null;
+  surge?: CreatorXpSurgePayload | null;
 };
 
 function reportCampaignDrawerXpTiming(
@@ -458,6 +455,7 @@ async function awardGoalCompletionXp({
     const goalSurge = payload.surge
       ? {
           ...fallbackGoalSurge,
+          ...payload.surge,
           title: payload.surge.title ?? fallbackGoalSurge.title,
           sourceIcon:
             payload.surge.sourceIcon ??
@@ -468,6 +466,10 @@ async function awardGoalCompletionXp({
           displayXp: payload.surge.displayXp ?? fallbackGoalSurge.displayXp,
           currentLevel:
             payload.surge.currentLevel ?? fallbackGoalSurge.currentLevel ?? null,
+          progressFrom:
+            payload.surge.progressFrom ?? fallbackGoalSurge.progressFrom,
+          progressTo: payload.surge.progressTo ?? fallbackGoalSurge.progressTo,
+          levelBreak: payload.surge.levelBreak ?? fallbackGoalSurge.levelBreak,
         }
       : fallbackGoalSurge;
 
@@ -564,6 +566,7 @@ async function awardCampaignDrawerTaskCompletionXp({
     dispatchCreatorXpRewardVisual({
       surge: {
         sourceType: "TASK",
+        ...payload.surge,
         title: payload.surge.title ?? task.name,
         sourceIcon: payload.surge.sourceIcon ?? task.skillIcon ?? null,
         displayXp: payload.surge.displayXp ?? undefined,

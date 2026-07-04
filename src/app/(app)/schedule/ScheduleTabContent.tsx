@@ -207,6 +207,7 @@ import { useToastHelpers } from "@/components/ui/toast";
 import {
   CREATOR_XP_SURGE_DISPLAY_XP_BY_SOURCE_TYPE,
   resolveCreatorXpSurgeTitle,
+  type CreatorXpSurgePayload,
 } from "@/components/xp/CreatorXpSurgeHud";
 import {
   PRIORITY_LABELS,
@@ -9255,38 +9256,6 @@ export default function ScheduleTabContent({
         }
         if (nextStage === "PERFECT") {
           void hapticComplete();
-          const skill = task.skill_id ? (skillMap[task.skill_id] ?? null) : null;
-          const monumentId = task.skill_id
-            ? (skillMonumentMap[task.skill_id] ?? null)
-            : null;
-          const monument = monumentId
-            ? monuments.find((item) => item.id === monumentId)
-            : null;
-          dispatchCreatorXpRewardVisual({
-            surge: {
-              sourceType: "TASK",
-              title: resolveCreatorXpSurgeTitle({
-                skillName: skill?.name,
-                monumentTitle: monument?.title,
-                sourceTitle: task.name,
-              }),
-              sourceIcon:
-                task.skill_icon?.trim() ||
-                skill?.icon?.trim() ||
-                monument?.emoji?.trim() ||
-                null,
-              displayXp: SCHEDULE_XP_AWARD_AMOUNTS.TASK,
-            },
-            sourceRect: capturedSourceRect,
-            sourceOrigin: capturedSourceOrigin,
-            amount: SCHEDULE_XP_AWARD_AMOUNTS.TASK,
-            kind: "task_complete",
-            burstId: `backlog-task:${taskId}:${new Date().toISOString()}`,
-            topOffsetPx:
-              topBarHeight !== null && Number.isFinite(topBarHeight)
-                ? Math.max(0, topBarHeight) + 8
-                : 72,
-          });
         }
 
         const shouldAwardXp = isCurrentlyCompleted || nextStage === "PERFECT";
@@ -9307,6 +9276,7 @@ export default function ScheduleTabContent({
             );
 
           const baseAwardKey = `backlog:${taskId}:task`;
+          const awardCompletedAt = new Date().toISOString();
           const body: Record<string, unknown> = {
             kind: "task",
             amount: isUndo ? -1 : 1,
@@ -9315,7 +9285,7 @@ export default function ScheduleTabContent({
               action: isUndo ? "undo" : "complete",
               sourceType: "TASK",
               sourceId: taskId,
-              completedAt: new Date().toISOString(),
+              completedAt: awardCompletedAt,
               wasScheduled: false,
               durationMin:
                 typeof task.duration_min === "number" &&
@@ -9343,6 +9313,68 @@ export default function ScheduleTabContent({
                 "Failed to award XP for backlog task completion",
                 await response.text()
               );
+              return;
+            }
+
+            const result = (await response.json().catch(() => null)) as {
+              success?: boolean;
+              deduped?: boolean;
+              inserted?: number;
+              surge?: CreatorXpSurgePayload | null;
+            } | null;
+            if (
+              !isUndo &&
+              result?.success &&
+              !result.deduped &&
+              (result.inserted ?? 0) > 0
+            ) {
+              const skill = task.skill_id
+                ? (skillMap[task.skill_id] ?? null)
+                : null;
+              const monumentId = task.skill_id
+                ? (skillMonumentMap[task.skill_id] ?? null)
+                : null;
+              const monument = monumentId
+                ? monuments.find((item) => item.id === monumentId)
+                : null;
+              const fallbackSurge: CreatorXpSurgePayload = {
+                sourceType: "TASK",
+                title: resolveCreatorXpSurgeTitle({
+                  skillName: skill?.name,
+                  monumentTitle: monument?.title,
+                  sourceTitle: task.name,
+                }),
+                sourceIcon:
+                  task.skill_icon?.trim() ||
+                  skill?.icon?.trim() ||
+                  monument?.emoji?.trim() ||
+                  null,
+                displayXp: SCHEDULE_XP_AWARD_AMOUNTS.TASK,
+              };
+              const surge = result.surge
+                ? {
+                    ...fallbackSurge,
+                    ...result.surge,
+                    title: result.surge.title ?? fallbackSurge.title,
+                    sourceIcon:
+                      result.surge.sourceIcon ?? fallbackSurge.sourceIcon,
+                    displayXp:
+                      result.surge.displayXp ?? fallbackSurge.displayXp,
+                  }
+                : fallbackSurge;
+
+              dispatchCreatorXpRewardVisual({
+                surge,
+                sourceRect: capturedSourceRect,
+                sourceOrigin: capturedSourceOrigin,
+                amount: surge.displayXp ?? SCHEDULE_XP_AWARD_AMOUNTS.TASK,
+                kind: "task_complete",
+                burstId: `backlog-task:${taskId}:${awardCompletedAt}`,
+                topOffsetPx:
+                  topBarHeight !== null && Number.isFinite(topBarHeight)
+                    ? Math.max(0, topBarHeight) + 8
+                    : 72,
+              });
             }
           } catch (awardError) {
             console.error(

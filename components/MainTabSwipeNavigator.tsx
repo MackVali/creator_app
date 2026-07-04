@@ -250,7 +250,9 @@ function DestinationPreview({ route }: { route: SwipeTargetRoute }) {
       className="min-h-full bg-[#050505] text-white"
     >
       {route === COMMAND_ROUTE ? <CommandTabContent /> : null}
-      {route === CONNECT_ROUTE ? <AnalyticsPageContent /> : null}
+      {route === CONNECT_ROUTE ? (
+        <AnalyticsPageContent compactTopSpacing />
+      ) : null}
       {route === SOURCE_ROUTE ? (
         <PlusRoute>
           <Source />
@@ -263,7 +265,7 @@ function DestinationPreview({ route }: { route: SwipeTargetRoute }) {
 
 function PersistentTabPanel({ route }: { route: PersistentMainTabRouteHref }) {
   if (route === COMMAND_ROUTE) return <DashboardClient />;
-  if (route === CONNECT_ROUTE) return <AnalyticsPageContent />;
+  if (route === CONNECT_ROUTE) return <AnalyticsPageContent compactTopSpacing />;
 
   return (
     <PlusRoute>

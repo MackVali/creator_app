@@ -10,13 +10,30 @@ const AnalyticsDashboard = dynamic(
   () => import("@/components/AnalyticsDashboard")
 );
 
-export default function AnalyticsPageContent() {
+function classNames(
+  ...classes: (string | boolean | null | undefined)[]
+): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+export default function AnalyticsPageContent({
+  compactTopSpacing = false,
+}: {
+  compactTopSpacing?: boolean;
+}) {
   const [activeView, setActiveView] = useState<AnalyticsView>("overview");
 
   return (
     <PlusRoute>
       <div className="relative">
-        <div className="mx-auto max-w-7xl px-4 pb-10 pt-[calc(env(safe-area-inset-top)+0.25rem)] sm:px-6 sm:pt-[calc(env(safe-area-inset-top)+0.5rem)] lg:px-8">
+        <div
+          className={classNames(
+            "mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8",
+            compactTopSpacing
+              ? "pt-1 sm:pt-2"
+              : "pt-[calc(env(safe-area-inset-top)+0.25rem)] sm:pt-[calc(env(safe-area-inset-top)+0.5rem)]"
+          )}
+        >
           <Suspense fallback={<AnalyticsDashboardSkeleton includeHeader />}>
             <AnalyticsDashboard
               activeView={activeView}
