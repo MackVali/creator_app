@@ -195,6 +195,7 @@ export async function GET() {
         startUtc: anchor.start_utc,
         blockLabel: brief.blockLabel,
         blockEventCount: brief.blockEventCount,
+        tapAction: brief.dataPayload.tapAction ?? null,
       },
       currentTimeBlock: {
         id: currentTimeBlock.id,

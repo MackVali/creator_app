@@ -5,6 +5,7 @@ import {
   formatDateKeyInTimeZone,
   startOfDayInTimeZone,
 } from "@/lib/scheduler/timezone";
+import { OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION } from "@/lib/notifications/notificationOpenIntents";
 import type { Database } from "@/types/supabase";
 
 const FALLBACK_TIME_ZONE = "America/Chicago";
@@ -73,6 +74,7 @@ export type ScheduleBlockBriefDataPayload = {
   timeBlockId: string | null;
   dayTypeTimeBlockId: string | null;
   windowId: string | null;
+  tapAction?: typeof OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION;
 };
 
 export type ScheduleBlockBrief = {
@@ -603,6 +605,11 @@ export async function buildScheduleBlockBrief(
       timeBlockId: anchorInstance.time_block_id,
       dayTypeTimeBlockId: anchorInstance.day_type_time_block_id,
       windowId: anchorInstance.window_id,
+      ...(isMealTimeBlock
+        ? {
+            tapAction: OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION,
+          }
+        : {}),
     },
   };
 }
