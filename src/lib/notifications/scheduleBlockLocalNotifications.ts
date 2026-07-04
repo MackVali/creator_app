@@ -11,6 +11,8 @@ export const TIME_BLOCK_START_NOTIFICATION_TYPE = "time_block_start";
 
 const FALLBACK_TIME_BLOCK_LABEL = "Time Block";
 const FALLBACK_EVENT_NAME = "Scheduled Event";
+const MEAL_BRIEF_TITLE = "Meal time";
+const MEAL_BRIEF_BODY = "Eat, then log your meal and calories in CREATOR.";
 const REMINDER_LEAD_MS = 5 * 60 * 1000;
 const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 const MAX_NOTIFICATIONS = 64;
@@ -331,10 +333,11 @@ function buildScheduleBlockNotifications(
     };
 
     if (briefFireMs > nowMs && notifications.length < MAX_NOTIFICATIONS) {
+      const isMealBlock = isMealTimeBlock(timeBlock);
       notifications.push({
         id: stableNotificationId(group.blockKey, startUtc, "brief"),
-        title: `${label} starts in 5 min`,
-        body: buildNotificationBody(group),
+        title: isMealBlock ? MEAL_BRIEF_TITLE : `${label} starts in 5 min`,
+        body: isMealBlock ? MEAL_BRIEF_BODY : buildNotificationBody(group),
         schedule: {
           at: new Date(briefFireMs),
           allowWhileIdle: true,
@@ -595,7 +598,14 @@ function isBreakTimeBlock(
   block: ScheduleBlockLocalNotificationTimeBlock | null,
 ) {
   const kind = block?.kind?.trim().toUpperCase();
-  return kind === "BREAK" || kind === "MEAL";
+  return kind === "BREAK";
+}
+
+function isMealTimeBlock(
+  block: ScheduleBlockLocalNotificationTimeBlock | null,
+) {
+  const kind = block?.kind?.trim().toUpperCase();
+  return kind === "MEAL";
 }
 
 function formatEventPreview(instance: ScheduleBlockLocalNotificationInstance) {

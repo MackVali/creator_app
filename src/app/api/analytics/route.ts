@@ -976,10 +976,12 @@ export async function GET(request: NextRequest) {
     previousStart,
     previousEnd
   );
+  const currentTotalXp = calculateCurrentTotalXp(skillProgress);
   const overviewDailyResult = await buildOverviewDailySeries({
     xpEvents: xpSplit.current,
     completionEvents: completionSplit.current,
     completionXpEvents: currentCompletionXpEvents,
+    totalXpEvents: xpEvents,
     observedInstances: currentOverviewObservedInstances,
     scheduleInstances: scheduleSummaryInstances,
     start,
@@ -988,12 +990,14 @@ export async function GET(request: NextRequest) {
     range,
     timeZone,
     usableScheduleSource: overviewUsableScheduleSource,
+    currentTotalXp,
   });
   const overviewDaily = overviewDailyResult.overviewDaily;
   const previousOverviewDailyResult = await buildOverviewDailySeries({
     xpEvents: xpSplit.previous,
     completionEvents: completionSplit.previous,
     completionXpEvents: previousCompletionXpEvents,
+    totalXpEvents: xpEvents,
     observedInstances: previousOverviewObservedInstances,
     scheduleInstances: previousOverviewScheduleInstances,
     start: previousStart,
@@ -1002,6 +1006,7 @@ export async function GET(request: NextRequest) {
     range,
     timeZone,
     usableScheduleSource: overviewUsableScheduleSource,
+    currentTotalXp,
   });
   const overviewComparison = buildOverviewComparison({
     current: overviewDaily,
@@ -1962,6 +1967,7 @@ async function buildOverviewDailySeries({
   xpEvents,
   completionEvents,
   completionXpEvents,
+  totalXpEvents,
   observedInstances,
   scheduleInstances,
   usableScheduleSource,
@@ -1970,10 +1976,12 @@ async function buildOverviewDailySeries({
   now,
   range,
   timeZone,
+  currentTotalXp,
 }: {
   xpEvents: RawXpEventRow[];
   completionEvents: NormalizedCompletionEventRow[];
   completionXpEvents: RawXpEventRow[];
+  totalXpEvents: RawXpEventRow[];
   observedInstances: NormalizedObservedScheduleAnalyticsRow[];
   scheduleInstances: NormalizedScheduleInstanceRow[];
   usableScheduleSource: OverviewUsableScheduleSource;
@@ -1982,6 +1990,7 @@ async function buildOverviewDailySeries({
   now: Date;
   range: AnalyticsRange;
   timeZone: string;
+  currentTotalXp: number;
 }): Promise<{
   overviewDaily: AnalyticsOverviewDailyPoint[];
   overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[];
@@ -1999,6 +2008,7 @@ async function buildOverviewDailySeries({
       points.set(date, {
         date,
         xpGained: 0,
+        totalXp: 0,
         projectXp: 0,
         habitXp: 0,
         taskXp: 0,
@@ -2024,6 +2034,7 @@ async function buildOverviewDailySeries({
       points.set(date, {
         date,
         xpGained: 0,
+        totalXp: 0,
         projectXp: 0,
         habitXp: 0,
         taskXp: 0,
@@ -2201,11 +2212,85 @@ async function buildOverviewDailySeries({
         : 0;
   }
 
+  addOverviewTotalXp({
+    points,
+    xpEvents: totalXpEvents,
+    start,
+    range,
+    timeZone,
+    currentTotalXp,
+  });
+
   return {
     overviewDaily: Array.from(points.values()),
     overviewEfficiencyDebugPerDay,
     overviewEfficiencyCompletedDebug: completedDebug,
   };
+}
+
+function calculateCurrentTotalXp(
+  skillProgress: Array<{ total_xp?: number | null }>
+) {
+  return skillProgress.reduce((sum, progress) => {
+    const totalXp = Number(progress.total_xp ?? 0);
+    return Number.isFinite(totalXp) ? sum + totalXp : sum;
+  }, 0);
+}
+
+function addOverviewTotalXp({
+  points,
+  xpEvents,
+  start,
+  range,
+  timeZone,
+  currentTotalXp,
+}: {
+  points: Map<string, AnalyticsOverviewDailyPoint>;
+  xpEvents: RawXpEventRow[];
+  start: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+  currentTotalXp: number;
+}) {
+  const xpDeltaByPoint = new Map<string, number>();
+  let xpDeltaSinceStart = 0;
+
+  for (const event of xpEvents) {
+    if (!event.skill_id) {
+      continue;
+    }
+
+    const eventDate = parseDate(event.created_at);
+    if (!eventDate || eventDate.getTime() < start.getTime()) {
+      continue;
+    }
+
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount === 0) {
+      continue;
+    }
+
+    xpDeltaSinceStart += amount;
+
+    const date =
+      range === "1d"
+        ? formatHourBucketKey(eventDate)
+        : formatProductivityDayKey(eventDate, timeZone);
+    if (!points.has(date)) {
+      continue;
+    }
+
+    xpDeltaByPoint.set(date, (xpDeltaByPoint.get(date) ?? 0) + amount);
+  }
+
+  let runningTotalXp = Math.max(0, currentTotalXp - xpDeltaSinceStart);
+  for (const point of points.values()) {
+    runningTotalXp = Math.max(
+      0,
+      runningTotalXp + (xpDeltaByPoint.get(point.date) ?? 0)
+    );
+    point.totalXp = runningTotalXp;
+  }
 }
 
 type OverviewComparisonSummary = {
