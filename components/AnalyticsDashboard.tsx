@@ -5,12 +5,27 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import { ChevronLeft, Info } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
 import type {
   AnalyticsOverviewComparison,
   AnalyticsOverviewComparisonMetric,
@@ -232,15 +247,6 @@ const ANALYTICS_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> =
   { value: "90d", label: "90D" },
 ];
 
-const XP_CHART_RANGE_OPTIONS: Array<{
-  value: Extract<AnalyticsRange, "7d" | "30d" | "90d">;
-  label: string;
-}> = [
-  { value: "90d", label: "90D" },
-  { value: "30d", label: "30D" },
-  { value: "7d", label: "7D" },
-];
-
 async function fetchAnalyticsRange(
   range: AnalyticsRange,
   signal: AbortSignal
@@ -440,7 +446,6 @@ export default function AnalyticsDashboard({
               points={overviewTrend}
               comparison={analytics?.overviewComparison}
               range={analytics?.range ?? selectedRange}
-              onRangeChange={setSelectedRange}
               isRefreshing={analyticsRefreshing}
               statusMessage={error}
             />
@@ -1794,14 +1799,12 @@ function OverviewDiagnosticsSection({
   points,
   comparison,
   range,
-  onRangeChange,
   isRefreshing,
   statusMessage,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   comparison?: AnalyticsOverviewComparison;
   range: AnalyticsRange;
-  onRangeChange: (range: AnalyticsRange) => void;
   isRefreshing: boolean;
   statusMessage: string | null;
 }) {
@@ -1952,9 +1955,6 @@ function OverviewDiagnosticsSection({
         <OverviewLineChart
           points={points}
           range={range}
-          onRangeChange={onRangeChange}
-          isRefreshing={isRefreshing}
-          selectedPointIndex={selectedPointIndex}
           onSelectedPointIndexChange={setSelectedPointIndex}
         />
       </div>
@@ -2142,140 +2142,68 @@ function getOverviewComparisonClass(
   return "text-zinc-500";
 }
 
-type OverviewXpSeries = {
-  label: string;
-  stroke: string;
-  fillId: string;
-  fillStops: readonly [string, string, string];
+const overviewXpChartConfig = {
+  totalXp: {
+    label: "Total XP",
+    color: "#86efac",
+  },
+} satisfies ChartConfig;
+
+type OverviewXpChartDataPoint = {
+  date: string;
+  totalXp: number;
+  point: AnalyticsOverviewDailyPoint;
 };
 
-const TOTAL_XP_SERIES: OverviewXpSeries = {
-  label: "Total XP",
-  stroke: "#86efac",
-  fillId: "overviewTotalXpArea",
-  fillStops: [
-    "rgba(134,239,172,0.22)",
-    "rgba(52,211,153,0.09)",
-    "rgba(16,185,129,0)",
-  ],
+type OverviewXpTooltipContentProps = {
+  active?: boolean;
+  payload?: ReadonlyArray<{
+    payload?: OverviewXpChartDataPoint;
+  }>;
+  label?: string | number;
+  range: AnalyticsRange;
 };
 
 function OverviewLineChart({
   points,
   range,
-  onRangeChange,
-  isRefreshing,
-  selectedPointIndex,
   onSelectedPointIndexChange,
 }: {
   points: AnalyticsOverviewDailyPoint[];
   range: AnalyticsRange;
-  onRangeChange: (range: AnalyticsRange) => void;
-  isRefreshing: boolean;
-  selectedPointIndex: number | null;
   onSelectedPointIndexChange: (index: number | null) => void;
 }) {
-  const chartRef = useRef<HTMLDivElement | null>(null);
-
-  const width = 720;
-  const height = 278;
-  const padding = { top: 30, right: 22, bottom: 52, left: 44 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const baselineY = padding.top + chartHeight;
   const totalXp = points.reduce((sum, point) => sum + point.xpGained, 0);
   const rawMaxValue = Math.max(
     0,
     ...points.map((point) => getOverviewXpValue(point))
   );
-  const yMax = getTrendYAxisMax(rawMaxValue);
   const isEmpty = rawMaxValue <= 0;
-  const hasEfficiencyBuckets = points.some(
-    (point) => point.usableWindowMinutes > 0
+  const chartData = useMemo<OverviewXpChartDataPoint[]>(
+    () =>
+      points.map((point) => ({
+        date: point.date,
+        totalXp: getOverviewXpValue(point),
+        point,
+      })),
+    [points]
   );
-  const activeIndex =
-    selectedPointIndex == null
-      ? -1
-      : Math.max(0, Math.min(selectedPointIndex, points.length - 1));
-  const activePoint = activeIndex >= 0 ? points[activeIndex] ?? null : null;
-  const yTickValues = buildYTickValues(yMax);
-  const yAxisLabels = yTickValues
-    .filter((value) => value > 0)
-    .map((value) => {
-      const ratio = yMax === 0 ? 0 : value / yMax;
-      const y = padding.top + chartHeight - ratio * chartHeight;
-
-      return {
-        value,
-        top: (y / height) * 100,
-      };
-    });
-  const chartPoints = points.map((point, index) => {
-    const x =
-      points.length === 1
-        ? padding.left + chartWidth / 2
-        : padding.left + (index / (points.length - 1)) * chartWidth;
-    const y = getOverviewChartY(
-      getOverviewXpValue(point),
-      yMax,
-      padding.top,
-      chartHeight
-    );
-    return { x, y, point };
-  });
-  const areaLayer = buildOverviewAreaLayer({
-    points,
-    chartWidth,
-    chartHeight,
-    paddingLeft: padding.left,
-    paddingTop: padding.top,
-    yMax,
-  });
-  const xLabels = getTrendAxisLabelIndices(range, points)
-    .map((index) => ({
-      x:
-        points.length === 1
-          ? padding.left + chartWidth / 2
-          : padding.left + (index / (points.length - 1)) * chartWidth,
-      label: formatTrendXAxisLabel(points[index]?.date, range),
-      weekday: formatTrendWeekdayLabel(points[index]?.date, range),
-    }));
-  const yAxisLabelLeft = ((padding.left - 10) / width) * 100;
-  const activeXPercent =
-    activeIndex >= 0 ? ((chartPoints[activeIndex]?.x ?? 0) / width) * 100 : 50;
-  const activeYPercent =
-    activeIndex >= 0 ? ((chartPoints[activeIndex]?.y ?? 0) / height) * 100 : 30;
-  const tooltipLeftPercent = Math.max(18, Math.min(82, activeXPercent));
-  const tooltipTopPercent = Math.max(9, Math.min(56, activeYPercent - 20));
-  const selectPoint = (index: number) => {
-    onSelectedPointIndexChange(index);
-  };
-  const clearSelectedPoint = () => {
-    onSelectedPointIndexChange(null);
-  };
-
-  useEffect(() => {
-    if (selectedPointIndex == null) {
+  const xAxisTicks = useMemo(
+    () =>
+      getTrendAxisLabelIndices(range, points)
+        .map((index) => points[index]?.date)
+        .filter((date): date is string => Boolean(date)),
+    [points, range]
+  );
+  const handleChartPointer = (state: MouseHandlerDataParam) => {
+    if (typeof state.activeTooltipIndex !== "number") {
       return;
     }
 
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
-      const chart = chartRef.current;
-      const target = event.target;
-
-      if (!chart || !(target instanceof Node) || chart.contains(target)) {
-        return;
-      }
-
-      onSelectedPointIndexChange(null);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, true);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-    };
-  }, [onSelectedPointIndexChange, selectedPointIndex]);
+    onSelectedPointIndexChange(
+      Math.max(0, Math.min(state.activeTooltipIndex, points.length - 1))
+    );
+  };
 
   return (
     <div className="overflow-hidden">
@@ -2293,263 +2221,108 @@ function OverviewLineChart({
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="h-1.5 w-4 rounded-full shadow-[0_0_12px_rgba(255,255,255,0.12)]"
-                style={{ backgroundColor: TOTAL_XP_SERIES.stroke }}
+                style={{ backgroundColor: overviewXpChartConfig.totalXp.color }}
               />
-              {TOTAL_XP_SERIES.label}
+              {overviewXpChartConfig.totalXp.label}
             </span>
           </div>
         </div>
-        <XpChartRangeSelector
-          range={range}
-          onRangeChange={onRangeChange}
-          isRefreshing={isRefreshing}
-        />
       </div>
 
       <div className="space-y-2.5 px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
-        <div ref={chartRef} className="relative" data-overview-area-chart>
-          <svg
-            viewBox={`0 0 ${width} ${height}`}
-            preserveAspectRatio="none"
-            className="h-[214px] w-full sm:h-[230px] md:h-[238px]"
+        <div className="relative" data-overview-area-chart>
+          <ChartContainer
+            config={overviewXpChartConfig}
+            className="h-[214px] w-full aspect-auto sm:h-[230px] md:h-[238px]"
           >
-            <defs>
-              <linearGradient id="overviewDailySurface" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.022)" />
-                <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-              </linearGradient>
-              <linearGradient
-                id={TOTAL_XP_SERIES.fillId}
-                x1="0"
-                x2="0"
-                y1="0"
-                y2="1"
-              >
-                <stop offset="0%" stopColor={TOTAL_XP_SERIES.fillStops[0]} />
-                <stop offset="58%" stopColor={TOTAL_XP_SERIES.fillStops[1]} />
-                <stop offset="100%" stopColor={TOTAL_XP_SERIES.fillStops[2]} />
-              </linearGradient>
-            </defs>
-
-            <rect
-              x={padding.left}
-              y={padding.top}
-              width={chartWidth}
-              height={chartHeight}
-              rx={18}
-              fill="url(#overviewDailySurface)"
-            />
-
-            {yTickValues.filter((value) => value > 0).map((value) => {
-              const ratio = yMax === 0 ? 0 : value / yMax;
-              const y = padding.top + chartHeight - ratio * chartHeight;
-              return (
-                <g key={`grid-${value}`}>
-                  <line
-                    x1={padding.left}
-                    x2={padding.left + chartWidth}
-                    y1={y}
-                    y2={y}
-                    stroke="rgba(212,212,216,0.105)"
-                    strokeDasharray="1 13"
-                    vectorEffect="non-scaling-stroke"
+            <AreaChart
+              accessibilityLayer
+              data={chartData}
+              margin={{ top: 20, right: 12, left: 0, bottom: 10 }}
+              onMouseMove={handleChartPointer}
+              onClick={handleChartPointer}
+              onMouseLeave={() => onSelectedPointIndexChange(null)}
+            >
+              <defs>
+                <linearGradient id="fillTotalXp" x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="5%"
+                    stopColor="var(--color-totalXp)"
+                    stopOpacity={0.34}
                   />
-                </g>
-              );
-            })}
-
-            <line
-              x1={padding.left}
-              x2={padding.left + chartWidth}
-              y1={baselineY}
-              y2={baselineY}
-              stroke="rgba(212,212,216,0.14)"
-              vectorEffect="non-scaling-stroke"
-            />
-
-            {!isEmpty ? (
-              <>
-                <path
-                  d={areaLayer.areaPath}
-                  fill={`url(#${TOTAL_XP_SERIES.fillId})`}
-                />
-                {activePoint ? (
-                  <line
-                    x1={chartPoints[activeIndex]?.x ?? 0}
-                    x2={chartPoints[activeIndex]?.x ?? 0}
-                    y1={padding.top}
-                    y2={baselineY}
-                    stroke="rgba(244,244,245,0.14)"
-                    strokeDasharray="1 9"
-                    vectorEffect="non-scaling-stroke"
+                  <stop
+                    offset="56%"
+                    stopColor="var(--color-totalXp)"
+                    stopOpacity={0.11}
                   />
-                ) : null}
-                <path
-                  d={areaLayer.linePath}
-                  fill="none"
-                  stroke={TOTAL_XP_SERIES.stroke}
-                  strokeWidth={2.75}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.94}
-                  vectorEffect="non-scaling-stroke"
-                />
-              </>
-            ) : (
-              <g>
-                <line
-                  x1={padding.left}
-                  x2={padding.left + chartWidth}
-                  y1={padding.top + chartHeight * 0.54}
-                  y2={padding.top + chartHeight * 0.54}
-                  stroke="rgba(161,161,170,0.25)"
-                  strokeDasharray="1 10"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </g>
-            )}
-
-          </svg>
+                  <stop
+                    offset="95%"
+                    stopColor="var(--color-totalXp)"
+                    stopOpacity={0}
+                  />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                vertical={false}
+                stroke="rgba(212,212,216,0.105)"
+                strokeDasharray="1 10"
+              />
+              <XAxis
+                dataKey="date"
+                ticks={xAxisTicks}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={10}
+                minTickGap={18}
+                tickFormatter={(value: string) =>
+                  formatTrendXAxisLabel(value, range)
+                }
+              />
+              <YAxis
+                width={34}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tickFormatter={(value: number) => formatCompactNumber(value)}
+                domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax * 1.15))]}
+              />
+              <ChartTooltip
+                cursor={{
+                  stroke: "rgba(244,244,245,0.16)",
+                  strokeDasharray: "1 8",
+                }}
+                content={(props) => (
+                  <OverviewXpTooltipContent
+                    {...props}
+                    range={range}
+                  />
+                )}
+              />
+              <Area
+                dataKey="totalXp"
+                name="Total XP"
+                type="natural"
+                fill="url(#fillTotalXp)"
+                stroke="var(--color-totalXp)"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{
+                  r: 4,
+                  fill: "#bbf7d0",
+                  stroke: "#09090b",
+                  strokeWidth: 1.5,
+                }}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ChartContainer>
 
           <div className="pointer-events-none absolute inset-0 select-none">
             {isEmpty ? (
-              <div
-                className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-medium text-zinc-400/90"
-                style={{
-                  left: `${((padding.left + chartWidth / 2) / width) * 100}%`,
-                  top: `${((padding.top + chartHeight * 0.46) / height) * 100}%`,
-                }}
-              >
+              <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] font-medium text-zinc-400/90">
                 No XP recorded in this range
               </div>
             ) : null}
-
-            {yAxisLabels.map((label) => (
-              <div
-                key={`y-axis-${label.value}`}
-                className="absolute -translate-y-1/2 -translate-x-full whitespace-nowrap text-[10px] font-medium leading-none text-zinc-500/75 tabular-nums sm:text-[11px]"
-                style={{
-                  left: `${yAxisLabelLeft}%`,
-                  top: `${label.top}%`,
-                }}
-              >
-                {formatCompactNumber(label.value)}
-              </div>
-            ))}
-
-            {xLabels.map((label, index) => (
-              <div
-                key={`${label.label}-${index}`}
-                className="absolute -translate-x-1/2 text-center leading-none"
-                style={{
-                  left: `${(label.x / width) * 100}%`,
-                  top: `${((height - 30) / height) * 100}%`,
-                }}
-              >
-                <div className="whitespace-nowrap text-[10px] font-medium text-zinc-400/80 tabular-nums sm:text-[11px]">
-                  {label.label}
-                </div>
-                <div className="mt-1 hidden whitespace-nowrap text-[10px] font-medium text-zinc-500/80 min-[420px]:block">
-                  {label.weekday}
-                </div>
-              </div>
-            ))}
-
-            {activePoint ? (
-              <div
-                className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-zinc-950 bg-emerald-200/80"
-                style={{
-                  left: `${(((chartPoints[activeIndex]?.x ?? 0) / width) * 100).toFixed(
-                    4
-                  )}%`,
-                  top: `${(((chartPoints[activeIndex]?.y ?? 0) / height) * 100).toFixed(
-                    4
-                  )}%`,
-                }}
-              />
-            ) : null}
-          </div>
-
-          {activePoint && !isEmpty ? (
-            <div
-              className="pointer-events-none absolute z-10 w-[220px] max-w-[calc(100%-1rem)] -translate-x-1/2 rounded-2xl border border-zinc-700/70 bg-zinc-950/95 p-3 text-xs shadow-[0_18px_42px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md sm:w-[240px]"
-              style={{
-                left: `${tooltipLeftPercent.toFixed(3)}%`,
-                top: `${tooltipTopPercent.toFixed(3)}%`,
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                    {formatTrendActiveLabel(activePoint.date, range)}
-                  </div>
-                  <div className="mt-1 text-lg font-semibold leading-none text-zinc-50 tabular-nums">
-                    {formatCompactNumber(activePoint.xpGained)} XP
-                  </div>
-                </div>
-                <div className="rounded-full border border-emerald-400/15 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-100/80">
-                  Total XP
-                </div>
-              </div>
-              <div className="mt-3 space-y-1.5">
-                <div className="flex items-center justify-between gap-3 text-[11px]">
-                  <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-400">
-                    <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: TOTAL_XP_SERIES.stroke }}
-                    />
-                    <span className="truncate">{TOTAL_XP_SERIES.label}</span>
-                  </span>
-                  <span className="font-medium text-zinc-100 tabular-nums">
-                    {formatCompactNumber(activePoint.xpGained)}
-                  </span>
-                </div>
-              </div>
-              <div className="mt-3 border-t border-white/[0.06] pt-2 text-[11px] leading-relaxed text-zinc-500">
-                {formatCompactNumber(activePoint.completedEvents)} completed ·{" "}
-                {formatCompactNumber(activePoint.completedProjects)} projects ·{" "}
-                {formatCompactNumber(activePoint.completedTasks)} tasks ·{" "}
-                {formatCompactNumber(activePoint.completedHabits)} habits
-              </div>
-            </div>
-          ) : null}
-
-          <div className="pointer-events-none absolute inset-0">
-            <div className="relative h-full">
-              {!isEmpty
-                ? chartPoints.map((point, index) => (
-                    <button
-                      key={`${point.point.date}-hitbox`}
-                      type="button"
-                      onPointerEnter={() => selectPoint(index)}
-                      onPointerMove={() => selectPoint(index)}
-                      onPointerDown={(event) => {
-                        if (event.pointerType === "touch") {
-                          selectPoint(index);
-                        }
-                      }}
-                      onPointerLeave={(event) => {
-                        if (event.pointerType !== "touch") {
-                          clearSelectedPoint();
-                        }
-                      }}
-                      onFocus={() => selectPoint(index)}
-                      onBlur={clearSelectedPoint}
-                      onClick={() => selectPoint(index)}
-                      className="pointer-events-auto absolute bottom-0 top-0 -translate-x-1/2 focus:outline-none"
-                      style={{
-                        left: `${((point.x / width) * 100).toFixed(4)}%`,
-                        width: `${Math.max(100 / Math.max(points.length, 1), 2)}%`,
-                      }}
-                      aria-label={formatOverviewPointAriaLabel(
-                        point.point,
-                        range,
-                        hasEfficiencyBuckets
-                      )}
-                    />
-                  ))
-                : null}
-            </div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 border-t border-white/[0.06] pt-2 text-[11px] text-zinc-500 sm:text-xs">
@@ -2561,40 +2334,43 @@ function OverviewLineChart({
   );
 }
 
-function XpChartRangeSelector({
+function OverviewXpTooltipContent({
+  active,
+  payload,
+  label,
   range,
-  onRangeChange,
-  isRefreshing,
-}: {
-  range: AnalyticsRange;
-  onRangeChange: (range: AnalyticsRange) => void;
-  isRefreshing: boolean;
-}) {
-  return (
-    <div className="w-full shrink-0 sm:w-auto" aria-label="XP chart range">
-      <div className="grid grid-cols-3 rounded-full border border-zinc-800 bg-zinc-950/80 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:inline-grid sm:min-w-[184px]">
-        {XP_CHART_RANGE_OPTIONS.map((option) => {
-          const isActive = option.value === range;
+}: OverviewXpTooltipContentProps) {
+  const point = payload?.[0]?.payload as OverviewXpChartDataPoint | undefined;
 
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onRangeChange(option.value)}
-              aria-pressed={isActive}
-              aria-busy={isRefreshing && isActive}
-              className={classNames(
-                "min-h-8 rounded-full px-3 text-[10px] font-semibold uppercase leading-none tracking-[0.12em] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-300/60 sm:min-h-7",
-                isActive
-                  ? "border border-zinc-700/80 bg-zinc-800/85 text-zinc-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-                  : "border border-transparent text-zinc-500 hover:text-zinc-300",
-                isRefreshing && isActive && "opacity-70"
-              )}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+  if (!active || !point) {
+    return null;
+  }
+
+  return (
+    <div className="min-w-[220px] rounded-xl border border-zinc-700/70 bg-zinc-950/95 p-3 text-xs text-zinc-100 shadow-[0_18px_42px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
+      <ChartTooltipContent
+        active={active}
+        payload={payload as ComponentProps<typeof ChartTooltipContent>["payload"]}
+        label={label}
+        labelFormatter={() => formatTrendActiveLabel(point.date, range)}
+        formatter={(value) => (
+          <div className="flex flex-1 items-center justify-between gap-3 leading-none">
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-400">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[--color-totalXp]" />
+              <span className="truncate">Total XP</span>
+            </span>
+            <span className="font-medium tabular-nums text-zinc-100">
+              {formatCompactNumber(Number(value))} XP
+            </span>
+          </div>
+        )}
+        className="border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
+      />
+      <div className="mt-3 border-t border-white/[0.06] pt-2 text-[11px] leading-relaxed text-zinc-500">
+        {formatCompactNumber(point.point.completedEvents)} completed ·{" "}
+        {formatCompactNumber(point.point.completedProjects)} projects ·{" "}
+        {formatCompactNumber(point.point.completedTasks)} tasks ·{" "}
+        {formatCompactNumber(point.point.completedHabits)} habits
       </div>
     </div>
   );
@@ -2602,78 +2378,6 @@ function XpChartRangeSelector({
 
 function getOverviewXpValue(point: AnalyticsOverviewDailyPoint) {
   return Math.max(0, Number(point.xpGained ?? 0));
-}
-
-function getOverviewChartY(
-  value: number,
-  yMax: number,
-  paddingTop: number,
-  chartHeight: number
-) {
-  const ratio = yMax === 0 ? 0 : value / yMax;
-  return paddingTop + chartHeight - ratio * chartHeight;
-}
-
-function buildOverviewAreaLayer({
-  points,
-  chartWidth,
-  chartHeight,
-  paddingLeft,
-  paddingTop,
-  yMax,
-}: {
-  points: AnalyticsOverviewDailyPoint[];
-  chartWidth: number;
-  chartHeight: number;
-  paddingLeft: number;
-  paddingTop: number;
-  yMax: number;
-}) {
-  const upperPoints: Array<{ x: number; y: number }> = [];
-  const lowerPoints: Array<{ x: number; y: number }> = [];
-
-  points.forEach((point, index) => {
-    const x =
-      points.length === 1
-        ? paddingLeft + chartWidth / 2
-        : paddingLeft + (index / (points.length - 1)) * chartWidth;
-
-    lowerPoints.push({
-      x,
-      y: getOverviewChartY(0, yMax, paddingTop, chartHeight),
-    });
-    upperPoints.push({
-      x,
-      y: getOverviewChartY(
-        getOverviewXpValue(point),
-        yMax,
-        paddingTop,
-        chartHeight
-      ),
-    });
-  });
-
-  return {
-    areaPath: buildSmoothAreaPath(upperPoints, lowerPoints),
-    linePath: buildSmoothLinePath(upperPoints),
-  };
-}
-
-function buildSmoothAreaPath(
-  upperPoints: Array<{ x: number; y: number }>,
-  lowerPoints: Array<{ x: number; y: number }>
-) {
-  if (upperPoints.length === 0 || lowerPoints.length === 0) {
-    return "";
-  }
-
-  const upperPath = buildSmoothLinePath(upperPoints);
-  const lowerPath = buildSmoothLinePath([...lowerPoints].reverse()).replace(
-    /^M/,
-    "L"
-  );
-
-  return `${upperPath} ${lowerPath} Z`;
 }
 
 function formatCompactNumber(value: number) {
@@ -2706,84 +2410,6 @@ function getSelectedPointAverageMinutes(point: AnalyticsOverviewDailyPoint) {
   // The daily payload has completed minutes but no separate active timer total;
   // use the existing usable window as the safest local fallback without changing queries.
   return point.usableWindowMinutes;
-}
-
-function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
-  if (points.length === 0) {
-    return "";
-  }
-
-  const first = points[0];
-  if (points.length === 1) {
-    return `M${first.x.toFixed(2)},${first.y.toFixed(2)}`;
-  }
-
-  if (points.length === 2) {
-    const second = points[1];
-    return `M${first.x.toFixed(2)},${first.y.toFixed(2)} L${second.x.toFixed(
-      2
-    )},${second.y.toFixed(2)}`;
-  }
-
-  const segmentSlopes = points.slice(0, -1).map((point, index) => {
-    const next = points[index + 1];
-    const rawDeltaX = next.x - point.x;
-    const deltaX =
-      Math.abs(rawDeltaX) < 1 ? (rawDeltaX < 0 ? -1 : 1) : rawDeltaX;
-    return (next.y - point.y) / deltaX;
-  });
-  const tangents = points.map((_, index) => {
-    if (index === 0) {
-      return segmentSlopes[0] ?? 0;
-    }
-
-    if (index === points.length - 1) {
-      return segmentSlopes[segmentSlopes.length - 1] ?? 0;
-    }
-
-    const previousSlope = segmentSlopes[index - 1] ?? 0;
-    const nextSlope = segmentSlopes[index] ?? 0;
-
-    if (
-      previousSlope === 0 ||
-      nextSlope === 0 ||
-      Math.sign(previousSlope) !== Math.sign(nextSlope)
-    ) {
-      return 0;
-    }
-
-    return (previousSlope + nextSlope) / 2;
-  });
-
-  return points.slice(0, -1).reduce((path, point, index) => {
-    const next = points[index + 1];
-    const deltaX = next.x - point.x;
-    const controlOneX = point.x + deltaX / 3;
-    const controlOneY = point.y + (tangents[index] * deltaX) / 3;
-    const controlTwoX = next.x - deltaX / 3;
-    const controlTwoY = next.y - (tangents[index + 1] * deltaX) / 3;
-
-    return `${path} C${controlOneX.toFixed(2)},${controlOneY.toFixed(
-      2
-    )} ${controlTwoX.toFixed(2)},${controlTwoY.toFixed(2)} ${next.x.toFixed(
-      2
-    )},${next.y.toFixed(2)}`;
-  }, `M${first.x.toFixed(2)},${first.y.toFixed(2)}`);
-}
-
-function buildYTickValues(yMax: number) {
-  const top = Math.max(1, Math.ceil(yMax));
-  const mid = Math.round(top / 2);
-  return [0, mid, top].filter(
-    (value, index, values) => values.indexOf(value) === index
-  );
-}
-
-function getTrendYAxisMax(maxValue: number) {
-  if (maxValue <= 0) {
-    return 1;
-  }
-  return Math.max(1, Math.ceil(maxValue * 1.15));
 }
 
 function getTrendAxisLabelIndices(
@@ -2850,41 +2476,6 @@ function formatTrendXAxisLabel(value: string | null, range: AnalyticsRange) {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-function formatTrendWeekdayLabel(value: string | null, range: AnalyticsRange) {
-  if (!value) {
-    return "";
-  }
-
-  const date = parseTrendDate(value, range);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-  }).format(date);
-}
-
-function formatOverviewPointAriaLabel(
-  point: AnalyticsOverviewDailyPoint,
-  range: AnalyticsRange,
-  hasEfficiencyBuckets: boolean
-) {
-  const parts = [
-    formatTrendActiveLabel(point.date, range),
-    `${formatCompactNumber(point.xpGained)} XP`,
-    `${formatCompactNumber(point.completedEvents)} completed`,
-    `${formatCompactNumber(point.scheduledEvents)} scheduled`,
-    `${formatCompactNumber(point.missedEvents)} missed`,
-  ];
-
-  if (hasEfficiencyBuckets && point.usableWindowMinutes > 0) {
-    parts.push(`${formatCompactNumber(point.efficiencyRate)}% efficiency`);
-  }
-
-  return parts.join(", ");
 }
 
 function formatTrendActiveLabel(value: string | null, range: AnalyticsRange) {
