@@ -26,6 +26,8 @@ import {
   YAxis,
 } from "recharts";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import { AnalyticsDashboardSkeleton } from "@/components/AnalyticsDashboardSkeleton";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
 import type {
   AnalyticsOverviewComparison,
@@ -215,12 +217,35 @@ async function fetchAnalyticsRange(
   range: AnalyticsRange,
   signal: AbortSignal
 ): Promise<AnalyticsResponse> {
+  const headers = new Headers();
+  const supabase = getSupabaseBrowser();
+  const sessionResult = supabase
+    ? await supabase.auth.getSession().catch(() => null)
+    : null;
+  const accessToken = sessionResult?.data.session?.access_token;
+
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
   const response = await fetch(`/api/analytics?range=${range}`, {
+    cache: "no-store",
     credentials: "include",
+    headers,
     signal,
   });
+  const payload = (await response.json().catch(() => null)) as unknown;
 
   if (!response.ok) {
+    console.error("Analytics API request failed", {
+      status: response.status,
+      statusText: response.statusText,
+      error:
+        payload && typeof payload === "object" && "error" in payload
+          ? String((payload as { error?: unknown }).error)
+          : null,
+    });
+
     if (response.status === 401) {
       throw new Error("unauthorized");
     }
@@ -232,7 +257,37 @@ async function fetchAnalyticsRange(
     throw new Error("fetch_failed");
   }
 
-  return (await response.json()) as AnalyticsResponse;
+  if (!isAnalyticsResponse(payload)) {
+    console.error("Analytics API returned an unexpected response shape", {
+      status: response.status,
+      range,
+      hasPayload: payload != null,
+      keys:
+        payload && typeof payload === "object"
+          ? Object.keys(payload as Record<string, unknown>).slice(0, 12)
+          : [],
+    });
+    throw new Error("invalid_response");
+  }
+
+  return payload;
+}
+
+function isAnalyticsResponse(payload: unknown): payload is AnalyticsResponse {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const record = payload as Record<string, unknown>;
+  return (
+    typeof record.range === "string" &&
+    Array.isArray(record.kpis) &&
+    Array.isArray(record.overviewDaily) &&
+    record.scheduleSummary != null &&
+    typeof record.scheduleSummary === "object" &&
+    record.todaySummary != null &&
+    typeof record.todaySummary === "object"
+  );
 }
 
 export default function AnalyticsDashboard({}: {
@@ -428,6 +483,8 @@ export default function AnalyticsDashboard({}: {
   const analyticsContent =
     !loading && error === "upgrade_required" ? (
       <AnalyticsPaywallState onUpgrade={handleUpgrade} />
+    ) : !hasAnalyticsData && loading ? (
+      <AnalyticsDashboardSkeleton />
     ) : (
       <div className="space-y-7 p-3 sm:space-y-8 sm:p-4 lg:p-5">
         {overviewContent}

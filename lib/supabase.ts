@@ -55,6 +55,7 @@ export function getSupabaseBrowser() {
 
 export type SupabaseServerOptions = {
   fetch?: typeof globalThis.fetch;
+  accessToken?: string | null;
 };
 
 type CookieWithValue = { name: string; value: string };
@@ -71,13 +72,11 @@ type CookieStore = {
   remove?: (name: string, options?: CookieOptions) => MaybePromise<void>;
 };
 
-function isPromiseLike<T>(
-  value: MaybePromise<T>
-): value is PromiseLike<T> {
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as PromiseLike<T>).then === "function"
+    typeof (value as PromiseLike<unknown>).then === "function"
   );
 }
 
@@ -85,7 +84,9 @@ function getCookieValue(
   result: MaybePromise<CookieWithValue | null | undefined>
 ): MaybePromise<string | null> {
   if (isPromiseLike(result)) {
-    return result.then((cookie) => cookie?.value ?? null);
+    return result.then(
+      (cookie) => (cookie as CookieWithValue | null | undefined)?.value ?? null
+    );
   }
   return result?.value ?? null;
 }
@@ -96,16 +97,32 @@ export function getSupabaseServer(
 ) {
   const { url, key } = getEnv();
   if (!url || !key) return null;
-  const fetchOverride = options?.fetch ?? globalThis.fetch;
+  const accessToken =
+    typeof options?.accessToken === "string" && options.accessToken.length > 0
+      ? options.accessToken
+      : null;
+  const baseFetch = options?.fetch ?? globalThis.fetch;
+  const fetchOverride =
+    accessToken && baseFetch
+      ? ((input, init) => {
+          const headers = new Headers(init?.headers);
+          if (!headers.has("Authorization")) {
+            headers.set("Authorization", `Bearer ${accessToken}`);
+          }
+
+          return baseFetch(input, { ...init, headers });
+        }) satisfies typeof globalThis.fetch
+      : baseFetch;
+
   return createServerClient<Database>(url, key, {
     cookies: {
-      get: (name) => getCookieValue(cookieStore.get?.(name) ?? null),
-      set: (name, value, opts) => {
+      get: (name: string) => getCookieValue(cookieStore.get?.(name) ?? null),
+      set: (name: string, value: string, opts?: CookieOptions) => {
         if (typeof cookieStore.set === "function") {
           return cookieStore.set(name, value, opts);
         }
       },
-      remove: (name, opts) => {
+      remove: (name: string, opts?: CookieOptions) => {
         if (typeof cookieStore.delete === "function") {
           return cookieStore.delete(name, opts);
         }

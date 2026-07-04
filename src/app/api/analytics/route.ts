@@ -54,6 +54,8 @@ import type {
 } from "@/types/analytics";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const RANGE_TO_DAYS: Record<AnalyticsRange, number> = {
   "1d": 1,
@@ -408,7 +410,8 @@ type OverviewDailySeriesCompletedDebug =
   AnalyticsOverviewEfficiencyCompletedDebug;
 
 export async function GET(request: NextRequest) {
-  const gate = await requirePlus();
+  const accessToken = getBearerToken(request.headers.get("authorization"));
+  const gate = await requirePlus({ accessToken });
   if (gate) {
     return gate;
   }
@@ -419,7 +422,7 @@ export async function GET(request: NextRequest) {
     ? requestedRange
     : "30d";
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient({ accessToken });
 
   if (!supabase) {
     return NextResponse.json(
@@ -431,7 +434,7 @@ export async function GET(request: NextRequest) {
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } = await supabase.auth.getUser(accessToken ?? undefined);
 
   if (userError) {
     return NextResponse.json({ error: userError.message }, { status: 500 });
@@ -1572,11 +1575,28 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  return NextResponse.json(response);
+  return NextResponse.json(response, {
+    headers: {
+      "Cache-Control": "private, no-store, max-age=0",
+    },
+  });
 }
 
 function isAnalyticsRange(value: string | null): value is AnalyticsRange {
   return value === "1d" || value === "7d" || value === "30d" || value === "90d";
+}
+
+function getBearerToken(authorization: string | null) {
+  if (!authorization) {
+    return null;
+  }
+
+  const [scheme, token] = authorization.split(/\s+/, 2);
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
+    return null;
+  }
+
+  return token;
 }
 
 function computeAnalyticsWindows({
