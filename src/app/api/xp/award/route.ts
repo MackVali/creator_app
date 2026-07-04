@@ -14,6 +14,7 @@ import {
   buildScheduleXpOccurrenceStem,
   resolveScheduleXpCompletionSemantics,
 } from "@/lib/xp/scheduleXpSemantics";
+import { xpRequired } from "@/lib/skills/progression";
 import type { Database, Json } from "@/types/supabase";
 
 type XpEventInsert = Database["public"]["Tables"]["xp_events"]["Insert"];
@@ -25,6 +26,10 @@ type SkillLookupRow = Pick<
 type SkillSurgeRow = Pick<
   Database["public"]["Tables"]["skills"]["Row"],
   "id" | "name" | "icon"
+>;
+type SkillProgressSurgeRow = Pick<
+  Database["public"]["Tables"]["skill_progress"]["Row"],
+  "level" | "prestige" | "xp_into_level"
 >;
 
 type AwardEvent = Omit<XpEventInsert, "award_key"> & {
@@ -113,6 +118,13 @@ type SkillAwardContext = {
     sourceIcon: string | null;
     displayXp: number;
     currentLevel: number | null;
+    progressFrom?: number;
+    progressTo?: number;
+    levelBreak?: {
+      oldLevel?: number | null;
+      newLevel?: number | null;
+      progressRolloverTo?: number | null;
+    } | null;
   } | null;
 };
 
@@ -429,7 +441,21 @@ async function resolveSkillBackedSurge({
   };
 }
 
-async function loadCurrentSkillLevel(
+function coerceFiniteNumber(value: number | null | undefined, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function resolveSkillProgressPercent(row: SkillProgressSurgeRow) {
+  const level = coerceFiniteNumber(row.level, 1);
+  const prestige = coerceFiniteNumber(row.prestige, 0);
+  const xpIntoLevel = Math.max(0, coerceFiniteNumber(row.xp_into_level, 0));
+  const required = xpRequired(level, prestige);
+  const safeRequired = required > 0 ? required : 1;
+
+  return Math.max(0, Math.min(100, (xpIntoLevel / safeRequired) * 100));
+}
+
+async function loadSkillProgressForSurge(
   client: ServerClient,
   userId: string,
   skillId: string | null
@@ -437,13 +463,18 @@ async function loadCurrentSkillLevel(
   if (!skillId) return null;
   const { data, error } = await client
     .from("skill_progress")
-    .select("level")
+    .select("level, prestige, xp_into_level")
     .eq("user_id", userId)
     .eq("skill_id", skillId)
     .maybeSingle();
   if (error) return null;
-  const level = (data as { level?: number | null } | null)?.level;
-  return typeof level === "number" && Number.isFinite(level) ? level : null;
+  const row = data as SkillProgressSurgeRow | null;
+  return row &&
+    typeof row.level === "number" &&
+    typeof row.prestige === "number" &&
+    typeof row.xp_into_level === "number"
+    ? row
+    : null;
 }
 
 function withResolvedEventContext(
@@ -707,6 +738,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, deduped, inserted: 0 });
     }
 
+    const preAwardSkillProgress = await loadSkillProgressForSurge(
+      db,
+      user.id,
+      surgeSkillId
+    );
+
     const { data, error } = await db
       .from("xp_events")
       .insert(eventsToInsert)
@@ -724,13 +761,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const currentLevel = await loadCurrentSkillLevel(
+    const postAwardSkillProgress = await loadSkillProgressForSurge(
       db,
       user.id,
       surgeSkillId
     );
-    if (surgePayload && currentLevel !== null) {
-      surgePayload = { ...surgePayload, currentLevel };
+    if (surgePayload && postAwardSkillProgress) {
+      surgePayload = {
+        ...surgePayload,
+        currentLevel: postAwardSkillProgress.level,
+      };
+
+      if (preAwardSkillProgress) {
+        const progressFrom = resolveSkillProgressPercent(preAwardSkillProgress);
+        const postAwardProgressTo =
+          resolveSkillProgressPercent(postAwardSkillProgress);
+        const hasLevelBreak =
+          preAwardSkillProgress.level !== postAwardSkillProgress.level ||
+          preAwardSkillProgress.prestige !== postAwardSkillProgress.prestige;
+
+        surgePayload = {
+          ...surgePayload,
+          progressFrom,
+          progressTo: hasLevelBreak ? 100 : postAwardProgressTo,
+          levelBreak: hasLevelBreak
+            ? {
+                oldLevel: preAwardSkillProgress.level,
+                newLevel: postAwardSkillProgress.level,
+                progressRolloverTo: postAwardProgressTo,
+              }
+            : surgePayload.levelBreak ?? null,
+        };
+      }
     }
 
     return NextResponse.json({
