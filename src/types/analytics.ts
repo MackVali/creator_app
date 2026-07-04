@@ -142,6 +142,7 @@ export type AnalyticsTodaySummary = {
 export type AnalyticsOverviewDailyPoint = {
   date: string;
   xpGained: number;
+  totalXp: number;
   projectXp: number;
   habitXp: number;
   taskXp: number;

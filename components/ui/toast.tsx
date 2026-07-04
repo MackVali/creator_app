@@ -1,8 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { createContext, useContext, useState } from "react";
-import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { X, AlertCircle, CheckCircle, Info, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Toast {
@@ -16,14 +25,151 @@ interface Toast {
   };
 }
 
+type StatusIslandState = "idle" | "processing" | "success" | "error";
+
+interface StatusIslandMessage {
+  id: string;
+  state: StatusIslandState;
+  title: string;
+}
+
 interface ToastContextType {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, "id">) => void;
   removeToast: (id: string) => void;
   clearToasts: () => void;
+  statusIsland: StatusIslandMessage;
+  setStatusIsland: (status: Omit<StatusIslandMessage, "id">) => void;
+  clearStatusIsland: () => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
+
+const IDLE_STATUS_ISLAND: StatusIslandMessage = {
+  id: "idle",
+  state: "idle",
+  title: "",
+};
+
+const PROCESSING_KEYWORDS = [
+  "adding",
+  "creating",
+  "loading",
+  "placing",
+  "posting",
+  "publishing",
+  "saving",
+  "scheduling",
+  "syncing",
+  "updating",
+];
+
+const LIGHTWEIGHT_SUCCESS_KEYWORDS = [
+  "added",
+  "created",
+  "copied",
+  "complete",
+  "completed",
+  "deleted",
+  "placed",
+  "posted",
+  "published",
+  "ready",
+  "removed",
+  "saved",
+  "sent",
+  "shared",
+  "synced",
+  "updated",
+];
+
+const LIGHTWEIGHT_ERROR_KEYWORDS = [
+  "copy failed",
+  "sync failed",
+  "update failed",
+  "save failed",
+];
+
+function normalizeToastText(title: string, description?: string) {
+  return [title, description].filter(Boolean).join(" ").trim();
+}
+
+function compactStatusText(title: string, description?: string) {
+  const text = normalizeToastText(title, description).replace(/\s+/g, " ");
+
+  if (text.length <= 38) return text;
+
+  return `${text.slice(0, 35).trimEnd()}...`;
+}
+
+function includesAnyKeyword(value: string, keywords: string[]) {
+  const normalized = value.toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
+
+function canUseStatusIslandSurface() {
+  if (typeof window === "undefined") return false;
+
+  const platform = Capacitor.getPlatform();
+  const nativeIos = Capacitor.isNativePlatform() && platform === "ios";
+  const userAgent = window.navigator.userAgent;
+  const ipadOsDesktopMode =
+    window.navigator.platform === "MacIntel" &&
+    window.navigator.maxTouchPoints > 1;
+  const browserIos = /iPad|iPhone|iPod/.test(userAgent) || ipadOsDesktopMode;
+  const coarsePointer =
+    window.matchMedia?.("(pointer: coarse)").matches ??
+    window.navigator.maxTouchPoints > 0;
+  const mobileViewport = window.innerWidth <= 820;
+
+  return (nativeIos || browserIos) && coarsePointer && mobileViewport;
+}
+
+function shouldRouteToStatusIsland(toast: Omit<Toast, "id">) {
+  if (!canUseStatusIslandSurface()) return false;
+  if (toast.action) return false;
+
+  const message = normalizeToastText(toast.title, toast.description);
+  const hasLongDescription = Boolean(toast.description && toast.description.length > 48);
+  if (message.length === 0 || message.length > 72 || hasLongDescription) {
+    return false;
+  }
+
+  if (toast.type === "info") {
+    return (
+      toast.title.endsWith("...") ||
+      toast.title.endsWith("…") ||
+      includesAnyKeyword(message, PROCESSING_KEYWORDS) ||
+      includesAnyKeyword(message, LIGHTWEIGHT_SUCCESS_KEYWORDS)
+    );
+  }
+
+  if (toast.type === "success") {
+    return includesAnyKeyword(message, LIGHTWEIGHT_SUCCESS_KEYWORDS);
+  }
+
+  if (toast.type === "error") {
+    return !toast.description && includesAnyKeyword(message, LIGHTWEIGHT_ERROR_KEYWORDS);
+  }
+
+  return false;
+}
+
+function toStatusIslandState(type: Toast["type"], title: string): StatusIslandState {
+  if (type === "success") return "success";
+  if (type === "error") return "error";
+
+  const normalizedTitle = title.toLowerCase();
+  if (
+    title.endsWith("...") ||
+    title.endsWith("…") ||
+    includesAnyKeyword(normalizedTitle, PROCESSING_KEYWORDS)
+  ) {
+    return "processing";
+  }
+
+  return "success";
+}
 
 export function useToast() {
   const context = useContext(ToastContext);
@@ -35,33 +181,150 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [statusIsland, setStatusIslandState] =
+    useState<StatusIslandMessage>(IDLE_STATUS_ISLAND);
+  const statusIslandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const addToast = (toast: Omit<Toast, "id">) => {
-    const id = Math.random().toString(36).substr(2, 9);
-    const newToast = { ...toast, id };
-    setToasts((prev) => [...prev, newToast]);
+  const clearStatusIslandTimer = useCallback(() => {
+    if (!statusIslandTimerRef.current) return;
 
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-      removeToast(id);
-    }, 5000);
-  };
+    clearTimeout(statusIslandTimerRef.current);
+    statusIslandTimerRef.current = null;
+  }, []);
 
-  const removeToast = (id: string) => {
+  const clearStatusIsland = useCallback(() => {
+    clearStatusIslandTimer();
+    setStatusIslandState(IDLE_STATUS_ISLAND);
+  }, [clearStatusIslandTimer]);
+
+  const setStatusIsland = useCallback(
+    (status: Omit<StatusIslandMessage, "id">) => {
+      clearStatusIslandTimer();
+
+      const id = Math.random().toString(36).substr(2, 9);
+      setStatusIslandState({ ...status, id });
+
+      if (status.state === "success" || status.state === "error") {
+        statusIslandTimerRef.current = setTimeout(() => {
+          setStatusIslandState(IDLE_STATUS_ISLAND);
+          statusIslandTimerRef.current = null;
+        }, status.state === "success" ? 1800 : 2600);
+      }
+    },
+    [clearStatusIslandTimer]
+  );
+
+  useEffect(() => clearStatusIslandTimer, [clearStatusIslandTimer]);
+
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  };
+  }, []);
 
-  const clearToasts = () => {
+  const addToast = useCallback(
+    (toast: Omit<Toast, "id">) => {
+      if (shouldRouteToStatusIsland(toast)) {
+        setStatusIsland({
+          state: toStatusIslandState(toast.type, toast.title),
+          title: compactStatusText(toast.title, toast.description),
+        });
+        return;
+      }
+
+      const id = Math.random().toString(36).substr(2, 9);
+      const newToast = { ...toast, id };
+      setToasts((prev) => [...prev, newToast]);
+
+      // Auto-remove after 5 seconds
+      setTimeout(() => {
+        removeToast(id);
+      }, 5000);
+    },
+    [removeToast, setStatusIsland]
+  );
+
+  const clearToasts = useCallback(() => {
     setToasts([]);
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      toasts,
+      addToast,
+      removeToast,
+      clearToasts,
+      statusIsland,
+      setStatusIsland,
+      clearStatusIsland,
+    }),
+    [
+      toasts,
+      addToast,
+      removeToast,
+      clearToasts,
+      statusIsland,
+      setStatusIsland,
+      clearStatusIsland,
+    ]
+  );
 
   return (
-    <ToastContext.Provider
-      value={{ toasts, addToast, removeToast, clearToasts }}
-    >
+    <ToastContext.Provider value={value}>
       {children}
+      <CreatorStatusIsland />
       <ToastContainer />
     </ToastContext.Provider>
+  );
+}
+
+function CreatorStatusIsland() {
+  const { statusIsland } = useToast();
+  const isIdle = statusIsland.state === "idle";
+
+  return (
+    <div
+      className="pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-[2147483647] -translate-x-1/2 sm:top-[calc(env(safe-area-inset-top,0px)+0.75rem)]"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <div
+        className={cn(
+          "flex h-9 items-center justify-center overflow-hidden rounded-full border border-white/[0.12] bg-black/[0.88] text-zinc-100 shadow-[0_14px_38px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.10)] ring-1 ring-black/35 backdrop-blur-2xl transition-[width,opacity,transform] duration-300 ease-out motion-reduce:transition-none supports-[backdrop-filter]:bg-black/[0.72]",
+          isIdle
+            ? "w-10 scale-95 opacity-0"
+            : "w-[min(calc(100vw-2rem),17rem)] scale-100 opacity-100"
+        )}
+      >
+        {!isIdle && (
+          <div className="flex min-w-0 items-center gap-2 px-3">
+            <StatusIslandIcon state={statusIsland.state} />
+            <span className="min-w-0 truncate text-[12.5px] font-medium leading-none tracking-normal text-zinc-100">
+              {statusIsland.title}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusIslandIcon({ state }: { state: StatusIslandState }) {
+  if (state === "processing") {
+    return (
+      <Loader2
+        className="h-3.5 w-3.5 shrink-0 animate-spin text-zinc-300 motion-reduce:animate-none"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <AlertCircle className="h-3.5 w-3.5 shrink-0 text-zinc-300" aria-hidden="true" />
+    );
+  }
+
+  return (
+    <CheckCircle className="h-3.5 w-3.5 shrink-0 text-zinc-300" aria-hidden="true" />
   );
 }
 

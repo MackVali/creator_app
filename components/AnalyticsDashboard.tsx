@@ -2173,21 +2173,28 @@ function OverviewLineChart({
   range: AnalyticsRange;
   onSelectedPointIndexChange: (index: number | null) => void;
 }) {
-  const totalXp = points.reduce((sum, point) => sum + point.xpGained, 0);
-  const rawMaxValue = Math.max(
-    0,
-    ...points.map((point) => getOverviewXpValue(point))
+  const totalXp =
+    points.length > 0
+      ? Math.max(0, Number(points[points.length - 1]?.totalXp ?? 0))
+      : 0;
+  const totalXpValues = useMemo(
+    () => points.map((point) => Math.max(0, Number(point.totalXp ?? 0))),
+    [points]
   );
+  const rawMaxValue = Math.max(0, ...totalXpValues);
   const isEmpty = rawMaxValue <= 0;
   const chartData = useMemo<OverviewXpChartDataPoint[]>(
     () =>
-      points.map((point) => ({
+      points.map((point, index) => ({
         date: point.date,
-        totalXp: getOverviewXpValue(point),
+        totalXp: totalXpValues[index] ?? 0,
         point,
       })),
-    [points]
+    [points, totalXpValues]
   );
+  const yAxisScale = useMemo(() => {
+    return getTotalXpYAxisScale(totalXpValues);
+  }, [totalXpValues]);
   const xAxisTicks = useMemo(
     () =>
       getTrendAxisLabelIndices(range, points)
@@ -2238,7 +2245,7 @@ function OverviewLineChart({
             <AreaChart
               accessibilityLayer
               data={chartData}
-              margin={{ top: 20, right: 12, left: 0, bottom: 10 }}
+              margin={{ top: 20, right: 12, left: 8, bottom: 10 }}
               onMouseMove={handleChartPointer}
               onClick={handleChartPointer}
               onMouseLeave={() => onSelectedPointIndexChange(null)}
@@ -2279,12 +2286,14 @@ function OverviewLineChart({
                 }
               />
               <YAxis
-                width={34}
+                width={46}
                 tickLine={false}
                 axisLine={false}
-                tickMargin={8}
-                tickFormatter={(value: number) => formatCompactNumber(value)}
-                domain={[0, (dataMax: number) => Math.max(1, Math.ceil(dataMax * 1.15))]}
+                tickMargin={6}
+                tick={{ fontSize: 10 }}
+                ticks={yAxisScale.ticks}
+                tickFormatter={(value: number) => formatXpAxisTick(value)}
+                domain={yAxisScale.domain}
               />
               <ChartTooltip
                 cursor={{
@@ -2376,8 +2385,79 @@ function OverviewXpTooltipContent({
   );
 }
 
-function getOverviewXpValue(point: AnalyticsOverviewDailyPoint) {
-  return Math.max(0, Number(point.xpGained ?? 0));
+function getTotalXpYAxisScale(values: number[]): {
+  domain: [number, number];
+  ticks: number[];
+} {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+
+  if (finiteValues.length === 0) {
+    return { domain: [0, 1], ticks: [0, 1] };
+  }
+
+  const minValue = Math.min(...finiteValues);
+  const maxValue = Math.max(...finiteValues);
+  const visibleRange = maxValue - minValue;
+  const padding =
+    visibleRange > 0
+      ? Math.max(1, visibleRange * 0.12)
+      : Math.max(1, Math.abs(maxValue) * 0.04);
+  const rawMin = Math.max(0, minValue - padding);
+  const rawMax = Math.max(1, maxValue + padding);
+  const step = Math.max(
+    getNiceXpStep((rawMax - rawMin) / 4),
+    maxValue >= 10000 ? 500 : 1
+  );
+  const lowerTick = Math.max(0, Math.floor(rawMin / step) * step);
+  const upperTick = Math.max(step, Math.ceil(rawMax / step) * step);
+  const ticks: number[] = [];
+
+  for (let tick = lowerTick; tick <= upperTick; tick += step) {
+    ticks.push(Math.round(tick));
+  }
+
+  if (ticks.length < 2) {
+    ticks.push(ticks[0] + step);
+  }
+
+  return {
+    domain: [ticks[0], ticks[ticks.length - 1]],
+    ticks,
+  };
+}
+
+function getNiceXpStep(rawStep: number) {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) {
+    return 1;
+  }
+
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalized = rawStep / magnitude;
+  const niceMultiplier =
+    normalized <= 1
+      ? 1
+      : normalized <= 2
+        ? 2
+        : normalized <= 2.5
+          ? 2.5
+          : normalized <= 5
+            ? 5
+            : 10;
+
+  return niceMultiplier * magnitude;
+}
+
+function formatXpAxisTick(value: number) {
+  const rounded = Math.round(value);
+
+  if (Math.abs(rounded) >= 1000) {
+    const compact = rounded / 1000;
+    return `${new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: Number.isInteger(compact) ? 0 : 1,
+    }).format(compact)}K`;
+  }
+
+  return formatCompactNumber(rounded);
 }
 
 function formatCompactNumber(value: number) {

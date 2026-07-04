@@ -9,6 +9,8 @@ import type { Database } from "@/types/supabase";
 
 const FALLBACK_TIME_ZONE = "America/Chicago";
 const UNNAMED_BLOCK_LABEL = "Unnamed Time Block";
+const MEAL_BRIEF_TITLE = "Meal time";
+const MEAL_BRIEF_BODY = "Eat, then log your meal and calories in CREATOR.";
 
 export type ScheduleInstance = {
   id: string;
@@ -183,6 +185,17 @@ function resolveBlockLabel(metadata: BlockMetadata) {
     pickText(joinedTimeBlock(metadata.dayTypeTimeBlock)?.label) ??
     pickText(metadata.window?.label) ??
     UNNAMED_BLOCK_LABEL
+  );
+}
+
+function normalizeBlockKind(value: string | null | undefined) {
+  return value?.trim().toUpperCase() ?? "";
+}
+
+function isMealBlock(metadata: BlockMetadata) {
+  return (
+    normalizeBlockKind(metadata.dayTypeTimeBlock?.block_type) === "MEAL" ||
+    normalizeBlockKind(metadata.window?.window_kind) === "MEAL"
   );
 }
 
@@ -522,6 +535,7 @@ export async function buildScheduleBlockBrief(
   const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone);
   const metadata = await loadBlockMetadata(client, userId, anchorInstance);
   const blockLabel = resolveBlockLabel(metadata);
+  const isMealTimeBlock = isMealBlock(metadata);
 
   const { data: dayInstancesData, error: dayInstancesError } = await client
     .from("schedule_instances")
@@ -546,12 +560,14 @@ export async function buildScheduleBlockBrief(
     .filter((candidate) => isSameBlock(anchorInstance, candidate))
     .sort((left, right) => left.start_utc.localeCompare(right.start_utc));
   const briefInstances = blockInstances.length > 0 ? blockInstances : [anchorInstance];
-  const title = buildBriefTitle({
-    blockLabel,
-    now,
-    start,
-    timeZone,
-  });
+  const title = isMealTimeBlock
+    ? MEAL_BRIEF_TITLE
+    : buildBriefTitle({
+        blockLabel,
+        now,
+        start,
+        timeZone,
+      });
   const skillIconsByInstanceId = await loadSkillIconByInstanceId(
     client,
     userId,
@@ -560,7 +576,7 @@ export async function buildScheduleBlockBrief(
   const previewEvents = briefInstances.map((briefInstance) =>
     toPreviewEvent(briefInstance, skillIconsByInstanceId),
   );
-  const body = buildBriefBody(previewEvents);
+  const body = isMealTimeBlock ? MEAL_BRIEF_BODY : buildBriefBody(previewEvents);
   const entityId =
     anchorInstance.time_block_id ??
     anchorInstance.day_type_time_block_id ??
