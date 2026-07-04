@@ -31,6 +31,10 @@ import { userIsAdmin } from "@/lib/auth/userRoles";
 import { hapticPress, hapticSnap } from "@/lib/haptics/creatorHaptics";
 import { getMonumentNote, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import { getNote, updateSkillNote } from "@/lib/notesStorage";
+import {
+  OPEN_NUTRITION_LOG_NOTIFICATION_QUERY_PARAM,
+  OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
+} from "@/lib/notifications/notificationOpenIntents";
 
 type PinnedBodyDatabase = {
   databaseId: string;
@@ -120,6 +124,40 @@ function sortPinnedBodyDatabases(databases: PinnedBodyDatabase[]) {
 
     return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
   });
+}
+
+function consumePendingNutritionLogNotificationOpen() {
+  if (typeof window === "undefined") return false;
+
+  const url = new URL(window.location.href);
+  const hasQueryIntent =
+    url.searchParams.get(OPEN_NUTRITION_LOG_NOTIFICATION_QUERY_PARAM) === "1";
+  let hasStoredIntent = false;
+
+  try {
+    hasStoredIntent =
+      window.sessionStorage.getItem(
+        OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
+      ) === "1";
+    if (hasStoredIntent) {
+      window.sessionStorage.removeItem(
+        OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
+      );
+    }
+  } catch {
+    hasStoredIntent = false;
+  }
+
+  if (hasQueryIntent) {
+    url.searchParams.delete(OPEN_NUTRITION_LOG_NOTIFICATION_QUERY_PARAM);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }
+
+  return hasStoredIntent || hasQueryIntent;
 }
 
 function isDefaultPinnedBodyDatabase(database: {
@@ -738,6 +776,12 @@ export default function TopNav() {
 
     openPinnedNutritionLogQuickAdd();
   }, [openPinnedNutritionLogQuickAdd]);
+
+  useEffect(() => {
+    if (!consumePendingNutritionLogNotificationOpen()) return;
+
+    openPinnedNutritionLogQuickAdd();
+  }, [openPinnedNutritionLogQuickAdd, pathname]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

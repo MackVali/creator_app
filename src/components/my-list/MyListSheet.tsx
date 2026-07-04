@@ -13,7 +13,13 @@ import {
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+} from "framer-motion";
 import clsx from "clsx";
 import {
   Check,
@@ -287,6 +293,13 @@ export function MyListSheet({
     string | null
   >(null);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+  const keyboardBottomOffset = useMotionValue(0);
+  const smoothedKeyboardBottomOffset = useSpring(keyboardBottomOffset, {
+    stiffness: 520,
+    damping: 58,
+    mass: 0.9,
+    restDelta: 0.5,
+  });
   const [myListSheetHeights, setMyListSheetHeights] = useState(() => ({
     compact: 448,
     expanded: 720,
@@ -1516,9 +1529,13 @@ export function MyListSheet({
       Number.isFinite(rawInset) && rawInset > 0 ? Math.round(rawInset) : 0;
 
     setKeyboardBottomInset((currentInset) =>
-      Math.abs(currentInset - nextInset) < 0.5 ? currentInset : nextInset
+      Math.abs(currentInset - nextInset) <= 1 ? currentInset : nextInset
     );
   }, [activeView, isEditableElementFocusedInsideSheet, open]);
+
+  useEffect(() => {
+    keyboardBottomOffset.set(keyboardBottomInset);
+  }, [keyboardBottomInset, keyboardBottomOffset]);
 
   const handleSheetFocusCapture = useCallback(
     (event: ReactFocusEvent<HTMLElement>) => {
@@ -1801,9 +1818,11 @@ export function MyListSheet({
       )}
       initial={false}
       animate={{ y: open ? 0 : "calc(100% - 2px)" }}
-      style={
-        keyboardBottomInset > 0 ? { bottom: keyboardBottomInset } : undefined
-      }
+      style={{
+        bottom: prefersReducedMotion
+          ? keyboardBottomOffset
+          : smoothedKeyboardBottomOffset,
+      }}
       transition={
         prefersReducedMotion
           ? { duration: 0 }

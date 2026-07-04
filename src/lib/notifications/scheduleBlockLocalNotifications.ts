@@ -5,6 +5,7 @@ import {
   type LocalNotificationSchema,
   type PendingLocalNotificationSchema,
 } from "@capacitor/local-notifications";
+import { OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION } from "@/lib/notifications/notificationOpenIntents";
 
 export const SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE = "schedule_block_brief";
 export const TIME_BLOCK_START_NOTIFICATION_TYPE = "time_block_start";
@@ -96,6 +97,7 @@ export type ScheduleBlockBriefTestNotificationPayload = {
   startUtc: string;
   blockLabel: string;
   blockEventCount: number;
+  tapAction?: string | null;
 };
 
 type GroupedBlock = {
@@ -251,6 +253,11 @@ export async function scheduleScheduleBlockBriefTestNotification(
           startUtc: payload.startUtc,
           blockLabel: payload.blockLabel,
           blockEventCount: payload.blockEventCount,
+          ...(payload.tapAction
+            ? {
+                tapAction: payload.tapAction,
+              }
+            : {}),
           test: true,
         },
       },
@@ -347,6 +354,11 @@ function buildScheduleBlockNotifications(
         extra: {
           type: SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
           test: false,
+          ...(isMealBlock
+            ? {
+                tapAction: OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION,
+              }
+            : {}),
           ...blockPayload,
         },
       });

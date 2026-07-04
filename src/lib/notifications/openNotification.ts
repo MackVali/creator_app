@@ -1,4 +1,12 @@
-import { TIME_BLOCK_START_NOTIFICATION_TYPE } from "@/lib/notifications/scheduleBlockLocalNotifications";
+import {
+  SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE,
+  TIME_BLOCK_START_NOTIFICATION_TYPE,
+} from "@/lib/notifications/scheduleBlockLocalNotifications";
+import {
+  OPEN_NUTRITION_LOG_NOTIFICATION_QUERY_PARAM,
+  OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
+  OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION,
+} from "@/lib/notifications/notificationOpenIntents";
 
 type NotificationPayload = Record<string, unknown>;
 
@@ -60,7 +68,48 @@ export function focusPomoUrlForNotificationPayload(input: unknown): string | nul
   return `/focus-pomo?${params.toString()}`;
 }
 
+export function scheduleNutritionLogUrlForNotificationPayload(
+  input: unknown,
+): string | null {
+  const payload = readPayload(input);
+  if (!payload) return null;
+
+  const type = readString(payload.type);
+  const tapAction = readString(payload.tapAction);
+  if (
+    type !== SCHEDULE_BLOCK_BRIEF_NOTIFICATION_TYPE ||
+    tapAction !== OPEN_NUTRITION_LOG_NOTIFICATION_TAP_ACTION
+  ) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  params.set(OPEN_NUTRITION_LOG_NOTIFICATION_QUERY_PARAM, "1");
+  return `/schedule?${params.toString()}`;
+}
+
+function storePendingNutritionLogOpenIntent() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
+      "1",
+    );
+  } catch {
+    // The URL query is the fallback handoff when sessionStorage is unavailable.
+  }
+}
+
 export function openNotificationPayload(input: unknown): boolean {
+  const scheduleNutritionLogUrl =
+    scheduleNutritionLogUrlForNotificationPayload(input);
+  if (scheduleNutritionLogUrl && typeof window !== "undefined") {
+    storePendingNutritionLogOpenIntent();
+    window.location.assign(scheduleNutritionLogUrl);
+    return true;
+  }
+
   const url = focusPomoUrlForNotificationPayload(input);
   if (!url || typeof window === "undefined") return false;
 

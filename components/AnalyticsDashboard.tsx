@@ -5,10 +5,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -234,12 +234,6 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
   };
 }
 
-const ANALYTICS_TABS: Array<{ id: AnalyticsView; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "execution", label: "Execution" },
-  { id: "habits", label: "Habits" },
-];
-
 const ANALYTICS_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
   { value: "1d", label: "24H" },
   { value: "7d", label: "7D" },
@@ -271,10 +265,7 @@ async function fetchAnalyticsRange(
   return (await response.json()) as AnalyticsResponse;
 }
 
-export default function AnalyticsDashboard({
-  activeView,
-  onViewChange,
-}: {
+export default function AnalyticsDashboard({}: {
   activeView: AnalyticsView;
   onViewChange: (view: AnalyticsView) => void;
 }) {
@@ -287,15 +278,12 @@ export default function AnalyticsDashboard({
   const [analyticsCache, setAnalyticsCache] = useState<
     Partial<Record<AnalyticsRange, AnalyticsResponse>>
   >({});
-  const previousViewRef = useRef<AnalyticsView>(activeView);
   const analyticsRequestIdRef = useRef(0);
   const analyticsAbortRef = useRef<AbortController | null>(null);
   const analyticsRef = useRef<AnalyticsResponse | null>(null);
   const analyticsCacheRef = useRef<
     Partial<Record<AnalyticsRange, AnalyticsResponse>>
   >({});
-  const [slideDirection, setSlideDirection] = useState(1);
-  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     analyticsRef.current = analytics;
@@ -380,19 +368,6 @@ export default function AnalyticsDashboard({
     };
   }, [selectedRange]);
 
-  useEffect(() => {
-    const previousIndex = ANALYTICS_TABS.findIndex(
-      (tab) => tab.id === previousViewRef.current
-    );
-    const nextIndex = ANALYTICS_TABS.findIndex((tab) => tab.id === activeView);
-
-    if (previousIndex !== -1 && nextIndex !== -1 && previousIndex !== nextIndex) {
-      setSlideDirection(nextIndex > previousIndex ? 1 : -1);
-    }
-
-    previousViewRef.current = activeView;
-  }, [activeView]);
-
   const skillCategoryContribution = analytics?.skillCategoryContribution ?? [];
   const skillCategoryContributionMeta =
     analytics?.skillCategoryContributionMeta ?? null;
@@ -404,8 +379,6 @@ export default function AnalyticsDashboard({
   const currentStreak = habitSummary.currentStreak;
   const routineTrends = habitSummary.routines;
   const streakHistory = habitSummary.streakHistory;
-  const activeTabLabel =
-    ANALYTICS_TABS.find((tab) => tab.id === activeView)?.label ?? "Analytics";
   const handleUpgrade = () => {
     router.push("/settings/billing");
   };
@@ -416,88 +389,99 @@ export default function AnalyticsDashboard({
       <ErrorState message={error} />
     ) : null;
 
-  let activeContent: ReactNode = null;
-
-  if (!loading && error === "upgrade_required") {
-    activeContent = <AnalyticsPaywallState onUpgrade={handleUpgrade} />;
-  } else if (activeView === "overview") {
-    activeContent = (
-      <div className="space-y-3 xl:space-y-4">
-        <SectionCard className="rounded-[22px] border-zinc-800/90 bg-[radial-gradient(circle_at_top_left,rgba(63,63,70,0.18),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-3 shadow-[0_22px_54px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-[26px] sm:p-4 lg:p-5">
-          {!hasAnalyticsData && loading ? (
-            <Skeleton className="h-64" />
-          ) : !hasAnalyticsData && error ? (
-            renderErrorState()
-          ) : overviewTrend.length === 0 ? (
-            <div
-              className={classNames(
-                "transition-opacity duration-200",
-                analyticsRefreshing && "opacity-80"
-              )}
-            >
-              <OverviewPanelStatus
-                isRefreshing={analyticsRefreshing}
-                message={error}
-              />
-              <EmptyCopy copy="No execution trend data in this range yet." />
-            </div>
-          ) : (
-            <OverviewDiagnosticsSection
-              points={overviewTrend}
-              comparison={analytics?.overviewComparison}
-              range={analytics?.range ?? selectedRange}
+  const overviewContent = (
+    <div className="space-y-3 xl:space-y-4">
+      <SectionCard className="rounded-[22px] border-zinc-800/90 bg-[radial-gradient(circle_at_top_left,rgba(63,63,70,0.18),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-3 shadow-[0_22px_54px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-[26px] sm:p-4 lg:p-5">
+        {!hasAnalyticsData && loading ? (
+          <Skeleton className="h-64" />
+        ) : !hasAnalyticsData && error ? (
+          renderErrorState()
+        ) : overviewTrend.length === 0 ? (
+          <div
+            className={classNames(
+              "transition-opacity duration-200",
+              analyticsRefreshing && "opacity-80"
+            )}
+          >
+            <OverviewPanelStatus
               isRefreshing={analyticsRefreshing}
-              statusMessage={error}
+              message={error}
             />
-          )}
-        </SectionCard>
-      </div>
-    );
-  } else if (activeView === "execution") {
-    activeContent = (
-      <div className="space-y-4 xl:space-y-6">
-        <SectionCard title="Skill Contribution">
-          {loading ? (
-            <Skeleton className="h-72" />
-          ) : error ? (
-            renderErrorState()
-          ) : (
-            <SkillContributionDashboard
-              range={selectedRange}
-              categories={skillCategoryContribution}
-              meta={skillCategoryContributionMeta}
-            />
-          )}
-        </SectionCard>
-      </div>
-    );
-  } else if (activeView === "habits") {
-    activeContent = (
-      <div className="space-y-4 xl:space-y-6">
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr] xl:gap-6">
-          <DailyConsistencyCard summary={habitSummary} />
-          <StreakTrendCard
-            currentStreak={currentStreak}
-            longestStreak={longestStreak}
-            history={streakHistory}
+            <EmptyCopy copy="No execution trend data in this range yet." />
+          </div>
+        ) : (
+          <OverviewDiagnosticsSection
+            points={overviewTrend}
+            comparison={analytics?.overviewComparison}
+            range={analytics?.range ?? selectedRange}
+            isRefreshing={analyticsRefreshing}
+            statusMessage={error}
           />
-        </div>
+        )}
+      </SectionCard>
+    </div>
+  );
 
-        <SectionCard
-          title="Routine heatmaps"
-          description="Consistency patterns by routine."
-        >
-          {loading ? (
-            <Skeleton className="h-40" />
-          ) : error ? (
-            renderErrorState()
-          ) : (
-            <RoutineHeatmap routines={routineTrends} />
-          )}
-        </SectionCard>
+  const executionContent = (
+    <div className="space-y-4 xl:space-y-6">
+      <SectionCard title="Skill Contribution">
+        {loading ? (
+          <Skeleton className="h-72" />
+        ) : error ? (
+          renderErrorState()
+        ) : (
+          <SkillContributionDashboard
+            range={selectedRange}
+            categories={skillCategoryContribution}
+            meta={skillCategoryContributionMeta}
+          />
+        )}
+      </SectionCard>
+    </div>
+  );
+
+  const habitsContent = (
+    <div className="space-y-4 xl:space-y-6">
+      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr] xl:gap-6">
+        {loading ? (
+          <Skeleton className="h-44" />
+        ) : error ? (
+          renderErrorState()
+        ) : (
+          <DailyConsistencyCard points={overviewTrend} range={selectedRange} />
+        )}
+        <StreakTrendCard
+          currentStreak={currentStreak}
+          longestStreak={longestStreak}
+          history={streakHistory}
+        />
+      </div>
+
+      <SectionCard
+        title="Routine heatmaps"
+        description="Consistency patterns by routine."
+      >
+        {loading ? (
+          <Skeleton className="h-40" />
+        ) : error ? (
+          renderErrorState()
+        ) : (
+          <RoutineHeatmap routines={routineTrends} />
+        )}
+      </SectionCard>
+    </div>
+  );
+
+  const analyticsContent =
+    !loading && error === "upgrade_required" ? (
+      <AnalyticsPaywallState onUpgrade={handleUpgrade} />
+    ) : (
+      <div className="space-y-7 p-3 sm:space-y-8 sm:p-4 lg:p-5">
+        <AnalyticsSection title="Overview">{overviewContent}</AnalyticsSection>
+        <AnalyticsSection title="Execution">{executionContent}</AnalyticsSection>
+        <AnalyticsSection title="Habits">{habitsContent}</AnalyticsSection>
       </div>
     );
-  }
 
   return (
     <div className="relative overflow-hidden text-[#E6E6EB]">
@@ -507,39 +491,15 @@ export default function AnalyticsDashboard({
       />
       <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-8 sm:pb-8">
         <Header
-          activeView={activeView}
-          onViewChange={onViewChange}
           selectedRange={selectedRange}
           onRangeChange={setSelectedRange}
           isRefreshing={analyticsRefreshing}
         />
         <section
-          aria-label={`${activeTabLabel} analytics`}
+          aria-label="Analytics"
           className="relative overflow-hidden rounded-[20px] border border-zinc-900/80 bg-zinc-950/35 p-0.5 min-[480px]:p-1.5 sm:rounded-[26px]"
         >
-          <AnimatePresence custom={slideDirection} initial={false} mode="wait">
-            <motion.div
-              key={activeView}
-              custom={slideDirection}
-              initial={
-                prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: slideDirection * 24 }
-              }
-              animate={{ opacity: 1, x: 0 }}
-              exit={
-                prefersReducedMotion
-                  ? { opacity: 1 }
-                  : { opacity: 0, x: slideDirection * -24 }
-              }
-              transition={
-                prefersReducedMotion
-                  ? { duration: 0 }
-                  : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
-              }
-              className="motion-reduce:transform-none"
-            >
-              {activeContent}
-            </motion.div>
-          </AnimatePresence>
+          {analyticsContent}
         </section>
       </div>
     </div>
@@ -547,14 +507,10 @@ export default function AnalyticsDashboard({
 }
 
 function Header({
-  activeView,
-  onViewChange,
   selectedRange,
   onRangeChange,
   isRefreshing,
 }: {
-  activeView: AnalyticsView;
-  onViewChange: (view: AnalyticsView) => void;
   selectedRange: AnalyticsRange;
   onRangeChange: (range: AnalyticsRange) => void;
   isRefreshing: boolean;
@@ -571,11 +527,6 @@ function Header({
           >
             <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
-          <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden lg:flex lg:justify-center">
-            <div className="w-max min-w-full pr-1 lg:min-w-0 lg:pr-0">
-              <AnalyticsTabs activeView={activeView} onViewChange={onViewChange} />
-            </div>
-          </div>
         </div>
         <div className="flex min-w-0 justify-end">
           <AnalyticsRangeSelector
@@ -589,40 +540,30 @@ function Header({
   );
 }
 
+function AnalyticsSection({
+  title,
+  children,
+}: {
+  title: "Overview" | "Execution" | "Habits";
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3" aria-labelledby={`analytics-${title.toLowerCase()}`}>
+      <h2
+        id={`analytics-${title.toLowerCase()}`}
+        className="px-1 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-400"
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 function formatAnalyticsRangeLabel(range: AnalyticsRange) {
   return (
     ANALYTICS_RANGE_OPTIONS.find((option) => option.value === range)?.label ??
     range.toUpperCase()
-  );
-}
-
-function AnalyticsTabs({
-  activeView,
-  onViewChange,
-}: {
-  activeView: AnalyticsView;
-  onViewChange: (view: AnalyticsView) => void;
-}) {
-  return (
-    <div className="inline-flex min-w-max items-center gap-5 sm:gap-7">
-      {ANALYTICS_TABS.map((tab) => {
-        const isActive = activeView === tab.id;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onViewChange(tab.id)}
-            aria-pressed={isActive}
-            className={classNames(
-              "shrink-0 py-1 text-sm font-medium leading-none text-white/60 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 motion-reduce:transition-none sm:text-base",
-              isActive && "text-white"
-            )}
-          >
-            {tab.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -2400,14 +2341,11 @@ function getTotalXpYAxisScale(values: number[]): {
   const visibleRange = maxValue - minValue;
   const padding =
     visibleRange > 0
-      ? Math.max(1, visibleRange * 0.12)
-      : Math.max(1, Math.abs(maxValue) * 0.04);
+      ? Math.max(1, visibleRange * 0.06)
+      : Math.max(10, Math.min(100, Math.max(1, Math.abs(maxValue) * 0.01)));
   const rawMin = Math.max(0, minValue - padding);
   const rawMax = Math.max(1, maxValue + padding);
-  const step = Math.max(
-    getNiceXpStep((rawMax - rawMin) / 4),
-    maxValue >= 10000 ? 500 : 1
-  );
+  const step = getTotalXpYAxisStep(rawMax - rawMin);
   const lowerTick = Math.max(0, Math.floor(rawMin / step) * step);
   const upperTick = Math.max(step, Math.ceil(rawMax / step) * step);
   const ticks: number[] = [];
@@ -2426,25 +2364,41 @@ function getTotalXpYAxisScale(values: number[]): {
   };
 }
 
-function getNiceXpStep(rawStep: number) {
-  if (!Number.isFinite(rawStep) || rawStep <= 0) {
-    return 1;
+function getTotalXpYAxisStep(visibleRange: number) {
+  if (!Number.isFinite(visibleRange) || visibleRange <= 0) {
+    return 10;
   }
 
+  const preferredSteps = [
+    10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
+  ];
+  const targetTickCount = 8;
+
+  for (const step of preferredSteps) {
+    const tickCount = Math.ceil(visibleRange / step) + 1;
+
+    if (tickCount <= targetTickCount) {
+      return step;
+    }
+  }
+
+  const rawStep = visibleRange / (targetTickCount - 1);
   const magnitude = 10 ** Math.floor(Math.log10(rawStep));
   const normalized = rawStep / magnitude;
-  const niceMultiplier =
-    normalized <= 1
-      ? 1
-      : normalized <= 2
-        ? 2
-        : normalized <= 2.5
-          ? 2.5
-          : normalized <= 5
-            ? 5
-            : 10;
 
-  return niceMultiplier * magnitude;
+  if (normalized <= 1) {
+    return magnitude;
+  }
+
+  if (normalized <= 2.5) {
+    return 2.5 * magnitude;
+  }
+
+  if (normalized <= 5) {
+    return 5 * magnitude;
+  }
+
+  return 10 * magnitude;
 }
 
 function formatXpAxisTick(value: number) {
@@ -2452,8 +2406,11 @@ function formatXpAxisTick(value: number) {
 
   if (Math.abs(rounded) >= 1000) {
     const compact = rounded / 1000;
+    const maximumFractionDigits =
+      rounded % 1000 === 0 ? 0 : rounded % 100 === 0 ? 1 : rounded % 10 === 0 ? 2 : 3;
+
     return `${new Intl.NumberFormat(undefined, {
-      maximumFractionDigits: Number.isInteger(compact) ? 0 : 1,
+      maximumFractionDigits,
     }).format(compact)}K`;
   }
 
@@ -2806,54 +2763,6 @@ function RoutineHeatmap({
   );
 }
 
-function StreakCalendar({
-  days,
-  completed,
-}: {
-  days: number;
-  completed: number[];
-}) {
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setDate(today.getDate() - (days - 1));
-  const cells = Array.from({ length: days }, (_, index) => {
-    const date = new Date(startDate);
-    date.setDate(startDate.getDate() + index);
-    const dayNumber = index + 1;
-    const isComplete = completed.includes(dayNumber);
-    return { key: dayNumber, date, isComplete };
-  });
-  const weekLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  return (
-    <div>
-      <div className="grid grid-cols-7 gap-1.5 text-[10px] uppercase tracking-[0.2em] text-zinc-500">
-        {weekLabels.map((label) => (
-          <span key={label} className="text-center">
-            {label}
-          </span>
-        ))}
-      </div>
-      <div className="mt-3 grid grid-cols-7 gap-1.5" aria-label="Streak calendar">
-        {cells.map(({ key, date, isComplete }) => (
-          <div
-            key={key}
-            className={classNames(
-              "flex h-7 w-full items-center justify-center rounded-lg border text-sm font-semibold transition sm:h-8",
-              isComplete
-                ? "border-zinc-600 bg-zinc-200 text-zinc-950"
-                : "border-zinc-800 bg-[#080808] text-zinc-500"
-            )}
-            title={date.toDateString()}
-          >
-            <span>{date.getDate()}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function SectionCard({
   title,
   description,
@@ -2958,38 +2867,264 @@ function Skeleton({ className }: { className?: string }) {
     />
   );
 }
-function DailyConsistencyCard({ summary }: { summary: AnalyticsHabitSummary }) {
-  const weeks = Math.ceil(summary.calendarDays / 7);
-  const today = new Date();
-  const currentFormatter = new Intl.DateTimeFormat(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+function DailyConsistencyCard({
+  points,
+  range,
+}: {
+  points: AnalyticsOverviewDailyPoint[];
+  range: AnalyticsRange;
+}) {
+  const cells = useMemo(
+    () => buildDailyConsistencyCells(points, range),
+    [points, range]
+  );
+  const maxCompletedEvents = cells.reduce(
+    (max, cell) => Math.max(max, cell.completedEvents),
+    0
+  );
+  const activeDays = cells.filter((cell) => cell.completedEvents > 0).length;
+  const rangeLabel = formatAnalyticsRangeLabel(range);
+  const columns = getDailyConsistencyColumnCount(range, cells.length);
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-3.5 sm:p-4">
+    <div className="rounded-2xl border border-emerald-400/10 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.12),transparent_32%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-3.5 shadow-[0_18px_44px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             Daily consistency
           </div>
           <p className="mt-1 text-sm text-zinc-400">
-            Streak coverage for the last {summary.calendarDays} days.
+            Completed Events by day across the selected {rangeLabel} range.
           </p>
         </div>
         <div className="text-right text-xs font-medium text-zinc-500">
-          <div>
-            {weeks} week{weeks === 1 ? "" : "s"}
-          </div>
-          <div>{currentFormatter.format(today)}</div>
+          <div>{activeDays} active days</div>
+          <div>{cells.length} days tracked</div>
         </div>
       </div>
-      <div className="mt-4 overflow-x-auto">
-        <StreakCalendar
-          days={summary.calendarDays}
-          completed={summary.calendarCompleted}
-        />
+
+      <div className="mt-4 overflow-x-auto pb-1">
+        <div
+          className="grid w-max min-w-max gap-1.5"
+          style={{
+            gridTemplateColumns: `repeat(${columns}, 1rem)`,
+          }}
+          aria-label="Completed Events daily consistency heatmap"
+        >
+          {cells.map((cell, index) => (
+            <span
+              key={cell.dateKey}
+              className={classNames(
+                "block h-4 w-4 rounded-[4px] border transition",
+                cell.completedEvents > 0
+                  ? "daily-consistency-cell--active border-emerald-300/25 shadow-[0_4px_14px_rgba(34,197,94,0.18)]"
+                  : "border-zinc-800/80 bg-zinc-950/80"
+              )}
+              style={getDailyConsistencyCellStyle(
+                cell,
+                index,
+                maxCompletedEvents
+              )}
+              title={`${cell.label} · ${cell.completedEvents} completed Event${
+                cell.completedEvents === 1 ? "" : "s"
+              }`}
+            />
+          ))}
+        </div>
       </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
+        <span>No Events</span>
+        <div className="flex items-center gap-1.5">
+          {[0, 1, 2, 3].map((step) => (
+            <span
+              key={step}
+              className={classNames(
+                "block h-3 w-3 rounded-[3px] border",
+                step === 0
+                  ? "border-zinc-800 bg-zinc-950/80"
+                  : "border-emerald-300/20"
+              )}
+              style={
+                step === 0
+                  ? undefined
+                  : {
+                      backgroundColor: getDailyConsistencyColor(
+                        step,
+                        3
+                      ),
+                    }
+              }
+            />
+          ))}
+        </div>
+        <span>More</span>
+      </div>
+      <style jsx global>{`
+        @keyframes dailyConsistencyJiggle {
+          0%,
+          72%,
+          100% {
+            transform: translate3d(0, 0, 0) rotate(0deg);
+          }
+          76% {
+            transform: translate3d(0.35px, -0.45px, 0) rotate(0.45deg);
+          }
+          80% {
+            transform: translate3d(-0.4px, 0.3px, 0) rotate(-0.4deg);
+          }
+          84% {
+            transform: translate3d(0.25px, 0.35px, 0) rotate(0.25deg);
+          }
+          88% {
+            transform: translate3d(-0.2px, -0.25px, 0) rotate(-0.2deg);
+          }
+        }
+
+        .daily-consistency-cell--active {
+          animation: dailyConsistencyJiggle 5.8s ease-in-out infinite;
+          animation-delay: var(--daily-consistency-delay, 0ms);
+          transform-origin: center;
+          will-change: transform;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .daily-consistency-cell--active {
+            animation: none;
+            transform: none;
+            will-change: auto;
+          }
+        }
+      `}</style>
     </div>
   );
+}
+
+function buildDailyConsistencyCells(
+  points: AnalyticsOverviewDailyPoint[],
+  range: AnalyticsRange
+) {
+  const dateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  const grouped = new Map<
+    string,
+    { date: Date; completedEvents: number }
+  >();
+
+  for (const point of points) {
+    const date = parseTrendDate(point.date, range);
+    const dateKey = getDailyConsistencyDateKey(date);
+    const existing = grouped.get(dateKey);
+    if (existing) {
+      existing.completedEvents += Math.max(
+        0,
+        Math.round(point.completedEvents ?? 0)
+      );
+    } else {
+      grouped.set(dateKey, {
+        date,
+        completedEvents: Math.max(0, Math.round(point.completedEvents ?? 0)),
+      });
+    }
+  }
+
+  const sortedCells = Array.from(grouped.entries())
+    .sort(([, a], [, b]) => a.date.getTime() - b.date.getTime())
+    .map(([dateKey, cell]) => ({
+      dateKey,
+      label: dateFormatter.format(cell.date),
+      completedEvents: cell.completedEvents,
+    }));
+  const rangeDays = getDailyConsistencyRangeDays(range);
+
+  if (rangeDays == null) {
+    return sortedCells;
+  }
+
+  const endDate =
+    sortedCells.length > 0
+      ? parseTrendDate(sortedCells[sortedCells.length - 1].dateKey, range)
+      : new Date();
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - (rangeDays - 1));
+
+  return Array.from({ length: rangeDays }, (_, index) => {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + index);
+    const dateKey = getDailyConsistencyDateKey(date);
+    const existing = grouped.get(dateKey);
+
+    return {
+      dateKey,
+      label: dateFormatter.format(date),
+      completedEvents: existing?.completedEvents ?? 0,
+    };
+  });
+}
+
+function getDailyConsistencyColor(value: number, maxValue: number) {
+  if (value <= 0) {
+    return "#09090b";
+  }
+  const ratio = maxValue <= 1 ? 1 : Math.min(value / maxValue, 1);
+  const alpha = 0.32 + ratio * 0.56;
+  return `rgba(34,197,94,${alpha.toFixed(2)})`;
+}
+
+function getDailyConsistencyRangeDays(range: AnalyticsRange) {
+  if (range === "7d") {
+    return 7;
+  }
+
+  if (range === "30d") {
+    return 30;
+  }
+
+  if (range === "90d") {
+    return 90;
+  }
+
+  return null;
+}
+
+function getDailyConsistencyColumnCount(range: AnalyticsRange, cellCount: number) {
+  if (range === "30d" || range === "90d") {
+    return 10;
+  }
+
+  if (range === "7d") {
+    return 7;
+  }
+
+  return Math.max(1, Math.min(cellCount, 10));
+}
+
+function getDailyConsistencyDateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function getDailyConsistencyCellStyle(
+  cell: { completedEvents: number; dateKey: string },
+  index: number,
+  maxCompletedEvents: number
+): CSSProperties | undefined {
+  if (cell.completedEvents <= 0) {
+    return undefined;
+  }
+
+  return {
+    "--daily-consistency-delay": `${((index % 10) * 130 + (index % 3) * 45) * -1}ms`,
+    backgroundColor: getDailyConsistencyColor(
+      cell.completedEvents,
+      maxCompletedEvents
+    ),
+  } as CSSProperties;
 }
