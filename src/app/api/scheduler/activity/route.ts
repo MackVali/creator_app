@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  formatDateKeyInTimeZone,
+  normalizeTimeZone,
+} from "@/lib/scheduler/timezone";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+const APP_ACTIVITY_FALLBACK_TIMEZONE = "America/Chicago";
 
-export async function POST() {
+type ActivityHeartbeatBody = {
+  timezone?: unknown;
+};
+
+export async function POST(request: Request) {
   const supabase = await createClient();
   if (!supabase) {
     return NextResponse.json(
@@ -28,6 +39,32 @@ export async function POST() {
   }
 
   const userId = user.id;
+  const requestedTimeZone = await readRequestedTimeZone(request);
+  const profileTimeZone = requestedTimeZone
+    ? null
+    : await resolveProfileTimeZone(supabase, userId);
+  const timezone = normalizeTimeZone(
+    requestedTimeZone ?? profileTimeZone ?? APP_ACTIVITY_FALLBACK_TIMEZONE
+  );
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const activityDate = formatDateKeyInTimeZone(now, timezone);
+
+  const { error: activityError } = await supabase
+    .from("daily_app_activity")
+    .upsert(
+      {
+        user_id: userId,
+        activity_date: activityDate,
+        timezone,
+        last_seen_at: nowIso,
+      },
+      { onConflict: "user_id,activity_date" }
+    );
+
+  if (activityError) {
+    return NextResponse.json({ error: activityError.message }, { status: 500 });
+  }
 
   const { data: existing, error: selectError } = await supabase
     .from("scheduler_user_state")
@@ -45,8 +82,6 @@ export async function POST() {
       return NextResponse.json({ ok: true, skipped: true });
     }
   }
-
-  const nowIso = new Date().toISOString();
 
   const { error: upsertError } = await supabase.from("scheduler_user_state").upsert(
     {
@@ -78,4 +113,34 @@ export async function DELETE() {
 
 export async function PATCH() {
   return NextResponse.json({ error: "method not allowed" }, { status: 405 });
+}
+
+async function readRequestedTimeZone(request: Request) {
+  try {
+    const body = (await request.json()) as ActivityHeartbeatBody;
+    return typeof body.timezone === "string" && body.timezone.trim().length > 0
+      ? body.timezone.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveProfileTimeZone(
+  client: SupabaseClient<Database>,
+  userId: string
+) {
+  try {
+    const { data, error } = await client
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      return null;
+    }
+    return typeof data?.timezone === "string" ? data.timezone.trim() : null;
+  } catch {
+    return null;
+  }
 }

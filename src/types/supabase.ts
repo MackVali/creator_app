@@ -755,6 +755,39 @@ export type Database = {
           },
         ]
       }
+      daily_app_activity: {
+        Row: {
+          activity_date: string
+          created_at: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity_date: string
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity_date?: string
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       dark_xp_events: {
         Row: {
           amount: number

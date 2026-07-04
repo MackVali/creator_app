@@ -17,7 +17,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { ChevronLeft, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -25,6 +25,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
 import type {
   AnalyticsOverviewComparison,
@@ -33,10 +34,10 @@ import type {
   AnalyticsRange,
   AnalyticsResponse,
   AnalyticsHabitSummary,
-  AnalyticsHabitRoutine,
   AnalyticsHabitPerformance,
   AnalyticsHabitStreakPoint,
   AnalyticsHabitWeeklyReflection,
+  AnalyticsAppActivityDay,
   AnalyticsSkillCategoryContribution,
   AnalyticsSkillCategoryContributionMeta,
   AnalyticsView,
@@ -123,37 +124,6 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
         )
     : base.calendarCompleted;
 
-  const routines = Array.isArray(record.routines)
-    ? record.routines
-        .map((item, index) => {
-          if (!item || typeof item !== "object") {
-            return null;
-          }
-
-          const routineRecord = item as Record<string, unknown>;
-          const rawHeatmap = routineRecord.heatmap;
-          const heatmap = Array.isArray(rawHeatmap)
-            ? rawHeatmap.map((week) =>
-                Array.isArray(week)
-                  ? week.map((value) => (isFiniteNumber(value) ? value : 0))
-                  : Array(7).fill(0)
-              )
-            : [];
-
-          const id =
-            typeof routineRecord.id === "string"
-              ? routineRecord.id
-              : `routine-${index}`;
-          const name =
-            typeof routineRecord.name === "string"
-              ? routineRecord.name
-              : `Routine ${index + 1}`;
-
-          return { id, name, heatmap } satisfies AnalyticsHabitRoutine;
-        })
-        .filter((routine): routine is AnalyticsHabitRoutine => routine !== null)
-    : base.routines;
-
   const streakHistory = Array.isArray(record.streakHistory)
     ? record.streakHistory
         .map((item) => {
@@ -226,7 +196,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
     longestStreak: toNonNegativeInt(record.longestStreak, base.longestStreak),
     calendarDays,
     calendarCompleted,
-    routines,
+    routines: base.routines,
     streakHistory,
     bestTimes: toPerformanceList(record.bestTimes),
     bestDays: toPerformanceList(record.bestDays),
@@ -376,9 +346,6 @@ export default function AnalyticsDashboard({}: {
   const hasAnalyticsData = analytics !== null;
 
   const longestStreak = habitSummary.longestStreak;
-  const currentStreak = habitSummary.currentStreak;
-  const routineTrends = habitSummary.routines;
-  const streakHistory = habitSummary.streakHistory;
   const handleUpgrade = () => {
     router.push("/settings/billing");
   };
@@ -451,24 +418,10 @@ export default function AnalyticsDashboard({}: {
           <DailyConsistencyCard points={overviewTrend} range={selectedRange} />
         )}
         <StreakTrendCard
-          currentStreak={currentStreak}
           longestStreak={longestStreak}
-          history={streakHistory}
+          appActivityDays={analytics?.appActivity?.days ?? null}
         />
       </div>
-
-      <SectionCard
-        title="Routine heatmaps"
-        description="Consistency patterns by routine."
-      >
-        {loading ? (
-          <Skeleton className="h-40" />
-        ) : error ? (
-          renderErrorState()
-        ) : (
-          <RoutineHeatmap routines={routineTrends} />
-        )}
-      </SectionCard>
     </div>
   );
 
@@ -477,9 +430,9 @@ export default function AnalyticsDashboard({}: {
       <AnalyticsPaywallState onUpgrade={handleUpgrade} />
     ) : (
       <div className="space-y-7 p-3 sm:space-y-8 sm:p-4 lg:p-5">
-        <AnalyticsSection title="Overview">{overviewContent}</AnalyticsSection>
-        <AnalyticsSection title="Execution">{executionContent}</AnalyticsSection>
-        <AnalyticsSection title="Habits">{habitsContent}</AnalyticsSection>
+        {overviewContent}
+        {executionContent}
+        {habitsContent}
       </div>
     );
 
@@ -515,48 +468,16 @@ function Header({
   onRangeChange: (range: AnalyticsRange) => void;
   isRefreshing: boolean;
 }) {
-  const router = useRouter();
   return (
-    <header className="sticky top-0 z-20 mb-3 -mx-4 bg-black px-4 py-2 sm:static sm:mx-0 sm:mb-5 sm:bg-transparent sm:px-0 sm:py-0">
-      <div className="flex min-w-0 flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
-        <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
-          <button
-            onClick={() => router.push("/dashboard")}
-            aria-label="Back to dashboard"
-            className="-ml-2 inline-flex h-8 w-8 shrink-0 items-center justify-center text-white/85 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:ml-0 sm:h-9 sm:w-9"
-          >
-            <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
-          </button>
-        </div>
-        <div className="flex min-w-0 justify-end">
-          <AnalyticsRangeSelector
-            selectedRange={selectedRange}
-            onRangeChange={onRangeChange}
-            isRefreshing={isRefreshing}
-          />
-        </div>
+    <header className="sticky top-0 z-20 mb-2 -mx-4 bg-black px-4 py-1.5 sm:static sm:mx-0 sm:mb-4 sm:bg-transparent sm:px-0 sm:py-0">
+      <div className="flex min-w-0 justify-end">
+        <AnalyticsRangeSelector
+          selectedRange={selectedRange}
+          onRangeChange={onRangeChange}
+          isRefreshing={isRefreshing}
+        />
       </div>
     </header>
-  );
-}
-
-function AnalyticsSection({
-  title,
-  children,
-}: {
-  title: "Overview" | "Execution" | "Habits";
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3" aria-labelledby={`analytics-${title.toLowerCase()}`}>
-      <h2
-        id={`analytics-${title.toLowerCase()}`}
-        className="px-1 text-sm font-semibold uppercase tracking-[0.14em] text-zinc-400"
-      >
-        {title}
-      </h2>
-      {children}
-    </section>
   );
 }
 
@@ -2544,223 +2465,169 @@ function parseTrendDate(value: string, range: AnalyticsRange) {
 }
 
 function StreakTrendCard({
-  currentStreak,
   longestStreak,
-  history,
+  appActivityDays = null,
 }: {
-  currentStreak: number;
   longestStreak: number;
-  history: { label: string; value: number }[];
+  appActivityDays?: AnalyticsAppActivityDay[] | null;
 }) {
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-2.5 text-xs text-zinc-400 sm:rounded-2xl sm:p-4 sm:text-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-            Streak momentum
-          </div>
-          <p className="mt-1 text-sm text-zinc-400">
-            See how your streak evolved over time.
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-            Current streak
-          </div>
-          <div className="mt-1 text-2xl font-semibold text-white">
-            {currentStreak} days
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 sm:mt-6">
-        <StreakSparkline data={history} />
-      </div>
-      <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-2.5 text-[11px] text-zinc-400 sm:mt-4 sm:p-3 sm:text-xs">
-        <div className="flex items-center justify-between">
-          <span className="uppercase tracking-[0.2em] text-zinc-500">
-            Longest streak
-          </span>
-          <span className="text-lg font-semibold text-white">
-            {longestStreak} days
-          </span>
-        </div>
-        <p className="mt-2 text-[13px]">Use these momentum bursts to plan your next focus session.</p>
-      </div>
-    </div>
-  );
-}
-
-function StreakSparkline({
-  data,
-}: {
-  data: { label: string; value: number }[];
-}) {
-  if (data.length === 0) {
-    return (
-      <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-950/70 text-center text-xs text-zinc-500">
-        Log more rituals to unlock streak trends.
-      </div>
-    );
-  }
-
-  const width = 280;
-  const height = 120;
-  const values = data.map((point) => point.value);
-  const maxValue = Math.max(...values, 1);
-  const minValue = Math.min(...values, 0);
-  const verticalPadding = 12;
-  const range = maxValue - minValue || 1;
-  const points = data.map((point, index) => {
-    const x =
-      data.length === 1 ? width / 2 : (index / (data.length - 1)) * width;
-    const normalized = (point.value - minValue) / range;
-    const y =
-      height - (normalized * (height - verticalPadding * 2) + verticalPadding);
-    return { x, y };
+  const hasAppActivityHistory = Array.isArray(appActivityDays);
+  const normalizedActivityDays = hasAppActivityHistory
+    ? Array.from({ length: 7 }, (_, index) => {
+        const day = appActivityDays[index];
+        return {
+          date: day?.date ?? null,
+          active: Boolean(day?.active),
+        };
+      })
+    : Array.from({ length: 7 }, () => ({ date: null, active: false }));
+  let activeOrdinal = 0;
+  const emberSlots = Array.from({ length: 7 }, (_, index) => {
+    const day = normalizedActivityDays[index];
+    const isActive = day?.active ?? false;
+    const ordinal = isActive ? ++activeOrdinal : 0;
+    return {
+      index,
+      date: day?.date ?? null,
+      isActive,
+      level: getAppActivityEmberLevel(ordinal),
+    };
   });
-
-  const linePath = points
-    .map(
-      (point, index) =>
-        `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
-    )
-    .join(" ");
-
-  const areaPath = [
-    `M0,${height}`,
-    ...points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`),
-    `L${width},${height}`,
-    "Z",
-  ].join(" ");
+  const activeDays = emberSlots.filter((slot) => slot.isActive).length;
+  const appActivityStatus = hasAppActivityHistory
+    ? `${activeDays}/7 active`
+    : "Not tracked yet";
 
   return (
-    <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full sm:h-32">
-        <defs>
-          <linearGradient id="streakGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(161,161,170,0.45)" />
-            <stop offset="100%" stopColor="rgba(82,82,91,0.04)" />
-          </linearGradient>
-        </defs>
-        <path d={areaPath} fill="url(#streakGradient)" />
-        <path
-          d={linePath}
-          fill="none"
-          stroke="url(#streakGradient)"
-          strokeWidth={2.5}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
-        <span>{data[0]?.label ?? ""}</span>
-        <span>{data[data.length - 1]?.label ?? ""}</span>
+    <div className="rounded-xl border border-zinc-800 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.08),transparent_38%),linear-gradient(145deg,rgba(9,9,11,0.94),rgba(24,24,27,0.82))] p-2.5 text-xs text-zinc-400 shadow-[0_18px_40px_rgba(0,0,0,0.26),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-2xl sm:p-4 sm:text-sm">
+      <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+        Streak momentum
       </div>
-    </div>
-  );
-}
 
-function RoutineHeatmap({
-  routines,
-}: {
-  routines: { id: string; name: string; heatmap: number[][] }[];
-}) {
-  if (routines.length === 0) {
-    return (
-      <div className="flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/70 px-3 text-center text-xs text-zinc-500 sm:min-h-[144px] sm:gap-3 sm:text-sm">
-        No routine data yet.
-        <span className="text-xs text-zinc-600">
-          Log habits like exercise or journaling to reveal patterns.
+      <div className="mt-3 rounded-xl border border-white/[0.07] bg-zinc-950/55 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[11px] font-medium text-zinc-400">
+            Longest habit streak
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-200/20 bg-[radial-gradient(circle_at_40%_30%,rgba(253,224,71,0.18),rgba(245,158,11,0.08)_48%,rgba(24,24,27,0.72)_78%)] py-0.5 pl-1.5 pr-2 text-sm font-semibold tabular-nums text-zinc-100 shadow-[0_0_18px_rgba(245,158,11,0.16),inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <FlameEmber
+              level="ULTRA"
+              size="xs"
+              className="shrink-0 overflow-visible opacity-95 [&_svg]:overflow-visible"
+            />
+            <span>{longestStreak} days</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 px-0.5">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+          App activity streak
+        </span>
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+          {appActivityStatus}
         </span>
       </div>
-    );
-  }
 
-  const weekCounts = routines.map((routine) => routine.heatmap.length);
-  const weeks = weekCounts.length > 0 ? Math.max(...weekCounts) : 0;
-  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-  return (
-    <div>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-            Routine trends
-          </div>
-          <p className="mt-1 text-sm text-zinc-400">
-            Visualize which habits stay consistent week over week.
-          </p>
-        </div>
-        {weeks > 0 ? (
-          <span className="text-xs font-medium text-zinc-500">
-            Past {weeks} week{weeks === 1 ? "" : "s"}
+      <div
+        className="mt-1.5 grid grid-cols-7 gap-1.5 rounded-xl border border-white/[0.06] bg-black/25 p-1.5 sm:gap-2 sm:p-2"
+        aria-label={
+          hasAppActivityHistory
+            ? `${activeDays} of 7 app activity days active`
+            : "Seven-day app activity history is not tracked yet"
+        }
+      >
+        {emberSlots.map((slot) => (
+          <span
+            key={slot.index}
+            className={classNames(
+              "flex h-9 min-w-0 items-center justify-center rounded-lg border sm:h-10",
+              slot.isActive
+                ? "streak-ember-slot--active border-amber-300/20 bg-[radial-gradient(circle_at_50%_70%,rgba(251,191,36,0.18),rgba(180,83,9,0.08)_44%,rgba(24,24,27,0.48)_76%)] shadow-[0_0_18px_rgba(245,158,11,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                : "border-white/[0.06] bg-zinc-950/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]",
+              slot.index === 6 &&
+                slot.level === "EXTREME" &&
+                "border-amber-200/35 bg-[radial-gradient(circle_at_50%_72%,rgba(253,224,71,0.24),rgba(245,158,11,0.14)_44%,rgba(24,24,27,0.5)_78%)] shadow-[0_0_24px_rgba(245,158,11,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+            )}
+            title={
+              hasAppActivityHistory
+                ? `${formatAppActivityDateLabel(slot.date)}: ${slot.isActive ? "active" : "inactive"}`
+                : `Day ${slot.index + 1}: app activity history unavailable`
+            }
+          >
+            {slot.isActive ? (
+              <FlameEmber
+                level={slot.level}
+                size="sm"
+                className={classNames(
+                  "shrink-0 overflow-visible opacity-95 [&_svg]:overflow-visible",
+                  slot.level === "EXTREME" && "scale-110"
+                )}
+              />
+            ) : (
+              <span
+                className="h-3 w-2.5 rounded-full border border-zinc-700/70 bg-zinc-900/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                aria-hidden="true"
+              />
+            )}
           </span>
-        ) : null}
+        ))}
       </div>
-      <div className="mt-4 space-y-4 sm:mt-5 sm:space-y-5">
-        {routines.map((routine) => {
-          const flattened = routine.heatmap.flat();
-          const totalDays = flattened.length;
-          const total = flattened.reduce((sum, value) => sum + value, 0);
-          const average =
-            totalDays === 0 ? 0 : Math.round((total / totalDays) * 100);
+      <style jsx global>{`
+        .streak-ember-slot--active {
+          animation: streakEmberSlotGlow 3.8s ease-in-out infinite;
+        }
 
-          return (
-            <div key={routine.id} className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-white">{routine.name}</span>
-                <span className="text-xs text-zinc-500">
-                  {average}% consistency
-                </span>
-              </div>
-              <div className="grid grid-cols-[auto,1fr] gap-3">
-                <div className="flex flex-col justify-between text-[10px] uppercase tracking-[0.2em] text-zinc-600">
-                  {dayLabels.map((label) => (
-                    <span key={label} className="h-6">
-                      {label}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  {routine.heatmap.map((week, weekIndex) => (
-                    <div
-                      key={`${routine.id}-week-${weekIndex}`}
-                      className="grid grid-rows-7 gap-1.5"
-                    >
-                      {week.map((value, dayIndex) => {
-                        const ratio =
-                          value > 1
-                            ? Math.min(value / 100, 1)
-                            : Math.max(0, Math.min(value, 1));
-                        const opacity =
-                          ratio === 0 ? 0.12 : 0.25 + ratio * 0.55;
-                        const backgroundColor =
-                          ratio === 0
-                            ? "#080808"
-                            : `rgba(161,161,170,${opacity.toFixed(2)})`;
-                        const boxShadow =
-                          ratio === 0
-                            ? undefined
-                            : "0 3px 10px rgba(113,113,122,0.2)";
-                        const percent = Math.round(ratio * 100);
-                        return (
-                          <span
-                            key={`${routine.id}-week-${weekIndex}-day-${dayIndex}`}
-                            className="h-6 w-6 rounded-md border border-zinc-800"
-                            style={{ backgroundColor, boxShadow }}
-                            title={`${dayLabels[dayIndex]} · ${percent}%`}
-                          />
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+        @keyframes streakEmberSlotGlow {
+          0%,
+          100% {
+            box-shadow:
+              0 0 16px rgba(245, 158, 11, 0.1),
+              inset 0 1px 0 rgba(255, 255, 255, 0.08);
+          }
+          50% {
+            box-shadow:
+              0 0 22px rgba(245, 158, 11, 0.16),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .streak-ember-slot--active {
+            animation: none;
+          }
+        }
+      `}</style>
     </div>
   );
+}
+
+function getAppActivityEmberLevel(activeOrdinal: number): FlameLevel {
+  if (activeOrdinal <= 0) {
+    return "NO";
+  }
+
+  if (activeOrdinal >= 7) {
+    return "EXTREME";
+  }
+
+  if (activeOrdinal >= 5) {
+    return "HIGH";
+  }
+
+  if (activeOrdinal >= 3) {
+    return "MEDIUM";
+  }
+
+  return "LOW";
+}
+
+function formatAppActivityDateLabel(date: string | null) {
+  if (!date) {
+    return "App activity day";
+  }
+
+  return date;
 }
 
 function SectionCard({
@@ -2883,7 +2750,6 @@ function DailyConsistencyCard({
     0
   );
   const activeDays = cells.filter((cell) => cell.completedEvents > 0).length;
-  const rangeLabel = formatAnalyticsRangeLabel(range);
   const columns = getDailyConsistencyColumnCount(range, cells.length);
 
   return (
@@ -2893,21 +2759,28 @@ function DailyConsistencyCard({
           <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             Daily consistency
           </div>
-          <p className="mt-1 text-sm text-zinc-400">
-            Completed Events by day across the selected {rangeLabel} range.
-          </p>
         </div>
-        <div className="text-right text-xs font-medium text-zinc-500">
-          <div>{activeDays} active days</div>
-          <div>{cells.length} days tracked</div>
+        <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/55 text-center text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="border-r border-white/10 px-3 py-2">
+            <div className="font-semibold text-zinc-200">{activeDays}</div>
+            <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+              Days active
+            </div>
+          </div>
+          <div className="px-3 py-2">
+            <div className="font-semibold text-zinc-200">{cells.length}</div>
+            <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+              Days tracked
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto pb-1">
+      <div className="mt-4 pb-1">
         <div
-          className="grid w-max min-w-max gap-1.5"
+          className="grid w-full gap-1.5 sm:gap-2"
           style={{
-            gridTemplateColumns: `repeat(${columns}, 1rem)`,
+            gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
           }}
           aria-label="Completed Events daily consistency heatmap"
         >
@@ -2915,7 +2788,7 @@ function DailyConsistencyCard({
             <span
               key={cell.dateKey}
               className={classNames(
-                "block h-4 w-4 rounded-[4px] border transition",
+                "block aspect-square w-full rounded-[5px] border transition",
                 cell.completedEvents > 0
                   ? "daily-consistency-cell--active border-emerald-300/25 shadow-[0_4px_14px_rgba(34,197,94,0.18)]"
                   : "border-zinc-800/80 bg-zinc-950/80"
@@ -2940,7 +2813,7 @@ function DailyConsistencyCard({
             <span
               key={step}
               className={classNames(
-                "block h-3 w-3 rounded-[3px] border",
+                "block h-3.5 w-3.5 rounded-[4px] border",
                 step === 0
                   ? "border-zinc-800 bg-zinc-950/80"
                   : "border-emerald-300/20"
@@ -2961,28 +2834,29 @@ function DailyConsistencyCard({
         <span>More</span>
       </div>
       <style jsx global>{`
-        @keyframes dailyConsistencyJiggle {
-          0%,
-          72%,
-          100% {
+        @keyframes dailyConsistencyOrganicWobble {
+          0% {
             transform: translate3d(0, 0, 0) rotate(0deg);
           }
-          76% {
-            transform: translate3d(0.35px, -0.45px, 0) rotate(0.45deg);
+          18% {
+            transform: translate3d(0.16px, -0.28px, 0) rotate(0.32deg) scale(1.012);
           }
-          80% {
-            transform: translate3d(-0.4px, 0.3px, 0) rotate(-0.4deg);
+          37% {
+            transform: translate3d(-0.22px, 0.18px, 0) rotate(-0.26deg) scale(0.998);
           }
-          84% {
-            transform: translate3d(0.25px, 0.35px, 0) rotate(0.25deg);
+          53% {
+            transform: translate3d(0.1px, 0.12px, 0) rotate(0.18deg) scale(1.006);
           }
-          88% {
-            transform: translate3d(-0.2px, -0.25px, 0) rotate(-0.2deg);
+          71% {
+            transform: translate3d(-0.08px, -0.12px, 0) rotate(-0.12deg) scale(1.002);
+          }
+          100% {
+            transform: translate3d(0, 0, 0) rotate(0deg);
           }
         }
 
         .daily-consistency-cell--active {
-          animation: dailyConsistencyJiggle 5.8s ease-in-out infinite;
+          animation: dailyConsistencyOrganicWobble 3.6s cubic-bezier(0.38, 0, 0.22, 1) infinite;
           animation-delay: var(--daily-consistency-delay, 0ms);
           transform-origin: center;
           will-change: transform;
@@ -3121,7 +2995,7 @@ function getDailyConsistencyCellStyle(
   }
 
   return {
-    "--daily-consistency-delay": `${((index % 10) * 130 + (index % 3) * 45) * -1}ms`,
+    "--daily-consistency-delay": `${((index % 10) * 120 + (index % 4) * 55) * -1}ms`,
     backgroundColor: getDailyConsistencyColor(
       cell.completedEvents,
       maxCompletedEvents

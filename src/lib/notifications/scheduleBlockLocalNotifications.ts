@@ -17,6 +17,7 @@ const MEAL_BRIEF_BODY = "Eat, then log your meal and calories in CREATOR.";
 const REMINDER_LEAD_MS = 5 * 60 * 1000;
 const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 const MAX_NOTIFICATIONS = 64;
+const MAX_FOCUS_START_SKILL_ICONS = 6;
 const SCHEDULE_BRIEF_ID_OFFSET = 1_000_000_000;
 const SCHEDULE_BRIEF_ID_RANGE = 500_000_000;
 const TIME_BLOCK_START_ID_OFFSET = 1_500_000_000;
@@ -600,10 +601,43 @@ function buildNotificationBody(group: GroupedBlock) {
 }
 
 function buildStartNotificationBody(group: GroupedBlock, label: string) {
+  if (isFocusTimeBlock(group.timeBlock)) {
+    return buildFocusStartNotificationBody(group);
+  }
+
   const count = group.instances.length;
   if (count <= 0) return `Start ${label} in Focus Pomo.`;
   if (count === 1) return `Start ${label} with 1 scheduled Event.`;
   return `Start ${label} with ${count} scheduled Events.`;
+}
+
+function buildFocusStartNotificationBody(group: GroupedBlock) {
+  const icons = collectFocusStartSkillIcons(group);
+  if (icons.length === 0) return "Start focus session.";
+
+  const visibleIcons = icons.slice(0, MAX_FOCUS_START_SKILL_ICONS);
+  const remainingCount = icons.length - visibleIcons.length;
+  const iconText =
+    remainingCount > 0
+      ? `${visibleIcons.join(" ")} +${remainingCount}`
+      : visibleIcons.join(" ");
+
+  return `Start focus session: ${iconText}`;
+}
+
+function collectFocusStartSkillIcons(group: GroupedBlock) {
+  const icons: string[] = [];
+  const seen = new Set<string>();
+
+  for (const instance of group.instances) {
+    const icon = pickText(instance.skillIcon);
+    if (!icon || seen.has(icon)) continue;
+
+    seen.add(icon);
+    icons.push(icon);
+  }
+
+  return icons;
 }
 
 function isBreakTimeBlock(
@@ -618,6 +652,13 @@ function isMealTimeBlock(
 ) {
   const kind = block?.kind?.trim().toUpperCase();
   return kind === "MEAL";
+}
+
+function isFocusTimeBlock(
+  block: ScheduleBlockLocalNotificationTimeBlock | null,
+) {
+  const kind = block?.kind?.trim().toUpperCase();
+  return kind === "FOCUS";
 }
 
 function formatEventPreview(instance: ScheduleBlockLocalNotificationInstance) {

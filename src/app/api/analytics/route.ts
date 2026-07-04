@@ -10,6 +10,7 @@ import {
   type WindowLite,
 } from "@/lib/scheduler/repo";
 import {
+  formatDateKeyInTimeZone,
   getDateTimeParts,
   makeZonedDate,
   normalizeTimeZone,
@@ -143,6 +144,10 @@ type RawHabitCompletionRow = {
 type RawHabitRoutineRow = {
   id: string;
   name?: string | null;
+};
+
+type RawDailyAppActivityRow = {
+  activity_date: string | null;
 };
 
 type NormalizedTaskRow = {
@@ -442,6 +447,27 @@ export async function GET(request: NextRequest) {
     : "America/Chicago"; // Temporary fallback until this route gets a guaranteed app/user timezone source.
   const { start: todayStart, end: todayEnd } =
     computeProductivityDayWindow(timeZone);
+  const analyticsNow = new Date();
+  const todayCalendarDateKey = formatDateKeyInTimeZone(analyticsNow, timeZone);
+  const todayCalendarActivityRes = await supabase
+    .from("daily_app_activity")
+    .upsert(
+      {
+        user_id: user.id,
+        activity_date: todayCalendarDateKey,
+        timezone: timeZone,
+        last_seen_at: analyticsNow.toISOString(),
+      },
+      { onConflict: "user_id,activity_date" }
+    );
+
+  if (todayCalendarActivityRes.error) {
+    return NextResponse.json(
+      { error: todayCalendarActivityRes.error.message },
+      { status: 500 }
+    );
+  }
+
   const { start, end, previousStart, previousEnd } = computeAnalyticsWindows({
     range,
     productivityDayStart: todayStart,
@@ -456,6 +482,10 @@ export async function GET(request: NextRequest) {
   const habitCompletionStart = habitHistoryStart.toISOString().slice(0, 10);
   const overviewStartDateKey = formatProductivityDayKey(previousStart, timeZone);
   const overviewEndDateKey = formatProductivityDayKey(end, timeZone);
+  const appActivityDateKeys = buildLastCalendarDateKeys(7, timeZone);
+  const appActivityStartDateKey = appActivityDateKeys[0] ?? todayCalendarDateKey;
+  const appActivityEndDateKey =
+    appActivityDateKeys[appActivityDateKeys.length - 1] ?? todayCalendarDateKey;
 
   const [
     xpEventsRes,
@@ -480,6 +510,7 @@ export async function GET(request: NextRequest) {
     todayScheduleInstancesRes,
     todaySummaryObservedRes,
     recentScheduleInstancesRes,
+    appActivityRes,
   ] = await Promise.all([
     supabase
       .from("xp_events")
@@ -684,6 +715,12 @@ export async function GET(request: NextRequest) {
       .lte("completed_at", end.toISOString())
       .order("completed_at", { ascending: false })
       .limit(12),
+    supabase
+      .from("daily_app_activity")
+      .select("activity_date")
+      .eq("user_id", user.id)
+      .gte("activity_date", appActivityStartDateKey)
+      .lte("activity_date", appActivityEndDateKey),
   ]);
 
   const queryError =
@@ -708,7 +745,8 @@ export async function GET(request: NextRequest) {
     scheduleSummaryObservedRes.error ||
     todayScheduleInstancesRes.error ||
     todaySummaryObservedRes.error ||
-    recentScheduleInstancesRes.error;
+    recentScheduleInstancesRes.error ||
+    appActivityRes.error;
 
   if (queryError) {
     return NextResponse.json({ error: queryError.message }, { status: 500 });
@@ -761,6 +799,11 @@ export async function GET(request: NextRequest) {
   const habitCompletions = normalizeHabitCompletionRows(
     habitCompletionRes.data ?? []
   );
+  const appActivity = buildAppActivitySummary({
+    dateKeys: appActivityDateKeys,
+    rows: (appActivityRes.data ?? []) as RawDailyAppActivityRow[],
+    timeZone,
+  });
   const overviewScheduleInstances = normalizeScheduleInstanceRows(
     (scheduleSummaryInstancesRes.data ?? []) as RawScheduleInstanceRow[]
   );
@@ -905,7 +948,6 @@ export async function GET(request: NextRequest) {
       );
     }
   }
-  const analyticsNow = new Date();
   const scheduleSummary = buildScheduleSummary(
     scheduleSummaryObservedInstances,
     analyticsNow
@@ -1495,6 +1537,7 @@ export async function GET(request: NextRequest) {
     overviewComparison,
     windows: windowSummary,
     activity: activityEvents,
+    appActivity,
     habit: habitSummary,
     projectVelocity,
   };
@@ -1592,6 +1635,50 @@ function addDays(date: Date, amount: number) {
 
 function startOfDay(date: Date) {
   return startOfDayInTimeZone(date, "UTC");
+}
+
+function buildLastCalendarDateKeys(count: number, timeZone: string) {
+  const todayParts = getDateTimeParts(new Date(), timeZone);
+  const todayUtc = Date.UTC(
+    todayParts.year,
+    todayParts.month - 1,
+    todayParts.day,
+    12,
+    0,
+    0,
+    0
+  );
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(todayUtc - (count - 1 - index) * MS_PER_DAY);
+    return formatDateKeyInTimeZone(date, "UTC");
+  });
+}
+
+function buildAppActivitySummary({
+  dateKeys,
+  rows,
+  timeZone,
+}: {
+  dateKeys: string[];
+  rows: RawDailyAppActivityRow[];
+  timeZone: string;
+}) {
+  const activeDates = new Set(
+    rows
+      .map((row) =>
+        typeof row.activity_date === "string" ? row.activity_date : null
+      )
+      .filter((date): date is string => date !== null)
+  );
+
+  return {
+    timezone: timeZone,
+    days: dateKeys.map((date) => ({
+      date,
+      active: activeDates.has(date),
+    })),
+  };
 }
 
 async function resolveProfileTimeZone(

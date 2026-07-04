@@ -1,6 +1,6 @@
 export const MAIN_TAB_ROUTES = [
   { key: "command", label: "COMMAND", href: "/dashboard" },
-  { key: "connect", label: "CONNECT", href: "/friends" },
+  { key: "connect", label: "ANALYTICS", href: "/friends" },
   { key: "schedule", label: "SCHEDULE", href: "/schedule" },
   { key: "source", label: "SOURCE", href: "/source" },
 ] as const;

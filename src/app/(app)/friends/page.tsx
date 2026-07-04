@@ -1,5 +1,5 @@
-import ConnectTabContent from "./ConnectTabContent";
+import AnalyticsPageContent from "@/components/AnalyticsPageContent";
 
 export default function FriendsPage() {
-  return <ConnectTabContent />;
+  return <AnalyticsPageContent />;
 }

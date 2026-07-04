@@ -325,6 +325,16 @@ export type AnalyticsWindowsSummary = {
   energy: { label: string; value: number }[];
 };
 
+export type AnalyticsAppActivityDay = {
+  date: string;
+  active: boolean;
+};
+
+export type AnalyticsAppActivitySummary = {
+  timezone: string;
+  days: AnalyticsAppActivityDay[];
+};
+
 export type AnalyticsResponse = {
   range: AnalyticsRange;
   generatedAt: string;
@@ -344,6 +354,7 @@ export type AnalyticsResponse = {
   overviewComparison: AnalyticsOverviewComparison;
   windows: AnalyticsWindowsSummary;
   activity: AnalyticsActivityEvent[];
+  appActivity: AnalyticsAppActivitySummary;
   habit: AnalyticsHabitSummary;
   projectVelocity: number[];
   overviewEfficiencyDebug?: AnalyticsOverviewEfficiencyDebug;
