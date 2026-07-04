@@ -973,16 +973,6 @@ export default function TopNav() {
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link
-                  href="/analytics"
-                  onClick={() => {
-                    void hapticPress();
-                  }}
-                >
-                  Analytics
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link
                   href="/settings"
                   onClick={() => {
                     void hapticPress();

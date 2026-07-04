@@ -25,10 +25,13 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Clock,
   Grid2x2,
   List,
+  Moon,
   Plus,
   Sun,
+  Sunrise,
   X,
 } from "lucide-react";
 
@@ -60,22 +63,44 @@ const QUICK_CREATE_PRIORITY_OPTIONS = PRIORITY_ORDER.map((priority) => ({
 const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
 const MY_LIST_DAY_BUCKETS = ["morning", "afternoon", "evening"] as const;
 const MY_LIST_DAY_VIEW_BUCKETS = [
+  "anytime",
   "morning",
   "afternoon",
   "evening",
-  "anytime",
 ] as const;
 const MY_LIST_DAY_LABELS: Record<MyListDayViewBucketId, string> = {
+  anytime: "Anytime",
   morning: "Morning",
   afternoon: "Afternoon",
   evening: "Evening",
-  anytime: "Anytime",
 };
-const MY_LIST_DAY_SYMBOLS: Record<MyListDayViewBucketId, string> = {
-  morning: "M",
-  afternoon: "A",
-  evening: "E",
-  anytime: "Any",
+const MY_LIST_DAY_VISUALS: Record<
+  MyListDayViewBucketId,
+  {
+    Icon: typeof Clock;
+    pillClassName: string;
+  }
+> = {
+  anytime: {
+    Icon: Clock,
+    pillClassName:
+      "border-zinc-300/10 bg-zinc-400/[0.11] text-zinc-200/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]",
+  },
+  morning: {
+    Icon: Sunrise,
+    pillClassName:
+      "border-yellow-100/[0.13] bg-[#5a4a1f]/35 text-yellow-100/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]",
+  },
+  afternoon: {
+    Icon: Sun,
+    pillClassName:
+      "border-[#6e1f2a]/45 bg-[#3a0f18]/88 text-rose-100/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]",
+  },
+  evening: {
+    Icon: Moon,
+    pillClassName:
+      "border-[#6f3a68]/48 bg-[#3b173f]/82 text-fuchsia-100/76 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]",
+  },
 };
 const LIST_COMPACT_HEADER_ALLOWANCE = 40;
 const LIST_COMPACT_ROW_HEIGHT = 42;
@@ -93,8 +118,11 @@ const MY_LIST_KEYBOARD_RECALC_DELAYS_MS = [80, 220, 420] as const;
 const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
 const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
+const MY_LIST_MANUAL_ROWS_STORAGE_KEY = "creator:my-list:manual-rows";
+const MY_LIST_CREATOR_DAY_ROLLOVER_HOUR = 4;
 const MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS = 500;
 const MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX = 14;
+const MY_LIST_DAY_DRAG_SCHEDULE_EXIT_PX = 22;
 const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
 const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
 const MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR = [
@@ -184,6 +212,7 @@ type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
 type MyListManualRow = {
   id: string;
   done: boolean;
+  completedAt: string | null;
   skillId: string | null;
   skillName: string | null;
   skillIcon: string;
@@ -202,6 +231,7 @@ function createManualRow(
   return {
     id,
     done: false,
+    completedAt: null,
     skillId: null,
     skillName: null,
     skillIcon: "",
@@ -210,6 +240,103 @@ function createManualRow(
     text: "",
     insertAfterRowKey: null,
   };
+}
+
+function sanitizeMyListManualRow(
+  value: unknown,
+  fallbackPriorityId: PriorityBucketId
+): MyListManualRow | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  if (!id || id === EMPTY_DRAFT_MANUAL_ROW_ID) return null;
+
+  const done = Boolean(record.done);
+  const completedAtValue = record.completedAt;
+  const completedAt =
+    done && typeof completedAtValue === "string" && completedAtValue.trim()
+      ? completedAtValue
+      : null;
+  const priorityId =
+    typeof record.priorityId === "string"
+      ? normalizePriority(record.priorityId)
+      : fallbackPriorityId;
+
+  return {
+    id,
+    done,
+    completedAt,
+    skillId:
+      typeof record.skillId === "string" && record.skillId.trim()
+        ? record.skillId
+        : null,
+    skillName:
+      typeof record.skillName === "string" && record.skillName.trim()
+        ? record.skillName
+        : null,
+    skillIcon: typeof record.skillIcon === "string" ? record.skillIcon : "",
+    priorityId,
+    dayBucketId: readMyListDayBucketFromUnknown(record),
+    text: typeof record.text === "string" ? record.text : "",
+    insertAfterRowKey:
+      typeof record.insertAfterRowKey === "string" &&
+      /^(manual|task):.+/.test(record.insertAfterRowKey) &&
+      record.insertAfterRowKey !== `manual:${EMPTY_DRAFT_MANUAL_ROW_ID}`
+        ? (record.insertAfterRowKey as MyListRowKey)
+        : null,
+  };
+}
+
+function sanitizeMyListManualRows(
+  rows: unknown,
+  fallbackPriorityId: PriorityBucketId
+): MyListManualRow[] {
+  if (!Array.isArray(rows)) return [];
+
+  const seenRowIds = new Set<string>();
+  return rows.reduce<MyListManualRow[]>((sanitizedRows, row) => {
+    const sanitizedRow = sanitizeMyListManualRow(row, fallbackPriorityId);
+    if (!sanitizedRow || seenRowIds.has(sanitizedRow.id)) {
+      return sanitizedRows;
+    }
+
+    seenRowIds.add(sanitizedRow.id);
+    sanitizedRows.push(sanitizedRow);
+    return sanitizedRows;
+  }, []);
+}
+
+function readStoredMyListManualRows(
+  fallbackPriorityId: PriorityBucketId
+): MyListManualRow[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const storedRows = window.localStorage.getItem(
+      MY_LIST_MANUAL_ROWS_STORAGE_KEY
+    );
+    if (storedRows === null) return [];
+    return sanitizeMyListManualRows(JSON.parse(storedRows), fallbackPriorityId);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredMyListManualRows(
+  rows: MyListManualRow[],
+  fallbackPriorityId: PriorityBucketId
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      MY_LIST_MANUAL_ROWS_STORAGE_KEY,
+      JSON.stringify(sanitizeMyListManualRows(rows, fallbackPriorityId))
+    );
+  } catch {
+    // Ignore unavailable storage so My List row editing is never blocked.
+  }
 }
 
 function normalizeMyListDayBucket(
@@ -253,6 +380,49 @@ function readMyListDayBucketFromUnknown(value: unknown): MyListDayBucketId | nul
   return null;
 }
 
+function getCurrentLocalCreatorDayStart(now: Date = new Date()) {
+  const start = new Date(now);
+  start.setHours(MY_LIST_CREATOR_DAY_ROLLOVER_HOUR, 0, 0, 0);
+
+  if (now.getTime() < start.getTime()) {
+    start.setDate(start.getDate() - 1);
+  }
+
+  return start;
+}
+
+function getNextLocalCreatorDayRollover(now: Date = new Date()) {
+  const nextRollover = getCurrentLocalCreatorDayStart(now);
+  nextRollover.setDate(nextRollover.getDate() + 1);
+  return nextRollover;
+}
+
+function readCompletedAtFromUnknown(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const completedAt = record.completedAt ?? record.completed_at;
+  return typeof completedAt === "string" && completedAt.trim().length > 0
+    ? completedAt
+    : null;
+}
+
+function isCompletedAtInCurrentLocalCreatorDay(
+  completedAt: string | null | undefined,
+  currentCreatorDayStart: Date,
+  nextCreatorDayRollover: Date
+) {
+  if (!completedAt) return false;
+
+  const completedDate = new Date(completedAt);
+  const completedTime = completedDate.getTime();
+  return (
+    Number.isFinite(completedTime) &&
+    completedTime >= currentCreatorDayStart.getTime() &&
+    completedTime < nextCreatorDayRollover.getTime()
+  );
+}
+
 type MyListTaskOverride = {
   skillId?: string | null;
   skillName?: string | null;
@@ -260,6 +430,7 @@ type MyListTaskOverride = {
   priorityId?: PriorityBucketId;
   dayBucketId?: MyListDayBucketId | null;
   text?: string;
+  completedAt?: string | null;
 };
 
 type MyListVisibleTodoRow =
@@ -302,6 +473,8 @@ type MyListScheduleDragPress = {
   rowWidth: number;
   timer: ReturnType<typeof setTimeout>;
   dragStarted: boolean;
+  dayDragStarted: boolean;
+  dayDropBucketId: MyListDayViewBucketId | null;
   restoreExpanded: boolean;
 };
 export type MyListTaskXpContext = {
@@ -341,6 +514,11 @@ export function MyListSheet({
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeView, setActiveView] = useState<MyListActiveView>("list");
   const [isDayLensActive, setIsDayLensActive] = useState(false);
+  const [areCompletedTodosVisible, setAreCompletedTodosVisible] =
+    useState(false);
+  const [creatorDayBoundaryNow, setCreatorDayBoundaryNow] = useState(
+    () => new Date()
+  );
   const [manualRows, setManualRows] = useState<MyListManualRow[]>([]);
   const [activeSkillPickerRowKey, setActiveSkillPickerRowKey] =
     useState<MyListRowKey | null>(null);
@@ -359,6 +537,8 @@ export function MyListSheet({
     () => new Set()
   );
   const [isScheduleDragActive, setIsScheduleDragActive] = useState(false);
+  const [dayDragDropBucketId, setDayDragDropBucketId] =
+    useState<MyListDayViewBucketId | null>(null);
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
     string | null
   >(null);
@@ -394,20 +574,44 @@ export function MyListSheet({
     null
   );
   const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
+  const creatorDayBoundary = useMemo(() => {
+    return {
+      currentStart: getCurrentLocalCreatorDayStart(creatorDayBoundaryNow),
+      nextRollover: getNextLocalCreatorDayRollover(creatorDayBoundaryNow),
+    };
+  }, [creatorDayBoundaryNow]);
   const visibleTasks = useMemo(
     () => tasks.filter((task) => !hiddenTaskRowIds.has(task.id)),
     [hiddenTaskRowIds, tasks]
   );
+  const activeVisibleTasks = useMemo(
+    () =>
+      visibleTasks.filter(
+        (task) => task.stage?.toString().toUpperCase() !== "PERFECT"
+      ),
+    [visibleTasks]
+  );
+  const activeManualRows = useMemo(
+    () => manualRows.filter((row) => !row.done),
+    [manualRows]
+  );
   const shouldShowEmptyDraftRow =
-    visibleTasks.length === 0 && manualRows.length === 0;
+    activeVisibleTasks.length === 0 && activeManualRows.length === 0;
   const hasListRows =
-    visibleTasks.length > 0 || manualRows.length > 0 || shouldShowEmptyDraftRow;
+    activeVisibleTasks.length > 0 ||
+    activeManualRows.length > 0 ||
+    shouldShowEmptyDraftRow;
   const visibleListRowCount =
-    visibleTasks.length + manualRows.length + (shouldShowEmptyDraftRow ? 1 : 0);
+    activeVisibleTasks.length +
+    activeManualRows.length +
+    (shouldShowEmptyDraftRow ? 1 : 0);
   const visibleManualRows = useMemo(
     () =>
       shouldShowEmptyDraftRow
-        ? [createManualRow(EMPTY_DRAFT_MANUAL_ROW_ID, defaultPriority.id)]
+        ? [
+            ...manualRows,
+            createManualRow(EMPTY_DRAFT_MANUAL_ROW_ID, defaultPriority.id),
+          ]
         : manualRows,
     [defaultPriority.id, manualRows, shouldShowEmptyDraftRow]
   );
@@ -471,9 +675,72 @@ export function MyListSheet({
     visibleManualRowsByAnchor,
     visibleTasks,
   ]);
+  const activeTodoRows = useMemo(
+    () =>
+      visibleTodoRows.filter((visibleRow) => {
+        if (visibleRow.rowType === "manual") {
+          return !visibleRow.row.done;
+        }
+
+        const override = taskOverrides[visibleRow.task.id];
+        const hasCompletionOverride = Boolean(
+          override && "completedAt" in override
+        );
+        const done = hasCompletionOverride
+          ? Boolean(override?.completedAt)
+          : visibleRow.task.stage?.toString().toUpperCase() === "PERFECT";
+        return !done;
+      }),
+    [taskOverrides, visibleTodoRows]
+  );
+  const completedTodoRows = useMemo(
+    () =>
+      visibleTodoRows.filter((visibleRow) => {
+        let done: boolean;
+        let completedAt: string | null;
+
+        if (visibleRow.rowType === "manual") {
+          done = visibleRow.row.done;
+          completedAt = visibleRow.row.completedAt;
+        } else {
+          const override = taskOverrides[visibleRow.task.id];
+          const hasCompletionOverride = Boolean(
+            override && "completedAt" in override
+          );
+          done = hasCompletionOverride
+            ? Boolean(override?.completedAt)
+            : visibleRow.task.stage?.toString().toUpperCase() === "PERFECT";
+          completedAt = hasCompletionOverride
+            ? override?.completedAt ?? null
+            : readCompletedAtFromUnknown(visibleRow.task);
+        }
+
+        return (
+          done &&
+          isCompletedAtInCurrentLocalCreatorDay(
+            completedAt,
+            creatorDayBoundary.currentStart,
+            creatorDayBoundary.nextRollover
+          )
+        );
+      }),
+    [
+      creatorDayBoundary.currentStart,
+      creatorDayBoundary.nextRollover,
+      taskOverrides,
+      visibleTodoRows,
+    ]
+  );
+  const completedTodoCount = completedTodoRows.length;
+  const completedRevealRowCount = areCompletedTodosVisible
+    ? completedTodoCount
+    : 0;
   const listContentHeight =
     LIST_COMPACT_HEADER_ALLOWANCE +
-    visibleListRowCount * LIST_COMPACT_ROW_HEIGHT +
+    (visibleListRowCount +
+      (completedTodoCount > 0 ? 1 : 0) +
+      completedRevealRowCount) *
+      LIST_COMPACT_ROW_HEIGHT +
     (isDayLensActive ? MY_LIST_DAY_VIEW_BUCKETS.length : PRIORITY_ORDER.length) *
       LIST_COMPACT_GROUP_HEADER_HEIGHT +
     LIST_COMPACT_NOTES_ALLOWANCE +
@@ -502,6 +769,16 @@ export function MyListSheet({
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
   );
+  const updateManualRowsWithPersistence = useCallback(
+    (updater: (currentRows: MyListManualRow[]) => MyListManualRow[]) => {
+      setManualRows((currentRows) => {
+        const nextRows = updater(currentRows);
+        writeStoredMyListManualRows(nextRows, defaultPriority.id);
+        return nextRows;
+      });
+    },
+    [defaultPriority.id]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -515,6 +792,27 @@ export function MyListSheet({
       // Ignore unavailable storage so the sheet remains usable.
     }
   }, []);
+
+  useEffect(() => {
+    setManualRows(readStoredMyListManualRows(defaultPriority.id));
+  }, [defaultPriority.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const now = new Date();
+    const delay = Math.max(
+      0,
+      getNextLocalCreatorDayRollover(now).getTime() - now.getTime()
+    );
+    const timeout = setTimeout(() => {
+      setCreatorDayBoundaryNow(new Date());
+    }, delay);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [creatorDayBoundaryNow]);
 
   const handleNoteChange = useCallback(
     (event: ReactChangeEvent<HTMLTextAreaElement>) => {
@@ -627,32 +925,91 @@ export function MyListSheet({
       return MY_LIST_DAY_VIEW_BUCKETS.map((bucketId) => ({
         id: bucketId,
         label: MY_LIST_DAY_LABELS[bucketId],
-        rows: visibleTodoRows.filter((visibleRow) => {
+        rows: activeTodoRows.filter((visibleRow) => {
           const rowBucketId = resolveVisibleRowDayBucketId(visibleRow);
           return bucketId === "anytime"
             ? rowBucketId === null
             : rowBucketId === bucketId;
         }),
-      })).filter((group) => group.rows.length > 0);
+      }));
     }
 
     return PRIORITY_ORDER.map((priorityId) => ({
       id: priorityId,
       label: PRIORITY_LABELS[priorityId],
-      rows: visibleTodoRows.filter(
+      rows: activeTodoRows.filter(
         (visibleRow) =>
           resolveVisibleRowPriorityGroupId(visibleRow) === priorityId
       ),
     })).filter((group) => group.rows.length > 0);
   }, [
+    activeTodoRows,
     isDayLensActive,
     resolveVisibleRowDayBucketId,
     resolveVisibleRowPriorityGroupId,
-    visibleTodoRows,
   ]);
+  const todoListSections = useMemo(
+    () => [
+      ...visibleTodoGroups.map((group) => ({
+        sectionType: "group" as const,
+        group,
+      })),
+      ...(completedTodoCount > 0
+        ? [
+            {
+              sectionType: "completed" as const,
+              group: {
+                id: "completed",
+                label: "",
+                rows: completedTodoRows,
+              },
+            },
+          ]
+        : []),
+    ],
+    [completedTodoCount, completedTodoRows, visibleTodoGroups]
+  );
 
   const canStartScheduleTimelineDrag =
     open && activeView === "list" && enableScheduleTimelineDrag;
+  const canStartTodoRowLongPress =
+    open &&
+    activeView === "list" &&
+    (enableScheduleTimelineDrag || isDayLensActive);
+
+  const assignDayBucketToRow = useCallback(
+    (
+      rowId: string,
+      rowType: "manual" | "task",
+      dayBucketId: MyListDayViewBucketId
+    ) => {
+      const nextDayBucketId =
+        dayBucketId === "anytime" ? null : dayBucketId;
+
+      setPendingDeleteRowId((currentRowId) =>
+        currentRowId === `${rowType}:${rowId}` ? null : currentRowId
+      );
+
+      if (rowType === "manual") {
+        updateManualRowsWithPersistence((currentRows) =>
+          currentRows.map((row) =>
+            row.id === rowId ? { ...row, dayBucketId: nextDayBucketId } : row
+          )
+        );
+      } else {
+        setTaskOverrides((currentOverrides) => ({
+          ...currentOverrides,
+          [rowId]: {
+            ...currentOverrides[rowId],
+            dayBucketId: nextDayBucketId,
+          },
+        }));
+      }
+
+      setActiveDayPickerRowKey(null);
+    },
+    [updateManualRowsWithPersistence]
+  );
 
   const clearScheduleDragPress = useCallback(() => {
     const press = scheduleDragPressRef.current;
@@ -660,6 +1017,7 @@ export function MyListSheet({
       clearTimeout(press.timer);
     }
     setIsScheduleDragActive(false);
+    setDayDragDropBucketId(null);
     scheduleDragPressRef.current = null;
   }, []);
 
@@ -669,6 +1027,56 @@ export function MyListSheet({
       Boolean(target.closest(MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR))
     );
   }, []);
+
+  const resolveDayDropBucketAtPoint = useCallback(
+    (clientX: number, clientY: number): MyListDayViewBucketId | null => {
+      if (!isDayLensActive || typeof document === "undefined") return null;
+
+      for (const bucketId of MY_LIST_DAY_VIEW_BUCKETS) {
+        const element = document.querySelector<HTMLElement>(
+          `[data-my-list-day-drop-zone="${bucketId}"]`
+        );
+        if (!element) continue;
+
+        const rect = element.getBoundingClientRect();
+        if (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        ) {
+          return bucketId;
+        }
+      }
+
+      return null;
+    },
+    [isDayLensActive]
+  );
+
+  const shouldEscalateDayDragToSchedule = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!canStartScheduleTimelineDrag) return false;
+
+      const sheetRect = sheetRootRef.current?.getBoundingClientRect();
+      const listRect = sheetScrollRef.current?.getBoundingClientRect();
+      const exitPadding = MY_LIST_DAY_DRAG_SCHEDULE_EXIT_PX;
+
+      if (!sheetRect || !listRect) return false;
+
+      if (!isExpanded) {
+        return clientY < listRect.top - exitPadding;
+      }
+
+      return (
+        clientX < sheetRect.left - exitPadding ||
+        clientX > sheetRect.right + exitPadding ||
+        clientY < sheetRect.top - exitPadding ||
+        clientY > sheetRect.bottom + exitPadding
+      );
+    },
+    [canStartScheduleTimelineDrag, isExpanded]
+  );
 
   const dispatchScheduleTimelineDrag = useCallback(
     (press: MyListScheduleDragPress) => {
@@ -726,8 +1134,17 @@ export function MyListSheet({
   const beginScheduleDragLongPress = useCallback(
     (press: MyListScheduleDragPress) => {
       if (scheduleDragPressRef.current !== press) return;
-      if (!canStartScheduleTimelineDrag) {
+      if (!canStartTodoRowLongPress) {
         clearScheduleDragPress();
+        return;
+      }
+      if (isDayLensActive) {
+        press.dayDragStarted = true;
+        press.dayDropBucketId = resolveDayDropBucketAtPoint(
+          press.lastX,
+          press.lastY
+        );
+        setDayDragDropBucketId(press.dayDropBucketId);
         return;
       }
       press.dragStarted = true;
@@ -735,9 +1152,11 @@ export function MyListSheet({
       dispatchScheduleTimelineDrag(press);
     },
     [
-      canStartScheduleTimelineDrag,
+      canStartTodoRowLongPress,
       clearScheduleDragPress,
       dispatchScheduleTimelineDrag,
+      isDayLensActive,
+      resolveDayDropBucketAtPoint,
     ]
   );
 
@@ -746,7 +1165,7 @@ export function MyListSheet({
       event: ReactPointerEvent<HTMLElement>,
       row: MyListScheduleDragRow
     ) => {
-      if (!canStartScheduleTimelineDrag) return;
+      if (!canStartTodoRowLongPress) return;
       if (event.button !== 0) return;
       if (shouldIgnoreScheduleDragTarget(event.target)) return;
       if (!row.title.trim()) return;
@@ -768,6 +1187,8 @@ export function MyListSheet({
           beginScheduleDragLongPress(press);
         }, MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS),
         dragStarted: false,
+        dayDragStarted: false,
+        dayDropBucketId: null,
         restoreExpanded: isExpanded,
       };
 
@@ -775,7 +1196,7 @@ export function MyListSheet({
     },
     [
       beginScheduleDragLongPress,
-      canStartScheduleTimelineDrag,
+      canStartTodoRowLongPress,
       clearScheduleDragPress,
       isExpanded,
       shouldIgnoreScheduleDragTarget,
@@ -794,6 +1215,26 @@ export function MyListSheet({
       }
       press.lastX = event.clientX;
       press.lastY = event.clientY;
+      if (press.dayDragStarted) {
+        event.preventDefault();
+
+        if (shouldEscalateDayDragToSchedule(event.clientX, event.clientY)) {
+          press.dayDragStarted = false;
+          press.dayDropBucketId = null;
+          setDayDragDropBucketId(null);
+          press.dragStarted = true;
+          setIsScheduleDragActive(true);
+          dispatchScheduleTimelineDrag(press);
+          return;
+        }
+
+        press.dayDropBucketId = resolveDayDropBucketAtPoint(
+          event.clientX,
+          event.clientY
+        );
+        setDayDragDropBucketId(press.dayDropBucketId);
+        return;
+      }
       if (press.dragStarted) {
         event.preventDefault();
         return;
@@ -807,7 +1248,12 @@ export function MyListSheet({
         clearScheduleDragPress();
       }
     },
-    [clearScheduleDragPress]
+    [
+      clearScheduleDragPress,
+      dispatchScheduleTimelineDrag,
+      resolveDayDropBucketAtPoint,
+      shouldEscalateDayDragToSchedule,
+    ]
   );
 
   const handleScheduleDragPointerEnd = useCallback(
@@ -820,9 +1266,18 @@ export function MyListSheet({
       ) {
         return;
       }
+      if (press.dayDragStarted) {
+        if (press.dayDropBucketId) {
+          assignDayBucketToRow(
+            press.row.rowId,
+            press.row.rowType,
+            press.dayDropBucketId
+          );
+        }
+      }
       clearScheduleDragPress();
     },
-    [clearScheduleDragPress]
+    [assignDayBucketToRow, clearScheduleDragPress]
   );
 
   const startScheduleDragTouchPress = useCallback(
@@ -830,7 +1285,7 @@ export function MyListSheet({
       event: ReactTouchEvent<HTMLElement>,
       row: MyListScheduleDragRow
     ) => {
-      if (!canStartScheduleTimelineDrag) return;
+      if (!canStartTodoRowLongPress) return;
       if (shouldIgnoreScheduleDragTarget(event.target)) return;
       if (!row.title.trim()) return;
       if (event.touches.length !== 1) return;
@@ -854,6 +1309,8 @@ export function MyListSheet({
           beginScheduleDragLongPress(press);
         }, MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS),
         dragStarted: false,
+        dayDragStarted: false,
+        dayDropBucketId: null,
         restoreExpanded: isExpanded,
       };
 
@@ -861,7 +1318,7 @@ export function MyListSheet({
     },
     [
       beginScheduleDragLongPress,
-      canStartScheduleTimelineDrag,
+      canStartTodoRowLongPress,
       clearScheduleDragPress,
       isExpanded,
       shouldIgnoreScheduleDragTarget,
@@ -890,6 +1347,27 @@ export function MyListSheet({
 
       press.lastX = touch.clientX;
       press.lastY = touch.clientY;
+      if (press.dayDragStarted) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (shouldEscalateDayDragToSchedule(touch.clientX, touch.clientY)) {
+          press.dayDragStarted = false;
+          press.dayDropBucketId = null;
+          setDayDragDropBucketId(null);
+          press.dragStarted = true;
+          setIsScheduleDragActive(true);
+          dispatchScheduleTimelineDrag(press);
+          return;
+        }
+
+        press.dayDropBucketId = resolveDayDropBucketAtPoint(
+          touch.clientX,
+          touch.clientY
+        );
+        setDayDragDropBucketId(press.dayDropBucketId);
+        return;
+      }
       if (press.dragStarted) {
         return;
       }
@@ -902,7 +1380,13 @@ export function MyListSheet({
         clearScheduleDragPress();
       }
     },
-    [clearScheduleDragPress, getTrackedScheduleDragTouch]
+    [
+      clearScheduleDragPress,
+      dispatchScheduleTimelineDrag,
+      getTrackedScheduleDragTouch,
+      resolveDayDropBucketAtPoint,
+      shouldEscalateDayDragToSchedule,
+    ]
   );
 
   const handleScheduleDragTouchEnd = useCallback(
@@ -910,9 +1394,16 @@ export function MyListSheet({
       const press = scheduleDragPressRef.current;
       if (!press || press.inputType !== "touch") return;
       if (!getTrackedScheduleDragTouch(event, press.pointerId)) return;
+      if (press.dayDragStarted && press.dayDropBucketId) {
+        assignDayBucketToRow(
+          press.row.rowId,
+          press.row.rowType,
+          press.dayDropBucketId
+        );
+      }
       clearScheduleDragPress();
     },
-    [clearScheduleDragPress, getTrackedScheduleDragTouch]
+    [assignDayBucketToRow, clearScheduleDragPress, getTrackedScheduleDragTouch]
   );
 
   const createManualRowId = useCallback(() => {
@@ -961,26 +1452,38 @@ export function MyListSheet({
     setPendingDeleteRowId(null);
     setActivePriorityPickerRowKey(null);
     setActiveDayPickerRowKey(null);
-    setManualRows((currentRows) => [
+    updateManualRowsWithPersistence((currentRows) => [
       ...currentRows,
       createManualRow(createManualRowId(), defaultPriority.id),
     ]);
-  }, [createManualRowId, defaultPriority.id]);
+  }, [createManualRowId, defaultPriority.id, updateManualRowsWithPersistence]);
 
   const updateManualRow = useCallback(
     (rowId: string, updates: Partial<Omit<MyListManualRow, "id">>) => {
+      const realDraftRowId =
+        rowId === EMPTY_DRAFT_MANUAL_ROW_ID ? createManualRowId() : null;
+
+      if (realDraftRowId) {
+        setPendingTitleFocusRowId(realDraftRowId);
+      }
+
       setPendingDeleteRowId((currentRowId) =>
         currentRowId === `manual:${rowId}` ? null : currentRowId
       );
-      setManualRows((currentRows) =>
+      updateManualRowsWithPersistence((currentRows) =>
         currentRows.length === 0 && rowId === EMPTY_DRAFT_MANUAL_ROW_ID
-          ? [{ ...createManualRow(rowId, defaultPriority.id), ...updates }]
+          ? [
+              {
+                ...createManualRow(realDraftRowId ?? rowId, defaultPriority.id),
+                ...updates,
+              },
+            ]
           : currentRows.map((row) =>
               row.id === rowId ? { ...row, ...updates } : row
             )
       );
     },
-    [defaultPriority.id]
+    [createManualRowId, defaultPriority.id, updateManualRowsWithPersistence]
   );
 
   const handleTodoTitleKeyDown = useCallback(
@@ -1014,7 +1517,7 @@ export function MyListSheet({
         };
 
         setPendingTitleFocusRowId(blankRowId);
-        setManualRows((currentRows) => {
+        updateManualRowsWithPersistence((currentRows) => {
           const draftRow =
             currentRows.find((row) => row.id === EMPTY_DRAFT_MANUAL_ROW_ID) ??
             createManualRow(realDraftRowId, defaultPriority.id);
@@ -1055,7 +1558,7 @@ export function MyListSheet({
       };
 
       setPendingTitleFocusRowId(blankRow.id);
-      setManualRows((currentRows) =>
+      updateManualRowsWithPersistence((currentRows) =>
         insertManualRowAfterAnchor(currentRows, anchorKey, blankRow)
       );
     },
@@ -1064,6 +1567,7 @@ export function MyListSheet({
       createManualRowId,
       defaultPriority.id,
       insertManualRowAfterAnchor,
+      updateManualRowsWithPersistence,
     ]
   );
 
@@ -1185,10 +1689,10 @@ export function MyListSheet({
 
   const handleManualCompletionToggle = useCallback(
     (rowId: string, checked: boolean) => {
-      if (!checked) {
-        updateManualRow(rowId, { done: false });
-        return;
-      }
+      updateManualRow(rowId, {
+        done: checked,
+        completedAt: checked ? new Date().toISOString() : null,
+      });
     },
     [updateManualRow]
   );
@@ -1227,28 +1731,9 @@ export function MyListSheet({
       rowType: "manual" | "task",
       dayBucketId: MyListDayViewBucketId
     ) => {
-      const nextDayBucketId =
-        dayBucketId === "anytime" ? null : dayBucketId;
-
-      setPendingDeleteRowId((currentRowId) =>
-        currentRowId === `${rowType}:${rowId}` ? null : currentRowId
-      );
-
-      if (rowType === "manual") {
-        updateManualRow(rowId, { dayBucketId: nextDayBucketId });
-      } else {
-        setTaskOverrides((currentOverrides) => ({
-          ...currentOverrides,
-          [rowId]: {
-            ...currentOverrides[rowId],
-            dayBucketId: nextDayBucketId,
-          },
-        }));
-      }
-
-      setActiveDayPickerRowKey(null);
+      assignDayBucketToRow(rowId, rowType, dayBucketId);
     },
-    [updateManualRow]
+    [assignDayBucketToRow]
   );
 
   const handleDeleteRowAction = useCallback(
@@ -1262,7 +1747,7 @@ export function MyListSheet({
 
       setPendingDeleteRowId(null);
       if (rowType === "manual") {
-        setManualRows((currentRows) =>
+        updateManualRowsWithPersistence((currentRows) =>
           currentRows.filter((row) => row.id !== rowId)
         );
         setActiveSkillPickerRowKey((currentRowKey) =>
@@ -1292,7 +1777,7 @@ export function MyListSheet({
         return nextIds;
       });
     },
-    [pendingDeleteRowId]
+    [pendingDeleteRowId, updateManualRowsWithPersistence]
   );
 
   const renderDeleteRowButton = useCallback(
@@ -1509,6 +1994,8 @@ export function MyListSheet({
                 dayBucketId === "anytime"
                   ? selectedDayBucketId === null
                   : selectedDayBucketId === dayBucketId;
+              const dayVisual = MY_LIST_DAY_VISUALS[dayBucketId];
+              const DayIcon = dayVisual.Icon;
 
               return (
                 <button
@@ -1523,13 +2010,18 @@ export function MyListSheet({
                   tabIndex={open ? 0 : -1}
                   className={clsx(
                     "flex h-8 w-full items-center gap-2 rounded-full border px-2 text-left text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                    dayVisual.pillClassName,
                     selected
-                      ? "border-white/22 bg-white/[0.12] text-white"
-                      : "border-transparent bg-transparent text-white/68 hover:bg-white/[0.08] hover:text-white"
+                      ? "ring-1 ring-white/18"
+                      : "opacity-75 hover:opacity-95"
                   )}
                 >
-                  <span className="flex h-5 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/30 text-[10px] font-black leading-none text-white/72">
-                    {MY_LIST_DAY_SYMBOLS[dayBucketId]}
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/18 text-current">
+                    <DayIcon
+                      className="h-3.5 w-3.5"
+                      strokeWidth={1.9}
+                      aria-hidden="true"
+                    />
                   </span>
                   <span className="min-w-0 flex-1 truncate">
                     {MY_LIST_DAY_LABELS[dayBucketId]}
@@ -2016,10 +2508,40 @@ export function MyListSheet({
   }, [clearKeyboardRecalculationTimeouts, open]);
 
   useEffect(() => {
-    if (!canStartScheduleTimelineDrag) {
+    if (completedTodoCount === 0) {
+      setAreCompletedTodosVisible(false);
+    }
+  }, [completedTodoCount]);
+
+  useEffect(() => {
+    setTaskOverrides((currentOverrides) => {
+      let changed = false;
+      const nextOverrides = { ...currentOverrides };
+
+      tasks.forEach((task) => {
+        const override = nextOverrides[task.id];
+        if (!override || !("completedAt" in override)) return;
+        if (pendingTaskIds.has(task.id)) return;
+
+        const taskDone =
+          task.stage?.toString().toUpperCase() === "PERFECT";
+        if (taskDone && override.completedAt) return;
+
+        const nextOverride = { ...override };
+        delete nextOverride.completedAt;
+        nextOverrides[task.id] = nextOverride;
+        changed = true;
+      });
+
+      return changed ? nextOverrides : currentOverrides;
+    });
+  }, [pendingTaskIds, tasks]);
+
+  useEffect(() => {
+    if (!canStartTodoRowLongPress) {
       clearScheduleDragPress();
     }
-  }, [canStartScheduleTimelineDrag, clearScheduleDragPress]);
+  }, [canStartTodoRowLongPress, clearScheduleDragPress]);
 
   useEffect(() => {
     if (!isScheduleDragActive || typeof window === "undefined") return;
@@ -2258,7 +2780,7 @@ export function MyListSheet({
                 className={clsx(
                   "flex h-6 w-6 items-center justify-center rounded-lg border bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35",
                   isDayLensActive
-                    ? "border-white/[0.18] bg-white/[0.085] text-white/88 ring-1 ring-white/[0.16]"
+                    ? "border-white/[0.08] text-white"
                     : "border-white/[0.08]"
                 )}
               >
@@ -2301,23 +2823,84 @@ export function MyListSheet({
           <div className="space-y-1.5">
             {hasListRows ? (
               <>
-                {visibleTodoGroups.map((group) => (
-                  <div key={group.id} className="space-y-1.5">
+                {todoListSections.map((section) => {
+                  const { group } = section;
+                  const isCompletedSection =
+                    section.sectionType === "completed";
+                  const dayDropBucketId =
+                    !isCompletedSection &&
+                    isDayLensActive &&
+                    MY_LIST_DAY_VIEW_BUCKETS.includes(
+                      group.id as MyListDayViewBucketId
+                    )
+                      ? (group.id as MyListDayViewBucketId)
+                      : null;
+                  const isActiveDayDropTarget =
+                    dayDropBucketId !== null &&
+                    dayDragDropBucketId === dayDropBucketId;
+
+                  const groupRows = (
+                    <div
+                      data-my-list-day-drop-zone={dayDropBucketId ?? undefined}
+                      className={clsx(
+                        "space-y-1.5 rounded-lg border px-1 pb-1 transition-colors",
+                        dayDropBucketId && "min-h-8",
+                        dayDropBucketId
+                          ? isActiveDayDropTarget
+                            ? "border-white/[0.16] bg-white/[0.055]"
+                            : "border-transparent bg-transparent"
+                          : "border-transparent bg-transparent"
+                      )}
+                    >
                     {group.label ? (
-                      <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
-                        {group.label}
-                      </div>
+                      dayDropBucketId ? (
+                        <div className="px-2 pt-1">
+                          {(() => {
+                            const dayVisual =
+                              MY_LIST_DAY_VISUALS[dayDropBucketId];
+                            const DayIcon = dayVisual.Icon;
+
+                            return (
+                              <div
+                                className={clsx(
+                                  "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em]",
+                                  dayVisual.pillClassName
+                                )}
+                              >
+                                <DayIcon
+                                  className="h-3 w-3"
+                                  strokeWidth={1.9}
+                                  aria-hidden="true"
+                                />
+                                <span>{group.label}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
+                          {group.label}
+                        </div>
+                      )
                     ) : null}
                     {group.rows.map((visibleRow) => {
                   if (visibleRow.rowType === "task") {
                     const task = visibleRow.task;
-                    const done =
-                      task.stage?.toString().toUpperCase() === "PERFECT";
+                    const taskCompletionOverride = taskOverrides[task.id];
+                    const hasTaskCompletionOverride = Boolean(
+                      taskCompletionOverride &&
+                        "completedAt" in taskCompletionOverride
+                    );
+                    const done = hasTaskCompletionOverride
+                      ? Boolean(taskCompletionOverride?.completedAt)
+                      : task.stage?.toString().toUpperCase() === "PERFECT";
                     const pending = pendingTaskIds.has(task.id);
                     const taskSkill = resolveTaskSkillMetadata(task);
                     const priorityId = resolveTaskPriorityId(task);
                     const dayBucketId = resolveTaskDayBucketId(task);
                     const dayViewBucketId = dayBucketId ?? "anytime";
+                    const dayVisual = MY_LIST_DAY_VISUALS[dayViewBucketId];
+                    const DayIcon = dayVisual.Icon;
                     const priorityOption =
                       QUICK_CREATE_PRIORITY_OPTIONS.find(
                         (option) => option.id === priorityId
@@ -2358,7 +2941,7 @@ export function MyListSheet({
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-schedule-drag-row={
-                        canStartScheduleTimelineDrag ? "true" : undefined
+                        canStartTodoRowLongPress ? "true" : undefined
                       }
                       onPointerDown={(event) =>
                         startScheduleDragPress(event, taskScheduleDragRow)
@@ -2374,7 +2957,7 @@ export function MyListSheet({
                       onTouchCancel={handleScheduleDragTouchEnd}
                       className={clsx(
                         "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
-                        canStartScheduleTimelineDrag &&
+                        canStartTodoRowLongPress &&
                           (isScheduleDragActive
                             ? "cursor-grabbing"
                             : "cursor-grab"),
@@ -2388,6 +2971,18 @@ export function MyListSheet({
                         disabled={pending}
                         onChange={(event) => {
                           setPendingDeleteRowId(null);
+                          const checked = event.target.checked;
+
+                          setTaskOverrides((currentOverrides) => ({
+                            ...currentOverrides,
+                            [task.id]: {
+                              ...currentOverrides[task.id],
+                              completedAt: checked
+                                ? new Date().toISOString()
+                                : null,
+                            },
+                          }));
+
                           const sourceElement = event.currentTarget.closest(
                             '[data-creator-xp-source="my-list-todo"]'
                           );
@@ -2502,13 +3097,16 @@ export function MyListSheet({
                             }}
                             tabIndex={open ? 0 : -1}
                             className={clsx(
-                              "flex h-7 min-w-7 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:border-white/14 hover:bg-white/[0.055] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                              "flex h-7 min-w-7 items-center justify-center rounded-full border px-1.5 outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                              dayVisual.pillClassName,
                               done && "text-white/42"
                             )}
                           >
-                            <span className="max-w-8 truncate">
-                              {MY_LIST_DAY_SYMBOLS[dayViewBucketId]}
-                            </span>
+                            <DayIcon
+                              className="h-3.5 w-3.5"
+                              strokeWidth={1.9}
+                              aria-hidden="true"
+                            />
                           </button>
                           {renderDayPicker(rowKey, dayBucketId, (nextId) =>
                             handleDaySelect(task.id, "task", nextId)
@@ -2579,7 +3177,7 @@ export function MyListSheet({
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-schedule-drag-row={
-                        canStartScheduleTimelineDrag ? "true" : undefined
+                        canStartTodoRowLongPress ? "true" : undefined
                       }
                       onPointerDown={(event) =>
                         startScheduleDragPress(event, manualScheduleDragRow)
@@ -2595,7 +3193,7 @@ export function MyListSheet({
                       onTouchCancel={handleScheduleDragTouchEnd}
                       className={clsx(
                         "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
-                        canStartScheduleTimelineDrag && "cursor-grab"
+                        canStartTodoRowLongPress && "cursor-grab"
                       )}
                     >
                     <input
@@ -2708,6 +3306,8 @@ export function MyListSheet({
                           QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
                         const dayViewBucketId =
                           row.dayBucketId ?? "anytime";
+                        const dayVisual = MY_LIST_DAY_VISUALS[dayViewBucketId];
+                        const DayIcon = dayVisual.Icon;
                         const rowKey = `manual:${row.id}` as const;
 
                         return (
@@ -2729,13 +3329,16 @@ export function MyListSheet({
                                 }}
                                 tabIndex={open ? 0 : -1}
                                 className={clsx(
-                                  "flex h-7 min-w-7 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:border-white/14 hover:bg-white/[0.055] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                                  "flex h-7 min-w-7 items-center justify-center rounded-full border px-1.5 outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                  dayVisual.pillClassName,
                                   row.done && "text-white/42"
                                 )}
                               >
-                                <span className="max-w-8 truncate">
-                                  {MY_LIST_DAY_SYMBOLS[dayViewBucketId]}
-                                </span>
+                                <DayIcon
+                                  className="h-3.5 w-3.5"
+                                  strokeWidth={1.9}
+                                  aria-hidden="true"
+                                />
                               </button>
                               {renderDayPicker(
                                 rowKey,
@@ -2787,8 +3390,60 @@ export function MyListSheet({
                     </div>
                   );
                     })}
-                  </div>
-                ))}
+                    </div>
+                  );
+
+                  if (isCompletedSection) {
+                    return (
+                      <div key="completed-todos" className="pt-1">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setAreCompletedTodosVisible((current) => !current);
+                          }}
+                          tabIndex={open ? 0 : -1}
+                          className="mx-auto block px-3 py-1 text-center text-xs font-medium text-white/38 outline-none transition hover:text-white/58 focus-visible:ring-2 focus-visible:ring-white/30"
+                        >
+                          {areCompletedTodosVisible
+                            ? "Hide completed"
+                            : "Show completed"}
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {areCompletedTodosVisible ? (
+                            <motion.div
+                              key="completed-todos-rows"
+                              initial={
+                                prefersReducedMotion
+                                  ? false
+                                  : { height: 0, opacity: 0 }
+                              }
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={
+                                prefersReducedMotion
+                                  ? undefined
+                                  : { height: 0, opacity: 0 }
+                              }
+                              transition={{
+                                duration: prefersReducedMotion ? 0 : 0.22,
+                                ease: [0.22, 1, 0.36, 1],
+                              }}
+                              className="overflow-hidden"
+                            >
+                              <div className="pt-1">{groupRows}</div>
+                            </motion.div>
+                          ) : null}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={group.id}>
+                      {groupRows}
+                    </div>
+                  );
+                })}
               </>
             ) : (
               <div className="rounded-lg bg-transparent px-3 py-2.5 text-sm text-white/42">

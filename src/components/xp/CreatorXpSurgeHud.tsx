@@ -15,6 +15,8 @@ import {
   dispatchCreatorXpBurstStatus,
   subscribeToCreatorXpBurstArrivals,
 } from "@/lib/effects/creatorXpBurstBus";
+import { playUiSound } from "@/lib/audio/uiSounds";
+import { hapticLevelUp } from "@/lib/haptics/creatorHaptics";
 
 export type CreatorXpSurgeSourceType =
   | "TASK"
@@ -88,8 +90,13 @@ const DEFAULT_PROGRESS_FROM = 24;
 const DEFAULT_PROGRESS_TO = 72;
 const SCHEDULED_EVENT_SURGE_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const CREATOR_XP_HEX_FILL_DURATION_MS = 1900;
+const CREATOR_XP_LEVEL_BREAK_FILL_DURATION_MS = 1180;
 const CREATOR_XP_HEX_IGNITION_DURATION_MS = 720;
+const CREATOR_XP_LEVEL_BREAK_HOLD_MS = 150;
+const CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS = 430;
+const CREATOR_XP_LEVEL_BREAK_ROLLOVER_MS = 390;
 const CREATOR_XP_HEX_ACTIVE_COLOR = "rgb(74, 222, 128)";
+const CREATOR_XP_HEX_OVERLOAD_COLOR = "rgb(245, 247, 250)";
 const CREATOR_XP_HEX_GAIN_EPSILON = 0.35;
 const CREATOR_XP_HEX_POINTS = [
   { x: 50, y: 4 },
@@ -238,13 +245,32 @@ function CreatorXpHexBadge({
   level: number | null;
   burnActive: boolean;
 }) {
-  const progressTarget = progressTo < progressFrom ? 100 : progressTo;
+  const progressTarget = isLevelBreak
+    ? 100
+    : progressTo < progressFrom
+      ? 100
+      : progressTo;
   const hasGain =
     progressTarget - progressFrom > CREATOR_XP_HEX_GAIN_EPSILON;
   const initialProgress = prefersReducedMotion ? progressTarget : progressFrom;
   const [animatedProgress, setAnimatedProgress] = useState(initialProgress);
+  const [overloadActive, setOverloadActive] = useState(false);
+  const [hasRolledOver, setHasRolledOver] = useState(false);
+  const [displayLevel, setDisplayLevel] = useState(level);
+  const levelBreakFeedbackFiredRef = useRef<number | null>(null);
+  const rolloverTarget =
+    typeof surge.levelBreak?.progressRolloverTo === "number" &&
+    Number.isFinite(surge.levelBreak.progressRolloverTo)
+      ? Math.min(Math.max(surge.levelBreak.progressRolloverTo, 0), 100)
+      : 0;
+  const hasRolloverProgress = rolloverTarget > 0;
   const burnHeadPoint = resolveCreatorXpHexPoint(animatedProgress);
-  const baseProgress = prefersReducedMotion ? progressTarget : progressFrom;
+  const baseProgress =
+    hasRolledOver || (prefersReducedMotion && isLevelBreak)
+      ? animatedProgress
+      : prefersReducedMotion
+        ? progressTarget
+        : progressFrom;
   const baseProgressStrokeOffset = 100 - baseProgress;
   const animatedGainLength = Math.min(
     Math.max(animatedProgress - progressFrom, 0),
@@ -252,6 +278,7 @@ function CreatorXpHexBadge({
   );
   const showAnimatedGain =
     !prefersReducedMotion &&
+    !hasRolledOver &&
     animatedGainLength > CREATOR_XP_HEX_GAIN_EPSILON;
   const showHexIgnition = !prefersReducedMotion && burnActive && hasGain;
   const showBurnHead = showAnimatedGain && animatedProgress > 0;
@@ -265,10 +292,39 @@ function CreatorXpHexBadge({
   );
   const ignitionOpacityPeak = isLevelBreak ? 0.18 : 0.14;
   const fillDelayMs = 90;
+  const fillDurationMs = isLevelBreak
+    ? CREATOR_XP_LEVEL_BREAK_FILL_DURATION_MS
+    : CREATOR_XP_HEX_FILL_DURATION_MS;
+  const levelBreakNewLevel =
+    typeof surge.levelBreak?.newLevel === "number" &&
+    Number.isFinite(surge.levelBreak.newLevel)
+      ? surge.levelBreak.newLevel
+      : level;
+  const levelBreakOldLevel =
+    typeof surge.levelBreak?.oldLevel === "number" &&
+    Number.isFinite(surge.levelBreak.oldLevel)
+      ? surge.levelBreak.oldLevel
+      : level;
+  const fireLevelBreakFeedback = useCallback(() => {
+    if (!isLevelBreak || levelBreakFeedbackFiredRef.current === surge.id) {
+      return;
+    }
+
+    levelBreakFeedbackFiredRef.current = surge.id;
+    void hapticLevelUp();
+    void playUiSound("taskComplete", { volume: 0.72 });
+  }, [isLevelBreak, surge.id]);
 
   useEffect(() => {
+    setOverloadActive(false);
+    setHasRolledOver(false);
+    setDisplayLevel(isLevelBreak ? levelBreakOldLevel : level);
+
     if (prefersReducedMotion) {
-      setAnimatedProgress(progressTarget);
+      setAnimatedProgress(isLevelBreak ? rolloverTarget : progressTarget);
+      setHasRolledOver(isLevelBreak);
+      setDisplayLevel(isLevelBreak ? levelBreakNewLevel : level);
+      fireLevelBreakFeedback();
       return;
     }
     if (!burnActive) {
@@ -282,11 +338,16 @@ function CreatorXpHexBadge({
 
     let frame = 0;
     let startTime: number | null = null;
+    let overloadStartTimeout = 0;
+    let overloadEndTimeout = 0;
+    let levelLockTimeout = 0;
+    let rolloverTimeout = 0;
+    let rolloverFrame = 0;
     const timeout = window.setTimeout(() => {
       frame = window.requestAnimationFrame(function animate(timestamp) {
         startTime ??= timestamp;
         const elapsed = timestamp - startTime;
-        const progress = Math.min(elapsed / CREATOR_XP_HEX_FILL_DURATION_MS, 1);
+        const progress = Math.min(elapsed / fillDurationMs, 1);
         const easedProgress = easeCreatorXpHexFill(progress);
         setAnimatedProgress(
           progressFrom + (progressTarget - progressFrom) * easedProgress
@@ -294,20 +355,80 @@ function CreatorXpHexBadge({
 
         if (progress < 1) {
           frame = window.requestAnimationFrame(animate);
+          return;
         }
+
+        if (!isLevelBreak) return;
+
+        overloadStartTimeout = window.setTimeout(() => {
+          setOverloadActive(true);
+          setDisplayLevel(levelBreakNewLevel);
+          fireLevelBreakFeedback();
+        }, CREATOR_XP_LEVEL_BREAK_HOLD_MS);
+        overloadEndTimeout = window.setTimeout(() => {
+          setOverloadActive(false);
+        }, CREATOR_XP_LEVEL_BREAK_HOLD_MS + CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS);
+        levelLockTimeout = window.setTimeout(() => {
+          setDisplayLevel(levelBreakNewLevel);
+        }, CREATOR_XP_LEVEL_BREAK_HOLD_MS + CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS);
+
+        rolloverTimeout = window.setTimeout(() => {
+          setHasRolledOver(true);
+          setAnimatedProgress(0);
+
+          if (!hasRolloverProgress) {
+            return;
+          }
+
+          rolloverFrame = window.requestAnimationFrame(() => {
+            let rolloverStartTime: number | null = null;
+            rolloverFrame = window.requestAnimationFrame(function roll(
+              rolloverTimestamp
+            ) {
+              rolloverStartTime ??= rolloverTimestamp;
+              const rolloverElapsed = rolloverTimestamp - rolloverStartTime;
+              const rolloverProgress = Math.min(
+                rolloverElapsed / CREATOR_XP_LEVEL_BREAK_ROLLOVER_MS,
+                1
+              );
+              const easedRollover = easeCreatorXpHexFill(rolloverProgress);
+              setAnimatedProgress(rolloverTarget * easedRollover);
+
+              if (rolloverProgress < 1) {
+                rolloverFrame = window.requestAnimationFrame(roll);
+                return;
+              }
+
+              setAnimatedProgress(rolloverTarget);
+            });
+          });
+        }, CREATOR_XP_LEVEL_BREAK_HOLD_MS + CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS);
       });
     }, fillDelayMs);
 
     return () => {
       window.clearTimeout(timeout);
+      window.clearTimeout(overloadStartTimeout);
+      window.clearTimeout(overloadEndTimeout);
+      window.clearTimeout(levelLockTimeout);
+      window.clearTimeout(rolloverTimeout);
       if (frame) window.cancelAnimationFrame(frame);
+      if (rolloverFrame) window.cancelAnimationFrame(rolloverFrame);
     };
   }, [
     burnActive,
     hasGain,
+    hasRolloverProgress,
+    isLevelBreak,
+    level,
+    levelBreakNewLevel,
+    levelBreakOldLevel,
     prefersReducedMotion,
+    fillDurationMs,
+    fireLevelBreakFeedback,
     progressFrom,
     progressTarget,
+    rolloverTarget,
     surge.id,
   ]);
 
@@ -327,6 +448,38 @@ function CreatorXpHexBadge({
       className="relative size-[118px]"
       data-creator-xp-target="surge-hex"
     >
+      {isLevelBreak ? (
+        <motion.div
+          className="absolute inset-[-10px] rounded-full bg-white/0 blur-xl"
+          initial={false}
+          animate={
+            overloadActive && !prefersReducedMotion
+              ? { opacity: [0, 0.36, 0], scale: [0.88, 1.08, 1] }
+              : { opacity: 0, scale: 1 }
+          }
+          transition={{
+            duration: CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS / 1000,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+          aria-hidden="true"
+        />
+      ) : null}
+      {isLevelBreak ? (
+        <motion.div
+          className="absolute inset-[-16px] rounded-full border border-white/35 shadow-[0_0_34px_rgba(255,255,255,0.18)]"
+          initial={false}
+          animate={
+            overloadActive && !prefersReducedMotion
+              ? { opacity: [0, 0.78, 0], scale: [0.82, 1.22, 1.34] }
+              : { opacity: 0, scale: 0.9 }
+          }
+          transition={{
+            duration: 0.38,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+          aria-hidden="true"
+        />
+      ) : null}
       <svg
         className="absolute inset-0 h-full w-full overflow-visible"
         viewBox="0 0 100 100"
@@ -475,6 +628,44 @@ function CreatorXpHexBadge({
             />
           </g>
         ) : null}
+        {isLevelBreak ? (
+          <motion.g
+            initial={false}
+            animate={
+              overloadActive && !prefersReducedMotion
+                ? { opacity: [0, 1, 0.24, 0], scale: [0.96, 1.075, 1.01, 1] }
+                : { opacity: 0, scale: 1 }
+            }
+            transition={{
+              duration: CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS / 1000,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+            style={{
+              transformBox: "fill-box",
+              transformOrigin: "center",
+            }}
+          >
+            <path
+              d={CREATOR_XP_HEX_PATH}
+              pathLength="100"
+              fill="rgba(255, 255, 255, 0.08)"
+              stroke={CREATOR_XP_HEX_OVERLOAD_COLOR}
+              strokeWidth="9.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.9"
+            />
+            <path
+              d={CREATOR_XP_HEX_PATH}
+              pathLength="100"
+              fill="none"
+              stroke="rgba(255, 255, 255, 0.72)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </motion.g>
+        ) : null}
         <path
           d={CREATOR_XP_HEX_PATH}
           fill="none"
@@ -490,9 +681,32 @@ function CreatorXpHexBadge({
             {skillIcon}
           </div>
           {level != null ? (
-            <div className="mt-1 text-[13px] font-extrabold leading-none text-white">
-              LVL {level}
-            </div>
+            <motion.div
+              initial={false}
+              animate={
+                overloadActive && !prefersReducedMotion
+                  ? {
+                      color: [
+                        "rgb(255, 255, 255)",
+                        "rgb(248, 250, 252)",
+                        "rgb(255, 255, 255)",
+                      ],
+                      scale: [1, 1.24, 0.98, 1],
+                    }
+                  : { color: "rgb(255, 255, 255)", scale: 1 }
+              }
+              transition={{
+                duration: CREATOR_XP_LEVEL_BREAK_OVERLOAD_MS / 1000,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+              className={`mt-1 text-[13px] font-extrabold leading-none text-white ${
+                isLevelBreak
+                  ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.28)]"
+                  : ""
+              }`}
+            >
+              LVL {displayLevel}
+            </motion.div>
           ) : null}
         </div>
       </div>
@@ -519,6 +733,9 @@ export function showScheduledEventCreatorXpSurge({
 
   showCreatorXpSurge({
     ...builtPayload,
+    ...input,
+    sourceType: builtPayload.sourceType,
+    sourceIcon: input.sourceIcon ?? builtPayload.sourceIcon,
     title: input.title?.trim() || builtPayload.title,
     displayXp: input.displayXp ?? builtPayload.displayXp,
     currentLevel: input.currentLevel ?? builtPayload.currentLevel,
@@ -641,6 +858,29 @@ function CreatorXpSurgeHud({
               level={level}
               burnActive={burnActive}
             />
+
+            {isLevelBreak ? (
+              <motion.div
+                initial={
+                  prefersReducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: 2, scale: 0.98 }
+                }
+                animate={
+                  prefersReducedMotion
+                    ? { opacity: 1 }
+                    : { opacity: 1, y: 0, scale: 1 }
+                }
+                transition={{
+                  delay: prefersReducedMotion ? 0 : 1.42,
+                  duration: 0.22,
+                  ease: [0.22, 0.72, 0.24, 1],
+                }}
+                className="mt-1 rounded-full border border-white/15 bg-white/[0.08] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.18em] text-white shadow-[0_0_18px_rgba(255,255,255,0.12)]"
+              >
+                LEVEL UP
+              </motion.div>
+            ) : null}
 
             <div className="mt-1 max-w-full text-[13px] font-semibold leading-tight text-white">
               <div className="truncate">{skillName}</div>

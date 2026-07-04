@@ -1,5 +1,5 @@
 import AnalyticsPageContent from "@/components/AnalyticsPageContent";
 
 export default function FriendsPage() {
-  return <AnalyticsPageContent />;
+  return <AnalyticsPageContent compactTopSpacing />;
 }

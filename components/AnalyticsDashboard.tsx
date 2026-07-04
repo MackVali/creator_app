@@ -7,7 +7,9 @@ import {
   useState,
   type CSSProperties,
   type ComponentProps,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type TouchEvent as ReactTouchEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -1487,11 +1489,14 @@ function SkillXpSparkline({
   const height = 12;
   const paddingX = 1.5;
   const paddingY = 2;
-  const values = trend.map((point) =>
-    Number.isFinite(point.xp) && point.xp > 0 ? point.xp : 0
-  );
-  const maxValue = Math.max(0, ...values);
-  const points = values.length > 0 ? values : [0, 0];
+  let runningTotal = 0;
+  const cumulativeXpValues = trend.map((point) => {
+    const bucketXp = Number.isFinite(point.xp) && point.xp > 0 ? point.xp : 0;
+    runningTotal += bucketXp;
+    return runningTotal;
+  });
+  const maxValue = Math.max(0, ...cumulativeXpValues);
+  const points = cumulativeXpValues.length > 0 ? cumulativeXpValues : [0, 0];
   const drawableWidth = width - paddingX * 2;
   const drawableHeight = height - paddingY * 2;
   const path = points
@@ -2083,6 +2088,12 @@ type OverviewXpTooltipContentProps = {
   range: AnalyticsRange;
 };
 
+function stopOverviewChartGesturePropagation(
+  event: ReactPointerEvent<HTMLElement> | ReactTouchEvent<HTMLElement>
+) {
+  event.stopPropagation();
+}
+
 function OverviewLineChart({
   points,
   range,
@@ -2156,7 +2167,19 @@ function OverviewLineChart({
       </div>
 
       <div className="space-y-2.5 px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
-        <div className="relative" data-overview-area-chart>
+        <div
+          className="relative touch-none"
+          data-no-tab-swipe
+          data-overview-area-chart
+          onPointerDown={stopOverviewChartGesturePropagation}
+          onPointerMove={stopOverviewChartGesturePropagation}
+          onPointerUp={stopOverviewChartGesturePropagation}
+          onPointerCancel={stopOverviewChartGesturePropagation}
+          onTouchStart={stopOverviewChartGesturePropagation}
+          onTouchMove={stopOverviewChartGesturePropagation}
+          onTouchEnd={stopOverviewChartGesturePropagation}
+          onTouchCancel={stopOverviewChartGesturePropagation}
+        >
           <ChartContainer
             config={overviewXpChartConfig}
             className="h-[214px] w-full aspect-auto sm:h-[230px] md:h-[238px]"
@@ -2817,19 +2840,8 @@ function DailyConsistencyCard({
             Daily consistency
           </div>
         </div>
-        <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/55 text-center text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="border-r border-white/10 px-3 py-2">
-            <div className="font-semibold text-zinc-200">{activeDays}</div>
-            <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-              Days active
-            </div>
-          </div>
-          <div className="px-3 py-2">
-            <div className="font-semibold text-zinc-200">{cells.length}</div>
-            <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-              Days tracked
-            </div>
-          </div>
+        <div className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+          {activeDays}/{cells.length} DAYS ACTIVE
         </div>
       </div>
 

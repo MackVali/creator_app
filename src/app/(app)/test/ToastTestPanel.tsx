@@ -6,6 +6,7 @@ import type { PermissionState } from "@capacitor/core";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { RotateCcw } from "lucide-react";
 import { useToastHelpers } from "@/components/ui/toast";
+import { showCreatorXpSurge } from "@/components/xp/CreatorXpSurgeHud";
 import {
   cancelPendingScheduleBlockLocalNotifications,
   listPendingScheduleBlockLocalNotifications,
@@ -421,6 +422,23 @@ export default function ToastTestPanel() {
     }
   };
 
+  const handleTestSkillLevelUpXp = () => {
+    showCreatorXpSurge({
+      sourceType: "HABIT",
+      title: "Discipline",
+      sourceIcon: "⚡️",
+      displayXp: 12,
+      currentLevel: 7,
+      progressFrom: 86,
+      progressTo: 100,
+      levelBreak: {
+        oldLevel: 6,
+        newLevel: 7,
+        progressRolloverTo: 18,
+      },
+    });
+  };
+
   return (
     <main className="min-h-[calc(100vh-9rem)] bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -491,6 +509,21 @@ export default function ToastTestPanel() {
               </div>
             </div>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              XP HUD
+            </h2>
+          </div>
+          <button
+            type="button"
+            className={buttonClass}
+            onClick={handleTestSkillLevelUpXp}
+          >
+            Test Skill Level Up XP
+          </button>
         </section>
 
         <section className="rounded-lg border border-white/10 bg-[#090B11] p-4 shadow-2xl shadow-black/30 sm:p-5">

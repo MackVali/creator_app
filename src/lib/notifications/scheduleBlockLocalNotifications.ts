@@ -613,7 +613,7 @@ function buildStartNotificationBody(group: GroupedBlock, label: string) {
 
 function buildFocusStartNotificationBody(group: GroupedBlock) {
   const icons = collectFocusStartSkillIcons(group);
-  if (icons.length === 0) return "Start focus session.";
+  if (icons.length === 0) return "Start FocusPomo session.";
 
   const visibleIcons = icons.slice(0, MAX_FOCUS_START_SKILL_ICONS);
   const remainingCount = icons.length - visibleIcons.length;
@@ -622,7 +622,7 @@ function buildFocusStartNotificationBody(group: GroupedBlock) {
       ? `${visibleIcons.join(" ")} +${remainingCount}`
       : visibleIcons.join(" ");
 
-  return `Start focus session: ${iconText}`;
+  return `Start FocusPomo session: ${iconText}`;
 }
 
 function collectFocusStartSkillIcons(group: GroupedBlock) {
