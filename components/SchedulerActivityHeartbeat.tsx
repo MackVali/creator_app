@@ -16,6 +16,10 @@ export default function SchedulerActivityHeartbeat() {
     fetch("/api/scheduler/activity", {
       method: "POST",
       cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
     }).catch((err: unknown) => {
       console.warn("Scheduler activity heartbeat failed:", err);
     });

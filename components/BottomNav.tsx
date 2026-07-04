@@ -1,6 +1,6 @@
 "use client";
 
-import { Blocks, Calendar, LayoutDashboard, Users } from "lucide-react";
+import { BarChart3, Blocks, Calendar, LayoutDashboard } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
@@ -27,7 +27,7 @@ const bottomNavIconComponents: Record<
   ComponentType<{ className?: string }>
 > = {
   command: LayoutDashboard,
-  connect: Users,
+  connect: BarChart3,
   schedule: Calendar,
   source: Blocks,
 };

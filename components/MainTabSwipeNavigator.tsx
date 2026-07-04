@@ -16,8 +16,8 @@ import {
 } from "@/app/(routes)/navigation";
 import CommandTabContent from "@/app/(app)/dashboard/CommandTabContent";
 import DashboardClient from "@/app/(app)/dashboard/DashboardClient";
-import ConnectTabContent from "@/app/(app)/friends/ConnectTabContent";
 import ScheduleTabContent from "@/app/(app)/schedule/ScheduleTabContent";
+import AnalyticsPageContent from "@/components/AnalyticsPageContent";
 import Source from "@/components/Source";
 import PlusRoute from "@/components/auth/PlusRoute";
 
@@ -250,7 +250,7 @@ function DestinationPreview({ route }: { route: SwipeTargetRoute }) {
       className="min-h-full bg-[#050505] text-white"
     >
       {route === COMMAND_ROUTE ? <CommandTabContent /> : null}
-      {route === CONNECT_ROUTE ? <ConnectTabContent /> : null}
+      {route === CONNECT_ROUTE ? <AnalyticsPageContent /> : null}
       {route === SOURCE_ROUTE ? (
         <PlusRoute>
           <Source />
@@ -263,7 +263,7 @@ function DestinationPreview({ route }: { route: SwipeTargetRoute }) {
 
 function PersistentTabPanel({ route }: { route: PersistentMainTabRouteHref }) {
   if (route === COMMAND_ROUTE) return <DashboardClient />;
-  if (route === CONNECT_ROUTE) return <ConnectTabContent />;
+  if (route === CONNECT_ROUTE) return <AnalyticsPageContent />;
 
   return (
     <PlusRoute>

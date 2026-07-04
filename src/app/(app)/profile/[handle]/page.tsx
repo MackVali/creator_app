@@ -969,9 +969,9 @@ export default function ProfileByHandlePage() {
         primaryLabel: "Edit Profile",
         primaryAriaLabel: "Edit profile",
         onPrimaryClick: () => router.push("/profile/edit"),
-        secondaryLabel: "View Inbox",
-        secondaryAriaLabel: "View inbox",
-        onSecondaryClick: () => router.push("/inbox"),
+        secondaryLabel: "View Connect",
+        secondaryAriaLabel: "View Connect",
+        onSecondaryClick: () => router.push("/connect"),
       }
     : {
         primaryLabel: primaryActionLabel,
