@@ -39,6 +39,7 @@ import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
+import type { MyListPinnableSourceType } from "@/lib/my-list/pinnedSourceItems";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
 import {
   PRIORITY_LABELS,
@@ -433,9 +434,19 @@ type MyListTaskOverride = {
   completedAt?: string | null;
 };
 
+export type MyListPinnedSourceRow = {
+  id: string;
+  sourceType: MyListPinnableSourceType;
+  title: string;
+  priority?: string | null;
+  energy?: string | null;
+  stage?: string | null;
+};
+
 type MyListVisibleTodoRow =
   | { rowType: "task"; task: TaskLite }
-  | { rowType: "manual"; row: MyListManualRow };
+  | { rowType: "manual"; row: MyListManualRow }
+  | { rowType: "pinnedSource"; row: MyListPinnedSourceRow };
 
 type MyListActiveView = "list" | "matrix";
 type MyListScheduleMetadata = {
@@ -486,6 +497,7 @@ export function MyListSheet({
   open,
   onOpenChange,
   tasks,
+  pinnedSourceRows,
   skills,
   skillCategories,
   pendingTaskIds,
@@ -497,6 +509,7 @@ export function MyListSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tasks: TaskLite[];
+  pinnedSourceRows?: MyListPinnedSourceRow[];
   skills: SkillRow[];
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
@@ -532,6 +545,9 @@ export function MyListSheet({
   );
   const [taskOverrides, setTaskOverrides] = useState<
     Record<string, MyListTaskOverride>
+  >({});
+  const [pinnedSourceCompletions, setPinnedSourceCompletions] = useState<
+    Record<string, string | null>
   >({});
   const [hiddenTaskRowIds, setHiddenTaskRowIds] = useState<Set<string>>(
     () => new Set()
@@ -591,18 +607,26 @@ export function MyListSheet({
       ),
     [visibleTasks]
   );
+  const visiblePinnedSourceRows = useMemo(
+    () => pinnedSourceRows ?? [],
+    [pinnedSourceRows]
+  );
   const activeManualRows = useMemo(
     () => manualRows.filter((row) => !row.done),
     [manualRows]
   );
   const shouldShowEmptyDraftRow =
-    activeVisibleTasks.length === 0 && activeManualRows.length === 0;
+    activeVisibleTasks.length === 0 &&
+    visiblePinnedSourceRows.length === 0 &&
+    activeManualRows.length === 0;
   const hasListRows =
     activeVisibleTasks.length > 0 ||
+    visiblePinnedSourceRows.length > 0 ||
     activeManualRows.length > 0 ||
     shouldShowEmptyDraftRow;
   const visibleListRowCount =
     activeVisibleTasks.length +
+    visiblePinnedSourceRows.length +
     activeManualRows.length +
     (shouldShowEmptyDraftRow ? 1 : 0);
   const visibleManualRows = useMemo(
@@ -653,6 +677,10 @@ export function MyListSheet({
       appendAnchoredManualRows(`task:${task.id}`);
     });
 
+    visiblePinnedSourceRows.forEach((row) => {
+      rows.push({ rowType: "pinnedSource", row });
+    });
+
     unanchoredVisibleManualRows.forEach((row) => {
       if (renderedManualRowIds.has(row.id)) return;
 
@@ -673,6 +701,7 @@ export function MyListSheet({
     unanchoredVisibleManualRows,
     visibleManualRows,
     visibleManualRowsByAnchor,
+    visiblePinnedSourceRows,
     visibleTasks,
   ]);
   const activeTodoRows = useMemo(
@@ -680,6 +709,12 @@ export function MyListSheet({
       visibleTodoRows.filter((visibleRow) => {
         if (visibleRow.rowType === "manual") {
           return !visibleRow.row.done;
+        }
+
+        if (visibleRow.rowType === "pinnedSource") {
+          return !pinnedSourceCompletions[
+            `${visibleRow.row.sourceType}:${visibleRow.row.id}`
+          ];
         }
 
         const override = taskOverrides[visibleRow.task.id];
@@ -691,7 +726,7 @@ export function MyListSheet({
           : visibleRow.task.stage?.toString().toUpperCase() === "PERFECT";
         return !done;
       }),
-    [taskOverrides, visibleTodoRows]
+    [pinnedSourceCompletions, taskOverrides, visibleTodoRows]
   );
   const completedTodoRows = useMemo(
     () =>
@@ -702,6 +737,12 @@ export function MyListSheet({
         if (visibleRow.rowType === "manual") {
           done = visibleRow.row.done;
           completedAt = visibleRow.row.completedAt;
+        } else if (visibleRow.rowType === "pinnedSource") {
+          completedAt =
+            pinnedSourceCompletions[
+              `${visibleRow.row.sourceType}:${visibleRow.row.id}`
+            ] ?? null;
+          done = Boolean(completedAt);
         } else {
           const override = taskOverrides[visibleRow.task.id];
           const hasCompletionOverride = Boolean(
@@ -727,6 +768,7 @@ export function MyListSheet({
     [
       creatorDayBoundary.currentStart,
       creatorDayBoundary.nextRollover,
+      pinnedSourceCompletions,
       taskOverrides,
       visibleTodoRows,
     ]
@@ -866,7 +908,9 @@ export function MyListSheet({
     (visibleRow: MyListVisibleTodoRow): MyListDayBucketId | null =>
       visibleRow.rowType === "manual"
         ? visibleRow.row.dayBucketId
-        : resolveTaskDayBucketId(visibleRow.task),
+        : visibleRow.rowType === "pinnedSource"
+          ? null
+          : resolveTaskDayBucketId(visibleRow.task),
     [resolveTaskDayBucketId]
   );
 
@@ -874,8 +918,10 @@ export function MyListSheet({
     (visibleRow: MyListVisibleTodoRow): PriorityBucketId =>
       visibleRow.rowType === "manual"
         ? visibleRow.row.priorityId
-        : resolveTaskPriorityGroupId(visibleRow.task),
-    [resolveTaskPriorityGroupId]
+        : visibleRow.rowType === "pinnedSource"
+          ? normalizePriority(visibleRow.row.priority ?? defaultPriority.id)
+          : resolveTaskPriorityGroupId(visibleRow.task),
+    [defaultPriority.id, resolveTaskPriorityGroupId]
   );
 
   const resolveTaskSkillMetadata = useCallback(
@@ -3145,6 +3191,102 @@ export function MyListSheet({
                       </div>
                     </div>
                   );
+                  }
+
+                  if (visibleRow.rowType === "pinnedSource") {
+                    const row = visibleRow.row;
+                    const completionKey = `${row.sourceType}:${row.id}`;
+                    const completedAt =
+                      pinnedSourceCompletions[completionKey] ?? null;
+                    const done = Boolean(completedAt);
+                    const checkboxId = `my-list-pinned-${row.sourceType.toLowerCase()}-${row.id}`;
+                    const priorityId = normalizePriority(
+                      row.priority ?? defaultPriority.id
+                    );
+                    const priorityOption =
+                      QUICK_CREATE_PRIORITY_OPTIONS.find(
+                        (option) => option.id === priorityId
+                      ) ?? defaultPriority;
+                    const prioritySymbol =
+                      priorityOption.symbol ||
+                      QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+                    const title = row.title.trim() || `Untitled ${row.sourceType.toLowerCase()}`;
+
+                    return (
+                      <div
+                        key={`pinned-source:${row.sourceType}:${row.id}`}
+                        data-creator-xp-source="my-list-todo"
+                        data-creator-xp-kind="todo"
+                        className="flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
+                      >
+                        <input
+                          id={checkboxId}
+                          type="checkbox"
+                          checked={done}
+                          onChange={(event) => {
+                            setPendingDeleteRowId(null);
+                            setPinnedSourceCompletions((current) => ({
+                              ...current,
+                              [completionKey]: event.target.checked
+                                ? new Date().toISOString()
+                                : null,
+                            }));
+                          }}
+                          tabIndex={open ? 0 : -1}
+                          className="peer sr-only"
+                        />
+                        <label
+                          htmlFor={checkboxId}
+                          aria-label={
+                            done
+                              ? "Mark pinned item incomplete"
+                              : "Mark pinned item complete"
+                          }
+                          className={clsx(
+                            "relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                            done
+                              ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11),inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-1 ring-green-900/45"
+                              : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                          )}
+                        >
+                          <span
+                            className={clsx(
+                              "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                              done ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                        </label>
+                        <span
+                          className={clsx(
+                            "shrink-0 rounded-full border border-white/8 bg-black/20 px-1.5 py-0.5 text-[0.56rem] font-black uppercase tracking-[0.08em] text-white/42",
+                            done && "text-white/32"
+                          )}
+                        >
+                          {row.sourceType}
+                        </span>
+                        <span
+                          className={clsx(
+                            "min-w-0 flex-1 truncate leading-snug text-white/84",
+                            done && "text-white/42 line-through"
+                          )}
+                        >
+                          {title}
+                        </span>
+                        <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
+                          <span
+                            title={priorityOption.label}
+                            className={clsx(
+                              "flex h-7 min-w-7 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1 text-[10px] font-black leading-none text-white/46",
+                              done && "text-white/32"
+                            )}
+                          >
+                            <span className="max-w-8 truncate">
+                              {prioritySymbol}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    );
                   }
 
                   const row = visibleRow.row;

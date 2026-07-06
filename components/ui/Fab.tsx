@@ -68,6 +68,7 @@ import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
 import { PostModal } from "./PostModal";
+import OperatorAiSheet from "@/components/ai/OperatorAiSheet";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "@/components/schedule/DayTimeline";
 import { Button } from "@/components/ui/button";
@@ -147,6 +148,10 @@ import {
 import { normalizeGoalStatus } from "@/lib/goals/status";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
+import {
+  isSourceItemPinned,
+  setSourceItemPinned,
+} from "@/lib/my-list/pinnedSourceItems";
 import {
   type FabCreationRequest,
 } from "@/components/ui/FabCreationContext";
@@ -2137,6 +2142,9 @@ const dispatchCreatorEntitySaved = (
     }),
   );
 };
+
+const pinToggleButtonClassName =
+  "absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md border outline-none transition focus-visible:ring-2 focus-visible:ring-white/35 md:h-9 md:w-9";
 
 const createLocalDraftId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -5598,6 +5606,7 @@ export function Fab({
     HABIT_RECURRENCE_OPTIONS[0]?.value ??
     "";
   const [projectName, setProjectName] = useState("");
+  const [projectPinned, setProjectPinned] = useState(false);
   const [projectStage, setProjectStage] = useState<string>("RESEARCH");
   const [projectDuration, setProjectDuration] = useState<number | "">("");
   const [projectPriority, setProjectPriority] = useState<string>("MEDIUM");
@@ -6445,6 +6454,7 @@ export function Fab({
   });
   const [projectWhy, setProjectWhy] = useState("");
   const [goalName, setGoalName] = useState("");
+  const [goalPinned, setGoalPinned] = useState(false);
   const [goalMonumentId, setGoalMonumentId] = useState<string | "">("");
   const [goalPriority, setGoalPriority] = useState("MEDIUM");
   const [goalEnergy, setGoalEnergy] = useState("MEDIUM");
@@ -6533,6 +6543,7 @@ export function Fab({
   > | null>(null);
   const goalProjectCompletingIdsRef = useRef<Set<string>>(new Set());
   const [taskName, setTaskName] = useState("");
+  const [taskPinned, setTaskPinned] = useState(false);
   const [taskStage, setTaskStage] = useState("PREPARE");
   const [taskDuration, setTaskDuration] = useState<string>("");
   const normalizedTaskDuration = Number.parseInt(taskDuration || "30", 10);
@@ -6805,6 +6816,7 @@ export function Fab({
   > | null>(null);
   const projectTaskCompletingIdsRef = useRef<Set<string>>(new Set());
   const [habitName, setHabitName] = useState("");
+  const [habitPinned, setHabitPinned] = useState(false);
   const [
     unifiedTitlePlaceholderIndex,
     setUnifiedTitlePlaceholderIndex,
@@ -8945,6 +8957,13 @@ export function Fab({
           }
 
           setGoalName(goalRow?.name ?? "");
+          setGoalPinned(
+            isSourceItemPinned({
+              userId: user.id,
+              sourceType: "GOAL",
+              sourceId: entityId,
+            }),
+          );
           setGoalPriority(normalizedPriority);
           setGoalEnergy(normalizedEnergy);
           setGoalActive(
@@ -9086,6 +9105,13 @@ export function Fab({
               : null;
 
           setProjectName(projectData?.name ?? "");
+          setProjectPinned(
+            isSourceItemPinned({
+              userId: user.id,
+              sourceType: "PROJECT",
+              sourceId: entityId,
+            }),
+          );
           setProjectGoalId(
             typeof projectData?.goal_id === "string" &&
               projectData.goal_id.trim().length > 0
@@ -9219,6 +9245,13 @@ export function Fab({
             return;
           }
 
+          setHabitPinned(
+            isSourceItemPinned({
+              userId: user.id,
+              sourceType: "HABIT",
+              sourceId: entityId,
+            }),
+          );
           const habitRowRecord = habitRow as Record<string, unknown>;
           const scheduledHabitInstance =
             scheduledHabitRow as FabLockedScheduleInstanceRow | null;
@@ -9363,6 +9396,13 @@ export function Fab({
           const tagRows = tagRowsData as FabTagRelationRow[] | null;
 
           setTaskName(taskRow?.name ?? "");
+          setTaskPinned(
+            isSourceItemPinned({
+              userId: user.id,
+              sourceType: "TASK",
+              sourceId: entityId,
+            }),
+          );
           setTaskGoalId(taskRow?.goal_id ?? null);
           setTaskProjectId(taskRow?.project_id ?? "");
           setTaskPriority(normalizeFabPriority(taskRow?.priority));
@@ -11317,6 +11357,7 @@ export function Fab({
 
   const resetFabFormState = useCallback(() => {
     setProjectName("");
+    setProjectPinned(false);
     setProjectStage("RESEARCH");
     setProjectDuration("");
     setProjectPriority("MEDIUM");
@@ -11333,6 +11374,7 @@ export function Fab({
     setProjectExactEndTime("");
 
     setGoalName("");
+    setGoalPinned(false);
     setGoalMonumentId("");
     setGoalRelationType(null);
     setGoalRelationId("");
@@ -11351,6 +11393,7 @@ export function Fab({
     setGoalCampaignCreating(false);
 
     setTaskName("");
+    setTaskPinned(false);
     setTaskStage("PREPARE");
     setTaskDuration("");
     setTaskPriority("MEDIUM");
@@ -11374,6 +11417,7 @@ export function Fab({
     resetUnifiedEventInviteDraft();
 
     setHabitName("");
+    setHabitPinned(false);
     setHabitType(defaultHabitType);
     setHabitRecurrence(defaultHabitRecurrence);
     setMemoCaptureActions({
@@ -16084,7 +16128,7 @@ export function Fab({
                     </Select>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
-                    <div className="grid gap-2">
+                    <div className="relative grid gap-2">
                       <Label htmlFor="goal-name" className="sr-only">
                         Goal name
                       </Label>
@@ -16096,8 +16140,33 @@ export function Fab({
                           setGoalName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your GOAL"
-                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] pr-12 text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
+                      <button
+                        type="button"
+                        aria-label={goalPinned ? "Unpin Goal" : "Pin Goal"}
+                        aria-pressed={goalPinned}
+                        title={goalPinned ? "Unpin Goal" : "Pin Goal"}
+                        onClick={() => {
+                          void hapticSoftTick();
+                          setGoalPinned((current) => !current);
+                        }}
+                        className={cn(
+                          pinToggleButtonClassName,
+                          goalPinned
+                            ? "border-amber-300/40 bg-amber-300/15 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.12)]"
+                            : "border-white/10 bg-black/10 text-white/38 hover:border-white/18 hover:text-white/70",
+                        )}
+                      >
+                        <Pin
+                          className={cn(
+                            "h-4 w-4",
+                            goalPinned && "fill-current",
+                          )}
+                          strokeWidth={2.2}
+                          aria-hidden="true"
+                        />
+                      </button>
                     </div>
                     <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
@@ -16584,7 +16653,7 @@ export function Fab({
                     </div>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
-                    <div className="grid min-w-0 gap-2">
+                    <div className="relative grid min-w-0 gap-2">
                       <Label htmlFor="main-project-name" className="sr-only">
                         Project name
                       </Label>
@@ -16596,8 +16665,35 @@ export function Fab({
                           setProjectName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your PROJECT"
-                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] pr-12 text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
+                      <button
+                        type="button"
+                        aria-label={
+                          projectPinned ? "Unpin Project" : "Pin Project"
+                        }
+                        aria-pressed={projectPinned}
+                        title={projectPinned ? "Unpin Project" : "Pin Project"}
+                        onClick={() => {
+                          void hapticSoftTick();
+                          setProjectPinned((current) => !current);
+                        }}
+                        className={cn(
+                          pinToggleButtonClassName,
+                          projectPinned
+                            ? "border-amber-300/40 bg-amber-300/15 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.12)]"
+                            : "border-white/10 bg-black/10 text-white/38 hover:border-white/18 hover:text-white/70",
+                        )}
+                      >
+                        <Pin
+                          className={cn(
+                            "h-4 w-4",
+                            projectPinned && "fill-current",
+                          )}
+                          strokeWidth={2.2}
+                          aria-hidden="true"
+                        />
+                      </button>
                     </div>
                     <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
@@ -16999,7 +17095,7 @@ export function Fab({
                     </Select>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
-                    <div className="grid min-w-0 gap-2">
+                    <div className="relative grid min-w-0 gap-2">
                       <Label htmlFor="main-task-name" className="sr-only">
                         Task name
                       </Label>
@@ -17011,8 +17107,33 @@ export function Fab({
                           setTaskName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your TASK"
-                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] pr-12 text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
+                      <button
+                        type="button"
+                        aria-label={taskPinned ? "Unpin Task" : "Pin Task"}
+                        aria-pressed={taskPinned}
+                        title={taskPinned ? "Unpin Task" : "Pin Task"}
+                        onClick={() => {
+                          void hapticSoftTick();
+                          setTaskPinned((current) => !current);
+                        }}
+                        className={cn(
+                          pinToggleButtonClassName,
+                          taskPinned
+                            ? "border-amber-300/40 bg-amber-300/15 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.12)]"
+                            : "border-white/10 bg-black/10 text-white/38 hover:border-white/18 hover:text-white/70",
+                        )}
+                      >
+                        <Pin
+                          className={cn(
+                            "h-4 w-4",
+                            taskPinned && "fill-current",
+                          )}
+                          strokeWidth={2.2}
+                          aria-hidden="true"
+                        />
+                      </button>
                     </div>
                     <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
@@ -17586,7 +17707,7 @@ export function Fab({
                     </div>
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
-                    <div className="grid min-w-0 gap-2">
+                    <div className="relative grid min-w-0 gap-2">
                       <Label htmlFor="habit-name" className="sr-only">
                         Habit name
                       </Label>
@@ -17598,8 +17719,33 @@ export function Fab({
                           setHabitName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your HABIT"
-                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] pr-12 text-lg font-extrabold leading-tight placeholder:font-extrabold selection:bg-zinc-500/40 selection:text-white focus:!border-zinc-400/50 focus-visible:!border-zinc-400/50 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
+                      <button
+                        type="button"
+                        aria-label={habitPinned ? "Unpin Habit" : "Pin Habit"}
+                        aria-pressed={habitPinned}
+                        title={habitPinned ? "Unpin Habit" : "Pin Habit"}
+                        onClick={() => {
+                          void hapticSoftTick();
+                          setHabitPinned((current) => !current);
+                        }}
+                        className={cn(
+                          pinToggleButtonClassName,
+                          habitPinned
+                            ? "border-amber-300/40 bg-amber-300/15 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.12)]"
+                            : "border-white/10 bg-black/10 text-white/38 hover:border-white/18 hover:text-white/70",
+                        )}
+                      >
+                        <Pin
+                          className={cn(
+                            "h-4 w-4",
+                            habitPinned && "fill-current",
+                          )}
+                          strokeWidth={2.2}
+                          aria-hidden="true"
+                        />
+                      </button>
                     </div>
                     <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
@@ -22789,6 +22935,12 @@ export function Fab({
             monumentId: null,
             goalId: parentGoalId,
           });
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: "PROJECT",
+            sourceId: savedProjectId,
+            pinned: projectPinned,
+          });
           restoreGoalProjectStack();
           void hapticComplete();
           toast.success(
@@ -22947,6 +23099,12 @@ export function Fab({
             monumentId: null,
             projectId: parentProjectId,
           });
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: "TASK",
+            sourceId: savedTaskId,
+            pinned: taskPinned,
+          });
           restoreProjectTaskStack();
           void hapticComplete();
           toast.success(
@@ -23089,6 +23247,12 @@ export function Fab({
             monumentId: goalRelationResolution.selectedMonumentId,
             circleId: goalRelationResolution.selectedCircleId,
           });
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: "GOAL",
+            sourceId: activeEditTarget.entityId,
+            pinned: goalPinned,
+          });
           resetFabFormState();
           closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
@@ -23176,6 +23340,12 @@ export function Fab({
             action: "updated",
             monumentId: null,
           });
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: "PROJECT",
+            sourceId: activeEditTarget.entityId,
+            pinned: projectPinned,
+          });
           resetFabFormState();
           closeExpandedPanel({ notifyEditClose: false });
           onEditSaved?.(activeEditTarget);
@@ -23244,6 +23414,12 @@ export function Fab({
             entityId: activeEditTarget.entityId,
             action: "updated",
             monumentId: null,
+          });
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: "TASK",
+            sourceId: activeEditTarget.entityId,
+            pinned: taskPinned,
           });
           resetFabFormState();
           closeExpandedPanel({ notifyEditClose: false });
@@ -23344,6 +23520,12 @@ export function Fab({
             entityId: activeEditTarget.entityId,
             action: "updated",
             monumentId: null,
+          });
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: "HABIT",
+            sourceId: activeEditTarget.entityId,
+            pinned: habitPinned,
           });
           resetFabFormState();
           closeExpandedPanel({ notifyEditClose: false });
@@ -23737,6 +23919,19 @@ export function Fab({
           }
         }
         if (createdEntityId) {
+          setSourceItemPinned({
+            userId: user.id,
+            sourceType: createdType,
+            sourceId: createdEntityId,
+            pinned:
+              createdType === "GOAL"
+                ? goalPinned
+                : createdType === "PROJECT"
+                  ? projectPinned
+                  : createdType === "TASK"
+                    ? taskPinned
+                    : habitPinned,
+          });
           const activeCreationRequest =
             creationRequest &&
             openingCreationRequestIdRef.current === creationRequest.id
@@ -23842,6 +24037,7 @@ export function Fab({
     habitWindowEdgePreference,
     habitWhy,
     habitName,
+    habitPinned,
     editTarget,
     isAddEventTimingInvalid,
     isDeletingFabEntity,
@@ -23856,6 +24052,7 @@ export function Fab({
     goalDue,
     goalEnergy,
     goalName,
+    goalPinned,
     goalPriority,
     goalWhy,
     manageableCircles,
@@ -23871,6 +24068,7 @@ export function Fab({
     projectExactStartTime,
     projectGoalId,
     projectName,
+    projectPinned,
     projectPriority,
     projectScheduleTimingMode,
     projectSkillIds,
@@ -23895,6 +24093,7 @@ export function Fab({
     taskHasExactDate,
     taskGoalId,
     taskName,
+    taskPinned,
     taskNotes,
     taskCompletedAt,
     taskPriority,
@@ -24053,6 +24252,7 @@ export function Fab({
 
       setIsDeletingFabEntity(true);
       try {
+        let deleteUserId: string | null = null;
         if (entityType === "GOAL") {
           const supabase = getSupabaseBrowser();
           if (!supabase) {
@@ -24066,12 +24266,20 @@ export function Fab({
           if (!user) {
             throw new Error("You must be signed in to delete this goal");
           }
+          deleteUserId = user.id;
           await deleteGoalCascade({
             supabase,
             goalId: entityId,
             userId: user.id,
           });
         } else {
+          const supabase = getSupabaseBrowser();
+          if (supabase) {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            deleteUserId = user?.id ?? null;
+          }
           const response = await fetch(
             `/api/schedule/events/${typeSegment}/${entityId}`,
             {
@@ -24087,6 +24295,12 @@ export function Fab({
         }
 
         if (entityType !== "EVENT") {
+          setSourceItemPinned({
+            userId: deleteUserId,
+            sourceType: entityType,
+            sourceId: entityId,
+            pinned: false,
+          });
           dispatchCreatorEntitySaved({
             entityType,
             entityId,
@@ -25147,6 +25361,19 @@ export function Fab({
         : isTask
           ? setTaskName
           : setHabitName;
+    const sourcePinned = isProject
+      ? projectPinned
+      : isTask
+        ? taskPinned
+        : isHabit
+          ? habitPinned
+          : false;
+    const setSourcePinned = isProject
+      ? setProjectPinned
+      : isTask
+        ? setTaskPinned
+        : setHabitPinned;
+    const sourcePinLabel = isProject ? "Project" : isTask ? "Task" : "Habit";
     const titleSuggestion =
       titleValue.length === 0 && isEventsMode
         ? UNIFIED_EVENT_TITLE_PLACEHOLDERS[
@@ -29342,8 +29569,46 @@ export function Fab({
                         value={titleValue}
                         onChange={(event) => titleSetter(event.target.value)}
                         placeholder={titlePlaceholder}
-                        className="relative h-auto rounded-none !border-0 !bg-transparent px-0 py-0 text-[1.45rem] font-medium leading-tight text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:!border-0 focus-visible:!border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none sm:text-[1.65rem]"
+                        className={cn(
+                          "relative h-auto rounded-none !border-0 !bg-transparent px-0 py-0 text-[1.45rem] font-medium leading-tight text-zinc-100 shadow-none placeholder:text-zinc-500 selection:bg-zinc-500/40 selection:text-white focus:!border-0 focus-visible:!border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none sm:text-[1.65rem]",
+                          !isEventsMode && "pr-10",
+                        )}
                       />
+                      {!isEventsMode ? (
+                        <button
+                          type="button"
+                          aria-label={
+                            sourcePinned
+                              ? `Unpin ${sourcePinLabel}`
+                              : `Pin ${sourcePinLabel}`
+                          }
+                          aria-pressed={sourcePinned}
+                          title={
+                            sourcePinned
+                              ? `Unpin ${sourcePinLabel}`
+                              : `Pin ${sourcePinLabel}`
+                          }
+                          onClick={() => {
+                            void hapticSoftTick();
+                            setSourcePinned((current) => !current);
+                          }}
+                          className={cn(
+                            "absolute right-0 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md border outline-none transition focus-visible:ring-2 focus-visible:ring-white/35",
+                            sourcePinned
+                              ? "border-amber-300/40 bg-amber-300/15 text-amber-200"
+                              : "border-white/10 bg-black/10 text-white/38 hover:border-white/18 hover:text-white/70",
+                          )}
+                        >
+                          <Pin
+                            className={cn(
+                              "h-4 w-4",
+                              sourcePinned && "fill-current",
+                            )}
+                            strokeWidth={2.2}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      ) : null}
                     </div>
                   </div>
 
@@ -31796,7 +32061,7 @@ export function Fab({
                       <X className="h-5 w-5" aria-hidden="true" />
                     </motion.button>
                     <motion.div
-                      className="relative flex min-h-[240px] flex-1 flex-col items-start justify-start px-6 py-5 pr-16 text-left"
+                      className="relative flex min-h-[240px] flex-1 flex-col text-left"
                       variants={{
                         closed: { opacity: 0 },
                         open: {
@@ -31809,12 +32074,7 @@ export function Fab({
                         },
                       }}
                     >
-                      <h2 className="text-sm font-semibold leading-tight text-white">
-                        Ilav - Personal Assistant
-                      </h2>
-                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">
-                        COMING SOON
-                      </p>
+                      <OperatorAiSheet />
                     </motion.div>
                   </motion.div>
                 </motion.div>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   MyListSheet,
+  type MyListPinnedSourceRow,
   type MyListTaskXpContext,
 } from "@/components/my-list/MyListSheet";
 import {
@@ -25,6 +26,10 @@ import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
+import {
+  MY_LIST_PINNED_SOURCE_ITEMS_CHANGED_EVENT,
+  readPinnedSourceItemIds,
+} from "@/lib/my-list/pinnedSourceItems";
 
 type MyListXpAwardResult = {
   success?: boolean;
@@ -132,6 +137,9 @@ export function GlobalMyList({
   const { user, ready } = useAuth();
   const [open, setOpen] = useState(false);
   const [tasks, setTasks] = useState<TaskLite[]>([]);
+  const [pinnedSourceRows, setPinnedSourceRows] = useState<
+    MyListPinnedSourceRow[]
+  >([]);
   const [skills, setSkills] = useState<SkillRow[]>([]);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [scheduledTaskIds, setScheduledTaskIds] = useState<Set<string>>(
@@ -145,6 +153,7 @@ export function GlobalMyList({
   useEffect(() => {
     if (!ready || !user?.id) {
       setTasks([]);
+      setPinnedSourceRows([]);
       setSkills([]);
       setSkillCategories([]);
       setScheduledTaskIds(new Set());
@@ -154,6 +163,106 @@ export function GlobalMyList({
     let active = true;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
+
+    const loadPinnedSourceRows = async (): Promise<MyListPinnedSourceRow[]> => {
+      const pinnedIds = readPinnedSourceItemIds(user.id);
+      const [goalsResult, projectsResult, tasksResult, habitsResult] =
+        await Promise.all([
+          pinnedIds.GOAL.length > 0
+            ? supabase
+                .from("goals")
+                .select("id, name, priority, energy, status")
+                .eq("user_id", user.id)
+                .in("id", pinnedIds.GOAL)
+            : Promise.resolve({ data: [], error: null }),
+          pinnedIds.PROJECT.length > 0
+            ? supabase
+                .from("projects")
+                .select("id, name, priority, energy, stage")
+                .eq("user_id", user.id)
+                .in("id", pinnedIds.PROJECT)
+            : Promise.resolve({ data: [], error: null }),
+          pinnedIds.TASK.length > 0
+            ? supabase
+                .from("tasks")
+                .select("id, name, priority, energy, stage")
+                .eq("user_id", user.id)
+                .in("id", pinnedIds.TASK)
+            : Promise.resolve({ data: [], error: null }),
+          pinnedIds.HABIT.length > 0
+            ? supabase
+                .from("habits")
+                .select("id, name, energy, habit_type")
+                .eq("user_id", user.id)
+                .in("id", pinnedIds.HABIT)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+
+      const firstError =
+        goalsResult.error ||
+        projectsResult.error ||
+        tasksResult.error ||
+        habitsResult.error;
+      if (firstError) throw firstError;
+
+      return [
+        ...((goalsResult.data ?? []) as {
+          id: string;
+          name: string | null;
+          priority: string | null;
+          energy: string | null;
+          status: string | null;
+        }[]).map((goal) => ({
+          id: goal.id,
+          sourceType: "GOAL" as const,
+          title: goal.name ?? "Untitled Goal",
+          priority: goal.priority,
+          energy: goal.energy,
+          stage: goal.status,
+        })),
+        ...((projectsResult.data ?? []) as {
+          id: string;
+          name: string | null;
+          priority: string | null;
+          energy: string | null;
+          stage: string | null;
+        }[]).map((project) => ({
+          id: project.id,
+          sourceType: "PROJECT" as const,
+          title: project.name ?? "Untitled Project",
+          priority: project.priority,
+          energy: project.energy,
+          stage: project.stage,
+        })),
+        ...((tasksResult.data ?? []) as {
+          id: string;
+          name: string | null;
+          priority: string | null;
+          energy: string | null;
+          stage: string | null;
+        }[]).map((task) => ({
+          id: task.id,
+          sourceType: "TASK" as const,
+          title: task.name ?? "Untitled Task",
+          priority: task.priority,
+          energy: task.energy,
+          stage: task.stage,
+        })),
+        ...((habitsResult.data ?? []) as {
+          id: string;
+          name: string | null;
+          energy: string | null;
+          habit_type: string | null;
+        }[]).map((habit) => ({
+          id: habit.id,
+          sourceType: "HABIT" as const,
+          title: habit.name ?? "Untitled Habit",
+          priority: "MEDIUM",
+          energy: habit.energy,
+          stage: habit.habit_type,
+        })),
+      ];
+    };
 
     const loadMyListData = async () => {
       const [taskRows, skillRows, categoryRows, scheduledRowsResult] =
@@ -174,7 +283,11 @@ export function GlobalMyList({
         throw scheduledRowsResult.error;
       }
 
+      const pinnedRows = await loadPinnedSourceRows();
+      if (!active) return;
+
       setTasks(taskRows);
+      setPinnedSourceRows(pinnedRows);
       setSkills(skillRows);
       setSkillCategories(categoryRows);
       setScheduledTaskIds(
@@ -191,13 +304,40 @@ export function GlobalMyList({
     void loadMyListData().catch(() => {
       if (!active) return;
       setTasks([]);
+      setPinnedSourceRows([]);
       setSkills([]);
       setSkillCategories([]);
       setScheduledTaskIds(new Set());
     });
 
+    const handlePinnedSourcesChanged = () => {
+      void loadMyListData().catch(() => {
+        if (!active) return;
+        setPinnedSourceRows([]);
+      });
+    };
+    const handleCreatorEntitySaved = () => {
+      void loadMyListData().catch(() => {
+        if (!active) return;
+        setPinnedSourceRows([]);
+      });
+    };
+    window.addEventListener(
+      MY_LIST_PINNED_SOURCE_ITEMS_CHANGED_EVENT,
+      handlePinnedSourcesChanged,
+    );
+    window.addEventListener("creator:entity-saved", handleCreatorEntitySaved);
+
     return () => {
       active = false;
+      window.removeEventListener(
+        MY_LIST_PINNED_SOURCE_ITEMS_CHANGED_EVENT,
+        handlePinnedSourcesChanged,
+      );
+      window.removeEventListener(
+        "creator:entity-saved",
+        handleCreatorEntitySaved,
+      );
     };
   }, [ready, user?.id]);
 
@@ -215,6 +355,18 @@ export function GlobalMyList({
           return left.name.localeCompare(right.name);
         }),
     [scheduledTaskIds, tasks]
+  );
+  const myListTaskIds = useMemo(
+    () => new Set(myListTasks.map((task) => task.id)),
+    [myListTasks],
+  );
+  const visiblePinnedSourceRows = useMemo(
+    () =>
+      pinnedSourceRows.filter((row) => {
+        if (row.sourceType !== "TASK") return true;
+        return !myListTaskIds.has(row.id) && !scheduledTaskIds.has(row.id);
+      }),
+    [myListTaskIds, pinnedSourceRows, scheduledTaskIds],
   );
 
   const handleTaskSkillSelect = useCallback((taskId: string, skill: SkillRow) => {
@@ -408,6 +560,7 @@ export function GlobalMyList({
     <MyListSheet
       open={open}
       tasks={myListTasks}
+      pinnedSourceRows={visiblePinnedSourceRows}
       skills={skills}
       skillCategories={skillCategories}
       pendingTaskIds={pendingTaskIds}

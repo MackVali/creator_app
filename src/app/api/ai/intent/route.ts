@@ -9,8 +9,19 @@ import {
   type ScheduleInstance,
 } from "@/lib/scheduler/instanceRepo";
 import { addDaysInTimeZone, makeDateInTimeZone } from "@/lib/scheduler/timezone";
-import { AI_INTENT_MODEL, getAiModelPricing } from "@/lib/ai/config";
 import {
+  AI_INTENT_MAX_OUTPUT_TOKENS,
+  AI_INTENT_MAX_PROMPT_CHARS,
+  AI_INTENT_MAX_SERIALIZED_CONTEXT_CHARS,
+  AI_INTENT_MAX_THREAD_MESSAGE_CHARS,
+  AI_INTENT_MAX_THREAD_MESSAGES,
+  AI_INTENT_MODEL,
+  AI_INTENT_STATIC_INPUT_CHARS_ESTIMATE,
+  estimateAiIntentCostUsd,
+  getAiModelPricing,
+} from "@/lib/ai/config";
+import {
+  resolveAiIntentsMode,
   runAiIntent,
   type RunAiIntentResult,
 } from "@/lib/ai/openaiIntent";
@@ -77,7 +88,10 @@ function normalizeThread(value: unknown): AiThreadPayload[] {
         if (roleValue === "user" || roleValue === "assistant") {
           return {
             role: roleValue,
-            content: (entry as { content: string }).content,
+            content: (entry as { content: string }).content.slice(
+              0,
+              AI_INTENT_MAX_THREAD_MESSAGE_CHARS
+            ),
           };
         }
     }
@@ -94,12 +108,12 @@ function getConfiguredLimit(value: string | undefined, fallback: number): number
 
 const CREATOR_PLUS_AI_DAILY_LIMIT = getConfiguredLimit(
   process.env.CREATOR_PLUS_AI_DAILY_LIMIT,
-  60
+  20
 );
 
 const CREATOR_PLUS_AI_MINUTE_LIMIT = getConfiguredLimit(
   process.env.CREATOR_PLUS_AI_MINUTE_LIMIT,
-  6
+  3
 );
 
 const PAID_TIERS = new Set(
@@ -117,7 +131,7 @@ const MONTHLY_AI_BUDGET_USD = (() => {
   if (Number.isFinite(parsed) && parsed >= 0) {
     return parsed;
   }
-  return 5;
+  return 1;
 })();
 
 function truncateToUtcDay(date: Date): Date {
@@ -274,6 +288,14 @@ export async function POST(request: NextRequest) {
     if (!prompt) {
       return NextResponse.json(
         { error: "Prompt must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+    if (prompt.length > AI_INTENT_MAX_PROMPT_CHARS) {
+      return NextResponse.json(
+        {
+          error: `Prompt must be ${AI_INTENT_MAX_PROMPT_CHARS} characters or fewer`,
+        },
         { status: 400 }
       );
     }
@@ -660,8 +682,69 @@ export async function POST(request: NextRequest) {
 
     console.log("AI_INTENT snapshot done", Date.now());
 
+    const serializedSnapshot = JSON.stringify(snapshot ?? null);
+    if (serializedSnapshot.length > AI_INTENT_MAX_SERIALIZED_CONTEXT_CHARS) {
+      return NextResponse.json(
+        {
+          error: "AI context is too large. Try again with a narrower schedule view.",
+        },
+        { status: 413 }
+      );
+    }
+
     const sanitizedThread = normalizeThread(payload?.thread);
-    const limitedThread = sanitizedThread.slice(-10);
+    const limitedThread = sanitizedThread.slice(-AI_INTENT_MAX_THREAD_MESSAGES);
+    const monthStart = getAiMonthStart(new Date());
+    const isLiveAiIntent = resolveAiIntentsMode() === "live";
+    const threadChars = limitedThread.reduce(
+      (total, message) => total + message.content.length,
+      0
+    );
+    const estimatedCostUsd = estimateAiIntentCostUsd({
+      model: AI_INTENT_MODEL,
+      inputChars:
+        AI_INTENT_STATIC_INPUT_CHARS_ESTIMATE +
+        prompt.length +
+        threadChars +
+        serializedSnapshot.length,
+      maxOutputTokens: AI_INTENT_MAX_OUTPUT_TOKENS,
+    });
+    if (isLiveAiIntent) {
+      const existingUsageRow = await fetchAiMonthlyUsage({
+        supabase,
+        userId: user.id,
+        monthStart,
+        model: AI_INTENT_MODEL,
+      });
+      const usedUsd = existingUsageRow?.cost_usd ?? 0;
+      if (usedUsd + estimatedCostUsd > MONTHLY_AI_BUDGET_USD) {
+        console.warn("AI_INTENT budget_rejected", {
+          userId: user.id,
+          model: AI_INTENT_MODEL,
+          monthStart,
+          usedUsd,
+          estimatedCostUsd,
+          budgetUsd: MONTHLY_AI_BUDGET_USD,
+        });
+        return NextResponse.json(
+          {
+            error: "AI monthly budget exceeded",
+            quota: {
+              month_start: monthStart,
+              budget_usd: MONTHLY_AI_BUDGET_USD,
+              used_usd: usedUsd,
+              estimated_request_usd: estimatedCostUsd,
+            },
+          },
+          { status: 429 }
+        );
+      }
+    }
+    console.log(
+      "AI_INTENT estimated_cost_usd=%s model=%s",
+      estimatedCostUsd,
+      AI_INTENT_MODEL
+    );
     const aiController = new AbortController();
     let aiTimeoutId: ReturnType<typeof setTimeout> | undefined;
     let aiResult: RunAiIntentResult;
@@ -705,10 +788,12 @@ export async function POST(request: NextRequest) {
     }
     const aiResponse = aiResult.ai;
     const normalizedAiResponse = { ...aiResponse };
-    if (Array.isArray(normalizedAiResponse.intents) && normalizedAiResponse.intents.length) {
+    if (
+      Array.isArray(normalizedAiResponse.intents) &&
+      normalizedAiResponse.intents.length
+    ) {
       normalizedAiResponse.intent = normalizedAiResponse.intents[0];
     }
-    const monthStart = getAiMonthStart(new Date());
     let usageRow = null;
     if (aiResult.usage) {
       const pricing = getAiModelPricing(AI_INTENT_MODEL);
@@ -725,6 +810,14 @@ export async function POST(request: NextRequest) {
         outputTokens: aiResult.usage.output_tokens,
         costUsd,
       });
+      console.log(
+        "AI_INTENT cost_usd=%s estimated_cost_usd=%s model=%s input_tokens=%s output_tokens=%s",
+        costUsd,
+        estimatedCostUsd,
+        AI_INTENT_MODEL,
+        aiResult.usage.input_tokens,
+        aiResult.usage.output_tokens
+      );
     }
     if (!usageRow) {
       usageRow = await fetchAiMonthlyUsage({
