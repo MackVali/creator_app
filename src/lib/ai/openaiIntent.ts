@@ -1,6 +1,12 @@
 import OpenAI from "openai";
 import { runAutopilotIntent } from "@/lib/ai/autopilotIntent";
-import { AI_INTENT_MODEL } from "@/lib/ai/config";
+import {
+  AI_INTENT_MAX_OUTPUT_TOKENS,
+  AI_INTENT_MAX_THREAD_MESSAGE_CHARS,
+  AI_INTENT_MAX_THREAD_MESSAGES,
+  AI_INTENT_MODEL,
+  AI_INTENT_TEMPERATURE,
+} from "@/lib/ai/config";
 import type {
   AiIntent,
   AiIntentResponse,
@@ -193,7 +199,7 @@ export type RunAiIntentResult = {
   usage?: RunAiIntentUsage;
 };
 
-const resolveAiIntentsMode = (): AiIntentsMode => {
+export const resolveAiIntentsMode = (): AiIntentsMode => {
   const rawMode = process.env.AI_INTENTS_MODE?.toLowerCase();
   if (rawMode === "live") {
     return "live";
@@ -206,6 +212,9 @@ const resolveAiIntentsMode = (): AiIntentsMode => {
   }
   return "mock";
 };
+
+const truncateText = (value: string, maxChars: number): string =>
+  value.length > maxChars ? value.slice(0, maxChars) : value;
 
 const createEmptyDraftPayload = () => ({
   name: null,
@@ -379,7 +388,13 @@ export async function runAiIntent(args: {
 
     const threadMessages =
       args.thread && args.thread.length > 0
-        ? args.thread.slice(-10)
+        ? args.thread.slice(-AI_INTENT_MAX_THREAD_MESSAGES).map((message) => ({
+            role: message.role,
+            content: truncateText(
+              message.content,
+              AI_INTENT_MAX_THREAD_MESSAGE_CHARS
+            ),
+          }))
         : undefined;
     const messages = [...SYSTEM_INSTRUCTIONS];
 
@@ -403,6 +418,8 @@ export async function runAiIntent(args: {
       {
         model: MODEL,
         store: false,
+        max_output_tokens: AI_INTENT_MAX_OUTPUT_TOKENS,
+        temperature: AI_INTENT_TEMPERATURE,
         input: messages,
         text: {
           format: STRUCTURE,

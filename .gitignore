@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/testsprite_tests/tmp/
 
 # next.js
 /.next/
