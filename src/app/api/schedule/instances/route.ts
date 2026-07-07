@@ -3,7 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type { Database, Json } from "@/types/supabase";
 import { enforceManualProjectGoalState } from "@/lib/scheduler/manualPlacementCascade";
-import { formatLocalDateKey } from "@/lib/time/tz";
+import {
+  createScheduleEventInstance,
+  MANUAL_INSTANCE_CREATE_PROJECTION,
+} from "@/lib/schedule/createScheduleEventInstance";
 
 type ScheduleInstanceInsert =
   Database["public"]["Tables"]["schedule_instances"]["Insert"];
@@ -59,31 +62,6 @@ const MANUAL_SOURCE_TYPES = new Set<ManualSourceType>([
   "TASK",
   "EVENT",
 ]);
-
-const MANUAL_INSTANCE_CREATE_PROJECTION = [
-  "id",
-  "updated_at",
-  "user_id",
-  "source_type",
-  "source_id",
-  "window_id",
-  "day_type_time_block_id",
-  "time_block_id",
-  "start_utc",
-  "end_utc",
-  "duration_min",
-  "status",
-  "weight_snapshot",
-  "energy_resolved",
-  "canceled_reason",
-  "completed_at",
-  "locked",
-  "placement_source",
-  "event_name",
-  "practice_context_monument_id",
-  "overlay_window_id",
-  "metadata",
-].join(", ");
 
 function normalizeSourceType(value: unknown): ManualSourceType | null {
   if (typeof value !== "string") return null;
@@ -221,36 +199,42 @@ export async function POST(request: NextRequest) {
   const overlayWindowId = normalizeString(
     getPayloadValue(payload, "overlayWindowId", "overlay_window_id")
   );
-  let resolvedSourceId = sourceId;
 
-  if (sourceType === "EVENT" && !resolvedSourceId) {
+  if (sourceType === "EVENT" && !sourceId) {
     const title = eventName ?? "Untitled Event";
-    const eventId = crypto.randomUUID();
-    const { error: eventError } = await supabase
-      .from("events")
-      .insert({
-        id: eventId,
-        user_id: user.id,
+    try {
+      const created = await createScheduleEventInstance({
+        supabase,
+        userId: user.id,
         title,
-        notes: null,
-        kind: "EVENT",
-        all_day: false,
-        start_at: nextStartIso,
-        end_at: nextEndIso,
+        start: parsedStart,
+        startUtc: nextStartIso,
+        endUtc: nextEndIso,
+        durationMin,
         timezone: timeZone,
-        start_date: formatLocalDateKey(parsedStart, timeZone),
-        end_date: formatLocalDateKey(new Date(nextEndIso), timeZone),
-        recurrence: "NONE",
-        location_name: null,
-        location_address: null,
-        meeting_provider: null,
-        meeting_url: null,
-        blocks_time: "DEFAULT",
-        visibility: "PRIVATE",
-        notification_timing: "NONE",
+        energyResolved,
+        eventName,
+        metadata,
+        timeBlockId,
+        windowId,
+        dayTypeTimeBlockId,
+        overlayWindowId,
       });
 
-    if (eventError) {
+      return NextResponse.json({
+        success: true,
+        instance: created.instance,
+        eventId: created.eventId,
+        startUtc: nextStartIso,
+        endUtc: nextEndIso,
+      });
+    } catch (error) {
+      const eventError = error as {
+        message?: string;
+        details?: string | null;
+        hint?: string | null;
+        code?: string | null;
+      };
       return NextResponse.json(
         {
           error: "Unable to create manual Event",
@@ -262,14 +246,23 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+  }
 
-    resolvedSourceId = eventId;
+  if (!sourceId) {
+    return NextResponse.json(
+      {
+        error: "Invalid manual Event placement request",
+        message: "Missing or invalid manual Event fields: sourceId",
+        invalidFields: ["sourceId"],
+      },
+      { status: 400 }
+    );
   }
 
   const insertPayload: ScheduleInstanceInsert = {
     user_id: user.id,
     source_type: sourceType,
-    source_id: resolvedSourceId,
+    source_id: sourceId,
     start_utc: nextStartIso,
     end_utc: nextEndIso,
     duration_min: durationMin,
@@ -331,7 +324,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     instance: data,
-    eventId: sourceType === "EVENT" ? resolvedSourceId : null,
+    eventId: sourceType === "EVENT" ? sourceId : null,
     startUtc: nextStartIso,
     endUtc: nextEndIso,
   });

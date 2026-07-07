@@ -29,7 +29,14 @@ import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
 import {
   MY_LIST_PINNED_SOURCE_ITEMS_CHANGED_EVENT,
   readPinnedSourceItemIds,
+  setSourceItemPinned,
+  writePinnedSourceItemIds,
 } from "@/lib/my-list/pinnedSourceItems";
+import {
+  loadPinnedSourceMyListItems,
+  updatePinnedSourceMyListItemCompletion,
+  type MyListPinnedSourceStorageItem,
+} from "@/lib/my-list/myListItemsStorage";
 
 type MyListXpAwardResult = {
   success?: boolean;
@@ -164,14 +171,52 @@ export function GlobalMyList({
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
 
-    const loadPinnedSourceRows = async (): Promise<MyListPinnedSourceRow[]> => {
-      const pinnedIds = readPinnedSourceItemIds(user.id);
+    const loadPinnedSourceRows = async (
+      skillRows: SkillRow[],
+      pinnedItems: MyListPinnedSourceStorageItem[]
+    ): Promise<MyListPinnedSourceRow[]> => {
+      const pinnedIds = pinnedItems.reduce(
+        (ids, item) => ({
+          ...ids,
+          [item.sourceType]: [...ids[item.sourceType], item.sourceId],
+        }),
+        {
+          GOAL: [],
+          PROJECT: [],
+          TASK: [],
+          HABIT: [],
+        } as Record<MyListPinnedSourceStorageItem["sourceType"], string[]>
+      );
+      const completionByKey = new Map(
+        pinnedItems.map((item) => [
+          `${item.sourceType}:${item.sourceId}`,
+          item.completedAt,
+        ])
+      );
+      const orderByKey = new Map(
+        pinnedItems.map((item, index) => [
+          `${item.sourceType}:${item.sourceId}`,
+          item.sortOrder * 1000 + index,
+        ])
+      );
+      const skillIconById = new Map(
+        skillRows
+          .map((skill) => [
+            skill.id,
+            typeof skill.icon === "string" && skill.icon.trim()
+              ? skill.icon.trim()
+              : null,
+          ] as const)
+          .filter((entry): entry is readonly [string, string] =>
+            Boolean(entry[0] && entry[1])
+          )
+      );
       const [goalsResult, projectsResult, tasksResult, habitsResult] =
         await Promise.all([
           pinnedIds.GOAL.length > 0
             ? supabase
                 .from("goals")
-                .select("id, name, priority, energy, status")
+                .select("id, name, emoji, priority, energy, status")
                 .eq("user_id", user.id)
                 .in("id", pinnedIds.GOAL)
             : Promise.resolve({ data: [], error: null }),
@@ -185,14 +230,14 @@ export function GlobalMyList({
           pinnedIds.TASK.length > 0
             ? supabase
                 .from("tasks")
-                .select("id, name, priority, energy, stage")
+                .select("id, name, priority, energy, stage, skill_id")
                 .eq("user_id", user.id)
                 .in("id", pinnedIds.TASK)
             : Promise.resolve({ data: [], error: null }),
           pinnedIds.HABIT.length > 0
             ? supabase
                 .from("habits")
-                .select("id, name, energy, habit_type")
+                .select("id, name, energy, habit_type, skill_id")
                 .eq("user_id", user.id)
                 .in("id", pinnedIds.HABIT)
             : Promise.resolve({ data: [], error: null }),
@@ -205,10 +250,47 @@ export function GlobalMyList({
         habitsResult.error;
       if (firstError) throw firstError;
 
+      const projectRows = (projectsResult.data ?? []) as {
+        id: string;
+        name: string | null;
+        priority: string | null;
+        energy: string | null;
+        stage: string | null;
+      }[];
+      const projectIds = projectRows
+        .map((project) => project.id)
+        .filter((projectId): projectId is string => Boolean(projectId));
+      const projectIconById = new Map<string, string>();
+      if (projectIds.length > 0) {
+        const { data: projectSkillRowsData, error: projectSkillRowsError } =
+          await supabase
+            .from("project_skills")
+            .select("project_id, skill_id")
+            .in("project_id", projectIds);
+        if (projectSkillRowsError) throw projectSkillRowsError;
+
+        ((projectSkillRowsData ?? []) as {
+          project_id?: string | null;
+          skill_id?: string | null;
+        }[]).forEach((row) => {
+          const projectId =
+            typeof row.project_id === "string" ? row.project_id : null;
+          if (!projectId || projectIconById.has(projectId)) return;
+
+          const icon = row.skill_id
+            ? skillIconById.get(row.skill_id) ?? null
+            : null;
+          if (icon) {
+            projectIconById.set(projectId, icon);
+          }
+        });
+      }
+
       return [
         ...((goalsResult.data ?? []) as {
           id: string;
           name: string | null;
+          emoji?: string | null;
           priority: string | null;
           energy: string | null;
           status: string | null;
@@ -216,23 +298,21 @@ export function GlobalMyList({
           id: goal.id,
           sourceType: "GOAL" as const,
           title: goal.name ?? "Untitled Goal",
+          icon: goal.emoji ?? null,
           priority: goal.priority,
           energy: goal.energy,
           stage: goal.status,
+          completedAt: completionByKey.get(`GOAL:${goal.id}`) ?? null,
         })),
-        ...((projectsResult.data ?? []) as {
-          id: string;
-          name: string | null;
-          priority: string | null;
-          energy: string | null;
-          stage: string | null;
-        }[]).map((project) => ({
+        ...projectRows.map((project) => ({
           id: project.id,
           sourceType: "PROJECT" as const,
           title: project.name ?? "Untitled Project",
+          icon: projectIconById.get(project.id) ?? null,
           priority: project.priority,
           energy: project.energy,
           stage: project.stage,
+          completedAt: completionByKey.get(`PROJECT:${project.id}`) ?? null,
         })),
         ...((tasksResult.data ?? []) as {
           id: string;
@@ -240,36 +320,46 @@ export function GlobalMyList({
           priority: string | null;
           energy: string | null;
           stage: string | null;
+          skill_id?: string | null;
         }[]).map((task) => ({
           id: task.id,
           sourceType: "TASK" as const,
           title: task.name ?? "Untitled Task",
+          icon: task.skill_id ? skillIconById.get(task.skill_id) ?? null : null,
           priority: task.priority,
           energy: task.energy,
           stage: task.stage,
+          completedAt: completionByKey.get(`TASK:${task.id}`) ?? null,
         })),
         ...((habitsResult.data ?? []) as {
           id: string;
           name: string | null;
           energy: string | null;
           habit_type: string | null;
+          skill_id?: string | null;
         }[]).map((habit) => ({
           id: habit.id,
           sourceType: "HABIT" as const,
           title: habit.name ?? "Untitled Habit",
+          icon: habit.skill_id ? skillIconById.get(habit.skill_id) ?? null : null,
           priority: "MEDIUM",
           energy: habit.energy,
           stage: habit.habit_type,
+          completedAt: completionByKey.get(`HABIT:${habit.id}`) ?? null,
         })),
-      ];
+      ].sort(
+        (left, right) =>
+          (orderByKey.get(`${left.sourceType}:${left.id}`) ?? 0) -
+          (orderByKey.get(`${right.sourceType}:${right.id}`) ?? 0)
+      );
     };
 
     const loadMyListData = async () => {
       const [taskRows, skillRows, categoryRows, scheduledRowsResult] =
         await Promise.all([
-          fetchReadyTasks(supabase),
+          fetchReadyTasks(),
           getSkillsForUser(user.id),
-          getCatsForUser(user.id, supabase),
+          getCatsForUser(user.id),
           supabase
             .from("schedule_instances")
             .select("source_id")
@@ -283,7 +373,44 @@ export function GlobalMyList({
         throw scheduledRowsResult.error;
       }
 
-      const pinnedRows = await loadPinnedSourceRows();
+      const localPinnedIds = readPinnedSourceItemIds(user.id);
+      const pinnedItems = await loadPinnedSourceMyListItems({
+        userId: user.id,
+        localPinnedIds,
+      }).catch((error) => {
+        console.error("Failed to load Supabase My List pinned source items", error);
+        return Object.entries(localPinnedIds).flatMap(([sourceType, sourceIds]) =>
+          sourceIds.map((sourceId, index) => ({
+            sourceType: sourceType as MyListPinnedSourceStorageItem["sourceType"],
+            sourceId,
+            done: false,
+            completedAt: null,
+            sortOrder: index,
+          }))
+        );
+      });
+      writePinnedSourceItemIds(
+        user.id,
+        pinnedItems.reduce(
+          (ids, item) => ({
+            ...ids,
+            [item.sourceType]: [...ids[item.sourceType], item.sourceId],
+          }),
+          {
+            GOAL: [],
+            PROJECT: [],
+            TASK: [],
+            HABIT: [],
+          } as Record<MyListPinnedSourceStorageItem["sourceType"], string[]>
+        ),
+        { notify: false }
+      );
+      const pinnedRows = await loadPinnedSourceRows(skillRows, pinnedItems).catch(
+        (error) => {
+          console.error("Failed to load My List pinned source rows", error);
+          return [];
+        }
+      );
       if (!active) return;
 
       setTasks(taskRows);
@@ -292,7 +419,9 @@ export function GlobalMyList({
       setSkillCategories(categoryRows);
       setScheduledTaskIds(
         new Set(
-          (scheduledRowsResult.data ?? [])
+          ((scheduledRowsResult.data ?? []) as {
+            source_id?: string | null;
+          }[])
             .map((row) =>
               typeof row.source_id === "string" ? row.source_id : null
             )
@@ -367,6 +496,49 @@ export function GlobalMyList({
         return !myListTaskIds.has(row.id) && !scheduledTaskIds.has(row.id);
       }),
     [myListTaskIds, pinnedSourceRows, scheduledTaskIds],
+  );
+
+  const handleRemovePinnedSource = useCallback(
+    (row: MyListPinnedSourceRow) => {
+      setSourceItemPinned({
+        userId: user?.id,
+        sourceType: row.sourceType,
+        sourceId: row.id,
+        pinned: false,
+      });
+      setPinnedSourceRows((currentRows) =>
+        currentRows.filter(
+          (currentRow) =>
+            currentRow.sourceType !== row.sourceType || currentRow.id !== row.id
+        )
+      );
+    },
+    [user?.id]
+  );
+
+  const handleTogglePinnedSourceCompletion = useCallback(
+    (row: MyListPinnedSourceRow, completedAt: string | null) => {
+      if (!user?.id) return;
+
+      setPinnedSourceRows((currentRows) =>
+        currentRows.map((currentRow) =>
+          currentRow.sourceType === row.sourceType && currentRow.id === row.id
+            ? { ...currentRow, completedAt }
+            : currentRow
+        )
+      );
+
+      void updatePinnedSourceMyListItemCompletion({
+        userId: user.id,
+        sourceType: row.sourceType,
+        sourceId: row.id,
+        done: Boolean(completedAt),
+        completedAt,
+      }).catch((error) => {
+        console.error("Failed to persist pinned My List completion", error);
+      });
+    },
+    [user?.id]
   );
 
   const handleTaskSkillSelect = useCallback((taskId: string, skill: SkillRow) => {
@@ -559,6 +731,7 @@ export function GlobalMyList({
   return (
     <MyListSheet
       open={open}
+      userId={user?.id ?? null}
       tasks={myListTasks}
       pinnedSourceRows={visiblePinnedSourceRows}
       skills={skills}
@@ -566,6 +739,8 @@ export function GlobalMyList({
       pendingTaskIds={pendingTaskIds}
       useFullExpandedHeight={useFullExpandedHeight}
       enableScheduleTimelineDrag={enableScheduleTimelineDrag === true}
+      onRemovePinnedSource={handleRemovePinnedSource}
+      onTogglePinnedSourceCompletion={handleTogglePinnedSourceCompletion}
       onToggleTask={handleToggleTask}
       onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {

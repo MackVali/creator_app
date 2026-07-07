@@ -79,6 +79,7 @@ export function isSourceItemPinned({
 export function writePinnedSourceItemIds(
   userId: string | null | undefined,
   pinnedIds: MyListPinnedSourceIds,
+  options?: { notify?: boolean },
 ) {
   if (!userId || typeof window === "undefined") return;
 
@@ -91,6 +92,8 @@ export function writePinnedSourceItemIds(
 
   try {
     window.localStorage.setItem(storageKey(userId), JSON.stringify(sanitized));
+    if (options?.notify === false) return;
+
     window.dispatchEvent(
       new CustomEvent(MY_LIST_PINNED_SOURCE_ITEMS_CHANGED_EVENT, {
         detail: sanitized,
@@ -124,4 +127,17 @@ export function setSourceItemPinned({
     ...current,
     [sourceType]: nextIds,
   });
+
+  void import("@/lib/my-list/myListItemsStorage")
+    .then(({ setPinnedSourceMyListItem }) =>
+      setPinnedSourceMyListItem({
+        userId,
+        sourceType,
+        sourceId,
+        pinned,
+      })
+    )
+    .catch((error) => {
+      console.error("Failed to persist My List pinned source item", error);
+    });
 }
