@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Dumbbell, NotebookPen } from "lucide-react";
+import { ChefHat, Dumbbell, NotebookPen } from "lucide-react";
 import { Icon } from "@iconify/react";
 import { cn } from "@/lib/utils";
 import type { Note } from "@/lib/types/note";
@@ -20,7 +20,7 @@ interface NoteCardProps {
   density?: NoteCardDensity;
 }
 
-type StarterNoteCardIconKey = "stomach" | "dumbbell";
+type StarterNoteCardIconKey = "stomach" | "dumbbell" | "chef-hat";
 
 function getStarterNoteCardIconKey(note: Note): StarterNoteCardIconKey | null {
   const metadata = note.metadata;
@@ -28,12 +28,17 @@ function getStarterNoteCardIconKey(note: Note): StarterNoteCardIconKey | null {
     return null;
   }
 
-  if (metadata.iconKey === "stomach" || metadata.iconKey === "dumbbell") {
+  if (
+    metadata.iconKey === "stomach" ||
+    metadata.iconKey === "dumbbell" ||
+    metadata.iconKey === "chef-hat"
+  ) {
     return metadata.iconKey;
   }
 
   if (metadata.systemNoteKey === "health-starter") return "stomach";
   if (metadata.systemNoteKey === "fitness-starter") return "dumbbell";
+  if (metadata.systemNoteKey === "cooking-starter") return "chef-hat";
 
   return null;
 }
@@ -63,6 +68,15 @@ function NoteCardIcon({
   if (iconKey === "dumbbell") {
     return (
       <Dumbbell
+        className={iconClassName}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (iconKey === "chef-hat") {
+    return (
+      <ChefHat
         className={iconClassName}
         aria-hidden="true"
       />

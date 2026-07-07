@@ -206,6 +206,12 @@ type ScheduleQuickCreateTaskDetailsPayload = {
   skillId?: string | null;
   priority?: string | null;
   energy?: string | null;
+  origin?: string | null;
+};
+type ScheduleQuickCreateTaskDetailsEvent = CustomEvent<
+  ScheduleQuickCreateTaskDetailsPayload
+> & {
+  __creatorQuickCreateTaskDetailsHandled?: boolean;
 };
 const UNIFIED_EVENT_TITLE_PLACEHOLDERS = [
   "Dentist appointment",
@@ -19658,10 +19664,11 @@ export function Fab({
     if (typeof window === "undefined") return;
 
     const handleOpenQuickCreateTaskDetails = (event: Event) => {
-      const payload =
-        event instanceof CustomEvent && event.detail
-          ? (event.detail as ScheduleQuickCreateTaskDetailsPayload)
-          : {};
+      if (!(event instanceof CustomEvent)) return;
+      const taskDetailsEvent = event as ScheduleQuickCreateTaskDetailsEvent;
+      if (taskDetailsEvent.__creatorQuickCreateTaskDetailsHandled) return;
+      taskDetailsEvent.__creatorQuickCreateTaskDetailsHandled = true;
+      const payload = taskDetailsEvent.detail ?? {};
       openQuickCreateTaskDetailsSheet(payload);
     };
 

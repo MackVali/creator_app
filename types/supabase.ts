@@ -800,6 +800,56 @@ export interface Database {
           updated_at?: string;
         };
       };
+      food_resources: {
+        Row: {
+          id: string;
+          user_id: string;
+          food_id: string | null;
+          name: string;
+          brand_name: string | null;
+          quantity: number | null;
+          unit: string | null;
+          location: string | null;
+          expires_on: string | null;
+          notes: string | null;
+          status: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          food_id?: string | null;
+          name: string;
+          brand_name?: string | null;
+          quantity?: number | null;
+          unit?: string | null;
+          location?: string | null;
+          expires_on?: string | null;
+          notes?: string | null;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          food_id?: string | null;
+          name?: string;
+          brand_name?: string | null;
+          quantity?: number | null;
+          unit?: string | null;
+          location?: string | null;
+          expires_on?: string | null;
+          notes?: string | null;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       recipes: {
         Row: {
           id: string;

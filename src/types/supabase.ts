@@ -1267,6 +1267,65 @@ export type Database = {
         }
         Relationships: []
       }
+      food_resources: {
+        Row: {
+          brand_name: string | null
+          created_at: string
+          expires_on: string | null
+          food_id: string | null
+          id: string
+          location: string | null
+          metadata: Json
+          name: string
+          notes: string | null
+          quantity: number | null
+          status: string
+          unit: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brand_name?: string | null
+          created_at?: string
+          expires_on?: string | null
+          food_id?: string | null
+          id?: string
+          location?: string | null
+          metadata?: Json
+          name: string
+          notes?: string | null
+          quantity?: number | null
+          status?: string
+          unit?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brand_name?: string | null
+          created_at?: string
+          expires_on?: string | null
+          food_id?: string | null
+          id?: string
+          location?: string | null
+          metadata?: Json
+          name?: string
+          notes?: string | null
+          quantity?: number | null
+          status?: string
+          unit?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_resources_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "foods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       friend_connections: {
         Row: {
           created_at: string
