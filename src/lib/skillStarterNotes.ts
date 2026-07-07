@@ -7,7 +7,7 @@ import type {
 } from "@/components/notes/NoteSlashTextarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
-type SkillStarterKind = "health" | "fitness";
+type SkillStarterKind = "health" | "fitness" | "cooking";
 
 export type SkillStarterNote = {
   kind: SkillStarterKind;
@@ -33,7 +33,7 @@ export type DefaultMemoDatabaseTarget = {
   database: NoteDatabaseDefinition;
 };
 
-type SkillStarterNoteIconKey = "stomach" | "dumbbell";
+type SkillStarterNoteIconKey = "stomach" | "dumbbell" | "chef-hat";
 
 type StarterNoteLike = {
   id?: string | null;
@@ -58,6 +58,8 @@ const STARTER_SKILL_ALIASES: Record<string, SkillStarterKind> = {
   health: "health",
   fitness: "fitness",
   exercise: "fitness",
+  cooking: "cooking",
+  cook: "cooking",
 };
 
 function normalizeSkillName(name: string | null | undefined) {
@@ -156,14 +158,22 @@ function buildStarterNote(
 export const NUTRITION_DATABASE_ID = "starter-health-nutrition";
 export const HYDRATION_DATABASE_ID = "starter-health-hydration";
 export const FITNESS_DATABASE_ID = "starter-fitness-fitness";
+export const ON_HAND_DATABASE_ID = "starter-cooking-on-hand";
 export const NUTRITION_FOOD_FIELD_ID = `${NUTRITION_DATABASE_ID}-food`;
 export const NUTRITION_CREATED_AT_FIELD_ID = `${NUTRITION_DATABASE_ID}-created-at`;
+export const ON_HAND_NAME_FIELD_ID = `${ON_HAND_DATABASE_ID}-name`;
+export const ON_HAND_QUANTITY_FIELD_ID = `${ON_HAND_DATABASE_ID}-quantity`;
+export const ON_HAND_UNIT_FIELD_ID = `${ON_HAND_DATABASE_ID}-unit`;
+export const ON_HAND_LOCATION_FIELD_ID = `${ON_HAND_DATABASE_ID}-location`;
+export const ON_HAND_EXPIRES_ON_FIELD_ID = `${ON_HAND_DATABASE_ID}-expires-on`;
+export const ON_HAND_NOTES_FIELD_ID = `${ON_HAND_DATABASE_ID}-notes`;
 
 const LOCKED_STARTER_DATABASE_IDS = new Set([
   NUTRITION_DATABASE_ID,
   HYDRATION_DATABASE_ID,
+  ON_HAND_DATABASE_ID,
 ]);
-const LOCKED_STARTER_DATABASE_KEYS = new Set(["nutrition", "hydration"]);
+const LOCKED_STARTER_DATABASE_KEYS = new Set(["nutrition", "hydration", "on-hand"]);
 
 export function isLockedStarterDatabaseId(databaseId: string | null | undefined) {
   return typeof databaseId === "string" && LOCKED_STARTER_DATABASE_IDS.has(databaseId);
@@ -229,6 +239,24 @@ const FITNESS_DATABASE = database(
   ],
 );
 
+const ON_HAND_DATABASE = {
+  ...database(
+    ON_HAND_DATABASE_ID,
+    "On Hand",
+    "on-hand",
+    "chef-hat",
+    [
+      field(ON_HAND_DATABASE_ID, "name", "Name", "text", true),
+      field(ON_HAND_DATABASE_ID, "quantity", "Quantity", "number"),
+      field(ON_HAND_DATABASE_ID, "unit", "Unit", "text"),
+      field(ON_HAND_DATABASE_ID, "location", "Location", "select"),
+      field(ON_HAND_DATABASE_ID, "expires-on", "Expires", "date"),
+      field(ON_HAND_DATABASE_ID, "notes", "Notes", "longText"),
+    ],
+  ),
+  activeViewId: `${ON_HAND_DATABASE_ID}-view-list`,
+};
+
 export const DEFAULT_MEMO_DATABASE_TARGETS: DefaultMemoDatabaseTarget[] = [
   {
     id: "nutrition",
@@ -267,9 +295,14 @@ const FITNESS_STARTER_NOTE = buildStarterNote("fitness", "Fitness", "💪", "dum
   FITNESS_DATABASE,
 ]);
 
+const COOKING_STARTER_NOTE = buildStarterNote("cooking", "Cooking", "🍳", "chef-hat", [
+  ON_HAND_DATABASE,
+]);
+
 const STARTER_NOTES: Record<SkillStarterKind, SkillStarterNote> = {
   health: HEALTH_STARTER_NOTE,
   fitness: FITNESS_STARTER_NOTE,
+  cooking: COOKING_STARTER_NOTE,
 };
 
 export function getSkillStarterNote(skillName: string | null | undefined) {
@@ -306,6 +339,15 @@ export function isDefaultNutritionDatabaseDefinition(
   return (
     definition?.systemDatabaseKey === "nutrition" ||
     definition?.id === NUTRITION_DATABASE_ID
+  );
+}
+
+export function isOnHandDatabaseDefinition(
+  definition: Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey"> | null | undefined,
+) {
+  return (
+    definition?.systemDatabaseKey === "on-hand" ||
+    definition?.id === ON_HAND_DATABASE_ID
   );
 }
 

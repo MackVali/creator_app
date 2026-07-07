@@ -3,6 +3,7 @@
 import {
   useCallback,
   type ChangeEvent as ReactChangeEvent,
+  type CSSProperties as ReactCSSProperties,
   useEffect,
   useMemo,
   useRef,
@@ -128,9 +129,17 @@ const MY_LIST_EDITABLE_TARGET_SELECTOR =
   'input, textarea, [contenteditable="true"]';
 const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
 const MY_LIST_MANUAL_ROWS_STORAGE_KEY = "creator:my-list:manual-rows";
+const MY_LIST_VIEW_MODE_STORAGE_KEY_PREFIX = "creator:my-list:view-mode";
+const MY_LIST_VIEW_MODE_ANONYMOUS_ID = "anonymous";
+const MY_LIST_VIEW_MODE_PREFERENCES = ["priority", "day", "matrix"] as const;
 const MY_LIST_CREATOR_DAY_ROLLOVER_HOUR = 4;
 const MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS = 500;
 const MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX = 14;
+const MY_LIST_MANUAL_UPGRADE_LONG_PRESS_MS = MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS;
+const MY_LIST_MANUAL_UPGRADE_MOVE_CANCEL_PX =
+  MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX;
+const MY_LIST_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT =
+  "schedule:open-quick-create-task-details";
 const MY_LIST_DAY_DRAG_SCHEDULE_EXIT_PX = 22;
 const MY_LIST_SCHEDULE_EVENT_DURATION_MIN = 30;
 const MY_LIST_SCHEDULE_PRESENTATION_KIND = "project-schedule-card";
@@ -145,6 +154,20 @@ const MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR = [
   "[contenteditable='true']",
   "[data-my-list-no-schedule-drag]",
 ].join(",");
+const MY_LIST_MANUAL_UPGRADE_BLOCKED_TARGET_SELECTOR = [
+  "button",
+  "select",
+  "label",
+  "[role='button']",
+  "[role='listbox']",
+  "[contenteditable='true']",
+  "[data-my-list-no-upgrade]",
+].join(",");
+const MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE = {
+  WebkitTouchCallout: "none",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+} satisfies ReactCSSProperties;
 
 function toCreatorXpBurstRect(rect: DOMRect): CreatorXpBurstRect {
   return {
@@ -218,6 +241,7 @@ type MyListRowKey = `manual:${string}` | `task:${string}`;
 type MyListPinnedSourceRowKey = `pinnedSource:${MyListPinnableSourceType}:${string}`;
 type MyListDayBucketId = (typeof MY_LIST_DAY_BUCKETS)[number];
 type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
+type MyListViewModePreference = (typeof MY_LIST_VIEW_MODE_PREFERENCES)[number];
 
 function buildPinnedSourceRowKey(
   sourceType: MyListPinnableSourceType,
@@ -406,6 +430,63 @@ function writeStoredMyListManualRows(
   }
 }
 
+function normalizeMyListViewModePreference(
+  value: unknown
+): MyListViewModePreference | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (
+    MY_LIST_VIEW_MODE_PREFERENCES.includes(
+      normalized as MyListViewModePreference
+    )
+  ) {
+    return normalized as MyListViewModePreference;
+  }
+  return null;
+}
+
+function getMyListViewModeStorageKey(userId?: string | null) {
+  const normalizedUserId = typeof userId === "string" ? userId.trim() : "";
+  return `${MY_LIST_VIEW_MODE_STORAGE_KEY_PREFIX}:${
+    normalizedUserId || MY_LIST_VIEW_MODE_ANONYMOUS_ID
+  }`;
+}
+
+function readStoredMyListViewModePreference(
+  userId?: string | null
+): MyListViewModePreference | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storedPreference = normalizeMyListViewModePreference(
+      window.localStorage.getItem(getMyListViewModeStorageKey(userId))
+    );
+    if (storedPreference || !userId?.trim()) return storedPreference;
+
+    return normalizeMyListViewModePreference(
+      window.localStorage.getItem(getMyListViewModeStorageKey(null))
+    );
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredMyListViewModePreference(
+  userId: string | null | undefined,
+  preference: MyListViewModePreference
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      getMyListViewModeStorageKey(userId),
+      preference
+    );
+  } catch {
+    // Ignore unavailable storage so changing views is never blocked.
+  }
+}
+
 function normalizeMyListDayBucket(
   value: unknown
 ): MyListDayBucketId | null {
@@ -558,6 +639,17 @@ type MyListScheduleDragPress = {
   dayDropBucketId: MyListDayViewBucketId | null;
   restoreExpanded: boolean;
 };
+type MyListManualUpgradePress = {
+  inputType: "pointer" | "touch";
+  pointerId: number;
+  startX: number;
+  startY: number;
+  title: string;
+  skillId: string | null;
+  priorityId: PriorityBucketId;
+  timer: ReturnType<typeof setTimeout>;
+  triggered: boolean;
+};
 export type MyListTaskXpContext = {
   skillId: string | null;
   monumentId: string | null;
@@ -604,8 +696,12 @@ export function MyListSheet({
   const prefersReducedMotion = useReducedMotion();
   const [note, setNote] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeView, setActiveView] = useState<MyListActiveView>("list");
-  const [isDayLensActive, setIsDayLensActive] = useState(false);
+  const [activeView, setActiveView] = useState<MyListActiveView>(() =>
+    readStoredMyListViewModePreference(userId) === "matrix" ? "matrix" : "list"
+  );
+  const [isDayLensActive, setIsDayLensActive] = useState(
+    () => readStoredMyListViewModePreference(userId) === "day"
+  );
   const [areCompletedTodosVisible, setAreCompletedTodosVisible] =
     useState(false);
   const [creatorDayBoundaryNow, setCreatorDayBoundaryNow] = useState(
@@ -655,6 +751,7 @@ export function MyListSheet({
   const manualRowIdCounterRef = useRef(0);
   const sheetTouchStartYRef = useRef<number | null>(null);
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
+  const manualUpgradePressRef = useRef<MyListManualUpgradePress | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
   const recalculateSheetHeightsRef = useRef<(() => void) | null>(null);
   const keyboardRecalculationTimeoutsRef = useRef<
@@ -669,6 +766,25 @@ export function MyListSheet({
     null
   );
   const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
+  const applyMyListViewModePreference = useCallback(
+    (preference: MyListViewModePreference) => {
+      if (preference === "matrix") {
+        setActiveView("matrix");
+        return;
+      }
+
+      setActiveView("list");
+      setIsDayLensActive(preference === "day");
+    },
+    []
+  );
+  const selectMyListViewModePreference = useCallback(
+    (preference: MyListViewModePreference) => {
+      writeStoredMyListViewModePreference(userId, preference);
+      applyMyListViewModePreference(preference);
+    },
+    [applyMyListViewModePreference, userId]
+  );
   const creatorDayBoundary = useMemo(() => {
     return {
       currentStart: getCurrentLocalCreatorDayStart(creatorDayBoundaryNow),
@@ -938,6 +1054,13 @@ export function MyListSheet({
   }, []);
 
   useEffect(() => {
+    const storedPreference = readStoredMyListViewModePreference(userId);
+    if (!storedPreference) return;
+
+    applyMyListViewModePreference(storedPreference);
+  }, [applyMyListViewModePreference, userId]);
+
+  useEffect(() => {
     let active = true;
     const localRows = readStoredMyListManualRows(defaultPriority.id);
 
@@ -1204,6 +1327,198 @@ export function MyListSheet({
       Boolean(target.closest(MY_LIST_SCHEDULE_DRAG_BLOCKED_TARGET_SELECTOR))
     );
   }, []);
+
+  const shouldIgnoreManualUpgradeTarget = useCallback((target: EventTarget) => {
+    return (
+      target instanceof HTMLElement &&
+      Boolean(target.closest(MY_LIST_MANUAL_UPGRADE_BLOCKED_TARGET_SELECTOR))
+    );
+  }, []);
+
+  const suppressManualUpgradeSelection = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.getSelection()?.removeAllRanges();
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLInputElement &&
+      sheetRootRef.current?.contains(activeElement)
+    ) {
+      const textLength = activeElement.value.length;
+      activeElement.setSelectionRange(textLength, textLength);
+    }
+  }, []);
+
+  const clearManualUpgradePress = useCallback(() => {
+    const press = manualUpgradePressRef.current;
+    if (press) {
+      clearTimeout(press.timer);
+    }
+    manualUpgradePressRef.current = null;
+  }, []);
+
+  const openManualUpgradeCreateSheet = useCallback(
+    (press: MyListManualUpgradePress) => {
+      if (manualUpgradePressRef.current !== press) return;
+      const title = press.title.trim();
+      if (!title || typeof window === "undefined") {
+        clearManualUpgradePress();
+        return;
+      }
+
+      press.triggered = true;
+      suppressManualUpgradeSelection();
+      const activeElement = document.activeElement;
+      if (
+        activeElement instanceof HTMLElement &&
+        sheetRootRef.current?.contains(activeElement) &&
+        activeElement.matches(MY_LIST_EDITABLE_TARGET_SELECTOR)
+      ) {
+        activeElement.blur();
+      }
+
+      setActiveSkillPickerRowKey(null);
+      setActivePriorityPickerRowKey(null);
+      setActiveDayPickerRowKey(null);
+      setPendingDeleteRowId(null);
+      onOpenChange(false);
+
+      window.dispatchEvent(
+        new CustomEvent(MY_LIST_OPEN_QUICK_CREATE_TASK_DETAILS_EVENT, {
+          detail: {
+            title,
+            skillId: press.skillId,
+            priority: press.priorityId,
+            energy: "MEDIUM",
+            origin: "my-list-upgrade",
+          },
+        })
+      );
+      clearManualUpgradePress();
+    },
+    [clearManualUpgradePress, onOpenChange, suppressManualUpgradeSelection]
+  );
+
+  const startManualUpgradePointerPress = useCallback(
+    (
+      event: ReactPointerEvent<HTMLElement>,
+      row: MyListManualRow
+    ) => {
+      if (!open || activeView !== "list") return;
+      if (event.button !== 0) return;
+      if (shouldIgnoreManualUpgradeTarget(event.target)) return;
+      const title = row.text.trim();
+      if (!title) return;
+
+      suppressManualUpgradeSelection();
+      clearManualUpgradePress();
+      const press: MyListManualUpgradePress = {
+        inputType: "pointer",
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        title,
+        skillId: row.skillId,
+        priorityId: row.priorityId,
+        timer: setTimeout(() => {
+          openManualUpgradeCreateSheet(press);
+        }, MY_LIST_MANUAL_UPGRADE_LONG_PRESS_MS),
+        triggered: false,
+      };
+      manualUpgradePressRef.current = press;
+    },
+    [
+      activeView,
+      clearManualUpgradePress,
+      open,
+      openManualUpgradeCreateSheet,
+      shouldIgnoreManualUpgradeTarget,
+      suppressManualUpgradeSelection,
+    ]
+  );
+
+  const handleManualUpgradePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const press = manualUpgradePressRef.current;
+      if (
+        !press ||
+        press.inputType !== "pointer" ||
+        press.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+      if (press.triggered) {
+        event.preventDefault();
+        return;
+      }
+
+      const moved = Math.hypot(
+        event.clientX - press.startX,
+        event.clientY - press.startY
+      );
+      if (moved > MY_LIST_MANUAL_UPGRADE_MOVE_CANCEL_PX) {
+        clearManualUpgradePress();
+      }
+    },
+    [clearManualUpgradePress]
+  );
+
+  const handleManualUpgradePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const press = manualUpgradePressRef.current;
+      if (
+        !press ||
+        press.inputType !== "pointer" ||
+        press.pointerId !== event.pointerId
+      ) {
+        return;
+      }
+      clearManualUpgradePress();
+    },
+    [clearManualUpgradePress]
+  );
+
+  const startManualUpgradeTouchPress = useCallback(
+    (event: ReactTouchEvent<HTMLElement>, row: MyListManualRow) => {
+      if (!open || activeView !== "list") return;
+      if (
+        typeof window !== "undefined" &&
+        "PointerEvent" in window
+      ) {
+        return;
+      }
+      if (shouldIgnoreManualUpgradeTarget(event.target)) return;
+      const title = row.text.trim();
+      if (!title) return;
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+
+      suppressManualUpgradeSelection();
+      clearManualUpgradePress();
+      const press: MyListManualUpgradePress = {
+        inputType: "touch",
+        pointerId: touch.identifier,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        title,
+        skillId: row.skillId,
+        priorityId: row.priorityId,
+        timer: setTimeout(() => {
+          openManualUpgradeCreateSheet(press);
+        }, MY_LIST_MANUAL_UPGRADE_LONG_PRESS_MS),
+        triggered: false,
+      };
+      manualUpgradePressRef.current = press;
+    },
+    [
+      activeView,
+      clearManualUpgradePress,
+      open,
+      openManualUpgradeCreateSheet,
+      shouldIgnoreManualUpgradeTarget,
+      suppressManualUpgradeSelection,
+    ]
+  );
 
   const resolveDayDropBucketAtPoint = useCallback(
     (clientX: number, clientY: number): MyListDayViewBucketId | null => {
@@ -1513,6 +1828,38 @@ export function MyListSheet({
       );
     },
     []
+  );
+
+  const handleManualUpgradeTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLElement>) => {
+      const press = manualUpgradePressRef.current;
+      if (!press || press.inputType !== "touch") return;
+      const touch = getTrackedScheduleDragTouch(event, press.pointerId);
+      if (!touch) return;
+      if (press.triggered) {
+        event.preventDefault();
+        return;
+      }
+
+      const moved = Math.hypot(
+        touch.clientX - press.startX,
+        touch.clientY - press.startY
+      );
+      if (moved > MY_LIST_MANUAL_UPGRADE_MOVE_CANCEL_PX) {
+        clearManualUpgradePress();
+      }
+    },
+    [clearManualUpgradePress, getTrackedScheduleDragTouch]
+  );
+
+  const handleManualUpgradeTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLElement>) => {
+      const press = manualUpgradePressRef.current;
+      if (!press || press.inputType !== "touch") return;
+      if (!getTrackedScheduleDragTouch(event, press.pointerId)) return;
+      clearManualUpgradePress();
+    },
+    [clearManualUpgradePress, getTrackedScheduleDragTouch]
   );
 
   const handleScheduleDragTouchMove = useCallback(
@@ -2709,8 +3056,6 @@ export function MyListSheet({
       setManualSkillSearch("");
       setPendingDeleteRowId(null);
       setPendingTitleFocusRowId(null);
-      setActiveView("list");
-      setIsDayLensActive(false);
     }
   }, [clearKeyboardRecalculationTimeouts, open]);
 
@@ -2749,6 +3094,12 @@ export function MyListSheet({
       clearScheduleDragPress();
     }
   }, [canStartTodoRowLongPress, clearScheduleDragPress]);
+
+  useEffect(() => {
+    if (!open || activeView !== "list") {
+      clearManualUpgradePress();
+    }
+  }, [activeView, clearManualUpgradePress, open]);
 
   useEffect(() => {
     if (!isScheduleDragActive || typeof window === "undefined") return;
@@ -2939,11 +3290,13 @@ export function MyListSheet({
               if (activeView === "list") {
                 onOpenChange(true);
                 setIsExpanded(true);
-                setActiveView("matrix");
+                selectMyListViewModePreference("matrix");
                 return;
               }
 
-              setActiveView("list");
+              selectMyListViewModePreference(
+                isDayLensActive ? "day" : "priority"
+              );
             }}
             tabIndex={open ? 0 : -1}
             className="absolute left-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg border border-white/[0.08] bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35 sm:left-5"
@@ -2981,7 +3334,9 @@ export function MyListSheet({
                   setActivePriorityPickerRowKey(null);
                   setActiveDayPickerRowKey(null);
                   setPendingDeleteRowId(null);
-                  setIsDayLensActive((current) => !current);
+                  selectMyListViewModePreference(
+                    isDayLensActive ? "priority" : "day"
+                  );
                 }}
                 tabIndex={open ? 0 : -1}
                 className={clsx(
@@ -3050,7 +3405,7 @@ export function MyListSheet({
                     <div
                       data-my-list-day-drop-zone={dayDropBucketId ?? undefined}
                       className={clsx(
-                        "space-y-1.5 rounded-lg border px-1 pb-1 transition-colors",
+                        "space-y-0.5 rounded-lg border px-1 pb-0.5 transition-colors",
                         dayDropBucketId && "min-h-8",
                         dayDropBucketId
                           ? isActiveDayDropTarget
@@ -3163,7 +3518,7 @@ export function MyListSheet({
                       onTouchEnd={handleScheduleDragTouchEnd}
                       onTouchCancel={handleScheduleDragTouchEnd}
                       className={clsx(
-                        "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
+                        "flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
                         canStartTodoRowLongPress &&
                           (isScheduleDragActive
                             ? "cursor-grabbing"
@@ -3286,7 +3641,7 @@ export function MyListSheet({
                           done && "text-white/42 line-through"
                         )}
                       />
-                      <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
+                      <div className="-mr-0.5 flex shrink-0 items-center gap-px">
                         <div className="relative shrink-0">
                           <button
                             type="button"
@@ -3336,7 +3691,7 @@ export function MyListSheet({
                             }}
                             tabIndex={open ? 0 : -1}
                             className={clsx(
-                              "flex h-7 min-w-7 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:border-white/14 hover:bg-white/[0.055] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                              "flex h-7 min-w-7 items-center justify-center rounded-full bg-black/10 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:bg-white/[0.045] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
                               done && "text-white/42"
                             )}
                           >
@@ -3379,7 +3734,7 @@ export function MyListSheet({
                         key={`pinned-source:${row.sourceType}:${row.id}`}
                         data-creator-xp-source="my-list-todo"
                         data-creator-xp-kind="todo"
-                        className="flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
+                        className="flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
                       >
                         <input
                           id={checkboxId}
@@ -3458,53 +3813,40 @@ export function MyListSheet({
                   }
 
                   const row = visibleRow.row;
-                  const priorityMetadata = resolvePriorityScheduleMetadata(
-                    row.priorityId
-                  );
-                  const manualScheduleDragRow: MyListScheduleDragRow = {
-                    rowType: "manual",
-                    rowId: row.id,
-                    title: row.text.trim(),
-                    sourceId: null,
-                    sourceType: "EVENT",
-                    energy: "MEDIUM",
-                    skillId: row.skillId,
-                    metadata: {
-                      source: "my-list",
-                      rowType: "manual",
-                      rowId: row.id,
-                      presentationKind: MY_LIST_SCHEDULE_PRESENTATION_KIND,
-                      skillId: row.skillId,
-                      skillName: row.skillName,
-                      skillIcon: row.skillIcon,
-                      ...priorityMetadata,
-                    },
-                  };
-
                   return (
                     <div
                       key={`manual:${row.id}`}
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
-                      data-my-list-schedule-drag-row={
-                        canStartTodoRowLongPress ? "true" : undefined
-                      }
+                      data-my-list-manual-upgrade-row="true"
                       onPointerDown={(event) =>
-                        startScheduleDragPress(event, manualScheduleDragRow)
+                        startManualUpgradePointerPress(event, row)
                       }
-                      onPointerMove={handleScheduleDragPointerMove}
-                      onPointerUp={handleScheduleDragPointerEnd}
-                      onPointerCancel={handleScheduleDragPointerEnd}
+                      onPointerMove={handleManualUpgradePointerMove}
+                      onPointerUp={handleManualUpgradePointerEnd}
+                      onPointerCancel={handleManualUpgradePointerEnd}
                       onTouchStart={(event) =>
-                        startScheduleDragTouchPress(event, manualScheduleDragRow)
+                        startManualUpgradeTouchPress(event, row)
                       }
-                      onTouchMove={handleScheduleDragTouchMove}
-                      onTouchEnd={handleScheduleDragTouchEnd}
-                      onTouchCancel={handleScheduleDragTouchEnd}
+                      onTouchMove={handleManualUpgradeTouchMove}
+                      onTouchEnd={handleManualUpgradeTouchEnd}
+                      onTouchCancel={handleManualUpgradeTouchEnd}
+                      onSelectStart={(event) => {
+                        if (manualUpgradePressRef.current) {
+                          event.preventDefault();
+                        }
+                      }}
+                      onDragStart={(event) => event.preventDefault()}
+                      onContextMenu={(event) => {
+                        if (!shouldIgnoreManualUpgradeTarget(event.target)) {
+                          event.preventDefault();
+                        }
+                      }}
                       className={clsx(
-                        "flex min-h-9 items-center gap-2 rounded-lg bg-transparent py-2 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
-                        canStartTodoRowLongPress && "cursor-grab"
+                        "flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
+                        open && activeView === "list" && "cursor-pointer"
                       )}
+                      style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     >
                     <input
                       id={`my-list-${row.id}`}
@@ -3587,10 +3929,20 @@ export function MyListSheet({
                       }}
                       type="text"
                       value={row.text}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onTouchStart={(event) => event.stopPropagation()}
-                      onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
+                      onSelect={(event) => {
+                        if (manualUpgradePressRef.current) {
+                          event.currentTarget.setSelectionRange(
+                            event.currentTarget.value.length,
+                            event.currentTarget.value.length
+                          );
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        if (manualUpgradePressRef.current) {
+                          event.preventDefault();
+                        }
+                      }}
                       onKeyDown={(event) =>
                         handleTodoTitleKeyDown(event, "manual", row.id)
                       }
@@ -3601,11 +3953,12 @@ export function MyListSheet({
                       aria-label="To-do text"
                       tabIndex={open ? 0 : -1}
                       className={clsx(
-                        "min-w-0 flex-1 bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30",
+                        "min-w-0 flex-1 select-none bg-transparent p-0 leading-snug text-white/84 outline-none placeholder:text-white/30 [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
                         row.done && "text-white/42 line-through"
                       )}
+                      style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     />
-                    <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
+                    <div className="-mr-0.5 flex shrink-0 items-center gap-px">
                       {(() => {
                         const priorityOption =
                           QUICK_CREATE_PRIORITY_OPTIONS.find(
@@ -3677,7 +4030,7 @@ export function MyListSheet({
                                 }}
                                 tabIndex={open ? 0 : -1}
                                 className={clsx(
-                                  "flex h-7 min-w-7 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:border-white/14 hover:bg-white/[0.055] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                                  "flex h-7 min-w-7 items-center justify-center rounded-full bg-black/10 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:bg-white/[0.045] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
                                   row.done && "text-white/42"
                                 )}
                               >

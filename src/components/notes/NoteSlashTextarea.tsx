@@ -75,9 +75,16 @@ import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHe
 import {
   getDatabaseCreatedAtInitialFormValues,
   isDefaultNutritionDatabaseDefinition,
+  isOnHandDatabaseDefinition,
   isLockedStarterDatabase,
   isLockedStarterDatabaseId,
   isDatabaseCreatedAtField,
+  ON_HAND_EXPIRES_ON_FIELD_ID,
+  ON_HAND_LOCATION_FIELD_ID,
+  ON_HAND_NAME_FIELD_ID,
+  ON_HAND_NOTES_FIELD_ID,
+  ON_HAND_QUANTITY_FIELD_ID,
+  ON_HAND_UNIT_FIELD_ID,
 } from "@/lib/skillStarterNotes";
 import {
   scanNutritionBarcode,
@@ -1677,6 +1684,26 @@ type NutritionFavoritesListResponse = {
     itemType?: NutritionFavoriteItemType;
     itemId?: string;
   }>;
+  error?: string;
+};
+type FoodResource = {
+  id: string;
+  food_id: string | null;
+  name: string;
+  brand_name: string | null;
+  quantity: number | null;
+  unit: string | null;
+  location: string | null;
+  expires_on: string | null;
+  notes: string | null;
+  status: string;
+  metadata?: unknown;
+  created_at: string;
+  updated_at: string;
+};
+type FoodResourcesResponse = {
+  foodResources?: FoodResource[];
+  foodResource?: FoodResource | null;
   error?: string;
 };
 
@@ -3448,8 +3475,52 @@ function getDatabaseEntryFieldValue(
 function getDatabaseEntryInitialFormValues(
   definition: NoteDatabaseDefinition,
   openedAt: string,
+  entry?: NoteDatabaseEntry | null,
 ) {
+  if (entry) {
+    return Object.fromEntries(
+      definition.fields.map((field) => {
+        const value = entry.values[field.id];
+        return [field.id, value == null ? "" : String(value)];
+      }),
+    );
+  }
+
   return getDatabaseCreatedAtInitialFormValues(definition, openedAt);
+}
+
+function mapFoodResourceToDatabaseEntry(resource: FoodResource): NoteDatabaseEntry {
+  return {
+    id: resource.id,
+    createdAt: resource.created_at,
+    updatedAt: resource.updated_at,
+    values: {
+      [ON_HAND_NAME_FIELD_ID]: resource.name,
+      [ON_HAND_QUANTITY_FIELD_ID]: resource.quantity,
+      [ON_HAND_UNIT_FIELD_ID]: resource.unit,
+      [ON_HAND_LOCATION_FIELD_ID]: resource.location,
+      [ON_HAND_EXPIRES_ON_FIELD_ID]: resource.expires_on,
+      [ON_HAND_NOTES_FIELD_ID]: resource.notes,
+      food_id: resource.food_id,
+      brand_name: resource.brand_name,
+      status: resource.status,
+    },
+  };
+}
+
+function mapOnHandEntryToFoodResourcePayload(entry: NoteDatabaseEntry) {
+  return {
+    id: entry.id,
+    food_id: typeof entry.values.food_id === "string" ? entry.values.food_id : null,
+    brand_name:
+      typeof entry.values.brand_name === "string" ? entry.values.brand_name : null,
+    name: entry.values[ON_HAND_NAME_FIELD_ID],
+    quantity: entry.values[ON_HAND_QUANTITY_FIELD_ID],
+    unit: entry.values[ON_HAND_UNIT_FIELD_ID],
+    location: entry.values[ON_HAND_LOCATION_FIELD_ID],
+    expires_on: entry.values[ON_HAND_EXPIRES_ON_FIELD_ID],
+    notes: entry.values[ON_HAND_NOTES_FIELD_ID],
+  };
 }
 
 function formatDatabaseCreatedAtMetadata(openedAt: string) {
@@ -3546,6 +3617,8 @@ function NoteDatabaseEntriesView({
   definition,
   entries,
   onAddField,
+  onArchiveEntry,
+  onEditEntry,
   onFieldHeaderClick,
   onFieldOrderChange,
   size = "compact",
@@ -3556,6 +3629,8 @@ function NoteDatabaseEntriesView({
   definition: NoteDatabaseDefinition;
   entries: NoteDatabaseEntry[];
   onAddField?: () => void;
+  onArchiveEntry?: (entry: NoteDatabaseEntry) => void;
+  onEditEntry?: (entry: NoteDatabaseEntry) => void;
   onFieldHeaderClick?: (field: NoteDatabaseFieldDefinition) => void;
   onFieldOrderChange?: (activeFieldId: string, overFieldId: string) => void;
   size?: "compact" | "full";
@@ -3564,6 +3639,7 @@ function NoteDatabaseEntriesView({
 }) {
   const isFull = size === "full";
   const canReorderFields = Boolean(onFieldOrderChange);
+  const hasEntryActions = Boolean(onEditEntry || onArchiveEntry);
   const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
   const suppressFieldHeaderClickRef = useRef(false);
   const fieldDragSensors = useSensors(
@@ -3682,6 +3758,14 @@ function NoteDatabaseEntriesView({
                         </button>
                       </th>
                     ) : null}
+                    {hasEntryActions ? (
+                      <th
+                        scope="col"
+                        className="sticky top-0 z-10 w-20 border-b border-white/[0.08] bg-[#08090a]/98 px-2 py-1 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30 backdrop-blur"
+                      >
+                        Actions
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -3716,6 +3800,32 @@ function NoteDatabaseEntriesView({
                           className={`${fullTableCellClassName} group-hover:bg-white/[0.025]`}
                         />
                       ) : null}
+                      {hasEntryActions ? (
+                        <td className={`${fullTableCellClassName} group-hover:bg-white/[0.025]`}>
+                          <div className="flex justify-end gap-1">
+                            {onEditEntry ? (
+                              <button
+                                type="button"
+                                aria-label={`Edit ${getDatabaseEntryTitle(entry, definition)}`}
+                                onClick={() => onEditEntry(entry)}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-white/44 outline-none transition hover:bg-white/[0.07] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/24"
+                              >
+                                <PencilLine className="h-3 w-3" />
+                              </button>
+                            ) : null}
+                            {onArchiveEntry ? (
+                              <button
+                                type="button"
+                                aria-label={`Archive ${getDatabaseEntryTitle(entry, definition)}`}
+                                onClick={() => onArchiveEntry(entry)}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-white/44 outline-none transition hover:bg-white/[0.07] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/24"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                   {Array.from({ length: placeholderRowCount }, (_, placeholderRowIndex) => (
@@ -3731,6 +3841,12 @@ function NoteDatabaseEntriesView({
                         />
                       ))}
                       {onAddField ? (
+                        <td
+                          aria-hidden="true"
+                          className={`${fullTableCellClassName} text-white/0`}
+                        />
+                      ) : null}
+                      {hasEntryActions ? (
                         <td
                           aria-hidden="true"
                           className={`${fullTableCellClassName} text-white/0`}
@@ -3851,6 +3967,36 @@ function NoteDatabaseEntriesView({
                       </span>
                     ) : null}
                   </span>
+                  {hasEntryActions ? (
+                    <span className="flex shrink-0 items-center gap-1">
+                      {onEditEntry ? (
+                        <button
+                          type="button"
+                          aria-label={`Edit ${getDatabaseEntryTitle(entry, definition)}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEditEntry(entry);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24"
+                        >
+                          <PencilLine className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                      {onArchiveEntry ? (
+                        <button
+                          type="button"
+                          aria-label={`Archive ${getDatabaseEntryTitle(entry, definition)}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onArchiveEntry(entry);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                    </span>
+                  ) : null}
                 </button>
 
                 {isExpanded ? (
@@ -4476,19 +4622,23 @@ function findListSelectionForCaret(nextSegments: NoteSegment[], caretOffset: num
 
 export function NoteDatabaseEntrySheet({
   databaseDefinition,
+  initialEntry,
   onClose,
   onSaveEntry,
   overlayClassName,
+  submitLabel = "Save entry",
 }: {
   databaseDefinition: NoteDatabaseDefinition;
   entries?: NoteDatabaseEntry[];
+  initialEntry?: NoteDatabaseEntry | null;
   onClose: () => void;
   onSaveEntry: (entry: NoteDatabaseEntry) => void | Promise<void>;
   overlayClassName?: string;
+  submitLabel?: string;
 }) {
   const [openedAt] = useState(() => new Date().toISOString());
   const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>(() =>
-    getDatabaseEntryInitialFormValues(databaseDefinition, openedAt),
+    getDatabaseEntryInitialFormValues(databaseDefinition, openedAt, initialEntry),
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -4817,7 +4967,6 @@ export function NoteDatabaseEntrySheet({
     nutritionLocalDayWindow.start,
     shouldRenderNutritionDailyProgress,
   ]);
-
   function updateEntryFormValue(fieldId: string, value: string) {
     setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
   }
@@ -7502,7 +7651,7 @@ export function NoteDatabaseEntrySheet({
     if (isSubmitting) return;
 
     const now = new Date().toISOString();
-    const entryId = buildClientDatabaseEntryId();
+    const entryId = initialEntry?.id ?? buildClientDatabaseEntryId();
     const values = databaseFields.reduce<Record<string, unknown>>(
       (nextValues, field) => {
         const rawValue = entryFormValues[field.id] ?? "";
@@ -7518,7 +7667,7 @@ export function NoteDatabaseEntrySheet({
     );
     const nextEntry: NoteDatabaseEntry = {
       id: entryId,
-      createdAt: now,
+      createdAt: initialEntry?.createdAt ?? now,
       updatedAt: now,
       values,
     };
@@ -7691,7 +7840,7 @@ export function NoteDatabaseEntrySheet({
                 : "flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
             }
           >
-            {isSubmitting ? "Saving..." : "Save entry"}
+            {isSubmitting ? "Saving..." : submitLabel}
           </button>
         </div>
       </div>
@@ -7737,6 +7886,11 @@ export function NoteDatabaseFocusedView({
   const [nutritionProgressAnimationKey, setNutritionProgressAnimationKey] = useState(0);
   const [isNutritionProgressAnimatedIn, setIsNutritionProgressAnimatedIn] = useState(false);
   const [nutritionDailyProgressRefreshKey, setNutritionDailyProgressRefreshKey] = useState(0);
+  const [externalDatabaseEntries, setExternalDatabaseEntries] = useState<NoteDatabaseEntry[]>(
+    [],
+  );
+  const [externalDatabaseError, setExternalDatabaseError] = useState<string | null>(null);
+  const [editingEntry, setEditingEntry] = useState<NoteDatabaseEntry | null>(null);
   const shouldReduceNutritionMotion = useReducedMotion();
   const lastOpenEntrySheetKeyRef = useRef<string | null>(null);
   const segments = useMemo(() => parseNoteSegments(noteContent), [noteContent]);
@@ -7762,13 +7916,17 @@ export function NoteDatabaseFocusedView({
   const activeDatabaseView = databaseDefinition ? getActiveDatabaseView(databaseDefinition) : null;
   const visibleFields = databaseDefinition ? getVisibleDatabaseFields(databaseDefinition) : [];
   const titleField = databaseDefinition ? getDatabaseTitleField(databaseDefinition) : null;
-  const entries = databaseEntries?.[databaseId] ?? [];
   const displayTitle = getDatabaseDisplayTitle(databaseDefinition?.title ?? databaseSegment?.title);
   const parentNoteTitle = noteTitle?.trim() || "Note";
   const isStarterDatabaseSchemaLocked = isLockedStarterDatabase(databaseDefinition);
   const isDefaultNutritionDatabase = databaseDefinition
     ? isDefaultNutritionDatabaseDefinition(databaseDefinition)
     : false;
+  const isOnHandDatabase = databaseDefinition
+    ? isOnHandDatabaseDefinition(databaseDefinition)
+    : false;
+  const storedEntries = databaseEntries?.[databaseId] ?? [];
+  const entries = isOnHandDatabase ? externalDatabaseEntries : storedEntries;
   const shouldRenderNutritionDailyProgress =
     isDefaultNutritionDatabase && Boolean(activeDatabaseView);
   const nutritionLocalDayWindow = useMemo(() => getNutritionLocalDayWindow(), []);
@@ -7808,6 +7966,30 @@ export function NoteDatabaseFocusedView({
     nutritionLocalDayWindow.start,
     shouldRenderNutritionDailyProgress,
   ]);
+  const refreshOnHandEntries = useCallback(async () => {
+    if (!isOnHandDatabase) {
+      setExternalDatabaseEntries([]);
+      setExternalDatabaseError(null);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/food-resources?status=active&limit=200");
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load On Hand.");
+      }
+
+      setExternalDatabaseEntries(
+        (payload.foodResources ?? []).map(mapFoodResourceToDatabaseEntry),
+      );
+      setExternalDatabaseError(null);
+    } catch (error) {
+      console.error("Failed to load On Hand food resources", { error });
+      setExternalDatabaseError("On Hand is unavailable right now.");
+    }
+  }, [isOnHandDatabase]);
 
   useEffect(() => {
     const { changed, definitions } = normalizeDatabaseDefinitionsForSegments(
@@ -7823,6 +8005,10 @@ export function NoteDatabaseFocusedView({
   useEffect(() => {
     void refreshNutritionDailyTotals();
   }, [nutritionDailyProgressRefreshKey, refreshNutritionDailyTotals]);
+
+  useEffect(() => {
+    void refreshOnHandEntries();
+  }, [refreshOnHandEntries]);
 
   useLayoutEffect(() => {
     if (!shouldRenderNutritionDailyProgress) {
@@ -7926,7 +8112,7 @@ export function NoteDatabaseFocusedView({
   }
 
   function updateDatabaseActiveView(viewType: NoteDatabaseViewType) {
-    if (activeDatabaseView.type !== viewType) {
+    if (activeDatabaseView?.type !== viewType) {
       void hapticSoftTick();
     }
 
@@ -8067,16 +8253,35 @@ export function NoteDatabaseFocusedView({
   }
 
   function openDatabaseEntrySheet() {
+    setEditingEntry(null);
     setEntrySheetKey((currentKey) => currentKey + 1);
     setIsEntrySheetOpen(true);
   }
 
   function closeDatabaseEntrySheet() {
     setIsEntrySheetOpen(false);
+    setEditingEntry(null);
   }
 
-  function saveDatabaseEntry(nextEntry: NoteDatabaseEntry) {
+  async function saveDatabaseEntry(nextEntry: NoteDatabaseEntry) {
     if (!databaseDefinition) return;
+
+    if (isOnHandDatabase) {
+      const isEditing = externalDatabaseEntries.some((entry) => entry.id === nextEntry.id);
+      const response = await fetch("/api/food-resources", {
+        method: isEditing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mapOnHandEntryToFoodResourcePayload(nextEntry)),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok || !payload.foodResource) {
+        throw new Error(payload.error || "Unable to save On Hand item.");
+      }
+
+      await refreshOnHandEntries();
+      return;
+    }
 
     const currentEntries = databaseEntries ?? {};
 
@@ -8087,6 +8292,36 @@ export function NoteDatabaseFocusedView({
 
     if (isDefaultNutritionDatabase) {
       setNutritionDailyProgressRefreshKey((currentKey) => currentKey + 1);
+    }
+  }
+
+  function editDatabaseEntry(entry: NoteDatabaseEntry) {
+    setEditingEntry(entry);
+    setEntrySheetKey((currentKey) => currentKey + 1);
+    setIsEntrySheetOpen(true);
+  }
+
+  async function archiveDatabaseEntry(entry: NoteDatabaseEntry) {
+    if (!isOnHandDatabase) return;
+
+    try {
+      const response = await fetch("/api/food-resources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: entry.id, action: "archive" }),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to archive On Hand item.");
+      }
+
+      await refreshOnHandEntries();
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to archive On Hand food resource", { error });
+      setExternalDatabaseError("Unable to archive that item right now.");
+      void hapticErrorPattern();
     }
   }
 
@@ -8255,11 +8490,18 @@ export function NoteDatabaseFocusedView({
             />
           </div>
         ) : null}
+        {externalDatabaseError ? (
+          <p className="px-2 pb-3 text-xs font-medium text-red-200/78">
+            {externalDatabaseError}
+          </p>
+        ) : null}
         <NoteDatabaseEntriesView
           activeView={activeDatabaseView}
           definition={databaseDefinition}
           entries={entries}
           onAddField={isStarterDatabaseSchemaLocked ? undefined : openNewDatabaseFieldSheet}
+          onArchiveEntry={isOnHandDatabase ? archiveDatabaseEntry : undefined}
+          onEditEntry={isOnHandDatabase ? editDatabaseEntry : undefined}
           onFieldHeaderClick={
             isStarterDatabaseSchemaLocked ? undefined : (field) => setEditingFieldId(field.id)
           }
@@ -8302,8 +8544,10 @@ export function NoteDatabaseFocusedView({
           key={entrySheetKey}
           databaseDefinition={databaseDefinition}
           entries={entries}
+          initialEntry={editingEntry}
           onClose={closeDatabaseEntrySheet}
           onSaveEntry={saveDatabaseEntry}
+          submitLabel={editingEntry ? "Save changes" : "Save entry"}
         />
       ) : null}
 
