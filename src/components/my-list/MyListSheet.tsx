@@ -39,7 +39,14 @@ import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
-import type { MyListPinnableSourceType } from "@/lib/my-list/pinnedSourceItems";
+import {
+  MY_LIST_PINNABLE_SOURCE_TYPES,
+  type MyListPinnableSourceType,
+} from "@/lib/my-list/pinnedSourceItems";
+import {
+  loadManualMyListItems,
+  replaceManualMyListItems,
+} from "@/lib/my-list/myListItemsStorage";
 import { MatrixContent } from "@/app/(app)/schedule/matrix/MatrixContent";
 import {
   PRIORITY_LABELS,
@@ -48,12 +55,14 @@ import {
   type PriorityBucketId,
 } from "@/app/(app)/schedule/priorities/utils";
 
+const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
 const QUICK_CREATE_PRIORITY_SYMBOLS: Record<PriorityBucketId, string> = {
+  "ULTRA-CRITICAL": "!!!!",
   CRITICAL: "!!!",
   HIGH: "!!",
   MEDIUM: "!",
   LOW: "~",
-  SOMEDAY: "...",
+  NO: QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL,
 };
 
 const QUICK_CREATE_PRIORITY_OPTIONS = PRIORITY_ORDER.map((priority) => ({
@@ -61,7 +70,6 @@ const QUICK_CREATE_PRIORITY_OPTIONS = PRIORITY_ORDER.map((priority) => ({
   label: PRIORITY_LABELS[priority],
   symbol: QUICK_CREATE_PRIORITY_SYMBOLS[priority],
 }));
-const QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL = "◇";
 const MY_LIST_DAY_BUCKETS = ["morning", "afternoon", "evening"] as const;
 const MY_LIST_DAY_VIEW_BUCKETS = [
   "anytime",
@@ -207,8 +215,16 @@ function compareQuickCreateOrderThenName(
 }
 
 type MyListRowKey = `manual:${string}` | `task:${string}`;
+type MyListPinnedSourceRowKey = `pinnedSource:${MyListPinnableSourceType}:${string}`;
 type MyListDayBucketId = (typeof MY_LIST_DAY_BUCKETS)[number];
 type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
+
+function buildPinnedSourceRowKey(
+  sourceType: MyListPinnableSourceType,
+  sourceId: string
+): MyListPinnedSourceRowKey {
+  return `pinnedSource:${sourceType}:${sourceId}`;
+}
 
 type MyListManualRow = {
   id: string;
@@ -308,6 +324,56 @@ function sanitizeMyListManualRows(
   }, []);
 }
 
+function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const sourceType =
+    typeof record.sourceType === "string" &&
+    MY_LIST_PINNABLE_SOURCE_TYPES.includes(
+      record.sourceType as MyListPinnableSourceType
+    )
+      ? (record.sourceType as MyListPinnableSourceType)
+      : null;
+
+  if (!id || !sourceType) return null;
+
+  return {
+    id,
+    sourceType,
+    title:
+      typeof record.title === "string" && record.title.trim()
+        ? record.title
+        : `Untitled ${sourceType.toLowerCase()}`,
+    icon: typeof record.icon === "string" ? record.icon : null,
+    priority: typeof record.priority === "string" ? record.priority : null,
+    energy: typeof record.energy === "string" ? record.energy : null,
+    stage: typeof record.stage === "string" ? record.stage : null,
+    completedAt:
+      typeof record.completedAt === "string" && record.completedAt.trim()
+        ? record.completedAt
+        : null,
+  };
+}
+
+function sanitizePinnedSourceRows(rows: unknown): MyListPinnedSourceRow[] {
+  if (!Array.isArray(rows)) return [];
+
+  const seenRowKeys = new Set<string>();
+  return rows.reduce<MyListPinnedSourceRow[]>((sanitizedRows, row) => {
+    const sanitizedRow = sanitizePinnedSourceRow(row);
+    if (!sanitizedRow) return sanitizedRows;
+
+    const rowKey = `${sanitizedRow.sourceType}:${sanitizedRow.id}`;
+    if (seenRowKeys.has(rowKey)) return sanitizedRows;
+
+    seenRowKeys.add(rowKey);
+    sanitizedRows.push(sanitizedRow);
+    return sanitizedRows;
+  }, []);
+}
+
 function readStoredMyListManualRows(
   fallbackPriorityId: PriorityBucketId
 ): MyListManualRow[] {
@@ -366,6 +432,8 @@ function readMyListDayBucketFromUnknown(value: unknown): MyListDayBucketId | nul
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     return (
+      readMyListDayBucketFromUnknown(record.dayBucketId) ??
+      readMyListDayBucketFromUnknown(record.day_bucket_id) ??
       readMyListDayBucketFromUnknown(record.dayBucket) ??
       readMyListDayBucketFromUnknown(record.day_bucket) ??
       readMyListDayBucketFromUnknown(record.dayTag) ??
@@ -438,9 +506,11 @@ export type MyListPinnedSourceRow = {
   id: string;
   sourceType: MyListPinnableSourceType;
   title: string;
+  icon?: string | null;
   priority?: string | null;
   energy?: string | null;
   stage?: string | null;
+  completedAt?: string | null;
 };
 
 type MyListVisibleTodoRow =
@@ -496,6 +566,7 @@ export type MyListTaskXpContext = {
 export function MyListSheet({
   open,
   onOpenChange,
+  userId,
   tasks,
   pinnedSourceRows,
   skills,
@@ -503,11 +574,14 @@ export function MyListSheet({
   pendingTaskIds,
   useFullExpandedHeight,
   enableScheduleTimelineDrag = false,
+  onRemovePinnedSource,
+  onTogglePinnedSourceCompletion,
   onToggleTask,
   onTaskSkillSelect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  userId?: string | null;
   tasks: TaskLite[];
   pinnedSourceRows?: MyListPinnedSourceRow[];
   skills: SkillRow[];
@@ -515,6 +589,11 @@ export function MyListSheet({
   pendingTaskIds: Set<string>;
   useFullExpandedHeight: boolean;
   enableScheduleTimelineDrag?: boolean;
+  onRemovePinnedSource?: (row: MyListPinnedSourceRow) => void;
+  onTogglePinnedSourceCompletion?: (
+    row: MyListPinnedSourceRow,
+    completedAt: string | null
+  ) => void;
   onToggleTask: (
     taskId: string,
     sourceRect: CreatorXpBurstRect | null,
@@ -608,36 +687,32 @@ export function MyListSheet({
     [visibleTasks]
   );
   const visiblePinnedSourceRows = useMemo(
-    () => pinnedSourceRows ?? [],
+    () => sanitizePinnedSourceRows(pinnedSourceRows),
     [pinnedSourceRows]
   );
   const activeManualRows = useMemo(
     () => manualRows.filter((row) => !row.done),
     [manualRows]
   );
-  const shouldShowEmptyDraftRow =
-    activeVisibleTasks.length === 0 &&
-    visiblePinnedSourceRows.length === 0 &&
-    activeManualRows.length === 0;
   const hasListRows =
     activeVisibleTasks.length > 0 ||
     visiblePinnedSourceRows.length > 0 ||
     activeManualRows.length > 0 ||
-    shouldShowEmptyDraftRow;
+    open;
   const visibleListRowCount =
     activeVisibleTasks.length +
     visiblePinnedSourceRows.length +
     activeManualRows.length +
-    (shouldShowEmptyDraftRow ? 1 : 0);
+    (open ? 1 : 0);
   const visibleManualRows = useMemo(
     () =>
-      shouldShowEmptyDraftRow
+      open
         ? [
             ...manualRows,
             createManualRow(EMPTY_DRAFT_MANUAL_ROW_ID, defaultPriority.id),
           ]
         : manualRows,
-    [defaultPriority.id, manualRows, shouldShowEmptyDraftRow]
+    [defaultPriority.id, manualRows, open]
   );
   const visibleManualRowsByAnchor = useMemo(() => {
     const rowsByAnchor = new Map<MyListRowKey, MyListManualRow[]>();
@@ -704,6 +779,25 @@ export function MyListSheet({
     visiblePinnedSourceRows,
     visibleTasks,
   ]);
+
+  useEffect(() => {
+    setPinnedSourceCompletions((currentCompletions) => {
+      const nextCompletions = { ...currentCompletions };
+      let changed = false;
+
+      visiblePinnedSourceRows.forEach((row) => {
+        const completionKey = `${row.sourceType}:${row.id}`;
+        const nextCompletedAt = row.completedAt ?? null;
+        if (nextCompletions[completionKey] !== nextCompletedAt) {
+          nextCompletions[completionKey] = nextCompletedAt;
+          changed = true;
+        }
+      });
+
+      return changed ? nextCompletions : currentCompletions;
+    });
+  }, [visiblePinnedSourceRows]);
+
   const activeTodoRows = useMemo(
     () =>
       visibleTodoRows.filter((visibleRow) => {
@@ -816,10 +910,18 @@ export function MyListSheet({
       setManualRows((currentRows) => {
         const nextRows = updater(currentRows);
         writeStoredMyListManualRows(nextRows, defaultPriority.id);
+        if (userId) {
+          void replaceManualMyListItems({
+            userId,
+            rows: nextRows,
+          }).catch((error) => {
+            console.error("Failed to persist My List manual rows", error);
+          });
+        }
         return nextRows;
       });
     },
-    [defaultPriority.id]
+    [defaultPriority.id, userId]
   );
 
   useEffect(() => {
@@ -836,8 +938,37 @@ export function MyListSheet({
   }, []);
 
   useEffect(() => {
-    setManualRows(readStoredMyListManualRows(defaultPriority.id));
-  }, [defaultPriority.id]);
+    let active = true;
+    const localRows = readStoredMyListManualRows(defaultPriority.id);
+
+    if (!userId) {
+      setManualRows(localRows);
+      return () => {
+        active = false;
+      };
+    }
+
+    void loadManualMyListItems({
+      userId,
+      localRows,
+      fallbackPriorityId: defaultPriority.id,
+    })
+      .then((rows) => {
+        if (!active) return;
+        const sanitizedRows = sanitizeMyListManualRows(rows, defaultPriority.id);
+        setManualRows(sanitizedRows);
+        writeStoredMyListManualRows(sanitizedRows, defaultPriority.id);
+      })
+      .catch((error) => {
+        console.error("Failed to load Supabase My List manual rows", error);
+        if (!active) return;
+        setManualRows(localRows);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [defaultPriority.id, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1516,18 +1647,21 @@ export function MyListSheet({
       setPendingDeleteRowId((currentRowId) =>
         currentRowId === `manual:${rowId}` ? null : currentRowId
       );
-      updateManualRowsWithPersistence((currentRows) =>
-        currentRows.length === 0 && rowId === EMPTY_DRAFT_MANUAL_ROW_ID
-          ? [
-              {
-                ...createManualRow(realDraftRowId ?? rowId, defaultPriority.id),
-                ...updates,
-              },
-            ]
-          : currentRows.map((row) =>
-              row.id === rowId ? { ...row, ...updates } : row
-            )
-      );
+      updateManualRowsWithPersistence((currentRows) => {
+        if (rowId === EMPTY_DRAFT_MANUAL_ROW_ID) {
+          return [
+            ...currentRows,
+            {
+              ...createManualRow(realDraftRowId ?? rowId, defaultPriority.id),
+              ...updates,
+            },
+          ];
+        }
+
+        return currentRows.map((row) =>
+          row.id === rowId ? { ...row, ...updates } : row
+        );
+      });
     },
     [createManualRowId, defaultPriority.id, updateManualRowsWithPersistence]
   );
@@ -1574,20 +1708,12 @@ export function MyListSheet({
             insertAfterRowKey: draftRow.insertAfterRowKey ?? null,
           };
 
-          if (currentRows.length === 0) {
-            return [realDraftRow, blankRow];
-          }
-
           const draftIndex = currentRows.findIndex(
             (row) => row.id === EMPTY_DRAFT_MANUAL_ROW_ID
           );
 
           if (draftIndex < 0) {
-            return insertManualRowAfterAnchor(
-              currentRows,
-              `manual:${rowId}`,
-              blankRow
-            );
+            return [...currentRows, realDraftRow, blankRow];
           }
 
           const nextRows = [...currentRows];
@@ -1783,8 +1909,15 @@ export function MyListSheet({
   );
 
   const handleDeleteRowAction = useCallback(
-    (rowId: string, rowType: "manual" | "task") => {
-      const deleteRowId = `${rowType}:${rowId}`;
+    (
+      rowId: string,
+      rowType: "manual" | "task" | "pinnedSource",
+      pinnedSourceRow?: MyListPinnedSourceRow
+    ) => {
+      const deleteRowId =
+        rowType === "pinnedSource" && pinnedSourceRow
+          ? buildPinnedSourceRowKey(pinnedSourceRow.sourceType, rowId)
+          : `${rowType}:${rowId}`;
 
       if (pendingDeleteRowId !== deleteRowId) {
         setPendingDeleteRowId(deleteRowId);
@@ -1792,6 +1925,19 @@ export function MyListSheet({
       }
 
       setPendingDeleteRowId(null);
+      if (rowType === "pinnedSource" && pinnedSourceRow) {
+        setPinnedSourceCompletions((currentCompletions) => {
+          const completionKey = `${pinnedSourceRow.sourceType}:${rowId}`;
+          if (!(completionKey in currentCompletions)) return currentCompletions;
+
+          const nextCompletions = { ...currentCompletions };
+          delete nextCompletions[completionKey];
+          return nextCompletions;
+        });
+        onRemovePinnedSource?.(pinnedSourceRow);
+        return;
+      }
+
       if (rowType === "manual") {
         updateManualRowsWithPersistence((currentRows) =>
           currentRows.filter((row) => row.id !== rowId)
@@ -1823,21 +1969,36 @@ export function MyListSheet({
         return nextIds;
       });
     },
-    [pendingDeleteRowId, updateManualRowsWithPersistence]
+    [onRemovePinnedSource, pendingDeleteRowId, updateManualRowsWithPersistence]
   );
 
   const renderDeleteRowButton = useCallback(
-    (rowId: string, rowType: "manual" | "task") => {
-      const deleteRowId = `${rowType}:${rowId}`;
+    (
+      rowId: string,
+      rowType: "manual" | "task" | "pinnedSource",
+      pinnedSourceRow?: MyListPinnedSourceRow
+    ) => {
+      const deleteRowId =
+        rowType === "pinnedSource" && pinnedSourceRow
+          ? buildPinnedSourceRowKey(pinnedSourceRow.sourceType, rowId)
+          : `${rowType}:${rowId}`;
       const confirming = pendingDeleteRowId === deleteRowId;
 
       return (
         <button
           type="button"
-          aria-label={confirming ? "Confirm remove to-do" : "Remove to-do"}
+          aria-label={
+            confirming
+              ? rowType === "pinnedSource"
+                ? "Confirm unpin item"
+                : "Confirm remove to-do"
+              : rowType === "pinnedSource"
+                ? "Unpin item"
+                : "Remove to-do"
+          }
           onClick={(event) => {
             event.stopPropagation();
-            handleDeleteRowAction(rowId, rowType);
+            handleDeleteRowAction(rowId, rowType, pinnedSourceRow);
           }}
           tabIndex={open ? 0 : -1}
           className={clsx(
@@ -3211,6 +3372,7 @@ export function MyListSheet({
                       priorityOption.symbol ||
                       QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
                     const title = row.title.trim() || `Untitled ${row.sourceType.toLowerCase()}`;
+                    const sourceIcon = resolvePinnedSourceIcon(row);
 
                     return (
                       <div
@@ -3224,13 +3386,15 @@ export function MyListSheet({
                           type="checkbox"
                           checked={done}
                           onChange={(event) => {
+                            const nextCompletedAt = event.target.checked
+                              ? new Date().toISOString()
+                              : null;
                             setPendingDeleteRowId(null);
                             setPinnedSourceCompletions((current) => ({
                               ...current,
-                              [completionKey]: event.target.checked
-                                ? new Date().toISOString()
-                                : null,
+                              [completionKey]: nextCompletedAt,
                             }));
+                            onTogglePinnedSourceCompletion?.(row, nextCompletedAt);
                           }}
                           tabIndex={open ? 0 : -1}
                           className="peer sr-only"
@@ -3258,11 +3422,14 @@ export function MyListSheet({
                         </label>
                         <span
                           className={clsx(
-                            "shrink-0 rounded-full border border-white/8 bg-black/20 px-1.5 py-0.5 text-[0.56rem] font-black uppercase tracking-[0.08em] text-white/42",
-                            done && "text-white/32"
+                            "flex h-4 w-4 shrink-0 items-center justify-center text-center text-[0.78rem] leading-none text-white/70",
+                            !row.icon?.trim() && "text-white/36",
+                            done && "text-white/42"
                           )}
+                          title={row.sourceType.toLowerCase()}
+                          aria-hidden="true"
                         >
-                          {row.sourceType}
+                          {sourceIcon}
                         </span>
                         <span
                           className={clsx(
@@ -3285,6 +3452,7 @@ export function MyListSheet({
                             </span>
                           </span>
                         </div>
+                        {renderDeleteRowButton(row.id, "pinnedSource", row)}
                       </div>
                     );
                   }
@@ -3614,4 +3782,12 @@ export function MyListSheet({
       </motion.div>
     </motion.aside>
   );
+}
+
+function resolvePinnedSourceIcon(row: MyListPinnedSourceRow) {
+  const explicitIcon = row.icon?.trim();
+  if (explicitIcon) return explicitIcon;
+
+  if (row.sourceType === "GOAL") return "✦";
+  return "•";
 }

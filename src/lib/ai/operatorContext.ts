@@ -21,7 +21,19 @@ type CreatorAiContextArgs = {
   timeZone: string;
   dayKey: string;
   nowMs?: number;
+  intentMode?: OperatorIntentMode;
+  myListContext?: OperatorMyListContext;
 };
+
+export type OperatorIntentMode =
+  | "next_action"
+  | "schedule_summary"
+  | "missed_today"
+  | "neglect"
+  | "plan_day"
+  | "goals_projects"
+  | "my_list"
+  | "general";
 
 type ScheduleSnapshotInstance = {
   id: string;
@@ -60,6 +72,7 @@ type OperatorStateItem = {
   id: string;
   title: string;
   type: string | null;
+  sourceId?: string | null;
   status: string | null;
   startLocal: string;
   endLocal: string;
@@ -67,10 +80,15 @@ type OperatorStateItem = {
   timing: string;
   start_utc_ms: number;
   end_utc_ms: number;
+  startUtc?: string | null;
+  endUtc?: string | null;
   skillName?: string | null;
   skillIcon?: string | null;
   blockId?: string | null;
   blockLabel?: string | null;
+  timeBlockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  windowId?: string | null;
 };
 
 type OperatorStateBlock = {
@@ -82,9 +100,16 @@ type OperatorStateBlock = {
   timeRange: string;
   timing: string;
   itemCount: number;
+  startUtc?: string | null;
+  endUtc?: string | null;
+  timeBlockId?: string | null;
+  dayTypeTimeBlockId?: string | null;
+  windowId?: string | null;
 };
 
 type OperatorState = {
+  intentMode: OperatorIntentMode;
+  nowUtcMs: number;
   nowLocal: string;
   dayPhase:
     | "late_night"
@@ -103,6 +128,7 @@ type OperatorState = {
   nextBlock: OperatorStateBlock | null;
   nextItems: OperatorStateItem[];
   lastMissedItems: OperatorStateItem[];
+  missedTodayItems: OperatorStateItem[];
   upcomingItems: OperatorStateItem[];
   scheduleSummaryItems: OperatorStateItem[];
   tonightItems: OperatorStateItem[];
@@ -119,7 +145,76 @@ type OperatorState = {
   neglectIntelligence: NeglectIntelligence;
   neglectDigest: string;
   scheduleDigest: string;
+  myListContext?: OperatorMyListContext;
+  suggestedActions: SuggestedAction[];
 };
+
+export type OperatorMyListContext = {
+  source: "server" | "client_local_storage" | "unavailable";
+  clientProvided?: boolean;
+  rows: Array<{
+    id: string;
+    text: string;
+    done?: boolean;
+    completedAt?: string | null;
+    skillIcon?: string | null;
+    skillName?: string | null;
+    dayBucketId?: string | null;
+    priorityId?: string | null;
+  }>;
+  capped: boolean;
+};
+
+export type SuggestedAction = {
+  id: string;
+  kind:
+    | "complete_due_item"
+    | "start_focus"
+    | "reschedule_missed_item"
+    | "protect_recovery"
+    | "open_context"
+    | "triage_due_today";
+  label: string;
+  reason: string;
+  confidence: "high" | "medium" | "low";
+  readOnly: true;
+  sourceType?:
+    | "PROJECT"
+    | "TASK"
+    | "HABIT"
+    | "EVENT"
+    | "SCHEDULE_INSTANCE"
+    | "SKILL"
+    | "MONUMENT"
+    | "GOAL";
+  sourceId?: string;
+  scheduleInstanceId?: string;
+  href?: string;
+  unavailableReason?: string;
+  evidence?: {
+    bucket?: string;
+    blockId?: string | null;
+    blockLabel?: string | null;
+    startUtc?: string | null;
+    endUtc?: string | null;
+  };
+};
+
+export type OperatorProposedAction =
+  | {
+      kind: "create_schedule_event";
+      status: "proposed";
+      title: string;
+      startAt: string;
+      endAt: string;
+      timezone: string;
+      notes?: string | null;
+      display: {
+        title: string;
+        timeRange: string;
+        typeLabel: "Event";
+      };
+    };
 
 type NeglectItem = {
   id: string;
@@ -1023,7 +1118,7 @@ const buildNeglectDigest = ({
   const moveLine = moveItem
     ? isRecoveryActive
       ? `Move: Protect sleep now. When awake, handle ${moveItem.title} first.`
-      : moveCandidate.bucket === "missedScheduledItems"
+      : moveCandidate?.bucket === "missedScheduledItems"
         ? `Move: Handle ${moveItem.title} first, then clear one due habit.`
         : `Move: Handle ${moveItem.title} first.`
     : isRecoveryActive
@@ -1039,6 +1134,388 @@ const buildNeglectDigest = ({
     .filter((line): line is string => Boolean(line))
     .join("\n");
 };
+
+const MAX_SUGGESTED_ACTIONS = 4;
+
+const normalizeSuggestedSourceType = (
+  type: NeglectItem["type"] | string | null | undefined
+): SuggestedAction["sourceType"] | undefined => {
+  const normalized = type?.trim().toUpperCase();
+  if (!normalized) return undefined;
+  if (normalized === "SCHEDULE_INSTANCE") return "SCHEDULE_INSTANCE";
+  if (normalized === "PROJECT") return "PROJECT";
+  if (normalized === "TASK") return "TASK";
+  if (normalized === "HABIT") return "HABIT";
+  if (normalized === "EVENT") return "EVENT";
+  if (normalized === "SKILL") return "SKILL";
+  if (normalized === "MONUMENT") return "MONUMENT";
+  if (normalized === "GOAL") return "GOAL";
+  return undefined;
+};
+
+const appendFocusLaunchParam = (
+  params: URLSearchParams,
+  key: string,
+  value: string | null | undefined
+) => {
+  const trimmed = value?.trim();
+  if (trimmed) params.set(key, trimmed);
+};
+
+const buildFocusLaunchHref = (block: OperatorStateBlock | null) => {
+  if (!block?.startUtc || !block.endUtc || !block.label.trim()) return null;
+  const blockId =
+    block.timeBlockId ?? block.dayTypeTimeBlockId ?? block.windowId ?? block.id;
+  if (!blockId) return null;
+  const params = new URLSearchParams();
+  params.set("launch", "time_block_start");
+  params.set("start", block.startUtc);
+  params.set("end", block.endUtc);
+  params.set("blockLabel", block.label);
+  appendFocusLaunchParam(params, "blockKey", blockId);
+  appendFocusLaunchParam(params, "timeBlockId", block.timeBlockId);
+  appendFocusLaunchParam(params, "dayTypeTimeBlockId", block.dayTypeTimeBlockId);
+  appendFocusLaunchParam(params, "windowId", block.windowId);
+  return `/focus-pomo?${params.toString()}`;
+};
+
+const INVALID_FOCUS_LABEL_PATTERNS = [
+  "snapshot test",
+  "placeholder",
+  "event name",
+  "demo",
+  "test",
+];
+
+const MAX_STANDARD_FOCUS_DURATION_MS = 12 * 60 * 60 * 1000;
+
+const isRecoveryBlockLabel = (label: string) =>
+  /\b(sleep|bedtime|nap|recovery|recover|rest|shutdown)\b/i.test(label);
+
+const getFocusBlockRejectionReason = (
+  block: OperatorStateBlock | null,
+  nowMs: number
+) => {
+  if (!block) return "missing_block";
+  const label = block.label.trim();
+  if (!label) return "missing_label";
+  const normalizedLabel = label.toLowerCase();
+  if (
+    INVALID_FOCUS_LABEL_PATTERNS.some((pattern) =>
+      normalizedLabel.includes(pattern)
+    )
+  ) {
+    return "placeholder_label";
+  }
+  if (!block.startUtc || !block.endUtc) return "missing_time_bounds";
+  const startMs = Date.parse(block.startUtc);
+  const endMs = Date.parse(block.endUtc);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return "invalid_time_bounds";
+  }
+  if (endMs <= startMs) return "non_positive_range";
+  if (endMs <= nowMs) return "ended";
+  const durationMs = endMs - startMs;
+  if (durationMs < 5 * 60 * 1000) return "too_short";
+  if (
+    durationMs > MAX_STANDARD_FOCUS_DURATION_MS &&
+    !isRecoveryBlockLabel(label)
+  ) {
+    return "suspicious_duration";
+  }
+  return null;
+};
+
+const logRejectedStartFocusCandidate = (
+  intentMode: OperatorIntentMode,
+  block: OperatorStateBlock | null,
+  reason: string
+) => {
+  console.info("AI operator rejected suggested action", {
+    intentMode,
+    kind: "start_focus",
+    candidate: block
+      ? {
+          id: block.id,
+          label: block.label,
+        }
+      : null,
+    reason,
+  });
+};
+
+export function buildSuggestedActions(
+  operatorState: Omit<OperatorState, "suggestedActions">
+): SuggestedAction[] {
+  const suggestions: SuggestedAction[] = [];
+  const seen = new Set<string>();
+  const add = (action: SuggestedAction) => {
+    if (suggestions.length >= MAX_SUGGESTED_ACTIONS) return;
+    const dedupeKey = [
+      action.kind,
+      action.sourceType ?? "",
+      action.sourceId ?? "",
+      action.scheduleInstanceId ?? "",
+      action.href ?? "",
+    ].join(":");
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    suggestions.push(action);
+  };
+
+  const addRecovery = () => {
+    const recoveryBlock =
+      operatorState.activeRecoveryBlock ?? operatorState.currentBlock;
+    const recoveryItem = operatorState.activeRecoveryItem;
+    const recoveryBlockId =
+      recoveryBlock?.id ?? recoveryItem?.blockId ?? recoveryItem?.id ?? "current";
+    if (!operatorState.isRecoveryActive) return;
+    const labelSource = recoveryItem?.title ?? recoveryBlock?.label ?? "recovery";
+    const resumeAt = recoveryBlock?.endLocal ?? recoveryItem?.endLocal ?? null;
+    add({
+      id: `protect_recovery:block:${recoveryBlockId}`,
+      kind: "protect_recovery",
+      label: /\bsleep|bedtime|nap\b/i.test(labelSource)
+        ? "Protect Sleep"
+        : "Stay in recovery",
+      reason: resumeAt
+        ? `Current block is ${labelSource}. Resume after ${resumeAt}.`
+        : `Current block is ${labelSource}. Keep this read-only and protect recovery.`,
+      confidence: "high",
+      readOnly: true,
+      href: "/schedule",
+      evidence: {
+        blockId: recoveryBlockId,
+        blockLabel: recoveryBlock?.label ?? recoveryItem?.blockLabel ?? null,
+        startUtc: recoveryBlock?.startUtc ?? recoveryItem?.startUtc ?? null,
+        endUtc: recoveryBlock?.endUtc ?? recoveryItem?.endUtc ?? null,
+      },
+    });
+  };
+
+  const neglect = operatorState.neglectIntelligence;
+  const triageCandidate =
+    neglect.dueHabitsUnscheduledIncomplete[0]
+      ? {
+          item: neglect.dueHabitsUnscheduledIncomplete[0],
+          bucket: "dueHabitsUnscheduledIncomplete",
+          reason: "Due today and not cleared yet.",
+        }
+      : neglect.dueUnscheduledProjects[0]
+        ? {
+            item: neglect.dueUnscheduledProjects[0],
+            bucket: "dueUnscheduledProjects",
+            reason: "Due today and not cleared yet.",
+          }
+        : neglect.overdueProjects[0]
+          ? {
+              item: neglect.overdueProjects[0],
+              bucket: "overdueProjects",
+              reason: "Overdue project with no scheduled recovery slot.",
+            }
+          : null;
+
+  const addTriageCandidate = () => {
+    if (!triageCandidate) return;
+    add({
+      id: `triage_due_today:${normalizeSuggestedSourceType(triageCandidate.item.type) ?? "GOAL"}:${triageCandidate.item.id}`,
+      kind: "triage_due_today",
+      label: `Clear ${triageCandidate.item.title}`,
+      reason: triageCandidate.reason,
+      confidence:
+        triageCandidate.bucket === "overdueProjects" ? "medium" : "high",
+      readOnly: true,
+      sourceType: normalizeSuggestedSourceType(triageCandidate.item.type),
+      sourceId: triageCandidate.item.id,
+      href: "/schedule",
+      evidence: { bucket: triageCandidate.bucket },
+    });
+  };
+
+  const addFocusBlock = () => {
+    const focusBlock = operatorState.currentBlock ?? operatorState.nextBlock;
+    if (operatorState.isRecoveryActive) {
+      logRejectedStartFocusCandidate(
+        operatorState.intentMode,
+        focusBlock,
+        "recovery_active"
+      );
+      return;
+    }
+    const rejectionReason = getFocusBlockRejectionReason(
+      focusBlock,
+      operatorState.nowUtcMs
+    );
+    if (rejectionReason) {
+      logRejectedStartFocusCandidate(
+        operatorState.intentMode,
+        focusBlock,
+        rejectionReason
+      );
+      return;
+    }
+    const focusHref = buildFocusLaunchHref(focusBlock);
+    if (!focusBlock || !focusHref) return;
+    const isCurrentBlock = operatorState.currentBlock?.id === focusBlock.id;
+    add({
+      id: `start_focus:block:${focusBlock.id}`,
+      kind: "start_focus",
+      label: `Start Focus Pomo: ${focusBlock.label}`,
+      reason: isCurrentBlock
+        ? `Current block is active until ${focusBlock.endLocal}.`
+        : `Next block starts at ${focusBlock.startLocal}.`,
+      confidence: isCurrentBlock ? "high" : "medium",
+      readOnly: true,
+      href: focusHref,
+      evidence: {
+        blockId: focusBlock.id,
+        blockLabel: focusBlock.label,
+        startUtc: focusBlock.startUtc ?? null,
+        endUtc: focusBlock.endUtc ?? null,
+      },
+    });
+  };
+
+  const addScheduleOpen = (reason = "Review today's block order.") => {
+    add({
+      id: "open_context:schedule",
+      kind: "open_context",
+      label: "Open Schedule",
+      reason,
+      confidence: "medium",
+      readOnly: true,
+      href: "/schedule",
+    });
+  };
+
+  const addMyListOpen = () => {
+    const context = operatorState.myListContext;
+    add({
+      id: "open_context:my_list",
+      kind: "open_context",
+      label: "Open My List",
+      reason:
+        context?.rows.length
+          ? `${context.rows.length} client-provided My List rows are visible read-only.`
+          : "Manual My List rows are unavailable to server context unless the client snapshot is present.",
+      confidence: context?.rows.length ? "high" : "low",
+      readOnly: true,
+      href: "/schedule",
+      unavailableReason:
+        context?.source === "unavailable"
+          ? "I cannot see manual My List rows yet."
+          : undefined,
+      evidence: { bucket: "myListContext" },
+    });
+  };
+
+  const addCompletionPlaceholder = () => {
+    if (!triageCandidate) return;
+    if (triageCandidate.bucket === "overdueProjects") return;
+    add({
+      id: `complete_due_item:${normalizeSuggestedSourceType(triageCandidate.item.type) ?? "GOAL"}:${triageCandidate.item.id}`,
+      kind: "complete_due_item",
+      label: `Complete ${triageCandidate.item.title}`,
+      reason: triageCandidate.reason,
+      confidence: "low",
+      readOnly: true,
+      sourceType: normalizeSuggestedSourceType(triageCandidate.item.type),
+      sourceId: triageCandidate.item.id,
+      unavailableReason:
+        "Completion writes need canonical XP/streak/schedule semantics first.",
+      evidence: { bucket: triageCandidate.bucket },
+    });
+  };
+
+  const addMissedReschedule = () => {
+    const missedToday = operatorState.missedTodayItems[0];
+    const missed = missedToday
+      ? {
+          id: missedToday.id,
+          title: missedToday.title,
+          scheduledStartAt: missedToday.startUtc ?? null,
+          evidenceAt: missedToday.endUtc ?? null,
+          blockLabel: missedToday.blockLabel ?? null,
+        }
+      : neglect.missedScheduledItems[0]
+        ? {
+            ...neglect.missedScheduledItems[0],
+            blockLabel: null,
+          }
+        : null;
+    if (!missed) return;
+    add({
+      id: `reschedule_missed_item:SCHEDULE_INSTANCE:${missed.id}`,
+      kind: "reschedule_missed_item",
+      label: `Reschedule ${missed.title}`,
+      reason: missed.blockLabel
+        ? `Missed from the earlier ${missed.blockLabel} block.`
+        : "Missed from an earlier schedule block.",
+      confidence: "low",
+      readOnly: true,
+      sourceType: "SCHEDULE_INSTANCE",
+      scheduleInstanceId: missed.id,
+      unavailableReason:
+        "Reschedule writes need target block, conflict, and cascade rules first.",
+      evidence: {
+        bucket: "missedScheduledItems",
+        startUtc: missed.scheduledStartAt ?? null,
+        endUtc: missed.evidenceAt ?? null,
+      },
+    });
+  };
+
+  if (operatorState.intentMode === "next_action") {
+    addRecovery();
+    addFocusBlock();
+    if (suggestions.length === 0) {
+      addTriageCandidate();
+      addScheduleOpen("Review due today before choosing a recovery slot.");
+    }
+  } else if (operatorState.intentMode === "schedule_summary") {
+    addScheduleOpen("Review today's blocks and key schedule items.");
+    addFocusBlock();
+  } else if (operatorState.intentMode === "missed_today") {
+    addMissedReschedule();
+    addScheduleOpen("Review today's missed items before choosing a recovery slot.");
+    addFocusBlock();
+  } else if (operatorState.intentMode === "neglect") {
+    addTriageCandidate();
+    addMissedReschedule();
+    addCompletionPlaceholder();
+    addScheduleOpen("Review due, stale, and missed context.");
+  } else if (operatorState.intentMode === "plan_day") {
+    addScheduleOpen("Review the day before making a read-only plan.");
+    addTriageCandidate();
+    addMissedReschedule();
+    addFocusBlock();
+  } else if (operatorState.intentMode === "goals_projects") {
+    addTriageCandidate();
+    addScheduleOpen("Open project and goal context from the schedule.");
+    addCompletionPlaceholder();
+  } else if (operatorState.intentMode === "my_list") {
+    addMyListOpen();
+    addScheduleOpen("Cross-check My List against today's schedule.");
+  } else {
+    addRecovery();
+    addTriageCandidate();
+    addFocusBlock();
+    addScheduleOpen();
+    addCompletionPlaceholder();
+    addMissedReschedule();
+  }
+
+  console.info("AI operator suggested actions", {
+    intentMode: operatorState.intentMode,
+    actions: suggestions.map((action) => ({
+      id: action.id,
+      kind: action.kind,
+      label: action.label,
+    })),
+  });
+
+  return suggestions;
+}
 
 const dedupeAndCapNeglectIntelligence = (
   source: NeglectIntelligence
@@ -1581,6 +2058,8 @@ function buildOperatorState({
   windows,
   instances,
   neglectIntelligence,
+  intentMode,
+  myListContext,
 }: {
   nowMs: number;
   timeZone: string;
@@ -1588,6 +2067,8 @@ function buildOperatorState({
   windows: CompactWindow[];
   instances: ScheduleSnapshotInstance[];
   neglectIntelligence: NeglectIntelligence;
+  intentMode: OperatorIntentMode;
+  myListContext: OperatorMyListContext;
 }): OperatorState {
   const blockRanges = windows
     .map((window) => {
@@ -1627,6 +2108,7 @@ function buildOperatorState({
     id: item.id,
     title: item.title,
     type: item.source_type,
+    sourceId: item.source_id ?? null,
     status: item.status,
     startLocal: formatLocalTime(item.start_utc_ms, timeZone),
     endLocal: formatLocalTime(item.end_utc_ms, timeZone),
@@ -1634,10 +2116,15 @@ function buildOperatorState({
     timing: formatItemTiming(item, nowMs),
     start_utc_ms: item.start_utc_ms,
     end_utc_ms: item.end_utc_ms,
+    startUtc: item.start_utc,
+    endUtc: item.end_utc,
     skillName: item.skill_name ?? null,
     skillIcon: item.skill_icon ?? null,
     blockId: getBlockLookupKey(item),
     blockLabel: blockLabelForItem(item),
+    timeBlockId: item.parent_time_block_id ?? null,
+    dayTypeTimeBlockId: item.parent_day_type_time_block_id ?? null,
+    windowId: item.parent_window_id ?? null,
   });
   const toOperatorBlock = (
     block: CompactWindow & { startMs: number; endMs: number },
@@ -1654,6 +2141,11 @@ function buildOperatorState({
       const key = getBlockLookupKey(item);
       return key === block.id || key === block.day_type_time_block_id;
     }).length,
+    startUtc: new Date(block.startMs).toISOString(),
+    endUtc: new Date(block.endMs).toISOString(),
+    timeBlockId: block.day_type_time_block_id ? null : block.id,
+    dayTypeTimeBlockId: block.day_type_time_block_id ?? null,
+    windowId: block.day_type_time_block_id ? null : block.id,
   });
   const formatBlockName = (label: string) => `**${label.toUpperCase()}**`;
   const formatOperatorItemName = (item: OperatorStateItem) =>
@@ -1692,6 +2184,23 @@ function buildOperatorState({
   const missedItems = instances
     .filter((item) => isMissedNeglectCandidate(item, nowMs))
     .sort((a, b) => b.end_utc_ms - a.end_utc_ms);
+  const localDayStartMs = makeDateInTimeZone(
+    { ...dayParts, hour: 0, minute: 0 },
+    timeZone
+  ).getTime();
+  const localDayEndMs = addDaysInTimeZone(
+    new Date(localDayStartMs),
+    1,
+    timeZone
+  ).getTime();
+  const missedTodayItems = missedItems
+    .filter(
+      (item) =>
+        item.end_utc_ms >= localDayStartMs &&
+        item.end_utc_ms < localDayEndMs
+    )
+    .map(toOperatorItem)
+    .slice(0, 8);
   const upcoming = instances
     .filter((item) => isUpcomingNeglectCandidate(item, nowMs))
     .sort((a, b) => a.start_utc_ms - b.start_utc_ms);
@@ -1849,6 +2358,13 @@ function buildOperatorState({
           .map(formatOperatorItemAt)
           .join("; ")
       : "none";
+  const missedTodayLine =
+    missedTodayItems.length > 0
+      ? missedTodayItems
+          .slice(0, 8)
+          .map(formatOperatorItemAt)
+          .join("; ")
+      : "none";
   const nextLine = nextBlock
     ? [
         `${formatBlockName(nextBlock.label)} starts at ${nextBlock.startLocal} (${nextBlock.timing})`,
@@ -1893,7 +2409,9 @@ function buildOperatorState({
     isRecoveryActive,
   });
 
-  return {
+  const operatorState: Omit<OperatorState, "suggestedActions"> = {
+    intentMode,
+    nowUtcMs: nowMs,
     nowLocal: formatNowLocal(nowMs, timeZone),
     dayPhase: getDayPhase(nowMs, timeZone),
     currentBlock,
@@ -1905,6 +2423,7 @@ function buildOperatorState({
     nextBlock,
     nextItems,
     lastMissedItems,
+    missedTodayItems,
     upcomingItems,
     scheduleSummaryItems,
     tonightItems,
@@ -1921,9 +2440,11 @@ function buildOperatorState({
     },
     neglectIntelligence,
     neglectDigest,
+    myListContext,
     scheduleDigest: [
       `Now: ${currentLine}.`,
       `Missed: ${missedLine}.`,
+      `Missed today: ${missedTodayLine}.`,
       `Next: ${nextLine}.`,
       `Later${showingKeyItems}: ${summaryLine}.`,
       `Skills: ${skillsLine}.`,
@@ -1931,6 +2452,11 @@ function buildOperatorState({
       `Tonight detail: ${tonightLine}.`,
       `Counts: ${countsLine}.`,
     ].join("\n"),
+  };
+
+  return {
+    ...operatorState,
+    suggestedActions: buildSuggestedActions(operatorState),
   };
 }
 
@@ -1942,10 +2468,18 @@ function enforceContextCap(context: CreatorAiContext): CreatorAiContext {
       currentItems: [...context.operator_state.currentItems],
       nextItems: [...context.operator_state.nextItems],
       lastMissedItems: [...context.operator_state.lastMissedItems],
+      missedTodayItems: [...context.operator_state.missedTodayItems],
       upcomingItems: [...context.operator_state.upcomingItems],
       scheduleSummaryItems: [...context.operator_state.scheduleSummaryItems],
       tonightItems: [...context.operator_state.tonightItems],
       todaySkills: [...context.operator_state.todaySkills],
+      suggestedActions: [...context.operator_state.suggestedActions],
+      myListContext: context.operator_state.myListContext
+        ? {
+            ...context.operator_state.myListContext,
+            rows: [...context.operator_state.myListContext.rows],
+          }
+        : undefined,
       neglectCheck: {
         ...context.operator_state.neglectCheck,
         missedItems: [...context.operator_state.neglectCheck.missedItems],
@@ -2018,11 +2552,13 @@ function enforceContextCap(context: CreatorAiContext): CreatorAiContext {
       copy.operator_state.neglectCheck.missedItems,
       copy.operator_state.scheduleSummaryItems,
       copy.operator_state.upcomingItems,
+      copy.operator_state.missedTodayItems,
       copy.operator_state.lastMissedItems,
       copy.operator_state.tonightItems,
       copy.operator_state.nextItems,
       copy.operator_state.currentItems,
       copy.operator_state.todaySkills,
+      copy.operator_state.suggestedActions,
       copy.operator_state.neglectIntelligence.inactiveHighPriorityDomains,
       copy.operator_state.neglectIntelligence.staleMonuments,
       copy.operator_state.neglectIntelligence.staleSkills,
@@ -2075,10 +2611,12 @@ function enforceContextCap(context: CreatorAiContext): CreatorAiContext {
         currentItems: [],
         nextItems: [],
         lastMissedItems: [],
+        missedTodayItems: [],
         upcomingItems: [],
         scheduleSummaryItems: [],
         tonightItems: [],
         todaySkills: [],
+        suggestedActions: [],
         neglectCheck: {
           ...copy.operator_state.neglectCheck,
           missedItems: [],
@@ -2123,6 +2661,7 @@ function logScheduleSummaryIconDebug(context: CreatorAiContext) {
   const currentItems = context.operator_state.currentItems;
   const nextItems = context.operator_state.nextItems;
   const upcomingItems = context.operator_state.upcomingItems;
+  const missedTodayItems = context.operator_state.missedTodayItems;
   const countWithIcon = (items: OperatorStateItem[]) =>
     items.filter((item) => Boolean(item.skillIcon?.trim())).length;
 
@@ -2132,6 +2671,7 @@ function logScheduleSummaryIconDebug(context: CreatorAiContext) {
     currentItemsWithSkillIcon: countWithIcon(currentItems),
     nextItemsWithSkillIcon: countWithIcon(nextItems),
     upcomingItemsWithSkillIcon: countWithIcon(upcomingItems),
+    missedTodayItemsWithSkillIcon: countWithIcon(missedTodayItems),
     scheduleInstanceCount: context.schedule_instances.length,
     scheduleInstancesWithSkillIcon: context.schedule_instances.filter((item) =>
       Boolean(item.skill_icon?.trim())
@@ -2149,6 +2689,8 @@ export async function getCreatorAiContext({
   timeZone,
   dayKey,
   nowMs: providedNowMs,
+  intentMode = "general",
+  myListContext = { source: "unavailable", rows: [], capped: false },
 }: CreatorAiContextArgs): Promise<CreatorAiContext> {
   const dayParts = parseDayKey(dayKey);
   if (!dayParts) {
@@ -2327,6 +2869,8 @@ export async function getCreatorAiContext({
       windows,
       instances: scheduleInstances,
       neglectIntelligence,
+      intentMode,
+      myListContext,
     }),
     windows,
     schedule_instances: scheduleInstances,

@@ -13,7 +13,14 @@ import {
   estimateAiIntentCostUsd,
   getAiModelPricing,
 } from "@/lib/ai/config";
-import { getCreatorAiContext } from "@/lib/ai/operatorContext";
+import {
+  getCreatorAiContext,
+  type OperatorIntentMode,
+  type OperatorMyListContext,
+  type OperatorProposedAction,
+  type SuggestedAction,
+} from "@/lib/ai/operatorContext";
+import { buildOperatorProposedActions } from "@/lib/ai/operatorProposedActions";
 import { resolveAiIntentsMode } from "@/lib/ai/openaiIntent";
 import {
   fetchAiMonthlyUsage,
@@ -36,6 +43,7 @@ type UsageCounterRpc = (
 
 const FALLBACK_TIME_ZONE = "America/Chicago";
 const AI_OPERATOR_TIMEOUT_MS = 45_000;
+const EMPTY_PROPOSED_ACTIONS: OperatorProposedAction[] = [];
 
 const PAID_TIERS = new Set(
   ["CREATOR PLUS", "MANAGER", "ENTERPRISE", "ADMIN"].map((value) =>
@@ -131,6 +139,55 @@ function normalizeTimeZone(value?: string) {
   }
 }
 
+function isValidTimeZone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveOperatorTimeZone({
+  supabase,
+  userId,
+  requestedTimeZone,
+}: {
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
+  userId: string;
+  requestedTimeZone?: unknown;
+}) {
+  if (typeof requestedTimeZone === "string") {
+    const trimmed = requestedTimeZone.trim();
+    if (trimmed && isValidTimeZone(trimmed)) return trimmed;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Failed to resolve AI operator profile timezone", {
+        message: error.message,
+        code: error.code,
+      });
+    } else {
+      const profileTimeZone =
+        typeof data?.timezone === "string" ? data.timezone.trim() : "";
+      if (profileTimeZone && isValidTimeZone(profileTimeZone)) {
+        return profileTimeZone;
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to resolve AI operator profile timezone", error);
+  }
+
+  return normalizeTimeZone(undefined);
+}
+
 function isNextActionPrompt(message: string): boolean {
   const normalized = message
     .toLowerCase()
@@ -145,6 +202,100 @@ function isNextActionPrompt(message: string): boolean {
     /\bwhat should i focus on(?: today| next| now)?\b/,
     /\bwhat do i focus on(?: today| next| now)?\b/,
   ].some((pattern) => pattern.test(normalized));
+}
+
+function normalizeIntentText(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function routeOperatorIntent(message: string): OperatorIntentMode {
+  const normalized = normalizeIntentText(message);
+  if (
+    [
+      /\bwhat should i do next\b/,
+      /\bwhat should i do now\b/,
+      /\bwhat now\b/,
+      /\bwhat should i focus on\b/,
+      /\bwhat do i focus on\b/,
+      /\bwhat should i do\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "next_action";
+  }
+  if (
+    [
+      /\bwhat did i miss\b/,
+      /\bwhat have i missed today\b/,
+      /\bwhat did i miss today\b/,
+      /\bwhat should i recover from today\b/,
+      /\bwhat slipped today\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "missed_today";
+  }
+  if (
+    [
+      /\bwhat am i neglecting\b/,
+      /\bwhat have i been neglecting\b/,
+      /\bwhat am i ignoring\b/,
+      /\bwhat is slipping\b/,
+      /\bwhat s slipping\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "neglect";
+  }
+  if (
+    [
+      /\bhelp me plan my day\b/,
+      /\bplan today\b/,
+      /\bplan my day\b/,
+      /\border my day\b/,
+      /\bplan the day\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "plan_day";
+  }
+  if (
+    [
+      /\bsummarize my schedule\b/,
+      /\bsummarize the schedule\b/,
+      /\bwhat is today\b/,
+      /\bwhat s today\b/,
+      /\bwhat is on my schedule\b/,
+      /\bwhat s on my schedule\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "schedule_summary";
+  }
+  if (
+    [
+      /\bgoals?\b/,
+      /\bprojects?\b/,
+      /\bwhat goal should i work on\b/,
+      /\bwhat project should i work on\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "goals_projects";
+  }
+  if (
+    [
+      /\bmy list\b/,
+      /\btodo list\b/,
+      /\bto do list\b/,
+      /\bwhat is on my list\b/,
+      /\bwhat s on my list\b/,
+    ].some((pattern) => pattern.test(normalized))
+  ) {
+    return "my_list";
+  }
+  if (isNextActionPrompt(message)) return "next_action";
+  if (isScheduleSummaryPrompt(message)) return "schedule_summary";
+  if (isNeglectPrompt(message)) return "neglect";
+  return "general";
 }
 
 function isNeglectPrompt(message: string): boolean {
@@ -294,6 +445,63 @@ function normalizeThread(value: unknown):
   return { ok: true, thread };
 }
 
+const MY_LIST_CLIENT_ROW_CAP = 10;
+const MY_LIST_TEXT_MAX_CHARS = 160;
+
+function sanitizeText(value: unknown, maxChars: number): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, maxChars);
+}
+
+function sanitizeOptionalString(
+  value: unknown,
+  maxChars: number
+): string | null {
+  const sanitized = sanitizeText(value, maxChars);
+  return sanitized || null;
+}
+
+function sanitizeClientMyListContext(value: unknown): OperatorMyListContext {
+  if (!value || typeof value !== "object") {
+    return { source: "unavailable", rows: [], capped: false };
+  }
+  const record = value as Record<string, unknown>;
+  const source =
+    record.source === "client_local_storage"
+      ? "client_local_storage"
+      : "unavailable";
+  if (!Array.isArray(record.rows) || source === "unavailable") {
+    return { source: "unavailable", rows: [], capped: false };
+  }
+  const rows: OperatorMyListContext["rows"] = [];
+  const seen = new Set<string>();
+  for (const row of record.rows) {
+    if (rows.length >= MY_LIST_CLIENT_ROW_CAP) break;
+    if (!row || typeof row !== "object") continue;
+    const rowRecord = row as Record<string, unknown>;
+    const id = sanitizeText(rowRecord.id, 80);
+    const text = sanitizeText(rowRecord.text, MY_LIST_TEXT_MAX_CHARS);
+    if (!id || !text || seen.has(id)) continue;
+    seen.add(id);
+    rows.push({
+      id,
+      text,
+      done: Boolean(rowRecord.done),
+      completedAt: sanitizeOptionalString(rowRecord.completedAt, 40),
+      skillIcon: sanitizeOptionalString(rowRecord.skillIcon, 16),
+      skillName: sanitizeOptionalString(rowRecord.skillName, 80),
+      dayBucketId: sanitizeOptionalString(rowRecord.dayBucketId, 32),
+      priorityId: sanitizeOptionalString(rowRecord.priorityId, 32),
+    });
+  }
+  return {
+    source: "client_local_storage",
+    clientProvided: true,
+    rows,
+    capped: record.rows.length > rows.length,
+  };
+}
+
 const toNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
@@ -323,6 +531,10 @@ function extractUsageFromResponse(response: {
 
 function buildContextSummary(context: unknown) {
   const record = context as Record<string, unknown>;
+  const operatorState =
+    typeof record.operator_state === "object" && record.operator_state !== null
+      ? (record.operator_state as Record<string, unknown>)
+      : {};
   return {
     dayKey: record.dayKey,
     timeZone: record.timeZone,
@@ -340,7 +552,83 @@ function buildContextSummary(context: unknown) {
     recentCompletions: Array.isArray(record.recentCompletions)
       ? record.recentCompletions.length
       : 0,
+    suggestedActions: Array.isArray(operatorState.suggestedActions)
+      ? operatorState.suggestedActions.length
+      : 0,
   };
+}
+
+function buildSuggestedActionsPromptSummary(actions: SuggestedAction[]) {
+  if (actions.length === 0) return "none";
+  return actions
+    .slice(0, 4)
+    .map((action) => {
+      const state = action.unavailableReason
+        ? `unavailable: ${action.unavailableReason}`
+        : action.href
+          ? `read-only link: ${action.href}`
+          : "read-only";
+      return `${action.kind}: ${action.label} - ${action.reason} (${state})`;
+    })
+    .join("\n");
+}
+
+type OperatorContext = Awaited<ReturnType<typeof getCreatorAiContext>>;
+
+function stripSuggestedActionPrefix(label: string, prefix: string) {
+  return label.startsWith(prefix) ? label.slice(prefix.length).trim() : label;
+}
+
+function getSecondaryNextActionContext(context: OperatorContext) {
+  const missed = context.operator_state.missedTodayItems[0];
+  if (missed) {
+    return `After that, handle missed item ${missed.title} if it still matters.`;
+  }
+
+  const due =
+    context.operator_state.neglectIntelligence.dueHabitsUnscheduledIncomplete[0] ??
+    context.operator_state.neglectIntelligence.dueUnscheduledProjects[0] ??
+    context.operator_state.neglectIntelligence.overdueProjects[0];
+  if (due) {
+    return `After that, clear ${due.title} if you still have capacity.`;
+  }
+
+  return null;
+}
+
+function alignNextActionAnswerWithTopSuggestion({
+  answer,
+  context,
+  intentMode,
+  suggestedActions,
+}: {
+  answer: string;
+  context: OperatorContext;
+  intentMode: OperatorIntentMode;
+  suggestedActions: SuggestedAction[];
+}) {
+  if (intentMode !== "next_action") return answer;
+  const topAction = suggestedActions.find((action) => !action.unavailableReason);
+  if (!topAction) return answer;
+  const secondary = getSecondaryNextActionContext(context);
+
+  if (topAction.kind === "start_focus") {
+    const blockLabel =
+      topAction.evidence?.blockLabel ??
+      stripSuggestedActionPrefix(topAction.label, "Start Focus Pomo:");
+    const primary = topAction.reason.startsWith("Current block")
+      ? `Start or continue ${blockLabel} in Focus Pomo now.`
+      : `Make ${blockLabel} the next Focus Pomo block.`;
+    return [primary, topAction.reason, secondary].filter(Boolean).join(" ");
+  }
+
+  if (topAction.kind === "protect_recovery") {
+    return [topAction.reason, secondary].filter(Boolean).join(" ");
+  }
+
+  return [`Start with ${topAction.label}.`, topAction.reason, secondary]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function classifyRelationToNow(item: Record<string, unknown>, nowMs: number) {
@@ -563,6 +851,13 @@ function buildContextIds(context: unknown) {
   };
 }
 
+function buildProposedActionAnswer(action: OperatorProposedAction) {
+  if (action.kind === "create_schedule_event") {
+    return `I drafted that event for review: ${action.display.title}, ${action.display.timeRange}.`;
+  }
+  return "I drafted that action for review.";
+}
+
 const OPERATOR_SYSTEM_PROMPT = [
   "You are ILAV, the read-only CREATOR Operator AI.",
   "Use the provided CREATOR context to help the user create order, not infinite possibilities.",
@@ -576,6 +871,15 @@ const OPERATOR_SYSTEM_PROMPT = [
   "When the user asks what to do today, what to do next, what matters now, or anything similar, choose ONE primary action first in plain human language.",
   "For today/next/now requests, first inspect schedule_digest, context.operator_state, runtime.now_utc_ms, runtime.local_time, context.dayKey, context.timeZone, schedule_instances, and windows.",
   "If the user explicitly asks for a schedule summary, then summarize the schedule. Otherwise do not dump the full schedule.",
+  "Use context.operator_state.intentMode to choose the answer shape. Do not answer every prompt as neglect/recovery.",
+  "Intent mode rules:",
+  "next_action: use current/next block, active recovery, and current/next items.",
+  "schedule_summary: use scheduleDigest and scheduleSummaryItems.",
+  "missed_today: use missedTodayItems only for missed-today claims.",
+  "neglect: use neglectDigest and neglectIntelligence.",
+  "plan_day: combine missedTodayItems, due today, and current/next block into a read-only plan.",
+  "goals_projects: use project/goal context and project due/stale buckets.",
+  "my_list: use myListContext only if available; otherwise say exactly: I cannot see manual My List rows yet.",
   "For schedule summaries, lead with structured lines from context.operator_state.scheduleDigest before interpretation.",
   "Default schedule summary structure: Now, Next, Later, Skills, Move. Include Missed only when actual missed items exist.",
   "Be specific with titles and times. If multiple scheduled items matter, name the most relevant 5 to 8 from context.operator_state.scheduleSummaryItems instead of saying several.",
@@ -618,7 +922,10 @@ const OPERATOR_SYSTEM_PROMPT = [
   "If the user asks what they are neglecting, prefer context.operator_state.neglectIntelligence. Do not simply list unchecked schedule items or infer neglect from future schedule items.",
   "Never call upcoming future items neglected.",
   "Never call items scheduled after the current sleep/recovery block neglected while context.operator_state.isRecoveryActive is true.",
+  "Suggested actions are passive read-only proposal cards. You may mention one when relevant, but never imply the card completes, creates, moves, reschedules, saves, or writes anything.",
+  "If a suggested action has unavailableReason, describe it only as not wired/read-only and do not instruct the app to apply it.",
   "For neglect answers, an item is Missed only if it appears in context.operator_state.neglectIntelligence.missedScheduledItems. Do not use lastMissedItems to expand the missed list. Future items belong under Upcoming.",
+  "For missed-today answers, an item is Missed today only if it appears in context.operator_state.missedTodayItems.",
   "If context.operator_state.neglectCheck.FUTURE_ITEMS_ARE_NOT_NEGLECTED is true, treat all future items as Upcoming only.",
   "For neglect answers, do not recommend generic body/wellness actions unless BODY or RECOVERY items exist in the provided context.",
   "For neglect answers, mention stale and due buckets only when context.operator_state.neglectIntelligence contains deterministic items.",
@@ -682,6 +989,45 @@ const NEGLECT_RESPONSE_CONTRACT = [
   "Do not pretend certainty when context is thin.",
 ].join("\n");
 
+const MISSED_TODAY_RESPONSE_CONTRACT = [
+  "MISSED_TODAY_INTENT is true.",
+  "Use context.operator_state.missedTodayItems as the source of truth for missed-today answers.",
+  "Missed today means same local day, incomplete, non-canceled, and end_utc <= runtime.now_utc_ms.",
+  "Future/upcoming items are never missed.",
+  "Answer in 2 to 4 compact labeled lines: Missed today, Still open, Move.",
+  "List at most 4 missed-today item names with exact times. Include skillIcon before the item name when present.",
+  "Include block/window labels when available.",
+  "If missedTodayItems is empty, say: Missed today: Nothing is clearly missed today.",
+  "Do not expand from long-range neglect buckets unless the user also asks what they are neglecting.",
+  "Do not claim anything was moved, rescheduled, completed, created, or saved.",
+].join("\n");
+
+const PLAN_DAY_RESPONSE_CONTRACT = [
+  "PLAN_DAY_INTENT is true.",
+  "Build a read-only day plan from scheduleDigest, missedTodayItems, due/stale intelligence, and the current/next block.",
+  "Answer in 3 to 5 short labeled lines such as Plan, Watch, Move.",
+  "Recover current missed-today items before due/stale items when missedTodayItems has values.",
+  "Do not write or schedule anything; phrase schedule changes as manual read-only moves.",
+  "Do not dump the full schedule.",
+].join("\n");
+
+const GOALS_PROJECTS_RESPONSE_CONTRACT = [
+  "GOALS_PROJECTS_INTENT is true.",
+  "Use projects, goals, and neglectIntelligence overdue/due/stale project buckets first.",
+  "Do not answer as a generic schedule recovery stack unless schedule evidence directly controls the decision.",
+  "Name exact goal/project titles when context includes them.",
+  "Keep the answer compact and read-only.",
+].join("\n");
+
+const MY_LIST_RESPONSE_CONTRACT = [
+  "MY_LIST_INTENT is true.",
+  "Use context.operator_state.myListContext only when source is client_local_storage or server and rows are present.",
+  "If My List context is unavailable or empty, say plainly: I cannot see manual My List rows yet.",
+  "When rows are present, state that the rows are a client-provided read-only snapshot, not database truth.",
+  "List at most 6 rows. Include skillIcon before text when present, and preserve done state when useful.",
+  "Do not claim My List rows were completed, moved, created, scheduled, or saved.",
+].join("\n");
+
 const SCHEDULE_SUMMARY_RESPONSE_CONTRACT = [
   "SCHEDULE_SUMMARY_INTENT is true.",
   "Use exactly this compact structure unless the user asks for a different format: Now, Next, Later, Skills, Move. Add Missed only if context.operator_state.lastMissedItems has actual values.",
@@ -702,7 +1048,10 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     if (!supabase) {
       return NextResponse.json(
-        { error: "Supabase client unavailable" },
+        {
+          error: "Supabase client unavailable",
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
+        },
         { status: 500 }
       );
     }
@@ -713,7 +1062,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Not authenticated" },
+        { error: "Not authenticated", proposedActions: EMPTY_PROPOSED_ACTIONS },
         { status: 401 }
       );
     }
@@ -724,6 +1073,7 @@ export async function POST(request: NextRequest) {
           timeZone?: unknown;
           dayKey?: unknown;
           thread?: unknown;
+          clientContext?: unknown;
         }
       | null;
 
@@ -731,7 +1081,10 @@ export async function POST(request: NextRequest) {
       typeof payload?.message === "string" ? payload.message.trim() : "";
     if (!message) {
       return NextResponse.json(
-        { error: "Message must be a non-empty string" },
+        {
+          error: "Message must be a non-empty string",
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
+        },
         { status: 400 }
       );
     }
@@ -739,18 +1092,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: `Message must be ${AI_INTENT_MAX_PROMPT_CHARS} characters or fewer`,
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
         },
         { status: 400 }
       );
     }
-    const hasNextActionIntent = isNextActionPrompt(message);
-    const hasNeglectIntent = isNeglectPrompt(message);
-    const hasScheduleSummaryIntent = isScheduleSummaryPrompt(message);
+    const intentMode = routeOperatorIntent(message);
+    const hasNextActionIntent = intentMode === "next_action";
+    const hasNeglectIntent = intentMode === "neglect";
+    const hasScheduleSummaryIntent = intentMode === "schedule_summary";
+    const hasMissedTodayIntent = intentMode === "missed_today";
+    const hasPlanDayIntent = intentMode === "plan_day";
+    const hasGoalsProjectsIntent = intentMode === "goals_projects";
+    const hasMyListIntent = intentMode === "my_list";
+    const clientContext =
+      typeof payload?.clientContext === "object" && payload.clientContext !== null
+        ? (payload.clientContext as Record<string, unknown>)
+        : {};
+    const myListContext = sanitizeClientMyListContext(
+      clientContext.myListManualRows
+    );
 
     const normalizedThread = normalizeThread(payload?.thread);
     if (!normalizedThread.ok) {
       return NextResponse.json(
-        { error: normalizedThread.error },
+        {
+          error: normalizedThread.error,
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
+        },
         { status: 400 }
       );
     }
@@ -787,9 +1156,53 @@ export async function POST(request: NextRequest) {
 
     if (!paidActive) {
       return NextResponse.json(
-        { error: "AI requires CREATOR Pro", tier: normalizedTier },
+        {
+          error: "AI requires CREATOR Pro",
+          tier: normalizedTier,
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
+        },
         { status: 403 }
       );
+    }
+
+    const timeZone = await resolveOperatorTimeZone({
+      supabase,
+      userId: user.id,
+      requestedTimeZone: payload?.timeZone,
+    });
+    const fallbackDayKey = formatDayKey(new Date(), timeZone);
+    const dayKey =
+      typeof payload?.dayKey === "string" && parseDayKey(payload.dayKey.trim())
+        ? payload.dayKey.trim()
+        : fallbackDayKey;
+    const requestTime = new Date();
+    const proposedActions = buildOperatorProposedActions({
+      message,
+      now: requestTime,
+      timezone: timeZone,
+    });
+
+    if (proposedActions.length > 0) {
+      const context = await getCreatorAiContext({
+        supabase: supabase as unknown as Parameters<
+          typeof getCreatorAiContext
+        >[0]["supabase"],
+        userId: user.id,
+        timeZone,
+        dayKey,
+        nowMs: requestTime.getTime(),
+        intentMode,
+        myListContext,
+      });
+      const suggestedActions = context.operator_state.suggestedActions;
+
+      return NextResponse.json({
+        answer: buildProposedActionAnswer(proposedActions[0]),
+        contextSummary: buildContextSummary(context),
+        contextIds: buildContextIds(context),
+        suggestedActions,
+        proposedActions,
+      });
     }
 
     if (normalizedTier !== "ADMIN") {
@@ -814,6 +1227,7 @@ export async function POST(request: NextRequest) {
               tier: normalizedTier,
               dailyLimit: CREATOR_PLUS_AI_DAILY_LIMIT,
               minuteLimit: CREATOR_PLUS_AI_MINUTE_LIMIT,
+              proposedActions: EMPTY_PROPOSED_ACTIONS,
             },
             { status: 429, headers: { "Retry-After": "60" } }
           );
@@ -839,6 +1253,7 @@ export async function POST(request: NextRequest) {
               tier: normalizedTier,
               dailyLimit: CREATOR_PLUS_AI_DAILY_LIMIT,
               minuteLimit: CREATOR_PLUS_AI_MINUTE_LIMIT,
+              proposedActions: EMPTY_PROPOSED_ACTIONS,
             },
             { status: 429, headers: { "Retry-After": "60" } }
           );
@@ -848,15 +1263,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const timeZone = normalizeTimeZone(
-      typeof payload?.timeZone === "string" ? payload.timeZone : undefined
-    );
-    const fallbackDayKey = formatDayKey(new Date(), timeZone);
-    const dayKey =
-      typeof payload?.dayKey === "string" && parseDayKey(payload.dayKey.trim())
-        ? payload.dayKey.trim()
-        : fallbackDayKey;
-    const requestTime = new Date();
     const localHour = getLocalHour(requestTime, timeZone);
     const explicitOvernightWork = isOvernightWorkPrompt(message);
     const explicitRecoveryOverride = isRecoveryOverridePrompt(message);
@@ -889,6 +1295,8 @@ export async function POST(request: NextRequest) {
       timeZone,
       dayKey,
       nowMs: requestTime.getTime(),
+      intentMode,
+      myListContext,
     });
     const scheduleTimeState = buildScheduleTimeState(
       context,
@@ -917,10 +1325,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "AI context is too large. Try again with a narrower schedule view.",
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
         },
         { status: 413 }
       );
     }
+    const suggestedActions = context.operator_state.suggestedActions;
+    const suggestedActionsPromptSummary =
+      buildSuggestedActionsPromptSummary(suggestedActions);
     console.info("AI operator context counts", {
       ...buildContextSummary(context),
       lateNightRecoveryDefault: runtimeContext.late_night_recovery_default,
@@ -932,6 +1344,9 @@ export async function POST(request: NextRequest) {
       minutesUntilNextScheduledItem:
         scheduleTimeState.minutes_until_next_scheduled_item,
       operatorDayPhase: context.operator_state.dayPhase,
+      intentMode,
+      missedTodayItems: context.operator_state.missedTodayItems.length,
+      myListRows: context.operator_state.myListContext?.rows.length ?? 0,
     });
     if (hasNeglectIntent) {
       logNeglectCheckDebug(context, runtimeContext);
@@ -948,6 +1363,7 @@ export async function POST(request: NextRequest) {
         AI_INTENT_STATIC_INPUT_CHARS_ESTIMATE +
         message.length +
         threadChars +
+        suggestedActionsPromptSummary.length +
         serializedContext.length,
       maxOutputTokens: AI_INTENT_MAX_OUTPUT_TOKENS,
     });
@@ -958,6 +1374,8 @@ export async function POST(request: NextRequest) {
           error: "ILAV Operator live AI is not enabled.",
           contextSummary: buildContextSummary(context),
           contextIds: buildContextIds(context),
+          suggestedActions,
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
         },
         { status: 503 }
       );
@@ -982,6 +1400,7 @@ export async function POST(request: NextRequest) {
             used_usd: usedUsd,
             estimated_request_usd: estimatedCostUsd,
           },
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
         },
         { status: 429 }
       );
@@ -999,6 +1418,14 @@ export async function POST(request: NextRequest) {
       ...(hasNeglectIntent
         ? [{ role: "system" as const, content: NEGLECT_RESPONSE_CONTRACT }]
         : []),
+      ...(hasMissedTodayIntent
+        ? [
+            {
+              role: "system" as const,
+              content: MISSED_TODAY_RESPONSE_CONTRACT,
+            },
+          ]
+        : []),
       ...(hasScheduleSummaryIntent
         ? [
             {
@@ -1007,10 +1434,24 @@ export async function POST(request: NextRequest) {
             },
           ]
         : []),
+      ...(hasPlanDayIntent
+        ? [{ role: "system" as const, content: PLAN_DAY_RESPONSE_CONTRACT }]
+        : []),
+      ...(hasGoalsProjectsIntent
+        ? [
+            {
+              role: "system" as const,
+              content: GOALS_PROJECTS_RESPONSE_CONTRACT,
+            },
+          ]
+        : []),
+      ...(hasMyListIntent
+        ? [{ role: "system" as const, content: MY_LIST_RESPONSE_CONTRACT }]
+        : []),
       ...normalizedThread.thread,
       {
         role: "user" as const,
-        content: `Message: ${message}\nNEXT_ACTION_INTENT: ${hasNextActionIntent}\nNEGLECT_INTENT: ${hasNeglectIntent}\nSCHEDULE_SUMMARY_INTENT: ${hasScheduleSummaryIntent}\nSchedule digest:\n${context.operator_state.scheduleDigest}\nNeglect digest:\n${context.operator_state.neglectDigest}\nRuntime JSON: ${JSON.stringify(runtimeContextForPrompt)}\nCREATOR context JSON: ${serializedContext}`,
+        content: `Message: ${message}\nINTENT_MODE: ${intentMode}\nNEXT_ACTION_INTENT: ${hasNextActionIntent}\nMISSED_TODAY_INTENT: ${hasMissedTodayIntent}\nNEGLECT_INTENT: ${hasNeglectIntent}\nSCHEDULE_SUMMARY_INTENT: ${hasScheduleSummaryIntent}\nPLAN_DAY_INTENT: ${hasPlanDayIntent}\nGOALS_PROJECTS_INTENT: ${hasGoalsProjectsIntent}\nMY_LIST_INTENT: ${hasMyListIntent}\nSchedule digest:\n${context.operator_state.scheduleDigest}\nNeglect digest:\n${context.operator_state.neglectDigest}\nSuggested actions summary:\n${suggestedActionsPromptSummary}\nRuntime JSON: ${JSON.stringify(runtimeContextForPrompt)}\nCREATOR context JSON: ${serializedContext}`,
       },
     ];
 
@@ -1035,7 +1476,14 @@ export async function POST(request: NextRequest) {
       if (timeoutId) clearTimeout(timeoutId);
     });
 
-    const answer = response.output_text?.trim() || "I could not produce an answer.";
+    const rawAnswer =
+      response.output_text?.trim() || "I could not produce an answer.";
+    const answer = alignNextActionAnswerWithTopSuggestion({
+      answer: rawAnswer,
+      context,
+      intentMode,
+      suggestedActions,
+    });
     const usage = extractUsageFromResponse(response);
     let usageRow = null;
     if (usage) {
@@ -1072,6 +1520,8 @@ export async function POST(request: NextRequest) {
       answer,
       contextSummary: buildContextSummary(context),
       contextIds: buildContextIds(context),
+      suggestedActions,
+      proposedActions: EMPTY_PROPOSED_ACTIONS,
       usage: usage
         ? {
             ...usage,
@@ -1085,13 +1535,19 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "AI request timed out") {
       return NextResponse.json(
-        { error: "ILAV timed out. Try a shorter request or retry." },
+        {
+          error: "ILAV timed out. Try a shorter request or retry.",
+          proposedActions: EMPTY_PROPOSED_ACTIONS,
+        },
         { status: 504 }
       );
     }
     console.error("AI_OPERATOR error", error);
     return NextResponse.json(
-      { error: "Unable to process ILAV Operator request" },
+      {
+        error: "Unable to process ILAV Operator request",
+        proposedActions: EMPTY_PROPOSED_ACTIONS,
+      },
       { status: 500 }
     );
   }
