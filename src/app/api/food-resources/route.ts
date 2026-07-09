@@ -9,6 +9,7 @@ type FoodResourceInsert = Database["public"]["Tables"]["food_resources"]["Insert
 type FoodResourceUpdate = Database["public"]["Tables"]["food_resources"]["Update"];
 
 const VALID_STATUSES = new Set(["active", "used", "discarded", "archived"]);
+const VALID_UNITS = new Set(["servings", "package", "g", "oz", "item"]);
 const LOCATIONS = new Set(["pantry", "fridge", "freezer", "counter", "other"]);
 const MAX_LIMIT = 200;
 const MAX_QUANTITY = 1_000_000_000;
@@ -27,6 +28,14 @@ function normalizeQuantity(value: unknown) {
   if (typeof value === "string" && !value.trim()) return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0 || parsed > MAX_QUANTITY) return undefined;
+  return parsed;
+}
+
+function normalizeDepletedQuantity(value: unknown) {
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  if (typeof value === "string" && !value.trim()) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > MAX_QUANTITY) return undefined;
   return parsed;
 }
 
@@ -75,6 +84,13 @@ function normalizeStatus(value: unknown) {
   const normalized = normalizeText(value, 32)?.toLowerCase() ?? null;
   if (!normalized) return "active";
   return VALID_STATUSES.has(normalized) ? normalized : undefined;
+}
+
+function normalizeUnit(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const normalized = normalizeText(value, 32)?.toLowerCase() ?? null;
+  if (!normalized) return undefined;
+  return VALID_UNITS.has(normalized) ? normalized : undefined;
 }
 
 function normalizeMetadata(value: unknown): Json {
@@ -281,6 +297,37 @@ export async function PATCH(request: NextRequest) {
   if (action === "archive") {
     updatePayload = {
       status: "archived",
+      updated_at: new Date().toISOString(),
+    };
+  } else if (action === "setQuantity") {
+    const quantity = normalizeDepletedQuantity(payload.quantity);
+    const unit = normalizeUnit(payload.unit);
+
+    if (quantity === undefined) {
+      return NextResponse.json(
+        { error: "Quantity must be greater than or equal to zero." },
+        { status: 400 },
+      );
+    }
+    if (unit === undefined) {
+      return NextResponse.json({ error: "Unit is invalid." }, { status: 400 });
+    }
+
+    updatePayload = {
+      quantity,
+      unit,
+      updated_at: new Date().toISOString(),
+    };
+  } else if (action === "setStatus") {
+    const status = normalizeStatus(payload.status);
+
+    if (status === undefined) {
+      return NextResponse.json({ error: "Status is invalid." }, { status: 400 });
+    }
+
+    updatePayload = {
+      status,
+      metadata: normalizeMetadata(payload.metadata),
       updated_at: new Date().toISOString(),
     };
   } else {

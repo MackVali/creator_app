@@ -39,6 +39,7 @@ import {
   List,
   ListChecks,
   Minus,
+  MoreHorizontal,
   PencilLine,
   Pin,
   Plus,
@@ -57,6 +58,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
   Fragment,
@@ -118,6 +120,11 @@ import {
   hapticSoftTick,
   hapticWarningPattern,
 } from "@/lib/haptics/creatorHaptics";
+import {
+  FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+  type FitnessWorkoutFocusSessionPayload,
+} from "@/lib/focus/fitnessWorkoutFocusSession";
+import { cn } from "@/lib/utils";
 
 type SlashCommandId =
   | "text"
@@ -303,12 +310,12 @@ const GROCERY_EXTRA_FOOD_ACTION_TABS = [
   icon: LucideIcon;
 }>;
 const FITNESS_ACTION_TABS = [
-  { id: "start", label: "Start", icon: Dumbbell },
+  { id: "start", label: "Workout", icon: Dumbbell },
   { id: "exercises", label: "Exercises", icon: ListChecks },
   { id: "favorites", label: "Favorites", icon: Star },
-  { id: "custom", label: "Custom", icon: PencilLine },
   { id: "workout-routines", label: "Routines", icon: Calendar },
   { id: "plans", label: "Plans", icon: List },
+  { id: "custom", label: "Custom", icon: PencilLine },
 ] as const satisfies ReadonlyArray<{
   id: string;
   label: string;
@@ -327,6 +334,9 @@ type FitnessWorkoutExerciseDetail = {
   reps: string;
   duration: string;
 };
+type FitnessWorkoutLogExerciseDetail = FitnessWorkoutExerciseDetail & {
+  weight: string;
+};
 type FitnessRoutineSample = {
   name: string;
   focus: string;
@@ -335,8 +345,22 @@ type FitnessRoutineSample = {
 };
 type FitnessPlanSample = {
   name: string;
-  cadence: string;
-  days: Array<{ day: string; routine: string }>;
+  description: string;
+  equipment: string[];
+  levels: string[];
+  daysPerWeek: number[];
+  goals: string[];
+  progressionNote: string;
+  sessionsByDays: Record<number, Array<{ label: string; exercises: string[] }>>;
+};
+const FITNESS_PLAN_SESSION_LENGTH_OPTIONS = [30, 45, 60] as const;
+type FitnessPlanSessionLength = (typeof FITNESS_PLAN_SESSION_LENGTH_OPTIONS)[number];
+type FitnessPlanSetup = {
+  goal: string;
+  level: string;
+  equipment: string;
+  daysPerWeek: number;
+  sessionLength: FitnessPlanSessionLength;
 };
 type FitnessMovementGroupSample = {
   label: string;
@@ -1234,33 +1258,187 @@ const FITNESS_ROUTINE_SAMPLES: FitnessRoutineSample[] = [
 ];
 const FITNESS_PLAN_SAMPLES: FitnessPlanSample[] = [
   {
-    name: "3-Day Push Pull Legs",
-    cadence: "3 workouts/week",
-    days: [
-      { day: "Mon", routine: "Push Day" },
-      { day: "Wed", routine: "Pull Day" },
-      { day: "Fri", routine: "Leg Day" },
-    ],
+    name: "Push Pull Legs",
+    description: "Build muscle through a repeating push, pull, legs split.",
+    equipment: ["gym", "hybrid"],
+    levels: ["beginner", "intermediate", "advanced"],
+    daysPerWeek: [3, 4, 5, 6],
+    goals: ["build muscle", "get stronger", "get toned / lean"],
+    progressionNote: "Progress by hitting the top of the rep range, then increasing weight.",
+    sessionsByDays: {
+      3: [
+        { label: "Push", exercises: ["Bench Press", "Shoulder Press", "Dip", "Push-up"] },
+        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row", "Dumbbell Row"] },
+        { label: "Legs", exercises: ["Goblet Squat", "Lunge", "Deadlift", "Plank"] },
+      ],
+      4: [
+        { label: "Push", exercises: ["Bench Press", "Shoulder Press", "Dip", "Push-up"] },
+        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row", "Dumbbell Row"] },
+        { label: "Legs", exercises: ["Goblet Squat", "Lunge", "Deadlift", "Plank"] },
+        { label: "Upper Pump", exercises: ["Dumbbell Press", "Lat Pulldown", "Row", "Dip"] },
+      ],
+      5: [
+        { label: "Push Strength", exercises: ["Bench Press", "Shoulder Press", "Dip"] },
+        { label: "Pull Strength", exercises: ["Pull-up", "Chin-up", "Row"] },
+        { label: "Legs Strength", exercises: ["Goblet Squat", "Deadlift", "Lunge"] },
+        { label: "Push Volume", exercises: ["Dumbbell Press", "Push-up", "Shoulder Press"] },
+        { label: "Pull Volume", exercises: ["Lat Pulldown", "Dumbbell Row", "Dead Hang"] },
+      ],
+      6: [
+        { label: "Push A", exercises: ["Bench Press", "Shoulder Press", "Dip"] },
+        { label: "Pull A", exercises: ["Pull-up", "Row", "Chin-up"] },
+        { label: "Legs A", exercises: ["Goblet Squat", "Lunge", "Plank"] },
+        { label: "Push B", exercises: ["Dumbbell Press", "Push-up", "Push Press"] },
+        { label: "Pull B", exercises: ["Lat Pulldown", "Dumbbell Row", "Dead Hang"] },
+        { label: "Legs B", exercises: ["Deadlift", "Romanian Deadlift", "Suitcase Carry"] },
+      ],
+    },
   },
   {
-    name: "Beginner Calisthenics Week",
-    cadence: "3 workouts + skill practice",
-    days: [
-      { day: "Mon", routine: "Full Body Calisthenics" },
-      { day: "Tue", routine: "Light mobility" },
-      { day: "Thu", routine: "Full Body Calisthenics" },
-      { day: "Sat", routine: "Core & Conditioning" },
-    ],
+    name: "Upper / Lower",
+    description: "Balanced strength and muscle split across upper and lower sessions.",
+    equipment: ["gym", "dumbbells", "hybrid"],
+    levels: ["beginner", "intermediate", "advanced"],
+    daysPerWeek: [2, 4],
+    goals: ["build muscle", "get stronger", "general fitness"],
+    progressionNote: "Progress by hitting the top of the rep range, then increasing weight.",
+    sessionsByDays: {
+      2: [
+        { label: "Upper", exercises: ["Bench Press", "Row", "Shoulder Press", "Pull-up"] },
+        { label: "Lower", exercises: ["Goblet Squat", "Deadlift", "Lunge", "Plank"] },
+      ],
+      4: [
+        { label: "Upper Strength", exercises: ["Bench Press", "Pull-up", "Shoulder Press", "Row"] },
+        { label: "Lower Strength", exercises: ["Goblet Squat", "Deadlift", "Lunge"] },
+        { label: "Upper Volume", exercises: ["Dumbbell Press", "Lat Pulldown", "Dumbbell Row", "Dip"] },
+        { label: "Lower Volume", exercises: ["Romanian Deadlift", "Lunge", "Suitcase Carry", "Plank"] },
+      ],
+    },
   },
   {
-    name: "4-Day Upper / Lower",
-    cadence: "4 workouts/week",
-    days: [
-      { day: "Mon", routine: "Push Day + Row" },
-      { day: "Tue", routine: "Leg Day" },
-      { day: "Thu", routine: "Pull Day + Press" },
-      { day: "Fri", routine: "Leg Day + Core" },
-    ],
+    name: "Full Body Foundation",
+    description: "Simple total-body training for consistency, strength, and base fitness.",
+    equipment: ["gym", "dumbbells", "home", "hybrid"],
+    levels: ["beginner", "intermediate"],
+    daysPerWeek: [2, 3, 4],
+    goals: ["general fitness", "build muscle", "get toned / lean"],
+    progressionNote: "Progress by adding reps, cleaning up form, or increasing load when sets feel steady.",
+    sessionsByDays: {
+      2: [
+        { label: "Squat / Push / Pull", exercises: ["Goblet Squat", "Push-up", "Row", "Plank"] },
+        { label: "Hinge / Push / Pull", exercises: ["Romanian Deadlift", "Dumbbell Press", "Pull-up", "Suitcase Carry"] },
+      ],
+      3: [
+        { label: "Squat / Push / Pull", exercises: ["Goblet Squat", "Push-up", "Row", "Plank"] },
+        { label: "Hinge / Push / Pull", exercises: ["Romanian Deadlift", "Dumbbell Press", "Pull-up", "Farmer's Carry"] },
+        { label: "Legs / Upper / Core", exercises: ["Lunge", "Bench Press", "Lat Pulldown", "Plank"] },
+      ],
+      4: [
+        { label: "Squat / Push / Pull", exercises: ["Goblet Squat", "Push-up", "Row"] },
+        { label: "Hinge / Core", exercises: ["Romanian Deadlift", "Suitcase Carry", "Plank"] },
+        { label: "Legs / Upper", exercises: ["Lunge", "Dumbbell Press", "Lat Pulldown"] },
+        { label: "Conditioning Base", exercises: ["Kettlebell Swing", "Farmer's Carry", "Mountain Climber"] },
+      ],
+    },
+  },
+  {
+    name: "Calisthenics",
+    description: "Build control, strength, and muscle using bodyweight progressions.",
+    equipment: ["calisthenics", "home", "hybrid"],
+    levels: ["beginner", "intermediate", "advanced"],
+    daysPerWeek: [2, 3, 4, 5],
+    goals: ["build muscle", "get stronger", "athleticism", "general fitness"],
+    progressionNote: "Progress through harder variations, cleaner control, slower tempo, or more reps.",
+    sessionsByDays: {
+      2: [
+        { label: "Push / Legs", exercises: ["Push-up", "Dip", "Bodyweight Squat", "Plank"] },
+        { label: "Pull / Core", exercises: ["Pull-up", "Chin-up", "Row", "Dead Hang"] },
+      ],
+      3: [
+        { label: "Push", exercises: ["Push-up", "Dip", "Decline Push-up", "Plank"] },
+        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row", "Dead Hang"] },
+        { label: "Legs-Core", exercises: ["Bodyweight Squat", "Lunge", "Mountain Climber", "Plank"] },
+      ],
+      4: [
+        { label: "Push", exercises: ["Push-up", "Dip", "Decline Push-up"] },
+        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row"] },
+        { label: "Legs-Core", exercises: ["Bodyweight Squat", "Lunge", "Plank"] },
+        { label: "Skills", exercises: ["Dead Hang", "Arm Circles", "Hip Opener", "World's Greatest Stretch"] },
+      ],
+      5: [
+        { label: "Push", exercises: ["Push-up", "Dip", "Decline Push-up"] },
+        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row"] },
+        { label: "Legs-Core", exercises: ["Bodyweight Squat", "Lunge", "Plank"] },
+        { label: "Skills", exercises: ["Dead Hang", "Arm Circles", "Hip Opener"] },
+        { label: "Conditioning", exercises: ["Burpee", "Mountain Climber", "Jumping Jack"] },
+      ],
+    },
+  },
+  {
+    name: "Athletic Conditioning",
+    description: "Improve work capacity, movement, conditioning, and core strength.",
+    equipment: ["gym", "home", "hybrid"],
+    levels: ["beginner", "intermediate", "advanced"],
+    daysPerWeek: [2, 3, 4, 5],
+    goals: ["athleticism", "get toned / lean", "general fitness"],
+    progressionNote: "Progress with more rounds, longer intervals, or shorter rest.",
+    sessionsByDays: {
+      2: [
+        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge", "Plank"] },
+        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber", "Farmer's Carry"] },
+      ],
+      3: [
+        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge", "Plank"] },
+        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber"] },
+        { label: "Carries-Core", exercises: ["Farmer's Carry", "Suitcase Carry", "Dead Hang", "Plank"] },
+      ],
+      4: [
+        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge"] },
+        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber"] },
+        { label: "Carries-Core", exercises: ["Farmer's Carry", "Suitcase Carry", "Plank"] },
+        { label: "Mobility-Conditioning", exercises: ["World's Greatest Stretch", "Hip Opener", "Skater Jump"] },
+      ],
+      5: [
+        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge"] },
+        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber"] },
+        { label: "Carries-Core", exercises: ["Farmer's Carry", "Suitcase Carry", "Plank"] },
+        { label: "Mobility-Conditioning", exercises: ["World's Greatest Stretch", "Hip Opener", "Skater Jump"] },
+        { label: "Power", exercises: ["Broad Jump", "Skater Jump", "Push Press"] },
+      ],
+    },
+  },
+  {
+    name: "Mobility / Recovery",
+    description: "Maintain joints, range, control, and recovery between harder sessions.",
+    equipment: ["home", "calisthenics", "hybrid"],
+    levels: ["beginner", "intermediate", "advanced"],
+    daysPerWeek: [2, 3, 4, 5],
+    goals: ["mobility", "general fitness", "recovery"],
+    progressionNote: "Progress with cleaner positions, longer holds, slower control, or smoother breathing.",
+    sessionsByDays: {
+      2: [
+        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
+        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Plank"] },
+      ],
+      3: [
+        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
+        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Bodyweight Squat"] },
+        { label: "Core Control", exercises: ["Plank", "Mountain Climber", "Suitcase Carry"] },
+      ],
+      4: [
+        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
+        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Bodyweight Squat"] },
+        { label: "Core Control", exercises: ["Plank", "Mountain Climber", "Suitcase Carry"] },
+        { label: "Recovery Flow", exercises: ["World's Greatest Stretch", "Hip Opener", "Arm Circles"] },
+      ],
+      5: [
+        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
+        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Bodyweight Squat"] },
+        { label: "Core Control", exercises: ["Plank", "Mountain Climber", "Suitcase Carry"] },
+        { label: "Recovery Flow", exercises: ["World's Greatest Stretch", "Hip Opener", "Arm Circles"] },
+        { label: "Light Conditioning", exercises: ["Jumping Jack", "Farmer's Carry", "Plank"] },
+      ],
+    },
   },
 ];
 const GROCERY_FOOD_ACTION_TAB_IDS = new Set<NutritionFoodActionTabId>([
@@ -2604,6 +2782,39 @@ type NutritionSelectedFoodItem = {
   food: FoodSearchResult;
   quantity: number;
   servingUnit: NutritionServingUnit;
+  groceryDeduction?: GroceryDeductionDraft | null;
+};
+type GroceryInventoryUnit = "servings" | "package" | "g" | "oz" | "item";
+type GroceryPackageServingsContext =
+  | {
+      source: "explicit";
+      servingsPerContainer: number;
+      servingGrams: number | null;
+      packageGrams: number | null;
+    }
+  | {
+      source: "inferred";
+      servingsPerContainer: number;
+      servingGrams: number;
+      packageGrams: number;
+    }
+  | {
+      source: "package_weight";
+      servingsPerContainer: null;
+      servingGrams: number | null;
+      packageGrams: number;
+    }
+  | {
+      source: "unknown";
+      servingsPerContainer: null;
+      servingGrams: number | null;
+      packageGrams: number | null;
+    };
+type GroceryDeductionDraft = {
+  foodResourceId: string;
+  currentQuantity: number;
+  inventoryUnit: GroceryInventoryUnit;
+  amount: string;
 };
 type NutritionMealTotalsSource = {
   total_calories?: number | string | null;
@@ -3174,6 +3385,13 @@ const NUTRITION_ALLOWED_SERVING_UNITS = [
   ...NUTRITION_VOLUME_UNITS,
   "serving",
 ] as const satisfies readonly NutritionAllowedServingUnit[];
+const GROCERY_INVENTORY_UNIT_OPTIONS = [
+  { value: "servings", label: "servings" },
+  { value: "package", label: "package" },
+  { value: "g", label: "g" },
+  { value: "oz", label: "oz" },
+  { value: "item", label: "item" },
+] as const satisfies readonly { value: GroceryInventoryUnit; label: string }[];
 const NUTRITION_SERVING_UNIT_ALIASES: Record<string, NutritionAllowedServingUnit> = {
   gram: "g",
   grams: "g",
@@ -3197,6 +3415,349 @@ const NUTRITION_VOLUME_UNIT_ML: Record<(typeof NUTRITION_VOLUME_UNITS)[number], 
   ml: 1,
   "fl oz": 14.7868 * 2,
 };
+const GRAMS_PER_OUNCE = 28.3495;
+
+function normalizeGroceryInventoryUnit(value: unknown): GroceryInventoryUnit {
+  if (typeof value !== "string") return "package";
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+
+  if (normalized === "serving" || normalized === "servings") return "servings";
+  if (normalized === "packages" || normalized === "pkg" || normalized === "pack") {
+    return "package";
+  }
+  if (normalized === "gram" || normalized === "grams") return "g";
+  if (normalized === "ounce" || normalized === "ounces") return "oz";
+  if (normalized === "items" || normalized === "each" || normalized === "ea") return "item";
+
+  return GROCERY_INVENTORY_UNIT_OPTIONS.some((option) => option.value === normalized)
+    ? (normalized as GroceryInventoryUnit)
+    : "package";
+}
+
+function parseGroceryInventoryNumber(value: unknown) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value.trim())
+        : null;
+
+  return parsed !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getGroceryMetadataSourceSummary(metadata: Record<string, unknown>) {
+  return metadata.source_summary &&
+    typeof metadata.source_summary === "object" &&
+    !Array.isArray(metadata.source_summary)
+    ? (metadata.source_summary as Record<string, unknown>)
+    : {};
+}
+
+function parseGroceryNetQuantity(value: unknown) {
+  if (typeof value !== "string") return null;
+  const match = value
+    .trim()
+    .toLowerCase()
+    .match(/(\d+(?:\.\d+)?)\s*(kg|kilogram|kilograms|g|gram|grams|lb|lbs|pound|pounds|oz|ounce|ounces)\b/);
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const unit = match[2];
+  if (unit === "kg" || unit === "kilogram" || unit === "kilograms") {
+    return { quantity: amount * 1000, unit: "g" as const };
+  }
+  if (unit === "g" || unit === "gram" || unit === "grams") {
+    return { quantity: amount, unit: "g" as const };
+  }
+  if (unit === "lb" || unit === "lbs" || unit === "pound" || unit === "pounds") {
+    return { quantity: amount * 16, unit: "oz" as const };
+  }
+  return { quantity: amount, unit: "oz" as const };
+}
+
+function getGroceryWeightGrams(amount: number, unit: "g" | "oz") {
+  return unit === "g" ? amount : amount * GRAMS_PER_OUNCE;
+}
+
+function parseGroceryProductQuantity(metadata: Record<string, unknown>) {
+  const amount =
+    parseGroceryInventoryNumber(metadata.product_quantity) ??
+    parseGroceryInventoryNumber(metadata.package_quantity);
+  if (!amount) return null;
+
+  const unit = normalizeGroceryInventoryUnit(
+    metadata.product_quantity_unit ?? metadata.package_quantity_unit,
+  );
+  if (unit === "g" || unit === "oz") return { quantity: amount, unit };
+
+  return null;
+}
+
+function getGroceryMetadataRecords(metadata: Record<string, unknown>) {
+  const sourceSummary = getGroceryMetadataSourceSummary(metadata);
+  const foodSnapshot =
+    metadata.foodSnapshot && typeof metadata.foodSnapshot === "object" && !Array.isArray(metadata.foodSnapshot)
+      ? (metadata.foodSnapshot as Record<string, unknown>)
+      : {};
+  const originalScannedNutrition =
+    metadata.originalScannedNutrition &&
+    typeof metadata.originalScannedNutrition === "object" &&
+    !Array.isArray(metadata.originalScannedNutrition)
+      ? (metadata.originalScannedNutrition as Record<string, unknown>)
+      : {};
+
+  return [metadata, sourceSummary, foodSnapshot, originalScannedNutrition];
+}
+
+function getGroceryServingGramsFromMetadata(metadata: Record<string, unknown>) {
+  for (const record of getGroceryMetadataRecords(metadata)) {
+    const servingGrams =
+      getPositiveNutritionMetadataNumber(record, "serving_grams") ??
+      getPositiveNutritionMetadataNumber(record, "servingGrams");
+    if (servingGrams) return servingGrams;
+  }
+
+  return null;
+}
+
+function getGroceryPackageAmount(metadata: Record<string, unknown>) {
+  for (const record of getGroceryMetadataRecords(metadata)) {
+    const packageAmount =
+      parseGroceryProductQuantity(record) ??
+      parseGroceryNetQuantity(getTrimmedMetadataString(record, "net_weight")) ??
+      parseGroceryNetQuantity(getTrimmedMetadataString(record, "package_weight")) ??
+      parseGroceryNetQuantity(getTrimmedMetadataString(record, "quantity"));
+    if (packageAmount) return packageAmount;
+  }
+
+  return null;
+}
+
+function getGroceryPackageGrams(metadata: Record<string, unknown>) {
+  const packageAmount = getGroceryPackageAmount(metadata);
+  return packageAmount ? getGroceryWeightGrams(packageAmount.quantity, packageAmount.unit) : null;
+}
+
+function getGroceryExplicitServingsPerContainer(metadata: Record<string, unknown>) {
+  for (const record of getGroceryMetadataRecords(metadata)) {
+    const source =
+      typeof record.servings_per_container_source === "string"
+        ? record.servings_per_container_source
+        : typeof record.package_servings_source === "string"
+          ? record.package_servings_source
+          : null;
+    const value =
+      getPositiveNutritionMetadataNumber(record, "explicit_servings_per_container") ??
+      (source && source !== "inferred"
+        ? getPositiveNutritionMetadataNumber(record, "servings_per_container")
+        : null) ??
+      getPositiveNutritionMetadataNumber(record, "servings_per_package");
+
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function getGroceryPackageServingsContext(
+  metadata: Record<string, unknown>,
+): GroceryPackageServingsContext {
+  const servingGrams = getGroceryServingGramsFromMetadata(metadata);
+  const packageGrams = getGroceryPackageGrams(metadata);
+  const explicitServingsPerContainer = getGroceryExplicitServingsPerContainer(metadata);
+
+  if (explicitServingsPerContainer) {
+    return {
+      source: "explicit",
+      servingsPerContainer: explicitServingsPerContainer,
+      servingGrams,
+      packageGrams,
+    };
+  }
+
+  if (servingGrams && packageGrams) {
+    return {
+      source: "inferred",
+      servingsPerContainer: roundFoodNutritionNumber(packageGrams / servingGrams),
+      servingGrams,
+      packageGrams,
+    };
+  }
+
+  if (packageGrams) {
+    return {
+      source: "package_weight",
+      servingsPerContainer: null,
+      servingGrams,
+      packageGrams,
+    };
+  }
+
+  return {
+    source: "unknown",
+    servingsPerContainer: null,
+    servingGrams,
+    packageGrams,
+  };
+}
+
+function getGroceryDefaultInventoryAmount(food: FoodSearchResult) {
+  const metadata = getRecordMetadata(food.metadata);
+  const servingsContext = getGroceryPackageServingsContext(metadata);
+
+  if (
+    servingsContext.source === "explicit" ||
+    servingsContext.source === "inferred"
+  ) {
+    return { quantity: servingsContext.servingsPerContainer, unit: "servings" as const };
+  }
+
+  const netQuantity = getGroceryPackageAmount(metadata);
+
+  return netQuantity ?? { quantity: 1, unit: "package" as const };
+}
+
+function formatGroceryGramValue(grams: number) {
+  return formatFoodNutritionNumber(roundFoodNutritionNumber(grams)) ?? String(Math.round(grams));
+}
+
+function getGroceryServingGramHelper(metadata: Record<string, unknown>) {
+  const servingGrams = getGroceryServingGramsFromMetadata(metadata);
+  return servingGrams ? `1 serving = ${formatGroceryGramValue(servingGrams)}g` : "Serving grams unknown";
+}
+
+function getGroceryInventoryGramEquivalent(
+  metadata: Record<string, unknown>,
+  quantity: number | null,
+  unit: GroceryInventoryUnit,
+) {
+  if (quantity === null) return null;
+
+  const servingsContext = getGroceryPackageServingsContext(metadata);
+  const servingGrams = servingsContext.servingGrams;
+  const packageGrams = servingsContext.packageGrams;
+
+  if (unit === "servings") {
+    return servingGrams ? quantity * servingGrams : null;
+  }
+  if (unit === "package") {
+    return packageGrams ? quantity * packageGrams : null;
+  }
+  if (unit === "g") return quantity;
+  if (unit === "oz") return quantity * GRAMS_PER_OUNCE;
+
+  return null;
+}
+
+function getGroceryInventoryGramHelper(
+  metadata: Record<string, unknown>,
+  quantity: number | null,
+  unit: GroceryInventoryUnit,
+  options: { includeQuantity?: boolean; packageUnknownText?: string; unknownText?: string } = {},
+) {
+  const gramEquivalent = getGroceryInventoryGramEquivalent(metadata, quantity, unit);
+  const formattedQuantity =
+    quantity !== null ? formatFoodNutritionNumber(quantity) ?? String(quantity) : null;
+  const pluralizedUnit =
+    unit === "servings"
+      ? quantity === 1
+        ? "serving"
+        : "servings"
+      : unit === "package"
+        ? quantity === 1
+          ? "package"
+          : "packages"
+        : unit;
+
+  if (gramEquivalent !== null) {
+    const gramsLabel = `${formatGroceryGramValue(gramEquivalent)}g`;
+
+    if (unit === "g") return `${gramsLabel} total`;
+    if (unit === "oz") {
+      return options.includeQuantity && formattedQuantity
+        ? `${formattedQuantity}oz ≈ ${gramsLabel} total`
+        : `≈ ${gramsLabel} total`;
+    }
+    if (options.includeQuantity && formattedQuantity) {
+      return `${formattedQuantity} ${pluralizedUnit} ≈ ${gramsLabel} total`;
+    }
+    return unit === "package" ? `≈ ${gramsLabel} total` : `≈ ${gramsLabel}`;
+  }
+
+  if (unit === "package" && options.packageUnknownText) return options.packageUnknownText;
+  return options.unknownText ?? "Total grams unknown";
+}
+
+function getGroceryDeductionGramHelper(
+  metadata: Record<string, unknown>,
+  quantity: number | null,
+  unit: GroceryInventoryUnit,
+) {
+  const gramEquivalent = getGroceryInventoryGramEquivalent(metadata, quantity, unit);
+  if (quantity === null || gramEquivalent === null) return "Gram equivalent unknown";
+
+  const quantityLabel = formatFoodNutritionNumber(quantity) ?? String(quantity);
+  const gramsLabel = `${formatGroceryGramValue(gramEquivalent)}g`;
+
+  if (unit === "g") return `Deducting ${gramsLabel}`;
+  if (unit === "oz") return `Deducting ${quantityLabel}oz ≈ ${gramsLabel}`;
+  if (unit === "servings") {
+    return `Deducting ${quantityLabel} ${quantity === 1 ? "serving" : "servings"} ≈ ${gramsLabel}`;
+  }
+  if (unit === "package") {
+    return `Deducting ${quantityLabel} ${quantity === 1 ? "package" : "packages"} ≈ ${gramsLabel}`;
+  }
+
+  return "Gram equivalent unknown";
+}
+
+function getGroceryScanDetectedInventoryLine(metadata: Record<string, unknown>) {
+  const servingsContext = getGroceryPackageServingsContext(metadata);
+
+  if (servingsContext.source === "explicit") {
+    return `Detected: ${
+      formatFoodNutritionNumber(servingsContext.servingsPerContainer) ??
+      servingsContext.servingsPerContainer
+    } servings per container`;
+  }
+
+  if (servingsContext.source === "inferred") {
+    return `Estimated: ${
+      formatFoodNutritionNumber(servingsContext.servingsPerContainer) ??
+      servingsContext.servingsPerContainer
+    } servings from ${formatGroceryGramValue(servingsContext.packageGrams)}g package ÷ ${
+      formatGroceryGramValue(servingsContext.servingGrams)
+    }g serving`;
+  }
+
+  return "Package servings not found from barcode";
+}
+
+function formatGroceryRemainingLabel(quantity: number, unit: string) {
+  const formattedQuantity = formatFoodNutritionNumber(quantity) ?? String(quantity);
+  const normalizedUnit = normalizeGroceryInventoryUnit(unit);
+
+  if (normalizedUnit === "g" || normalizedUnit === "oz") {
+    return `${formattedQuantity}${normalizedUnit} left`;
+  }
+
+  const unitLabel =
+    normalizedUnit === "servings"
+      ? quantity === 1
+        ? "serving"
+        : "servings"
+      : normalizedUnit === "package"
+        ? quantity === 1
+          ? "package"
+          : "packages"
+        : quantity === 1
+          ? "item"
+          : "items";
+
+  return `${formattedQuantity} ${unitLabel} left`;
+}
 
 function normalizeNutritionServingUnit(
   value: unknown,
@@ -3323,6 +3884,61 @@ function getDefaultFoodServingAmount(food: FoodSearchResult) {
   return servingUnit === "serving" ? 1 : servingSize ?? 1;
 }
 
+function getGroceryResourceMetadata(food: FoodSearchResult) {
+  const metadata = getRecordMetadata(food.metadata);
+  const foodResourceId =
+    typeof metadata.foodResourceId === "string" && metadata.foodResourceId.trim()
+      ? metadata.foodResourceId.trim()
+      : null;
+  const currentQuantity = parseGroceryInventoryNumber(metadata.foodResourceQuantity);
+
+  if (!foodResourceId || !currentQuantity) return null;
+
+  return {
+    foodResourceId,
+    currentQuantity,
+    unit: normalizeGroceryInventoryUnit(metadata.foodResourceUnit),
+  };
+}
+
+function getDefaultGroceryDeductionDraft(
+  food: FoodSearchResult,
+  servingQuantity: number,
+  servingUnit: NutritionServingUnit,
+): GroceryDeductionDraft | null {
+  const groceryResource = getGroceryResourceMetadata(food);
+  if (!groceryResource) return null;
+
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  const servingMultiplier = getNutritionServingMultiplier({
+    amount: servingQuantity,
+    unit: getSafeFoodServingUnit(food, servingUnit),
+    defaultServingGrams: servingGrams,
+    defaultServingSize: getPositiveNutritionNumber(food.serving_size),
+    defaultServingUnit: getDefaultFoodServingUnit(food),
+    gramsPerMl: getFoodVolumeAnchor(food)?.gramsPerMl,
+  });
+  const selectedGrams = servingGrams ? servingGrams * servingMultiplier : null;
+  let amount = "";
+
+  if (groceryResource.unit === "servings") {
+    amount = formatNutritionServingAmount(servingMultiplier);
+  } else if (groceryResource.unit === "g" && selectedGrams) {
+    amount = formatFoodNutritionNumber(selectedGrams) ?? "";
+  } else if (groceryResource.unit === "oz" && selectedGrams) {
+    amount = formatFoodNutritionNumber(selectedGrams / GRAMS_PER_OUNCE) ?? "";
+  } else if (groceryResource.unit === "package" || groceryResource.unit === "item") {
+    amount = "1";
+  }
+
+  return {
+    foodResourceId: groceryResource.foodResourceId,
+    currentQuantity: groceryResource.currentQuantity,
+    inventoryUnit: groceryResource.unit,
+    amount,
+  };
+}
+
 function getRecipeServingOptions(
   recipe: NutritionRecipeSearchResult,
 ): NutritionServingOption[] {
@@ -3431,20 +4047,34 @@ function makeNutritionSelectedFoodItem(
   quantity = getDefaultFoodServingAmount(food),
   servingUnit = getDefaultFoodServingUnit(food),
 ): NutritionSelectedFoodItem {
+  const normalizedQuantity = normalizeNutritionQuantity(quantity);
+  const safeServingUnit = getSafeFoodServingUnit(food, servingUnit);
+
   return {
     food,
-    quantity: normalizeNutritionQuantity(quantity),
-    servingUnit: getSafeFoodServingUnit(food, servingUnit),
+    quantity: normalizedQuantity,
+    servingUnit: safeServingUnit,
+    groceryDeduction: getDefaultGroceryDeductionDraft(
+      food,
+      normalizedQuantity,
+      safeServingUnit,
+    ),
   };
 }
 
 function sanitizeNutritionSelectedFoodItem(
   item: NutritionSelectedFoodItem,
 ): NutritionSelectedFoodItem {
+  const quantity = normalizeNutritionQuantity(item.quantity);
+  const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
+
   return {
     ...item,
-    quantity: normalizeNutritionQuantity(item.quantity),
-    servingUnit: getSafeFoodServingUnit(item.food, item.servingUnit),
+    quantity,
+    servingUnit,
+    groceryDeduction:
+      item.groceryDeduction ??
+      getDefaultGroceryDeductionDraft(item.food, quantity, servingUnit),
   };
 }
 
@@ -3755,6 +4385,37 @@ function getRecordMetadata(value: unknown): Record<string, unknown> {
 function getTrimmedMetadataString(metadata: Record<string, unknown>, key: string) {
   const value = metadata[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getGroceryScanPackageLine(metadata: Record<string, unknown>) {
+  const servingGrams = getGroceryServingGramsFromMetadata(metadata);
+  const servingSizeText =
+    getTrimmedMetadataString(metadata, "serving_size_text") ??
+    getGroceryMetadataRecords(metadata)
+      .map((record) => getTrimmedMetadataString(record, "serving_size"))
+      .find(Boolean);
+  const servingLabel = servingGrams
+    ? `${formatFoodNutritionNumber(servingGrams) ?? servingGrams}g serving`
+    : servingSizeText
+      ? `${servingSizeText} serving`
+      : null;
+  const servingsContext = getGroceryPackageServingsContext(metadata);
+  const servingsLabel = servingsContext.servingsPerContainer
+    ? `${formatFoodNutritionNumber(servingsContext.servingsPerContainer) ?? servingsContext.servingsPerContainer} servings`
+    : null;
+  const netWeight =
+    getGroceryMetadataRecords(metadata)
+      .map(
+        (record) =>
+          getTrimmedMetadataString(record, "net_weight") ??
+          getTrimmedMetadataString(record, "quantity"),
+      )
+      .find(Boolean) ??
+    (servingsContext.packageGrams
+      ? `${formatGroceryGramValue(servingsContext.packageGrams)}g package`
+      : null);
+
+  return [servingLabel, servingsLabel ?? netWeight].filter(Boolean).join(" · ");
 }
 
 function toFoodFamilyTitle(value: string) {
@@ -4459,6 +5120,41 @@ async function createNutritionMeal(draft: NutritionMealDraft) {
   return mealId;
 }
 
+async function depleteGroceryFromNutritionItems(items: NutritionSelectedFoodItem[]) {
+  for (const item of items) {
+    const deduction = item.groceryDeduction;
+    if (!deduction) continue;
+
+    const amount = parseGroceryInventoryNumber(deduction.amount);
+    if (!amount) continue;
+
+    const remainingQuantity = Math.max(0, deduction.currentQuantity - amount);
+
+    try {
+      const response = await fetch("/api/food-resources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: deduction.foodResourceId,
+          action: "setQuantity",
+          quantity: remainingQuantity,
+          unit: deduction.inventoryUnit,
+        }),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to update Grocery quantity.");
+      }
+    } catch (error) {
+      console.error("Failed to deplete Grocery after Nutrition save", {
+        error,
+        foodResourceId: deduction.foodResourceId,
+      });
+    }
+  }
+}
+
 async function createNutritionMealTemplate(draft: {
   name: string;
   icon: string;
@@ -4534,8 +5230,10 @@ function mapSelectedNutritionFoodsToEntryValues(
 
     return {
       [ON_HAND_NAME_FIELD_ID]: item.food.name,
-      [ON_HAND_QUANTITY_FIELD_ID]: formatNutritionServingAmount(item.quantity),
-      [ON_HAND_UNIT_FIELD_ID]: getSafeFoodServingUnit(item.food, item.servingUnit),
+      [ON_HAND_QUANTITY_FIELD_ID]: formatNutritionServingAmount(
+        getGroceryDefaultInventoryAmount(item.food).quantity,
+      ),
+      [ON_HAND_UNIT_FIELD_ID]: getGroceryDefaultInventoryAmount(item.food).unit,
       [GROCERY_CUSTOM_CALORIES_FIELD_ID]: formatOptionalFoodNutritionLineValue(
         item,
         "calories",
@@ -4816,11 +5514,9 @@ function getOptionalNutritionMetadataString(
 function mapFoodResourceToFoodSearchResult(resource: FoodResource): FoodSearchResult {
   const metadata = getFoodResourceMetadata(resource);
   const servingQuantity =
-    getPositiveNutritionNumber(resource.quantity) ??
     getPositiveNutritionMetadataNumber(metadata, "serving_quantity") ??
     1;
   const servingUnit =
-    resource.unit ??
     getOptionalNutritionMetadataString(metadata, "serving_unit") ??
     "serving";
   const source =
@@ -4859,12 +5555,12 @@ function getCorrectedGroceryNutritionMetadata(entryValues: Record<string, unknow
   const name = entryValues[ON_HAND_NAME_FIELD_ID];
   const brandName = entryValues.brand_name;
   const servingQuantity =
-    getPositiveNutritionMetadataNumber(entryValues, ON_HAND_QUANTITY_FIELD_ID) ?? 1;
+    getPositiveNutritionMetadataNumber(baseMetadata, "serving_quantity") ?? 1;
   const servingUnit =
-    typeof entryValues[ON_HAND_UNIT_FIELD_ID] === "string" &&
-    entryValues[ON_HAND_UNIT_FIELD_ID].trim()
-      ? normalizeNutritionServingUnit(entryValues[ON_HAND_UNIT_FIELD_ID])
-      : "serving";
+    getOptionalNutritionMetadataString(baseMetadata, "serving_unit") ?? "serving";
+  const inventoryQuantity =
+    parseGroceryInventoryNumber(entryValues[ON_HAND_QUANTITY_FIELD_ID]) ?? null;
+  const inventoryUnit = normalizeGroceryInventoryUnit(entryValues[ON_HAND_UNIT_FIELD_ID]);
   const hasCaloriesInput = Object.prototype.hasOwnProperty.call(
     entryValues,
     GROCERY_CUSTOM_CALORIES_FIELD_ID,
@@ -4908,6 +5604,8 @@ function getCorrectedGroceryNutritionMetadata(entryValues: Record<string, unknow
     canonical_food_name: foodFamily ?? undefined,
     serving_quantity: servingQuantity,
     serving_unit: servingUnit,
+    inventory_quantity: inventoryQuantity ?? undefined,
+    inventory_unit: inventoryUnit,
     calories: calories ?? undefined,
     carbs_g: carbsG ?? undefined,
     protein_g: proteinG ?? undefined,
@@ -4955,12 +5653,11 @@ function getGroceryCustomMetadata(entryValues: Record<string, unknown>) {
   );
   const fatG = getOptionalNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_FAT_FIELD_ID]);
   const servingQuantity =
-    getPositiveNutritionMetadataNumber(entryValues, ON_HAND_QUANTITY_FIELD_ID) ?? 1;
-  const servingUnit =
-    typeof entryValues[ON_HAND_UNIT_FIELD_ID] === "string" &&
-    entryValues[ON_HAND_UNIT_FIELD_ID].trim()
-      ? normalizeNutritionServingUnit(entryValues[ON_HAND_UNIT_FIELD_ID])
-      : "serving";
+    getPositiveNutritionMetadataNumber(entryValues, "serving_quantity") ?? 1;
+  const servingUnit = getOptionalNutritionMetadataString(entryValues, "serving_unit") ?? "serving";
+  const inventoryQuantity =
+    parseGroceryInventoryNumber(entryValues[ON_HAND_QUANTITY_FIELD_ID]) ?? null;
+  const inventoryUnit = normalizeGroceryInventoryUnit(entryValues[ON_HAND_UNIT_FIELD_ID]);
   const foodFamily = getFoodFamilyFromMetadataOrName(
     metadata,
     entryValues[ON_HAND_NAME_FIELD_ID],
@@ -4972,6 +5669,8 @@ function getGroceryCustomMetadata(entryValues: Record<string, unknown>) {
   metadata.canonical_food_name = foodFamily ?? undefined;
   metadata.serving_quantity = servingQuantity;
   metadata.serving_unit = servingUnit;
+  metadata.inventory_quantity = inventoryQuantity ?? undefined;
+  metadata.inventory_unit = inventoryUnit;
   if (calories !== null) metadata.calories = calories;
   if (carbsG !== null) metadata.carbs_g = carbsG;
   if (proteinG !== null) metadata.protein_g = proteinG;
@@ -6093,6 +6792,7 @@ export function NoteDatabaseEntrySheet({
   overlayClassName?: string;
   submitLabel?: string;
 }) {
+  const router = useRouter();
   const [openedAt] = useState(() => new Date().toISOString());
   const [entryFormValues, setEntryFormValues] = useState<Record<string, unknown>>(() =>
     getDatabaseEntryInitialFormValues(databaseDefinition, openedAt, initialEntry),
@@ -6106,8 +6806,21 @@ export function NoteDatabaseEntrySheet({
   const [selectedFitnessWorkoutExercises, setSelectedFitnessWorkoutExercises] = useState<
     FitnessExerciseSample[]
   >([]);
+  const [selectedFitnessRoutineName, setSelectedFitnessRoutineName] = useState<string | null>(
+    null,
+  );
+  const [selectedFitnessPlanName, setSelectedFitnessPlanName] = useState<string | null>(
+    null,
+  );
+  const [selectedFitnessPlanSetup, setSelectedFitnessPlanSetup] = useState<
+    Partial<FitnessPlanSetup>
+  >({});
   const [fitnessWorkoutExerciseDetailsById, setFitnessWorkoutExerciseDetailsById] = useState<
     Record<string, FitnessWorkoutExerciseDetail>
+  >({});
+  const [isFitnessWorkoutReviewOpen, setIsFitnessWorkoutReviewOpen] = useState(false);
+  const [fitnessWorkoutLogDetailsById, setFitnessWorkoutLogDetailsById] = useState<
+    Record<string, FitnessWorkoutLogExerciseDetail>
   >({});
   const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
     () => new Set(),
@@ -6174,6 +6887,22 @@ export function NoteDatabaseEntrySheet({
   const [groceryResourcesError, setGroceryResourcesError] = useState<string | null>(
     null,
   );
+  const [openGroceryResourceMenuId, setOpenGroceryResourceMenuId] = useState<string | null>(
+    null,
+  );
+  const [editingGroceryResourceId, setEditingGroceryResourceId] = useState<string | null>(
+    null,
+  );
+  const [groceryResourceEditDraft, setGroceryResourceEditDraft] = useState<{
+    quantity: string;
+    unit: GroceryInventoryUnit;
+  }>({ quantity: "", unit: "package" });
+  const [savingGroceryResourceActionId, setSavingGroceryResourceActionId] = useState<
+    string | null
+  >(null);
+  const [groceryResourceActionError, setGroceryResourceActionError] = useState<
+    string | null
+  >(null);
   const [nutritionSavedMeals, setNutritionSavedMeals] = useState<NutritionSavedMeal[]>([]);
   const [isNutritionSavedMealsLoading, setIsNutritionSavedMealsLoading] = useState(false);
   const [nutritionSavedMealsError, setNutritionSavedMealsError] = useState<string | null>(
@@ -6340,12 +7069,6 @@ export function NoteDatabaseEntrySheet({
     : null;
   const groceryFoodField = isGroceryDatabase
     ? editableDatabaseFields.find((field) => field.id === ON_HAND_NAME_FIELD_ID) ?? null
-    : null;
-  const groceryQuantityField = isGroceryDatabase
-    ? editableDatabaseFields.find((field) => field.id === ON_HAND_QUANTITY_FIELD_ID) ?? null
-    : null;
-  const groceryUnitField = isGroceryDatabase
-    ? editableDatabaseFields.find((field) => field.id === ON_HAND_UNIT_FIELD_ID) ?? null
     : null;
   const groceryExpirationField = isGroceryDatabase
     ? editableDatabaseFields.find((field) => field.id === ON_HAND_EXPIRES_ON_FIELD_ID) ?? null
@@ -7106,6 +7829,118 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function getCurrentFitnessWorkoutName() {
+    return selectedFitnessRoutineName ?? "Custom Workout";
+  }
+
+  function buildFitnessWorkoutLogDetail(
+    exercise: FitnessExerciseSample,
+  ): FitnessWorkoutLogExerciseDetail {
+    const detail = getFitnessWorkoutExerciseDetail(
+      exercise,
+      fitnessWorkoutExerciseDetailsById,
+    );
+
+    return {
+      sets: detail.sets,
+      reps: detail.reps,
+      duration: detail.duration,
+      weight: "",
+    };
+  }
+
+  function shouldShowFitnessWeightField(exercise: FitnessExerciseSample) {
+    const searchableText = [
+      exercise.name,
+      exercise.movementType,
+      exercise.primaryArea,
+      exercise.equipment,
+    ]
+      .join(" ")
+      .toLowerCase();
+    const bodyweightPattern =
+      /\b(bodyweight|calisthenics|mobility|core|conditioning|plank|burpee|push-up|pull-up|chin-up|dip|lunge)\b/;
+
+    return !bodyweightPattern.test(searchableText);
+  }
+
+  function getFitnessWorkoutLogDetail(exercise: FitnessExerciseSample) {
+    return (
+      fitnessWorkoutLogDetailsById[getFitnessExerciseId(exercise)] ??
+      buildFitnessWorkoutLogDetail(exercise)
+    );
+  }
+
+  function updateFitnessWorkoutLogDetail(
+    exercise: FitnessExerciseSample,
+    key: keyof FitnessWorkoutLogExerciseDetail,
+    value: string,
+  ) {
+    const exerciseId = getFitnessExerciseId(exercise);
+
+    setFitnessWorkoutLogDetailsById((currentDetails) => ({
+      ...currentDetails,
+      [exerciseId]: {
+        ...(currentDetails[exerciseId] ?? buildFitnessWorkoutLogDetail(exercise)),
+        [key]: value,
+      },
+    }));
+  }
+
+  function buildFitnessWorkoutEntryValues(
+    workoutName: string,
+    detailsByExerciseId: Record<string, FitnessWorkoutLogExerciseDetail>,
+  ) {
+    const nameFieldId = getFitnessEntryFieldId("Name");
+    const workoutFieldId = getFitnessEntryFieldId("Workout");
+    const guidanceFieldId = getFitnessEntryFieldId("Sets/Reps or Duration");
+    const notesFieldId = getFitnessEntryFieldId("Notes");
+    const nextValues: Record<string, string> = {};
+    const workoutLines = selectedFitnessWorkoutExercises.map((exercise) => exercise.name);
+    const detailLines = selectedFitnessWorkoutExercises.map((exercise) => {
+      const detail =
+        detailsByExerciseId[getFitnessExerciseId(exercise)] ??
+        buildFitnessWorkoutLogDetail(exercise);
+      const sets = detail.sets.trim();
+      const reps = detail.reps.trim();
+      const duration = detail.duration.trim();
+
+      if (duration) {
+        return [exercise.name, sets ? `${sets} sets` : null, duration]
+          .filter(Boolean)
+          .join(": ");
+      }
+
+      return [exercise.name, sets ? `${sets} sets` : null, reps ? `${reps} reps` : null]
+        .filter(Boolean)
+        .join(": ");
+    });
+    const weightLines = selectedFitnessWorkoutExercises
+      .map((exercise) => {
+        const weight =
+          detailsByExerciseId[getFitnessExerciseId(exercise)]?.weight.trim() ?? "";
+
+        return weight ? `${exercise.name}: ${weight}` : null;
+      })
+      .filter((line): line is string => Boolean(line));
+    const existingNotes = notesFieldId
+      ? typeof entryFormValues[notesFieldId] === "string"
+        ? entryFormValues[notesFieldId].trim()
+        : ""
+      : "";
+    const notesLines = [
+      weightLines.length > 0 ? `Weights:\n${weightLines.join("\n")}` : null,
+      existingNotes,
+    ].filter(Boolean);
+
+    if (nameFieldId) nextValues[nameFieldId] = workoutName;
+    if (workoutFieldId) nextValues[workoutFieldId] = workoutLines.join("\n");
+    if (guidanceFieldId) nextValues[guidanceFieldId] = detailLines.join("\n");
+    if (notesFieldId) nextValues[notesFieldId] = notesLines.join("\n\n");
+
+    return nextValues;
+  }
+
   function toggleFitnessWorkoutExercise(exercise: FitnessExerciseSample) {
     const exerciseId = getFitnessExerciseId(exercise);
     const isSelected = selectedFitnessWorkoutExercises.some(
@@ -7118,6 +7953,10 @@ export function NoteDatabaseEntrySheet({
           (selectedExercise) => getFitnessExerciseId(selectedExercise) !== exerciseId,
         ),
       );
+      if (selectedFitnessWorkoutExercises.length <= 1) {
+        setSelectedFitnessRoutineName(null);
+        setIsFitnessWorkoutReviewOpen(false);
+      }
       setFitnessWorkoutExerciseDetailsById((currentDetails) => {
         const nextDetails = { ...currentDetails };
         delete nextDetails[exerciseId];
@@ -7160,6 +7999,10 @@ export function NoteDatabaseEntrySheet({
     setSelectedFitnessWorkoutExercises((currentExercises) =>
       currentExercises.filter((exercise) => getFitnessExerciseId(exercise) !== exerciseId),
     );
+    if (selectedFitnessWorkoutExercises.length <= 1) {
+      setSelectedFitnessRoutineName(null);
+      setIsFitnessWorkoutReviewOpen(false);
+    }
     setFitnessWorkoutExerciseDetailsById((currentDetails) => {
       const nextDetails = { ...currentDetails };
       delete nextDetails[exerciseId];
@@ -7170,7 +8013,10 @@ export function NoteDatabaseEntrySheet({
 
   function clearFitnessWorkoutExercises() {
     setSelectedFitnessWorkoutExercises([]);
+    setSelectedFitnessRoutineName(null);
     setFitnessWorkoutExerciseDetailsById({});
+    setFitnessWorkoutLogDetailsById({});
+    setIsFitnessWorkoutReviewOpen(false);
     void hapticSnap();
   }
 
@@ -7190,14 +8036,13 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function selectFitnessRoutine(routine: FitnessRoutineSample) {
-    const routineExercises = routine.exercises.map((exerciseName) =>
-      getFitnessRoutineExercise(routine, exerciseName),
-    );
-
+  function loadFitnessWorkoutExercises(
+    workoutName: string,
+    workoutExercises: FitnessExerciseSample[],
+  ) {
     setSelectedFitnessWorkoutExercises((currentExercises) => {
       const currentExerciseIds = new Set(currentExercises.map(getFitnessExerciseId));
-      const nextExercises = routineExercises.filter(
+      const nextExercises = workoutExercises.filter(
         (exercise) => !currentExerciseIds.has(getFitnessExerciseId(exercise)),
       );
 
@@ -7208,7 +8053,7 @@ export function NoteDatabaseEntrySheet({
     setFitnessWorkoutExerciseDetailsById((currentDetails) => {
       const nextDetails = { ...currentDetails };
 
-      routineExercises.forEach((exercise) => {
+      workoutExercises.forEach((exercise) => {
         const exerciseId = getFitnessExerciseId(exercise);
 
         if (!nextDetails[exerciseId]) {
@@ -7218,8 +8063,85 @@ export function NoteDatabaseEntrySheet({
 
       return nextDetails;
     });
+    setSelectedFitnessRoutineName(workoutName);
+    setIsFitnessWorkoutReviewOpen(false);
     selectFitnessAction("start");
     void hapticSoftTick();
+  }
+
+  function selectFitnessRoutine(routine: FitnessRoutineSample) {
+    const routineExercises = routine.exercises.map((exerciseName) =>
+      getFitnessRoutineExercise(routine, exerciseName),
+    );
+
+    loadFitnessWorkoutExercises(routine.name, routineExercises);
+  }
+
+  function getFitnessPlanExercise(
+    plan: FitnessPlanSample,
+    exerciseName: string,
+  ): FitnessExerciseSample {
+    return (
+      FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName) ?? {
+        name: exerciseName,
+        movementType: "Plan",
+        primaryArea: plan.name,
+        equipment: "",
+        guidance: "",
+        notes: "",
+      }
+    );
+  }
+
+  function startFitnessPlan(plan: FitnessPlanSample) {
+    setSelectedFitnessPlanName(plan.name);
+    setSelectedFitnessPlanSetup({});
+    void hapticSoftTick();
+  }
+
+  function updateSelectedFitnessPlanSetup<T extends keyof FitnessPlanSetup>(
+    key: T,
+    value: FitnessPlanSetup[T],
+  ) {
+    setSelectedFitnessPlanSetup((currentSetup) => ({
+      ...currentSetup,
+      [key]: value,
+    }));
+    void hapticSoftTick();
+  }
+
+  function isFitnessPlanSetupReady(
+    setup: Partial<FitnessPlanSetup>,
+  ): setup is FitnessPlanSetup {
+    return Boolean(
+      setup.goal &&
+        setup.level &&
+        setup.equipment &&
+        setup.daysPerWeek &&
+        setup.sessionLength,
+    );
+  }
+
+  function getFitnessPlanSessions(
+    plan: FitnessPlanSample,
+    setup: Pick<FitnessPlanSetup, "daysPerWeek">,
+  ) {
+    return plan.sessionsByDays[setup.daysPerWeek] ?? [];
+  }
+
+  function loadFirstFitnessPlanWorkout(plan: FitnessPlanSample) {
+    if (!isFitnessPlanSetupReady(selectedFitnessPlanSetup)) return;
+
+    const firstPlanSession = getFitnessPlanSessions(plan, selectedFitnessPlanSetup)[0];
+
+    if (!firstPlanSession) return;
+
+    loadFitnessWorkoutExercises(
+      `${plan.name} · Session 1`,
+      firstPlanSession.exercises.map((exerciseName) =>
+        getFitnessPlanExercise(plan, exerciseName),
+      ),
+    );
   }
 
   function updateFitnessWorkoutExerciseDetail(
@@ -7301,40 +8223,84 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function logSelectedFitnessWorkout() {
-    const nameFieldId = getFitnessEntryFieldId("Name");
-    const workoutFieldId = getFitnessEntryFieldId("Workout");
-    const guidanceFieldId = getFitnessEntryFieldId("Sets/Reps or Duration");
-    const notesFieldId = getFitnessEntryFieldId("Notes");
-    const nextValues: Record<string, string> = {};
-    const selectedExerciseNames = selectedFitnessWorkoutExercises.map(
-      (exercise) => exercise.name,
+  function reviewSelectedFitnessWorkout() {
+    if (selectedFitnessWorkoutExercises.length === 0) return;
+
+    setFitnessWorkoutLogDetailsById((currentDetails) => {
+      const nextDetails = { ...currentDetails };
+
+      selectedFitnessWorkoutExercises.forEach((exercise) => {
+        const exerciseId = getFitnessExerciseId(exercise);
+
+        if (!nextDetails[exerciseId]) {
+          nextDetails[exerciseId] = buildFitnessWorkoutLogDetail(exercise);
+        }
+      });
+
+      return nextDetails;
+    });
+    setIsFitnessWorkoutReviewOpen(true);
+    void hapticSoftTick();
+  }
+
+  function startSelectedFitnessWorkout() {
+    if (selectedFitnessWorkoutExercises.length === 0) return;
+
+    const payload: FitnessWorkoutFocusSessionPayload = {
+      source: "fitness",
+      workoutName: getCurrentFitnessWorkoutName(),
+      createdAt: new Date().toISOString(),
+      exercises: selectedFitnessWorkoutExercises.map((exercise) => {
+        const detail = getFitnessWorkoutExerciseDetail(
+          exercise,
+          fitnessWorkoutExerciseDetailsById,
+        );
+
+        return {
+          id: getFitnessExerciseId(exercise),
+          name: exercise.name,
+          sets: detail.sets,
+          reps: detail.reps,
+          duration: detail.duration,
+        };
+      }),
+    };
+
+    try {
+      window.sessionStorage.setItem(
+        FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+        JSON.stringify(payload),
+      );
+    } catch {
+      // Route navigation still opens Focus Pomo when sessionStorage is unavailable.
+    }
+
+    void hapticSoftTick();
+    router.push("/focus-pomo");
+  }
+
+  function logReviewedFitnessWorkout() {
+    if (selectedFitnessWorkoutExercises.length === 0) return;
+
+    const workoutName = getCurrentFitnessWorkoutName();
+    const nextDetailsByExerciseId = selectedFitnessWorkoutExercises.reduce<
+      Record<string, FitnessWorkoutLogExerciseDetail>
+    >((nextDetails, exercise) => {
+      const exerciseId = getFitnessExerciseId(exercise);
+      nextDetails[exerciseId] = getFitnessWorkoutLogDetail(exercise);
+      return nextDetails;
+    }, {});
+    const nextValues = buildFitnessWorkoutEntryValues(
+      workoutName,
+      nextDetailsByExerciseId,
     );
 
-    if (selectedExerciseNames.length > 0) {
-      if (nameFieldId) nextValues[nameFieldId] = "Workout";
-      if (workoutFieldId) nextValues[workoutFieldId] = selectedExerciseNames.join(", ");
-      if (guidanceFieldId) {
-        nextValues[guidanceFieldId] = selectedFitnessWorkoutExercises
-          .map((exercise) =>
-            formatFitnessWorkoutExerciseDetail(
-              exercise,
-              fitnessWorkoutExerciseDetailsById,
-            ),
-          )
-          .join("\n");
-      }
-      if (notesFieldId) {
-        nextValues[notesFieldId] = "Built from selected exercises.";
-      }
-    }
-
     if (Object.keys(nextValues).length > 0) {
-      setEntryFormValues((current) => ({ ...current, ...nextValues }));
+      const nextFormValues = { ...entryFormValues, ...nextValues };
+      setEntryFormValues(nextFormValues);
       setSubmitError(null);
+      void saveDatabaseEntry(nextFormValues);
     }
-
-    selectFitnessAction("custom");
   }
 
   function applyNutritionFoodSelection(nextFoods: NutritionSelectedFoodItem[]) {
@@ -7414,6 +8380,11 @@ export function NoteDatabaseEntrySheet({
         ...selectedNutritionFood,
         quantity: nextQuantity,
         servingUnit: nextServingUnit,
+        groceryDeduction: getDefaultGroceryDeductionDraft(
+          food,
+          nextQuantity,
+          nextServingUnit,
+        ),
       };
       setSelectedNutritionFood(nextItem);
       setEntryFormValues((current) => ({
@@ -7430,10 +8401,46 @@ export function NoteDatabaseEntrySheet({
             ...selectedFood,
             quantity: nextQuantity,
             servingUnit: nextServingUnit,
+            groceryDeduction: getDefaultGroceryDeductionDraft(
+              food,
+              nextQuantity,
+              nextServingUnit,
+            ),
           }
         : selectedFood,
     );
     applyNutritionFoodSelection(nextFoods);
+  }
+
+  function updateNutritionGroceryDeduction(food: FoodSearchResult, amount: string) {
+    const foodKey = getNutritionFoodSelectionKey(food);
+
+    setSelectedNutritionFoods((currentFoods) =>
+      currentFoods.map((selectedFood) => {
+        if (getNutritionFoodSelectionKey(selectedFood.food) !== foodKey) {
+          return selectedFood;
+        }
+
+        const currentDeduction =
+          selectedFood.groceryDeduction ??
+          getDefaultGroceryDeductionDraft(
+            selectedFood.food,
+            selectedFood.quantity,
+            selectedFood.servingUnit,
+          );
+
+        return currentDeduction
+          ? {
+              ...selectedFood,
+              groceryDeduction: {
+                ...currentDeduction,
+                amount,
+              },
+            }
+          : selectedFood;
+      }),
+    );
+    setSubmitError(null);
   }
 
   function getSelectedNutritionFoodItem(food: FoodSearchResult) {
@@ -7722,6 +8729,9 @@ export function NoteDatabaseEntrySheet({
 
     try {
       const params = new URLSearchParams({ barcode: normalizedBarcode });
+      if (isGroceryDatabase) {
+        params.set("context", "grocery");
+      }
       const response = await fetch(`/api/nutrition/foods/barcode?${params.toString()}`);
       const payload = (await response.json()) as NutritionFoodBarcodeLookupResponse;
 
@@ -7745,6 +8755,18 @@ export function NoteDatabaseEntrySheet({
                 scan_status: payload.status,
                 originalScannedProductName: payload.food.name,
                 originalScannedBrandName: payload.food.brand_name ?? undefined,
+                sourceProductName:
+                  getTrimmedMetadataString(
+                    getRecordMetadata(payload.food.metadata),
+                    "source_product_name",
+                  ) ?? payload.food.name,
+                sourceBrandName:
+                  getTrimmedMetadataString(
+                    getRecordMetadata(payload.food.metadata),
+                    "source_brand_name",
+                  ) ??
+                  payload.food.brand_name ??
+                  undefined,
                 originalScannedNutrition: {
                   serving_size: payload.food.serving_size,
                   serving_unit: payload.food.serving_unit,
@@ -8458,14 +9480,212 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderFitnessPlanBrowser() {
+    const selectedFitnessPlan = FITNESS_PLAN_SAMPLES.find(
+      (plan) => plan.name === selectedFitnessPlanName,
+    );
+    const isSelectedFitnessPlanReady = isFitnessPlanSetupReady(selectedFitnessPlanSetup);
+    const selectedFitnessPlanSessions =
+      selectedFitnessPlan && isSelectedFitnessPlanReady
+        ? getFitnessPlanSessions(selectedFitnessPlan, selectedFitnessPlanSetup)
+        : [];
+
+    function formatFitnessPlanLabel(value: string) {
+      return value
+        .split(" ")
+        .map((word) => (word === "/" ? word : `${word.charAt(0).toUpperCase()}${word.slice(1)}`))
+        .join(" ");
+    }
+
+    function getFitnessPlanRangeLabel(values: string[]) {
+      if (values.length <= 1) return formatFitnessPlanLabel(values[0] ?? "");
+
+      return `${formatFitnessPlanLabel(values[0])}-${formatFitnessPlanLabel(
+        values[values.length - 1],
+      )}`;
+    }
+
+    function getFitnessPlanDaysLabel(daysPerWeek: number[]) {
+      const firstDay = daysPerWeek[0];
+      const lastDay = daysPerWeek[daysPerWeek.length - 1];
+
+      if (!firstDay) return "Days/week";
+      if (firstDay === lastDay) return `${firstDay} days/week`;
+
+      return `${firstDay}-${lastDay} days/week`;
+    }
+
+    function renderFitnessPlanOptionButton<T extends string | number>(
+      label: string,
+      value: T,
+      selectedValue: T | undefined,
+      onSelect: (value: T) => void,
+    ) {
+      const isSelected = selectedValue === value;
+
+      return (
+        <button
+          key={String(value)}
+          type="button"
+          onClick={() => onSelect(value)}
+          className={cn(
+            "flex h-8 items-center justify-center rounded-lg border px-2.5 text-[11px] font-semibold outline-none transition focus-visible:ring-1 focus-visible:ring-white/18",
+            isSelected
+              ? "border-emerald-200/[0.26] bg-emerald-200/[0.14] text-emerald-50/88"
+              : "border-white/[0.06] bg-black/24 text-white/52 hover:border-white/[0.11] hover:bg-white/[0.055] hover:text-white/78",
+          )}
+        >
+          {label}
+        </button>
+      );
+    }
+
+    function renderFitnessPlanOptionGroup(children: ReactNode, label: string) {
+      return (
+        <div>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/38">
+            {label}
+          </p>
+          <div className="flex flex-wrap gap-1.5">{children}</div>
+        </div>
+      );
+    }
+
     return (
       <div className="mt-3 space-y-2">
         <div className="px-1">
           <p className="text-sm font-semibold text-white/82">Plans</p>
           <p className="mt-0.5 text-xs font-medium text-white/38">
-            Weekly structures that combine multiple workout routines.
+            Indefinite training systems personalized into local workout cycles.
           </p>
         </div>
+        {selectedFitnessPlan ? (
+          <div className="rounded-xl border border-emerald-300/[0.18] bg-emerald-300/[0.07] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-100/48">
+                  Plan setup
+                </p>
+                <p className="mt-1 text-sm font-semibold text-white/88">
+                  {selectedFitnessPlan.name}
+                </p>
+                <p className="mt-1 text-xs font-medium text-white/46">
+                  {selectedFitnessPlan.description}
+                </p>
+              </div>
+              {isSelectedFitnessPlanReady ? (
+                <span className="shrink-0 rounded-full border border-emerald-200/[0.16] bg-emerald-200/[0.1] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-50/58">
+                  Ready
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3 space-y-3">
+              {renderFitnessPlanOptionGroup(
+                selectedFitnessPlan.goals.map((goal) =>
+                  renderFitnessPlanOptionButton(
+                    formatFitnessPlanLabel(goal),
+                    goal,
+                    selectedFitnessPlanSetup.goal,
+                    (value) => updateSelectedFitnessPlanSetup("goal", value),
+                  ),
+                ),
+                "Goal",
+              )}
+              {renderFitnessPlanOptionGroup(
+                selectedFitnessPlan.levels.map((level) =>
+                  renderFitnessPlanOptionButton(
+                    formatFitnessPlanLabel(level),
+                    level,
+                    selectedFitnessPlanSetup.level,
+                    (value) => updateSelectedFitnessPlanSetup("level", value),
+                  ),
+                ),
+                "Level",
+              )}
+              {renderFitnessPlanOptionGroup(
+                selectedFitnessPlan.equipment.map((equipment) =>
+                  renderFitnessPlanOptionButton(
+                    formatFitnessPlanLabel(equipment),
+                    equipment,
+                    selectedFitnessPlanSetup.equipment,
+                    (value) => updateSelectedFitnessPlanSetup("equipment", value),
+                  ),
+                ),
+                "Equipment",
+              )}
+              {renderFitnessPlanOptionGroup(
+                selectedFitnessPlan.daysPerWeek.map((daysPerWeek) =>
+                  renderFitnessPlanOptionButton(
+                    `${daysPerWeek} days/week`,
+                    daysPerWeek,
+                    selectedFitnessPlanSetup.daysPerWeek,
+                    (value) => updateSelectedFitnessPlanSetup("daysPerWeek", value),
+                  ),
+                ),
+                "Days/week",
+              )}
+              {renderFitnessPlanOptionGroup(
+                FITNESS_PLAN_SESSION_LENGTH_OPTIONS.map((sessionLength) =>
+                  renderFitnessPlanOptionButton(
+                    `${sessionLength} min`,
+                    sessionLength,
+                    selectedFitnessPlanSetup.sessionLength,
+                    (value) => updateSelectedFitnessPlanSetup("sessionLength", value),
+                  ),
+                ),
+                "Session length",
+              )}
+            </div>
+            <p className="mt-3 rounded-lg border border-white/[0.055] bg-black/18 px-2.5 py-2 text-[11px] font-medium leading-5 text-white/44">
+              {selectedFitnessPlan.progressionNote}
+            </p>
+            {isSelectedFitnessPlanReady ? (
+              <div className="mt-3 rounded-lg border border-white/[0.055] bg-black/24 p-2.5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white/82">
+                      {selectedFitnessPlan.name}
+                    </p>
+                    <p className="mt-1 text-[11px] font-medium leading-5 text-white/42">
+                      {formatFitnessPlanLabel(selectedFitnessPlanSetup.goal)} ·{" "}
+                      {formatFitnessPlanLabel(selectedFitnessPlanSetup.level)} ·{" "}
+                      {formatFitnessPlanLabel(selectedFitnessPlanSetup.equipment)} ·{" "}
+                      {selectedFitnessPlanSetup.daysPerWeek} days/week ·{" "}
+                      {selectedFitnessPlanSetup.sessionLength} min
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadFirstFitnessPlanWorkout(selectedFitnessPlan)}
+                    className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-200/[0.18] bg-emerald-200/[0.12] px-2.5 text-xs font-semibold text-emerald-50/82 outline-none transition hover:border-emerald-100/[0.28] hover:bg-emerald-200/[0.17] hover:text-white focus-visible:ring-1 focus-visible:ring-emerald-100/24"
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    Load first workout
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {selectedFitnessPlanSessions.map((session, sessionIndex) => (
+                    <div
+                      key={`${selectedFitnessPlan.name}-${session.label}-${sessionIndex}`}
+                      className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.03] px-2.5 py-2"
+                    >
+                      <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[11px] font-semibold text-white/58">
+                        {sessionIndex + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-white/66">
+                          Session {sessionIndex + 1}
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] font-medium text-white/34">
+                          {session.label}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="space-y-2">
           {FITNESS_PLAN_SAMPLES.map((plan) => (
             <div
@@ -8475,26 +9695,29 @@ export function NoteDatabaseEntrySheet({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-white/86">{plan.name}</p>
-                  <p className="mt-1 text-xs font-medium text-white/42">{plan.cadence}</p>
+                  <p className="mt-1 text-xs font-medium text-white/42">
+                    {plan.description}
+                  </p>
                 </div>
-                <span className="rounded-full border border-white/[0.05] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/36">
-                  Plan
-                </span>
+                <button
+                  type="button"
+                  onClick={() => startFitnessPlan(plan)}
+                  className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.11] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/16"
+                >
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  Start Plan
+                </button>
               </div>
-              <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {plan.days.map((planDay) => (
-                  <div
-                    key={`${plan.name}-${planDay.day}`}
-                    className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.03] px-2.5 py-2"
-                  >
-                    <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[11px] font-semibold text-white/58">
-                      {planDay.day}
-                    </span>
-                    <span className="min-w-0 truncate text-xs font-medium text-white/64">
-                      {planDay.routine}
-                    </span>
-                  </div>
-                ))}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
+                  {plan.equipment.map(formatFitnessPlanLabel).join(" / ")}
+                </span>
+                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
+                  {getFitnessPlanRangeLabel(plan.levels)}
+                </span>
+                <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
+                  {getFitnessPlanDaysLabel(plan.daysPerWeek)}
+                </span>
               </div>
             </div>
           ))}
@@ -8519,8 +9742,122 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderFitnessWorkoutReviewContent() {
+    const currentWorkoutName = getCurrentFitnessWorkoutName();
+
+    return (
+      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white/82">{currentWorkoutName}</p>
+            <p className="mt-0.5 text-xs font-medium text-white/38">
+              {selectedFitnessWorkoutExercises.length} selected
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsFitnessWorkoutReviewOpen(false);
+              void hapticSnap();
+            }}
+            className="shrink-0 rounded-lg border border-white/[0.06] bg-white/[0.045] px-2.5 py-1.5 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.08] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/16"
+          >
+            Back to Workout
+          </button>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          {selectedFitnessWorkoutExercises.map((exercise) => {
+            const detail = getFitnessWorkoutLogDetail(exercise);
+            const usesDuration = shouldUseFitnessDurationDetail(exercise);
+            const showWeight = shouldShowFitnessWeightField(exercise);
+
+            return (
+              <div
+                key={exercise.name}
+                className="rounded-lg border border-white/[0.045] bg-white/[0.035] p-2.5"
+              >
+                <p className="truncate text-xs font-semibold text-white/80">
+                  {exercise.name}
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <label className="min-w-0">
+                    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-white/32">
+                      Sets
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={detail.sets}
+                      onChange={(event) =>
+                        updateFitnessWorkoutLogDetail(exercise, "sets", event.target.value)
+                      }
+                      className="h-9 w-full rounded-lg border border-white/[0.06] bg-black/30 px-2 text-xs font-semibold text-white/82 outline-none transition placeholder:text-white/24 focus-visible:border-white/[0.15] focus-visible:ring-1 focus-visible:ring-white/12"
+                    />
+                  </label>
+                  <label className="min-w-0">
+                    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-white/32">
+                      {usesDuration ? "Duration" : "Reps"}
+                    </span>
+                    <input
+                      type="text"
+                      value={usesDuration ? detail.duration : detail.reps}
+                      onChange={(event) =>
+                        updateFitnessWorkoutLogDetail(
+                          exercise,
+                          usesDuration ? "duration" : "reps",
+                          event.target.value,
+                        )
+                      }
+                      className="h-9 w-full rounded-lg border border-white/[0.06] bg-black/30 px-2 text-xs font-semibold text-white/82 outline-none transition placeholder:text-white/24 focus-visible:border-white/[0.15] focus-visible:ring-1 focus-visible:ring-white/12"
+                    />
+                  </label>
+                  {showWeight ? (
+                    <label className="min-w-0 sm:col-span-2">
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-white/32">
+                        Weight
+                      </span>
+                      <input
+                        type="text"
+                        value={detail.weight}
+                        onChange={(event) =>
+                          updateFitnessWorkoutLogDetail(
+                            exercise,
+                            "weight",
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Optional"
+                        className="h-9 w-full rounded-lg border border-white/[0.06] bg-black/30 px-2 text-xs font-semibold text-white/82 outline-none transition placeholder:text-white/24 focus-visible:border-white/[0.15] focus-visible:ring-1 focus-visible:ring-white/12"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={logReviewedFitnessWorkout}
+          disabled={isSubmitting || selectedFitnessWorkoutExercises.length === 0}
+          className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.13] px-3 text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] focus-visible:ring-1 focus-visible:ring-white/16 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+        >
+          <Check className="h-4 w-4" aria-hidden="true" />
+          {isSubmitting ? "Saving..." : "Log workout"}
+        </button>
+      </div>
+    );
+  }
+
   function renderFitnessStartContent() {
     const hasSelectedWorkoutExercises = selectedFitnessWorkoutExercises.length > 0;
+    const currentWorkoutName = getCurrentFitnessWorkoutName();
+
+    if (isFitnessWorkoutReviewOpen && hasSelectedWorkoutExercises) {
+      return renderFitnessWorkoutReviewContent();
+    }
 
     return (
       <div className="mt-3">
@@ -8531,11 +9868,16 @@ export function NoteDatabaseEntrySheet({
                 <Dumbbell className="h-4 w-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-white/82">Current workout</p>
+                <p className="text-sm font-semibold text-white/82">Current Workout</p>
                 {hasSelectedWorkoutExercises ? (
-                  <p className="mt-0.5 text-xs font-medium text-white/38">
-                    {selectedFitnessWorkoutExercises.length} selected
-                  </p>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <p className="min-w-0 truncate text-xs font-semibold text-white/58">
+                      {currentWorkoutName}
+                    </p>
+                    <p className="text-xs font-medium text-white/34">
+                      {selectedFitnessWorkoutExercises.length} selected
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -8562,6 +9904,12 @@ export function NoteDatabaseEntrySheet({
                       <p className="truncate text-xs font-semibold text-white/78">
                         {exercise.name}
                       </p>
+                      <p className="mt-0.5 truncate text-[11px] font-medium text-white/36">
+                        {formatFitnessWorkoutExerciseDetail(
+                          exercise,
+                          fitnessWorkoutExerciseDetailsById,
+                        )}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -8576,16 +9924,16 @@ export function NoteDatabaseEntrySheet({
               ))}
             </div>
           ) : (
-            <div className="mt-3 rounded-lg border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-3 text-center text-xs font-medium text-white/40">
-              Add exercises from Exercises or Favorites.
+            <div className="mt-3 rounded-lg border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-3 text-center text-xs font-medium leading-5 text-white/40">
+              Build this workout from Exercises, Favorites, or Routines.
             </div>
           )}
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => selectFitnessAction("exercises")}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.045] px-3 text-xs font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.045] px-1.5 text-[11px] font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
             >
               <ListChecks className="h-4 w-4" aria-hidden="true" />
               Exercises
@@ -8593,21 +9941,41 @@ export function NoteDatabaseEntrySheet({
             <button
               type="button"
               onClick={() => selectFitnessAction("favorites")}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.045] px-3 text-xs font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.045] px-1.5 text-[11px] font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
             >
               <Star className="h-4 w-4" aria-hidden="true" />
               Favorites
             </button>
+            <button
+              type="button"
+              onClick={() => selectFitnessAction("workout-routines")}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.045] px-1.5 text-[11px] font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
+            >
+              <Calendar className="h-4 w-4" aria-hidden="true" />
+              Routines
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={logSelectedFitnessWorkout}
-            className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.13] px-3 text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] focus-visible:ring-1 focus-visible:ring-white/16"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Review &amp; log workout
-          </button>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={startSelectedFitnessWorkout}
+              disabled={!hasSelectedWorkoutExercises}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-emerald-200/[0.18] bg-emerald-200/[0.12] px-2 text-xs font-semibold text-emerald-50/82 outline-none transition hover:border-emerald-100/[0.28] hover:bg-emerald-200/[0.17] hover:text-white focus-visible:ring-1 focus-visible:ring-emerald-100/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+            >
+              <Dumbbell className="h-4 w-4" aria-hidden="true" />
+              Start
+            </button>
+            <button
+              type="button"
+              onClick={reviewSelectedFitnessWorkout}
+              disabled={!hasSelectedWorkoutExercises}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.13] px-2 text-xs font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] focus-visible:ring-1 focus-visible:ring-white/16 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Review &amp; log workout
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -8809,6 +10177,51 @@ export function NoteDatabaseEntrySheet({
     });
   }
 
+  function renderNutritionGroceryDeductionControl(item: NutritionSelectedFoodItem) {
+    const deduction = item.groceryDeduction;
+    if (!deduction) return null;
+
+    const remainingPreview = parseGroceryInventoryNumber(deduction.amount);
+    const nextRemaining =
+      remainingPreview === null
+        ? null
+        : Math.max(0, deduction.currentQuantity - remainingPreview);
+    const deductionGramHelper = getGroceryDeductionGramHelper(
+      getRecordMetadata(item.food.metadata),
+      remainingPreview,
+      deduction.inventoryUnit,
+    );
+
+    return (
+      <label className="mt-2 block min-w-0 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-1.5">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-[11px] font-semibold text-white/42">
+            Deduct from Grocery
+          </span>
+          <input
+            type="number"
+            min={0.01}
+            step="any"
+            value={deduction.amount}
+            onChange={(event) => updateNutritionGroceryDeduction(item.food, event.target.value)}
+            className="h-8 w-24 min-w-0 rounded-lg border border-white/[0.055] bg-black/28 px-2.5 text-xs font-semibold tabular-nums text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/34 focus-visible:border-white/[0.14] focus-visible:bg-black/38 focus-visible:ring-1 focus-visible:ring-white/12"
+          />
+          <span className="shrink-0 text-xs font-semibold text-white/58">
+            {deduction.inventoryUnit}
+          </span>
+          {nextRemaining !== null ? (
+            <span className="min-w-0 truncate text-[11px] font-medium text-white/34">
+              {formatFoodNutritionNumber(nextRemaining) ?? nextRemaining} left
+            </span>
+          ) : null}
+        </span>
+        <span className="mt-1 block text-[11px] font-medium text-white/38">
+          {deductionGramHelper}
+        </span>
+      </label>
+    );
+  }
+
   function renderGrocerySelectedFoodDetail(item: NutritionSelectedFoodItem) {
     const { food } = item;
     const groceryNameValue =
@@ -8819,6 +10232,9 @@ export function NoteDatabaseEntrySheet({
       typeof entryFormValues.brand_name === "string"
         ? entryFormValues.brand_name
         : food.brand_name ?? "";
+    const metadata = getRecordMetadata(food.metadata);
+    const packageLine = getGroceryScanPackageLine(metadata);
+    const detectedInventoryLine = getGroceryScanDetectedInventoryLine(metadata);
     const nutritionInputClassName =
       "mt-1.5 h-9 w-full rounded-lg border border-white/[0.055] bg-black/28 px-2.5 text-sm font-semibold tabular-nums text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/34 focus-visible:border-white/[0.14] focus-visible:bg-black/38 focus-visible:ring-1 focus-visible:ring-white/12";
     const textInputClassName =
@@ -8849,6 +10265,11 @@ export function NoteDatabaseEntrySheet({
                 {[food.brand_name, food.source === "open_food_facts" ? "Barcode scan" : null]
                   .filter(Boolean)
                   .join(" · ")}
+              </span>
+            ) : null}
+            {packageLine ? (
+              <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/48">
+                {packageLine}
               </span>
             ) : null}
           </span>
@@ -8945,16 +10366,38 @@ export function NoteDatabaseEntrySheet({
           <span className="text-xs font-semibold text-white/52">Serving</span>
           {renderNutritionFoodQuantityControl(item)}
         </div>
-        {renderGroceryInventoryControls()}
+        <p className="mt-1 text-[11px] font-medium text-white/38">
+          {getGroceryServingGramHelper(metadata)}
+        </p>
+        {renderGroceryInventoryControls(metadata, detectedInventoryLine)}
       </div>
     );
   }
 
-  function renderGroceryInventoryControls() {
-    if (!isGroceryDatabase || (!groceryExpirationField && !groceryLocationField)) {
+  function renderGroceryInventoryControls(
+    sourceMetadata: Record<string, unknown> = getRecordMetadata(entryFormValues.metadata),
+    detectedInventoryLine?: string,
+  ) {
+    if (!isGroceryDatabase) {
       return null;
     }
 
+    const quantityValue = entryFormValues[ON_HAND_QUANTITY_FIELD_ID];
+    const unitValue = entryFormValues[ON_HAND_UNIT_FIELD_ID];
+    const amountValue =
+      typeof quantityValue === "number"
+        ? formatFoodNutritionNumber(quantityValue) ?? String(quantityValue)
+        : typeof quantityValue === "string"
+          ? quantityValue
+          : "";
+    const inventoryUnit = normalizeGroceryInventoryUnit(unitValue);
+    const parsedAmount = parseGroceryInventoryNumber(amountValue);
+    const gramHelperLine = getGroceryInventoryGramHelper(
+      sourceMetadata,
+      parsedAmount,
+      inventoryUnit,
+      { includeQuantity: true },
+    );
     const expiresValue =
       typeof entryFormValues[ON_HAND_EXPIRES_ON_FIELD_ID] === "string"
         ? entryFormValues[ON_HAND_EXPIRES_ON_FIELD_ID]
@@ -8980,6 +10423,48 @@ export function NoteDatabaseEntrySheet({
 
     return (
       <div className="mt-3 border-t border-white/[0.055] pt-3">
+        <div className="mb-2 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-2">
+          <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
+            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/42">
+              Amount on hand
+            </span>
+            {detectedInventoryLine ? (
+              <span className="min-w-0 truncate text-[11px] font-semibold text-white/40">
+                {detectedInventoryLine}
+              </span>
+            ) : null}
+          </div>
+          <label className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-[11px] font-semibold text-white/46">
+              You have
+            </span>
+            <input
+              type="number"
+              min={0.01}
+              step="any"
+              value={amountValue}
+              onChange={(event) =>
+                updateEntryFormValue(ON_HAND_QUANTITY_FIELD_ID, event.target.value)
+              }
+              className={`${compactInputClassName} w-24 tabular-nums`}
+            />
+            <select
+              value={inventoryUnit}
+              onChange={(event) =>
+                updateEntryFormValue(ON_HAND_UNIT_FIELD_ID, event.target.value)
+              }
+              className={`${compactInputClassName} flex-1`}
+            >
+              {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-1.5 text-[11px] font-medium text-white/38">{gramHelperLine}</p>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           {groceryExpirationField ? (
             <button
@@ -9050,43 +10535,6 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function renderGroceryCustomServingSelector() {
-    const quantityValue = entryFormValues[ON_HAND_QUANTITY_FIELD_ID];
-    const unitValue = entryFormValues[ON_HAND_UNIT_FIELD_ID];
-    const amount =
-      typeof quantityValue === "number"
-        ? quantityValue
-        : typeof quantityValue === "string"
-          ? Number(quantityValue)
-          : 1;
-    const servingOptions: NutritionServingOption[] = [
-      { value: "serving", label: "serving" },
-      { value: "g", label: "g" },
-      { value: "oz", label: "oz" },
-      { value: "lb", label: "lb" },
-      { value: "cup", label: "cup" },
-      { value: "tbsp", label: "tbsp" },
-      { value: "tsp", label: "tsp" },
-      { value: "ml", label: "ml" },
-      { value: "fl oz", label: "fl oz" },
-    ];
-
-    return renderNutritionServingSelector({
-      id: "grocery-custom",
-      label: "Grocery quantity",
-      amount: Number.isFinite(amount) && amount > 0 ? amount : 1,
-      unit: normalizeNutritionServingUnit(unitValue),
-      options: servingOptions,
-      onChange: (nextAmount, nextUnit) => {
-        updateEntryFormValue(
-          ON_HAND_QUANTITY_FIELD_ID,
-          formatNutritionServingAmount(nextAmount),
-        );
-        updateEntryFormValue(ON_HAND_UNIT_FIELD_ID, nextUnit);
-      },
-    });
-  }
-
   function renderGroceryCustomFoodFields() {
     if (!groceryFoodField) return null;
 
@@ -9116,12 +10564,6 @@ export function NoteDatabaseEntrySheet({
             </div>
           ))}
         </div>
-        {groceryQuantityField || groceryUnitField ? (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.055] bg-black/30 px-3 py-2.5">
-            <span className="text-xs font-semibold text-white/52">Serving</span>
-            {renderGroceryCustomServingSelector()}
-          </div>
-        ) : null}
         {inventoryFields.length > 0 ? renderGroceryInventoryControls() : null}
       </div>
     );
@@ -9343,7 +10785,12 @@ export function NoteDatabaseEntrySheet({
       food.metadata && typeof food.metadata === "object" && !Array.isArray(food.metadata)
         ? (food.metadata as Record<string, unknown>)
         : {};
-    const quantity = getPositiveNutritionMetadataNumber(metadata, "foodResourceQuantity");
+    const quantity =
+      typeof metadata.foodResourceQuantity === "number" &&
+      Number.isFinite(metadata.foodResourceQuantity) &&
+      metadata.foodResourceQuantity >= 0
+        ? metadata.foodResourceQuantity
+        : null;
     const unit =
       typeof metadata.foodResourceUnit === "string" && metadata.foodResourceUnit.trim()
         ? metadata.foodResourceUnit.trim()
@@ -9354,13 +10801,25 @@ export function NoteDatabaseEntrySheet({
         ? metadata.foodResourceLocation.trim()
         : null;
     const quantityLabel =
-      quantity && unit
-        ? `${formatFoodNutritionNumber(quantity) ?? quantity} ${unit}`
-        : quantity
-          ? formatFoodNutritionNumber(quantity)
+      quantity !== null && unit
+        ? formatGroceryRemainingLabel(quantity, unit)
+        : quantity !== null
+          ? `${formatFoodNutritionNumber(quantity) ?? quantity} left`
           : unit;
+    const gramHelper =
+      quantity !== null && unit
+        ? getGroceryInventoryGramHelper(
+            metadata,
+            quantity,
+            normalizeGroceryInventoryUnit(unit),
+            {
+              packageUnknownText: "servings unknown",
+              unknownText: "grams unknown",
+            },
+          )
+        : null;
 
-    return [food.brand_name, quantityLabel, location].filter(Boolean).join(" · ");
+    return [food.brand_name, quantityLabel, gramHelper, location].filter(Boolean).join(" · ");
   }
 
   function renderNutritionGroceryContent() {
@@ -9443,12 +10902,35 @@ export function NoteDatabaseEntrySheet({
   }
 
   function getGroceryResourceQuantityLabel(resource: FoodResource) {
-    const quantity = getPositiveNutritionNumber(resource.quantity);
+    const quantity =
+      typeof resource.quantity === "number" &&
+      Number.isFinite(resource.quantity) &&
+      resource.quantity >= 0
+        ? resource.quantity
+        : null;
     const unit = resource.unit?.trim();
 
-    if (quantity && unit) return `${formatFoodNutritionNumber(quantity) ?? quantity} ${unit}`;
-    if (quantity) return formatFoodNutritionNumber(quantity) ?? String(quantity);
+    if (quantity !== null && unit) return formatGroceryRemainingLabel(quantity, unit);
+    if (quantity !== null) return `${formatFoodNutritionNumber(quantity) ?? quantity} left`;
     return unit ?? "";
+  }
+
+  function getGroceryResourceQuantityGramHelper(resource: FoodResource) {
+    const quantity =
+      typeof resource.quantity === "number" &&
+      Number.isFinite(resource.quantity) &&
+      resource.quantity >= 0
+        ? resource.quantity
+        : null;
+    const unit = normalizeGroceryInventoryUnit(resource.unit);
+    const metadata = getFoodResourceMetadata(resource);
+
+    if (quantity === null || !resource.unit?.trim()) return "grams unknown";
+
+    return getGroceryInventoryGramHelper(metadata, quantity, unit, {
+      packageUnknownText: "servings unknown",
+      unknownText: "grams unknown",
+    });
   }
 
   function getGroceryResourceMetadataNumber(resource: FoodResource, key: NutritionMacroSourceKey) {
@@ -9493,6 +10975,120 @@ export function NoteDatabaseEntrySheet({
     return [resource.brand_name, quantity, location, expires].filter(Boolean);
   }
 
+  function getGroceryResourceDraftQuantity(resource: FoodResource) {
+    return typeof resource.quantity === "number" && Number.isFinite(resource.quantity)
+      ? formatFoodNutritionNumber(resource.quantity) ?? String(resource.quantity)
+      : "";
+  }
+
+  function parseGroceryResourceDraftQuantity(value: string) {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) return null;
+
+    const parsed = Number(trimmedValue);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  function startEditingGroceryResource(resource: FoodResource) {
+    setOpenGroceryResourceMenuId(null);
+    setGroceryResourceActionError(null);
+    setEditingGroceryResourceId(resource.id);
+    setGroceryResourceEditDraft({
+      quantity: getGroceryResourceDraftQuantity(resource),
+      unit: normalizeGroceryInventoryUnit(resource.unit),
+    });
+  }
+
+  function cancelEditingGroceryResource() {
+    setEditingGroceryResourceId(null);
+    setGroceryResourceActionError(null);
+  }
+
+  async function saveGroceryResourceQuantity(resource: FoodResource) {
+    const quantity = parseGroceryResourceDraftQuantity(groceryResourceEditDraft.quantity);
+
+    if (quantity === null) {
+      setGroceryResourceActionError("Enter a quantity of 0 or more.");
+      void hapticErrorPattern();
+      return;
+    }
+
+    setSavingGroceryResourceActionId(resource.id);
+    setGroceryResourceActionError(null);
+
+    try {
+      const response = await fetch("/api/food-resources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: resource.id,
+          action: "setQuantity",
+          quantity,
+          unit: groceryResourceEditDraft.unit,
+        }),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok || !payload.foodResource) {
+        throw new Error(payload.error || "Unable to update Grocery quantity.");
+      }
+
+      setGroceryResourceItems((currentItems) =>
+        currentItems.map((currentItem) =>
+          currentItem.id === resource.id ? payload.foodResource! : currentItem,
+        ),
+      );
+      setEditingGroceryResourceId(null);
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to update Grocery List quantity", { error });
+      setGroceryResourceActionError("Unable to update that item right now.");
+      void hapticErrorPattern();
+    } finally {
+      setSavingGroceryResourceActionId(null);
+    }
+  }
+
+  async function expireGroceryResource(resource: FoodResource) {
+    setOpenGroceryResourceMenuId(null);
+    setEditingGroceryResourceId(null);
+    setSavingGroceryResourceActionId(resource.id);
+    setGroceryResourceActionError(null);
+
+    try {
+      const response = await fetch("/api/food-resources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: resource.id,
+          action: "setStatus",
+          status: "discarded",
+          metadata: {
+            ...getFoodResourceMetadata(resource),
+            expired_manually_at: new Date().toISOString(),
+            expired_from_grocery_menu: true,
+          },
+        }),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to expire Grocery item.");
+      }
+
+      setGroceryResourceItems((currentItems) =>
+        currentItems.filter((currentItem) => currentItem.id !== resource.id),
+      );
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to expire Grocery List item", { error });
+      setGroceryResourceActionError("Unable to expire that item right now.");
+      void hapticErrorPattern();
+    } finally {
+      setSavingGroceryResourceActionId(null);
+    }
+  }
+
   function renderGroceryResourcesContent() {
     return (
       <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
@@ -9506,39 +11102,175 @@ export function NoteDatabaseEntrySheet({
           </p>
         ) : groceryResourceItems.length > 0 ? (
           <div className="divide-y divide-white/[0.045]">
+            {groceryResourceActionError ? (
+              <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
+                {groceryResourceActionError}
+              </p>
+            ) : null}
             {groceryResourceItems.map((resource) => {
               const detailLine = getGroceryResourceDetailParts(resource).join(" · ");
+              const quantityGramHelper = getGroceryResourceQuantityGramHelper(resource);
               const nutritionMeta = getGroceryResourceNutritionMeta(resource);
+              const isMenuOpen = openGroceryResourceMenuId === resource.id;
+              const isEditing = editingGroceryResourceId === resource.id;
+              const isSaving = savingGroceryResourceActionId === resource.id;
+              const editQuantity = parseGroceryResourceDraftQuantity(
+                groceryResourceEditDraft.quantity,
+              );
+              const editGramHelper = getGroceryInventoryGramHelper(
+                getFoodResourceMetadata(resource),
+                editQuantity,
+                groceryResourceEditDraft.unit,
+                {
+                  packageUnknownText: "servings unknown",
+                  unknownText: "grams unknown",
+                },
+              );
 
               return (
                 <div
                   key={resource.id}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+                  className="relative"
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.045] text-white/60">
-                      <ShoppingBasket className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-white/84">
-                        {resource.name}
+                  <div className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.045] text-white/60">
+                        <ShoppingBasket className="h-4 w-4" aria-hidden="true" />
                       </span>
-                      {detailLine ? (
-                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                          {detailLine}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-white/84">
+                          {resource.name}
+                        </span>
+                        {detailLine ? (
+                          <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                            {detailLine}
+                          </span>
+                        ) : null}
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/34">
+                          {quantityGramHelper}
+                        </span>
+                        {nutritionMeta ? (
+                          <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/46">
+                            {nutritionMeta}
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {resource.location ? (
+                        <span className="hidden shrink-0 rounded-full border border-white/[0.055] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 sm:inline-flex">
+                          {resource.location}
                         </span>
                       ) : null}
-                      {nutritionMeta ? (
-                        <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/46">
-                          {nutritionMeta}
-                        </span>
-                      ) : null}
-                    </span>
+                      <button
+                        type="button"
+                        aria-label={`Actions for ${resource.name}`}
+                        aria-expanded={isMenuOpen}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setGroceryResourceActionError(null);
+                          setOpenGroceryResourceMenuId((currentId) =>
+                            currentId === resource.id ? null : resource.id,
+                          );
+                        }}
+                        disabled={isSaving}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.045] text-white/52 outline-none transition hover:border-white/14 hover:bg-white/[0.075] hover:text-white/76 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                  {resource.location ? (
-                    <span className="hidden shrink-0 rounded-full border border-white/[0.055] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 sm:inline-flex">
-                      {resource.location}
-                    </span>
+                  {isMenuOpen ? (
+                    <div className="mx-3 mb-3 grid grid-cols-2 gap-2 rounded-xl border border-white/[0.07] bg-zinc-950/72 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] backdrop-blur-xl">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          startEditingGroceryResource(resource);
+                        }}
+                        disabled={isSaving}
+                        className="flex h-9 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.045] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:bg-white/[0.075] hover:text-white focus-visible:bg-white/[0.08] focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void expireGroceryResource(resource);
+                        }}
+                        disabled={isSaving}
+                        className="flex h-9 items-center justify-center rounded-lg border border-red-300/[0.16] bg-red-500/[0.08] px-2.5 text-xs font-bold text-red-200 outline-none transition hover:bg-red-500/[0.14] hover:text-red-100 focus-visible:bg-red-500/[0.16] focus-visible:ring-1 focus-visible:ring-red-200/24 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Expire
+                      </button>
+                    </div>
+                  ) : null}
+                  {isEditing ? (
+                    <div className="mx-3 mb-3 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                      <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">
+                        <label className="min-w-0">
+                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-white/34">
+                            Amount
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={groceryResourceEditDraft.quantity}
+                            onChange={(event) =>
+                              setGroceryResourceEditDraft((currentDraft) => ({
+                                ...currentDraft,
+                                quantity: event.target.value,
+                              }))
+                            }
+                            className="h-9 w-full rounded-lg border border-white/[0.07] bg-black/32 px-2.5 text-sm font-semibold text-white/82 outline-none transition placeholder:text-white/24 focus:border-white/18 focus:bg-black/42 focus:ring-1 focus:ring-white/12"
+                          />
+                        </label>
+                        <label className="min-w-0">
+                          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-white/34">
+                            Unit
+                          </span>
+                          <select
+                            value={groceryResourceEditDraft.unit}
+                            onChange={(event) =>
+                              setGroceryResourceEditDraft((currentDraft) => ({
+                                ...currentDraft,
+                                unit: normalizeGroceryInventoryUnit(event.target.value),
+                              }))
+                            }
+                            className="h-9 w-full rounded-lg border border-white/[0.07] bg-black/32 px-2 text-sm font-semibold text-white/82 outline-none transition focus:border-white/18 focus:bg-black/42 focus:ring-1 focus:ring-white/12"
+                          >
+                            {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <p className="mt-1.5 text-[11px] font-medium text-white/38">
+                        {editGramHelper}
+                      </p>
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelEditingGroceryResource}
+                          disabled={isSaving}
+                          className="h-8 rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 text-xs font-semibold text-white/54 outline-none transition hover:bg-white/[0.065] hover:text-white/74 focus-visible:ring-1 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveGroceryResourceQuantity(resource)}
+                          disabled={isSaving}
+                          className="h-8 rounded-lg border border-zinc-50/28 bg-zinc-200/82 px-3 text-xs font-bold text-zinc-950 outline-none transition hover:bg-zinc-100 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               );
@@ -9592,6 +11324,10 @@ export function NoteDatabaseEntrySheet({
             const meta = isGroceryDatabase ? food.brand_name : getNutritionSelectedFoodLineMeta(item);
             const quantityBadgeLabel = getNutritionSelectedFoodQuantityBadgeLabel(item);
             const isScannedSelection = selectedNutritionFoodAction === "scan";
+            const groceryServingGramHelper =
+              selectedNutritionFoodAction === "grocery"
+                ? getGroceryServingGramHelper(getRecordMetadata(food.metadata))
+                : null;
             const favoriteTarget: NutritionFavoriteTarget | null =
               food.source?.startsWith("grocery")
                 ? null
@@ -9639,38 +11375,49 @@ export function NoteDatabaseEntrySheet({
             return (
               <div
                 key={food.id}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2"
+                className="w-full rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2"
               >
-                {isGroceryDatabase ? null : renderNutritionFavoriteButton(favoriteTarget)}
-                <NutritionFoodIcon food={food} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="block truncate text-sm font-semibold text-white/84">
-                      {food.name}
+                <div className="flex w-full items-center gap-2">
+                  {isGroceryDatabase ? null : renderNutritionFavoriteButton(favoriteTarget)}
+                  <NutritionFoodIcon food={food} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="block truncate text-sm font-semibold text-white/84">
+                        {food.name}
+                      </span>
+                      {quantityBadgeLabel ? (
+                        <span className="shrink-0 rounded-full border border-white/[0.07] bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
+                          {quantityBadgeLabel}
+                        </span>
+                      ) : null}
                     </span>
-                    {quantityBadgeLabel ? (
-                      <span className="shrink-0 rounded-full border border-white/[0.07] bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
-                        {quantityBadgeLabel}
+                    {meta ? (
+                      <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                        {meta}
+                      </span>
+                    ) : null}
+                    {groceryServingGramHelper ? (
+                      <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                        {groceryServingGramHelper}
                       </span>
                     ) : null}
                   </span>
-                  {meta ? (
-                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
-                      {meta}
-                    </span>
-                  ) : null}
-                </span>
-                <div className="hidden sm:block">
-                  {renderNutritionFoodQuantityControl(item)}
+                  <div className="hidden sm:block">
+                    {renderNutritionFoodQuantityControl(item)}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${food.name}`}
+                    onClick={() => removeNutritionSelectedFood(food)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  aria-label={`Remove ${food.name}`}
-                  onClick={() => removeNutritionSelectedFood(food)}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
-                >
-                  <X className="h-3 w-3" aria-hidden="true" />
-                </button>
+                <div className="mt-2 sm:hidden">{renderNutritionFoodQuantityControl(item)}</div>
+                {selectedNutritionFoodAction === "grocery"
+                  ? renderNutritionGroceryDeductionControl(item)
+                  : null}
               </div>
             );
           })}
@@ -10857,14 +12604,15 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  async function saveDatabaseEntry() {
+  async function saveDatabaseEntry(formValuesOverride?: Record<string, unknown>) {
     if (isSubmitting) return;
 
+    const formValues = formValuesOverride ?? entryFormValues;
     const now = new Date().toISOString();
     const entryId = initialEntry?.id ?? buildClientDatabaseEntryId();
     const values = databaseFields.reduce<Record<string, unknown>>(
       (nextValues, field) => {
-        const rawFieldValue = entryFormValues[field.id];
+        const rawFieldValue = formValues[field.id];
         const rawValue =
           typeof rawFieldValue === "string"
             ? rawFieldValue
@@ -10883,8 +12631,8 @@ export function NoteDatabaseEntrySheet({
     );
 
     if (isGroceryDatabase) {
-      const foodId = entryFormValues.food_id;
-      const brandName = entryFormValues.brand_name;
+      const foodId = formValues.food_id;
+      const brandName = formValues.brand_name;
 
       delete values[ON_HAND_NOTES_FIELD_ID];
 
@@ -10898,7 +12646,7 @@ export function NoteDatabaseEntrySheet({
         selectedNutritionFoodAction === "custom" &&
         !isUsefulDatabaseEntryValue(values[ON_HAND_UNIT_FIELD_ID])
       ) {
-        values[ON_HAND_UNIT_FIELD_ID] = "serving";
+        values[ON_HAND_UNIT_FIELD_ID] = "package";
       }
       if (typeof foodId === "string" && foodId.trim()) {
         values.food_id = foodId;
@@ -10907,18 +12655,18 @@ export function NoteDatabaseEntrySheet({
         values.brand_name = brandName;
       }
       if (selectedNutritionFoodAction === "custom") {
-        values.metadata = getGroceryCustomMetadata(entryFormValues);
+        values.metadata = getGroceryCustomMetadata(formValues);
       } else {
         values[GROCERY_CUSTOM_CALORIES_FIELD_ID] =
-          entryFormValues[GROCERY_CUSTOM_CALORIES_FIELD_ID] ?? "";
+          formValues[GROCERY_CUSTOM_CALORIES_FIELD_ID] ?? "";
         values[GROCERY_CUSTOM_CARBS_FIELD_ID] =
-          entryFormValues[GROCERY_CUSTOM_CARBS_FIELD_ID] ?? "";
+          formValues[GROCERY_CUSTOM_CARBS_FIELD_ID] ?? "";
         values[GROCERY_CUSTOM_PROTEIN_FIELD_ID] =
-          entryFormValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID] ?? "";
+          formValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID] ?? "";
         values[GROCERY_CUSTOM_FAT_FIELD_ID] =
-          entryFormValues[GROCERY_CUSTOM_FAT_FIELD_ID] ?? "";
+          formValues[GROCERY_CUSTOM_FAT_FIELD_ID] ?? "";
         values.metadata = getCorrectedGroceryNutritionMetadata({
-          ...entryFormValues,
+          ...formValues,
           ...values,
         });
       }
@@ -10951,6 +12699,9 @@ export function NoteDatabaseEntrySheet({
       if (nutritionMealDraft) {
         try {
           const nutritionMealId = await createNutritionMeal(nutritionMealDraft);
+          if (selectedNutritionFoodAction === "grocery") {
+            await depleteGroceryFromNutritionItems(selectedNutritionFoods);
+          }
           await refreshNutritionDailyTotals();
           entryToSave = {
             ...nextEntry,
@@ -11102,7 +12853,9 @@ export function NoteDatabaseEntrySheet({
             <button
               type="button"
               disabled={databaseFields.length === 0 || isSubmitting}
-              onClick={saveDatabaseEntry}
+              onClick={() => {
+                void saveDatabaseEntry();
+              }}
               className={
                 isDefaultNutritionDatabase
                   ? "flex h-11 w-full items-center justify-center rounded-2xl border border-zinc-50/35 bg-zinc-200/72 px-5 text-sm font-semibold text-zinc-950 shadow-[0_12px_28px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.46),inset_0_-1px_0_rgba(113,113,122,0.16)] outline-none backdrop-blur-xl transition hover:border-white/45 hover:bg-zinc-200/84 active:bg-zinc-300/78 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
