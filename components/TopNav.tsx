@@ -35,6 +35,15 @@ import {
   OPEN_NUTRITION_LOG_NOTIFICATION_QUERY_PARAM,
   OPEN_NUTRITION_LOG_NOTIFICATION_STORAGE_KEY,
 } from "@/lib/notifications/notificationOpenIntents";
+import {
+  isOnHandDatabaseDefinition,
+  ON_HAND_EXPIRES_ON_FIELD_ID,
+  ON_HAND_LOCATION_FIELD_ID,
+  ON_HAND_NAME_FIELD_ID,
+  ON_HAND_NOTES_FIELD_ID,
+  ON_HAND_QUANTITY_FIELD_ID,
+  ON_HAND_UNIT_FIELD_ID,
+} from "@/lib/skillStarterNotes";
 
 type PinnedBodyDatabase = {
   databaseId: string;
@@ -70,7 +79,7 @@ type NoteDatabaseMetadataDefinition = {
   systemDatabaseKey?: unknown;
 };
 
-type BodyDatabaseIconKey = "stomach" | "droplet" | "dumbbell" | "table" | string;
+type BodyDatabaseIconKey = "stomach" | "droplet" | "dumbbell" | "grocery" | "table" | string;
 
 const BODY_FALLBACK_ROWS = [
   {
@@ -91,6 +100,7 @@ const BODY_DATABASE_SORT_ORDER = new Map([
   ["nutrition", 0],
   ["hydration", 1],
   ["fitness", 2],
+  ["on-hand", 3],
 ]);
 const CREATOR_OPEN_NUTRITION_LOG_EVENT = "creator:open-nutrition-log";
 const CREATOR_SCHEDULE_NUTRITION_LOG_OVERLAY_EVENT =
@@ -99,6 +109,26 @@ const SCHEDULE_QUICK_ADD_OVERLAY_CLASS_NAME = "!z-[2147483647]";
 
 function normalizeBodyDatabaseKey(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
+}
+
+function isOnHandPinnedBodyDatabase(database: {
+  title: string;
+  systemDatabaseKey?: string | null;
+}) {
+  const normalizedTitle = normalizeBodyDatabaseKey(database.title);
+
+  return (
+    normalizeBodyDatabaseKey(database.systemDatabaseKey) === "on-hand" ||
+    normalizedTitle === "on hand" ||
+    normalizedTitle === "grocery list"
+  );
+}
+
+function getBodyDatabaseDisplayLabel(database: {
+  title: string;
+  systemDatabaseKey?: string | null;
+}) {
+  return isOnHandPinnedBodyDatabase(database) ? "Grocery" : database.title;
 }
 
 function getBodyDatabasePriority(database: {
@@ -170,6 +200,13 @@ function isDefaultPinnedBodyDatabase(database: {
   );
 }
 
+function canQuickAddPinnedBodyDatabase(database: {
+  title: string;
+  systemDatabaseKey?: string | null;
+}) {
+  return isDefaultPinnedBodyDatabase(database) || isOnHandPinnedBodyDatabase(database);
+}
+
 function getBodyDatabaseIconKey({
   iconKey,
   systemDatabaseKey,
@@ -183,6 +220,10 @@ function getBodyDatabaseIconKey({
   if (normalizedSystemKey === "nutrition") return "stomach";
   if (normalizedSystemKey === "hydration") return "droplet";
   if (normalizedSystemKey === "fitness") return "dumbbell";
+  if (normalizedSystemKey === "on-hand") return "grocery";
+
+  const normalizedTitle = normalizeBodyDatabaseKey(title);
+  if (normalizedTitle === "on hand" || normalizedTitle === "grocery list") return "grocery";
 
   if (typeof iconKey === "string" && iconKey.trim()) {
     const normalizedIconKey = iconKey.trim();
@@ -199,7 +240,6 @@ function getBodyDatabaseIconKey({
     }
   }
 
-  const normalizedTitle = normalizeBodyDatabaseKey(title);
   if (normalizedTitle === "nutrition") return "stomach";
   if (normalizedTitle === "hydration") return "droplet";
   if (normalizedTitle === "fitness") return "dumbbell";
@@ -223,6 +263,14 @@ function BodyPanelRowIcon({ iconKey }: { iconKey: BodyDatabaseIconKey }) {
       iconKey === "droplet" ? Droplet : iconKey === "dumbbell" ? Dumbbell : Table2;
 
     return <LucideIcon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />;
+  }
+
+  if (iconKey === "grocery") {
+    return (
+      <span className="w-4 shrink-0 text-center text-sm leading-none" aria-hidden="true">
+        🥬
+      </span>
+    );
   }
 
   const resolvedIcon = resolveNoteIcon(iconKey);
@@ -375,6 +423,32 @@ function getMetadataDatabaseEntries(
     : {};
 }
 
+type FoodResourcesResponse = {
+  foodResource?: unknown;
+  error?: string;
+};
+
+function mapOnHandEntryToFoodResourcePayload(entry: NoteDatabaseEntry) {
+  return {
+    id: entry.id,
+    food_id: typeof entry.values.food_id === "string" ? entry.values.food_id : null,
+    brand_name:
+      typeof entry.values.brand_name === "string" ? entry.values.brand_name : null,
+    name: entry.values[ON_HAND_NAME_FIELD_ID],
+    quantity: entry.values[ON_HAND_QUANTITY_FIELD_ID],
+    unit: entry.values[ON_HAND_UNIT_FIELD_ID],
+    location: entry.values[ON_HAND_LOCATION_FIELD_ID],
+    expires_on: entry.values[ON_HAND_EXPIRES_ON_FIELD_ID],
+    notes: entry.values[ON_HAND_NOTES_FIELD_ID],
+    metadata:
+      entry.values.metadata &&
+      typeof entry.values.metadata === "object" &&
+      !Array.isArray(entry.values.metadata)
+        ? entry.values.metadata
+        : undefined,
+  };
+}
+
 type QuickAddNote = {
   id: string;
   title: string | null;
@@ -510,6 +584,22 @@ function TopNavQuickAddEntrySheet({
   async function saveQuickAddEntry(entry: NoteDatabaseEntry) {
     if (!note || !databaseDefinition) {
       throw new Error("Missing quick-add database.");
+    }
+
+    if (isOnHandDatabaseDefinition(databaseDefinition)) {
+      const response = await fetch("/api/food-resources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mapOnHandEntryToFoodResourcePayload(entry)),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok || !payload.foodResource) {
+        throw new Error(payload.error || "Unable to save Grocery List item.");
+      }
+
+      window.dispatchEvent(new Event("creator:pinned-body-databases-changed"));
+      return;
     }
 
     const currentEntries = getMetadataDatabaseEntries(noteMetadata);
@@ -846,14 +936,14 @@ export default function TopNav() {
     pinnedBodyDatabases.length > 0
       ? pinnedBodyDatabases.map((database) => ({
           key: `${database.noteId}:${database.databaseId}`,
-          label: database.title,
+          label: getBodyDatabaseDisplayLabel(database),
           iconKey: database.iconKey,
           onClick: () => {
             void hapticPress();
             setIsBodyMenuOpen(false);
             router.push(database.href);
           },
-          onAddEntryClick: isDefaultPinnedBodyDatabase(database)
+          onAddEntryClick: canQuickAddPinnedBodyDatabase(database)
             ? () => openPinnedBodyDatabaseQuickAdd(database)
             : undefined,
         }))

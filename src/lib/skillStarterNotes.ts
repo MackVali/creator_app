@@ -242,9 +242,9 @@ const FITNESS_DATABASE = database(
 const ON_HAND_DATABASE = {
   ...database(
     ON_HAND_DATABASE_ID,
-    "On Hand",
+    "Grocery List",
     "on-hand",
-    "chef-hat",
+    "🥬",
     [
       field(ON_HAND_DATABASE_ID, "name", "Name", "text", true),
       field(ON_HAND_DATABASE_ID, "quantity", "Quantity", "number"),
@@ -342,12 +342,28 @@ export function isDefaultNutritionDatabaseDefinition(
   );
 }
 
-export function isOnHandDatabaseDefinition(
+export function isDefaultFitnessDatabaseDefinition(
   definition: Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey"> | null | undefined,
 ) {
   return (
+    definition?.systemDatabaseKey === "fitness" ||
+    definition?.id === FITNESS_DATABASE_ID
+  );
+}
+
+export function isOnHandDatabaseDefinition(
+  definition:
+    | Pick<NoteDatabaseDefinition, "id" | "systemDatabaseKey"> & { title?: string | null }
+    | null
+    | undefined,
+) {
+  const normalizedTitle = definition?.title?.trim().toLowerCase();
+
+  return (
     definition?.systemDatabaseKey === "on-hand" ||
-    definition?.id === ON_HAND_DATABASE_ID
+    definition?.id === ON_HAND_DATABASE_ID ||
+    normalizedTitle === "on hand" ||
+    normalizedTitle === "grocery list"
   );
 }
 
@@ -539,6 +555,12 @@ export function getSkillStarterNoteMetadataRepair(
       nextDatabase.activeViewId = starterDatabase.activeViewId;
 
       if (!hasSameDefaultNutritionSchema(currentDatabase, starterDatabase)) {
+        changed = true;
+      }
+    } else if (starterDatabase.systemDatabaseKey === "on-hand") {
+      nextDatabase.title = starterDatabase.title;
+
+      if (currentDatabase.title !== starterDatabase.title) {
         changed = true;
       }
     }

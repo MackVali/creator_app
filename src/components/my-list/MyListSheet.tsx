@@ -11,9 +11,27 @@ import {
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   AnimatePresence,
   motion,
@@ -27,6 +45,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  GripVertical,
   Grid2x2,
   List,
   Moon,
@@ -650,10 +669,272 @@ type MyListManualUpgradePress = {
   timer: ReturnType<typeof setTimeout>;
   triggered: boolean;
 };
+type MyListSortableManualTodoHandleProps = {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
+  isDragging: boolean;
+};
+type MyListSortableManualTodoRowProps = {
+  rowId: string;
+  disabled: boolean;
+  reorderGroup: MyListManualReorderGroup | null;
+  children: (props: MyListSortableManualTodoHandleProps) => ReactNode;
+};
+type MyListManualReorderGroup =
+  | { kind: "day"; id: MyListDayViewBucketId }
+  | { kind: "priority"; id: PriorityBucketId };
+type MyListManualReorderOverData =
+  | { type: "manual-row"; group: MyListManualReorderGroup | null }
+  | { type: "manual-group"; group: MyListManualReorderGroup };
+type MyListManualReorderDestination = {
+  targetRowId: string | null;
+  group: MyListManualReorderGroup | null;
+};
 export type MyListTaskXpContext = {
   skillId: string | null;
   monumentId: string | null;
 };
+
+function buildManualReorderGroupDropId(group: MyListManualReorderGroup) {
+  return `manualGroup:${group.kind}:${group.id}`;
+}
+
+function readManualReorderOverData(
+  value: unknown
+): MyListManualReorderOverData | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const type = record.type;
+  const groupValue = record.group;
+  const group =
+    groupValue && typeof groupValue === "object"
+      ? (groupValue as Record<string, unknown>)
+      : null;
+  const groupKind = group?.kind;
+  const groupId = group?.id;
+
+  if (
+    groupKind === "day" &&
+    typeof groupId === "string" &&
+    MY_LIST_DAY_VIEW_BUCKETS.includes(groupId as MyListDayViewBucketId)
+  ) {
+    const parsedGroup = {
+      kind: groupKind,
+      id: groupId as MyListDayViewBucketId,
+    } satisfies MyListManualReorderGroup;
+
+    return type === "manual-group" || type === "manual-row"
+      ? {
+          type,
+          group: parsedGroup,
+        }
+      : null;
+  }
+
+  if (
+    groupKind === "priority" &&
+    typeof groupId === "string" &&
+    PRIORITY_ORDER.includes(groupId as PriorityBucketId)
+  ) {
+    const parsedGroup = {
+      kind: groupKind,
+      id: groupId as PriorityBucketId,
+    } satisfies MyListManualReorderGroup;
+
+    return type === "manual-group" || type === "manual-row"
+      ? {
+          type,
+          group: parsedGroup,
+        }
+      : null;
+  }
+
+  if (type === "manual-row") {
+    return { type, group: null };
+  }
+
+  return null;
+}
+
+function resolveManualReorderGroupForRow(
+  row: MyListManualRow,
+  groupKind: MyListManualReorderGroup["kind"]
+): MyListManualReorderGroup {
+  if (groupKind === "day") {
+    return { kind: "day", id: row.dayBucketId ?? "anytime" };
+  }
+
+  return { kind: "priority", id: row.priorityId };
+}
+
+function isManualRowInReorderGroup(
+  row: MyListManualRow,
+  group: MyListManualReorderGroup
+) {
+  const rowGroup = resolveManualReorderGroupForRow(row, group.kind);
+  return rowGroup.id === group.id;
+}
+
+function applyManualReorderGroup(
+  row: MyListManualRow,
+  group: MyListManualReorderGroup | null
+): MyListManualRow {
+  if (!group) return row;
+
+  if (group.kind === "day") {
+    const dayBucketId = group.id === "anytime" ? null : group.id;
+    return row.dayBucketId === dayBucketId ? row : { ...row, dayBucketId };
+  }
+
+  return row.priorityId === group.id ? row : { ...row, priorityId: group.id };
+}
+
+function areManualRowsEquivalent(
+  leftRows: MyListManualRow[],
+  rightRows: MyListManualRow[]
+) {
+  if (leftRows === rightRows) return true;
+  if (leftRows.length !== rightRows.length) return false;
+
+  return leftRows.every((leftRow, index) => {
+    const rightRow = rightRows[index];
+    return (
+      rightRow &&
+      leftRow.id === rightRow.id &&
+      leftRow.done === rightRow.done &&
+      leftRow.completedAt === rightRow.completedAt &&
+      leftRow.skillId === rightRow.skillId &&
+      leftRow.skillName === rightRow.skillName &&
+      leftRow.skillIcon === rightRow.skillIcon &&
+      leftRow.priorityId === rightRow.priorityId &&
+      leftRow.dayBucketId === rightRow.dayBucketId &&
+      leftRow.text === rightRow.text &&
+      leftRow.insertAfterRowKey === rightRow.insertAfterRowKey
+    );
+  });
+}
+
+function reorderManualRowsForDestination(
+  currentRows: MyListManualRow[],
+  draggedRowId: string,
+  destination: MyListManualReorderDestination
+) {
+  if (draggedRowId === EMPTY_DRAFT_MANUAL_ROW_ID) return currentRows;
+
+  const draggedIndex = currentRows.findIndex((row) => row.id === draggedRowId);
+  if (draggedIndex < 0) return currentRows;
+  if (destination.targetRowId === EMPTY_DRAFT_MANUAL_ROW_ID) return currentRows;
+
+  const draggedRow = applyManualReorderGroup(
+    currentRows[draggedIndex],
+    destination.group
+  );
+  const rowsWithoutDragged = currentRows.filter((row) => row.id !== draggedRowId);
+  let insertIndex = rowsWithoutDragged.length;
+
+  if (destination.targetRowId) {
+    const targetIndex = rowsWithoutDragged.findIndex(
+      (row) => row.id === destination.targetRowId
+    );
+    if (targetIndex < 0) return currentRows;
+    insertIndex = targetIndex;
+  } else if (destination.group) {
+    let lastGroupIndex = -1;
+    for (let index = rowsWithoutDragged.length - 1; index >= 0; index -= 1) {
+      if (isManualRowInReorderGroup(rowsWithoutDragged[index], destination.group)) {
+        lastGroupIndex = index;
+        break;
+      }
+    }
+    insertIndex = lastGroupIndex >= 0 ? lastGroupIndex + 1 : rowsWithoutDragged.length;
+  }
+
+  const nextRows = [...rowsWithoutDragged];
+  nextRows.splice(insertIndex, 0, draggedRow);
+  const normalizedRows = nextRows.map((row) =>
+    row.insertAfterRowKey ? { ...row, insertAfterRowKey: null } : row
+  );
+
+  return areManualRowsEquivalent(currentRows, normalizedRows)
+    ? currentRows
+    : normalizedRows;
+}
+
+function MyListManualTodoGroupDropZone({
+  group,
+  children,
+  className,
+  dayDropBucketId,
+}: {
+  group: MyListManualReorderGroup | null;
+  children: ReactNode;
+  className?: string;
+  dayDropBucketId?: MyListDayViewBucketId;
+}) {
+  const { setNodeRef } = useDroppable({
+    id: group ? buildManualReorderGroupDropId(group) : "manualGroup:none",
+    data: group
+      ? ({
+          type: "manual-group",
+          group,
+        } satisfies MyListManualReorderOverData)
+      : undefined,
+    disabled: !group,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-my-list-day-drop-zone={dayDropBucketId}
+      className={className}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MyListSortableManualTodoRow({
+  rowId,
+  disabled,
+  reorderGroup,
+  children,
+}: MyListSortableManualTodoRowProps) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: rowId,
+    disabled,
+    data: {
+      type: "manual-row",
+      group: reorderGroup,
+    } satisfies MyListManualReorderOverData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 30 : undefined,
+      }}
+      className={clsx(
+        "relative touch-manipulation",
+        isDragging && "z-30"
+      )}
+    >
+      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
+    </div>
+  );
+}
 
 export function MyListSheet({
   open,
@@ -728,6 +1009,9 @@ export function MyListSheet({
     () => new Set()
   );
   const [isScheduleDragActive, setIsScheduleDragActive] = useState(false);
+  const [activeManualReorderRowId, setActiveManualReorderRowId] = useState<
+    string | null
+  >(null);
   const [dayDragDropBucketId, setDayDragDropBucketId] =
     useState<MyListDayViewBucketId | null>(null);
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
@@ -752,6 +1036,7 @@ export function MyListSheet({
   const sheetTouchStartYRef = useRef<number | null>(null);
   const scheduleDragPressRef = useRef<MyListScheduleDragPress | null>(null);
   const manualUpgradePressRef = useRef<MyListManualUpgradePress | null>(null);
+  const manualReorderOriginRowsRef = useRef<MyListManualRow[] | null>(null);
   const editableFocusInsideSheetRef = useRef(false);
   const recalculateSheetHeightsRef = useRef<(() => void) | null>(null);
   const keyboardRecalculationTimeoutsRef = useRef<
@@ -766,6 +1051,13 @@ export function MyListSheet({
     null
   );
   const defaultPriority = resolveQuickCreateMediumPriorityMetadata();
+  const manualReorderSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 4,
+      },
+    })
+  );
   const applyMyListViewModePreference = useCallback(
     (preference: MyListViewModePreference) => {
       if (preference === "matrix") {
@@ -895,6 +1187,19 @@ export function MyListSheet({
     visiblePinnedSourceRows,
     visibleTasks,
   ]);
+  const manualReorderItemIds = useMemo(
+    () =>
+      visibleTodoRows
+        .filter(
+          (
+            visibleRow
+          ): visibleRow is Extract<MyListVisibleTodoRow, { rowType: "manual" }> =>
+            visibleRow.rowType === "manual" &&
+            visibleRow.row.id !== EMPTY_DRAFT_MANUAL_ROW_ID
+        )
+        .map((visibleRow) => visibleRow.row.id),
+    [visibleTodoRows]
+  );
 
   useEffect(() => {
     setPinnedSourceCompletions((currentCompletions) => {
@@ -1021,23 +1326,29 @@ export function MyListSheet({
     () => new Map(skills.map((skill) => [skill.id, skill])),
     [skills]
   );
+  const persistManualRows = useCallback(
+    (rows: MyListManualRow[]) => {
+      writeStoredMyListManualRows(rows, defaultPriority.id);
+      if (userId) {
+        void replaceManualMyListItems({
+          userId,
+          rows,
+        }).catch((error) => {
+          console.error("Failed to persist My List manual rows", error);
+        });
+      }
+    },
+    [defaultPriority.id, userId]
+  );
   const updateManualRowsWithPersistence = useCallback(
     (updater: (currentRows: MyListManualRow[]) => MyListManualRow[]) => {
       setManualRows((currentRows) => {
         const nextRows = updater(currentRows);
-        writeStoredMyListManualRows(nextRows, defaultPriority.id);
-        if (userId) {
-          void replaceManualMyListItems({
-            userId,
-            rows: nextRows,
-          }).catch((error) => {
-            console.error("Failed to persist My List manual rows", error);
-          });
-        }
+        persistManualRows(nextRows);
         return nextRows;
       });
     },
-    [defaultPriority.id, userId]
+    [persistManualRows]
   );
 
   useEffect(() => {
@@ -1981,6 +2292,105 @@ export function MyListSheet({
       createManualRow(createManualRowId(), defaultPriority.id),
     ]);
   }, [createManualRowId, defaultPriority.id, updateManualRowsWithPersistence]);
+
+  const resolveManualReorderDestination = useCallback(
+    (
+      event: DragOverEvent | DragEndEvent
+    ): MyListManualReorderDestination | null => {
+      const over = event.over;
+      if (!over) return null;
+
+      const overData = readManualReorderOverData(over.data.current);
+      if (!overData) return null;
+
+      return {
+        targetRowId: overData.type === "manual-row" ? String(over.id) : null,
+        group: overData.group,
+      };
+    },
+    []
+  );
+
+  const previewManualRowForReorder = useCallback(
+    (
+      draggedRowId: string,
+      destination: MyListManualReorderDestination
+    ) => {
+      if (
+        draggedRowId === destination.targetRowId ||
+        draggedRowId === EMPTY_DRAFT_MANUAL_ROW_ID
+      ) {
+        return;
+      }
+
+      setManualRows((currentRows) =>
+        reorderManualRowsForDestination(currentRows, draggedRowId, destination)
+      );
+    },
+    []
+  );
+
+  const persistManualRowForReorder = useCallback(
+    (
+      draggedRowId: string,
+      destination: MyListManualReorderDestination | null
+    ) => {
+      setManualRows((currentRows) => {
+        const nextRows = destination
+          ? reorderManualRowsForDestination(currentRows, draggedRowId, destination)
+          : currentRows;
+        persistManualRows(nextRows);
+        return nextRows;
+      });
+    },
+    [persistManualRows]
+  );
+
+  const handleManualReorderDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const rowId = String(event.active.id);
+      if (!open || activeView !== "list" || rowId === EMPTY_DRAFT_MANUAL_ROW_ID) {
+        return;
+      }
+
+      clearManualUpgradePress();
+      setPendingDeleteRowId(null);
+      setActiveSkillPickerRowKey(null);
+      setActivePriorityPickerRowKey(null);
+      setActiveDayPickerRowKey(null);
+      setManualSkillSearch("");
+      manualReorderOriginRowsRef.current = manualRows;
+      setActiveManualReorderRowId(rowId);
+    },
+    [activeView, clearManualUpgradePress, manualRows, open]
+  );
+
+  const handleManualReorderDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const destination = resolveManualReorderDestination(event);
+      if (!destination) return;
+
+      previewManualRowForReorder(String(event.active.id), destination);
+    },
+    [previewManualRowForReorder, resolveManualReorderDestination]
+  );
+
+  const handleManualReorderDragEnd = useCallback((event: DragEndEvent) => {
+    const destination = resolveManualReorderDestination(event);
+    persistManualRowForReorder(String(event.active.id), destination);
+
+    manualReorderOriginRowsRef.current = null;
+    setActiveManualReorderRowId(null);
+  }, [persistManualRowForReorder, resolveManualReorderDestination]);
+
+  const handleManualReorderDragCancel = useCallback(() => {
+    const originRows = manualReorderOriginRowsRef.current;
+    if (originRows) {
+      setManualRows(originRows);
+    }
+    manualReorderOriginRowsRef.current = null;
+    setActiveManualReorderRowId(null);
+  }, []);
 
   const updateManualRow = useCallback(
     (rowId: string, updates: Partial<Omit<MyListManualRow, "id">>) => {
@@ -3382,7 +3792,19 @@ export function MyListSheet({
         >
           {activeView === "list" ? (
             <>
-          <div className="space-y-1.5">
+          <DndContext
+            sensors={manualReorderSensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleManualReorderDragStart}
+            onDragOver={handleManualReorderDragOver}
+            onDragEnd={handleManualReorderDragEnd}
+            onDragCancel={handleManualReorderDragCancel}
+          >
+            <SortableContext
+              items={manualReorderItemIds}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-1.5">
             {hasListRows ? (
               <>
                 {todoListSections.map((section) => {
@@ -3400,10 +3822,21 @@ export function MyListSheet({
                   const isActiveDayDropTarget =
                     dayDropBucketId !== null &&
                     dayDragDropBucketId === dayDropBucketId;
+                  const manualReorderGroup: MyListManualReorderGroup | null =
+                    !isCompletedSection && isDayLensActive && dayDropBucketId
+                      ? { kind: "day", id: dayDropBucketId }
+                      : !isCompletedSection &&
+                          PRIORITY_ORDER.includes(group.id as PriorityBucketId)
+                        ? {
+                            kind: "priority",
+                            id: group.id as PriorityBucketId,
+                          }
+                        : null;
 
                   const groupRows = (
-                    <div
-                      data-my-list-day-drop-zone={dayDropBucketId ?? undefined}
+                    <MyListManualTodoGroupDropZone
+                      group={manualReorderGroup}
+                      dayDropBucketId={dayDropBucketId ?? undefined}
                       className={clsx(
                         "space-y-0.5 rounded-lg border px-1 pb-0.5 transition-colors",
                         dayDropBucketId && "min-h-8",
@@ -3814,8 +4247,23 @@ export function MyListSheet({
 
                   const row = visibleRow.row;
                   return (
-                    <div
+                    <MyListSortableManualTodoRow
                       key={`manual:${row.id}`}
+                      rowId={row.id}
+                      reorderGroup={manualReorderGroup}
+                      disabled={
+                        !open ||
+                        activeView !== "list" ||
+                        row.id === EMPTY_DRAFT_MANUAL_ROW_ID
+                      }
+                    >
+                      {({
+                        attributes,
+                        listeners,
+                        setActivatorNodeRef,
+                        isDragging,
+                      }) => (
+                    <div
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-manual-upgrade-row="true"
@@ -3831,23 +4279,57 @@ export function MyListSheet({
                       onTouchMove={handleManualUpgradeTouchMove}
                       onTouchEnd={handleManualUpgradeTouchEnd}
                       onTouchCancel={handleManualUpgradeTouchEnd}
-                      onSelectStart={(event) => {
+                      onSelectCapture={(event) => {
                         if (manualUpgradePressRef.current) {
                           event.preventDefault();
                         }
                       }}
-                      onDragStart={(event) => event.preventDefault()}
                       onContextMenu={(event) => {
                         if (!shouldIgnoreManualUpgradeTarget(event.target)) {
                           event.preventDefault();
                         }
                       }}
                       className={clsx(
-                        "flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
-                        open && activeView === "list" && "cursor-pointer"
+                        "relative flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-[background-color,box-shadow,opacity,transform] hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
+                        open && activeView === "list" && "cursor-pointer",
+                        (isDragging || activeManualReorderRowId === row.id) &&
+                          "z-30 scale-[1.012] cursor-grabbing bg-white/[0.075] opacity-95 shadow-[0_12px_34px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.13]"
                       )}
                       style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     >
+                      <span
+                        aria-label="Reorder to-do"
+                        title="Reorder to-do"
+                        ref={setActivatorNodeRef}
+                        data-my-list-no-upgrade
+                        {...attributes}
+                        {...listeners}
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          listeners?.onPointerDown?.(event);
+                        }}
+                        onTouchStart={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onMouseDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        className="absolute left-0 top-1/2 z-10 flex h-5 w-2.5 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
+                      >
+                        <GripVertical
+                          className="h-3.5 w-3.5"
+                          strokeWidth={2.3}
+                        />
+                      </span>
                     <input
                       id={`my-list-${row.id}`}
                       type="checkbox"
@@ -4051,9 +4533,11 @@ export function MyListSheet({
                       })()}
                     </div>
                     </div>
+                      )}
+                    </MyListSortableManualTodoRow>
                   );
                     })}
-                    </div>
+                    </MyListManualTodoGroupDropZone>
                   );
 
                   if (isCompletedSection) {
@@ -4114,6 +4598,8 @@ export function MyListSheet({
               </div>
             )}
           </div>
+            </SortableContext>
+          </DndContext>
           <div className="border-t border-white/[0.055] pt-2">
             <textarea
               value={note}
