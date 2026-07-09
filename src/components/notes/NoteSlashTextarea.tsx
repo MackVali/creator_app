@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Clock,
   BookOpen,
+  Dumbbell,
   Eye,
   EyeOff,
   FileText,
@@ -44,6 +45,7 @@ import {
   ScanLine,
   Search,
   Settings2,
+  ShoppingBasket,
   Star,
   X,
   Table2,
@@ -74,6 +76,7 @@ import { Icon as IconifyIcon } from "@iconify/react";
 import { NoteIconPicker, resolveNoteIcon } from "@/components/notes/NoteEditorHeader";
 import {
   getDatabaseCreatedAtInitialFormValues,
+  isDefaultFitnessDatabaseDefinition,
   isDefaultNutritionDatabaseDefinition,
   isOnHandDatabaseDefinition,
   isLockedStarterDatabase,
@@ -107,6 +110,7 @@ import {
   DEFAULT_NUTRITION_RECIPE_ICON,
   type NutritionMealDraft,
 } from "@/lib/nutrition/meals";
+import type { Json } from "@/types/supabase";
 import {
   hapticComplete,
   hapticErrorPattern,
@@ -278,6 +282,7 @@ const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
 } as const;
 const NUTRITION_FOOD_ACTION_TABS = [
   { id: "search", label: "Search", icon: Search },
+  { id: "grocery", label: "Grocery", icon: ShoppingBasket },
   { id: "scan", label: "Scan", icon: ScanLine },
   { id: "favs", label: "Favs", icon: Star },
   { id: "custom", label: "Custom", icon: PencilLine },
@@ -290,6 +295,375 @@ const NUTRITION_FOOD_ACTION_TABS = [
   label: string;
   icon: LucideIcon;
 }>;
+const GROCERY_EXTRA_FOOD_ACTION_TABS = [
+  { id: "meal-plan", label: "Meal Plan", icon: Calendar },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}>;
+const FITNESS_ACTION_TABS = [
+  { id: "start", label: "Start", icon: Dumbbell },
+  { id: "exercises", label: "Exercises", icon: ListChecks },
+  { id: "favorites", label: "Favorites", icon: Star },
+  { id: "custom", label: "Custom", icon: PencilLine },
+  { id: "workout-routines", label: "Routines", icon: Calendar },
+  { id: "plans", label: "Plans", icon: List },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}>;
+type FitnessExerciseSample = {
+  name: string;
+  movementType: string;
+  primaryArea: string;
+  equipment: string;
+  guidance: string;
+  notes: string;
+};
+type FitnessRoutineSample = {
+  name: string;
+  focus: string;
+  exercises: string[];
+  guidance: string;
+};
+type FitnessPlanSample = {
+  name: string;
+  cadence: string;
+  days: Array<{ day: string; routine: string }>;
+};
+type FitnessMovementGroupSample = {
+  label: string;
+  icon: LucideIcon;
+  subcategories: Array<{
+    label: string;
+    exercises: string[];
+  }>;
+};
+const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
+  {
+    name: "Push-up",
+    movementType: "Push",
+    primaryArea: "Chest, triceps",
+    equipment: "Bodyweight",
+    guidance: "3-5 sets x 8-20 reps",
+    notes: "Keep ribs down and move as one line.",
+  },
+  {
+    name: "Pull-up",
+    movementType: "Pull",
+    primaryArea: "Back, biceps",
+    equipment: "Pull-up bar",
+    guidance: "3-5 sets x 3-10 reps",
+    notes: "Start from a dead hang and pull chest toward the bar.",
+  },
+  {
+    name: "Chin-up",
+    movementType: "Pull",
+    primaryArea: "Lats, biceps",
+    equipment: "Pull-up bar",
+    guidance: "3-4 sets x 4-12 reps",
+    notes: "Use a supinated grip and control the lower.",
+  },
+  {
+    name: "Dip",
+    movementType: "Push",
+    primaryArea: "Chest, triceps",
+    equipment: "Bars",
+    guidance: "3-4 sets x 5-12 reps",
+    notes: "Keep shoulders packed and stop before discomfort.",
+  },
+  {
+    name: "Bodyweight Squat",
+    movementType: "Squat",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight",
+    guidance: "3-5 sets x 12-25 reps",
+    notes: "Track knees over toes and keep your torso tall.",
+  },
+  {
+    name: "Lunge",
+    movementType: "Single-leg",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight or dumbbells",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Use an even stride and drive through the front foot.",
+  },
+  {
+    name: "Plank",
+    movementType: "Core",
+    primaryArea: "Abs, trunk",
+    equipment: "Bodyweight",
+    guidance: "3-4 holds x 30-60 sec",
+    notes: "Squeeze glutes and keep breathing steady.",
+  },
+  {
+    name: "Burpee",
+    movementType: "Conditioning",
+    primaryArea: "Full body",
+    equipment: "Bodyweight",
+    guidance: "4-8 rounds x 20-45 sec",
+    notes: "Move smoothly before chasing speed.",
+  },
+  {
+    name: "Bench Press",
+    movementType: "Push",
+    primaryArea: "Chest, triceps",
+    equipment: "Barbell or dumbbells",
+    guidance: "3-5 sets x 5-10 reps",
+    notes: "Brace, use a stable arch, and press evenly.",
+  },
+  {
+    name: "Row",
+    movementType: "Pull",
+    primaryArea: "Back",
+    equipment: "Cable, barbell, or dumbbells",
+    guidance: "3-5 sets x 8-12 reps",
+    notes: "Pull elbows back and pause briefly at the top.",
+  },
+  {
+    name: "Deadlift",
+    movementType: "Hinge",
+    primaryArea: "Posterior chain",
+    equipment: "Barbell",
+    guidance: "3-5 sets x 3-6 reps",
+    notes: "Brace hard and keep the bar close.",
+  },
+  {
+    name: "Shoulder Press",
+    movementType: "Push",
+    primaryArea: "Shoulders",
+    equipment: "Barbell or dumbbells",
+    guidance: "3-4 sets x 6-10 reps",
+    notes: "Stack wrists over elbows and avoid overextending.",
+  },
+  {
+    name: "Pike Push-up",
+    movementType: "Push",
+    primaryArea: "Shoulders, triceps",
+    equipment: "Bodyweight",
+    guidance: "3-4 sets x 6-12 reps",
+    notes: "Press your head toward the floor while keeping hips high.",
+  },
+  {
+    name: "Goblet Squat",
+    movementType: "Squat",
+    primaryArea: "Quads, glutes",
+    equipment: "Dumbbell or kettlebell",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Hold the weight close and sit between your hips.",
+  },
+  {
+    name: "Hip Hinge",
+    movementType: "Hinge",
+    primaryArea: "Hamstrings, glutes",
+    equipment: "Bodyweight",
+    guidance: "3 sets x 10-15 reps",
+    notes: "Push hips back while keeping a neutral spine.",
+  },
+  {
+    name: "Side Plank",
+    movementType: "Core",
+    primaryArea: "Obliques, trunk",
+    equipment: "Bodyweight",
+    guidance: "3 holds x 20-45 sec each side",
+    notes: "Stack shoulders and hips, then press the floor away.",
+  },
+  {
+    name: "Crunch",
+    movementType: "Core",
+    primaryArea: "Abs",
+    equipment: "Bodyweight",
+    guidance: "3 sets x 12-20 reps",
+    notes: "Curl ribs toward hips without pulling on your neck.",
+  },
+  {
+    name: "Leg Raise",
+    movementType: "Core",
+    primaryArea: "Abs, hip flexors",
+    equipment: "Bodyweight",
+    guidance: "3 sets x 8-15 reps",
+    notes: "Lower slowly and keep your low back controlled.",
+  },
+  {
+    name: "Mountain Climber",
+    movementType: "Conditioning",
+    primaryArea: "Full body, core",
+    equipment: "Bodyweight",
+    guidance: "4-8 rounds x 20-40 sec",
+    notes: "Keep shoulders over hands and drive knees rhythmically.",
+  },
+  {
+    name: "Jump Rope",
+    movementType: "Conditioning",
+    primaryArea: "Cardio, calves",
+    equipment: "Jump rope",
+    guidance: "5-10 rounds x 30-60 sec",
+    notes: "Stay tall and use small wrist turns.",
+  },
+  {
+    name: "Arm Circles",
+    movementType: "Mobility",
+    primaryArea: "Shoulders",
+    equipment: "Bodyweight",
+    guidance: "2 rounds x 20-30 sec each direction",
+    notes: "Use smooth circles and keep ribs stacked.",
+  },
+  {
+    name: "Hip Opener",
+    movementType: "Mobility",
+    primaryArea: "Hips",
+    equipment: "Bodyweight",
+    guidance: "2-3 rounds x 30-45 sec each side",
+    notes: "Move slowly through comfortable ranges.",
+  },
+  {
+    name: "Hamstring Stretch",
+    movementType: "Mobility",
+    primaryArea: "Hamstrings",
+    equipment: "Bodyweight",
+    guidance: "2-3 holds x 30-60 sec each side",
+    notes: "Hinge forward gently and breathe into the stretch.",
+  },
+];
+const FITNESS_MOVEMENT_GROUP_SAMPLES: FitnessMovementGroupSample[] = [
+  {
+    label: "Push",
+    icon: Dumbbell,
+    subcategories: [
+      { label: "Chest", exercises: ["Push-up", "Bench Press"] },
+      { label: "Shoulders", exercises: ["Shoulder Press", "Pike Push-up"] },
+      { label: "Triceps", exercises: ["Dip"] },
+    ],
+  },
+  {
+    label: "Pull",
+    icon: GripVertical,
+    subcategories: [
+      { label: "Back", exercises: ["Pull-up", "Row", "Deadlift"] },
+      { label: "Biceps", exercises: ["Chin-up"] },
+    ],
+  },
+  {
+    label: "Legs",
+    icon: ListChecks,
+    subcategories: [
+      { label: "Squat", exercises: ["Bodyweight Squat", "Goblet Squat"] },
+      { label: "Lunge", exercises: ["Lunge"] },
+      { label: "Hinge", exercises: ["Deadlift", "Hip Hinge"] },
+    ],
+  },
+  {
+    label: "Core",
+    icon: CheckSquare,
+    subcategories: [
+      { label: "Stability", exercises: ["Plank", "Side Plank"] },
+      { label: "Abs", exercises: ["Crunch", "Leg Raise"] },
+    ],
+  },
+  {
+    label: "Conditioning",
+    icon: Clock,
+    subcategories: [
+      { label: "Full Body", exercises: ["Burpee", "Mountain Climber"] },
+      { label: "Cardio", exercises: ["Jump Rope"] },
+    ],
+  },
+  {
+    label: "Mobility",
+    icon: Settings2,
+    subcategories: [
+      { label: "Warmup", exercises: ["Arm Circles", "Hip Opener"] },
+      { label: "Recovery", exercises: ["Hamstring Stretch"] },
+    ],
+  },
+];
+const FITNESS_EXERCISE_SAMPLE_BY_NAME = new Map(
+  FITNESS_EXERCISE_SAMPLES.map((exercise) => [exercise.name, exercise]),
+);
+const FITNESS_ROUTINE_SAMPLES: FitnessRoutineSample[] = [
+  {
+    name: "Push Day",
+    focus: "Chest, shoulders, triceps",
+    exercises: ["Bench Press", "Shoulder Press", "Dip", "Push-up"],
+    guidance: "3-4 sets each, 5-12 reps; finish with controlled push-ups.",
+  },
+  {
+    name: "Pull Day",
+    focus: "Back, biceps",
+    exercises: ["Pull-up", "Chin-up", "Row"],
+    guidance: "3-5 sets each, 4-12 reps; rest 90-150 sec between hard sets.",
+  },
+  {
+    name: "Leg Day",
+    focus: "Quads, glutes, hinge",
+    exercises: ["Bodyweight Squat", "Lunge", "Deadlift"],
+    guidance: "3-5 working sets; mix 3-6 heavy reps with 8-15 accessory reps.",
+  },
+  {
+    name: "Full Body Calisthenics",
+    focus: "Bodyweight strength",
+    exercises: ["Push-up", "Pull-up", "Bodyweight Squat", "Plank"],
+    guidance: "3-5 rounds; leave 1-2 reps in reserve on strength moves.",
+  },
+  {
+    name: "Core & Conditioning",
+    focus: "Trunk, engine",
+    exercises: ["Plank", "Burpee", "Lunge"],
+    guidance: "12-20 min circuit; alternate 40 sec work with 20 sec reset.",
+  },
+];
+const FITNESS_PLAN_SAMPLES: FitnessPlanSample[] = [
+  {
+    name: "3-Day Push Pull Legs",
+    cadence: "3 workouts/week",
+    days: [
+      { day: "Mon", routine: "Push Day" },
+      { day: "Wed", routine: "Pull Day" },
+      { day: "Fri", routine: "Leg Day" },
+    ],
+  },
+  {
+    name: "Beginner Calisthenics Week",
+    cadence: "3 workouts + skill practice",
+    days: [
+      { day: "Mon", routine: "Full Body Calisthenics" },
+      { day: "Tue", routine: "Light mobility" },
+      { day: "Thu", routine: "Full Body Calisthenics" },
+      { day: "Sat", routine: "Core & Conditioning" },
+    ],
+  },
+  {
+    name: "4-Day Upper / Lower",
+    cadence: "4 workouts/week",
+    days: [
+      { day: "Mon", routine: "Push Day + Row" },
+      { day: "Tue", routine: "Leg Day" },
+      { day: "Thu", routine: "Pull Day + Press" },
+      { day: "Fri", routine: "Leg Day + Core" },
+    ],
+  },
+];
+const GROCERY_FOOD_ACTION_TAB_IDS = new Set<NutritionFoodActionTabId>([
+  "search",
+  "grocery",
+  "scan",
+  "custom",
+  "recipes",
+  "chef",
+]);
+const GROCERY_LOCATION_OPTIONS = [
+  { value: "pantry", label: "Pantry" },
+  { value: "fridge", label: "Fridge" },
+  { value: "freezer", label: "Freezer" },
+  { value: "counter", label: "Counter" },
+  { value: "other", label: "Other" },
+] as const;
+const GROCERY_CUSTOM_CALORIES_FIELD_ID = "grocery-custom-calories";
+const GROCERY_CUSTOM_CARBS_FIELD_ID = "grocery-custom-carbs";
+const GROCERY_CUSTOM_PROTEIN_FIELD_ID = "grocery-custom-protein";
+const GROCERY_CUSTOM_FAT_FIELD_ID = "grocery-custom-fat";
 const NUTRITION_MEAL_TEMPLATE_ICON_OPTIONS = [
   "🍽️",
   "🥗",
@@ -1184,6 +1558,33 @@ function getDatabaseDisplayTitle(title: string | null | undefined) {
     : trimmedTitle;
 }
 
+function getDatabaseMenuDisplayTitle(
+  definition: NoteDatabaseDefinition,
+  fallbackTitle?: string | null,
+) {
+  return isOnHandDatabaseDefinition(definition)
+    ? "Grocery"
+    : getDatabaseDisplayTitle(definition.title ?? fallbackTitle);
+}
+
+function getDatabaseDisplayIconKey(definition: NoteDatabaseDefinition) {
+  return isOnHandDatabaseDefinition(definition) ? "🥬" : definition.iconKey;
+}
+
+function getNormalizedDatabaseTitle(definition: NoteDatabaseDefinition) {
+  const trimmedTitle = definition.title?.trim() ?? "";
+
+  if (isOnHandDatabaseDefinition(definition)) {
+    return trimmedTitle.length === 0 ||
+      trimmedTitle === NOTE_DATABASE_TITLE_FALLBACK ||
+      trimmedTitle.toLowerCase() === "on hand"
+      ? "Grocery List"
+      : trimmedTitle;
+  }
+
+  return trimmedTitle ? trimmedTitle : NOTE_DATABASE_DISPLAY_TITLE_FALLBACK;
+}
+
 function getDatabaseFormTitle(title: string | null | undefined) {
   const trimmedTitle = title?.trim() ?? "";
   const databaseTitle =
@@ -1337,7 +1738,7 @@ function normalizeDatabaseDefinition(definition: NoteDatabaseDefinition): NoteDa
   return {
     ...definition,
     id: databaseId,
-    title: definition.title?.trim() ? definition.title : NOTE_DATABASE_DISPLAY_TITLE_FALLBACK,
+    title: getNormalizedDatabaseTitle(definition),
     titleFieldId,
     fields,
     views,
@@ -1565,7 +1966,10 @@ function getDatabaseFieldName(field: NoteDatabaseFieldDefinition) {
 
 type NutritionMacroFieldKey = (typeof NUTRITION_MACRO_FIELD_KEYS)[number];
 type NutritionDailyMetricKey = keyof typeof DEFAULT_DAILY_NUTRITION_GOALS;
-type NutritionFoodActionTabId = (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"];
+type NutritionFoodActionTabId =
+  | (typeof NUTRITION_FOOD_ACTION_TABS)[number]["id"]
+  | (typeof GROCERY_EXTRA_FOOD_ACTION_TABS)[number]["id"];
+type FitnessActionTabId = (typeof FITNESS_ACTION_TABS)[number]["id"];
 type NutritionFavoriteItemType = "food" | "recipe" | "meal_template";
 type NutritionFavoriteTarget = {
   itemType: NutritionFavoriteItemType;
@@ -2645,6 +3049,26 @@ function getNutritionSelectedFoodLineMeta(item: NutritionSelectedFoodItem) {
   return nutritionParts.join(" · ");
 }
 
+function getNutritionSelectedFoodMacroRows(item: NutritionSelectedFoodItem) {
+  return [
+    {
+      key: "carbs",
+      label: "Carbs",
+      value: formatFoodNutritionNumber(getNutritionFoodLineValue(item, "carbs_g")) ?? "0",
+    },
+    {
+      key: "protein",
+      label: "Protein",
+      value: formatFoodNutritionNumber(getNutritionFoodLineValue(item, "protein_g")) ?? "0",
+    },
+    {
+      key: "fat",
+      label: "Fat",
+      value: formatFoodNutritionNumber(getNutritionFoodLineValue(item, "fat_g")) ?? "0",
+    },
+  ];
+}
+
 function getNutritionMealBuilderItemLineMeta(item: NutritionMealBuilderItem) {
   const calories =
     formatFoodNutritionNumber(getNutritionMealBuilderItemLineValue(item, "calories")) ?? "0";
@@ -2907,7 +3331,9 @@ function getNutritionMealOccurredAt(
   return fallbackIso;
 }
 
-function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
+function buildFoodNutritionMealItem(
+  item: NutritionSelectedFoodItem,
+): NutritionMealDraft["items"][number] {
   const { food } = item;
   const quantity = normalizeNutritionQuantity(item.quantity);
   const servingUnit = getSafeFoodServingUnit(food, item.servingUnit);
@@ -2917,16 +3343,95 @@ function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
   const carbs = getNutritionLineValue(food.carbs_g, multiplier);
   const protein = getNutritionLineValue(food.protein_g, multiplier);
   const fat = getNutritionLineValue(food.fat_g, multiplier);
+  const metadata =
+    food.metadata && typeof food.metadata === "object" && !Array.isArray(food.metadata)
+      ? (food.metadata as Record<string, unknown>)
+      : {};
+  const grocerySource =
+    typeof metadata.source === "string" && metadata.source.startsWith("grocery");
+  const metadataSource = typeof metadata.source === "string" ? metadata.source : "foods";
+  const catalogFoodId =
+    typeof metadata.catalogFoodId === "string" && metadata.catalogFoodId.trim()
+      ? metadata.catalogFoodId.trim()
+      : food.source === "grocery_resource"
+        ? null
+        : food.id;
+  const mealItemMetadata: Json = {
+    ...metadata,
+    source: food.source ?? metadataSource,
+    snapshotTotals: "line",
+    selectedServing: {
+      amount: quantity,
+      unit: servingUnit,
+      defaultServingGrams: servingGrams,
+      multiplier,
+    },
+    perServing: {
+      calories: getNutritionSnapshotNumber(food.calories),
+      carbs_g: getNutritionSnapshotNumber(food.carbs_g),
+      protein_g: getNutritionSnapshotNumber(food.protein_g),
+      fat_g: getNutritionSnapshotNumber(food.fat_g),
+    },
+  };
+  const snapshot = {
+    name: food.name,
+    displayName: food.name,
+    brandName: food.brand_name ?? undefined,
+    brand_name: food.brand_name ?? undefined,
+    servingSize: food.serving_size ?? undefined,
+    serving_size: food.serving_size ?? undefined,
+    servingUnit,
+    serving_unit: servingUnit,
+    servingGrams,
+    serving_grams: servingGrams,
+    calories,
+    carbs_g: carbs,
+    protein_g: protein,
+    fat_g: fat,
+  };
+
+  if (grocerySource && !catalogFoodId) {
+    return {
+      type: "custom" as const,
+      name: food.name,
+      quantity,
+      servingUnit,
+      servingGrams,
+      snapshot,
+      metadata: mealItemMetadata,
+    } satisfies NutritionMealDraft["items"][number];
+  }
 
   return {
     type: "food" as const,
-    foodId: food.id,
+    foodId: catalogFoodId ?? food.id,
     quantity,
     servingUnit,
     servingGrams,
-    snapshot: {
+    snapshot,
+    metadata: mealItemMetadata,
+  } satisfies NutritionMealDraft["items"][number];
+}
+
+function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
+  const { food } = item;
+  const quantity = normalizeNutritionQuantity(item.quantity);
+  const servingUnit = getSafeFoodServingUnit(food, item.servingUnit);
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  const multiplier = getFoodServingMultiplier(item);
+
+  return {
+    source: "grocery-food-selection",
+    catalogSource: food.source ?? "foods",
+    selectedServing: {
+      amount: quantity,
+      unit: servingUnit,
+      defaultServingGrams: servingGrams,
+      multiplier,
+    },
+    foodSnapshot: {
+      id: food.id,
       name: food.name,
-      displayName: food.name,
       brandName: food.brand_name ?? undefined,
       brand_name: food.brand_name ?? undefined,
       servingSize: food.serving_size ?? undefined,
@@ -2935,28 +3440,18 @@ function buildFoodNutritionMealItem(item: NutritionSelectedFoodItem) {
       serving_unit: servingUnit,
       servingGrams,
       serving_grams: servingGrams,
-      calories,
-      carbs_g: carbs,
-      protein_g: protein,
-      fat_g: fat,
+      calories: getNutritionLineValue(food.calories, multiplier),
+      carbs_g: getNutritionLineValue(food.carbs_g, multiplier),
+      protein_g: getNutritionLineValue(food.protein_g, multiplier),
+      fat_g: getNutritionLineValue(food.fat_g, multiplier),
     },
-    metadata: {
-      source: food.source ?? "foods",
-      snapshotTotals: "line",
-      selectedServing: {
-        amount: quantity,
-        unit: servingUnit,
-        defaultServingGrams: servingGrams,
-        multiplier,
-      },
-      perServing: {
-        calories: getNutritionSnapshotNumber(food.calories),
-        carbs_g: getNutritionSnapshotNumber(food.carbs_g),
-        protein_g: getNutritionSnapshotNumber(food.protein_g),
-        fat_g: getNutritionSnapshotNumber(food.fat_g),
-      },
+    perServing: {
+      calories: getNutritionSnapshotNumber(food.calories),
+      carbs_g: getNutritionSnapshotNumber(food.carbs_g),
+      protein_g: getNutritionSnapshotNumber(food.protein_g),
+      fat_g: getNutritionSnapshotNumber(food.fat_g),
     },
-  } satisfies NutritionMealDraft["items"][number];
+  };
 }
 
 function getSortedNutritionMealItems(meal: NutritionSavedMeal) {
@@ -3153,7 +3648,7 @@ function buildNutritionMealDraft({
   const fields = findNutritionEntryFields(databaseDefinition);
   let items: NutritionMealDraft["items"] = [];
 
-  if (selectedAction === "search") {
+  if (selectedAction === "search" || selectedAction === "grocery") {
     items = selectedFoods.map(buildFoodNutritionMealItem);
   } else if (selectedAction === "scan" && selectedFood) {
     items = [buildFoodNutritionMealItem(selectedFood)];
@@ -3290,6 +3785,29 @@ function mapSelectedNutritionFoodsToEntryValues(
   items: NutritionSelectedFoodItem[],
   databaseDefinition: NoteDatabaseDefinition | null | undefined,
 ) {
+  if (databaseDefinition && isOnHandDatabaseDefinition(databaseDefinition)) {
+    const item = items[0] ?? null;
+    if (!item) {
+      return {
+        [ON_HAND_NAME_FIELD_ID]: "",
+        [ON_HAND_QUANTITY_FIELD_ID]: "",
+        [ON_HAND_UNIT_FIELD_ID]: "",
+        food_id: "",
+        brand_name: "",
+        metadata: {},
+      };
+    }
+
+    return {
+      [ON_HAND_NAME_FIELD_ID]: item.food.name,
+      [ON_HAND_QUANTITY_FIELD_ID]: formatNutritionServingAmount(item.quantity),
+      [ON_HAND_UNIT_FIELD_ID]: getSafeFoodServingUnit(item.food, item.servingUnit),
+      food_id: item.food.id,
+      brand_name: item.food.brand_name ?? "",
+      metadata: buildGroceryFoodResourceMetadata(item),
+    };
+  }
+
   const { foodField, caloriesField, carbsField, proteinField, fatField } =
     findNutritionEntryFields(databaseDefinition);
   const values: Record<string, string> = {};
@@ -3478,18 +3996,26 @@ function getDatabaseEntryInitialFormValues(
   entry?: NoteDatabaseEntry | null,
 ) {
   if (entry) {
-    return Object.fromEntries(
-      definition.fields.map((field) => {
-        const value = entry.values[field.id];
-        return [field.id, value == null ? "" : String(value)];
-      }),
-    );
+    return {
+      ...entry.values,
+      ...Object.fromEntries(
+        definition.fields.map((field) => {
+          const value = entry.values[field.id];
+          return [field.id, value == null ? "" : String(value)];
+        }),
+      ),
+    };
   }
 
   return getDatabaseCreatedAtInitialFormValues(definition, openedAt);
 }
 
 function mapFoodResourceToDatabaseEntry(resource: FoodResource): NoteDatabaseEntry {
+  const metadata =
+    resource.metadata && typeof resource.metadata === "object" && !Array.isArray(resource.metadata)
+      ? (resource.metadata as Record<string, unknown>)
+      : {};
+
   return {
     id: resource.id,
     createdAt: resource.created_at,
@@ -3501,10 +4027,86 @@ function mapFoodResourceToDatabaseEntry(resource: FoodResource): NoteDatabaseEnt
       [ON_HAND_LOCATION_FIELD_ID]: resource.location,
       [ON_HAND_EXPIRES_ON_FIELD_ID]: resource.expires_on,
       [ON_HAND_NOTES_FIELD_ID]: resource.notes,
+      [GROCERY_CUSTOM_CALORIES_FIELD_ID]: metadata.calories ?? "",
+      [GROCERY_CUSTOM_CARBS_FIELD_ID]: metadata.carbs_g ?? "",
+      [GROCERY_CUSTOM_PROTEIN_FIELD_ID]: metadata.protein_g ?? "",
+      [GROCERY_CUSTOM_FAT_FIELD_ID]: metadata.fat_g ?? "",
       food_id: resource.food_id,
       brand_name: resource.brand_name,
+      metadata: resource.metadata,
       status: resource.status,
     },
+  };
+}
+
+function getFoodResourceMetadata(resource: FoodResource) {
+  return resource.metadata && typeof resource.metadata === "object" && !Array.isArray(resource.metadata)
+    ? (resource.metadata as Record<string, unknown>)
+    : {};
+}
+
+function getOptionalNutritionMetadataNumber(
+  metadata: Record<string, unknown>,
+  key: string,
+) {
+  const value = getNutritionSnapshotNumber(metadata[key]);
+  return value ?? null;
+}
+
+function getPositiveNutritionMetadataNumber(
+  metadata: Record<string, unknown>,
+  key: string,
+) {
+  const value = getNutritionSnapshotNumber(metadata[key]);
+  return value !== null && value > 0 ? value : null;
+}
+
+function getOptionalNutritionMetadataString(
+  metadata: Record<string, unknown>,
+  key: string,
+) {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function mapFoodResourceToFoodSearchResult(resource: FoodResource): FoodSearchResult {
+  const metadata = getFoodResourceMetadata(resource);
+  const servingQuantity =
+    getPositiveNutritionNumber(resource.quantity) ??
+    getPositiveNutritionMetadataNumber(metadata, "serving_quantity") ??
+    1;
+  const servingUnit =
+    resource.unit ??
+    getOptionalNutritionMetadataString(metadata, "serving_unit") ??
+    "serving";
+  const source =
+    resource.food_id || metadata.source === "grocery-food-selection"
+      ? "grocery_resource"
+      : "grocery_custom";
+  const foodMetadata = {
+    ...metadata,
+    source,
+    catalogFoodId: resource.food_id,
+    foodResourceId: resource.id,
+    foodResourceStatus: resource.status,
+    foodResourceLocation: resource.location,
+    foodResourceQuantity: resource.quantity,
+    foodResourceUnit: resource.unit,
+  } as FoodSearchResult["metadata"];
+
+  return {
+    id: `grocery-resource-${resource.id}`,
+    name: resource.name,
+    brand_name: resource.brand_name,
+    source,
+    serving_size: servingQuantity,
+    serving_unit: servingUnit,
+    serving_grams: getPositiveNutritionMetadataNumber(metadata, "serving_grams"),
+    calories: getOptionalNutritionMetadataNumber(metadata, "calories"),
+    carbs_g: getOptionalNutritionMetadataNumber(metadata, "carbs_g"),
+    protein_g: getOptionalNutritionMetadataNumber(metadata, "protein_g"),
+    fat_g: getOptionalNutritionMetadataNumber(metadata, "fat_g"),
+    metadata: foodMetadata,
   };
 }
 
@@ -3520,7 +4122,38 @@ function mapOnHandEntryToFoodResourcePayload(entry: NoteDatabaseEntry) {
     location: entry.values[ON_HAND_LOCATION_FIELD_ID],
     expires_on: entry.values[ON_HAND_EXPIRES_ON_FIELD_ID],
     notes: entry.values[ON_HAND_NOTES_FIELD_ID],
+    metadata:
+      entry.values.metadata &&
+      typeof entry.values.metadata === "object" &&
+      !Array.isArray(entry.values.metadata)
+        ? entry.values.metadata
+        : undefined,
   };
+}
+
+function getGroceryCustomMetadata(entryValues: Record<string, unknown>) {
+  const metadata: Record<string, unknown> = {};
+  const calories = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_CALORIES_FIELD_ID]);
+  const carbsG = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_CARBS_FIELD_ID]);
+  const proteinG = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID]);
+  const fatG = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_FAT_FIELD_ID]);
+  const servingQuantity =
+    getPositiveNutritionMetadataNumber(entryValues, ON_HAND_QUANTITY_FIELD_ID) ?? 1;
+  const servingUnit =
+    typeof entryValues[ON_HAND_UNIT_FIELD_ID] === "string" &&
+    entryValues[ON_HAND_UNIT_FIELD_ID].trim()
+      ? normalizeNutritionServingUnit(entryValues[ON_HAND_UNIT_FIELD_ID])
+      : "serving";
+
+  metadata.source = "grocery_custom";
+  metadata.serving_quantity = servingQuantity;
+  metadata.serving_unit = servingUnit;
+  if (calories !== null) metadata.calories = calories;
+  if (carbsG !== null) metadata.carbs_g = carbsG;
+  if (proteinG !== null) metadata.protein_g = proteinG;
+  if (fatG !== null) metadata.fat_g = fatG;
+
+  return metadata;
 }
 
 function formatDatabaseCreatedAtMetadata(openedAt: string) {
@@ -4637,13 +5270,27 @@ export function NoteDatabaseEntrySheet({
   submitLabel?: string;
 }) {
   const [openedAt] = useState(() => new Date().toISOString());
-  const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>(() =>
+  const [entryFormValues, setEntryFormValues] = useState<Record<string, unknown>>(() =>
     getDatabaseEntryInitialFormValues(databaseDefinition, openedAt, initialEntry),
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedNutritionFoodAction, setSelectedNutritionFoodAction] =
     useState<NutritionFoodActionTabId>("search");
+  const [selectedFitnessAction, setSelectedFitnessAction] =
+    useState<FitnessActionTabId>("start");
+  const [selectedFitnessWorkoutExercises, setSelectedFitnessWorkoutExercises] = useState<
+    FitnessExerciseSample[]
+  >([]);
+  const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [expandedFitnessMovementGroups, setExpandedFitnessMovementGroups] = useState<
+    Set<string>
+  >(() => new Set());
+  const [expandedFitnessSubcategories, setExpandedFitnessSubcategories] = useState<
+    Set<string>
+  >(() => new Set());
   const [openNutritionBrowseDepartment, setOpenNutritionBrowseDepartment] =
     useState<FoodBrowseDepartmentLabel | null>(null);
   const [openNutritionBrowseAisle, setOpenNutritionBrowseAisle] =
@@ -4686,6 +5333,18 @@ export function NoteDatabaseEntrySheet({
   >([]);
   const [isNutritionFoodBrowseLoading, setIsNutritionFoodBrowseLoading] = useState(false);
   const [nutritionFoodBrowseError, setNutritionFoodBrowseError] = useState<string | null>(
+    null,
+  );
+  const [nutritionGroceryFoods, setNutritionGroceryFoods] = useState<FoodSearchResult[]>(
+    [],
+  );
+  const [isNutritionGroceryLoading, setIsNutritionGroceryLoading] = useState(false);
+  const [nutritionGroceryError, setNutritionGroceryError] = useState<string | null>(
+    null,
+  );
+  const [groceryResourceItems, setGroceryResourceItems] = useState<FoodResource[]>([]);
+  const [isGroceryResourcesLoading, setIsGroceryResourcesLoading] = useState(false);
+  const [groceryResourcesError, setGroceryResourcesError] = useState<string | null>(
     null,
   );
   const [nutritionSavedMeals, setNutritionSavedMeals] = useState<NutritionSavedMeal[]>([]);
@@ -4766,6 +5425,9 @@ export function NoteDatabaseEntrySheet({
   const [nutritionBarcodeLookupError, setNutritionBarcodeLookupError] = useState<
     string | null
   >(null);
+  const [expandedGroceryInventoryField, setExpandedGroceryInventoryField] = useState<
+    "expires" | "location" | null
+  >(null);
   const [openNutritionServingUnitMenu, setOpenNutritionServingUnitMenu] = useState<{
     id: string;
     top: number;
@@ -4773,6 +5435,9 @@ export function NoteDatabaseEntrySheet({
   } | null>(null);
   const nutritionFoodActionTabRefs = useRef<
     Partial<Record<NutritionFoodActionTabId, HTMLButtonElement | null>>
+  >({});
+  const fitnessActionTabRefs = useRef<
+    Partial<Record<FitnessActionTabId, HTMLButtonElement | null>>
   >({});
   const nutritionMealBuilderIconPickerRef = useRef<HTMLDivElement | null>(null);
   const nutritionRecipeBuilderIconPickerRef = useRef<HTMLDivElement | null>(null);
@@ -4783,15 +5448,46 @@ export function NoteDatabaseEntrySheet({
   const databaseFields = getDatabaseFieldsWithTitleFirst(databaseDefinition);
   const editableDatabaseFields = databaseFields.filter((field) => !isDatabaseCreatedAtField(field));
   const createdAtFields = databaseFields.filter(isDatabaseCreatedAtField);
-  const createdAtMetadataTime = createdAtFields.length > 0
-    ? formatDatabaseCreatedAtMetadata(entryFormValues[createdAtFields[0].id] ?? openedAt)
-    : "";
+  const createdAtValue =
+    createdAtFields.length > 0 ? entryFormValues[createdAtFields[0].id] : null;
+  const createdAtMetadataTime =
+    createdAtFields.length > 0
+      ? formatDatabaseCreatedAtMetadata(
+          typeof createdAtValue === "string" ? createdAtValue : openedAt,
+        )
+      : "";
   const databaseFormTitle = getDatabaseFormTitle(databaseDefinition.title);
   const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
+  const isDefaultFitnessDatabase = isDefaultFitnessDatabaseDefinition(databaseDefinition);
+  const isGroceryDatabase = isOnHandDatabaseDefinition(databaseDefinition);
+  const isFoodSearchDatabase = isDefaultNutritionDatabase || isGroceryDatabase;
+  const shouldShowFitnessEntryFields =
+    !isDefaultFitnessDatabase || selectedFitnessAction === "custom";
+  const shouldShowEntryFooter =
+    !isDefaultFitnessDatabase || selectedFitnessAction === "custom";
   const isNutritionSearchMode =
-    isDefaultNutritionDatabase && selectedNutritionFoodAction === "search";
+    isFoodSearchDatabase && selectedNutritionFoodAction === "search";
   const shouldHideNutritionEntryFields =
     isDefaultNutritionDatabase && selectedNutritionFoodAction !== "custom";
+  const hiddenGroceryFoodSearchFieldIds = new Set<string>(
+    isGroceryDatabase
+      ? [
+          ON_HAND_QUANTITY_FIELD_ID,
+          ON_HAND_UNIT_FIELD_ID,
+          ON_HAND_LOCATION_FIELD_ID,
+          ON_HAND_EXPIRES_ON_FIELD_ID,
+          ON_HAND_NOTES_FIELD_ID,
+        ]
+      : [],
+  );
+  const visibleFoodActionTabs = isGroceryDatabase
+    ? [
+        ...NUTRITION_FOOD_ACTION_TABS.filter((tab) =>
+          GROCERY_FOOD_ACTION_TAB_IDS.has(tab.id),
+        ),
+        ...GROCERY_EXTRA_FOOD_ACTION_TABS,
+      ]
+    : NUTRITION_FOOD_ACTION_TABS;
   const nutritionMacroFields = isDefaultNutritionDatabase
     ? NUTRITION_MACRO_FIELD_KEYS.map((macroKey) =>
         editableDatabaseFields.find((field) => getNutritionMacroFieldKey(field) === macroKey),
@@ -4814,6 +5510,21 @@ export function NoteDatabaseEntrySheet({
     nutritionMacroFields.length === NUTRITION_MACRO_FIELD_KEYS.length;
   const nutritionFoodField = isDefaultNutritionDatabase
     ? editableDatabaseFields.find(isDefaultNutritionFoodField) ?? null
+    : null;
+  const groceryFoodField = isGroceryDatabase
+    ? editableDatabaseFields.find((field) => field.id === ON_HAND_NAME_FIELD_ID) ?? null
+    : null;
+  const groceryQuantityField = isGroceryDatabase
+    ? editableDatabaseFields.find((field) => field.id === ON_HAND_QUANTITY_FIELD_ID) ?? null
+    : null;
+  const groceryUnitField = isGroceryDatabase
+    ? editableDatabaseFields.find((field) => field.id === ON_HAND_UNIT_FIELD_ID) ?? null
+    : null;
+  const groceryExpirationField = isGroceryDatabase
+    ? editableDatabaseFields.find((field) => field.id === ON_HAND_EXPIRES_ON_FIELD_ID) ?? null
+    : null;
+  const groceryLocationField = isGroceryDatabase
+    ? editableDatabaseFields.find((field) => field.id === ON_HAND_LOCATION_FIELD_ID) ?? null
     : null;
   const normalizedNutritionFoodSearchValue = normalizeFoodSearchText(
     nutritionFoodSearchQuery,
@@ -4850,6 +5561,8 @@ export function NoteDatabaseEntrySheet({
         : selectedNutritionFoods;
 
     selectedFoodItems.forEach((item) => {
+      if (item.food.source?.startsWith("grocery")) return;
+
       targets.push({
         itemType: "food",
         itemId: item.food.id,
@@ -5060,7 +5773,7 @@ export function NoteDatabaseEntrySheet({
 
   useEffect(() => {
     if (
-      !isDefaultNutritionDatabase ||
+      !isFoodSearchDatabase ||
       selectedNutritionFoodAction !== "search" ||
       normalizedNutritionFoodSearchValue.length < 2
     ) {
@@ -5110,7 +5823,7 @@ export function NoteDatabaseEntrySheet({
       controller.abort();
     };
   }, [
-    isDefaultNutritionDatabase,
+    isFoodSearchDatabase,
     normalizedNutritionFoodSearchValue,
     nutritionFoodSearchQuery,
     selectedNutritionFoodAction,
@@ -5171,6 +5884,90 @@ export function NoteDatabaseEntrySheet({
     openNutritionBrowseAisle,
     openNutritionBrowseDepartment,
   ]);
+
+  useEffect(() => {
+    if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "grocery") {
+      setNutritionGroceryFoods([]);
+      setIsNutritionGroceryLoading(false);
+      setNutritionGroceryError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsNutritionGroceryLoading(true);
+    setNutritionGroceryError(null);
+
+    fetch("/api/food-resources?status=active&limit=200", {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as FoodResourcesResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to load Grocery.");
+        }
+
+        setNutritionGroceryFoods(
+          (payload.foodResources ?? []).map(mapFoodResourceToFoodSearchResult),
+        );
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load nutrition Grocery foods", { error });
+        setNutritionGroceryFoods([]);
+        setNutritionGroceryError("Grocery is unavailable right now.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsNutritionGroceryLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isDefaultNutritionDatabase, selectedNutritionFoodAction]);
+
+  useEffect(() => {
+    if (!isGroceryDatabase || selectedNutritionFoodAction !== "grocery") {
+      setGroceryResourceItems([]);
+      setIsGroceryResourcesLoading(false);
+      setGroceryResourcesError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsGroceryResourcesLoading(true);
+    setGroceryResourcesError(null);
+
+    fetch("/api/food-resources?status=active&limit=200", {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as FoodResourcesResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to load Grocery List.");
+        }
+
+        setGroceryResourceItems(payload.foodResources ?? []);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load Grocery List resources for Grocery tab", { error });
+        setGroceryResourceItems([]);
+        setGroceryResourcesError("Grocery List is unavailable right now.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsGroceryResourcesLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isGroceryDatabase, selectedNutritionFoodAction]);
 
   useEffect(() => {
     if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "recent") {
@@ -5432,6 +6229,8 @@ export function NoteDatabaseEntrySheet({
   ]);
 
   function selectNutritionFoodAction(tabId: NutritionFoodActionTabId) {
+    if (!visibleFoodActionTabs.some((tab) => tab.id === tabId)) return;
+
     setSelectedNutritionFoodAction(tabId);
     nutritionFoodActionTabRefs.current[tabId]?.scrollIntoView({
       inline: "center",
@@ -5441,13 +6240,112 @@ export function NoteDatabaseEntrySheet({
   }
 
   function selectNutritionFoodActionByOffset(offset: -1 | 1) {
-    const currentIndex = NUTRITION_FOOD_ACTION_TABS.findIndex(
+    const currentIndex = visibleFoodActionTabs.findIndex(
       (tab) => tab.id === selectedNutritionFoodAction,
     );
+    const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex =
-      (currentIndex + offset + NUTRITION_FOOD_ACTION_TABS.length) %
-      NUTRITION_FOOD_ACTION_TABS.length;
-    selectNutritionFoodAction(NUTRITION_FOOD_ACTION_TABS[nextIndex].id);
+      (safeCurrentIndex + offset + visibleFoodActionTabs.length) %
+      visibleFoodActionTabs.length;
+    selectNutritionFoodAction(visibleFoodActionTabs[nextIndex].id);
+  }
+
+  function selectFitnessAction(tabId: FitnessActionTabId) {
+    setSelectedFitnessAction(tabId);
+    fitnessActionTabRefs.current[tabId]?.scrollIntoView({
+      inline: "center",
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }
+
+  function selectFitnessActionByOffset(offset: -1 | 1) {
+    const currentIndex = FITNESS_ACTION_TABS.findIndex(
+      (tab) => tab.id === selectedFitnessAction,
+    );
+    const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex =
+      (safeCurrentIndex + offset + FITNESS_ACTION_TABS.length) %
+      FITNESS_ACTION_TABS.length;
+    selectFitnessAction(FITNESS_ACTION_TABS[nextIndex].id);
+  }
+
+  function getFitnessEntryFieldId(fieldName: string) {
+    const normalizedFieldName = fieldName.trim().toLowerCase();
+    return (
+      editableDatabaseFields.find(
+        (field) => getDatabaseFieldName(field).trim().toLowerCase() === normalizedFieldName,
+      )?.id ?? null
+    );
+  }
+
+  function addFitnessWorkoutExercise(exercise: FitnessExerciseSample) {
+    setSelectedFitnessWorkoutExercises((currentExercises) => {
+      if (currentExercises.some((selectedExercise) => selectedExercise.name === exercise.name)) {
+        return currentExercises;
+      }
+
+      void hapticSoftTick();
+      return [...currentExercises, exercise];
+    });
+  }
+
+  function toggleFavoriteFitnessExercise(exerciseId: string) {
+    setFavoriteFitnessExerciseIds((currentExerciseIds) => {
+      const nextExerciseIds = new Set(currentExerciseIds);
+
+      if (nextExerciseIds.has(exerciseId)) {
+        nextExerciseIds.delete(exerciseId);
+      } else {
+        nextExerciseIds.add(exerciseId);
+      }
+
+      return nextExerciseIds;
+    });
+    void hapticSoftTick();
+  }
+
+  function removeFitnessWorkoutExercise(exerciseName: string) {
+    setSelectedFitnessWorkoutExercises((currentExercises) =>
+      currentExercises.filter((exercise) => exercise.name !== exerciseName),
+    );
+    void hapticSnap();
+  }
+
+  function clearFitnessWorkoutExercises() {
+    setSelectedFitnessWorkoutExercises([]);
+    void hapticSnap();
+  }
+
+  function logSelectedFitnessWorkout() {
+    const nameFieldId = getFitnessEntryFieldId("Name");
+    const workoutFieldId = getFitnessEntryFieldId("Workout");
+    const guidanceFieldId = getFitnessEntryFieldId("Sets/Reps or Duration");
+    const notesFieldId = getFitnessEntryFieldId("Notes");
+    const nextValues: Record<string, string> = {};
+    const selectedExerciseNames = selectedFitnessWorkoutExercises.map(
+      (exercise) => exercise.name,
+    );
+
+    if (selectedExerciseNames.length > 0) {
+      if (nameFieldId) nextValues[nameFieldId] = "Workout";
+      if (workoutFieldId) nextValues[workoutFieldId] = selectedExerciseNames.join(", ");
+      if (guidanceFieldId) {
+        nextValues[guidanceFieldId] = selectedFitnessWorkoutExercises
+          .map((exercise) => `${exercise.name}: ${exercise.guidance}`)
+          .join("\n");
+      }
+      if (notesFieldId) {
+        nextValues[notesFieldId] = "Built from selected exercises.";
+      }
+    }
+
+    if (Object.keys(nextValues).length > 0) {
+      setEntryFormValues((current) => ({ ...current, ...nextValues }));
+      setSubmitError(null);
+    }
+
+    selectFitnessAction("custom");
   }
 
   function applyNutritionFoodSelection(nextFoods: NutritionSelectedFoodItem[]) {
@@ -5466,6 +6364,16 @@ export function NoteDatabaseEntrySheet({
   }
 
   function toggleNutritionFoodSelection(food: FoodSearchResult) {
+    if (isGroceryDatabase) {
+      const foodKey = getNutritionFoodSelectionKey(food);
+      const nextFoods = selectedNutritionFoodIds.has(foodKey)
+        ? []
+        : [makeNutritionSelectedFoodItem(food)];
+
+      applyNutritionFoodSelection(nextFoods);
+      return;
+    }
+
     const foodKey = getNutritionFoodSelectionKey(food);
     const nextFoods = selectedNutritionFoodIds.has(foodKey)
       ? selectedNutritionFoods.filter(
@@ -5841,8 +6749,12 @@ export function NoteDatabaseEntrySheet({
         selectNutritionFood(payload.food);
         setNutritionBarcodeLookupStatus(
           payload.status === "created"
-            ? "Added to foods catalog. Save entry to log it."
-            : "Found in foods catalog. Save entry to log it.",
+            ? isGroceryDatabase
+              ? "Added to foods catalog. Save to add it to Grocery List."
+              : "Added to foods catalog. Save entry to log it."
+            : isGroceryDatabase
+              ? "Found in foods catalog. Save to add it to Grocery List."
+              : "Found in foods catalog. Save entry to log it.",
         );
         return;
       }
@@ -5900,11 +6812,29 @@ export function NoteDatabaseEntrySheet({
     options: { compact?: boolean } = {},
   ) {
     const fieldName = getDatabaseFieldName(field);
-    const fieldValue = entryFormValues[field.id] ?? "";
+    const rawFieldValue = entryFormValues[field.id];
+    const fieldValue =
+      typeof rawFieldValue === "string"
+        ? rawFieldValue
+        : rawFieldValue == null
+          ? ""
+          : String(rawFieldValue);
     const nutritionMacroFieldKey =
-      isDefaultNutritionDatabase && field.type === "number" ? getNutritionMacroFieldKey(field) : null;
+      field.type === "number" &&
+      (isDefaultNutritionDatabase ||
+        field.id === GROCERY_CUSTOM_CARBS_FIELD_ID ||
+        field.id === GROCERY_CUSTOM_PROTEIN_FIELD_ID ||
+        field.id === GROCERY_CUSTOM_FAT_FIELD_ID)
+        ? getNutritionMacroFieldKey(field)
+        : null;
     const fieldTypeDisplayLabel = nutritionMacroFieldKey ? "GRAMS" : NOTE_DATABASE_FIELD_TYPE_LABELS[field.type];
     const numberFieldPlaceholder = nutritionMacroFieldKey ? "0g" : fieldName;
+    const displayFieldName =
+      isGroceryDatabase &&
+      field.id === ON_HAND_NAME_FIELD_ID &&
+      selectedNutritionFoodAction !== "custom"
+        ? "Grocery item"
+        : fieldName;
     const inputClassName = options.compact
       ? "mt-1.5 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-2 py-2 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]"
       : "mt-2 w-full rounded-lg border border-white/[0.04] bg-white/[0.045] px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] hover:bg-white/[0.055] focus-visible:border-white/[0.12] focus-visible:bg-white/[0.06]";
@@ -5912,7 +6842,9 @@ export function NoteDatabaseEntrySheet({
     return (
       <label key={field.id} className={options.compact ? "block min-w-0" : "block"}>
         <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
-          <span className="min-w-0 truncate">{field.isTitle ? "Title" : fieldName}</span>
+          <span className="min-w-0 truncate">
+            {field.isTitle ? displayFieldName : fieldName}
+          </span>
           <span className="flex shrink-0 items-center gap-1.5">
             {field.isTitle ? (
               <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
@@ -5966,6 +6898,18 @@ export function NoteDatabaseEntrySheet({
             className={`${inputClassName} cursor-not-allowed text-white/28`}
             placeholder="Photo field coming later"
           />
+        ) : isGroceryDatabase && field.id === ON_HAND_LOCATION_FIELD_ID ? (
+          <select
+            value={fieldValue || "other"}
+            onChange={(event) => updateEntryFormValue(field.id, event.target.value)}
+            className={inputClassName}
+          >
+            {GROCERY_LOCATION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         ) : (
           <input
             type="text"
@@ -5984,7 +6928,7 @@ export function NoteDatabaseEntrySheet({
       <div className="relative -mx-1">
         <button
           type="button"
-          aria-label="Previous Nutrition tab"
+          aria-label={isGroceryDatabase ? "Previous Grocery tab" : "Previous Nutrition tab"}
           onClick={(event) => {
             event.preventDefault();
             selectNutritionFoodActionByOffset(-1);
@@ -5995,7 +6939,7 @@ export function NoteDatabaseEntrySheet({
         </button>
         <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex min-w-max items-center gap-1.5 pb-1">
-            {NUTRITION_FOOD_ACTION_TABS.map((tab) => {
+            {visibleFoodActionTabs.map((tab) => {
               const Icon = tab.icon;
               const isSelected = selectedNutritionFoodAction === tab.id;
 
@@ -6023,7 +6967,7 @@ export function NoteDatabaseEntrySheet({
         </div>
         <button
           type="button"
-          aria-label="Next Nutrition tab"
+          aria-label={isGroceryDatabase ? "Next Grocery tab" : "Next Nutrition tab"}
           onClick={(event) => {
             event.preventDefault();
             selectNutritionFoodActionByOffset(1);
@@ -6032,6 +6976,628 @@ export function NoteDatabaseEntrySheet({
         >
           <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
         </button>
+      </div>
+    );
+  }
+
+  function renderFitnessActionTabs() {
+    return (
+      <div className="relative -mx-1">
+        <button
+          type="button"
+          aria-label="Previous Fitness tab"
+          onClick={(event) => {
+            event.preventDefault();
+            selectFitnessActionByOffset(-1);
+          }}
+          className="absolute left-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
+        >
+          <ChevronLeft className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
+        </button>
+        <div className="overflow-x-auto overscroll-x-contain px-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max items-center gap-1 pb-1">
+            {FITNESS_ACTION_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isSelected = selectedFitnessAction === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  ref={(node) => {
+                    fitnessActionTabRefs.current[tab.id] = node;
+                  }}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => selectFitnessAction(tab.id)}
+                  className={`flex h-11 min-w-[3rem] shrink-0 flex-col items-center justify-center gap-0.5 px-2 text-[10px] font-semibold leading-none outline-none transition ${
+                    isSelected
+                      ? "text-white/88"
+                      : "text-white/42 hover:text-white/68"
+                  } focus-visible:text-white/80 focus-visible:ring-1 focus-visible:ring-white/16`}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <span className="whitespace-nowrap text-center leading-[1.05]">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="Next Fitness tab"
+          onClick={(event) => {
+            event.preventDefault();
+            selectFitnessActionByOffset(1);
+          }}
+          className="absolute right-0 top-0 z-10 flex h-11 w-4 items-center justify-center bg-black/42 text-white/34 outline-none transition hover:text-white/58 focus-visible:text-white/76 focus-visible:ring-1 focus-visible:ring-white/14"
+        >
+          <ChevronRight className="h-3.5 w-3.5 stroke-[1.5]" aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
+
+  function renderFitnessExerciseBrowser() {
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
+          {selectedFitnessWorkoutExercises.length > 0 ? (
+            <div className="flex min-h-9 items-center gap-2 border-b border-white/[0.055] bg-white/[0.035] px-3 text-xs font-semibold text-white/62">
+              <Check className="h-3.5 w-3.5 shrink-0 text-white/70" aria-hidden="true" />
+              <span className="min-w-0 truncate">
+                {selectedFitnessWorkoutExercises.length} selected
+              </span>
+              <span className="shrink-0 text-white/34">· Current workout</span>
+            </div>
+          ) : null}
+          {FITNESS_MOVEMENT_GROUP_SAMPLES.map((movementGroup) => {
+            const isGroupOpen = expandedFitnessMovementGroups.has(movementGroup.label);
+            const isFirstGroup =
+              movementGroup.label === FITNESS_MOVEMENT_GROUP_SAMPLES[0]?.label;
+            const movementExerciseCount = movementGroup.subcategories.reduce(
+              (count, subcategory) => count + subcategory.exercises.length,
+              0,
+            );
+            const MovementIcon = movementGroup.icon;
+
+            return (
+              <Fragment key={movementGroup.label}>
+                <button
+                  type="button"
+                  aria-expanded={isGroupOpen}
+                  onClick={() => {
+                    setExpandedFitnessMovementGroups((currentGroups) => {
+                      const nextGroups = new Set(currentGroups);
+
+                      if (nextGroups.has(movementGroup.label)) {
+                        nextGroups.delete(movementGroup.label);
+                      } else {
+                        nextGroups.add(movementGroup.label);
+                      }
+
+                      return nextGroups;
+                    });
+                    setExpandedFitnessSubcategories((currentSubcategories) => {
+                      const nextSubcategories = new Set(currentSubcategories);
+                      const subcategoryPrefix = `${movementGroup.label}::`;
+
+                      currentSubcategories.forEach((subcategoryKey) => {
+                        if (subcategoryKey.startsWith(subcategoryPrefix)) {
+                          nextSubcategories.delete(subcategoryKey);
+                        }
+                      });
+
+                      return nextSubcategories;
+                    });
+                  }}
+                  className={`flex h-11 w-full items-center gap-3 border-t px-3 text-left outline-none transition ${
+                    selectedFitnessWorkoutExercises.length > 0 || !isFirstGroup
+                      ? "border-white/[0.055]"
+                      : "border-transparent"
+                  } ${
+                    isGroupOpen
+                      ? "bg-white/[0.035] text-white/90"
+                      : "text-white/62 hover:bg-white/[0.026] hover:text-white/82"
+                  } focus-visible:bg-white/[0.06]`}
+                >
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 stroke-[1.65] transition ${
+                      isGroupOpen ? "rotate-90 text-white/58" : "text-white/32"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-semibold">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.045] text-white/58">
+                      <MovementIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 truncate">{movementGroup.label}</span>
+                  </span>
+                  <span className="shrink-0 rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-0.5 text-[11px] font-semibold text-white/38">
+                    {movementExerciseCount}
+                  </span>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {isGroupOpen ? (
+                    <motion.div
+                      key={`${movementGroup.label}-fitness-subcategories`}
+                      initial={{ height: 0, opacity: 0, y: -2 }}
+                      animate={{ height: "auto", opacity: 1, y: 0 }}
+                      exit={{ height: 0, opacity: 0, y: -2 }}
+                      transition={nutritionBrowseAccordionTransition}
+                      className="overflow-hidden"
+                    >
+                      {movementGroup.subcategories.map((subcategory) => {
+                        const exercises = subcategory.exercises
+                          .map((exerciseName) => FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName))
+                          .filter(
+                            (exercise): exercise is FitnessExerciseSample => Boolean(exercise),
+                          );
+                        const subcategoryKey = `${movementGroup.label}::${subcategory.label}`;
+                        const isSubcategoryOpen =
+                          expandedFitnessSubcategories.has(subcategoryKey);
+
+                        return (
+                          <div key={`${movementGroup.label}-${subcategory.label}`}>
+                            <button
+                              type="button"
+                              aria-expanded={isSubcategoryOpen}
+                              onClick={() =>
+                                setExpandedFitnessSubcategories((currentSubcategories) => {
+                                  const nextSubcategories = new Set(currentSubcategories);
+
+                                  if (nextSubcategories.has(subcategoryKey)) {
+                                    nextSubcategories.delete(subcategoryKey);
+                                  } else {
+                                    nextSubcategories.add(subcategoryKey);
+                                  }
+
+                                  return nextSubcategories;
+                                })
+                              }
+                              className={`flex h-9 w-full items-center justify-between gap-3 border-t border-white/[0.045] pl-10 pr-3 text-left outline-none transition ${
+                                isSubcategoryOpen
+                                  ? "bg-white/[0.032] text-white/78"
+                                  : "bg-white/[0.018] text-white/56 hover:bg-white/[0.026] hover:text-white/74"
+                              } focus-visible:bg-white/[0.05]`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ChevronRight
+                                  className={`h-3.5 w-3.5 shrink-0 stroke-[1.7] transition ${
+                                    isSubcategoryOpen
+                                      ? "rotate-90 text-white/54"
+                                      : "text-white/28"
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                <span className="min-w-0 truncate text-xs font-semibold">
+                                  {subcategory.label}
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/26">
+                                {exercises.length}
+                              </span>
+                            </button>
+                            <AnimatePresence initial={false}>
+                              {isSubcategoryOpen ? (
+                                <motion.div
+                                  key={`${subcategoryKey}-fitness-exercises`}
+                                  initial={{ height: 0, opacity: 0, y: -2 }}
+                                  animate={{ height: "auto", opacity: 1, y: 0 }}
+                                  exit={{ height: 0, opacity: 0, y: -2 }}
+                                  transition={nutritionBrowseAccordionTransition}
+                                  className="overflow-hidden"
+                                >
+                                  {exercises.map((exercise) => {
+                                    const isSelected = selectedFitnessWorkoutExercises.some(
+                                      (selectedExercise) =>
+                                        selectedExercise.name === exercise.name,
+                                    );
+                                    const isFavorite = favoriteFitnessExerciseIds.has(
+                                      exercise.name,
+                                    );
+
+                                    return (
+                                      <div
+                                        key={exercise.name}
+                                        className={`flex min-h-14 w-full items-center gap-2.5 border-t border-white/[0.04] px-3 py-2 text-left transition ${
+                                          isSelected
+                                            ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.68)]"
+                                            : "hover:bg-white/[0.022]"
+                                        }`}
+                                      >
+                                        <button
+                                          type="button"
+                                          aria-label={
+                                            isFavorite
+                                              ? `Remove ${exercise.name} from favorites`
+                                              : `Add ${exercise.name} to favorites`
+                                          }
+                                          aria-pressed={isFavorite}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            toggleFavoriteFitnessExercise(exercise.name);
+                                          }}
+                                          className={`flex h-8 w-7 shrink-0 items-center justify-center outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
+                                            isFavorite
+                                              ? "text-[#f8d36b]"
+                                              : "text-white/42 hover:text-white/78"
+                                          }`}
+                                        >
+                                          <Star
+                                            className={`h-4 w-4 ${
+                                              isFavorite ? "fill-current" : ""
+                                            }`}
+                                            aria-hidden="true"
+                                          />
+                                        </button>
+                                        <div className="min-w-0 flex-1">
+                                          <span className="flex min-w-0 items-center gap-1.5">
+                                            {isSelected ? (
+                                              <Check
+                                                className="h-3.5 w-3.5 shrink-0 text-white/68"
+                                                aria-hidden="true"
+                                              />
+                                            ) : null}
+                                            <span className="block truncate text-sm font-semibold text-white/84">
+                                              {exercise.name}
+                                            </span>
+                                          </span>
+                                          <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                                            {exercise.equipment} · {exercise.guidance}
+                                          </span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          aria-label={
+                                            isSelected
+                                              ? `${exercise.name} already added`
+                                              : `Add ${exercise.name} to current workout`
+                                          }
+                                          aria-pressed={isSelected}
+                                          disabled={isSelected}
+                                          onClick={() => addFitnessWorkoutExercise(exercise)}
+                                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
+                                            isSelected
+                                              ? "cursor-default border-white/[0.1] bg-white/[0.1] text-white/72"
+                                              : "border-white/[0.08] bg-white/[0.08] text-white/76 hover:border-white/[0.14] hover:bg-white/[0.13] hover:text-white"
+                                          }`}
+                                        >
+                                          {isSelected ? (
+                                            <Check className="h-4 w-4" aria-hidden="true" />
+                                          ) : (
+                                            <Plus className="h-4 w-4" aria-hidden="true" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </motion.div>
+                              ) : null}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </Fragment>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFitnessFavoritesBrowser() {
+    const favoriteExercises = FITNESS_EXERCISE_SAMPLES.filter((exercise) =>
+      favoriteFitnessExerciseIds.has(exercise.name),
+    );
+
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="flex items-end justify-between gap-3 px-1">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white/82">Favorites</p>
+            <p className="mt-0.5 text-xs font-medium text-white/38">
+              Star exercises from the Exercises tab for quick access.
+            </p>
+          </div>
+          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
+            UI-only
+          </span>
+        </div>
+        {favoriteExercises.length > 0 ? (
+          <div className="space-y-1.5">
+            {favoriteExercises.map((exercise) => {
+              const isSelected = selectedFitnessWorkoutExercises.some(
+                (selectedExercise) => selectedExercise.name === exercise.name,
+              );
+
+              return (
+                <div
+                  key={exercise.name}
+                  className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+                    isSelected
+                      ? "border-white/[0.11] bg-white/[0.065]"
+                      : "border-white/[0.055] bg-black/42"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    aria-label={`Remove ${exercise.name} from favorites`}
+                    aria-pressed={true}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleFavoriteFitnessExercise(exercise.name);
+                    }}
+                    className="flex h-8 w-7 shrink-0 items-center justify-center text-[#f8d36b] outline-none transition hover:text-[#f8d36b]/85 focus-visible:ring-1 focus-visible:ring-white/16"
+                  >
+                    <Star className="h-4 w-4 fill-current" aria-hidden="true" />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white/84">
+                      {exercise.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs font-medium text-white/40">
+                      {exercise.movementType} · {exercise.guidance}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={
+                      isSelected
+                        ? `${exercise.name} already added`
+                        : `Add ${exercise.name} to current workout`
+                    }
+                    aria-pressed={isSelected}
+                    disabled={isSelected}
+                    onClick={() => addFitnessWorkoutExercise(exercise)}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
+                      isSelected
+                        ? "cursor-default border-white/[0.1] bg-white/[0.1] text-white/72"
+                        : "border-white/[0.08] bg-white/[0.08] text-white/76 hover:border-white/[0.14] hover:bg-white/[0.13] hover:text-white"
+                    }`}
+                  >
+                    {isSelected ? (
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/[0.08] bg-black/34 px-3 py-3 text-xs font-medium text-white/42">
+            No favorite exercises yet. Star exercises from the Exercises tab.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderFitnessCustomIntro() {
+    return (
+      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.055] text-white/62">
+            <PencilLine className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white/82">Custom fitness log</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-white/42">
+              Review selected exercises or enter a manual workout before saving.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderFitnessRoutineBrowser() {
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="px-1">
+          <p className="text-sm font-semibold text-white/82">Routines</p>
+          <p className="mt-0.5 text-xs font-medium text-white/38">
+            Reusable workout sessions made from exercises.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {FITNESS_ROUTINE_SAMPLES.map((routine) => (
+            <div
+              key={routine.name}
+              className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white/86">{routine.name}</p>
+                  <p className="mt-1 text-xs font-medium text-white/42">{routine.focus}</p>
+                </div>
+                <span className="rounded-full border border-white/[0.05] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/36">
+                  Routine
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {routine.exercises.map((exerciseName) => (
+                  <span
+                    key={exerciseName}
+                    className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50"
+                  >
+                    {exerciseName}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-xs font-medium leading-5 text-white/44">
+                {routine.guidance}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFitnessPlanBrowser() {
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="px-1">
+          <p className="text-sm font-semibold text-white/82">Plans</p>
+          <p className="mt-0.5 text-xs font-medium text-white/38">
+            Weekly structures that combine multiple workout routines.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {FITNESS_PLAN_SAMPLES.map((plan) => (
+            <div
+              key={plan.name}
+              className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white/86">{plan.name}</p>
+                  <p className="mt-1 text-xs font-medium text-white/42">{plan.cadence}</p>
+                </div>
+                <span className="rounded-full border border-white/[0.05] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/36">
+                  Plan
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {plan.days.map((planDay) => (
+                  <div
+                    key={`${plan.name}-${planDay.day}`}
+                    className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.03] px-2.5 py-2"
+                  >
+                    <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[11px] font-semibold text-white/58">
+                      {planDay.day}
+                    </span>
+                    <span className="min-w-0 truncate text-xs font-medium text-white/64">
+                      {planDay.routine}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFitnessStartContent() {
+    const hasSelectedWorkoutExercises = selectedFitnessWorkoutExercises.length > 0;
+
+    return (
+      <div className="mt-3">
+        <div className="rounded-xl border border-white/[0.055] bg-black/42 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.055] text-white/62">
+                <Dumbbell className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white/82">Current workout</p>
+                {hasSelectedWorkoutExercises ? (
+                  <p className="mt-0.5 text-xs font-medium text-white/38">
+                    {selectedFitnessWorkoutExercises.length} selected
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            {hasSelectedWorkoutExercises ? (
+              <button
+                type="button"
+                onClick={clearFitnessWorkoutExercises}
+                className="shrink-0 rounded-lg border border-white/[0.06] bg-white/[0.045] px-2.5 py-1.5 text-xs font-semibold text-white/58 outline-none transition hover:border-white/[0.1] hover:bg-white/[0.08] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/16"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {hasSelectedWorkoutExercises ? (
+            <div className="mt-3 space-y-1.5">
+              {selectedFitnessWorkoutExercises.map((exercise) => (
+                <div
+                  key={exercise.name}
+                  className="flex min-h-10 items-center gap-2 rounded-lg border border-white/[0.045] bg-white/[0.035] px-2.5 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-semibold text-white/78">
+                      {exercise.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] font-medium text-white/38">
+                      {exercise.guidance}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${exercise.name} from current workout`}
+                    onClick={() => removeFitnessWorkoutExercise(exercise.name)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/40 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-lg border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-3 text-center text-xs font-medium text-white/40">
+              Add exercises from Exercises or Favorites.
+            </div>
+          )}
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => selectFitnessAction("exercises")}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.045] px-3 text-xs font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
+            >
+              <ListChecks className="h-4 w-4" aria-hidden="true" />
+              Exercises
+            </button>
+            <button
+              type="button"
+              onClick={() => selectFitnessAction("favorites")}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.045] px-3 text-xs font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/16"
+            >
+              <Star className="h-4 w-4" aria-hidden="true" />
+              Favorites
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={logSelectedFitnessWorkout}
+            className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.13] px-3 text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] focus-visible:ring-1 focus-visible:ring-white/16"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Review &amp; log workout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderFitnessTabContent() {
+    return (
+      <div>
+        {renderFitnessActionTabs()}
+        {selectedFitnessAction === "start" ? (
+          renderFitnessStartContent()
+        ) : selectedFitnessAction === "exercises" ? (
+          renderFitnessExerciseBrowser()
+        ) : selectedFitnessAction === "favorites" ? (
+          renderFitnessFavoritesBrowser()
+        ) : selectedFitnessAction === "custom" ? (
+          renderFitnessCustomIntro()
+        ) : selectedFitnessAction === "workout-routines" ? (
+          renderFitnessRoutineBrowser()
+        ) : selectedFitnessAction === "plans" ? (
+          renderFitnessPlanBrowser()
+        ) : null}
       </div>
     );
   }
@@ -6211,6 +7777,247 @@ export function NoteDatabaseEntrySheet({
     });
   }
 
+  function renderGrocerySelectedFoodDetail(item: NutritionSelectedFoodItem) {
+    const calories = formatFoodNutritionNumber(
+      getNutritionFoodLineValue(item, "calories"),
+    ) ?? "0";
+    const macroRows = getNutritionSelectedFoodMacroRows(item);
+    const { food } = item;
+
+    return (
+      <div
+        key={food.id}
+        className="w-full rounded-xl border border-white/[0.07] bg-black/30 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+      >
+        <div className="flex w-full items-start gap-3">
+          <NutritionFoodIcon food={food} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold leading-snug text-white/88">
+              {food.name}
+            </span>
+            {food.brand_name ? (
+              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
+                {food.brand_name}
+              </span>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            aria-label={`Remove ${food.name}`}
+            onClick={() => removeNutritionSelectedFood(food)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/42 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-white/[0.055] bg-white/[0.035] px-3 py-2">
+          <div className="flex min-w-0 items-baseline justify-between gap-3">
+            <span className="text-xs font-semibold text-white/52">Calories</span>
+            <span className="text-lg font-semibold leading-none tabular-nums text-white/88">
+              {calories}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {macroRows.map((macro) => (
+              <div key={macro.key} className="min-w-0 rounded-lg bg-black/24 px-2 py-1.5">
+                <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32">
+                  {macro.label}
+                </span>
+                <span className="mt-0.5 block text-sm font-semibold tabular-nums text-white/78">
+                  {macro.value}g
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold text-white/52">Serving</span>
+          {renderNutritionFoodQuantityControl(item)}
+        </div>
+        {renderGroceryInventoryControls()}
+      </div>
+    );
+  }
+
+  function renderGroceryInventoryControls() {
+    if (!isGroceryDatabase || (!groceryExpirationField && !groceryLocationField)) {
+      return null;
+    }
+
+    const expiresValue =
+      typeof entryFormValues[ON_HAND_EXPIRES_ON_FIELD_ID] === "string"
+        ? entryFormValues[ON_HAND_EXPIRES_ON_FIELD_ID]
+        : "";
+    const locationValue =
+      typeof entryFormValues[ON_HAND_LOCATION_FIELD_ID] === "string"
+        ? entryFormValues[ON_HAND_LOCATION_FIELD_ID]
+        : "";
+    const locationLabel =
+      GROCERY_LOCATION_OPTIONS.find((option) => option.value === locationValue)?.label ??
+      (locationValue ? locationValue : "");
+    const inventoryChipClassName =
+      "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.045] px-2.5 text-xs font-semibold text-white/64 outline-none transition hover:border-white/[0.11] hover:bg-white/[0.07] hover:text-white/84 focus-visible:ring-1 focus-visible:ring-white/16";
+    const compactInputClassName =
+      "h-8 min-w-0 rounded-lg border border-white/[0.055] bg-black/28 px-2.5 text-xs font-semibold text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/34 focus-visible:border-white/[0.14] focus-visible:bg-black/38 focus-visible:ring-1 focus-visible:ring-white/12";
+
+    const toggleInventoryField = (field: "expires" | "location") => {
+      void hapticSoftTick();
+      setExpandedGroceryInventoryField((currentField) =>
+        currentField === field ? null : field,
+      );
+    };
+
+    return (
+      <div className="mt-3 border-t border-white/[0.055] pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {groceryExpirationField ? (
+            <button
+              type="button"
+              aria-expanded={expandedGroceryInventoryField === "expires"}
+              onClick={() => toggleInventoryField("expires")}
+              className={inventoryChipClassName}
+            >
+              <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                {expiresValue
+                  ? `Expires ${formatDatabaseEntryValue(expiresValue, "date")}`
+                  : "Expires"}
+              </span>
+            </button>
+          ) : null}
+          {groceryLocationField ? (
+            <button
+              type="button"
+              aria-expanded={expandedGroceryInventoryField === "location"}
+              onClick={() => toggleInventoryField("location")}
+              className={inventoryChipClassName}
+            >
+              <Pin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{locationLabel || "Location"}</span>
+            </button>
+          ) : null}
+        </div>
+
+        {expandedGroceryInventoryField === "expires" && groceryExpirationField ? (
+          <label className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-1.5">
+            <span className="shrink-0 text-[11px] font-semibold text-white/42">
+              Expires
+            </span>
+            <input
+              type="date"
+              value={expiresValue}
+              onChange={(event) =>
+                updateEntryFormValue(ON_HAND_EXPIRES_ON_FIELD_ID, event.target.value)
+              }
+              className={`${compactInputClassName} flex-1`}
+            />
+          </label>
+        ) : null}
+
+        {expandedGroceryInventoryField === "location" && groceryLocationField ? (
+          <label className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-1.5">
+            <span className="shrink-0 text-[11px] font-semibold text-white/42">
+              Location
+            </span>
+            <select
+              value={locationValue}
+              onChange={(event) =>
+                updateEntryFormValue(ON_HAND_LOCATION_FIELD_ID, event.target.value)
+              }
+              className={`${compactInputClassName} flex-1`}
+            >
+              <option value="">Location</option>
+              {GROCERY_LOCATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderGroceryCustomServingSelector() {
+    const quantityValue = entryFormValues[ON_HAND_QUANTITY_FIELD_ID];
+    const unitValue = entryFormValues[ON_HAND_UNIT_FIELD_ID];
+    const amount =
+      typeof quantityValue === "number"
+        ? quantityValue
+        : typeof quantityValue === "string"
+          ? Number(quantityValue)
+          : 1;
+    const servingOptions: NutritionServingOption[] = [
+      { value: "serving", label: "serving" },
+      { value: "g", label: "g" },
+      { value: "oz", label: "oz" },
+      { value: "lb", label: "lb" },
+      { value: "cup", label: "cup" },
+      { value: "tbsp", label: "tbsp" },
+      { value: "tsp", label: "tsp" },
+      { value: "ml", label: "ml" },
+      { value: "fl oz", label: "fl oz" },
+    ];
+
+    return renderNutritionServingSelector({
+      id: "grocery-custom",
+      label: "Grocery quantity",
+      amount: Number.isFinite(amount) && amount > 0 ? amount : 1,
+      unit: normalizeNutritionServingUnit(unitValue),
+      options: servingOptions,
+      onChange: (nextAmount, nextUnit) => {
+        updateEntryFormValue(
+          ON_HAND_QUANTITY_FIELD_ID,
+          formatNutritionServingAmount(nextAmount),
+        );
+        updateEntryFormValue(ON_HAND_UNIT_FIELD_ID, nextUnit);
+      },
+    });
+  }
+
+  function renderGroceryCustomFoodFields() {
+    if (!groceryFoodField) return null;
+
+    const caloriesField: NoteDatabaseFieldDefinition = {
+      id: GROCERY_CUSTOM_CALORIES_FIELD_ID,
+      name: "Calories",
+      type: "number",
+    };
+    const macroFields: NoteDatabaseFieldDefinition[] = [
+      { id: GROCERY_CUSTOM_CARBS_FIELD_ID, name: "Carbs", type: "number" },
+      { id: GROCERY_CUSTOM_PROTEIN_FIELD_ID, name: "Protein", type: "number" },
+      { id: GROCERY_CUSTOM_FAT_FIELD_ID, name: "Fat", type: "number" },
+    ];
+    const inventoryFields = [
+      groceryExpirationField,
+      groceryLocationField,
+    ].filter((field): field is NoteDatabaseFieldDefinition => Boolean(field));
+
+    return (
+      <div className="mt-3 space-y-3">
+        {renderDatabaseEntryField({ ...groceryFoodField, name: "Food" })}
+        {renderDatabaseEntryField(caloriesField)}
+        <div className="grid grid-cols-3 gap-2">
+          {macroFields.map((macroField) => (
+            <div key={macroField.id} className="min-w-0">
+              {renderDatabaseEntryField(macroField, { compact: true })}
+            </div>
+          ))}
+        </div>
+        {groceryQuantityField || groceryUnitField ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.055] bg-black/30 px-3 py-2.5">
+            <span className="text-xs font-semibold text-white/52">Serving</span>
+            {renderGroceryCustomServingSelector()}
+          </div>
+        ) : null}
+        {inventoryFields.length > 0 ? renderGroceryInventoryControls() : null}
+      </div>
+    );
+  }
+
   function renderNutritionMealBuilderQuantityControl(item: NutritionMealBuilderItem) {
     return renderNutritionServingSelector({
       id: `meal-builder-${item.id}`,
@@ -6360,7 +8167,9 @@ export function NoteDatabaseEntrySheet({
               const selectedItem = getSelectedNutritionFoodItem(food);
               const isSelected = Boolean(selectedItem);
               const displayMeta = selectedItem
-                ? getNutritionSelectedFoodLineMeta(selectedItem)
+                ? isGroceryDatabase
+                  ? food.brand_name
+                  : getNutritionSelectedFoodLineMeta(selectedItem)
                 : meta;
               const subline =
                 selectedItem && displayMeta
@@ -6420,6 +8229,230 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function getNutritionGroceryFoodDetails(food: FoodSearchResult) {
+    const metadata =
+      food.metadata && typeof food.metadata === "object" && !Array.isArray(food.metadata)
+        ? (food.metadata as Record<string, unknown>)
+        : {};
+    const quantity = getPositiveNutritionMetadataNumber(metadata, "foodResourceQuantity");
+    const unit =
+      typeof metadata.foodResourceUnit === "string" && metadata.foodResourceUnit.trim()
+        ? metadata.foodResourceUnit.trim()
+        : null;
+    const location =
+      typeof metadata.foodResourceLocation === "string" &&
+      metadata.foodResourceLocation.trim()
+        ? metadata.foodResourceLocation.trim()
+        : null;
+    const quantityLabel =
+      quantity && unit
+        ? `${formatFoodNutritionNumber(quantity) ?? quantity} ${unit}`
+        : quantity
+          ? formatFoodNutritionNumber(quantity)
+          : unit;
+
+    return [food.brand_name, quantityLabel, location].filter(Boolean).join(" · ");
+  }
+
+  function renderNutritionGroceryContent() {
+    return (
+      <div className="mt-2">
+        {renderSelectedNutritionFoods()}
+        <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+          {isNutritionGroceryLoading ? (
+            <p className="px-3 py-2.5 text-xs font-medium text-white/42">
+              Loading Grocery...
+            </p>
+          ) : nutritionGroceryError ? (
+            <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
+              {nutritionGroceryError}
+            </p>
+          ) : nutritionGroceryFoods.length > 0 ? (
+            <div className="divide-y divide-white/[0.045]">
+              {nutritionGroceryFoods.map((food) => {
+                const selectedItem = getSelectedNutritionFoodItem(food);
+                const isSelected = Boolean(selectedItem);
+                const details = getNutritionGroceryFoodDetails(food);
+                const nutritionMeta = selectedItem
+                  ? getNutritionSelectedFoodLineMeta(selectedItem)
+                  : getFoodSearchResultMeta(food);
+
+                return (
+                  <div
+                    key={food.id}
+                    className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition ${
+                      isSelected
+                        ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.7)]"
+                        : "hover:bg-white/[0.045]"
+                    } focus-visible:bg-white/[0.06]`}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => toggleNutritionFoodSelection(food)}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left outline-none"
+                    >
+                      <NutritionFoodIcon food={food} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {isSelected ? (
+                            <Check
+                              className="h-3.5 w-3.5 shrink-0 text-white/76"
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <span className="block truncate text-sm font-semibold text-white/84">
+                            {food.name}
+                          </span>
+                        </span>
+                        {details || nutritionMeta ? (
+                          <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                            {[details, nutritionMeta].filter(Boolean).join(" · ")}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                    {selectedItem ? (
+                      renderNutritionFoodQuantityControl(selectedItem)
+                    ) : nutritionMeta ? (
+                      <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                        {nutritionMeta}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="px-3 py-2.5 text-xs font-medium text-white/38">
+              No active Grocery foods yet.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function getGroceryResourceQuantityLabel(resource: FoodResource) {
+    const quantity = getPositiveNutritionNumber(resource.quantity);
+    const unit = resource.unit?.trim();
+
+    if (quantity && unit) return `${formatFoodNutritionNumber(quantity) ?? quantity} ${unit}`;
+    if (quantity) return formatFoodNutritionNumber(quantity) ?? String(quantity);
+    return unit ?? "";
+  }
+
+  function getGroceryResourceMetadataNumber(resource: FoodResource, key: NutritionMacroSourceKey) {
+    const metadata = getFoodResourceMetadata(resource);
+    const directValue = getNutritionSnapshotNumber(metadata[key]);
+    if (directValue !== null) return directValue;
+
+    const foodSnapshot =
+      metadata.foodSnapshot && typeof metadata.foodSnapshot === "object" && !Array.isArray(metadata.foodSnapshot)
+        ? (metadata.foodSnapshot as Record<string, unknown>)
+        : null;
+
+    return getNutritionSnapshotNumber(foodSnapshot?.[key]);
+  }
+
+  function getGroceryResourceNutritionMeta(resource: FoodResource) {
+    const calories = getGroceryResourceMetadataNumber(resource, "calories");
+    const carbs = getGroceryResourceMetadataNumber(resource, "carbs_g");
+    const protein = getGroceryResourceMetadataNumber(resource, "protein_g");
+    const fat = getGroceryResourceMetadataNumber(resource, "fat_g");
+    const parts: string[] = [];
+
+    if (calories !== null) {
+      parts.push(`${formatFoodNutritionNumber(calories) ?? calories} cal`);
+    }
+    if (carbs !== null) parts.push(`${formatFoodNutritionNumber(carbs) ?? carbs}g C`);
+    if (protein !== null) {
+      parts.push(`${formatFoodNutritionNumber(protein) ?? protein}g P`);
+    }
+    if (fat !== null) parts.push(`${formatFoodNutritionNumber(fat) ?? fat}g F`);
+
+    return parts.join(" · ");
+  }
+
+  function getGroceryResourceDetailParts(resource: FoodResource) {
+    const quantity = getGroceryResourceQuantityLabel(resource);
+    const location = resource.location?.trim();
+    const expires = resource.expires_on
+      ? `Expires ${formatDatabaseEntryValue(resource.expires_on, "date")}`
+      : "";
+
+    return [resource.brand_name, quantity, location, expires].filter(Boolean);
+  }
+
+  function renderGroceryResourcesContent() {
+    return (
+      <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
+        {isGroceryResourcesLoading ? (
+          <p className="px-3 py-2.5 text-xs font-medium text-white/42">
+            Loading groceries...
+          </p>
+        ) : groceryResourcesError ? (
+          <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
+            {groceryResourcesError}
+          </p>
+        ) : groceryResourceItems.length > 0 ? (
+          <div className="divide-y divide-white/[0.045]">
+            {groceryResourceItems.map((resource) => {
+              const detailLine = getGroceryResourceDetailParts(resource).join(" · ");
+              const nutritionMeta = getGroceryResourceNutritionMeta(resource);
+
+              return (
+                <div
+                  key={resource.id}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.045] text-white/60">
+                      <ShoppingBasket className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-white/84">
+                        {resource.name}
+                      </span>
+                      {detailLine ? (
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                          {detailLine}
+                        </span>
+                      ) : null}
+                      {nutritionMeta ? (
+                        <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/46">
+                          {nutritionMeta}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                  {resource.location ? (
+                    <span className="hidden shrink-0 rounded-full border border-white/[0.055] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 sm:inline-flex">
+                      {resource.location}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-3 py-5 text-center">
+            <ShoppingBasket
+              className="mx-auto h-5 w-5 text-white/28"
+              aria-hidden="true"
+            />
+            <p className="mt-2 text-xs font-semibold text-white/48">
+              No active groceries yet.
+            </p>
+            <p className="mt-1 text-[11px] font-medium text-white/30">
+              Added Grocery List items will show here.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderSelectedNutritionFoods() {
     const selectedItems =
       selectedNutritionFoodAction === "scan"
@@ -6443,14 +8476,21 @@ export function NoteDatabaseEntrySheet({
         <div className="space-y-1.5">
           {selectedItems.map((item) => {
             const { food } = item;
-            const meta = getNutritionSelectedFoodLineMeta(item);
+            if (isGroceryDatabase) {
+              return renderGrocerySelectedFoodDetail(item);
+            }
+
+            const meta = isGroceryDatabase ? food.brand_name : getNutritionSelectedFoodLineMeta(item);
             const quantityBadgeLabel = getNutritionSelectedFoodQuantityBadgeLabel(item);
             const isScannedSelection = selectedNutritionFoodAction === "scan";
-            const favoriteTarget: NutritionFavoriteTarget = {
-              itemType: "food",
-              itemId: food.id,
-              label: food.name,
-            };
+            const favoriteTarget: NutritionFavoriteTarget | null =
+              food.source?.startsWith("grocery")
+                ? null
+                : {
+                    itemType: "food",
+                    itemId: food.id,
+                    label: food.name,
+                  };
 
             if (isScannedSelection) {
               return (
@@ -6459,7 +8499,7 @@ export function NoteDatabaseEntrySheet({
                   className="w-full rounded-lg border border-white/[0.055] bg-black/28 px-2.5 py-2.5"
                 >
                   <div className="flex w-full items-start gap-2">
-                    {renderNutritionFavoriteButton(favoriteTarget)}
+                    {isGroceryDatabase ? null : renderNutritionFavoriteButton(favoriteTarget)}
                     <NutritionFoodIcon food={food} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold leading-snug text-white/86">
@@ -6492,7 +8532,7 @@ export function NoteDatabaseEntrySheet({
                 key={food.id}
                 className="flex w-full items-center gap-2 rounded-lg border border-white/[0.055] bg-black/28 px-2 py-2"
               >
-                {renderNutritionFavoriteButton(favoriteTarget)}
+                {isGroceryDatabase ? null : renderNutritionFavoriteButton(favoriteTarget)}
                 <NutritionFoodIcon food={food} />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-1.5">
@@ -7339,6 +9379,45 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderGroceryPlanningPlaceholder(
+    tab: Extract<NutritionFoodActionTabId, "recipes" | "chef" | "meal-plan">,
+  ) {
+    const content = {
+      recipes: {
+        icon: BookOpen,
+        title: "Recipes",
+        body: "Recipe ideas from Grocery List items will live here later.",
+      },
+      chef: {
+        icon: ChefHat,
+        title: "Chef",
+        body: "Chef help for cooking from available groceries will live here later.",
+      },
+      "meal-plan": {
+        icon: Calendar,
+        title: "Meal Plan",
+        body: "Plan meals from Grocery List items here later.",
+      },
+    }[tab];
+    const Icon = content.icon;
+
+    return (
+      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-4">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/66 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <Icon className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white/84">{content.title}</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-white/42">
+              {content.body}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderNutritionFoodBrowseContent() {
     return (
       <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
@@ -7459,8 +9538,12 @@ export function NoteDatabaseEntrySheet({
                                       const isSelected = Boolean(selectedItem);
                                       const nutritionPreview =
                                         selectedItem
-                                          ? getNutritionSelectedFoodLineMeta(selectedItem)
-                                          : getFoodBrowseNutritionPreview(food);
+                                          ? isGroceryDatabase
+                                            ? food.brand_name
+                                            : getNutritionSelectedFoodLineMeta(selectedItem)
+                                          : isGroceryDatabase
+                                            ? food.brand_name
+                                            : getFoodBrowseNutritionPreview(food);
 
                                       return (
                                         <div
@@ -7492,7 +9575,9 @@ export function NoteDatabaseEntrySheet({
                                               </span>
                                               <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
                                                 {nutritionPreview ||
-                                                  "Nutrition details unavailable"}
+                                                  (isGroceryDatabase
+                                                    ? "Catalog item"
+                                                    : "Nutrition details unavailable")}
                                               </span>
                                             </span>
                                           </button>
@@ -7526,6 +9611,8 @@ export function NoteDatabaseEntrySheet({
 
   function renderNutritionFoodSearchField(field: NoteDatabaseFieldDefinition) {
     const normalizedBarcodeValue = normalizeFoodBarcode(nutritionBarcodeValue);
+    const isGroceryMode = isGroceryDatabase;
+    const searchPlaceholder = isGroceryMode ? "Search groceries..." : "Search foods...";
 
     return (
       <div key={field.id} className="block">
@@ -7539,9 +9626,13 @@ export function NoteDatabaseEntrySheet({
             {renderNutritionFoodActionTabs()}
 
             {selectedNutritionFoodAction === "custom" ? (
-          <div className="mt-3">{renderDatabaseEntryField(field)}</div>
-        ) : selectedNutritionFoodAction === "scan" ? (
-          <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
+              isGroceryMode ? (
+                renderGroceryCustomFoodFields()
+              ) : (
+                <div className="mt-3">{renderDatabaseEntryField(field)}</div>
+              )
+            ) : selectedNutritionFoodAction === "scan" ? (
+              <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-3">
             <button
               type="button"
               onClick={() => void scanAndLookupNutritionBarcode()}
@@ -7605,12 +9696,22 @@ export function NoteDatabaseEntrySheet({
             ) : null}
             {renderSelectedNutritionFoods()}
           </div>
+        ) : selectedNutritionFoodAction === "grocery" ? (
+          isGroceryMode ? renderGroceryResourcesContent() : renderNutritionGroceryContent()
         ) : selectedNutritionFoodAction === "meals" ? (
           renderNutritionReusableMealsContent()
         ) : selectedNutritionFoodAction === "recent" ? (
           renderNutritionSavedMealsContent()
         ) : selectedNutritionFoodAction === "recipes" ? (
-          renderNutritionRecipesContent()
+          isGroceryMode ? (
+            renderGroceryPlanningPlaceholder("recipes")
+          ) : (
+            renderNutritionRecipesContent()
+          )
+        ) : selectedNutritionFoodAction === "chef" && isGroceryMode ? (
+          renderGroceryPlanningPlaceholder("chef")
+        ) : selectedNutritionFoodAction === "meal-plan" && isGroceryMode ? (
+          renderGroceryPlanningPlaceholder("meal-plan")
         ) : (
           <>
             <div className="relative mt-2">
@@ -7623,7 +9724,7 @@ export function NoteDatabaseEntrySheet({
                 value={nutritionFoodSearchQuery}
                 onChange={(event) => setNutritionFoodSearchQuery(event.target.value)}
                 className="h-12 w-full rounded-xl border border-white/[0.055] bg-black/42 pl-10 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/28 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/48 focus-visible:border-white/[0.16] focus-visible:bg-black/54 focus-visible:ring-1 focus-visible:ring-white/12"
-                placeholder="Search foods..."
+                placeholder={searchPlaceholder}
                 aria-label="Food"
               />
             </div>
@@ -7635,7 +9736,7 @@ export function NoteDatabaseEntrySheet({
                 isLoading: isNutritionFoodSearchLoading,
                 error: nutritionFoodSearchError,
                 loadingLabel: "Searching...",
-                emptyLabel: "No foods found.",
+                emptyLabel: isGroceryMode ? "No groceries found." : "No foods found.",
               })
             ) : null}
             {selectedNutritionFoodAction === "search" ? renderNutritionFoodBrowseContent() : null}
@@ -7654,7 +9755,13 @@ export function NoteDatabaseEntrySheet({
     const entryId = initialEntry?.id ?? buildClientDatabaseEntryId();
     const values = databaseFields.reduce<Record<string, unknown>>(
       (nextValues, field) => {
-        const rawValue = entryFormValues[field.id] ?? "";
+        const rawFieldValue = entryFormValues[field.id];
+        const rawValue =
+          typeof rawFieldValue === "string"
+            ? rawFieldValue
+            : rawFieldValue == null
+              ? ""
+              : String(rawFieldValue);
         const value = getDatabaseEntryFieldValue(field, rawValue);
 
         if (isUsefulDatabaseEntryValue(value)) {
@@ -7665,6 +9772,39 @@ export function NoteDatabaseEntrySheet({
       },
       {},
     );
+
+    if (isGroceryDatabase) {
+      const foodId = entryFormValues.food_id;
+      const brandName = entryFormValues.brand_name;
+      const metadata = entryFormValues.metadata;
+
+      delete values[ON_HAND_NOTES_FIELD_ID];
+
+      if (
+        selectedNutritionFoodAction === "custom" &&
+        !isUsefulDatabaseEntryValue(values[ON_HAND_QUANTITY_FIELD_ID])
+      ) {
+        values[ON_HAND_QUANTITY_FIELD_ID] = 1;
+      }
+      if (
+        selectedNutritionFoodAction === "custom" &&
+        !isUsefulDatabaseEntryValue(values[ON_HAND_UNIT_FIELD_ID])
+      ) {
+        values[ON_HAND_UNIT_FIELD_ID] = "serving";
+      }
+      if (typeof foodId === "string" && foodId.trim()) {
+        values.food_id = foodId;
+      }
+      if (typeof brandName === "string" && brandName.trim()) {
+        values.brand_name = brandName;
+      }
+      if (selectedNutritionFoodAction === "custom") {
+        values.metadata = getGroceryCustomMetadata(entryFormValues);
+      } else if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+        values.metadata = metadata;
+      }
+    }
+
     const nextEntry: NoteDatabaseEntry = {
       id: entryId,
       createdAt: initialEntry?.createdAt ?? now,
@@ -7763,17 +9903,26 @@ export function NoteDatabaseEntrySheet({
 
         <div
           className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 ${
-            isDefaultNutritionDatabase ? "pt-2" : "pt-4"
+            isDefaultNutritionDatabase || isDefaultFitnessDatabase ? "pt-2" : "pt-4"
           } [-webkit-overflow-scrolling:touch]`}
         >
           {databaseFields.length > 0 ? (
             <div className="space-y-4">
+              {isDefaultFitnessDatabase ? renderFitnessTabContent() : null}
               {editableDatabaseFields.map((field, fieldIndex) => {
-                if (nutritionFoodField?.id === field.id) {
+                if (!shouldShowFitnessEntryFields) {
+                  return null;
+                }
+
+                if (nutritionFoodField?.id === field.id || groceryFoodField?.id === field.id) {
                   return renderNutritionFoodSearchField(field);
                 }
 
                 if (shouldHideNutritionEntryFields) {
+                  return null;
+                }
+
+                if (hiddenGroceryFoodSearchFieldIds.has(field.id)) {
                   return null;
                 }
 
@@ -7793,7 +9942,7 @@ export function NoteDatabaseEntrySheet({
 
                 return renderDatabaseEntryField(field);
               })}
-              {createdAtMetadataTime ? (
+              {createdAtMetadataTime && shouldShowFitnessEntryFields ? (
                 <p className="!mt-1 px-1 text-center text-[10px] font-medium leading-none text-white/36">
                   {createdAtMetadataTime}
                 </p>
@@ -7812,37 +9961,39 @@ export function NoteDatabaseEntrySheet({
           </p>
         ) : null}
 
-        <div
-          className={`border-t border-white/[0.04] p-3 sm:p-4 ${
-            isDefaultNutritionDatabase ? "flex" : "flex gap-2"
-          }`}
-        >
-          {!isDefaultNutritionDatabase ? (
+        {shouldShowEntryFooter ? (
+          <div
+            className={`border-t border-white/[0.04] p-3 sm:p-4 ${
+              isDefaultNutritionDatabase ? "flex" : "flex gap-2"
+            }`}
+          >
+            {!isDefaultNutritionDatabase ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void hapticSnap();
+                  onClose();
+                }}
+                disabled={isSubmitting}
+                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:text-white/28"
+              >
+                Cancel
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => {
-                void hapticSnap();
-                onClose();
-              }}
-              disabled={isSubmitting}
-              className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:text-white/28"
+              disabled={databaseFields.length === 0 || isSubmitting}
+              onClick={saveDatabaseEntry}
+              className={
+                isDefaultNutritionDatabase
+                  ? "flex h-11 w-full items-center justify-center rounded-2xl border border-zinc-50/35 bg-zinc-200/72 px-5 text-sm font-semibold text-zinc-950 shadow-[0_12px_28px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.46),inset_0_-1px_0_rgba(113,113,122,0.16)] outline-none backdrop-blur-xl transition hover:border-white/45 hover:bg-zinc-200/84 active:bg-zinc-300/78 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
+                  : "flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+              }
             >
-              Cancel
+              {isSubmitting ? "Saving..." : submitLabel}
             </button>
-          ) : null}
-          <button
-            type="button"
-            disabled={databaseFields.length === 0 || isSubmitting}
-            onClick={saveDatabaseEntry}
-            className={
-              isDefaultNutritionDatabase
-                ? "flex h-11 w-full items-center justify-center rounded-2xl border border-zinc-50/35 bg-zinc-200/72 px-5 text-sm font-semibold text-zinc-950 shadow-[0_12px_28px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.46),inset_0_-1px_0_rgba(113,113,122,0.16)] outline-none backdrop-blur-xl transition hover:border-white/45 hover:bg-zinc-200/84 active:bg-zinc-300/78 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
-                : "flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
-            }
-          >
-            {isSubmitting ? "Saving..." : submitLabel}
-          </button>
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -7978,7 +10129,7 @@ export function NoteDatabaseFocusedView({
       const payload = (await response.json()) as FoodResourcesResponse;
 
       if (!response.ok) {
-        throw new Error(payload.error || "Unable to load On Hand.");
+        throw new Error(payload.error || "Unable to load Grocery List.");
       }
 
       setExternalDatabaseEntries(
@@ -7986,8 +10137,8 @@ export function NoteDatabaseFocusedView({
       );
       setExternalDatabaseError(null);
     } catch (error) {
-      console.error("Failed to load On Hand food resources", { error });
-      setExternalDatabaseError("On Hand is unavailable right now.");
+      console.error("Failed to load Grocery List food resources", { error });
+      setExternalDatabaseError("Grocery List is unavailable right now.");
     }
   }, [isOnHandDatabase]);
 
@@ -8276,7 +10427,7 @@ export function NoteDatabaseFocusedView({
       const payload = (await response.json()) as FoodResourcesResponse;
 
       if (!response.ok || !payload.foodResource) {
-        throw new Error(payload.error || "Unable to save On Hand item.");
+        throw new Error(payload.error || "Unable to save Grocery List item.");
       }
 
       await refreshOnHandEntries();
@@ -8313,13 +10464,13 @@ export function NoteDatabaseFocusedView({
       const payload = (await response.json()) as FoodResourcesResponse;
 
       if (!response.ok) {
-        throw new Error(payload.error || "Unable to archive On Hand item.");
+        throw new Error(payload.error || "Unable to archive Grocery List item.");
       }
 
       await refreshOnHandEntries();
       void hapticComplete();
     } catch (error) {
-      console.error("Failed to archive On Hand food resource", { error });
+      console.error("Failed to archive Grocery List food resource", { error });
       setExternalDatabaseError("Unable to archive that item right now.");
       void hapticErrorPattern();
     }
@@ -8393,7 +10544,7 @@ export function NoteDatabaseFocusedView({
       <div className="mt-3 flex flex-col gap-4 border-b border-white/[0.07] pb-4">
         <div className="flex min-w-0 max-w-full items-center gap-2">
           <NoteIconPicker
-            icon={databaseDefinition.iconKey || DEFAULT_NOTE_DATABASE_ICON}
+            icon={getDatabaseDisplayIconKey(databaseDefinition) || DEFAULT_NOTE_DATABASE_ICON}
             onIconChange={updateDatabaseIcon}
             ariaLabel="Change database icon"
             customInputAriaLabel="Custom database icon"
@@ -8547,7 +10698,15 @@ export function NoteDatabaseFocusedView({
           initialEntry={editingEntry}
           onClose={closeDatabaseEntrySheet}
           onSaveEntry={saveDatabaseEntry}
-          submitLabel={editingEntry ? "Save changes" : "Save entry"}
+          submitLabel={
+            isOnHandDatabase
+              ? editingEntry
+                ? "Save grocery"
+                : "Add grocery"
+              : editingEntry
+                ? "Save changes"
+                : "Save entry"
+          }
         />
       ) : null}
 
@@ -8797,7 +10956,8 @@ function NoteSlashTextarea({
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(null);
   const [activeEntryDatabaseId, setActiveEntryDatabaseId] = useState<string | null>(null);
-  const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>({});
+  const [externalDatabaseEntries, setExternalDatabaseEntries] = useState<NoteDatabaseEntry[]>([]);
+  const [externalDatabaseError, setExternalDatabaseError] = useState<string | null>(null);
   const [activeSegmentDragId, setActiveSegmentDragId] = useState<string | null>(null);
   const [activeSegmentDragSize, setActiveSegmentDragSize] = useState<NoteSegmentDragSize | null>(
     null,
@@ -8851,21 +11011,19 @@ function NoteSlashTextarea({
       ? (normalizedDatabaseDefinitions[activeEntryDatabaseId] ??
         createDefaultDatabaseDefinition(activeEntryDatabaseSegment))
       : null;
-  const activeEntryDatabaseFormTitle = getDatabaseFormTitle(
-    activeEntryDatabaseDefinition?.title ?? activeEntryDatabaseSegment?.title,
+  const hasOnHandDatabase = useMemo(
+    () =>
+      segments.some((segment) => {
+        if (segment.type !== "database") return false;
+
+        const definition =
+          normalizedDatabaseDefinitions[segment.databaseId] ??
+          createDefaultDatabaseDefinition(segment);
+
+        return isOnHandDatabaseDefinition(definition);
+      }),
+    [normalizedDatabaseDefinitions, segments],
   );
-  const activeEntryDatabaseFields = activeEntryDatabaseDefinition
-    ? getDatabaseFieldsWithTitleFirst(activeEntryDatabaseDefinition)
-    : [];
-  const activeEntryEditableDatabaseFields = activeEntryDatabaseFields.filter(
-    (field) => !isDatabaseCreatedAtField(field),
-  );
-  const activeEntryCreatedAtFields = activeEntryDatabaseFields.filter(isDatabaseCreatedAtField);
-  const activeEntryCreatedAtMetadataTime = activeEntryCreatedAtFields.length > 0
-    ? formatDatabaseCreatedAtMetadata(
-        entryFormValues[activeEntryCreatedAtFields[0].id] ?? "",
-      )
-    : "";
   const activeDatabaseFields = activeDatabaseDefinition
     ? getDatabaseFieldsWithTitleFirst(activeDatabaseDefinition)
     : [];
@@ -9096,6 +11254,35 @@ function NoteSlashTextarea({
     };
   }, [isMenuOpen]);
 
+  const refreshOnHandEntries = useCallback(async () => {
+    if (!hasOnHandDatabase) {
+      setExternalDatabaseEntries([]);
+      setExternalDatabaseError(null);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/food-resources?status=active&limit=200");
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load Grocery List.");
+      }
+
+      setExternalDatabaseEntries(
+        (payload.foodResources ?? []).map(mapFoodResourceToDatabaseEntry),
+      );
+      setExternalDatabaseError(null);
+    } catch (error) {
+      console.error("Failed to load Grocery List food resources", { error });
+      setExternalDatabaseError("Grocery List is unavailable right now.");
+    }
+  }, [hasOnHandDatabase]);
+
+  useEffect(() => {
+    void refreshOnHandEntries();
+  }, [refreshOnHandEntries]);
+
   useEffect(() => {
     if (!activeSegmentDragId) return;
 
@@ -9210,7 +11397,6 @@ function NoteSlashTextarea({
 
       if (!entryDatabaseStillExists) {
         setActiveEntryDatabaseId(null);
-        setEntryFormValues({});
       }
     }
 
@@ -9646,7 +11832,6 @@ function NoteSlashTextarea({
 
     if (activeEntryDatabaseId === databaseId) {
       setActiveEntryDatabaseId(null);
-      setEntryFormValues({});
     }
 
     setPendingSelection(findNearestEditableSelection(parsedNextSegments, removal.segmentIndex));
@@ -9654,12 +11839,6 @@ function NoteSlashTextarea({
 
   function openDatabaseEntrySheet(segment: NoteDatabaseSegment) {
     setActiveEntryDatabaseId(segment.databaseId);
-    const currentDefinition =
-      normalizedDatabaseDefinitions[segment.databaseId] ??
-      createDefaultDatabaseDefinition(segment);
-    setEntryFormValues(
-      getDatabaseEntryInitialFormValues(currentDefinition, new Date().toISOString()),
-    );
 
     if (!databaseDefinitions?.[segment.databaseId]) {
       updateDatabaseDefinition(segment.databaseId, (currentDefinition) => currentDefinition);
@@ -9668,37 +11847,27 @@ function NoteSlashTextarea({
 
   function closeDatabaseEntrySheet() {
     setActiveEntryDatabaseId(null);
-    setEntryFormValues({});
   }
 
-  function updateEntryFormValue(fieldId: string, value: string) {
-    setEntryFormValues((current) => ({ ...current, [fieldId]: value }));
-  }
-
-  function saveDatabaseEntry() {
+  async function saveDatabaseEntry(nextEntry: NoteDatabaseEntry) {
     if (!activeEntryDatabaseDefinition) return;
 
-    const now = new Date().toISOString();
-    const formFields = getDatabaseFieldsWithTitleFirst(activeEntryDatabaseDefinition);
-    const values = formFields.reduce<Record<string, unknown>>(
-      (nextValues, field) => {
-        const rawValue = entryFormValues[field.id] ?? "";
-        const value = getDatabaseEntryFieldValue(field, rawValue);
+    if (isOnHandDatabaseDefinition(activeEntryDatabaseDefinition)) {
+      const response = await fetch("/api/food-resources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mapOnHandEntryToFoodResourcePayload(nextEntry)),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
 
-        if (isUsefulDatabaseEntryValue(value)) {
-          nextValues[field.id] = value;
-        }
+      if (!response.ok || !payload.foodResource) {
+        throw new Error(payload.error || "Unable to save Grocery List item.");
+      }
 
-        return nextValues;
-      },
-      {},
-    );
-    const nextEntry: NoteDatabaseEntry = {
-      id: buildClientDatabaseEntryId(),
-      createdAt: now,
-      updatedAt: now,
-      values,
-    };
+      await refreshOnHandEntries();
+      return;
+    }
+
     const currentEntries = databaseEntries ?? {};
 
     onDatabaseEntriesChange?.({
@@ -9709,7 +11878,6 @@ function NoteSlashTextarea({
       ],
     });
     void hapticComplete();
-    closeDatabaseEntrySheet();
   }
 
   function updateDatabaseTitle(databaseId: string, title: string) {
@@ -10321,11 +12489,14 @@ function NoteSlashTextarea({
               const definition =
                 normalizedDatabaseDefinitions[segment.databaseId] ??
                 createDefaultDatabaseDefinition(segment);
-              const displayTitle = getDatabaseDisplayTitle(definition?.title ?? segment.title);
+              const displayTitle = getDatabaseMenuDisplayTitle(definition, segment.title);
               const isLockedSystemDatabase = definition.lockedSystemDatabase === true;
               const isStarterDatabaseSchemaLocked = isLockedStarterDatabase(definition);
               const canOpenDatabase = !isStarterDatabaseSchemaLocked || Boolean(onOpenDatabase);
-              const entries = databaseEntries?.[segment.databaseId] ?? [];
+              const isOnHandDatabase = isOnHandDatabaseDefinition(definition);
+              const entries = isOnHandDatabase
+                ? externalDatabaseEntries
+                : databaseEntries?.[segment.databaseId] ?? [];
               const activeView = getActiveDatabaseView(definition);
               const visibleFields = getVisibleDatabaseFields(definition);
               const titleField = getDatabaseTitleField(definition);
@@ -10338,7 +12509,7 @@ function NoteSlashTextarea({
                 <div className="min-w-0 flex-1 border-y border-white/[0.055] bg-transparent py-2.5 text-white/90">
                   <div className="flex items-center gap-2">
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center text-white/38">
-                      <DatabaseInlineIcon iconKey={definition.iconKey} />
+                      <DatabaseInlineIcon iconKey={getDatabaseDisplayIconKey(definition)} />
                     </span>
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <p className="truncate text-sm font-semibold leading-4 text-white/86">
@@ -10388,6 +12559,11 @@ function NoteSlashTextarea({
                   </div>
 
                   <div className="mt-2">
+                    {isOnHandDatabase && externalDatabaseError ? (
+                      <p className="pb-2 text-xs font-medium text-red-200/78">
+                        {externalDatabaseError}
+                      </p>
+                    ) : null}
                     <NoteDatabaseEntriesView
                       activeView={activeView}
                       definition={definition}
@@ -10468,168 +12644,21 @@ function NoteSlashTextarea({
       ) : null}
 
       {activeEntryDatabaseDefinition ? (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden overscroll-contain bg-black/58 p-3 backdrop-blur-sm sm:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="note-inline-database-entry-form-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              void hapticSnap();
-              closeDatabaseEntrySheet();
-            }
-          }}
-        >
-          <div className="animate-in fade-in-0 zoom-in-95 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-white/[0.04] bg-[#090909] shadow-[0_24px_80px_-32px_rgba(0,0,0,1)] duration-200">
-            <div className="relative border-b border-white/[0.04] px-4 py-4">
-              <h2
-                id="note-inline-database-entry-form-title"
-                className="truncate px-10 text-center text-base font-semibold leading-6 text-white"
-              >
-                {activeEntryDatabaseFormTitle}
-              </h2>
-              <button
-                type="button"
-                aria-label="Close entry form"
-                onClick={() => {
-                  void hapticSnap();
-                  closeDatabaseEntrySheet();
-                }}
-                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/82 focus-visible:bg-white/[0.08] focus-visible:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-4 [-webkit-overflow-scrolling:touch]">
-              {activeEntryDatabaseFields.length > 0 ? (
-                <div className="space-y-3">
-                  {activeEntryEditableDatabaseFields.length > 0 ? (
-                    <div className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.035] divide-y divide-white/[0.04]">
-                      {activeEntryEditableDatabaseFields.map((field) => {
-                        const fieldName = getDatabaseFieldName(field);
-                        const fieldValue = entryFormValues[field.id] ?? "";
-                        const inputClassName =
-                          "mt-2 w-full rounded-xl border border-white/[0.04] bg-black/22 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.07] focus-visible:border-white/[0.12] focus-visible:bg-black/28";
-
-                        return (
-                          <label key={field.id} className="block px-4 py-3">
-                            <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white/60">
-                              <span className="min-w-0 truncate">
-                                {field.isTitle ? "Title" : fieldName}
-                              </span>
-                              <span className="flex shrink-0 items-center gap-1.5">
-                                {field.isTitle ? (
-                                  <span className="rounded-full border border-white/[0.05] bg-black/22 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/48">
-                                    {fieldName}
-                                  </span>
-                                ) : null}
-                                <span className="text-[10px] uppercase tracking-[0.14em] text-white/30">
-                                  {NOTE_DATABASE_FIELD_TYPE_LABELS[field.type]}
-                                </span>
-                              </span>
-                            </span>
-                            {field.type === "longText" ? (
-                              <textarea
-                                value={fieldValue}
-                                onChange={(event) =>
-                                  updateEntryFormValue(field.id, event.target.value)
-                                }
-                                rows={4}
-                                className={`${inputClassName} resize-none`}
-                                placeholder={fieldName}
-                              />
-                            ) : field.type === "number" ? (
-                              <input
-                                type="number"
-                                value={fieldValue}
-                                onChange={(event) =>
-                                  updateEntryFormValue(field.id, event.target.value)
-                                }
-                                className={inputClassName}
-                                placeholder={fieldName}
-                              />
-                            ) : field.type === "rating" ? (
-                              <input
-                                type="number"
-                                min={1}
-                                max={5}
-                                step={1}
-                                value={fieldValue}
-                                onChange={(event) =>
-                                  updateEntryFormValue(field.id, event.target.value)
-                                }
-                                className={inputClassName}
-                                placeholder="1-5"
-                              />
-                            ) : field.type === "date" ? (
-                              <input
-                                type="date"
-                                value={fieldValue}
-                                onChange={(event) =>
-                                  updateEntryFormValue(field.id, event.target.value)
-                                }
-                                className={inputClassName}
-                              />
-                            ) : field.type === "photo" ? (
-                              <input
-                                disabled
-                                readOnly
-                                value=""
-                                className={`${inputClassName} cursor-not-allowed text-white/28`}
-                                placeholder="Photo field coming later"
-                              />
-                            ) : (
-                              <input
-                                type="text"
-                                value={fieldValue}
-                                onChange={(event) =>
-                                  updateEntryFormValue(field.id, event.target.value)
-                                }
-                                className={inputClassName}
-                                placeholder={field.type === "select" ? "Select value" : fieldName}
-                              />
-                            )}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  {activeEntryCreatedAtMetadataTime ? (
-                    <p className="!mt-1 px-1 text-center text-[10px] font-medium leading-none text-white/36">
-                      {activeEntryCreatedAtMetadataTime}
-                    </p>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.025] px-3 py-6 text-center text-sm text-white/42">
-                  Add fields in the builder before creating entries.
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 border-t border-white/[0.04] p-3 sm:p-4">
-              <button
-                type="button"
-                onClick={() => {
-                  void hapticSnap();
-                  closeDatabaseEntrySheet();
-                }}
-                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.05] bg-white/[0.035] text-sm font-semibold text-white/62 outline-none transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white/82 focus-visible:ring-1 focus-visible:ring-white/18"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={activeEntryDatabaseFields.length === 0}
-                onClick={saveDatabaseEntry}
-                className="flex h-11 flex-1 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.1] text-sm font-semibold text-white/88 outline-none transition hover:border-white/[0.12] hover:bg-white/[0.14] hover:text-white focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
-              >
-                Save entry
-              </button>
-            </div>
-          </div>
-        </div>
+        <NoteDatabaseEntrySheet
+          databaseDefinition={activeEntryDatabaseDefinition}
+          entries={
+            isOnHandDatabaseDefinition(activeEntryDatabaseDefinition)
+              ? externalDatabaseEntries
+              : databaseEntries?.[activeEntryDatabaseDefinition.id]
+          }
+          onClose={closeDatabaseEntrySheet}
+          onSaveEntry={saveDatabaseEntry}
+          submitLabel={
+            isOnHandDatabaseDefinition(activeEntryDatabaseDefinition)
+              ? "Add grocery"
+              : "Save entry"
+          }
+        />
       ) : null}
 
       {activeDatabaseDefinition && !isActiveStarterDatabaseSchemaLocked ? (

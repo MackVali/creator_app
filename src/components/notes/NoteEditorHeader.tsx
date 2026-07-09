@@ -9,6 +9,7 @@ import {
   Brain,
   Brush,
   CalendarCheck,
+  ChefHat,
   ChevronLeft,
   CheckSquare,
   CircleAlert,
@@ -176,6 +177,9 @@ export function resolveNoteIcon(
   if (normalizedValue === "stomach") return { kind: "iconify", icon: "game-icons:stomach" };
   if (normalizedValue === "droplet") return { kind: "lucide", Icon: Droplet };
   if (normalizedValue === "dumbbell") return { kind: "lucide", Icon: Dumbbell };
+  if (normalizedValue === "chef-hat" || normalizedValue === "chef hat") {
+    return { kind: "lucide", Icon: ChefHat };
+  }
   if (normalizedValue === "database" || normalizedValue === "table") {
     return { kind: "lucide", Icon: Database };
   }
