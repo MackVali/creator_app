@@ -322,6 +322,11 @@ type FitnessExerciseSample = {
   guidance: string;
   notes: string;
 };
+type FitnessWorkoutExerciseDetail = {
+  sets: string;
+  reps: string;
+  duration: string;
+};
 type FitnessRoutineSample = {
   name: string;
   focus: string;
@@ -351,60 +356,20 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Keep ribs down and move as one line.",
   },
   {
-    name: "Pull-up",
-    movementType: "Pull",
-    primaryArea: "Back, biceps",
-    equipment: "Pull-up bar",
-    guidance: "3-5 sets x 3-10 reps",
-    notes: "Start from a dead hang and pull chest toward the bar.",
-  },
-  {
-    name: "Chin-up",
-    movementType: "Pull",
-    primaryArea: "Lats, biceps",
-    equipment: "Pull-up bar",
-    guidance: "3-4 sets x 4-12 reps",
-    notes: "Use a supinated grip and control the lower.",
-  },
-  {
-    name: "Dip",
+    name: "Incline Push-up",
     movementType: "Push",
     primaryArea: "Chest, triceps",
-    equipment: "Bars",
-    guidance: "3-4 sets x 5-12 reps",
-    notes: "Keep shoulders packed and stop before discomfort.",
+    equipment: "Bench or box",
+    guidance: "3-4 sets x 8-15 reps",
+    notes: "Keep a straight line and lower your chest to the support.",
   },
   {
-    name: "Bodyweight Squat",
-    movementType: "Squat",
-    primaryArea: "Quads, glutes",
-    equipment: "Bodyweight",
-    guidance: "3-5 sets x 12-25 reps",
-    notes: "Track knees over toes and keep your torso tall.",
-  },
-  {
-    name: "Lunge",
-    movementType: "Single-leg",
-    primaryArea: "Quads, glutes",
-    equipment: "Bodyweight or dumbbells",
-    guidance: "3 sets x 8-12 each side",
-    notes: "Use an even stride and drive through the front foot.",
-  },
-  {
-    name: "Plank",
-    movementType: "Core",
-    primaryArea: "Abs, trunk",
-    equipment: "Bodyweight",
-    guidance: "3-4 holds x 30-60 sec",
-    notes: "Squeeze glutes and keep breathing steady.",
-  },
-  {
-    name: "Burpee",
-    movementType: "Conditioning",
-    primaryArea: "Full body",
-    equipment: "Bodyweight",
-    guidance: "4-8 rounds x 20-45 sec",
-    notes: "Move smoothly before chasing speed.",
+    name: "Decline Push-up",
+    movementType: "Push",
+    primaryArea: "Upper chest, shoulders",
+    equipment: "Bench or box",
+    guidance: "3-4 sets x 6-12 reps",
+    notes: "Elevate feet and keep elbows controlled.",
   },
   {
     name: "Bench Press",
@@ -415,20 +380,28 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Brace, use a stable arch, and press evenly.",
   },
   {
-    name: "Row",
-    movementType: "Pull",
-    primaryArea: "Back",
-    equipment: "Cable, barbell, or dumbbells",
-    guidance: "3-5 sets x 8-12 reps",
-    notes: "Pull elbows back and pause briefly at the top.",
+    name: "Incline Bench Press",
+    movementType: "Push",
+    primaryArea: "Upper chest, shoulders",
+    equipment: "Barbell or dumbbells",
+    guidance: "3-4 sets x 6-10 reps",
+    notes: "Set a moderate incline and press without shrugging.",
   },
   {
-    name: "Deadlift",
-    movementType: "Hinge",
-    primaryArea: "Posterior chain",
-    equipment: "Barbell",
-    guidance: "3-5 sets x 3-6 reps",
-    notes: "Brace hard and keep the bar close.",
+    name: "Dumbbell Press",
+    movementType: "Push",
+    primaryArea: "Chest, triceps",
+    equipment: "Dumbbells",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Let each shoulder move naturally and press evenly.",
+  },
+  {
+    name: "Chest Fly",
+    movementType: "Push",
+    primaryArea: "Chest",
+    equipment: "Dumbbells or cable",
+    guidance: "2-4 sets x 10-15 reps",
+    notes: "Use a soft elbow bend and stop before shoulder strain.",
   },
   {
     name: "Shoulder Press",
@@ -447,12 +420,268 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Press your head toward the floor while keeping hips high.",
   },
   {
+    name: "Lateral Raise",
+    movementType: "Push",
+    primaryArea: "Side delts",
+    equipment: "Dumbbells or cable",
+    guidance: "2-4 sets x 12-20 reps",
+    notes: "Raise with control and keep traps quiet.",
+  },
+  {
+    name: "Front Raise",
+    movementType: "Push",
+    primaryArea: "Front delts",
+    equipment: "Dumbbells or plate",
+    guidance: "2-3 sets x 10-15 reps",
+    notes: "Lift to shoulder height without leaning back.",
+  },
+  {
+    name: "Arnold Press",
+    movementType: "Push",
+    primaryArea: "Shoulders",
+    equipment: "Dumbbells",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Rotate smoothly and keep the ribs stacked.",
+  },
+  {
+    name: "Dip",
+    movementType: "Push",
+    primaryArea: "Chest, triceps",
+    equipment: "Bars",
+    guidance: "3-4 sets x 5-12 reps",
+    notes: "Keep shoulders packed and stop before discomfort.",
+  },
+  {
+    name: "Close-Grip Push-up",
+    movementType: "Push",
+    primaryArea: "Triceps, chest",
+    equipment: "Bodyweight",
+    guidance: "3-4 sets x 8-15 reps",
+    notes: "Keep elbows close and press through the palms.",
+  },
+  {
+    name: "Triceps Extension",
+    movementType: "Push",
+    primaryArea: "Triceps",
+    equipment: "Dumbbell, cable, or band",
+    guidance: "2-4 sets x 10-15 reps",
+    notes: "Keep upper arms steady and extend fully.",
+  },
+  {
+    name: "Skull Crusher",
+    movementType: "Push",
+    primaryArea: "Triceps",
+    equipment: "EZ bar or dumbbells",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Lower under control and keep elbows from flaring.",
+  },
+  {
+    name: "Pull-up",
+    movementType: "Pull",
+    primaryArea: "Back, biceps",
+    equipment: "Pull-up bar",
+    guidance: "3-5 sets x 3-10 reps",
+    notes: "Start from a dead hang and pull chest toward the bar.",
+  },
+  {
+    name: "Chin-up",
+    movementType: "Pull",
+    primaryArea: "Lats, biceps",
+    equipment: "Pull-up bar",
+    guidance: "3-4 sets x 4-12 reps",
+    notes: "Use a supinated grip and control the lower.",
+  },
+  {
+    name: "Inverted Row",
+    movementType: "Pull",
+    primaryArea: "Back, biceps",
+    equipment: "Bar or rings",
+    guidance: "3-4 sets x 8-15 reps",
+    notes: "Keep the body rigid and pull the chest to the bar.",
+  },
+  {
+    name: "Bent-Over Row",
+    movementType: "Pull",
+    primaryArea: "Back",
+    equipment: "Barbell",
+    guidance: "3-5 sets x 6-12 reps",
+    notes: "Hinge, brace, and pull elbows toward your hips.",
+  },
+  {
+    name: "Dumbbell Row",
+    movementType: "Pull",
+    primaryArea: "Lats, upper back",
+    equipment: "Dumbbell",
+    guidance: "3-4 sets x 8-12 each side",
+    notes: "Keep shoulders square and pause at the top.",
+  },
+  {
+    name: "Lat Pulldown",
+    movementType: "Pull",
+    primaryArea: "Lats, upper back",
+    equipment: "Cable machine",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Drive elbows down and avoid leaning too far back.",
+  },
+  {
+    name: "Seated Cable Row",
+    movementType: "Pull",
+    primaryArea: "Mid back",
+    equipment: "Cable machine",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Sit tall and pull handles to the torso.",
+  },
+  {
+    name: "Row",
+    movementType: "Pull",
+    primaryArea: "Back",
+    equipment: "Cable, barbell, or dumbbells",
+    guidance: "3-5 sets x 8-12 reps",
+    notes: "Pull elbows back and pause briefly at the top.",
+  },
+  {
+    name: "Face Pull",
+    movementType: "Pull",
+    primaryArea: "Rear delts, upper back",
+    equipment: "Cable or band",
+    guidance: "2-4 sets x 12-20 reps",
+    notes: "Pull toward the face with elbows high.",
+  },
+  {
+    name: "Reverse Fly",
+    movementType: "Pull",
+    primaryArea: "Rear delts",
+    equipment: "Dumbbells or cable",
+    guidance: "2-4 sets x 12-20 reps",
+    notes: "Open the arms with control and keep shoulders down.",
+  },
+  {
+    name: "Curl",
+    movementType: "Pull",
+    primaryArea: "Biceps",
+    equipment: "Dumbbells or barbell",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Keep elbows near your sides and lower slowly.",
+  },
+  {
+    name: "Hammer Curl",
+    movementType: "Pull",
+    primaryArea: "Biceps, forearms",
+    equipment: "Dumbbells",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Use a neutral grip and avoid swinging.",
+  },
+  {
+    name: "Preacher Curl",
+    movementType: "Pull",
+    primaryArea: "Biceps",
+    equipment: "Preacher bench or machine",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Let the arm pad control the motion.",
+  },
+  {
+    name: "Bodyweight Squat",
+    movementType: "Squat",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight",
+    guidance: "3-5 sets x 12-25 reps",
+    notes: "Track knees over toes and keep your torso tall.",
+  },
+  {
     name: "Goblet Squat",
     movementType: "Squat",
     primaryArea: "Quads, glutes",
     equipment: "Dumbbell or kettlebell",
     guidance: "3-4 sets x 8-12 reps",
     notes: "Hold the weight close and sit between your hips.",
+  },
+  {
+    name: "Back Squat",
+    movementType: "Squat",
+    primaryArea: "Quads, glutes",
+    equipment: "Barbell",
+    guidance: "3-5 sets x 3-8 reps",
+    notes: "Brace hard and keep the bar path balanced.",
+  },
+  {
+    name: "Front Squat",
+    movementType: "Squat",
+    primaryArea: "Quads, trunk",
+    equipment: "Barbell",
+    guidance: "3-5 sets x 3-8 reps",
+    notes: "Keep elbows high and torso upright.",
+  },
+  {
+    name: "Split Squat",
+    movementType: "Single-leg",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight or dumbbells",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Drop straight down and drive through the front foot.",
+  },
+  {
+    name: "Forward Lunge",
+    movementType: "Single-leg",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight or dumbbells",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Step forward with control and push back to stand.",
+  },
+  {
+    name: "Reverse Lunge",
+    movementType: "Single-leg",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight or dumbbells",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Step back softly and keep the front knee tracking.",
+  },
+  {
+    name: "Walking Lunge",
+    movementType: "Single-leg",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight or dumbbells",
+    guidance: "3 sets x 10-20 steps",
+    notes: "Use steady strides and stay tall between steps.",
+  },
+  {
+    name: "Lunge",
+    movementType: "Single-leg",
+    primaryArea: "Quads, glutes",
+    equipment: "Bodyweight or dumbbells",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Use an even stride and drive through the front foot.",
+  },
+  {
+    name: "Deadlift",
+    movementType: "Hinge",
+    primaryArea: "Posterior chain",
+    equipment: "Barbell",
+    guidance: "3-5 sets x 3-6 reps",
+    notes: "Brace hard and keep the bar close.",
+  },
+  {
+    name: "Romanian Deadlift",
+    movementType: "Hinge",
+    primaryArea: "Hamstrings, glutes",
+    equipment: "Barbell or dumbbells",
+    guidance: "3-4 sets x 6-12 reps",
+    notes: "Push hips back and keep tension in the hamstrings.",
+  },
+  {
+    name: "Hip Thrust",
+    movementType: "Hinge",
+    primaryArea: "Glutes",
+    equipment: "Barbell or bench",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Tuck ribs down and finish with a strong glute squeeze.",
+  },
+  {
+    name: "Good Morning",
+    movementType: "Hinge",
+    primaryArea: "Hamstrings, glutes",
+    equipment: "Barbell",
+    guidance: "3-4 sets x 8-12 reps",
+    notes: "Hinge from the hips and keep the spine neutral.",
   },
   {
     name: "Hip Hinge",
@@ -463,12 +692,68 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Push hips back while keeping a neutral spine.",
   },
   {
+    name: "Leg Curl",
+    movementType: "Hinge",
+    primaryArea: "Hamstrings",
+    equipment: "Machine",
+    guidance: "3-4 sets x 10-15 reps",
+    notes: "Curl smoothly and control the return.",
+  },
+  {
+    name: "Nordic Curl",
+    movementType: "Hinge",
+    primaryArea: "Hamstrings",
+    equipment: "Bodyweight",
+    guidance: "2-4 sets x 3-8 reps",
+    notes: "Lower slowly and use assistance as needed.",
+  },
+  {
+    name: "Calf Raise",
+    movementType: "Legs",
+    primaryArea: "Calves",
+    equipment: "Bodyweight, machine, or dumbbells",
+    guidance: "3-5 sets x 10-20 reps",
+    notes: "Pause at the top and use a full stretch.",
+  },
+  {
+    name: "Seated Calf Raise",
+    movementType: "Legs",
+    primaryArea: "Calves",
+    equipment: "Machine",
+    guidance: "3-5 sets x 12-20 reps",
+    notes: "Control the bottom stretch and press through the big toe.",
+  },
+  {
+    name: "Plank",
+    movementType: "Core",
+    primaryArea: "Abs, trunk",
+    equipment: "Bodyweight",
+    guidance: "3-4 holds x 30-60 sec",
+    notes: "Squeeze glutes and keep breathing steady.",
+  },
+  {
     name: "Side Plank",
     movementType: "Core",
     primaryArea: "Obliques, trunk",
     equipment: "Bodyweight",
     guidance: "3 holds x 20-45 sec each side",
     notes: "Stack shoulders and hips, then press the floor away.",
+  },
+  {
+    name: "Dead Bug",
+    movementType: "Core",
+    primaryArea: "Abs, trunk",
+    equipment: "Bodyweight",
+    guidance: "3 sets x 6-10 each side",
+    notes: "Keep low back down while limbs move slowly.",
+  },
+  {
+    name: "Bird Dog",
+    movementType: "Core",
+    primaryArea: "Trunk, glutes",
+    equipment: "Bodyweight",
+    guidance: "3 sets x 6-10 each side",
+    notes: "Reach long and keep hips square.",
   },
   {
     name: "Crunch",
@@ -479,12 +764,60 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Curl ribs toward hips without pulling on your neck.",
   },
   {
+    name: "Sit-up",
+    movementType: "Core",
+    primaryArea: "Abs, hip flexors",
+    equipment: "Bodyweight",
+    guidance: "3 sets x 8-15 reps",
+    notes: "Rise with control and avoid yanking the neck.",
+  },
+  {
     name: "Leg Raise",
     movementType: "Core",
     primaryArea: "Abs, hip flexors",
     equipment: "Bodyweight",
     guidance: "3 sets x 8-15 reps",
     notes: "Lower slowly and keep your low back controlled.",
+  },
+  {
+    name: "Hanging Knee Raise",
+    movementType: "Core",
+    primaryArea: "Abs, hip flexors",
+    equipment: "Pull-up bar",
+    guidance: "3 sets x 8-12 reps",
+    notes: "Tuck pelvis and avoid swinging.",
+  },
+  {
+    name: "Russian Twist",
+    movementType: "Core",
+    primaryArea: "Obliques",
+    equipment: "Bodyweight or medicine ball",
+    guidance: "3 sets x 12-20 total reps",
+    notes: "Rotate the rib cage while staying tall.",
+  },
+  {
+    name: "Pallof Press",
+    movementType: "Core",
+    primaryArea: "Obliques, trunk",
+    equipment: "Cable or band",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Press straight out and resist rotation.",
+  },
+  {
+    name: "Wood Chop",
+    movementType: "Core",
+    primaryArea: "Obliques, trunk",
+    equipment: "Cable, band, or medicine ball",
+    guidance: "3 sets x 8-12 each side",
+    notes: "Rotate through the torso with controlled hips.",
+  },
+  {
+    name: "Burpee",
+    movementType: "Conditioning",
+    primaryArea: "Full body",
+    equipment: "Bodyweight",
+    guidance: "4-8 rounds x 20-45 sec",
+    notes: "Move smoothly before chasing speed.",
   },
   {
     name: "Mountain Climber",
@@ -495,12 +828,60 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Keep shoulders over hands and drive knees rhythmically.",
   },
   {
+    name: "Jumping Jack",
+    movementType: "Conditioning",
+    primaryArea: "Full body, cardio",
+    equipment: "Bodyweight",
+    guidance: "3-6 rounds x 30-60 sec",
+    notes: "Land softly and keep a steady rhythm.",
+  },
+  {
     name: "Jump Rope",
     movementType: "Conditioning",
     primaryArea: "Cardio, calves",
     equipment: "Jump rope",
     guidance: "5-10 rounds x 30-60 sec",
     notes: "Stay tall and use small wrist turns.",
+  },
+  {
+    name: "High Knees",
+    movementType: "Conditioning",
+    primaryArea: "Cardio, hip flexors",
+    equipment: "Bodyweight",
+    guidance: "4-8 rounds x 20-40 sec",
+    notes: "Stay springy and drive knees up quickly.",
+  },
+  {
+    name: "Sprint",
+    movementType: "Conditioning",
+    primaryArea: "Cardio, legs",
+    equipment: "Track or open space",
+    guidance: "4-10 efforts x 10-30 sec",
+    notes: "Build speed gradually and recover fully.",
+  },
+  {
+    name: "Kettlebell Swing",
+    movementType: "Power",
+    primaryArea: "Posterior chain",
+    equipment: "Kettlebell",
+    guidance: "4-6 sets x 10-20 reps",
+    notes: "Snap the hips and let the bell float.",
+  },
+  {
+    name: "Medicine Ball Slam",
+    movementType: "Power",
+    primaryArea: "Full body",
+    equipment: "Medicine ball",
+    guidance: "4-6 sets x 6-12 reps",
+    notes: "Reach tall and slam with the whole body.",
+  },
+  {
+    name: "Box Jump",
+    movementType: "Power",
+    primaryArea: "Legs, power",
+    equipment: "Box",
+    guidance: "3-5 sets x 3-6 reps",
+    notes: "Land quietly and step down between reps.",
   },
   {
     name: "Arm Circles",
@@ -519,6 +900,14 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     notes: "Move slowly through comfortable ranges.",
   },
   {
+    name: "World's Greatest Stretch",
+    movementType: "Mobility",
+    primaryArea: "Hips, hamstrings, thoracic spine",
+    equipment: "Bodyweight",
+    guidance: "2 rounds x 4-6 each side",
+    notes: "Move from lunge to rotation with slow breathing.",
+  },
+  {
     name: "Hamstring Stretch",
     movementType: "Mobility",
     primaryArea: "Hamstrings",
@@ -526,62 +915,291 @@ const FITNESS_EXERCISE_SAMPLES: FitnessExerciseSample[] = [
     guidance: "2-3 holds x 30-60 sec each side",
     notes: "Hinge forward gently and breathe into the stretch.",
   },
+  {
+    name: "Couch Stretch",
+    movementType: "Mobility",
+    primaryArea: "Hip flexors, quads",
+    equipment: "Wall or bench",
+    guidance: "2-3 holds x 30-60 sec each side",
+    notes: "Squeeze the glute and keep ribs stacked.",
+  },
+  {
+    name: "Child's Pose",
+    movementType: "Mobility",
+    primaryArea: "Back, hips",
+    equipment: "Bodyweight",
+    guidance: "2-3 holds x 30-60 sec",
+    notes: "Reach long and breathe into the back.",
+  },
+  {
+    name: "Thoracic Rotation",
+    movementType: "Mobility",
+    primaryArea: "Upper back",
+    equipment: "Bodyweight",
+    guidance: "2 rounds x 6-10 each side",
+    notes: "Rotate through the upper back without forcing range.",
+  },
+  {
+    name: "Farmer's Carry",
+    movementType: "Carry",
+    primaryArea: "Grip, trunk",
+    equipment: "Dumbbells or kettlebells",
+    guidance: "3-5 carries x 20-40 m",
+    notes: "Walk tall and keep shoulders packed.",
+  },
+  {
+    name: "Suitcase Carry",
+    movementType: "Carry",
+    primaryArea: "Obliques, grip",
+    equipment: "Dumbbell or kettlebell",
+    guidance: "3-5 carries x 20-40 m each side",
+    notes: "Resist leaning and walk with even steps.",
+  },
+  {
+    name: "Overhead Carry",
+    movementType: "Carry",
+    primaryArea: "Shoulders, trunk",
+    equipment: "Dumbbell, kettlebell, or plate",
+    guidance: "3-5 carries x 10-30 m",
+    notes: "Lock in the shoulder and keep ribs down.",
+  },
+  {
+    name: "Dead Hang",
+    movementType: "Grip",
+    primaryArea: "Grip, shoulders",
+    equipment: "Pull-up bar",
+    guidance: "3-5 hangs x 15-45 sec",
+    notes: "Hang actively and breathe steadily.",
+  },
+  {
+    name: "Plate Pinch",
+    movementType: "Grip",
+    primaryArea: "Grip, forearms",
+    equipment: "Weight plates",
+    guidance: "3-5 holds x 15-45 sec",
+    notes: "Pinch plates smoothly and keep wrists neutral.",
+  },
+  {
+    name: "Power Clean",
+    movementType: "Olympic",
+    primaryArea: "Full body, power",
+    equipment: "Barbell",
+    guidance: "4-6 sets x 2-5 reps",
+    notes: "Pull fast and receive with a strong rack.",
+  },
+  {
+    name: "Hang Clean",
+    movementType: "Olympic",
+    primaryArea: "Full body, power",
+    equipment: "Barbell",
+    guidance: "4-6 sets x 2-5 reps",
+    notes: "Start from the hang and extend through the hips.",
+  },
+  {
+    name: "Push Press",
+    movementType: "Olympic",
+    primaryArea: "Shoulders, power",
+    equipment: "Barbell or dumbbells",
+    guidance: "3-5 sets x 3-6 reps",
+    notes: "Dip straight down and drive the weight overhead.",
+  },
+  {
+    name: "Broad Jump",
+    movementType: "Athletic",
+    primaryArea: "Legs, power",
+    equipment: "Bodyweight",
+    guidance: "3-5 sets x 3-5 reps",
+    notes: "Swing arms, jump long, and land softly.",
+  },
+  {
+    name: "Skater Jump",
+    movementType: "Athletic",
+    primaryArea: "Glutes, lateral power",
+    equipment: "Bodyweight",
+    guidance: "3-5 sets x 6-10 each side",
+    notes: "Push laterally and stick each landing.",
+  },
 ];
 const FITNESS_MOVEMENT_GROUP_SAMPLES: FitnessMovementGroupSample[] = [
   {
     label: "Push",
     icon: Dumbbell,
     subcategories: [
-      { label: "Chest", exercises: ["Push-up", "Bench Press"] },
-      { label: "Shoulders", exercises: ["Shoulder Press", "Pike Push-up"] },
-      { label: "Triceps", exercises: ["Dip"] },
+      {
+        label: "Chest",
+        exercises: [
+          "Push-up",
+          "Incline Push-up",
+          "Decline Push-up",
+          "Bench Press",
+          "Incline Bench Press",
+          "Dumbbell Press",
+          "Chest Fly",
+        ],
+      },
+      {
+        label: "Shoulders",
+        exercises: ["Shoulder Press", "Pike Push-up", "Lateral Raise", "Front Raise", "Arnold Press"],
+      },
+      {
+        label: "Triceps",
+        exercises: ["Dip", "Close-Grip Push-up", "Triceps Extension", "Skull Crusher"],
+      },
     ],
   },
   {
     label: "Pull",
     icon: GripVertical,
     subcategories: [
-      { label: "Back", exercises: ["Pull-up", "Row", "Deadlift"] },
-      { label: "Biceps", exercises: ["Chin-up"] },
+      {
+        label: "Back",
+        exercises: [
+          "Pull-up",
+          "Chin-up",
+          "Inverted Row",
+          "Bent-Over Row",
+          "Dumbbell Row",
+          "Lat Pulldown",
+          "Seated Cable Row",
+          "Row",
+        ],
+      },
+      { label: "Rear Delts", exercises: ["Face Pull", "Reverse Fly"] },
+      { label: "Biceps", exercises: ["Curl", "Hammer Curl", "Preacher Curl"] },
     ],
   },
   {
     label: "Legs",
     icon: ListChecks,
     subcategories: [
-      { label: "Squat", exercises: ["Bodyweight Squat", "Goblet Squat"] },
-      { label: "Lunge", exercises: ["Lunge"] },
-      { label: "Hinge", exercises: ["Deadlift", "Hip Hinge"] },
+      {
+        label: "Squat",
+        exercises: ["Bodyweight Squat", "Goblet Squat", "Back Squat", "Front Squat", "Split Squat"],
+      },
+      { label: "Lunge", exercises: ["Forward Lunge", "Reverse Lunge", "Walking Lunge", "Lunge"] },
+      {
+        label: "Hinge",
+        exercises: ["Deadlift", "Romanian Deadlift", "Hip Thrust", "Good Morning", "Hip Hinge"],
+      },
+      { label: "Hamstrings", exercises: ["Leg Curl", "Nordic Curl"] },
+      { label: "Calves", exercises: ["Calf Raise", "Seated Calf Raise"] },
     ],
   },
   {
     label: "Core",
     icon: CheckSquare,
     subcategories: [
-      { label: "Stability", exercises: ["Plank", "Side Plank"] },
-      { label: "Abs", exercises: ["Crunch", "Leg Raise"] },
+      { label: "Stability", exercises: ["Plank", "Side Plank", "Dead Bug", "Bird Dog"] },
+      { label: "Abs", exercises: ["Crunch", "Sit-up", "Leg Raise", "Hanging Knee Raise"] },
+      { label: "Rotation", exercises: ["Russian Twist", "Pallof Press", "Wood Chop"] },
     ],
   },
   {
     label: "Conditioning",
     icon: Clock,
     subcategories: [
-      { label: "Full Body", exercises: ["Burpee", "Mountain Climber"] },
-      { label: "Cardio", exercises: ["Jump Rope"] },
+      { label: "Full Body", exercises: ["Burpee", "Mountain Climber", "Jumping Jack"] },
+      { label: "Cardio", exercises: ["Jump Rope", "High Knees", "Sprint"] },
+      { label: "Power", exercises: ["Kettlebell Swing", "Medicine Ball Slam", "Box Jump"] },
     ],
   },
   {
     label: "Mobility",
     icon: Settings2,
     subcategories: [
-      { label: "Warmup", exercises: ["Arm Circles", "Hip Opener"] },
-      { label: "Recovery", exercises: ["Hamstring Stretch"] },
+      { label: "Warmup", exercises: ["Arm Circles", "Hip Opener", "World's Greatest Stretch"] },
+      {
+        label: "Recovery",
+        exercises: ["Hamstring Stretch", "Couch Stretch", "Child's Pose", "Thoracic Rotation"],
+      },
+    ],
+  },
+  {
+    label: "Carries / Grip",
+    icon: GripVertical,
+    subcategories: [
+      { label: "Carries", exercises: ["Farmer's Carry", "Suitcase Carry", "Overhead Carry"] },
+      { label: "Grip", exercises: ["Dead Hang", "Plate Pinch"] },
+    ],
+  },
+  {
+    label: "Olympic / Athletic",
+    icon: Dumbbell,
+    subcategories: [
+      { label: "Explosive", exercises: ["Power Clean", "Hang Clean", "Push Press"] },
+      { label: "Athletic", exercises: ["Broad Jump", "Skater Jump"] },
     ],
   },
 ];
 const FITNESS_EXERCISE_SAMPLE_BY_NAME = new Map(
   FITNESS_EXERCISE_SAMPLES.map((exercise) => [exercise.name, exercise]),
 );
+function getFitnessExerciseId(exercise: Pick<FitnessExerciseSample, "name">) {
+  return exercise.name;
+}
+
+function getFitnessGuidancePart(guidance: string, pattern: RegExp) {
+  return guidance.match(pattern)?.[1]?.trim() ?? "";
+}
+
+function getDefaultFitnessWorkoutExerciseDetail(
+  exercise: FitnessExerciseSample,
+): FitnessWorkoutExerciseDetail {
+  return {
+    sets: getFitnessGuidancePart(
+      exercise.guidance,
+      /\b(\d+(?:-\d+)?)\s*(?:sets?|holds?|rounds?|carries|hangs?|efforts?)\b/i,
+    ),
+    reps: getFitnessGuidancePart(
+      exercise.guidance,
+      /\bx\s*(\d+(?:-\d+)?(?:\s*(?:each side|each|total reps|steps|reps?))?)/i,
+    ),
+    duration: getFitnessGuidancePart(
+      exercise.guidance,
+      /\bx\s*(\d+(?:-\d+)?\s*(?:sec|secs|seconds|min|mins|minutes)\b)/i,
+    ),
+  };
+}
+
+function getFitnessWorkoutExerciseDetail(
+  exercise: FitnessExerciseSample,
+  detailsByExerciseId: Record<string, FitnessWorkoutExerciseDetail>,
+) {
+  return (
+    detailsByExerciseId[getFitnessExerciseId(exercise)] ??
+    getDefaultFitnessWorkoutExerciseDetail(exercise)
+  );
+}
+
+function shouldUseFitnessDurationDetail(exercise: FitnessExerciseSample) {
+  return Boolean(getDefaultFitnessWorkoutExerciseDetail(exercise).duration);
+}
+
+function formatFitnessWorkoutExerciseDetail(
+  exercise: FitnessExerciseSample,
+  detailsByExerciseId: Record<string, FitnessWorkoutExerciseDetail>,
+) {
+  const detail = getFitnessWorkoutExerciseDetail(exercise, detailsByExerciseId);
+  const sets = detail.sets.trim();
+  const reps = detail.reps.trim();
+  const duration = detail.duration.trim();
+
+  if (shouldUseFitnessDurationDetail(exercise)) {
+    if (sets && reps) return `${exercise.name}: ${sets} sets x ${reps}`;
+    if (reps) return `${exercise.name}: ${reps} reps`;
+    if (sets && duration) return `${exercise.name}: ${sets} x ${duration}`;
+    if (duration) return `${exercise.name}: ${duration}`;
+    if (sets) return `${exercise.name}: ${sets}`;
+    if (!exercise.guidance.trim()) return exercise.name;
+    return `${exercise.name}: ${exercise.guidance}`;
+  }
+
+  if (sets && reps) return `${exercise.name}: ${sets} sets x ${reps}`;
+  if (sets) return `${exercise.name}: ${sets} sets`;
+  if (reps) return `${exercise.name}: ${reps} reps`;
+  if (!exercise.guidance.trim()) return exercise.name;
+  return `${exercise.name}: ${exercise.guidance}`;
+}
 const FITNESS_ROUTINE_SAMPLES: FitnessRoutineSample[] = [
   {
     name: "Push Day",
@@ -3049,26 +3667,6 @@ function getNutritionSelectedFoodLineMeta(item: NutritionSelectedFoodItem) {
   return nutritionParts.join(" · ");
 }
 
-function getNutritionSelectedFoodMacroRows(item: NutritionSelectedFoodItem) {
-  return [
-    {
-      key: "carbs",
-      label: "Carbs",
-      value: formatFoodNutritionNumber(getNutritionFoodLineValue(item, "carbs_g")) ?? "0",
-    },
-    {
-      key: "protein",
-      label: "Protein",
-      value: formatFoodNutritionNumber(getNutritionFoodLineValue(item, "protein_g")) ?? "0",
-    },
-    {
-      key: "fat",
-      label: "Fat",
-      value: formatFoodNutritionNumber(getNutritionFoodLineValue(item, "fat_g")) ?? "0",
-    },
-  ];
-}
-
 function getNutritionMealBuilderItemLineMeta(item: NutritionMealBuilderItem) {
   const calories =
     formatFoodNutritionNumber(getNutritionMealBuilderItemLineValue(item, "calories")) ?? "0";
@@ -3120,6 +3718,106 @@ function getNutritionSnapshotNumber(value: unknown) {
         : 0;
 
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function getOptionalNutritionSnapshotNumber(value: unknown) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function getOptionalFoodNutritionLineValue(
+  item: NutritionSelectedFoodItem,
+  key: NutritionMacroSourceKey,
+) {
+  const value = getOptionalNutritionSnapshotNumber(item.food[key]);
+  if (value === null) return null;
+
+  return value * getFoodServingMultiplier(item);
+}
+
+function formatOptionalFoodNutritionLineValue(
+  item: NutritionSelectedFoodItem,
+  key: NutritionMacroSourceKey,
+) {
+  const value = getOptionalFoodNutritionLineValue(item, key);
+  return value === null ? "" : (formatFoodNutritionNumber(value) ?? "");
+}
+
+function getRecordMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function getTrimmedMetadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function toFoodFamilyTitle(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function deriveFoodFamilyName(name: unknown, brandName?: unknown) {
+  if (typeof name !== "string" || !name.trim()) return null;
+
+  let normalized = normalizeFoodSearchText(name);
+  const normalizedBrand =
+    typeof brandName === "string" ? normalizeFoodSearchText(brandName) : "";
+
+  if (normalizedBrand) {
+    const escapedBrand = escapeRegExp(normalizedBrand);
+    normalized = normalized
+      .replace(new RegExp(`^${escapedBrand}\\s+`), "")
+      .replace(new RegExp(`\\s+${escapedBrand}$`), "")
+      .trim();
+  }
+
+  const knownFamilies = [
+    "peanut butter",
+    "powdered peanut butter",
+    "almond butter",
+    "cashew butter",
+  ];
+  const knownFamily = knownFamilies.find((family) => normalized.includes(family));
+  if (knownFamily) {
+    return knownFamily === "powdered peanut butter"
+      ? "Peanut Butter"
+      : toFoodFamilyTitle(knownFamily);
+  }
+
+  const withoutDescriptors = normalized
+    .replace(
+      /\b(creamy|crunchy|natural|organic|classic|original|smooth|reduced fat|low fat|powdered|no sugar added|unsweetened|salted|unsalted)\b/g,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return withoutDescriptors ? toFoodFamilyTitle(withoutDescriptors) : null;
+}
+
+function getFoodFamilyFromMetadataOrName(
+  metadata: Record<string, unknown>,
+  name: unknown,
+  brandName?: unknown,
+) {
+  return (
+    getTrimmedMetadataString(metadata, "food_family") ??
+    getTrimmedMetadataString(metadata, "canonical_food_name") ??
+    deriveFoodFamilyName(name, brandName)
+  );
 }
 
 function getLocalTimezone() {
@@ -3415,14 +4113,43 @@ function buildFoodNutritionMealItem(
 
 function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
   const { food } = item;
+  const sourceMetadata = getRecordMetadata(food.metadata);
   const quantity = normalizeNutritionQuantity(item.quantity);
   const servingUnit = getSafeFoodServingUnit(food, item.servingUnit);
   const servingGrams = getPositiveNutritionNumber(food.serving_grams);
   const multiplier = getFoodServingMultiplier(item);
+  const lineCalories = getOptionalFoodNutritionLineValue(item, "calories");
+  const lineCarbs = getOptionalFoodNutritionLineValue(item, "carbs_g");
+  const lineProtein = getOptionalFoodNutritionLineValue(item, "protein_g");
+  const lineFat = getOptionalFoodNutritionLineValue(item, "fat_g");
+  const foodFamily = getFoodFamilyFromMetadataOrName(
+    sourceMetadata,
+    food.name,
+    food.brand_name,
+  );
+  const originalScannedNutrition = {
+    serving_quantity: quantity,
+    serving_unit: servingUnit,
+    serving_grams: servingGrams,
+    calories: getOptionalNutritionSnapshotNumber(food.calories),
+    carbs_g: getOptionalNutritionSnapshotNumber(food.carbs_g),
+    protein_g: getOptionalNutritionSnapshotNumber(food.protein_g),
+    fat_g: getOptionalNutritionSnapshotNumber(food.fat_g),
+  };
 
   return {
+    ...sourceMetadata,
     source: "grocery-food-selection",
     catalogSource: food.source ?? "foods",
+    food_family: foodFamily ?? undefined,
+    canonical_food_name: foodFamily ?? undefined,
+    serving_quantity: quantity,
+    serving_unit: servingUnit,
+    serving_grams: servingGrams,
+    calories: lineCalories ?? undefined,
+    carbs_g: lineCarbs ?? undefined,
+    protein_g: lineProtein ?? undefined,
+    fat_g: lineFat ?? undefined,
     selectedServing: {
       amount: quantity,
       unit: servingUnit,
@@ -3440,10 +4167,10 @@ function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
       serving_unit: servingUnit,
       servingGrams,
       serving_grams: servingGrams,
-      calories: getNutritionLineValue(food.calories, multiplier),
-      carbs_g: getNutritionLineValue(food.carbs_g, multiplier),
-      protein_g: getNutritionLineValue(food.protein_g, multiplier),
-      fat_g: getNutritionLineValue(food.fat_g, multiplier),
+      calories: lineCalories,
+      carbs_g: lineCarbs,
+      protein_g: lineProtein,
+      fat_g: lineFat,
     },
     perServing: {
       calories: getNutritionSnapshotNumber(food.calories),
@@ -3451,6 +4178,13 @@ function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
       protein_g: getNutritionSnapshotNumber(food.protein_g),
       fat_g: getNutritionSnapshotNumber(food.fat_g),
     },
+    originalScannedProductName:
+      getTrimmedMetadataString(sourceMetadata, "originalScannedProductName") ?? food.name,
+    originalScannedBrandName:
+      getTrimmedMetadataString(sourceMetadata, "originalScannedBrandName") ??
+      food.brand_name ??
+      undefined,
+    originalScannedNutrition,
   };
 }
 
@@ -3802,6 +4536,16 @@ function mapSelectedNutritionFoodsToEntryValues(
       [ON_HAND_NAME_FIELD_ID]: item.food.name,
       [ON_HAND_QUANTITY_FIELD_ID]: formatNutritionServingAmount(item.quantity),
       [ON_HAND_UNIT_FIELD_ID]: getSafeFoodServingUnit(item.food, item.servingUnit),
+      [GROCERY_CUSTOM_CALORIES_FIELD_ID]: formatOptionalFoodNutritionLineValue(
+        item,
+        "calories",
+      ),
+      [GROCERY_CUSTOM_CARBS_FIELD_ID]: formatOptionalFoodNutritionLineValue(item, "carbs_g"),
+      [GROCERY_CUSTOM_PROTEIN_FIELD_ID]: formatOptionalFoodNutritionLineValue(
+        item,
+        "protein_g",
+      ),
+      [GROCERY_CUSTOM_FAT_FIELD_ID]: formatOptionalFoodNutritionLineValue(item, "fat_g"),
       food_id: item.food.id,
       brand_name: item.food.brand_name ?? "",
       metadata: buildGroceryFoodResourceMetadata(item),
@@ -4110,7 +4854,79 @@ function mapFoodResourceToFoodSearchResult(resource: FoodResource): FoodSearchRe
   };
 }
 
+function getCorrectedGroceryNutritionMetadata(entryValues: Record<string, unknown>) {
+  const baseMetadata = getRecordMetadata(entryValues.metadata);
+  const name = entryValues[ON_HAND_NAME_FIELD_ID];
+  const brandName = entryValues.brand_name;
+  const servingQuantity =
+    getPositiveNutritionMetadataNumber(entryValues, ON_HAND_QUANTITY_FIELD_ID) ?? 1;
+  const servingUnit =
+    typeof entryValues[ON_HAND_UNIT_FIELD_ID] === "string" &&
+    entryValues[ON_HAND_UNIT_FIELD_ID].trim()
+      ? normalizeNutritionServingUnit(entryValues[ON_HAND_UNIT_FIELD_ID])
+      : "serving";
+  const hasCaloriesInput = Object.prototype.hasOwnProperty.call(
+    entryValues,
+    GROCERY_CUSTOM_CALORIES_FIELD_ID,
+  );
+  const hasCarbsInput = Object.prototype.hasOwnProperty.call(
+    entryValues,
+    GROCERY_CUSTOM_CARBS_FIELD_ID,
+  );
+  const hasProteinInput = Object.prototype.hasOwnProperty.call(
+    entryValues,
+    GROCERY_CUSTOM_PROTEIN_FIELD_ID,
+  );
+  const hasFatInput = Object.prototype.hasOwnProperty.call(
+    entryValues,
+    GROCERY_CUSTOM_FAT_FIELD_ID,
+  );
+  const calories = getOptionalNutritionSnapshotNumber(
+    hasCaloriesInput ? entryValues[GROCERY_CUSTOM_CALORIES_FIELD_ID] : baseMetadata.calories,
+  );
+  const carbsG = getOptionalNutritionSnapshotNumber(
+    hasCarbsInput ? entryValues[GROCERY_CUSTOM_CARBS_FIELD_ID] : baseMetadata.carbs_g,
+  );
+  const proteinG = getOptionalNutritionSnapshotNumber(
+    hasProteinInput ? entryValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID] : baseMetadata.protein_g,
+  );
+  const fatG = getOptionalNutritionSnapshotNumber(
+    hasFatInput ? entryValues[GROCERY_CUSTOM_FAT_FIELD_ID] : baseMetadata.fat_g,
+  );
+  const foodFamily = getFoodFamilyFromMetadataOrName(baseMetadata, name, brandName);
+  const correctedNutrition = {
+    serving_quantity: servingQuantity,
+    serving_unit: servingUnit,
+    calories,
+    carbs_g: carbsG,
+    protein_g: proteinG,
+    fat_g: fatG,
+  };
+  const metadata: Record<string, unknown> = {
+    ...baseMetadata,
+    food_family: foodFamily ?? undefined,
+    canonical_food_name: foodFamily ?? undefined,
+    serving_quantity: servingQuantity,
+    serving_unit: servingUnit,
+    calories: calories ?? undefined,
+    carbs_g: carbsG ?? undefined,
+    protein_g: proteinG ?? undefined,
+    fat_g: fatG ?? undefined,
+    correctedNutrition,
+  };
+
+  for (const key of ["calories", "carbs_g", "protein_g", "fat_g"] as const) {
+    if (metadata[key] === undefined) {
+      delete metadata[key];
+    }
+  }
+
+  return metadata;
+}
+
 function mapOnHandEntryToFoodResourcePayload(entry: NoteDatabaseEntry) {
+  const metadata = getCorrectedGroceryNutritionMetadata(entry.values);
+
   return {
     id: entry.id,
     food_id: typeof entry.values.food_id === "string" ? entry.values.food_id : null,
@@ -4122,21 +4938,22 @@ function mapOnHandEntryToFoodResourcePayload(entry: NoteDatabaseEntry) {
     location: entry.values[ON_HAND_LOCATION_FIELD_ID],
     expires_on: entry.values[ON_HAND_EXPIRES_ON_FIELD_ID],
     notes: entry.values[ON_HAND_NOTES_FIELD_ID],
-    metadata:
-      entry.values.metadata &&
-      typeof entry.values.metadata === "object" &&
-      !Array.isArray(entry.values.metadata)
-        ? entry.values.metadata
-        : undefined,
+    metadata,
   };
 }
 
 function getGroceryCustomMetadata(entryValues: Record<string, unknown>) {
   const metadata: Record<string, unknown> = {};
-  const calories = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_CALORIES_FIELD_ID]);
-  const carbsG = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_CARBS_FIELD_ID]);
-  const proteinG = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID]);
-  const fatG = getNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_FAT_FIELD_ID]);
+  const calories = getOptionalNutritionSnapshotNumber(
+    entryValues[GROCERY_CUSTOM_CALORIES_FIELD_ID],
+  );
+  const carbsG = getOptionalNutritionSnapshotNumber(
+    entryValues[GROCERY_CUSTOM_CARBS_FIELD_ID],
+  );
+  const proteinG = getOptionalNutritionSnapshotNumber(
+    entryValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID],
+  );
+  const fatG = getOptionalNutritionSnapshotNumber(entryValues[GROCERY_CUSTOM_FAT_FIELD_ID]);
   const servingQuantity =
     getPositiveNutritionMetadataNumber(entryValues, ON_HAND_QUANTITY_FIELD_ID) ?? 1;
   const servingUnit =
@@ -4144,8 +4961,15 @@ function getGroceryCustomMetadata(entryValues: Record<string, unknown>) {
     entryValues[ON_HAND_UNIT_FIELD_ID].trim()
       ? normalizeNutritionServingUnit(entryValues[ON_HAND_UNIT_FIELD_ID])
       : "serving";
+  const foodFamily = getFoodFamilyFromMetadataOrName(
+    metadata,
+    entryValues[ON_HAND_NAME_FIELD_ID],
+    entryValues.brand_name,
+  );
 
   metadata.source = "grocery_custom";
+  metadata.food_family = foodFamily ?? undefined;
+  metadata.canonical_food_name = foodFamily ?? undefined;
   metadata.serving_quantity = servingQuantity;
   metadata.serving_unit = servingUnit;
   if (calories !== null) metadata.calories = calories;
@@ -5282,6 +6106,9 @@ export function NoteDatabaseEntrySheet({
   const [selectedFitnessWorkoutExercises, setSelectedFitnessWorkoutExercises] = useState<
     FitnessExerciseSample[]
   >([]);
+  const [fitnessWorkoutExerciseDetailsById, setFitnessWorkoutExerciseDetailsById] = useState<
+    Record<string, FitnessWorkoutExerciseDetail>
+  >({});
   const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -6279,15 +7106,37 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function addFitnessWorkoutExercise(exercise: FitnessExerciseSample) {
-    setSelectedFitnessWorkoutExercises((currentExercises) => {
-      if (currentExercises.some((selectedExercise) => selectedExercise.name === exercise.name)) {
-        return currentExercises;
-      }
+  function toggleFitnessWorkoutExercise(exercise: FitnessExerciseSample) {
+    const exerciseId = getFitnessExerciseId(exercise);
+    const isSelected = selectedFitnessWorkoutExercises.some(
+      (selectedExercise) => getFitnessExerciseId(selectedExercise) === exerciseId,
+    );
 
-      void hapticSoftTick();
-      return [...currentExercises, exercise];
+    if (isSelected) {
+      setSelectedFitnessWorkoutExercises((currentExercises) =>
+        currentExercises.filter(
+          (selectedExercise) => getFitnessExerciseId(selectedExercise) !== exerciseId,
+        ),
+      );
+      setFitnessWorkoutExerciseDetailsById((currentDetails) => {
+        const nextDetails = { ...currentDetails };
+        delete nextDetails[exerciseId];
+        return nextDetails;
+      });
+      void hapticSnap();
+      return;
+    }
+
+    setSelectedFitnessWorkoutExercises((currentExercises) => [...currentExercises, exercise]);
+    setFitnessWorkoutExerciseDetailsById((currentDetails) => {
+      if (currentDetails[exerciseId]) return currentDetails;
+
+      return {
+        ...currentDetails,
+        [exerciseId]: getDefaultFitnessWorkoutExerciseDetail(exercise),
+      };
     });
+    void hapticSoftTick();
   }
 
   function toggleFavoriteFitnessExercise(exerciseId: string) {
@@ -6306,15 +7155,150 @@ export function NoteDatabaseEntrySheet({
   }
 
   function removeFitnessWorkoutExercise(exerciseName: string) {
+    const exerciseId = exerciseName;
+
     setSelectedFitnessWorkoutExercises((currentExercises) =>
-      currentExercises.filter((exercise) => exercise.name !== exerciseName),
+      currentExercises.filter((exercise) => getFitnessExerciseId(exercise) !== exerciseId),
     );
+    setFitnessWorkoutExerciseDetailsById((currentDetails) => {
+      const nextDetails = { ...currentDetails };
+      delete nextDetails[exerciseId];
+      return nextDetails;
+    });
     void hapticSnap();
   }
 
   function clearFitnessWorkoutExercises() {
     setSelectedFitnessWorkoutExercises([]);
+    setFitnessWorkoutExerciseDetailsById({});
     void hapticSnap();
+  }
+
+  function getFitnessRoutineExercise(
+    routine: FitnessRoutineSample,
+    exerciseName: string,
+  ): FitnessExerciseSample {
+    return (
+      FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName) ?? {
+        name: exerciseName,
+        movementType: "Routine",
+        primaryArea: routine.focus,
+        equipment: "",
+        guidance: "",
+        notes: "",
+      }
+    );
+  }
+
+  function selectFitnessRoutine(routine: FitnessRoutineSample) {
+    const routineExercises = routine.exercises.map((exerciseName) =>
+      getFitnessRoutineExercise(routine, exerciseName),
+    );
+
+    setSelectedFitnessWorkoutExercises((currentExercises) => {
+      const currentExerciseIds = new Set(currentExercises.map(getFitnessExerciseId));
+      const nextExercises = routineExercises.filter(
+        (exercise) => !currentExerciseIds.has(getFitnessExerciseId(exercise)),
+      );
+
+      return nextExercises.length > 0
+        ? [...currentExercises, ...nextExercises]
+        : currentExercises;
+    });
+    setFitnessWorkoutExerciseDetailsById((currentDetails) => {
+      const nextDetails = { ...currentDetails };
+
+      routineExercises.forEach((exercise) => {
+        const exerciseId = getFitnessExerciseId(exercise);
+
+        if (!nextDetails[exerciseId]) {
+          nextDetails[exerciseId] = getDefaultFitnessWorkoutExerciseDetail(exercise);
+        }
+      });
+
+      return nextDetails;
+    });
+    selectFitnessAction("start");
+    void hapticSoftTick();
+  }
+
+  function updateFitnessWorkoutExerciseDetail(
+    exercise: FitnessExerciseSample,
+    key: keyof FitnessWorkoutExerciseDetail,
+    value: string,
+  ) {
+    const exerciseId = getFitnessExerciseId(exercise);
+
+    setFitnessWorkoutExerciseDetailsById((currentDetails) => {
+      const currentDetail =
+        currentDetails[exerciseId] ?? getDefaultFitnessWorkoutExerciseDetail(exercise);
+
+      return {
+        ...currentDetails,
+        [exerciseId]: {
+          ...currentDetail,
+          [key]: value,
+        },
+      };
+    });
+  }
+
+  function getPositiveFitnessDetailValue(value: string) {
+    const parsedValue = Number.parseInt(value, 10);
+
+    return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 1;
+  }
+
+  function bumpFitnessWorkoutExerciseDetail(
+    exercise: FitnessExerciseSample,
+    key: "sets" | "reps",
+    offset: -1 | 1,
+  ) {
+    const currentDetail = getFitnessWorkoutExerciseDetail(
+      exercise,
+      fitnessWorkoutExerciseDetailsById,
+    );
+    const nextValue = Math.max(
+      1,
+      getPositiveFitnessDetailValue(currentDetail[key]) + offset,
+    );
+
+    updateFitnessWorkoutExerciseDetail(exercise, key, String(nextValue));
+    void hapticSoftTick();
+  }
+
+  function renderFitnessDetailStepper(
+    exercise: FitnessExerciseSample,
+    key: "sets" | "reps",
+    label: string,
+    value: number,
+  ) {
+    return (
+      <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-lg border border-white/[0.07] bg-black/28">
+        <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/36">
+          {label}
+        </span>
+        <button
+          type="button"
+          aria-label={`Decrease ${label.toLowerCase()} for ${exercise.name}`}
+          onClick={() => bumpFitnessWorkoutExerciseDetail(exercise, key, -1)}
+          className="flex h-8 w-7 items-center justify-center border-l border-white/[0.055] text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/78 focus-visible:bg-white/[0.08] focus-visible:text-white"
+        >
+          <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+        <span className="flex h-8 w-7 items-center justify-center border-l border-white/[0.055] text-xs font-semibold tabular-nums text-white/82">
+          {value}
+        </span>
+        <button
+          type="button"
+          aria-label={`Increase ${label.toLowerCase()} for ${exercise.name}`}
+          onClick={() => bumpFitnessWorkoutExerciseDetail(exercise, key, 1)}
+          className="flex h-8 w-7 items-center justify-center border-l border-white/[0.055] text-white/46 outline-none transition hover:bg-white/[0.07] hover:text-white/78 focus-visible:bg-white/[0.08] focus-visible:text-white"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    );
   }
 
   function logSelectedFitnessWorkout() {
@@ -6332,7 +7316,12 @@ export function NoteDatabaseEntrySheet({
       if (workoutFieldId) nextValues[workoutFieldId] = selectedExerciseNames.join(", ");
       if (guidanceFieldId) {
         nextValues[guidanceFieldId] = selectedFitnessWorkoutExercises
-          .map((exercise) => `${exercise.name}: ${exercise.guidance}`)
+          .map((exercise) =>
+            formatFitnessWorkoutExerciseDetail(
+              exercise,
+              fitnessWorkoutExerciseDetailsById,
+            ),
+          )
           .join("\n");
       }
       if (notesFieldId) {
@@ -6746,7 +7735,30 @@ export function NoteDatabaseEntrySheet({
       }
 
       if (payload.food) {
-        selectNutritionFood(payload.food);
+        const foodForSelection: FoodSearchResult = isGroceryDatabase
+          ? {
+              ...payload.food,
+              metadata: {
+                ...getRecordMetadata(payload.food.metadata),
+                barcode: normalizedBarcode,
+                scan_source: payload.source,
+                scan_status: payload.status,
+                originalScannedProductName: payload.food.name,
+                originalScannedBrandName: payload.food.brand_name ?? undefined,
+                originalScannedNutrition: {
+                  serving_size: payload.food.serving_size,
+                  serving_unit: payload.food.serving_unit,
+                  serving_grams: payload.food.serving_grams,
+                  calories: payload.food.calories,
+                  carbs_g: payload.food.carbs_g,
+                  protein_g: payload.food.protein_g,
+                  fat_g: payload.food.fat_g,
+                },
+              },
+            }
+          : payload.food;
+
+        selectNutritionFood(foodForSelection);
         setNutritionBarcodeLookupStatus(
           payload.status === "created"
             ? isGroceryDatabase
@@ -7244,22 +8256,25 @@ export function NoteDatabaseEntrySheet({
                                             </span>
                                           </span>
                                           <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                                            {exercise.equipment} · {exercise.guidance}
+                                            {exercise.movementType} · {exercise.equipment} ·{" "}
+                                            {exercise.primaryArea}
                                           </span>
+                                          {isSelected
+                                            ? renderFitnessWorkoutDetailControls(exercise)
+                                            : null}
                                         </div>
                                         <button
                                           type="button"
                                           aria-label={
                                             isSelected
-                                              ? `${exercise.name} already added`
+                                              ? `Remove ${exercise.name} from current workout`
                                               : `Add ${exercise.name} to current workout`
                                           }
                                           aria-pressed={isSelected}
-                                          disabled={isSelected}
-                                          onClick={() => addFitnessWorkoutExercise(exercise)}
+                                          onClick={() => toggleFitnessWorkoutExercise(exercise)}
                                           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
                                             isSelected
-                                              ? "cursor-default border-white/[0.1] bg-white/[0.1] text-white/72"
+                                              ? "border-white/[0.14] bg-white/[0.12] text-white/82 hover:border-white/[0.2] hover:bg-white/[0.16] hover:text-white"
                                               : "border-white/[0.08] bg-white/[0.08] text-white/76 hover:border-white/[0.14] hover:bg-white/[0.13] hover:text-white"
                                           }`}
                                         >
@@ -7340,22 +8355,22 @@ export function NoteDatabaseEntrySheet({
                       {exercise.name}
                     </p>
                     <p className="mt-0.5 truncate text-xs font-medium text-white/40">
-                      {exercise.movementType} · {exercise.guidance}
+                      {exercise.movementType} · {exercise.equipment} · {exercise.primaryArea}
                     </p>
+                    {isSelected ? renderFitnessWorkoutDetailControls(exercise) : null}
                   </div>
                   <button
                     type="button"
                     aria-label={
                       isSelected
-                        ? `${exercise.name} already added`
+                        ? `Remove ${exercise.name} from current workout`
                         : `Add ${exercise.name} to current workout`
                     }
                     aria-pressed={isSelected}
-                    disabled={isSelected}
-                    onClick={() => addFitnessWorkoutExercise(exercise)}
+                    onClick={() => toggleFitnessWorkoutExercise(exercise)}
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border outline-none transition focus-visible:ring-1 focus-visible:ring-white/16 ${
                       isSelected
-                        ? "cursor-default border-white/[0.1] bg-white/[0.1] text-white/72"
+                        ? "border-white/[0.14] bg-white/[0.12] text-white/82 hover:border-white/[0.2] hover:bg-white/[0.16] hover:text-white"
                         : "border-white/[0.08] bg-white/[0.08] text-white/76 hover:border-white/[0.14] hover:bg-white/[0.13] hover:text-white"
                     }`}
                   >
@@ -7416,9 +8431,14 @@ export function NoteDatabaseEntrySheet({
                   <p className="text-sm font-semibold text-white/86">{routine.name}</p>
                   <p className="mt-1 text-xs font-medium text-white/42">{routine.focus}</p>
                 </div>
-                <span className="rounded-full border border-white/[0.05] bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/36">
-                  Routine
-                </span>
+                <button
+                  type="button"
+                  onClick={() => selectFitnessRoutine(routine)}
+                  className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.11] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/16"
+                >
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  Use
+                </button>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {routine.exercises.map((exerciseName) => (
@@ -7430,9 +8450,6 @@ export function NoteDatabaseEntrySheet({
                   </span>
                 ))}
               </div>
-              <p className="mt-2 text-xs font-medium leading-5 text-white/44">
-                {routine.guidance}
-              </p>
             </div>
           ))}
         </div>
@@ -7486,6 +8503,22 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderFitnessWorkoutDetailControls(exercise: FitnessExerciseSample) {
+    const detail = getFitnessWorkoutExerciseDetail(
+      exercise,
+      fitnessWorkoutExerciseDetailsById,
+    );
+    const sets = getPositiveFitnessDetailValue(detail.sets);
+    const reps = getPositiveFitnessDetailValue(detail.reps);
+
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {renderFitnessDetailStepper(exercise, "sets", "Sets", sets)}
+        {renderFitnessDetailStepper(exercise, "reps", "Reps", reps)}
+      </div>
+    );
+  }
+
   function renderFitnessStartContent() {
     const hasSelectedWorkoutExercises = selectedFitnessWorkoutExercises.length > 0;
 
@@ -7522,24 +8555,23 @@ export function NoteDatabaseEntrySheet({
               {selectedFitnessWorkoutExercises.map((exercise) => (
                 <div
                   key={exercise.name}
-                  className="flex min-h-10 items-center gap-2 rounded-lg border border-white/[0.045] bg-white/[0.035] px-2.5 py-2"
+                  className="rounded-lg border border-white/[0.045] bg-white/[0.035] px-2.5 py-2"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-white/78">
-                      {exercise.name}
-                    </p>
-                    <p className="mt-0.5 truncate text-[11px] font-medium text-white/38">
-                      {exercise.guidance}
-                    </p>
+                  <div className="flex min-h-8 items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-white/78">
+                        {exercise.name}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${exercise.name} from current workout`}
+                      onClick={() => removeFitnessWorkoutExercise(exercise.name)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/40 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${exercise.name} from current workout`}
-                    onClick={() => removeFitnessWorkoutExercise(exercise.name)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white/40 outline-none transition hover:bg-white/[0.07] hover:text-white/76 focus-visible:bg-white/[0.08] focus-visible:text-white"
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
                 </div>
               ))}
             </div>
@@ -7778,11 +8810,28 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderGrocerySelectedFoodDetail(item: NutritionSelectedFoodItem) {
-    const calories = formatFoodNutritionNumber(
-      getNutritionFoodLineValue(item, "calories"),
-    ) ?? "0";
-    const macroRows = getNutritionSelectedFoodMacroRows(item);
     const { food } = item;
+    const groceryNameValue =
+      typeof entryFormValues[ON_HAND_NAME_FIELD_ID] === "string"
+        ? entryFormValues[ON_HAND_NAME_FIELD_ID]
+        : food.name;
+    const groceryBrandValue =
+      typeof entryFormValues.brand_name === "string"
+        ? entryFormValues.brand_name
+        : food.brand_name ?? "";
+    const nutritionInputClassName =
+      "mt-1.5 h-9 w-full rounded-lg border border-white/[0.055] bg-black/28 px-2.5 text-sm font-semibold tabular-nums text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/34 focus-visible:border-white/[0.14] focus-visible:bg-black/38 focus-visible:ring-1 focus-visible:ring-white/12";
+    const textInputClassName =
+      "mt-1.5 h-9 w-full rounded-lg border border-white/[0.055] bg-black/28 px-2.5 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/34 focus-visible:border-white/[0.14] focus-visible:bg-black/38 focus-visible:ring-1 focus-visible:ring-white/12";
+    const macroFields: Array<{
+      id: string;
+      label: string;
+      placeholder: string;
+    }> = [
+      { id: GROCERY_CUSTOM_CARBS_FIELD_ID, label: "Carbs", placeholder: "g" },
+      { id: GROCERY_CUSTOM_PROTEIN_FIELD_ID, label: "Protein", placeholder: "g" },
+      { id: GROCERY_CUSTOM_FAT_FIELD_ID, label: "Fat", placeholder: "g" },
+    ];
 
     return (
       <div
@@ -7795,9 +8844,11 @@ export function NoteDatabaseEntrySheet({
             <span className="block text-sm font-semibold leading-snug text-white/88">
               {food.name}
             </span>
-            {food.brand_name ? (
+            {food.brand_name || food.source === "open_food_facts" ? (
               <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
-                {food.brand_name}
+                {[food.brand_name, food.source === "open_food_facts" ? "Barcode scan" : null]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             ) : null}
           </span>
@@ -7811,24 +8862,82 @@ export function NoteDatabaseEntrySheet({
           </button>
         </div>
 
-        <div className="mt-3 rounded-lg border border-white/[0.055] bg-white/[0.035] px-3 py-2">
-          <div className="flex min-w-0 items-baseline justify-between gap-3">
-            <span className="text-xs font-semibold text-white/52">Calories</span>
-            <span className="text-lg font-semibold leading-none tabular-nums text-white/88">
-              {calories}
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="block min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+              Food
             </span>
+            <input
+              type="text"
+              value={groceryNameValue}
+              onChange={(event) =>
+                updateEntryFormValue(ON_HAND_NAME_FIELD_ID, event.target.value)
+              }
+              className={textInputClassName}
+              placeholder="Food name"
+            />
+          </label>
+          <label className="block min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+              Brand
+            </span>
+            <input
+              type="text"
+              value={groceryBrandValue}
+              onChange={(event) => updateEntryFormValue("brand_name", event.target.value)}
+              className={textInputClassName}
+              placeholder="Brand"
+            />
+          </label>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-white/[0.055] bg-white/[0.035] px-3 py-2.5">
+          <div className="grid grid-cols-1 gap-2">
+            <label className="block min-w-0">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/38">
+                Calories
+              </span>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={
+                  typeof entryFormValues[GROCERY_CUSTOM_CALORIES_FIELD_ID] === "string"
+                    ? entryFormValues[GROCERY_CUSTOM_CALORIES_FIELD_ID]
+                    : ""
+                }
+                onChange={(event) =>
+                  updateEntryFormValue(GROCERY_CUSTOM_CALORIES_FIELD_ID, event.target.value)
+                }
+                className={nutritionInputClassName}
+                placeholder="Calories"
+              />
+            </label>
           </div>
           <div className="mt-2 grid grid-cols-3 gap-1.5">
-            {macroRows.map((macro) => (
-              <div key={macro.key} className="min-w-0 rounded-lg bg-black/24 px-2 py-1.5">
-                <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32">
-                  {macro.label}
-                </span>
-                <span className="mt-0.5 block text-sm font-semibold tabular-nums text-white/78">
-                  {macro.value}g
-                </span>
-              </div>
-            ))}
+            {macroFields.map((macro) => {
+              const macroValue = entryFormValues[macro.id];
+
+              return (
+                <label
+                  key={macro.id}
+                  className="block min-w-0 rounded-lg bg-black/24 px-2 py-1.5"
+                >
+                  <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-white/32">
+                    {macro.label}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={typeof macroValue === "string" ? macroValue : ""}
+                    onChange={(event) => updateEntryFormValue(macro.id, event.target.value)}
+                    className="mt-1 h-8 w-full rounded-md border border-white/[0.045] bg-white/[0.035] px-2 text-sm font-semibold tabular-nums text-white outline-none transition placeholder:text-white/24 selection:bg-white/[0.18] hover:border-white/[0.08] hover:bg-white/[0.05] focus-visible:border-white/[0.13] focus-visible:bg-white/[0.06]"
+                    placeholder={macro.placeholder}
+                  />
+                </label>
+              );
+            })}
           </div>
         </div>
 
@@ -9776,7 +10885,6 @@ export function NoteDatabaseEntrySheet({
     if (isGroceryDatabase) {
       const foodId = entryFormValues.food_id;
       const brandName = entryFormValues.brand_name;
-      const metadata = entryFormValues.metadata;
 
       delete values[ON_HAND_NOTES_FIELD_ID];
 
@@ -9800,8 +10908,19 @@ export function NoteDatabaseEntrySheet({
       }
       if (selectedNutritionFoodAction === "custom") {
         values.metadata = getGroceryCustomMetadata(entryFormValues);
-      } else if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-        values.metadata = metadata;
+      } else {
+        values[GROCERY_CUSTOM_CALORIES_FIELD_ID] =
+          entryFormValues[GROCERY_CUSTOM_CALORIES_FIELD_ID] ?? "";
+        values[GROCERY_CUSTOM_CARBS_FIELD_ID] =
+          entryFormValues[GROCERY_CUSTOM_CARBS_FIELD_ID] ?? "";
+        values[GROCERY_CUSTOM_PROTEIN_FIELD_ID] =
+          entryFormValues[GROCERY_CUSTOM_PROTEIN_FIELD_ID] ?? "";
+        values[GROCERY_CUSTOM_FAT_FIELD_ID] =
+          entryFormValues[GROCERY_CUSTOM_FAT_FIELD_ID] ?? "";
+        values.metadata = getCorrectedGroceryNutritionMetadata({
+          ...entryFormValues,
+          ...values,
+        });
       }
     }
 
