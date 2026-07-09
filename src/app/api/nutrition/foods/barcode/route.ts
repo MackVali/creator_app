@@ -18,7 +18,7 @@ import {
 export const runtime = "nodejs";
 
 const FOOD_SELECT =
-  "id,name,brand_name,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g";
+  "id,name,brand_name,source,serving_size,serving_unit,serving_grams,calories,carbs_g,protein_g,fat_g,metadata";
 const OPEN_FOOD_FACTS_FIELDS = [
   "code",
   "product_name",
@@ -28,7 +28,13 @@ const OPEN_FOOD_FACTS_FIELDS = [
   "brands",
   "serving_size",
   "serving_quantity",
+  "serving_quantity_unit",
   "quantity",
+  "product_quantity",
+  "product_quantity_unit",
+  "servings_per_container",
+  "servings_per_package",
+  "nutrition_data_per",
   "nutriments",
 ].join(",");
 const OPEN_FOOD_FACTS_TIMEOUT_MS = 4500;
@@ -75,6 +81,7 @@ function mapFoodRow(row: FoodRow): FoodSearchResult {
     id: row.id,
     name: row.name,
     brand_name: row.brand_name,
+    source: row.source,
     serving_size: toNullableNumber(row.serving_size),
     serving_unit: row.serving_unit,
     serving_grams: toNullableNumber(row.serving_grams),
@@ -82,6 +89,7 @@ function mapFoodRow(row: FoodRow): FoodSearchResult {
     carbs_g: toNullableNumber(row.carbs_g),
     protein_g: toNullableNumber(row.protein_g),
     fat_g: toNullableNumber(row.fat_g),
+    metadata: row.metadata,
   };
 }
 
@@ -264,6 +272,8 @@ export async function GET(request: NextRequest) {
   }
 
   const normalizedBarcode = normalizeFoodBarcode(request.nextUrl.searchParams.get("barcode"));
+  const lookupContext = request.nextUrl.searchParams.get("context");
+  const shouldPreferExternalProduct = lookupContext === "grocery";
 
   if (!isValidNormalizedFoodBarcode(normalizedBarcode)) {
     return barcodeResponse({
@@ -288,20 +298,22 @@ export async function GET(request: NextRequest) {
     return rateLimitedBarcodeResponse(endpointLimit);
   }
 
-  const existingFood = await findFoodByBarcode(supabase, normalizedBarcode);
-  if (existingFood.error) {
-    console.error("Failed to look up nutrition food by barcode", {
-      error: existingFood.error,
-    });
-    return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
-  }
+  if (!shouldPreferExternalProduct) {
+    const existingFood = await findFoodByBarcode(supabase, normalizedBarcode);
+    if (existingFood.error) {
+      console.error("Failed to look up nutrition food by barcode", {
+        error: existingFood.error,
+      });
+      return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
+    }
 
-  if (existingFood.food) {
-    return barcodeResponse({
-      food: existingFood.food,
-      source: "foods",
-      status: "found",
-    });
+    if (existingFood.food) {
+      return barcodeResponse({
+        food: existingFood.food,
+        source: "foods",
+        status: "found",
+      });
+    }
   }
 
   let externalLimit: ApiRateLimitDecision;
@@ -331,6 +343,24 @@ export async function GET(request: NextRequest) {
 
   const openFoodFactsFetch = await fetchOpenFoodFactsProduct(normalizedBarcode);
   if (openFoodFactsFetch.status === "external_error") {
+    if (shouldPreferExternalProduct) {
+      const existingFood = await findFoodByBarcode(supabase, normalizedBarcode);
+      if (existingFood.error) {
+        console.error("Failed to look up fallback nutrition food by barcode", {
+          error: existingFood.error,
+        });
+        return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
+      }
+
+      if (existingFood.food) {
+        return barcodeResponse({
+          food: existingFood.food,
+          source: "foods",
+          status: "found",
+        });
+      }
+    }
+
     return barcodeResponse(
       {
         food: null,
@@ -346,6 +376,24 @@ export async function GET(request: NextRequest) {
     openFoodFactsResponse?.status === 1 ? openFoodFactsResponse.product ?? null : null;
 
   if (!product) {
+    if (shouldPreferExternalProduct) {
+      const existingFood = await findFoodByBarcode(supabase, normalizedBarcode);
+      if (existingFood.error) {
+        console.error("Failed to look up fallback nutrition food by barcode", {
+          error: existingFood.error,
+        });
+        return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
+      }
+
+      if (existingFood.food) {
+        return barcodeResponse({
+          food: existingFood.food,
+          source: "foods",
+          status: "found",
+        });
+      }
+    }
+
     return barcodeResponse({
       food: null,
       source: null,
@@ -353,7 +401,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  if (!extractOpenFoodFactsNutrition(product)) {
+  if (!extractOpenFoodFactsNutrition(product) && !shouldPreferExternalProduct) {
     return barcodeResponse({
       food: null,
       source: "open_food_facts",
@@ -364,6 +412,7 @@ export async function GET(request: NextRequest) {
   const foodInsert = mapOpenFoodFactsProductToFoodInsert(product, {
     barcode: normalizedBarcode,
     createdByUserId: user.id,
+    allowIncompleteNutrition: shouldPreferExternalProduct,
   });
 
   if (!foodInsert) {
@@ -383,7 +432,6 @@ export async function GET(request: NextRequest) {
     .from("foods")
     .upsert(foodInsert, {
       onConflict: "normalized_barcode",
-      ignoreDuplicates: true,
     })
     .select(FOOD_SELECT);
 

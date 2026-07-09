@@ -16,6 +16,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
+  AutoScrollActivator,
   closestCenter,
   DndContext,
   PointerSensor,
@@ -758,6 +759,25 @@ function readManualReorderOverData(
   return null;
 }
 
+function readManualReorderActiveRowId(
+  active: DragStartEvent["active"],
+  rows: MyListManualRow[]
+) {
+  const activeData = readManualReorderOverData(active.data.current);
+  const rowId = typeof active.id === "string" ? active.id.trim() : "";
+
+  if (
+    !rowId ||
+    rowId === EMPTY_DRAFT_MANUAL_ROW_ID ||
+    activeData?.type !== "manual-row" ||
+    !rows.some((row) => row.id === rowId)
+  ) {
+    return null;
+  }
+
+  return rowId;
+}
+
 function resolveManualReorderGroupForRow(
   row: MyListManualRow,
   groupKind: MyListManualReorderGroup["kind"]
@@ -927,7 +947,7 @@ function MyListSortableManualTodoRow({
         zIndex: isDragging ? 30 : undefined,
       }}
       className={clsx(
-        "relative touch-manipulation",
+        "relative",
         isDragging && "z-30"
       )}
     >
@@ -1054,9 +1074,19 @@ export function MyListSheet({
   const manualReorderSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 4,
+        distance: 6,
       },
     })
+  );
+  const manualReorderAutoScroll = useMemo(
+    () => ({
+      enabled: true,
+      activator: AutoScrollActivator.Pointer,
+      acceleration: 8,
+      threshold: { x: 0, y: 0.16 },
+      canScroll: (element: Element) => element === sheetScrollRef.current,
+    }),
+    []
   );
   const applyMyListViewModePreference = useCallback(
     (preference: MyListViewModePreference) => {
@@ -2295,7 +2325,8 @@ export function MyListSheet({
 
   const resolveManualReorderDestination = useCallback(
     (
-      event: DragOverEvent | DragEndEvent
+      event: DragOverEvent | DragEndEvent,
+      rows: MyListManualRow[]
     ): MyListManualReorderDestination | null => {
       const over = event.over;
       if (!over) return null;
@@ -2303,29 +2334,22 @@ export function MyListSheet({
       const overData = readManualReorderOverData(over.data.current);
       if (!overData) return null;
 
-      return {
-        targetRowId: overData.type === "manual-row" ? String(over.id) : null,
-        group: overData.group,
-      };
-    },
-    []
-  );
-
-  const previewManualRowForReorder = useCallback(
-    (
-      draggedRowId: string,
-      destination: MyListManualReorderDestination
-    ) => {
+      const targetRowId =
+        overData.type === "manual-row" && typeof over.id === "string"
+          ? over.id.trim()
+          : null;
       if (
-        draggedRowId === destination.targetRowId ||
-        draggedRowId === EMPTY_DRAFT_MANUAL_ROW_ID
+        targetRowId &&
+        (targetRowId === EMPTY_DRAFT_MANUAL_ROW_ID ||
+          !rows.some((row) => row.id === targetRowId))
       ) {
-        return;
+        return null;
       }
 
-      setManualRows((currentRows) =>
-        reorderManualRowsForDestination(currentRows, draggedRowId, destination)
-      );
+      return {
+        targetRowId,
+        group: overData.group,
+      };
     },
     []
   );
@@ -2346,44 +2370,7 @@ export function MyListSheet({
     [persistManualRows]
   );
 
-  const handleManualReorderDragStart = useCallback(
-    (event: DragStartEvent) => {
-      const rowId = String(event.active.id);
-      if (!open || activeView !== "list" || rowId === EMPTY_DRAFT_MANUAL_ROW_ID) {
-        return;
-      }
-
-      clearManualUpgradePress();
-      setPendingDeleteRowId(null);
-      setActiveSkillPickerRowKey(null);
-      setActivePriorityPickerRowKey(null);
-      setActiveDayPickerRowKey(null);
-      setManualSkillSearch("");
-      manualReorderOriginRowsRef.current = manualRows;
-      setActiveManualReorderRowId(rowId);
-    },
-    [activeView, clearManualUpgradePress, manualRows, open]
-  );
-
-  const handleManualReorderDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const destination = resolveManualReorderDestination(event);
-      if (!destination) return;
-
-      previewManualRowForReorder(String(event.active.id), destination);
-    },
-    [previewManualRowForReorder, resolveManualReorderDestination]
-  );
-
-  const handleManualReorderDragEnd = useCallback((event: DragEndEvent) => {
-    const destination = resolveManualReorderDestination(event);
-    persistManualRowForReorder(String(event.active.id), destination);
-
-    manualReorderOriginRowsRef.current = null;
-    setActiveManualReorderRowId(null);
-  }, [persistManualRowForReorder, resolveManualReorderDestination]);
-
-  const handleManualReorderDragCancel = useCallback(() => {
+  const restoreManualReorderOrigin = useCallback(() => {
     const originRows = manualReorderOriginRowsRef.current;
     if (originRows) {
       setManualRows(originRows);
@@ -2391,6 +2378,86 @@ export function MyListSheet({
     manualReorderOriginRowsRef.current = null;
     setActiveManualReorderRowId(null);
   }, []);
+
+  const resetManualReorderAfterError = useCallback(
+    (error: unknown) => {
+      console.warn("My List manual reorder cancelled", error);
+      restoreManualReorderOrigin();
+    },
+    [restoreManualReorderOrigin]
+  );
+
+  const handleManualReorderDragStart = useCallback(
+    (event: DragStartEvent) => {
+      try {
+        const rowId = readManualReorderActiveRowId(event.active, manualRows);
+        if (!open || activeView !== "list" || !rowId) {
+          return;
+        }
+
+        clearManualUpgradePress();
+        setPendingDeleteRowId(null);
+        setActiveSkillPickerRowKey(null);
+        setActivePriorityPickerRowKey(null);
+        setActiveDayPickerRowKey(null);
+        setManualSkillSearch("");
+        manualReorderOriginRowsRef.current = manualRows;
+        setActiveManualReorderRowId(rowId);
+      } catch (error) {
+        resetManualReorderAfterError(error);
+      }
+    },
+    [
+      activeView,
+      clearManualUpgradePress,
+      manualRows,
+      open,
+      resetManualReorderAfterError,
+    ]
+  );
+
+  const handleManualReorderDragOver = useCallback(
+    (event: DragOverEvent) => {
+      try {
+        setManualRows((currentRows) => {
+          const rowId = readManualReorderActiveRowId(event.active, currentRows);
+          const destination = resolveManualReorderDestination(event, currentRows);
+          if (!rowId || !destination) return currentRows;
+          return reorderManualRowsForDestination(currentRows, rowId, destination);
+        });
+      } catch (error) {
+        resetManualReorderAfterError(error);
+      }
+    },
+    [resetManualReorderAfterError, resolveManualReorderDestination]
+  );
+
+  const handleManualReorderDragEnd = useCallback((event: DragEndEvent) => {
+    try {
+      const rowId = readManualReorderActiveRowId(event.active, manualRows);
+      const destination = resolveManualReorderDestination(event, manualRows);
+      if (!rowId || !destination) {
+        restoreManualReorderOrigin();
+        return;
+      }
+
+      persistManualRowForReorder(rowId, destination);
+      manualReorderOriginRowsRef.current = null;
+      setActiveManualReorderRowId(null);
+    } catch (error) {
+      resetManualReorderAfterError(error);
+    }
+  }, [
+    manualRows,
+    persistManualRowForReorder,
+    resetManualReorderAfterError,
+    resolveManualReorderDestination,
+    restoreManualReorderOrigin,
+  ]);
+
+  const handleManualReorderDragCancel = useCallback(() => {
+    restoreManualReorderOrigin();
+  }, [restoreManualReorderOrigin]);
 
   const updateManualRow = useCallback(
     (rowId: string, updates: Partial<Omit<MyListManualRow, "id">>) => {
@@ -3005,14 +3072,26 @@ export function MyListSheet({
 
   const handleSheetTouchStart = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (activeManualReorderRowId) {
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        sheetTouchStartYRef.current = null;
+        return;
+      }
+
       event.stopPropagation();
       sheetTouchStartYRef.current = event.touches[0]?.clientY ?? null;
     },
-    []
+    [activeManualReorderRowId]
   );
 
   const handleSheetTouchMove = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (activeManualReorderRowId) {
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (isScheduleDragActive) return;
       event.stopPropagation();
       if (!open || isExpanded) return;
@@ -3026,7 +3105,7 @@ export function MyListSheet({
         expandSheet();
       }
     },
-    [expandSheet, isExpanded, isScheduleDragActive, open]
+    [activeManualReorderRowId, expandSheet, isExpanded, isScheduleDragActive, open]
   );
 
   const handleSheetTouchEnd = useCallback(() => {
@@ -3036,6 +3115,7 @@ export function MyListSheet({
   const handleSheetWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
       event.stopPropagation();
+      if (activeManualReorderRowId) return;
       if (!open || isExpanded) return;
 
       const scrollElement = sheetScrollRef.current;
@@ -3046,7 +3126,7 @@ export function MyListSheet({
         expandSheet();
       }
     },
-    [expandSheet, isExpanded, open]
+    [activeManualReorderRowId, expandSheet, isExpanded, open]
   );
 
   const scrollActiveEditableIntoSheetView = useCallback(() => {
@@ -3783,7 +3863,12 @@ export function MyListSheet({
         </div>
         <div
           ref={sheetScrollRef}
-          className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 [-webkit-overflow-scrolling:touch] sm:px-5"
+          className={clsx(
+            "min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5",
+            activeManualReorderRowId
+              ? "touch-none [-webkit-overflow-scrolling:auto]"
+              : "[-webkit-overflow-scrolling:touch]"
+          )}
           onTouchStart={handleSheetTouchStart}
           onTouchMove={handleSheetTouchMove}
           onTouchEnd={handleSheetTouchEnd}
@@ -3795,6 +3880,7 @@ export function MyListSheet({
           <DndContext
             sensors={manualReorderSensors}
             collisionDetection={closestCenter}
+            autoScroll={manualReorderAutoScroll}
             onDragStart={handleManualReorderDragStart}
             onDragOver={handleManualReorderDragOver}
             onDragEnd={handleManualReorderDragEnd}
@@ -4323,7 +4409,7 @@ export function MyListSheet({
                           event.preventDefault();
                           event.stopPropagation();
                         }}
-                        className="absolute left-0 top-1/2 z-10 flex h-5 w-2.5 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
+                        className="absolute left-0 top-1/2 z-10 flex h-5 w-2.5 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
                       >
                         <GripVertical
                           className="h-3.5 w-3.5"

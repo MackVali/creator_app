@@ -136,7 +136,13 @@ export type OpenFoodFactsProduct = {
   brands?: unknown;
   serving_size?: unknown;
   serving_quantity?: unknown;
+  serving_quantity_unit?: unknown;
   quantity?: unknown;
+  product_quantity?: unknown;
+  product_quantity_unit?: unknown;
+  servings_per_container?: unknown;
+  servings_per_package?: unknown;
+  nutrition_data_per?: unknown;
   nutriments?: unknown;
 };
 
@@ -568,19 +574,19 @@ function isUsableSharedFoodName(value: string | null | undefined) {
 
 function hasUsefulOpenFoodFactsNutrition(
   nutrition: {
-    calories: number;
-    carbs_g: number;
-    protein_g: number;
-    fat_g: number;
+    calories: number | null;
+    carbs_g: number | null;
+    protein_g: number | null;
+    fat_g: number | null;
   } | null,
 ) {
   if (!nutrition) return false;
 
   return (
-    nutrition.calories > 0 ||
-    nutrition.carbs_g > 0 ||
-    nutrition.protein_g > 0 ||
-    nutrition.fat_g > 0
+    (nutrition.calories ?? 0) > 0 ||
+    (nutrition.carbs_g ?? 0) > 0 ||
+    (nutrition.protein_g ?? 0) > 0 ||
+    (nutrition.fat_g ?? 0) > 0
   );
 }
 
@@ -588,6 +594,7 @@ export function extractOpenFoodFactsNutrition(product: OpenFoodFactsProduct) {
   if (!isOpenFoodFactsRecord(product.nutriments)) return null;
 
   const nutriments = product.nutriments;
+  const serving = parseOpenFoodFactsServing(product);
   const getNutritionForBasis = (basis: "serving" | "100g") => {
     const suffix = basis === "serving" ? "serving" : "100g";
     const calories = getOpenFoodFactsCalories(nutriments, basis);
@@ -636,7 +643,75 @@ export function extractOpenFoodFactsNutrition(product: OpenFoodFactsProduct) {
     return nutrition;
   };
 
-  return getNutritionForBasis("serving") ?? getNutritionForBasis("100g");
+  const servingNutrition = getNutritionForBasis("serving");
+  const per100gNutrition = getNutritionForBasis("100g");
+
+  if (servingNutrition) {
+    return {
+      ...servingNutrition,
+      per_serving: {
+        calories: servingNutrition.calories,
+        carbs_g: servingNutrition.carbs_g,
+        protein_g: servingNutrition.protein_g,
+        fat_g: servingNutrition.fat_g,
+      },
+      per_100g: per100gNutrition
+        ? {
+            calories: per100gNutrition.calories,
+            carbs_g: per100gNutrition.carbs_g,
+            protein_g: per100gNutrition.protein_g,
+            fat_g: per100gNutrition.fat_g,
+          }
+        : null,
+      computed_from_100g: false,
+      needs_review: false,
+    };
+  }
+
+  if (!per100gNutrition) return null;
+
+  const servingGrams = serving.serving_grams;
+  if (servingGrams) {
+    const multiplier = servingGrams / 100;
+    const computedServingNutrition = {
+      calories: roundFoodNutritionNumber(per100gNutrition.calories * multiplier),
+      carbs_g: roundFoodNutritionNumber(per100gNutrition.carbs_g * multiplier),
+      protein_g: roundFoodNutritionNumber(per100gNutrition.protein_g * multiplier),
+      fat_g: roundFoodNutritionNumber(per100gNutrition.fat_g * multiplier),
+    };
+
+    return {
+      basis: "computed_serving" as const,
+      ...computedServingNutrition,
+      per_serving: computedServingNutrition,
+      per_100g: {
+        calories: per100gNutrition.calories,
+        carbs_g: per100gNutrition.carbs_g,
+        protein_g: per100gNutrition.protein_g,
+        fat_g: per100gNutrition.fat_g,
+      },
+      computed_from_100g: true,
+      needs_review: false,
+    };
+  }
+
+  return {
+    ...per100gNutrition,
+    per_serving: {
+      calories: per100gNutrition.calories,
+      carbs_g: per100gNutrition.carbs_g,
+      protein_g: per100gNutrition.protein_g,
+      fat_g: per100gNutrition.fat_g,
+    },
+    per_100g: {
+      calories: per100gNutrition.calories,
+      carbs_g: per100gNutrition.carbs_g,
+      protein_g: per100gNutrition.protein_g,
+      fat_g: per100gNutrition.fat_g,
+    },
+    computed_from_100g: false,
+    needs_review: true,
+  };
 }
 
 function parseServingUnit(value: string | null) {
@@ -668,9 +743,57 @@ function parseOpenFoodFactsServing(product: OpenFoodFactsProduct) {
   };
 }
 
+function parseOpenFoodFactsPackage(product: OpenFoodFactsProduct, servingGrams: number | null) {
+  const quantityText = coerceOpenFoodFactsString(product.quantity);
+  const productQuantity = parseOpenFoodFactsNumber(product.product_quantity);
+  const productQuantityUnit =
+    parseServingUnit(coerceOpenFoodFactsString(product.product_quantity_unit)) ??
+    (quantityText?.match(/\b(g|gram|grams|ml|milliliter|milliliters)\b/i)?.[1]
+      ? parseServingUnit(quantityText.match(/\b(g|gram|grams|ml|milliliter|milliliters)\b/i)?.[1] ?? null)
+      : null);
+  const servingsPerContainer =
+    parseOpenFoodFactsNumber(product.servings_per_container) ??
+    parseOpenFoodFactsNumber(product.servings_per_package);
+  const computedServingsPerContainer =
+    servingsPerContainer === null &&
+    productQuantity !== null &&
+    productQuantityUnit === "g" &&
+    servingGrams
+      ? roundFoodNutritionNumber(productQuantity / servingGrams)
+      : null;
+
+  return {
+    quantity: quantityText,
+    product_quantity: sanitizePositiveNumber(productQuantity, MAX_SERVING_SIZE * 100),
+    product_quantity_unit: productQuantityUnit,
+    net_weight:
+      productQuantity !== null && productQuantityUnit
+        ? `${roundFoodNutritionNumber(productQuantity)}${productQuantityUnit}`
+        : quantityText,
+    explicit_servings_per_container: sanitizePositiveNumber(servingsPerContainer, MAX_SERVING_SIZE),
+    inferred_servings_per_container: sanitizePositiveNumber(
+      computedServingsPerContainer,
+      MAX_SERVING_SIZE,
+    ),
+    servings_per_container:
+      sanitizePositiveNumber(servingsPerContainer, MAX_SERVING_SIZE) ??
+      sanitizePositiveNumber(computedServingsPerContainer, MAX_SERVING_SIZE),
+    servings_per_container_source:
+      servingsPerContainer !== null
+        ? "explicit"
+        : computedServingsPerContainer !== null
+          ? "inferred"
+          : null,
+  };
+}
+
 export function mapOpenFoodFactsProductToFoodInsert(
   product: OpenFoodFactsProduct,
-  input: { barcode: string; createdByUserId?: string | null },
+  input: {
+    barcode: string;
+    createdByUserId?: string | null;
+    allowIncompleteNutrition?: boolean;
+  },
 ): FoodInsert | null {
   const normalizedInputBarcode = normalizeFoodBarcode(input.barcode);
   if (!isValidNormalizedFoodBarcode(normalizedInputBarcode)) return null;
@@ -697,35 +820,83 @@ export function mapOpenFoodFactsProductToFoodInsert(
     compactOpenFoodFactsString(product.abbreviated_product_name, FOOD_NAME_MAX_LENGTH) ??
     compactOpenFoodFactsString(product.generic_name, FOOD_NAME_MAX_LENGTH);
   if (!isUsableSharedFoodName(name)) return null;
-
-  const nutrition = extractOpenFoodFactsNutrition(product);
-  if (!hasUsefulOpenFoodFactsNutrition(nutrition)) return null;
+  const foodName = name as string;
 
   const brandName = compactOpenFoodFactsString(product.brands, FOOD_BRAND_MAX_LENGTH);
   const normalizedName = normalizeFoodSearchText(name);
   if (!normalizedName) return null;
 
   const normalizedBrandName = brandName ? normalizeFoodSearchText(brandName) : null;
+  const parsedServing = parseOpenFoodFactsServing(product);
+  const nutrition = extractOpenFoodFactsNutrition(product);
+  if (!hasUsefulOpenFoodFactsNutrition(nutrition) && !input.allowIncompleteNutrition) {
+    return null;
+  }
+
   const serving =
-    nutrition.basis === "serving"
-      ? parseOpenFoodFactsServing(product)
-      : { serving_size: 100, serving_unit: "g", serving_grams: 100 };
+    nutrition?.basis === "100g" && !parsedServing.serving_grams
+      ? { serving_size: 100, serving_unit: "g", serving_grams: 100 }
+      : parsedServing;
+  const packageInfo = parseOpenFoodFactsPackage(product, serving.serving_grams);
   const externalId = normalizedBarcode;
+  const nutritionPerServing = nutrition?.per_serving ?? {
+    calories: null,
+    carbs_g: null,
+    protein_g: null,
+    fat_g: null,
+  };
+  const nutritionPer100g = nutrition?.per_100g ?? null;
+  const needsReview = nutrition?.needs_review ?? true;
   const metadata: Json = {
     source: "open_food_facts",
     source_summary: {
+      source: "open_food_facts",
       code: externalId,
-      product_name: name,
+      barcode,
+      product_name: foodName,
       brands: brandName,
-      quantity: coerceOpenFoodFactsString(product.quantity),
+      quantity: packageInfo.quantity,
+      product_quantity: packageInfo.product_quantity,
+      product_quantity_unit: packageInfo.product_quantity_unit,
+      net_weight: packageInfo.net_weight,
+      explicit_servings_per_container: packageInfo.explicit_servings_per_container,
+      inferred_servings_per_container: packageInfo.inferred_servings_per_container,
+      servings_per_container: packageInfo.servings_per_container,
+      servings_per_container_source: packageInfo.servings_per_container_source,
       serving_size: coerceOpenFoodFactsString(product.serving_size),
       serving_quantity: parseOpenFoodFactsNumber(product.serving_quantity),
-      nutrition_basis: nutrition.basis,
+      serving_quantity_unit: coerceOpenFoodFactsString(product.serving_quantity_unit),
+      serving_unit: serving.serving_unit,
+      serving_grams: serving.serving_grams,
+      nutrition_basis: nutrition?.basis ?? null,
+      nutrition_per_serving: nutritionPerServing,
+      nutrition_per_100g: nutritionPer100g,
+      nutrition_computed_from_100g: nutrition?.computed_from_100g ?? false,
+      nutrition_needs_review: needsReview,
+      nutrition_data_per: coerceOpenFoodFactsString(product.nutrition_data_per),
     },
+    barcode,
+    source_product_name: foodName,
+    source_brand_name: brandName,
+    serving_size_text: coerceOpenFoodFactsString(product.serving_size),
+    serving_quantity: parseOpenFoodFactsNumber(product.serving_quantity),
+    serving_unit: serving.serving_unit,
+    serving_grams: serving.serving_grams,
+    explicit_servings_per_container: packageInfo.explicit_servings_per_container,
+    inferred_servings_per_container: packageInfo.inferred_servings_per_container,
+    servings_per_container: packageInfo.servings_per_container,
+    servings_per_container_source: packageInfo.servings_per_container_source,
+    product_quantity: packageInfo.product_quantity,
+    product_quantity_unit: packageInfo.product_quantity_unit,
+    net_weight: packageInfo.net_weight,
+    nutrition_per_serving: nutritionPerServing,
+    nutrition_per_100g: nutritionPer100g,
+    nutrition_computed_from_100g: nutrition?.computed_from_100g ?? false,
+    nutrition_needs_review: needsReview,
   };
 
   return {
-    name,
+    name: foodName,
     normalized_name: normalizedName,
     brand_name: brandName,
     normalized_brand_name: normalizedBrandName,
@@ -734,10 +905,10 @@ export function mapOpenFoodFactsProductToFoodInsert(
     serving_size: serving.serving_size,
     serving_unit: serving.serving_unit,
     serving_grams: serving.serving_grams,
-    calories: nutrition.calories,
-    carbs_g: nutrition.carbs_g,
-    protein_g: nutrition.protein_g,
-    fat_g: nutrition.fat_g,
+    calories: nutrition?.calories ?? null,
+    carbs_g: nutrition?.carbs_g ?? null,
+    protein_g: nutrition?.protein_g ?? null,
+    fat_g: nutrition?.fat_g ?? null,
     source: "open_food_facts",
     external_source: "open_food_facts",
     external_id: externalId,

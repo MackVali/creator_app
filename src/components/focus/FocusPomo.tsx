@@ -80,6 +80,11 @@ import {
   scheduleFocusPomoCompletionNotification,
 } from "@/lib/notifications/focusPomoLocalNotifications";
 import {
+  FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+  readFitnessWorkoutFocusSessionPayload,
+  type FitnessWorkoutFocusSessionPayload,
+} from "@/lib/focus/fitnessWorkoutFocusSession";
+import {
   hapticComplete,
   hapticErrorPattern,
   hapticLongPress,
@@ -2609,6 +2614,7 @@ function toFocusPomoRunSyncQueueItem(
   item: FocusPomoQueueItem | null
 ): FocusPomoRunSyncQueueItem | null {
   if (!item) return null;
+  if (item.sourceType === "FITNESS") return null;
 
   const sourceId = readScopeString(item.id);
   if (!sourceId) return null;
@@ -3711,6 +3717,95 @@ function applyFocusPomoQueueOrder(
   return orderedItems;
 }
 
+function parseFitnessWorkoutDurationMinutes(value: string | undefined) {
+  const normalizedValue = value?.trim().toLowerCase();
+  if (!normalizedValue) return null;
+
+  const match = normalizedValue.match(
+    /(\d+(?:\.\d+)?)\s*(sec|secs|second|seconds|min|mins|minute|minutes)\b/,
+  );
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  return match[2]?.startsWith("sec") || match[2]?.startsWith("second")
+    ? Math.max(1, Math.ceil(amount / 60))
+    : Math.max(1, Math.round(amount));
+}
+
+function formatFitnessWorkoutFocusSubtitle(
+  session: FitnessWorkoutFocusSessionPayload,
+  exercise: FitnessWorkoutFocusSessionPayload["exercises"][number],
+) {
+  const detailParts = [
+    exercise.sets ? `${exercise.sets} sets` : null,
+    exercise.duration || (exercise.reps ? `${exercise.reps} reps` : null),
+    exercise.weight ? exercise.weight : null,
+  ].filter(Boolean);
+
+  return detailParts.length > 0
+    ? `${session.workoutName} · ${detailParts.join(" · ")}`
+    : session.workoutName;
+}
+
+function toFitnessWorkoutFocusQueueItems(
+  session: FitnessWorkoutFocusSessionPayload,
+): FocusPomoQueueItem[] {
+  const createdAtMs = Date.parse(session.createdAt);
+  const createdAtKey = Number.isFinite(createdAtMs)
+    ? String(createdAtMs)
+    : String(Date.now());
+
+  return session.exercises.map((exercise, index) => {
+    const durationMinutes = parseFitnessWorkoutDurationMinutes(exercise.duration);
+
+    return {
+      id: `fitness-workout-${createdAtKey}-${index + 1}-${exercise.id}`,
+      kind: "chore",
+      sourceType: "FITNESS",
+      title: exercise.name,
+      subtitle: formatFitnessWorkoutFocusSubtitle(session, exercise),
+      durationMinutes,
+      durationLabel: durationMinutes ? `${durationMinutes} min` : "Workout set",
+      energyLabel: null,
+      statusLabel: "Ready",
+      rawTypeLabel: "Fitness",
+      icon: null,
+      routineName: session.workoutName,
+      routine_name: session.workoutName,
+    };
+  });
+}
+
+function readPendingFitnessWorkoutFocusQueueItems(): FocusPomoQueueItem[] | null {
+  if (typeof window === "undefined") return null;
+
+  let rawPayload: string | null = null;
+
+  try {
+    rawPayload = window.sessionStorage.getItem(
+      FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+    );
+    if (rawPayload) {
+      window.sessionStorage.removeItem(FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY);
+    }
+  } catch {
+    return null;
+  }
+
+  if (!rawPayload) return null;
+
+  try {
+    const payload = readFitnessWorkoutFocusSessionPayload(JSON.parse(rawPayload));
+    if (!payload) return null;
+
+    return toFitnessWorkoutFocusQueueItems(payload);
+  } catch {
+    return null;
+  }
+}
+
 type SortableFocusQueueItemProps = {
   item: FocusPomoQueueItem;
   position: number;
@@ -4717,6 +4812,18 @@ export default function FocusPomo({
     setIsRunLogExpanded(false);
     setScopeOpen(false);
     setIsQueueExpanded(false);
+
+    if (!hasTimeBlockStartLaunch && !activeSourceType && !activeSourceId) {
+      const fitnessWorkoutQueueItems = readPendingFitnessWorkoutFocusQueueItems();
+
+      if (fitnessWorkoutQueueItems) {
+        setQueue(fitnessWorkoutQueueItems);
+        setQueueLoading(false);
+        setQueueError(null);
+        return;
+      }
+    }
+
     setQueueLoading(true);
     setQueueError(null);
 
