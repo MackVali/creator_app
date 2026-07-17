@@ -8262,6 +8262,8 @@ export function NoteDatabaseEntrySheet({
           sets: detail.sets,
           reps: detail.reps,
           duration: detail.duration,
+          weight:
+            fitnessWorkoutLogDetailsById[getFitnessExerciseId(exercise)]?.weight,
         };
       }),
     };
@@ -9961,7 +9963,7 @@ export function NoteDatabaseEntrySheet({
               type="button"
               onClick={startSelectedFitnessWorkout}
               disabled={!hasSelectedWorkoutExercises}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-emerald-200/[0.18] bg-emerald-200/[0.12] px-2 text-xs font-semibold text-emerald-50/82 outline-none transition hover:border-emerald-100/[0.28] hover:bg-emerald-200/[0.17] hover:text-white focus-visible:ring-1 focus-visible:ring-emerald-100/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/[0.42] bg-white/70 px-2 text-xs font-semibold text-zinc-900 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.82),inset_0_-1px_0_rgba(0,0,0,0.12)] outline-none backdrop-blur-xl transition hover:border-white/[0.58] hover:bg-white/80 hover:text-black active:bg-white/65 focus-visible:ring-1 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:border-white/[0.08] disabled:bg-white/[0.06] disabled:text-white/28 disabled:shadow-none"
             >
               <Dumbbell className="h-4 w-4" aria-hidden="true" />
               Start
@@ -9970,10 +9972,10 @@ export function NoteDatabaseEntrySheet({
               type="button"
               onClick={reviewSelectedFitnessWorkout}
               disabled={!hasSelectedWorkoutExercises}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.13] px-2 text-xs font-semibold text-white/88 outline-none transition hover:border-white/[0.16] hover:bg-white/[0.17] focus-visible:ring-1 focus-visible:ring-white/16 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-white/[0.14] bg-zinc-800/72 px-2 text-xs font-semibold text-white/88 shadow-[0_10px_24px_-16px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(0,0,0,0.32)] outline-none backdrop-blur-xl transition hover:border-white/[0.2] hover:bg-zinc-700/78 hover:text-white active:bg-zinc-800/82 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:border-white/[0.05] disabled:bg-white/[0.025] disabled:text-white/28 disabled:shadow-none"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Review &amp; log workout
+              Review &amp; log
             </button>
           </div>
         </div>

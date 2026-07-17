@@ -80,6 +80,7 @@ import {
   scheduleFocusPomoCompletionNotification,
 } from "@/lib/notifications/focusPomoLocalNotifications";
 import {
+  expandFitnessWorkoutFocusSessionSets,
   FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
   readFitnessWorkoutFocusSessionPayload,
   type FitnessWorkoutFocusSessionPayload,
@@ -3734,38 +3735,34 @@ function parseFitnessWorkoutDurationMinutes(value: string | undefined) {
     : Math.max(1, Math.round(amount));
 }
 
-function formatFitnessWorkoutFocusSubtitle(
-  session: FitnessWorkoutFocusSessionPayload,
-  exercise: FitnessWorkoutFocusSessionPayload["exercises"][number],
-) {
+function formatFitnessWorkoutFocusSetSubtitle(item: {
+  setNumber: number;
+  totalSets: number;
+  reps?: string;
+  duration?: string;
+  weight?: string;
+}) {
   const detailParts = [
-    exercise.sets ? `${exercise.sets} sets` : null,
-    exercise.duration || (exercise.reps ? `${exercise.reps} reps` : null),
-    exercise.weight ? exercise.weight : null,
+    `Set ${item.setNumber} of ${item.totalSets}`,
+    item.duration || (item.reps ? `${item.reps} reps` : null),
+    item.weight || null,
   ].filter(Boolean);
 
-  return detailParts.length > 0
-    ? `${session.workoutName} · ${detailParts.join(" · ")}`
-    : session.workoutName;
+  return detailParts.join(" · ");
 }
 
 function toFitnessWorkoutFocusQueueItems(
   session: FitnessWorkoutFocusSessionPayload,
 ): FocusPomoQueueItem[] {
-  const createdAtMs = Date.parse(session.createdAt);
-  const createdAtKey = Number.isFinite(createdAtMs)
-    ? String(createdAtMs)
-    : String(Date.now());
-
-  return session.exercises.map((exercise, index) => {
-    const durationMinutes = parseFitnessWorkoutDurationMinutes(exercise.duration);
+  return expandFitnessWorkoutFocusSessionSets(session).map((set) => {
+    const durationMinutes = parseFitnessWorkoutDurationMinutes(set.duration);
 
     return {
-      id: `fitness-workout-${createdAtKey}-${index + 1}-${exercise.id}`,
+      id: set.id,
       kind: "chore",
       sourceType: "FITNESS",
-      title: exercise.name,
-      subtitle: formatFitnessWorkoutFocusSubtitle(session, exercise),
+      title: set.exerciseName,
+      subtitle: formatFitnessWorkoutFocusSetSubtitle(set),
       durationMinutes,
       durationLabel: durationMinutes ? `${durationMinutes} min` : "Workout set",
       energyLabel: null,
@@ -3774,11 +3771,20 @@ function toFitnessWorkoutFocusQueueItems(
       icon: null,
       routineName: session.workoutName,
       routine_name: session.workoutName,
+      fitnessExerciseId: set.exerciseId,
+      fitnessSetNumber: set.setNumber,
+      fitnessTotalSets: set.totalSets,
+      fitnessReps: set.reps,
+      fitnessDuration: set.duration,
+      fitnessWeight: set.weight,
     };
   });
 }
 
-function readPendingFitnessWorkoutFocusQueueItems(): FocusPomoQueueItem[] | null {
+function readPendingFitnessWorkoutFocusSession(): {
+  session: FitnessWorkoutFocusSessionPayload;
+  queueItems: FocusPomoQueueItem[];
+} | null {
   if (typeof window === "undefined") return null;
 
   let rawPayload: string | null = null;
@@ -3787,9 +3793,6 @@ function readPendingFitnessWorkoutFocusQueueItems(): FocusPomoQueueItem[] | null
     rawPayload = window.sessionStorage.getItem(
       FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
     );
-    if (rawPayload) {
-      window.sessionStorage.removeItem(FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY);
-    }
   } catch {
     return null;
   }
@@ -3800,7 +3803,10 @@ function readPendingFitnessWorkoutFocusQueueItems(): FocusPomoQueueItem[] | null
     const payload = readFitnessWorkoutFocusSessionPayload(JSON.parse(rawPayload));
     if (!payload) return null;
 
-    return toFitnessWorkoutFocusQueueItems(payload);
+    const queueItems = toFitnessWorkoutFocusQueueItems(payload);
+    if (queueItems.length === 0) return null;
+
+    return { session: payload, queueItems };
   } catch {
     return null;
   }
@@ -4045,7 +4051,9 @@ function SortableFocusQueueItem({
             {item.title}
           </span>
           <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]">
-            {item.rawTypeLabel ?? item.kind}
+            {item.sourceType === "FITNESS"
+              ? item.subtitle
+              : (item.rawTypeLabel ?? item.kind)}
           </span>
         </span>
         <span className="ml-auto flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
@@ -4355,6 +4363,8 @@ export default function FocusPomo({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
   const [queue, setQueue] = useState<FocusPomoQueueItem[]>([]);
+  const [activeFitnessWorkoutSession, setActiveFitnessWorkoutSession] =
+    useState<FitnessWorkoutFocusSessionPayload | null>(null);
   const [queueLoading, setQueueLoading] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [scopeQueue, setScopeQueue] = useState<FocusPomoQueueItem[]>([]);
@@ -4395,6 +4405,7 @@ export default function FocusPomo({
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
   const completionRequestsRef = useRef(new Map<string, Promise<boolean>>());
+  const fitnessWorkoutSessionActiveRef = useRef(false);
   const focusPomoLiveActivityRef =
     useRef<ActiveFocusPomoLiveActivitySession | null>(null);
   const focusPomoLiveActivityActionHandlerRef = useRef<{
@@ -4763,6 +4774,8 @@ export default function FocusPomo({
 
   useEffect(() => {
     if (!open) {
+      fitnessWorkoutSessionActiveRef.current = false;
+      setActiveFitnessWorkoutSession(null);
       setQueue([]);
       setQueueLoading(false);
       setQueueError(null);
@@ -4791,6 +4804,8 @@ export default function FocusPomo({
       return;
     }
 
+    if (fitnessWorkoutSessionActiveRef.current) return;
+
     let stale = false;
 
     setActiveIndex(0);
@@ -4814,12 +4829,21 @@ export default function FocusPomo({
     setIsQueueExpanded(false);
 
     if (!hasTimeBlockStartLaunch && !activeSourceType && !activeSourceId) {
-      const fitnessWorkoutQueueItems = readPendingFitnessWorkoutFocusQueueItems();
+      const fitnessWorkoutSession = readPendingFitnessWorkoutFocusSession();
 
-      if (fitnessWorkoutQueueItems) {
-        setQueue(fitnessWorkoutQueueItems);
+      if (fitnessWorkoutSession) {
+        fitnessWorkoutSessionActiveRef.current = true;
+        setActiveFitnessWorkoutSession(fitnessWorkoutSession.session);
+        setQueue(fitnessWorkoutSession.queueItems);
         setQueueLoading(false);
         setQueueError(null);
+        try {
+          window.sessionStorage.removeItem(
+            FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
+          );
+        } catch {
+          // The queue is already stable in local state; storage cleanup can fail safely.
+        }
         return;
       }
     }
@@ -4846,11 +4870,11 @@ export default function FocusPomo({
 
     queuePromise
       .then((items) => {
-        if (stale) return;
+        if (stale || fitnessWorkoutSessionActiveRef.current) return;
         setQueue(items);
       })
       .catch((error: unknown) => {
-        if (stale) return;
+        if (stale || fitnessWorkoutSessionActiveRef.current) return;
         console.error("Failed to load FocusPomo queue", error);
         setQueue([]);
         setQueueError(
@@ -4862,7 +4886,7 @@ export default function FocusPomo({
         );
       })
       .finally(() => {
-        if (stale) return;
+        if (stale || fitnessWorkoutSessionActiveRef.current) return;
         setQueueLoading(false);
       });
 
@@ -4871,6 +4895,7 @@ export default function FocusPomo({
     };
   }, [
     open,
+    activeFitnessWorkoutSession,
     activeSourceId,
     activeSourceType,
     hasTimeBlockStartLaunch,
@@ -5415,6 +5440,8 @@ export default function FocusPomo({
   );
   const reconcileFocusPomoRunFromServer = useCallback(
     async (trigger: string) => {
+      if (activeFitnessWorkoutSession) return;
+
       const activeSession = focusPomoLiveActivityRef.current;
 
       console.info(`${FOCUS_POMO_RUN_SYNC_LOG} sync_start`, {
@@ -5604,7 +5631,7 @@ export default function FocusPomo({
         queueOrderCount: nextQueueOrder.length,
       });
     },
-    [sortedQueue]
+    [activeFitnessWorkoutSession, sortedQueue]
   );
   const handleUndoRunHistorySession = (session: FocusPomoRunResult) => {
     const restoredItemKey = getFocusPomoQueueItemKey(session.item);
@@ -5631,6 +5658,8 @@ export default function FocusPomo({
     }
 
     if (session.action === "completed") {
+      if (activeFitnessWorkoutSession) return;
+
       const undoCompletedSession = async () => {
         const completionRequest = completionRequestsRef.current.get(session.id);
 
@@ -5865,7 +5894,7 @@ export default function FocusPomo({
   ): Promise<void> => {
     const activeSession = focusPomoLiveActivityRef.current;
     focusPomoLiveActivityRef.current = null;
-    if (activeSession?.sessionId) {
+    if (activeSession?.sessionId && !activeFitnessWorkoutSession) {
       void clearFocusPomoRun(activeSession.sessionId, status);
     }
 
@@ -5914,7 +5943,7 @@ export default function FocusPomo({
       0,
       runQueueItems.findIndex((entry) => entry.itemKey === itemKey)
     );
-    const actionTokens = isNativeIosApp()
+    const actionTokens = isNativeIosApp() && !activeFitnessWorkoutSession
       ? await createFocusPomoLiveActivityActionTokens({
           sessionId,
           itemKey,
@@ -5930,7 +5959,11 @@ export default function FocusPomo({
           endsAt: targetEndAtDate?.toISOString() ?? null,
         })
       : null;
-    if (!isNativeIosApp() && runQueueItems.length > 0) {
+    if (
+      !activeFitnessWorkoutSession &&
+      !isNativeIosApp() &&
+      runQueueItems.length > 0
+    ) {
       void syncFocusPomoRun({
         sessionId,
         activeItemKey: itemKey,
@@ -6135,7 +6168,7 @@ export default function FocusPomo({
   }, [isRunning, mode]);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || activeFitnessWorkoutSession) return;
 
     let canceled = false;
     let syncing = false;
@@ -6178,7 +6211,7 @@ export default function FocusPomo({
       window.removeEventListener("pageshow", handlePageShow);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [mounted, reconcileFocusPomoRunFromServer]);
+  }, [activeFitnessWorkoutSession, mounted, reconcileFocusPomoRunFromServer]);
 
   useEffect(() => {
     if (!mounted || !isNativeIosApp()) return;
@@ -7019,6 +7052,11 @@ export default function FocusPomo({
 
     dismissCurrentQueueItem(currentItem);
 
+    if (activeFitnessWorkoutSession) {
+      void hapticComplete();
+      return;
+    }
+
     const completionRequest = completeFocusPomoItem({
       item: currentItem,
       completedAt,
@@ -7819,6 +7857,12 @@ export default function FocusPomo({
                             ) : null}
                           </div>
                         </div>
+
+                        {currentItem?.sourceType === "FITNESS" ? (
+                          <p className="mt-1.5 text-xs font-semibold text-zinc-400 sm:mt-2 sm:text-sm">
+                            {currentItem.subtitle}
+                          </p>
+                        ) : null}
 
                         {activeCardLoading ? (
                           <div
