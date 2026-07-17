@@ -889,11 +889,11 @@ function MyListManualTodoGroupDropZone({
   dayDropBucketId,
 }: {
   group: MyListManualReorderGroup | null;
-  children: ReactNode;
-  className?: string;
+  children: ReactNode | ((isOver: boolean) => ReactNode);
+  className?: string | ((isOver: boolean) => string);
   dayDropBucketId?: MyListDayViewBucketId;
 }) {
-  const { setNodeRef } = useDroppable({
+  const { isOver, setNodeRef } = useDroppable({
     id: group ? buildManualReorderGroupDropId(group) : "manualGroup:none",
     data: group
       ? ({
@@ -908,9 +908,9 @@ function MyListManualTodoGroupDropZone({
     <div
       ref={setNodeRef}
       data-my-list-day-drop-zone={dayDropBucketId}
-      className={className}
+      className={typeof className === "function" ? className(isOver) : className}
     >
-      {children}
+      {typeof children === "function" ? children(isOver) : children}
     </div>
   );
 }
@@ -1034,6 +1034,12 @@ export function MyListSheet({
   >(null);
   const [dayDragDropBucketId, setDayDragDropBucketId] =
     useState<MyListDayViewBucketId | null>(null);
+  const [collapsedDayGroups, setCollapsedDayGroups] = useState<
+    Partial<Record<MyListDayViewBucketId, boolean>>
+  >({});
+  const manualReorderCompactDayGroupIdsRef = useRef<
+    Set<MyListDayViewBucketId>
+  >(new Set());
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
     string | null
   >(null);
@@ -1589,12 +1595,59 @@ export function MyListSheet({
     resolveVisibleRowDayBucketId,
     resolveVisibleRowPriorityGroupId,
   ]);
-  const todoListSections = useMemo(
-    () => [
-      ...visibleTodoGroups.map((group) => ({
+  const dayGroupLayoutSections = useMemo(() => {
+    if (!isDayLensActive) {
+      return visibleTodoGroups.map((group) => ({
         sectionType: "group" as const,
         group,
-      })),
+      }));
+    }
+
+    const sections: Array<
+      | {
+          sectionType: "group";
+          group: (typeof visibleTodoGroups)[number];
+        }
+      | {
+          sectionType: "compact-day-groups";
+          groups: (typeof visibleTodoGroups)[number][];
+        }
+    > = [];
+
+    visibleTodoGroups.forEach((group) => {
+      const bucketId = group.id as MyListDayViewBucketId;
+      const collapsedPreference = collapsedDayGroups[bucketId];
+      const wasCompactWhenManualDragStarted =
+        activeManualReorderRowId !== null &&
+        manualReorderCompactDayGroupIdsRef.current.has(bucketId);
+      const isExpanded =
+        !wasCompactWhenManualDragStarted &&
+        (collapsedPreference === false ||
+          (collapsedPreference === undefined && group.rows.length > 0));
+
+      if (isExpanded) {
+        sections.push({ sectionType: "group", group });
+        return;
+      }
+
+      const previousSection = sections.at(-1);
+      if (previousSection?.sectionType === "compact-day-groups") {
+        previousSection.groups.push(group);
+      } else {
+        sections.push({ sectionType: "compact-day-groups", groups: [group] });
+      }
+    });
+
+    return sections;
+  }, [
+    activeManualReorderRowId,
+    collapsedDayGroups,
+    isDayLensActive,
+    visibleTodoGroups,
+  ]);
+  const todoListSections = useMemo(
+    () => [
+      ...dayGroupLayoutSections,
       ...(completedTodoCount > 0
         ? [
             {
@@ -1608,7 +1661,7 @@ export function MyListSheet({
           ]
         : []),
     ],
-    [completedTodoCount, completedTodoRows, visibleTodoGroups]
+    [completedTodoCount, completedTodoRows, dayGroupLayoutSections]
   );
 
   const canStartScheduleTimelineDrag =
@@ -2376,6 +2429,7 @@ export function MyListSheet({
       setManualRows(originRows);
     }
     manualReorderOriginRowsRef.current = null;
+    manualReorderCompactDayGroupIdsRef.current.clear();
     setActiveManualReorderRowId(null);
   }, []);
 
@@ -2402,6 +2456,19 @@ export function MyListSheet({
         setActiveDayPickerRowKey(null);
         setManualSkillSearch("");
         manualReorderOriginRowsRef.current = manualRows;
+        manualReorderCompactDayGroupIdsRef.current = new Set(
+          visibleTodoGroups
+            .filter((group) => {
+              const bucketId = group.id as MyListDayViewBucketId;
+              const collapsedPreference = collapsedDayGroups[bucketId];
+              return (
+                isDayLensActive &&
+                collapsedPreference !== false &&
+                (collapsedPreference === true || group.rows.length === 0)
+              );
+            })
+            .map((group) => group.id as MyListDayViewBucketId)
+        );
         setActiveManualReorderRowId(rowId);
       } catch (error) {
         resetManualReorderAfterError(error);
@@ -2410,9 +2477,12 @@ export function MyListSheet({
     [
       activeView,
       clearManualUpgradePress,
+      collapsedDayGroups,
+      isDayLensActive,
       manualRows,
       open,
       resetManualReorderAfterError,
+      visibleTodoGroups,
     ]
   );
 
@@ -2442,7 +2512,17 @@ export function MyListSheet({
       }
 
       persistManualRowForReorder(rowId, destination);
+      if (
+        destination.group?.kind === "day" &&
+        manualReorderCompactDayGroupIdsRef.current.has(destination.group.id)
+      ) {
+        setCollapsedDayGroups((current) => ({
+          ...current,
+          [destination.group!.id]: true,
+        }));
+      }
       manualReorderOriginRowsRef.current = null;
+      manualReorderCompactDayGroupIdsRef.current.clear();
       setActiveManualReorderRowId(null);
     } catch (error) {
       resetManualReorderAfterError(error);
@@ -3894,6 +3974,81 @@ export function MyListSheet({
             {hasListRows ? (
               <>
                 {todoListSections.map((section) => {
+                  if (section.sectionType === "compact-day-groups") {
+                    return (
+                      <div
+                        key={`compact-day-groups:${section.groups
+                          .map((group) => group.id)
+                          .join(":")}`}
+                        className="flex flex-wrap items-center gap-1.5 px-3 py-1"
+                      >
+                        {section.groups.map((group) => {
+                          const bucketId = group.id as MyListDayViewBucketId;
+                          const dayVisual = MY_LIST_DAY_VISUALS[bucketId];
+                          const DayIcon = dayVisual.Icon;
+                          const manualReorderGroup = {
+                            kind: "day",
+                            id: bucketId,
+                          } satisfies MyListManualReorderGroup;
+
+                          return (
+                            <MyListManualTodoGroupDropZone
+                              key={bucketId}
+                              group={manualReorderGroup}
+                              dayDropBucketId={bucketId}
+                              className="inline-flex"
+                            >
+                              {(isOver) => {
+                                const isManualTodoOver =
+                                  isOver && activeManualReorderRowId !== null;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    aria-expanded={false}
+                                    aria-label={`Expand ${group.label} group`}
+                                    data-my-list-no-schedule-drag
+                                    data-my-list-no-upgrade
+                                    onPointerDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onTouchStart={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onMouseDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setCollapsedDayGroups((current) => ({
+                                        ...current,
+                                        [bucketId]: false,
+                                      }));
+                                    }}
+                                    tabIndex={open ? 0 : -1}
+                                    className={clsx(
+                                      "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition duration-150 hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                      dayVisual.pillClassName,
+                                      isManualTodoOver &&
+                                        "scale-[1.04] border-white/45 bg-white/[0.16] text-white shadow-[0_0_12px_rgba(255,255,255,0.14)] ring-1 ring-white/30"
+                                    )}
+                                  >
+                                    <DayIcon
+                                      className="h-3 w-3"
+                                      strokeWidth={1.9}
+                                      aria-hidden="true"
+                                    />
+                                    <span>{group.label}</span>
+                                  </button>
+                                );
+                              }}
+                            </MyListManualTodoGroupDropZone>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
                   const { group } = section;
                   const isCompletedSection =
                     section.sectionType === "completed";
@@ -3942,9 +4097,29 @@ export function MyListSheet({
                             const DayIcon = dayVisual.Icon;
 
                             return (
-                              <div
+                              <button
+                                type="button"
+                                aria-expanded={true}
+                                aria-label={`Collapse ${group.label} group`}
+                                data-my-list-no-schedule-drag
+                                data-my-list-no-upgrade
+                                onPointerDown={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onTouchStart={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setCollapsedDayGroups((current) => ({
+                                    ...current,
+                                    [dayDropBucketId]: true,
+                                  }));
+                                }}
+                                tabIndex={open ? 0 : -1}
                                 className={clsx(
-                                  "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em]",
+                                  "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
                                   dayVisual.pillClassName
                                 )}
                               >
@@ -3954,7 +4129,7 @@ export function MyListSheet({
                                   aria-hidden="true"
                                 />
                                 <span>{group.label}</span>
-                              </div>
+                              </button>
                             );
                           })()}
                         </div>
@@ -4160,7 +4335,36 @@ export function MyListSheet({
                           done && "text-white/42 line-through"
                         )}
                       />
-                      <div className="-mr-0.5 flex shrink-0 items-center gap-px">
+                      <div className="-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0">
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            aria-label={`Choose priority: ${priorityOption.label}`}
+                            aria-haspopup="listbox"
+                            aria-expanded={activePriorityPickerRowKey === rowKey}
+                            title={priorityOption.label}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setActiveSkillPickerRowKey(null);
+                              setActiveDayPickerRowKey(null);
+                              setActivePriorityPickerRowKey((currentRowKey) =>
+                                currentRowKey === rowKey ? null : rowKey
+                              );
+                            }}
+                            tabIndex={open ? 0 : -1}
+                            className={clsx(
+                              "flex h-7 min-w-7 items-center justify-center rounded-full bg-black/10 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:bg-white/[0.045] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                              done && "text-white/42"
+                            )}
+                          >
+                            <span className="max-w-8 truncate">
+                              {prioritySymbol}
+                            </span>
+                          </button>
+                          {renderPriorityPicker(rowKey, priorityId, (nextId) =>
+                            handlePrioritySelect(task.id, "task", nextId)
+                          )}
+                        </div>
                         <div className="relative shrink-0">
                           <button
                             type="button"
@@ -4191,35 +4395,6 @@ export function MyListSheet({
                           </button>
                           {renderDayPicker(rowKey, dayBucketId, (nextId) =>
                             handleDaySelect(task.id, "task", nextId)
-                          )}
-                        </div>
-                        <div className="relative shrink-0">
-                          <button
-                            type="button"
-                            aria-label={`Choose priority: ${priorityOption.label}`}
-                            aria-haspopup="listbox"
-                            aria-expanded={activePriorityPickerRowKey === rowKey}
-                            title={priorityOption.label}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setActiveSkillPickerRowKey(null);
-                              setActiveDayPickerRowKey(null);
-                              setActivePriorityPickerRowKey((currentRowKey) =>
-                                currentRowKey === rowKey ? null : rowKey
-                              );
-                            }}
-                            tabIndex={open ? 0 : -1}
-                            className={clsx(
-                              "flex h-7 min-w-7 items-center justify-center rounded-full bg-black/10 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:bg-white/[0.045] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
-                              done && "text-white/42"
-                            )}
-                          >
-                            <span className="max-w-8 truncate">
-                              {prioritySymbol}
-                            </span>
-                          </button>
-                          {renderPriorityPicker(rowKey, priorityId, (nextId) =>
-                            handlePrioritySelect(task.id, "task", nextId)
                           )}
                         </div>
                         {renderDeleteRowButton(task.id, "task")}
@@ -4526,7 +4701,7 @@ export function MyListSheet({
                       )}
                       style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     />
-                    <div className="-mr-0.5 flex shrink-0 items-center gap-px">
+                    <div className="-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0">
                       {(() => {
                         const priorityOption =
                           QUICK_CREATE_PRIORITY_OPTIONS.find(
@@ -4543,41 +4718,6 @@ export function MyListSheet({
 
                         return (
                           <>
-                            <div className="relative shrink-0">
-                              <button
-                                type="button"
-                                aria-label={`Choose day: ${MY_LIST_DAY_LABELS[dayViewBucketId]}`}
-                                aria-haspopup="listbox"
-                                aria-expanded={activeDayPickerRowKey === rowKey}
-                                title={MY_LIST_DAY_LABELS[dayViewBucketId]}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setActiveSkillPickerRowKey(null);
-                                  setActivePriorityPickerRowKey(null);
-                                  setActiveDayPickerRowKey((currentRowKey) =>
-                                    currentRowKey === rowKey ? null : rowKey
-                                  );
-                                }}
-                                tabIndex={open ? 0 : -1}
-                                className={clsx(
-                                  "flex h-7 min-w-7 items-center justify-center rounded-full border px-1.5 outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
-                                  dayVisual.pillClassName,
-                                  row.done && "text-white/42"
-                                )}
-                              >
-                                <DayIcon
-                                  className="h-3.5 w-3.5"
-                                  strokeWidth={1.9}
-                                  aria-hidden="true"
-                                />
-                              </button>
-                              {renderDayPicker(
-                                rowKey,
-                                row.dayBucketId,
-                                (nextId) =>
-                                  handleDaySelect(row.id, "manual", nextId)
-                              )}
-                            </div>
                             <div className="relative shrink-0">
                               <button
                                 type="button"
@@ -4611,6 +4751,41 @@ export function MyListSheet({
                                 row.priorityId,
                                 (nextId) =>
                                   handlePrioritySelect(row.id, "manual", nextId)
+                              )}
+                            </div>
+                            <div className="relative shrink-0">
+                              <button
+                                type="button"
+                                aria-label={`Choose day: ${MY_LIST_DAY_LABELS[dayViewBucketId]}`}
+                                aria-haspopup="listbox"
+                                aria-expanded={activeDayPickerRowKey === rowKey}
+                                title={MY_LIST_DAY_LABELS[dayViewBucketId]}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setActiveSkillPickerRowKey(null);
+                                  setActivePriorityPickerRowKey(null);
+                                  setActiveDayPickerRowKey((currentRowKey) =>
+                                    currentRowKey === rowKey ? null : rowKey
+                                  );
+                                }}
+                                tabIndex={open ? 0 : -1}
+                                className={clsx(
+                                  "flex h-7 min-w-7 items-center justify-center rounded-full border px-1.5 outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                  dayVisual.pillClassName,
+                                  row.done && "text-white/42"
+                                )}
+                              >
+                                <DayIcon
+                                  className="h-3.5 w-3.5"
+                                  strokeWidth={1.9}
+                                  aria-hidden="true"
+                                />
+                              </button>
+                              {renderDayPicker(
+                                rowKey,
+                                row.dayBucketId,
+                                (nextId) =>
+                                  handleDaySelect(row.id, "manual", nextId)
                               )}
                             </div>
                             {renderDeleteRowButton(row.id, "manual")}

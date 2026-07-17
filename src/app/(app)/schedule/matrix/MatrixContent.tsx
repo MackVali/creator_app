@@ -72,6 +72,7 @@ import {
   type CreatorXpBurstSourceOrigin,
 } from "@/lib/effects/creatorXpBurstBus";
 import { cn } from "@/lib/utils";
+import { compareMatrixTimeBlockStarts } from "./matrixTimeBlockOrder";
 
 type ScheduleInstance =
   Database["public"]["Tables"]["schedule_instances"]["Row"];
@@ -2047,7 +2048,7 @@ function groupEventsByBlock({
   return Array.from(groupLookup.values()).sort((a, b) => {
     if (a.key === NO_BLOCK_GROUP_KEY) return 1;
     if (b.key === NO_BLOCK_GROUP_KEY) return -1;
-    return (a.sortValue ?? "").localeCompare(b.sortValue ?? "");
+    return compareMatrixTimeBlockStarts(a.sortValue, b.sortValue);
   });
 }
 
@@ -2110,7 +2111,7 @@ function mergeMatrixMonumentGroups({
     if (a.key === UNLINKED_GROUP_KEY || a.key === NO_BLOCK_GROUP_KEY) return 1;
     if (b.key === UNLINKED_GROUP_KEY || b.key === NO_BLOCK_GROUP_KEY) return -1;
     if (a.sortValue || b.sortValue) {
-      return (a.sortValue ?? "").localeCompare(b.sortValue ?? "");
+      return compareMatrixTimeBlockStarts(a.sortValue, b.sortValue);
     }
     return a.title.localeCompare(b.title);
   });
