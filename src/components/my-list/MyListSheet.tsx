@@ -53,6 +53,7 @@ import {
   Plus,
   Sun,
   Sunrise,
+  Tags,
   X,
 } from "lucide-react";
 
@@ -60,6 +61,7 @@ import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   MY_LIST_PINNABLE_SOURCE_TYPES,
   type MyListPinnableSourceType,
@@ -151,7 +153,12 @@ const MY_LIST_NOTES_STORAGE_KEY = "creator:my-list:notes";
 const MY_LIST_MANUAL_ROWS_STORAGE_KEY = "creator:my-list:manual-rows";
 const MY_LIST_VIEW_MODE_STORAGE_KEY_PREFIX = "creator:my-list:view-mode";
 const MY_LIST_VIEW_MODE_ANONYMOUS_ID = "anonymous";
-const MY_LIST_VIEW_MODE_PREFERENCES = ["priority", "day", "matrix"] as const;
+const MY_LIST_VIEW_MODE_PREFERENCES = [
+  "priority",
+  "tags",
+  "day",
+  "matrix",
+] as const;
 const MY_LIST_CREATOR_DAY_ROLLOVER_HOUR = 4;
 const MY_LIST_SCHEDULE_DRAG_LONG_PRESS_MS = 500;
 const MY_LIST_SCHEDULE_DRAG_MOVE_CANCEL_PX = 14;
@@ -262,6 +269,12 @@ type MyListPinnedSourceRowKey = `pinnedSource:${MyListPinnableSourceType}:${stri
 type MyListDayBucketId = (typeof MY_LIST_DAY_BUCKETS)[number];
 type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
 type MyListViewModePreference = (typeof MY_LIST_VIEW_MODE_PREFERENCES)[number];
+type MyListCustomTag = { id: string; name: string };
+type MyListTagRelation = {
+  tag_id: string;
+  entity_type: string;
+  entity_id: string;
+};
 
 function buildPinnedSourceRowKey(
   sourceType: MyListPinnableSourceType,
@@ -1003,6 +1016,13 @@ export function MyListSheet({
   const [isDayLensActive, setIsDayLensActive] = useState(
     () => readStoredMyListViewModePreference(userId) === "day"
   );
+  const [isTagLensActive, setIsTagLensActive] = useState(
+    () => readStoredMyListViewModePreference(userId) === "tags"
+  );
+  const [customTags, setCustomTags] = useState<MyListCustomTag[]>([]);
+  const [customTagIdsByEntityKey, setCustomTagIdsByEntityKey] = useState<
+    Map<string, string[]>
+  >(() => new Map());
   const [areCompletedTodosVisible, setAreCompletedTodosVisible] =
     useState(false);
   const [creatorDayBoundaryNow, setCreatorDayBoundaryNow] = useState(
@@ -1036,6 +1056,9 @@ export function MyListSheet({
     useState<MyListDayViewBucketId | null>(null);
   const [collapsedDayGroups, setCollapsedDayGroups] = useState<
     Partial<Record<MyListDayViewBucketId, boolean>>
+  >({});
+  const [collapsedTagGroups, setCollapsedTagGroups] = useState<
+    Record<string, boolean>
   >({});
   const manualReorderCompactDayGroupIdsRef = useRef<
     Set<MyListDayViewBucketId>
@@ -1103,6 +1126,7 @@ export function MyListSheet({
 
       setActiveView("list");
       setIsDayLensActive(preference === "day");
+      setIsTagLensActive(preference === "tags");
     },
     []
   );
@@ -1334,7 +1358,11 @@ export function MyListSheet({
       (completedTodoCount > 0 ? 1 : 0) +
       completedRevealRowCount) *
       LIST_COMPACT_ROW_HEIGHT +
-    (isDayLensActive ? MY_LIST_DAY_VIEW_BUCKETS.length : PRIORITY_ORDER.length) *
+    (isDayLensActive
+      ? MY_LIST_DAY_VIEW_BUCKETS.length
+      : isTagLensActive
+        ? MY_LIST_DAY_VIEW_BUCKETS.length + customTags.length
+        : PRIORITY_ORDER.length) *
       LIST_COMPACT_GROUP_HEADER_HEIGHT +
     LIST_COMPACT_NOTES_ALLOWANCE +
     LIST_COMPACT_BOTTOM_ALLOWANCE;
@@ -1406,6 +1434,85 @@ export function MyListSheet({
 
     applyMyListViewModePreference(storedPreference);
   }, [applyMyListViewModePreference, userId]);
+
+  useEffect(() => {
+    if (!isTagLensActive || !userId) {
+      if (!userId) {
+        setCustomTags([]);
+        setCustomTagIdsByEntityKey(new Map());
+      }
+      return;
+    }
+
+    const entityTargets = [
+      ...tasks.map((task) => ({ entityType: "TASK", entityId: task.id })),
+      ...visiblePinnedSourceRows.map((row) => ({
+        entityType: row.sourceType,
+        entityId: row.id,
+      })),
+    ];
+    const entityIds = [...new Set(entityTargets.map(({ entityId }) => entityId))];
+    let active = true;
+
+    const loadCustomTags = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      const [tagsResult, relationsResult] = await Promise.all([
+        supabase
+          .from("tags")
+          .select("id, name")
+          .eq("user_id", userId)
+          .order("name", { ascending: true }),
+        entityIds.length > 0
+          ? supabase
+              .from("event_tags")
+              .select("tag_id, entity_type, entity_id")
+              .eq("user_id", userId)
+              .in("entity_id", entityIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (tagsResult.error) throw tagsResult.error;
+      if (relationsResult.error) throw relationsResult.error;
+      if (!active) return;
+
+      const targetKeys = new Set(
+        entityTargets.map(
+          ({ entityType, entityId }) => `${entityType}:${entityId}`
+        )
+      );
+      const nextTagIdsByEntityKey = new Map<string, string[]>();
+      ((relationsResult.data ?? []) as MyListTagRelation[]).forEach(
+        (relation) => {
+          const entityKey = `${relation.entity_type}:${relation.entity_id}`;
+          if (!targetKeys.has(entityKey)) return;
+          const tagIds = nextTagIdsByEntityKey.get(entityKey) ?? [];
+          if (!tagIds.includes(relation.tag_id)) tagIds.push(relation.tag_id);
+          nextTagIdsByEntityKey.set(entityKey, tagIds);
+        }
+      );
+
+      setCustomTags(
+        ((tagsResult.data ?? []) as MyListCustomTag[]).filter(
+          (tag) => tag.id && tag.name?.trim()
+        )
+      );
+      setCustomTagIdsByEntityKey(nextTagIdsByEntityKey);
+    };
+
+    void loadCustomTags().catch((error) => {
+      console.warn("Failed to load My List custom tags", error);
+      if (active) {
+        setCustomTags([]);
+        setCustomTagIdsByEntityKey(new Map());
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isTagLensActive, tasks, userId, visiblePinnedSourceRows]);
 
   useEffect(() => {
     let active = true;
@@ -1525,6 +1632,18 @@ export function MyListSheet({
     [defaultPriority.id, resolveTaskPriorityGroupId]
   );
 
+  const resolveVisibleRowCustomTagIds = useCallback(
+    (visibleRow: MyListVisibleTodoRow): string[] => {
+      if (visibleRow.rowType === "manual") return [];
+      const entityKey =
+        visibleRow.rowType === "task"
+          ? `TASK:${visibleRow.task.id}`
+          : `${visibleRow.row.sourceType}:${visibleRow.row.id}`;
+      return customTagIdsByEntityKey.get(entityKey) ?? [];
+    },
+    [customTagIdsByEntityKey]
+  );
+
   const resolveTaskSkillMetadata = useCallback(
     (task: TaskLite) => {
       const override = taskOverrides[task.id];
@@ -1568,6 +1687,74 @@ export function MyListSheet({
   );
 
   const visibleTodoGroups = useMemo(() => {
+    if (isTagLensActive) {
+      const builtInTagIdsByName = new Map(
+        MY_LIST_DAY_VIEW_BUCKETS.map((bucketId) => [
+          MY_LIST_DAY_LABELS[bucketId].trim().toLocaleLowerCase(),
+          bucketId,
+        ])
+      );
+      const customTagsByName = new Map<
+        string,
+        { id: string; label: string; tagIds: string[] }
+      >();
+
+      customTags.forEach((tag) => {
+        const label = tag.name.trim();
+        const normalizedName = label.toLocaleLowerCase();
+        const existing = customTagsByName.get(normalizedName);
+        if (existing) {
+          existing.tagIds.push(tag.id);
+        } else {
+          customTagsByName.set(normalizedName, {
+            id: tag.id,
+            label,
+            tagIds: [tag.id],
+          });
+        }
+      });
+
+      const builtInGroups = MY_LIST_DAY_VIEW_BUCKETS.map((bucketId) => {
+        const matchingCustomTagIds =
+          customTagsByName.get(
+            MY_LIST_DAY_LABELS[bucketId].trim().toLocaleLowerCase()
+          )?.tagIds ?? [];
+
+        return {
+          id: `tag:builtin:${bucketId}`,
+          label: MY_LIST_DAY_LABELS[bucketId],
+          rows: activeTodoRows.filter((visibleRow) => {
+            const rowBucketId = resolveVisibleRowDayBucketId(visibleRow);
+            const isInBuiltInBucket =
+              bucketId === "anytime"
+                ? rowBucketId === null
+                : rowBucketId === bucketId;
+            return (
+              isInBuiltInBucket ||
+              resolveVisibleRowCustomTagIds(visibleRow).some((tagId) =>
+                matchingCustomTagIds.includes(tagId)
+              )
+            );
+          }),
+        };
+      });
+      const customGroups = [...customTagsByName.entries()]
+        .filter(([normalizedName]) => !builtInTagIdsByName.has(normalizedName))
+        .map(([, tag]) => ({
+          id: `tag:${tag.id}`,
+          label: tag.label,
+          rows: activeTodoRows.filter((visibleRow) =>
+            resolveVisibleRowCustomTagIds(visibleRow).some((tagId) =>
+              tag.tagIds.includes(tagId)
+            )
+          ),
+        }))
+        .filter((group) => group.rows.length > 0)
+        .sort((left, right) => left.label.localeCompare(right.label));
+
+      return [...builtInGroups, ...customGroups];
+    }
+
     if (isDayLensActive) {
       return MY_LIST_DAY_VIEW_BUCKETS.map((bucketId) => ({
         id: bucketId,
@@ -1591,12 +1778,15 @@ export function MyListSheet({
     })).filter((group) => group.rows.length > 0);
   }, [
     activeTodoRows,
+    customTags,
     isDayLensActive,
+    isTagLensActive,
+    resolveVisibleRowCustomTagIds,
     resolveVisibleRowDayBucketId,
     resolveVisibleRowPriorityGroupId,
   ]);
-  const dayGroupLayoutSections = useMemo(() => {
-    if (!isDayLensActive) {
+  const lensGroupLayoutSections = useMemo(() => {
+    if (!isDayLensActive && !isTagLensActive) {
       return visibleTodoGroups.map((group) => ({
         sectionType: "group" as const,
         group,
@@ -1616,8 +1806,11 @@ export function MyListSheet({
 
     visibleTodoGroups.forEach((group) => {
       const bucketId = group.id as MyListDayViewBucketId;
-      const collapsedPreference = collapsedDayGroups[bucketId];
+      const collapsedPreference = isTagLensActive
+        ? collapsedTagGroups[group.id]
+        : collapsedDayGroups[bucketId];
       const wasCompactWhenManualDragStarted =
+        isDayLensActive &&
         activeManualReorderRowId !== null &&
         manualReorderCompactDayGroupIdsRef.current.has(bucketId);
       const isExpanded =
@@ -1642,12 +1835,14 @@ export function MyListSheet({
   }, [
     activeManualReorderRowId,
     collapsedDayGroups,
+    collapsedTagGroups,
     isDayLensActive,
+    isTagLensActive,
     visibleTodoGroups,
   ]);
   const todoListSections = useMemo(
     () => [
-      ...dayGroupLayoutSections,
+      ...lensGroupLayoutSections,
       ...(completedTodoCount > 0
         ? [
             {
@@ -1661,7 +1856,7 @@ export function MyListSheet({
           ]
         : []),
     ],
-    [completedTodoCount, completedTodoRows, dayGroupLayoutSections]
+    [completedTodoCount, completedTodoRows, lensGroupLayoutSections]
   );
 
   const canStartScheduleTimelineDrag =
@@ -3865,7 +4060,7 @@ export function MyListSheet({
               }
 
               selectMyListViewModePreference(
-                isDayLensActive ? "day" : "priority"
+                isTagLensActive ? "tags" : isDayLensActive ? "day" : "priority"
               );
             }}
             tabIndex={open ? 0 : -1}
@@ -3890,6 +4085,38 @@ export function MyListSheet({
           </h2>
           {activeView === "list" ? (
             <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-1 sm:right-5">
+              <button
+                type="button"
+                aria-label={
+                  isTagLensActive
+                    ? "Hide Tag grouping"
+                    : "Show Tag grouping"
+                }
+                aria-pressed={isTagLensActive}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveSkillPickerRowKey(null);
+                  setActivePriorityPickerRowKey(null);
+                  setActiveDayPickerRowKey(null);
+                  setPendingDeleteRowId(null);
+                  selectMyListViewModePreference(
+                    isTagLensActive ? "priority" : "tags"
+                  );
+                }}
+                tabIndex={open ? 0 : -1}
+                className={clsx(
+                  "flex h-6 w-6 items-center justify-center rounded-lg border bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35",
+                  isTagLensActive
+                    ? "border-white/[0.08] text-white"
+                    : "border-white/[0.08]"
+                )}
+              >
+                <Tags
+                  className="h-3.5 w-3.5"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              </button>
               <button
                 type="button"
                 aria-label={
@@ -3983,6 +4210,35 @@ export function MyListSheet({
                         className="flex flex-wrap items-center gap-1.5 px-3 py-1"
                       >
                         {section.groups.map((group) => {
+                          if (isTagLensActive) {
+                            return (
+                              <button
+                                key={group.id}
+                                type="button"
+                                aria-expanded={false}
+                                aria-label={`Expand ${group.label} group`}
+                                data-my-list-no-schedule-drag
+                                data-my-list-no-upgrade
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setCollapsedTagGroups((current) => ({
+                                    ...current,
+                                    [group.id]: false,
+                                  }));
+                                }}
+                                tabIndex={open ? 0 : -1}
+                                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
+                              >
+                                <Tags
+                                  className="h-3 w-3"
+                                  strokeWidth={1.9}
+                                  aria-hidden="true"
+                                />
+                                <span>{group.label}</span>
+                              </button>
+                            );
+                          }
+
                           const bucketId = group.id as MyListDayViewBucketId;
                           const dayVisual = MY_LIST_DAY_VISUALS[bucketId];
                           const DayIcon = dayVisual.Icon;
@@ -4132,6 +4388,32 @@ export function MyListSheet({
                               </button>
                             );
                           })()}
+                        </div>
+                      ) : isTagLensActive && !isCompletedSection ? (
+                        <div className="px-2 pt-1">
+                          <button
+                            type="button"
+                            aria-expanded={true}
+                            aria-label={`Collapse ${group.label} group`}
+                            data-my-list-no-schedule-drag
+                            data-my-list-no-upgrade
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setCollapsedTagGroups((current) => ({
+                                ...current,
+                                [group.id]: true,
+                              }));
+                            }}
+                            tabIndex={open ? 0 : -1}
+                            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/[0.1] bg-zinc-400/[0.09] px-2 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/62 outline-none transition hover:bg-white/[0.08] hover:text-white/82 focus-visible:ring-2 focus-visible:ring-white/35"
+                          >
+                            <Tags
+                              className="h-3 w-3"
+                              strokeWidth={1.9}
+                              aria-hidden="true"
+                            />
+                            <span>{group.label}</span>
+                          </button>
                         </div>
                       ) : (
                         <div className="px-3 pt-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white/38">
