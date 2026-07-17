@@ -50,6 +50,7 @@ import {
   Grid2x2,
   List,
   Moon,
+  Pin,
   Plus,
   Sun,
   Sunrise,
@@ -3109,7 +3110,13 @@ export function MyListSheet({
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
-              key={confirming ? "check" : "x"}
+              key={
+                confirming
+                  ? "check"
+                  : rowType === "pinnedSource"
+                    ? "pin"
+                    : "x"
+              }
               initial={
                 prefersReducedMotion ? false : { opacity: 0, scale: 0.72 }
               }
@@ -3122,6 +3129,8 @@ export function MyListSheet({
             >
               {confirming ? (
                 <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+              ) : rowType === "pinnedSource" ? (
+                <Pin className="h-3 w-3" strokeWidth={1.9} />
               ) : (
                 <X className="h-3.5 w-3.5" strokeWidth={2} />
               )}
