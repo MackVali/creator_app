@@ -341,7 +341,10 @@ type FitnessRoutineSample = {
   name: string;
   focus: string;
   exercises: string[];
-  guidance: string;
+};
+type FitnessRoutineGroupSample = {
+  name: string;
+  routines: FitnessRoutineSample[];
 };
 type FitnessPlanSample = {
   name: string;
@@ -1239,36 +1242,99 @@ function formatFitnessWorkoutExerciseDetail(
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 }
-const FITNESS_ROUTINE_SAMPLES: FitnessRoutineSample[] = [
+const FITNESS_ROUTINE_GROUP_SAMPLES: FitnessRoutineGroupSample[] = [
   {
-    name: "Push Day",
-    focus: "Chest, shoulders, triceps",
-    exercises: ["Bench Press", "Shoulder Press", "Dip", "Push-up"],
-    guidance: "3-4 sets each, 5-12 reps; finish with controlled push-ups.",
+    name: "Calisthenics",
+    routines: [
+      {
+        name: "Calisthenics Push / Chest",
+        focus: "Chest, shoulders, triceps",
+        exercises: ["Push-up", "Decline Push-up", "Dip", "Pike Push-up"],
+      },
+      {
+        name: "Calisthenics Pull",
+        focus: "Back, biceps, grip",
+        exercises: ["Pull-up", "Chin-up", "Inverted Row", "Dead Hang"],
+      },
+      {
+        name: "Calisthenics Legs",
+        focus: "Quads, glutes, hamstrings",
+        exercises: ["Bodyweight Squat", "Split Squat", "Reverse Lunge", "Nordic Curl"],
+      },
+      {
+        name: "Calisthenics Core",
+        focus: "Trunk strength and control",
+        exercises: ["Plank", "Side Plank", "Hanging Knee Raise", "Dead Bug"],
+      },
+      {
+        name: "Calisthenics Full Body",
+        focus: "Total-body strength",
+        exercises: ["Push-up", "Pull-up", "Bodyweight Squat", "Lunge", "Plank"],
+      },
+    ],
   },
   {
-    name: "Pull Day",
-    focus: "Back, biceps",
-    exercises: ["Pull-up", "Chin-up", "Row"],
-    guidance: "3-5 sets each, 4-12 reps; rest 90-150 sec between hard sets.",
+    name: "Weightlifting",
+    routines: [
+      {
+        name: "Weightlifting Chest",
+        focus: "Chest and triceps",
+        exercises: ["Bench Press", "Incline Bench Press", "Dumbbell Press", "Chest Fly"],
+      },
+      {
+        name: "Weightlifting Back",
+        focus: "Lats and upper back",
+        exercises: ["Bent-Over Row", "Lat Pulldown", "Dumbbell Row", "Face Pull"],
+      },
+      {
+        name: "Weightlifting Legs",
+        focus: "Quads, glutes, hamstrings",
+        exercises: ["Back Squat", "Romanian Deadlift", "Walking Lunge", "Leg Curl", "Calf Raise"],
+      },
+      {
+        name: "Weightlifting Shoulders",
+        focus: "Delts and upper traps",
+        exercises: ["Shoulder Press", "Lateral Raise", "Front Raise", "Reverse Fly"],
+      },
+      {
+        name: "Weightlifting Arms",
+        focus: "Biceps and triceps",
+        exercises: ["Curl", "Hammer Curl", "Triceps Extension", "Skull Crusher"],
+      },
+      {
+        name: "Weightlifting Full Body",
+        focus: "Balanced total-body session",
+        exercises: ["Goblet Squat", "Bench Press", "Dumbbell Row", "Romanian Deadlift", "Shoulder Press"],
+      },
+    ],
   },
   {
-    name: "Leg Day",
-    focus: "Quads, glutes, hinge",
-    exercises: ["Bodyweight Squat", "Lunge", "Deadlift"],
-    guidance: "3-5 working sets; mix 3-6 heavy reps with 8-15 accessory reps.",
+    name: "Powerlifting",
+    routines: [
+      { name: "Squat Day", focus: "Squat strength", exercises: ["Back Squat", "Front Squat", "Romanian Deadlift", "Leg Curl"] },
+      { name: "Bench Day", focus: "Bench strength", exercises: ["Bench Press", "Close-Grip Push-up", "Dumbbell Press", "Triceps Extension"] },
+      { name: "Deadlift Day", focus: "Deadlift strength", exercises: ["Deadlift", "Romanian Deadlift", "Bent-Over Row", "Dead Hang"] },
+      { name: "Upper Accessories", focus: "Upper-body support work", exercises: ["Shoulder Press", "Dumbbell Row", "Face Pull", "Hammer Curl", "Triceps Extension"] },
+      { name: "Lower Accessories", focus: "Lower-body support work", exercises: ["Front Squat", "Hip Thrust", "Walking Lunge", "Leg Curl", "Calf Raise"] },
+    ],
   },
   {
-    name: "Full Body Calisthenics",
-    focus: "Bodyweight strength",
-    exercises: ["Push-up", "Pull-up", "Bodyweight Squat", "Plank"],
-    guidance: "3-5 rounds; leave 1-2 reps in reserve on strength moves.",
+    name: "Athletic",
+    routines: [
+      { name: "Conditioning Circuit", focus: "Work capacity", exercises: ["Jump Rope", "Burpee", "Kettlebell Swing", "Mountain Climber"] },
+      { name: "Explosive Lower Body", focus: "Speed and power", exercises: ["Broad Jump", "Box Jump", "Skater Jump", "Hang Clean"] },
+      { name: "Carries & Grip", focus: "Loaded movement and grip", exercises: ["Farmer's Carry", "Suitcase Carry", "Overhead Carry", "Dead Hang", "Plate Pinch"] },
+      { name: "Core Athletic Stability", focus: "Bracing and rotation control", exercises: ["Pallof Press", "Bird Dog", "Side Plank", "Dead Bug", "Russian Twist"] },
+    ],
   },
   {
-    name: "Core & Conditioning",
-    focus: "Trunk, engine",
-    exercises: ["Plank", "Burpee", "Lunge"],
-    guidance: "12-20 min circuit; alternate 40 sec work with 20 sec reset.",
+    name: "Mobility / Recovery",
+    routines: [
+      { name: "Full Body Mobility", focus: "Head-to-toe mobility", exercises: ["World's Greatest Stretch", "Hip Opener", "Arm Circles", "Thoracic Rotation"] },
+      { name: "Hips & Hamstrings", focus: "Lower-body range of motion", exercises: ["Hip Opener", "Hamstring Stretch", "Couch Stretch", "Child's Pose"] },
+      { name: "Shoulders & T-Spine", focus: "Upper-body mobility", exercises: ["Arm Circles", "Thoracic Rotation", "Dead Hang", "Child's Pose"] },
+      { name: "Recovery Reset", focus: "Easy recovery flow", exercises: ["Child's Pose", "Hamstring Stretch", "Couch Stretch", "Thoracic Rotation"] },
+    ],
   },
 ];
 const FITNESS_PLAN_SAMPLES: FitnessPlanSample[] = [
@@ -3635,9 +3701,12 @@ function getGroceryPackageServingsContext(
   }
 
   if (servingGrams && packageGrams) {
+    const formattedServings = formatFoodNutritionNumber(packageGrams / servingGrams);
+
     return {
       source: "inferred",
-      servingsPerContainer: roundFoodNutritionNumber(packageGrams / servingGrams),
+      servingsPerContainer:
+        formattedServings !== null ? Number(formattedServings) : packageGrams / servingGrams,
       servingGrams,
       packageGrams,
     };
@@ -3677,7 +3746,7 @@ function getGroceryDefaultInventoryAmount(food: FoodSearchResult) {
 }
 
 function formatGroceryGramValue(grams: number) {
-  return formatFoodNutritionNumber(roundFoodNutritionNumber(grams)) ?? String(Math.round(grams));
+  return formatFoodNutritionNumber(grams) ?? String(Math.round(grams));
 }
 
 function getGroceryServingGramHelper(metadata: Record<string, unknown>) {
@@ -6882,6 +6951,9 @@ export function NoteDatabaseEntrySheet({
   const [favoriteFitnessExerciseIds, setFavoriteFitnessExerciseIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [expandedFitnessRoutineGroups, setExpandedFitnessRoutineGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [expandedFitnessMovementGroups, setExpandedFitnessMovementGroups] = useState<
     Set<string>
   >(() => new Set());
@@ -9414,12 +9486,9 @@ export function NoteDatabaseEntrySheet({
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white/82">Favorites</p>
             <p className="mt-0.5 text-xs font-medium text-white/38">
-              Star exercises from the Exercises tab for quick access.
+
             </p>
           </div>
-          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/30">
-            UI-only
-          </span>
         </div>
         {favoriteExercises.length > 0 ? (
           <div className="space-y-1.5">
@@ -9519,38 +9588,82 @@ export function NoteDatabaseEntrySheet({
             Reusable workout sessions made from exercises.
           </p>
         </div>
-        <div className="space-y-2">
-          {FITNESS_ROUTINE_SAMPLES.map((routine) => (
-            <div
-              key={routine.name}
-              className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white/86">{routine.name}</p>
-                  <p className="mt-1 text-xs font-medium text-white/42">{routine.focus}</p>
-                </div>
+        <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
+          {FITNESS_ROUTINE_GROUP_SAMPLES.map((routineGroup, groupIndex) => {
+            const isGroupOpen = expandedFitnessRoutineGroups.has(routineGroup.name);
+
+            return (
+              <Fragment key={routineGroup.name}>
                 <button
                   type="button"
-                  onClick={() => selectFitnessRoutine(routine)}
-                  className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.11] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/16"
+                  aria-expanded={isGroupOpen}
+                  onClick={() => {
+                    setExpandedFitnessRoutineGroups((currentGroups) => {
+                      const nextGroups = new Set(currentGroups);
+                      if (nextGroups.has(routineGroup.name)) nextGroups.delete(routineGroup.name);
+                      else nextGroups.add(routineGroup.name);
+                      return nextGroups;
+                    });
+                  }}
+                  className={`flex h-11 w-full items-center gap-3 px-3 text-left outline-none transition ${
+                    groupIndex > 0 ? "border-t border-white/[0.055]" : ""
+                  } ${
+                    isGroupOpen
+                      ? "bg-white/[0.035] text-white/90"
+                      : "text-white/62 hover:bg-white/[0.026] hover:text-white/82"
+                  } focus-visible:bg-white/[0.06]`}
                 >
-                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                  Use
-                </button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {routine.exercises.map((exerciseName) => (
-                  <span
-                    key={exerciseName}
-                    className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50"
-                  >
-                    {exerciseName}
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 stroke-[1.65] transition ${
+                      isGroupOpen ? "rotate-90 text-white/58" : "text-white/32"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                    {routineGroup.name}
                   </span>
-                ))}
-              </div>
-            </div>
-          ))}
+                  <span className="shrink-0 text-[11px] font-semibold text-white/38">
+                    {routineGroup.routines.length} routines
+                  </span>
+                </button>
+                {isGroupOpen ? (
+                  <div className="space-y-2 border-t border-white/[0.045] bg-black/20 p-2">
+                    {routineGroup.routines.map((routine) => (
+                      <div
+                        key={routine.name}
+                        className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-white/86">{routine.name}</p>
+                            <p className="mt-1 text-xs font-medium text-white/42">{routine.focus}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => selectFitnessRoutine(routine)}
+                            className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/72 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.11] hover:text-white/90 focus-visible:ring-1 focus-visible:ring-white/16"
+                          >
+                            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                            Use
+                          </button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {routine.exercises.map((exerciseName) => (
+                            <span
+                              key={exerciseName}
+                              className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50"
+                            >
+                              {exerciseName}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </Fragment>
+            );
+          })}
         </div>
       </div>
     );

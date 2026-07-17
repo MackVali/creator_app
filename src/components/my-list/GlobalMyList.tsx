@@ -470,12 +470,24 @@ export function GlobalMyList({
     };
   }, [ready, user?.id]);
 
+  const pinnedTaskIds = useMemo(
+    () =>
+      new Set(
+        pinnedSourceRows
+          .filter((row) => row.sourceType === "TASK")
+          .map((row) => row.id)
+      ),
+    [pinnedSourceRows]
+  );
   const myListTasks = useMemo(
     () =>
       tasks
         .filter(
           (task) =>
-            !task.goal_id && !task.project_id && !scheduledTaskIds.has(task.id)
+            !task.goal_id &&
+            !task.project_id &&
+            !scheduledTaskIds.has(task.id) &&
+            !pinnedTaskIds.has(task.id)
         )
         .sort((left, right) => {
           const leftDone = left.stage?.toString().toUpperCase() === "PERFECT";
@@ -483,19 +495,15 @@ export function GlobalMyList({
           if (leftDone !== rightDone) return leftDone ? 1 : -1;
           return left.name.localeCompare(right.name);
         }),
-    [scheduledTaskIds, tasks]
-  );
-  const myListTaskIds = useMemo(
-    () => new Set(myListTasks.map((task) => task.id)),
-    [myListTasks],
+    [pinnedTaskIds, scheduledTaskIds, tasks]
   );
   const visiblePinnedSourceRows = useMemo(
     () =>
       pinnedSourceRows.filter((row) => {
         if (row.sourceType !== "TASK") return true;
-        return !myListTaskIds.has(row.id) && !scheduledTaskIds.has(row.id);
+        return !scheduledTaskIds.has(row.id);
       }),
-    [myListTaskIds, pinnedSourceRows, scheduledTaskIds],
+    [pinnedSourceRows, scheduledTaskIds],
   );
 
   const handleRemovePinnedSource = useCallback(
