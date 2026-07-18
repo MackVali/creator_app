@@ -6775,6 +6775,15 @@ export function NoteDatabaseEntrySheet({
   const [groceryResourceActionError, setGroceryResourceActionError] = useState<
     string | null
   >(null);
+  const [expandedGrocerySearchFood, setExpandedGrocerySearchFood] =
+    useState<FoodSearchResult | null>(null);
+  const [grocerySearchAmount, setGrocerySearchAmount] = useState("1");
+  const [grocerySearchUnit, setGrocerySearchUnit] =
+    useState<GroceryInventoryUnit>("package");
+  const [isGrocerySearchSaving, setIsGrocerySearchSaving] = useState(false);
+  const [grocerySearchSaveError, setGrocerySearchSaveError] = useState<string | null>(
+    null,
+  );
   const [nutritionSavedMeals, setNutritionSavedMeals] = useState<NutritionSavedMeal[]>([]);
   const [isNutritionSavedMealsLoading, setIsNutritionSavedMealsLoading] = useState(false);
   const [nutritionSavedMealsError, setNutritionSavedMealsError] = useState<string | null>(
@@ -7354,7 +7363,8 @@ export function NoteDatabaseEntrySheet({
     const shouldLoadChefResources = selectedNutritionFoodAction === "chef" &&
       (isGroceryDatabase || isDefaultNutritionDatabase);
     const shouldLoadGroceryResources = isGroceryDatabase &&
-      selectedNutritionFoodAction === "grocery";
+      (selectedNutritionFoodAction === "grocery" ||
+        selectedNutritionFoodAction === "search");
     if (!shouldLoadChefResources && !shouldLoadGroceryResources) {
       setGroceryResourceItems([]);
       setIsGroceryResourcesLoading(false);
@@ -10105,6 +10115,9 @@ export function NoteDatabaseEntrySheet({
 
   function renderGrocerySelectedFoodDetail(item: NutritionSelectedFoodItem) {
     const { food } = item;
+    const isGrocerySearchContext =
+      isGroceryDatabase && selectedNutritionFoodAction === "search";
+    const shouldRenderEditableServingPicker = !isGrocerySearchContext;
     const groceryNameValue =
       typeof entryFormValues[ON_HAND_NAME_FIELD_ID] === "string"
         ? entryFormValues[ON_HAND_NAME_FIELD_ID]
@@ -10243,10 +10256,14 @@ export function NoteDatabaseEntrySheet({
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <span className="text-xs font-semibold text-white/52">Serving</span>
-          {renderNutritionFoodQuantityControl(item)}
-        </div>
+        {shouldRenderEditableServingPicker ? (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold text-white/52">Serving</span>
+            {renderNutritionFoodQuantityControl(item)}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs font-semibold text-white/52">Nutrition per serving</p>
+        )}
         <p className="mt-1 text-[11px] font-medium text-white/38">
           {getGroceryServingGramHelper(metadata)}
         </p>
@@ -10573,6 +10590,188 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function getActiveGroceryResourcesForFood(food: FoodSearchResult) {
+    return groceryResourceItems.filter(
+      (resource) => resource.status === "active" && resource.food_id === food.id,
+    );
+  }
+
+  function getCompatibleGrocerySearchResource(
+    food: FoodSearchResult,
+    unit: GroceryInventoryUnit,
+  ) {
+    return getActiveGroceryResourcesForFood(food).find((resource) => {
+      const resourceUnit = getFoodResourceText(resource.unit);
+      return (
+        resourceUnit &&
+        getFoodResourceNumber(resource.quantity) !== null &&
+        normalizeGroceryInventoryUnit(resourceUnit) === unit
+      );
+    });
+  }
+
+  function toggleGrocerySearchFood(food: FoodSearchResult) {
+    if (expandedGrocerySearchFood?.id === food.id) {
+      setExpandedGrocerySearchFood(null);
+      setGrocerySearchSaveError(null);
+      return;
+    }
+
+    const defaultInventory = getGroceryDefaultInventoryAmount(food);
+    setExpandedGrocerySearchFood(food);
+    setGrocerySearchAmount(formatNutritionServingAmount(defaultInventory.quantity));
+    setGrocerySearchUnit(defaultInventory.unit);
+    setGrocerySearchSaveError(null);
+    setExpandedGroceryInventoryField(null);
+    void hapticSoftTick();
+  }
+
+  async function saveGrocerySearchFood(food: FoodSearchResult) {
+    if (isGrocerySearchSaving) return;
+
+    const addedAmount = parseGroceryInventoryNumber(grocerySearchAmount);
+    if (!addedAmount || addedAmount <= 0) {
+      setGrocerySearchSaveError("Enter an amount greater than 0.");
+      void hapticErrorPattern();
+      return;
+    }
+
+    const compatibleResource = getCompatibleGrocerySearchResource(food, grocerySearchUnit);
+    setIsGrocerySearchSaving(true);
+    setGrocerySearchSaveError(null);
+
+    try {
+      const selectedItem = makeNutritionSelectedFoodItem(food);
+      const metadata = {
+        ...buildGroceryFoodResourceMetadata(selectedItem),
+        inventory_quantity: addedAmount,
+        inventory_unit: grocerySearchUnit,
+      };
+      const response = await fetch("/api/food-resources", {
+        method: compatibleResource ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          compatibleResource
+            ? {
+                id: compatibleResource.id,
+                action: "setQuantity",
+                quantity: (getFoodResourceNumber(compatibleResource.quantity) ?? 0) + addedAmount,
+                unit: grocerySearchUnit,
+              }
+            : {
+                food_id: food.id,
+                brand_name: food.brand_name ?? null,
+                name: food.name,
+                quantity: addedAmount,
+                unit: grocerySearchUnit,
+                location: null,
+                expires_on: null,
+                notes: null,
+                metadata,
+              },
+        ),
+      });
+      const payload = (await response.json()) as FoodResourcesResponse;
+
+      if (!response.ok || !payload.foodResource) {
+        throw new Error(payload.error || "Unable to add this grocery.");
+      }
+
+      const savedResource = normalizeFoodResource(payload.foodResource, 0);
+      setGroceryResourceItems((currentItems) =>
+        compatibleResource
+          ? currentItems.map((resource) =>
+              resource.id === compatibleResource.id ? savedResource : resource,
+            )
+          : [savedResource, ...currentItems],
+      );
+      setExpandedGrocerySearchFood(null);
+      void hapticComplete();
+    } catch (error) {
+      console.error("Failed to add Grocery search result", { error, foodId: food.id });
+      setGrocerySearchSaveError("Unable to add this grocery right now.");
+      void hapticErrorPattern();
+    } finally {
+      setIsGrocerySearchSaving(false);
+    }
+  }
+
+  function renderGrocerySearchExpansion(food: FoodSearchResult) {
+    const activeResources = getActiveGroceryResourcesForFood(food);
+    const compatibleResource = getCompatibleGrocerySearchResource(food, grocerySearchUnit);
+    const existingResource = compatibleResource ?? activeResources[0] ?? null;
+    const existingQuantity = existingResource
+      ? getFoodResourceNumber(existingResource.quantity)
+      : null;
+    const existingUnit = existingResource ? getFoodResourceText(existingResource.unit) : "";
+    const hasUnitMismatch = activeResources.length > 0 && !compatibleResource;
+
+    return (
+      <div className="border-t border-white/[0.045] bg-white/[0.025] px-3 pb-3 pt-2.5">
+        {existingQuantity !== null && existingUnit ? (
+          <p className="mb-2 text-[11px] font-semibold text-white/48">
+            Already have: {formatFoodNutritionNumber(existingQuantity) ?? existingQuantity}{" "}
+            {existingUnit}
+          </p>
+        ) : null}
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/42">
+          Amount acquired
+        </p>
+        <div className="mt-1.5 flex min-w-0 items-center gap-2">
+          <input
+            type="number"
+            min={0.01}
+            step="any"
+            value={grocerySearchAmount}
+            onChange={(event) => {
+              setGrocerySearchAmount(event.target.value);
+              setGrocerySearchSaveError(null);
+            }}
+            className="h-9 w-24 rounded-lg border border-white/[0.065] bg-black/32 px-2.5 text-sm font-semibold tabular-nums text-white outline-none transition focus-visible:border-white/[0.16] focus-visible:ring-1 focus-visible:ring-white/12"
+            aria-label="Amount acquired"
+          />
+          <select
+            value={grocerySearchUnit}
+            onChange={(event) => {
+              setGrocerySearchUnit(event.target.value as GroceryInventoryUnit);
+              setGrocerySearchSaveError(null);
+            }}
+            className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.065] bg-[#101010] px-2.5 text-xs font-semibold text-white/78 outline-none transition focus-visible:border-white/[0.16] focus-visible:ring-1 focus-visible:ring-white/12"
+            aria-label="Inventory unit"
+          >
+            {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void saveGrocerySearchFood(food)}
+            disabled={isGrocerySearchSaving || isGroceryResourcesLoading}
+            className="h-9 shrink-0 rounded-lg border border-zinc-50/28 bg-zinc-200/82 px-3 text-xs font-bold text-zinc-950 outline-none transition hover:bg-zinc-100 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {isGrocerySearchSaving
+              ? "Adding..."
+              : isGroceryResourcesLoading
+                ? "Checking..."
+                : "Add to Grocery"}
+          </button>
+        </div>
+        {hasUnitMismatch ? (
+          <p className="mt-1.5 text-[11px] font-medium text-amber-100/62">
+            The saved unit differs, so this amount will be kept as a separate row.
+          </p>
+        ) : null}
+        {grocerySearchSaveError ? (
+          <p className="mt-1.5 text-[11px] font-medium text-red-200/72">
+            {grocerySearchSaveError}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderNutritionFoodResultList({
     foods,
     isLoading,
@@ -10597,7 +10796,11 @@ export function NoteDatabaseEntrySheet({
             {foods.map((food) => {
               const meta = getFoodSearchResultMeta(food);
               const selectedItem = getSelectedNutritionFoodItem(food);
-              const isSelected = Boolean(selectedItem);
+              const isGrocerySearchResult =
+                isGroceryDatabase && selectedNutritionFoodAction === "search";
+              const isSelected = isGrocerySearchResult
+                ? expandedGrocerySearchFood?.id === food.id
+                : Boolean(selectedItem);
               const displayMeta = selectedItem
                 ? isGroceryDatabase
                   ? food.brand_name
@@ -10611,45 +10814,55 @@ export function NoteDatabaseEntrySheet({
               return (
                 <div
                   key={food.id}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition ${
+                  className={
                     isSelected
-                      ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.7)]"
-                      : "hover:bg-white/[0.045]"
-                  } focus-visible:bg-white/[0.06]`}
+                      ? "bg-white/[0.045] shadow-[inset_3px_0_0_rgba(255,255,255,0.62)]"
+                      : ""
+                  }
                 >
-                  <button
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => toggleNutritionFoodSelection(food)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left outline-none"
-                  >
-                    <NutritionFoodIcon food={food} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        {isSelected ? (
-                          <Check
-                            className="h-3.5 w-3.5 shrink-0 text-white/76"
-                            aria-hidden="true"
-                          />
+                  <div className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition hover:bg-white/[0.045]">
+                    <button
+                      type="button"
+                      aria-expanded={isGrocerySearchResult ? isSelected : undefined}
+                      aria-pressed={isGrocerySearchResult ? undefined : isSelected}
+                      onClick={() =>
+                        isGrocerySearchResult
+                          ? toggleGrocerySearchFood(food)
+                          : toggleNutritionFoodSelection(food)
+                      }
+                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-white/12"
+                    >
+                      <NutritionFoodIcon food={food} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {isSelected ? (
+                            <Check
+                              className="h-3.5 w-3.5 shrink-0 text-white/76"
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <span className="block truncate text-sm font-semibold text-white/84">
+                            {food.name}
+                          </span>
+                        </span>
+                        {subline ? (
+                          <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                            {subline}
+                          </span>
                         ) : null}
-                        <span className="block truncate text-sm font-semibold text-white/84">
-                          {food.name}
-                        </span>
                       </span>
-                      {subline ? (
-                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                          {subline}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                  {selectedItem ? (
-                    renderNutritionFoodQuantityControl(selectedItem)
-                  ) : meta ? (
-                    <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
-                      {meta}
-                    </span>
-                  ) : null}
+                    </button>
+                    {!isGrocerySearchResult && selectedItem ? (
+                      renderNutritionFoodQuantityControl(selectedItem)
+                    ) : !isGrocerySearchResult && meta ? (
+                      <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
+                        {meta}
+                      </span>
+                    ) : null}
+                  </div>
+                  {isGrocerySearchResult && isSelected
+                    ? renderGrocerySearchExpansion(food)
+                    : null}
                 </div>
               );
             })}
@@ -12561,7 +12774,9 @@ export function NoteDatabaseEntrySheet({
                 aria-label="Food"
               />
             </div>
-            {renderSelectedNutritionFoods()}
+            {isGroceryMode && selectedNutritionFoodAction === "search"
+              ? null
+              : renderSelectedNutritionFoods()}
             {selectedNutritionFoodAction === "search" &&
             normalizedNutritionFoodSearchValue.length >= 2 ? (
               renderNutritionFoodResultList({
@@ -12808,7 +13023,8 @@ export function NoteDatabaseEntrySheet({
           </p>
         ) : null}
 
-        {shouldShowEntryFooter ? (
+        {shouldShowEntryFooter &&
+        !(isGroceryDatabase && selectedNutritionFoodAction === "search") ? (
           <div
             className={`border-t border-white/[0.04] p-3 sm:p-4 ${
               isDefaultNutritionDatabase ? "flex" : "flex gap-2"
