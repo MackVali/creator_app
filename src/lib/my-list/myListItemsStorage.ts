@@ -29,6 +29,8 @@ export type MyListPinnedSourceStorageItem = {
   sourceId: string;
   done: boolean;
   completedAt: string | null;
+  priorityId: string | null;
+  dayBucketId: MyListStorageDayBucketId | null;
   sortOrder: number;
 };
 
@@ -408,6 +410,13 @@ export async function loadPinnedSourceMyListItems({
         sourceId: row.source_id,
         done: Boolean(row.done),
         completedAt: row.done && row.completed_at ? row.completed_at : null,
+        priorityId: row.priority_id ?? null,
+        dayBucketId:
+          row.day_bucket_id === "morning" ||
+          row.day_bucket_id === "afternoon" ||
+          row.day_bucket_id === "evening"
+            ? row.day_bucket_id
+            : null,
         sortOrder: row.sort_order ?? 0,
       };
     })
@@ -471,6 +480,37 @@ export async function updatePinnedSourceMyListItemCompletion({
       done,
       completed_at: done ? completedAt : null,
     })
+    .eq("user_id", userId)
+    .eq("item_kind", "PINNED_SOURCE")
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId);
+
+  if (error) throw error;
+}
+
+export async function updatePinnedSourceMyListItemMetadata({
+  userId,
+  sourceType,
+  sourceId,
+  priorityId,
+  dayBucketId,
+}: {
+  userId: string;
+  sourceType: MyListSourceType;
+  sourceId: string;
+  priorityId?: string;
+  dayBucketId?: MyListStorageDayBucketId | null;
+}) {
+  const client = getClient();
+  if (!client) throw new Error("Supabase client not available");
+
+  const values: Partial<MyListItemRow> = {};
+  if (priorityId !== undefined) values.priority_id = priorityId;
+  if (dayBucketId !== undefined) values.day_bucket_id = dayBucketId;
+
+  const { error } = await client
+    .from("my_list_items")
+    .update(values)
     .eq("user_id", userId)
     .eq("item_kind", "PINNED_SOURCE")
     .eq("source_type", sourceType)

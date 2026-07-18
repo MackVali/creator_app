@@ -265,8 +265,11 @@ function compareQuickCreateOrderThenName(
   return (leftName ?? "").localeCompare(rightName ?? "");
 }
 
-type MyListRowKey = `manual:${string}` | `task:${string}`;
 type MyListPinnedSourceRowKey = `pinnedSource:${MyListPinnableSourceType}:${string}`;
+type MyListRowKey =
+  | `manual:${string}`
+  | `task:${string}`
+  | MyListPinnedSourceRowKey;
 type MyListDayBucketId = (typeof MY_LIST_DAY_BUCKETS)[number];
 type MyListDayViewBucketId = (typeof MY_LIST_DAY_VIEW_BUCKETS)[number];
 type MyListViewModePreference = (typeof MY_LIST_VIEW_MODE_PREFERENCES)[number];
@@ -405,9 +408,22 @@ function sanitizePinnedSourceRow(value: unknown): MyListPinnedSourceRow | null {
         ? record.title
         : `Untitled ${sourceType.toLowerCase()}`,
     icon: typeof record.icon === "string" ? record.icon : null,
+    goalIcon: typeof record.goalIcon === "string" ? record.goalIcon : null,
+    monumentIcon:
+      typeof record.monumentIcon === "string" ? record.monumentIcon : null,
+    monumentName:
+      typeof record.monumentName === "string" ? record.monumentName : null,
+    skillIcon: typeof record.skillIcon === "string" ? record.skillIcon : null,
     priority: typeof record.priority === "string" ? record.priority : null,
+    priorityId:
+      typeof record.priorityId === "string"
+        ? normalizePriority(record.priorityId)
+        : null,
+    dayBucketId: readMyListDayBucketFromUnknown(record),
     energy: typeof record.energy === "string" ? record.energy : null,
     stage: typeof record.stage === "string" ? record.stage : null,
+    goalId: typeof record.goalId === "string" ? record.goalId : null,
+    isPinned: record.isPinned !== false,
     completedAt:
       typeof record.completedAt === "string" && record.completedAt.trim()
         ? record.completedAt
@@ -622,10 +638,23 @@ export type MyListPinnedSourceRow = {
   sourceType: MyListPinnableSourceType;
   title: string;
   icon?: string | null;
+  goalIcon?: string | null;
+  monumentIcon?: string | null;
+  monumentName?: string | null;
+  skillIcon?: string | null;
   priority?: string | null;
+  priorityId?: PriorityBucketId | null;
+  dayBucketId?: MyListDayBucketId | null;
   energy?: string | null;
   stage?: string | null;
+  goalId?: string | null;
+  isPinned?: boolean;
   completedAt?: string | null;
+};
+
+export type MyListPinnedGoalRow = MyListPinnedSourceRow & {
+  sourceType: "GOAL";
+  projects: MyListPinnedSourceRow[];
 };
 
 type MyListVisibleTodoRow =
@@ -976,6 +1005,7 @@ export function MyListSheet({
   userId,
   tasks,
   pinnedSourceRows,
+  pinnedGoalRows,
   skills,
   skillCategories,
   pendingTaskIds,
@@ -983,6 +1013,7 @@ export function MyListSheet({
   enableScheduleTimelineDrag = false,
   onRemovePinnedSource,
   onTogglePinnedSourceCompletion,
+  onUpdatePinnedSourceMetadata,
   onToggleTask,
   onTaskSkillSelect,
 }: {
@@ -991,6 +1022,7 @@ export function MyListSheet({
   userId?: string | null;
   tasks: TaskLite[];
   pinnedSourceRows?: MyListPinnedSourceRow[];
+  pinnedGoalRows?: MyListPinnedGoalRow[];
   skills: SkillRow[];
   skillCategories: CatRow[];
   pendingTaskIds: Set<string>;
@@ -1000,6 +1032,13 @@ export function MyListSheet({
   onTogglePinnedSourceCompletion?: (
     row: MyListPinnedSourceRow,
     completedAt: string | null
+  ) => void;
+  onUpdatePinnedSourceMetadata?: (
+    row: MyListPinnedSourceRow,
+    updates: {
+      priorityId?: PriorityBucketId | null;
+      dayBucketId?: MyListDayBucketId | null;
+    }
   ) => void;
   onToggleTask: (
     taskId: string,
@@ -1026,6 +1065,9 @@ export function MyListSheet({
   >(() => new Map());
   const [areCompletedTodosVisible, setAreCompletedTodosVisible] =
     useState(false);
+  const [expandedPinnedGoalIds, setExpandedPinnedGoalIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [creatorDayBoundaryNow, setCreatorDayBoundaryNow] = useState(
     () => new Date()
   );
@@ -1035,6 +1077,8 @@ export function MyListSheet({
   const [activePriorityPickerRowKey, setActivePriorityPickerRowKey] =
     useState<MyListRowKey | null>(null);
   const [activeDayPickerRowKey, setActiveDayPickerRowKey] =
+    useState<MyListRowKey | null>(null);
+  const [activeTodoRowKey, setActiveTodoRowKey] =
     useState<MyListRowKey | null>(null);
   const [manualSkillSearch, setManualSkillSearch] = useState("");
   const [pendingDeleteRowId, setPendingDeleteRowId] = useState<string | null>(
@@ -1067,6 +1111,23 @@ export function MyListSheet({
   const [pendingTitleFocusRowId, setPendingTitleFocusRowId] = useState<
     string | null
   >(null);
+
+  const areTodoRowControlsRevealed = useCallback(
+    (rowKey: MyListRowKey, isDragging = false) =>
+      activeTodoRowKey === rowKey ||
+      activeSkillPickerRowKey === rowKey ||
+      activePriorityPickerRowKey === rowKey ||
+      activeDayPickerRowKey === rowKey ||
+      pendingDeleteRowId === rowKey ||
+      isDragging,
+    [
+      activeDayPickerRowKey,
+      activePriorityPickerRowKey,
+      activeSkillPickerRowKey,
+      activeTodoRowKey,
+      pendingDeleteRowId,
+    ]
+  );
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
   const keyboardBottomOffset = useMotionValue(0);
   const smoothedKeyboardBottomOffset = useSpring(keyboardBottomOffset, {
@@ -1158,6 +1219,13 @@ export function MyListSheet({
   const visiblePinnedSourceRows = useMemo(
     () => sanitizePinnedSourceRows(pinnedSourceRows),
     [pinnedSourceRows]
+  );
+  const visiblePinnedGoalRows = useMemo(
+    () =>
+      (pinnedGoalRows ?? []).filter(
+        (row) => row.sourceType === "GOAL" && row.id && row.title
+      ),
+    [pinnedGoalRows]
   );
   const activeManualRows = useMemo(
     () => manualRows.filter((row) => !row.done),
@@ -1618,7 +1686,7 @@ export function MyListSheet({
       visibleRow.rowType === "manual"
         ? visibleRow.row.dayBucketId
         : visibleRow.rowType === "pinnedSource"
-          ? null
+          ? visibleRow.row.dayBucketId ?? null
           : resolveTaskDayBucketId(visibleRow.task),
     [resolveTaskDayBucketId]
   );
@@ -1628,7 +1696,8 @@ export function MyListSheet({
       visibleRow.rowType === "manual"
         ? visibleRow.row.priorityId
         : visibleRow.rowType === "pinnedSource"
-          ? normalizePriority(visibleRow.row.priority ?? defaultPriority.id)
+          ? visibleRow.row.priorityId ??
+            normalizePriority(visibleRow.row.priority ?? defaultPriority.id)
           : resolveTaskPriorityGroupId(visibleRow.task),
     [defaultPriority.id, resolveTaskPriorityGroupId]
   );
@@ -1870,8 +1939,9 @@ export function MyListSheet({
   const assignDayBucketToRow = useCallback(
     (
       rowId: string,
-      rowType: "manual" | "task",
-      dayBucketId: MyListDayViewBucketId
+      rowType: "manual" | "task" | "pinnedSource",
+      dayBucketId: MyListDayViewBucketId,
+      pinnedSourceRow?: MyListPinnedSourceRow
     ) => {
       const nextDayBucketId =
         dayBucketId === "anytime" ? null : dayBucketId;
@@ -1880,7 +1950,11 @@ export function MyListSheet({
         currentRowId === `${rowType}:${rowId}` ? null : currentRowId
       );
 
-      if (rowType === "manual") {
+      if (rowType === "pinnedSource" && pinnedSourceRow) {
+        onUpdatePinnedSourceMetadata?.(pinnedSourceRow, {
+          dayBucketId: nextDayBucketId,
+        });
+      } else if (rowType === "manual") {
         updateManualRowsWithPersistence((currentRows) =>
           currentRows.map((row) =>
             row.id === rowId ? { ...row, dayBucketId: nextDayBucketId } : row
@@ -1898,7 +1972,7 @@ export function MyListSheet({
 
       setActiveDayPickerRowKey(null);
     },
-    [updateManualRowsWithPersistence]
+    [onUpdatePinnedSourceMetadata, updateManualRowsWithPersistence]
   );
 
   const clearScheduleDragPress = useCallback(() => {
@@ -2972,14 +3046,17 @@ export function MyListSheet({
   const handlePrioritySelect = useCallback(
     (
       rowId: string,
-      rowType: "manual" | "task",
-      priorityId: PriorityBucketId
+      rowType: "manual" | "task" | "pinnedSource",
+      priorityId: PriorityBucketId,
+      pinnedSourceRow?: MyListPinnedSourceRow
     ) => {
       setPendingDeleteRowId((currentRowId) =>
         currentRowId === `${rowType}:${rowId}` ? null : currentRowId
       );
 
-      if (rowType === "manual") {
+      if (rowType === "pinnedSource" && pinnedSourceRow) {
+        onUpdatePinnedSourceMetadata?.(pinnedSourceRow, { priorityId });
+      } else if (rowType === "manual") {
         updateManualRow(rowId, { priorityId });
       } else {
         setTaskOverrides((currentOverrides) => ({
@@ -2994,16 +3071,17 @@ export function MyListSheet({
       setActivePriorityPickerRowKey(null);
       setActiveDayPickerRowKey(null);
     },
-    [updateManualRow]
+    [onUpdatePinnedSourceMetadata, updateManualRow]
   );
 
   const handleDaySelect = useCallback(
     (
       rowId: string,
-      rowType: "manual" | "task",
-      dayBucketId: MyListDayViewBucketId
+      rowType: "manual" | "task" | "pinnedSource",
+      dayBucketId: MyListDayViewBucketId,
+      pinnedSourceRow?: MyListPinnedSourceRow
     ) => {
-      assignDayBucketToRow(rowId, rowType, dayBucketId);
+      assignDayBucketToRow(rowId, rowType, dayBucketId, pinnedSourceRow);
     },
     [assignDayBucketToRow]
   );
@@ -4193,6 +4271,148 @@ export function MyListSheet({
         >
           {activeView === "list" ? (
             <>
+          {visiblePinnedGoalRows.length > 0 ? (
+            <div className="border-b border-white/[0.055] pb-2">
+              {visiblePinnedGoalRows.map((goal) => {
+                const expanded = expandedPinnedGoalIds.has(goal.id);
+                return (
+                  <div
+                    key={`pinned-goal:${goal.id}`}
+                    className="min-w-0"
+                  >
+                    <div className="flex h-8 items-center pr-1.5">
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-controls={`pinned-goal-projects:${goal.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setExpandedPinnedGoalIds((currentIds) => {
+                            const nextIds = new Set(currentIds);
+                            if (nextIds.has(goal.id)) nextIds.delete(goal.id);
+                            else nextIds.add(goal.id);
+                            return nextIds;
+                          });
+                        }}
+                        tabIndex={open ? 0 : -1}
+                        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-3 pr-1 text-left outline-none transition hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-white/30"
+                      >
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center text-[0.8rem] text-white/62"
+                          aria-hidden="true"
+                        >
+                          {resolvePinnedSourceIcon(goal)}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[0.78rem] font-medium text-white/86">
+                          {goal.title}
+                        </span>
+                        <ChevronDown
+                          className={clsx(
+                            "h-3.5 w-3.5 shrink-0 text-white/36 transition-transform",
+                            expanded && "rotate-180"
+                          )}
+                          strokeWidth={1.8}
+                          aria-hidden="true"
+                        />
+                      </button>
+                      {renderDeleteRowButton(goal.id, "pinnedSource", goal)}
+                    </div>
+                    {expanded ? (
+                      <div
+                        id={`pinned-goal-projects:${goal.id}`}
+                        className="pb-1"
+                      >
+                        {goal.projects.length > 0 ? (
+                          goal.projects.map((project) => {
+                            const completionKey = `PROJECT:${project.id}`;
+                            const completedAt =
+                              pinnedSourceCompletions[completionKey] ?? null;
+                            const done = Boolean(completedAt);
+                            const canToggleCompletion = project.isPinned === true;
+                            const checkboxId = `my-list-goal-project-${project.id}`;
+
+                            return (
+                              <div
+                                key={project.id}
+                                className="flex min-h-8 min-w-0 items-center gap-2 rounded-lg py-1 pl-5 pr-2 text-sm transition-colors hover:bg-white/[0.025]"
+                              >
+                                <input
+                                  id={checkboxId}
+                                  type="checkbox"
+                                  checked={done}
+                                  disabled={!canToggleCompletion}
+                                  onChange={(event) => {
+                                    if (!canToggleCompletion) return;
+                                    const nextCompletedAt = event.target.checked
+                                      ? new Date().toISOString()
+                                      : null;
+                                    setPinnedSourceCompletions((current) => ({
+                                      ...current,
+                                      [completionKey]: nextCompletedAt,
+                                    }));
+                                    onTogglePinnedSourceCompletion?.(
+                                      project,
+                                      nextCompletedAt
+                                    );
+                                  }}
+                                  tabIndex={open && canToggleCompletion ? 0 : -1}
+                                  className="peer sr-only"
+                                />
+                                <label
+                                  htmlFor={checkboxId}
+                                  aria-label={
+                                    canToggleCompletion
+                                      ? done
+                                        ? "Mark Project incomplete"
+                                        : "Mark Project complete"
+                                      : "Project completion is unavailable"
+                                  }
+                                  className={clsx(
+                                    "relative flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.32rem] border transition peer-focus-visible:ring-2 peer-focus-visible:ring-white/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950",
+                                    done
+                                      ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white ring-1 ring-green-900/45"
+                                      : "border-white/16 bg-black/24 text-transparent",
+                                    canToggleCompletion
+                                      ? "cursor-pointer"
+                                      : "cursor-default opacity-55"
+                                  )}
+                                >
+                                  <span
+                                    className={clsx(
+                                      "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+                                      done ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                </label>
+                                <span
+                                  className="flex h-4 w-4 shrink-0 items-center justify-center text-[0.72rem] text-white/56"
+                                  aria-hidden="true"
+                                >
+                                  {resolvePinnedProjectIcon(project)}
+                                </span>
+                                <span
+                                  className={clsx(
+                                    "truncate text-[0.74rem] text-white/68",
+                                    done && "text-white/38 line-through"
+                                  )}
+                                >
+                                  {project.title}
+                                </span>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="py-1.5 pl-11 text-[0.68rem] text-white/34">
+                            No linked Projects.
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           <DndContext
             sensors={manualReorderSensors}
             collisionDetection={closestCenter}
@@ -4490,6 +4710,8 @@ export function MyListSheet({
                       data-my-list-schedule-drag-row={
                         canStartTodoRowLongPress ? "true" : undefined
                       }
+                      onPointerDownCapture={() => setActiveTodoRowKey(rowKey)}
+                      onFocusCapture={() => setActiveTodoRowKey(rowKey)}
                       onPointerDown={(event) =>
                         startScheduleDragPress(event, taskScheduleDragRow)
                       }
@@ -4503,7 +4725,7 @@ export function MyListSheet({
                       onTouchEnd={handleScheduleDragTouchEnd}
                       onTouchCancel={handleScheduleDragTouchEnd}
                       className={clsx(
-                        "flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
+                        "group/todo-row flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]",
                         canStartTodoRowLongPress &&
                           (isScheduleDragActive
                             ? "cursor-grabbing"
@@ -4626,7 +4848,14 @@ export function MyListSheet({
                           done && "text-white/42 line-through"
                         )}
                       />
-                      <div className="-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0">
+                      <div
+                        className={clsx(
+                          "-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0 transition-opacity duration-150 group-hover/todo-row:pointer-events-auto group-hover/todo-row:w-auto group-hover/todo-row:overflow-visible group-hover/todo-row:opacity-100 group-focus-within/todo-row:pointer-events-auto group-focus-within/todo-row:w-auto group-focus-within/todo-row:overflow-visible group-focus-within/todo-row:opacity-100",
+                          areTodoRowControlsRevealed(rowKey)
+                            ? "w-auto overflow-visible opacity-100 pointer-events-auto"
+                            : "w-0 overflow-hidden opacity-0 pointer-events-none"
+                        )}
+                      >
                         <div className="relative shrink-0">
                           <button
                             type="button"
@@ -4701,9 +4930,9 @@ export function MyListSheet({
                       pinnedSourceCompletions[completionKey] ?? null;
                     const done = Boolean(completedAt);
                     const checkboxId = `my-list-pinned-${row.sourceType.toLowerCase()}-${row.id}`;
-                    const priorityId = normalizePriority(
-                      row.priority ?? defaultPriority.id
-                    );
+                    const priorityId =
+                      row.priorityId ??
+                      normalizePriority(row.priority ?? defaultPriority.id);
                     const priorityOption =
                       QUICK_CREATE_PRIORITY_OPTIONS.find(
                         (option) => option.id === priorityId
@@ -4711,6 +4940,14 @@ export function MyListSheet({
                     const prioritySymbol =
                       priorityOption.symbol ||
                       QUICK_CREATE_PRIORITY_PLACEHOLDER_SYMBOL;
+                    const dayBucketId = row.dayBucketId ?? null;
+                    const dayViewBucketId = dayBucketId ?? "anytime";
+                    const dayVisual = MY_LIST_DAY_VISUALS[dayViewBucketId];
+                    const DayIcon = dayVisual.Icon;
+                    const rowKey = buildPinnedSourceRowKey(
+                      row.sourceType,
+                      row.id
+                    );
                     const title = row.title.trim() || `Untitled ${row.sourceType.toLowerCase()}`;
                     const sourceIcon = resolvePinnedSourceIcon(row);
 
@@ -4719,7 +4956,9 @@ export function MyListSheet({
                         key={`pinned-source:${row.sourceType}:${row.id}`}
                         data-creator-xp-source="my-list-todo"
                         data-creator-xp-kind="todo"
-                        className="flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
+                        onPointerDownCapture={() => setActiveTodoRowKey(rowKey)}
+                        onFocusCapture={() => setActiveTodoRowKey(rowKey)}
+                        className="group/todo-row flex min-h-8 items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-colors hover:bg-white/[0.035]"
                       >
                         <input
                           id={checkboxId}
@@ -4779,20 +5018,90 @@ export function MyListSheet({
                         >
                           {title}
                         </span>
-                        <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
-                          <span
-                            title={priorityOption.label}
-                            className={clsx(
-                              "flex h-7 min-w-7 items-center justify-center rounded-full border border-white/8 bg-black/20 px-1 text-[10px] font-black leading-none text-white/46",
-                              done && "text-white/32"
+                        <div
+                          className={clsx(
+                            "-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0 transition-opacity duration-150 group-hover/todo-row:pointer-events-auto group-hover/todo-row:w-auto group-hover/todo-row:overflow-visible group-hover/todo-row:opacity-100 group-focus-within/todo-row:pointer-events-auto group-focus-within/todo-row:w-auto group-focus-within/todo-row:overflow-visible group-focus-within/todo-row:opacity-100",
+                            areTodoRowControlsRevealed(rowKey)
+                              ? "w-auto overflow-visible opacity-100 pointer-events-auto"
+                              : "w-0 overflow-hidden opacity-0 pointer-events-none"
+                          )}
+                        >
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              aria-label={`Choose priority: ${priorityOption.label}`}
+                              aria-haspopup="listbox"
+                              aria-expanded={activePriorityPickerRowKey === rowKey}
+                              title={priorityOption.label}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setActiveSkillPickerRowKey(null);
+                                setActiveDayPickerRowKey(null);
+                                setActivePriorityPickerRowKey((currentRowKey) =>
+                                  currentRowKey === rowKey ? null : rowKey
+                                );
+                              }}
+                              tabIndex={open ? 0 : -1}
+                              className={clsx(
+                                "flex h-7 min-w-7 items-center justify-center rounded-full bg-black/10 px-1 text-[10px] font-black leading-none text-white/46 outline-none transition hover:bg-white/[0.045] hover:text-white/72 focus-visible:ring-2 focus-visible:ring-white/35",
+                                done && "text-white/42"
+                              )}
+                            >
+                              <span className="max-w-8 truncate">
+                                {prioritySymbol}
+                              </span>
+                            </button>
+                            {renderPriorityPicker(
+                              rowKey,
+                              priorityId,
+                              (nextId) =>
+                                handlePrioritySelect(
+                                  row.id,
+                                  "pinnedSource",
+                                  nextId,
+                                  row
+                                )
                             )}
-                          >
-                            <span className="max-w-8 truncate">
-                              {prioritySymbol}
-                            </span>
-                          </span>
+                          </div>
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              aria-label={`Choose day: ${MY_LIST_DAY_LABELS[dayViewBucketId]}`}
+                              aria-haspopup="listbox"
+                              aria-expanded={activeDayPickerRowKey === rowKey}
+                              title={MY_LIST_DAY_LABELS[dayViewBucketId]}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setActiveSkillPickerRowKey(null);
+                                setActivePriorityPickerRowKey(null);
+                                setActiveDayPickerRowKey((currentRowKey) =>
+                                  currentRowKey === rowKey ? null : rowKey
+                                );
+                              }}
+                              tabIndex={open ? 0 : -1}
+                              className={clsx(
+                                "flex h-7 min-w-7 items-center justify-center rounded-full border px-1.5 outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/35",
+                                dayVisual.pillClassName,
+                                done && "text-white/42"
+                              )}
+                            >
+                              <DayIcon
+                                className="h-3.5 w-3.5"
+                                strokeWidth={1.9}
+                                aria-hidden="true"
+                              />
+                            </button>
+                            {renderDayPicker(rowKey, dayBucketId, (nextId) =>
+                              handleDaySelect(
+                                row.id,
+                                "pinnedSource",
+                                nextId,
+                                row
+                              )
+                            )}
+                          </div>
+                          {renderDeleteRowButton(row.id, "pinnedSource", row)}
                         </div>
-                        {renderDeleteRowButton(row.id, "pinnedSource", row)}
                       </div>
                     );
                   }
@@ -4819,6 +5128,12 @@ export function MyListSheet({
                       data-creator-xp-source="my-list-todo"
                       data-creator-xp-kind="todo"
                       data-my-list-manual-upgrade-row="true"
+                      onPointerDownCapture={() =>
+                        setActiveTodoRowKey(`manual:${row.id}`)
+                      }
+                      onFocusCapture={() =>
+                        setActiveTodoRowKey(`manual:${row.id}`)
+                      }
                       onPointerDown={(event) =>
                         startManualUpgradePointerPress(event, row)
                       }
@@ -4842,7 +5157,7 @@ export function MyListSheet({
                         }
                       }}
                       className={clsx(
-                        "relative flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-[background-color,box-shadow,opacity,transform] hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
+                        "group/todo-row relative flex min-h-8 select-none items-center gap-2 rounded-lg bg-transparent py-1 pl-3 pr-1.5 text-sm text-white/84 transition-[background-color,box-shadow,opacity,transform] hover:bg-white/[0.035] [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]",
                         open && activeView === "list" && "cursor-pointer",
                         (isDragging || activeManualReorderRowId === row.id) &&
                           "z-30 scale-[1.012] cursor-grabbing bg-white/[0.075] opacity-95 shadow-[0_12px_34px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/[0.13]"
@@ -4992,7 +5307,17 @@ export function MyListSheet({
                       )}
                       style={MY_LIST_MANUAL_UPGRADE_NO_SELECT_STYLE}
                     />
-                    <div className="-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0">
+                    <div
+                      className={clsx(
+                        "-mr-1 ml-auto flex shrink-0 items-center justify-end gap-0 transition-opacity duration-150 group-hover/todo-row:pointer-events-auto group-hover/todo-row:w-auto group-hover/todo-row:overflow-visible group-hover/todo-row:opacity-100 group-focus-within/todo-row:pointer-events-auto group-focus-within/todo-row:w-auto group-focus-within/todo-row:overflow-visible group-focus-within/todo-row:opacity-100",
+                        areTodoRowControlsRevealed(
+                          `manual:${row.id}`,
+                          isDragging || activeManualReorderRowId === row.id
+                        )
+                          ? "w-auto overflow-visible opacity-100 pointer-events-auto"
+                          : "w-0 overflow-hidden opacity-0 pointer-events-none"
+                      )}
+                    >
                       {(() => {
                         const priorityOption =
                           QUICK_CREATE_PRIORITY_OPTIONS.find(
@@ -5176,9 +5501,22 @@ export function MyListSheet({
 }
 
 function resolvePinnedSourceIcon(row: MyListPinnedSourceRow) {
+  if (row.sourceType === "GOAL") {
+    const goalIcon = row.goalIcon?.trim() || row.icon?.trim();
+    if (goalIcon) return goalIcon;
+
+    const monumentIcon = row.monumentIcon?.trim();
+    if (monumentIcon) return monumentIcon;
+
+    return "✦";
+  }
+
   const explicitIcon = row.icon?.trim();
   if (explicitIcon) return explicitIcon;
 
-  if (row.sourceType === "GOAL") return "✦";
   return "•";
+}
+
+function resolvePinnedProjectIcon(row: MyListPinnedSourceRow) {
+  return row.skillIcon?.trim() || row.icon?.trim() || "•";
 }
