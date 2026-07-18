@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   MyListSheet,
+  type MyListPinnedGoalRow,
   type MyListPinnedSourceRow,
   type MyListTaskXpContext,
 } from "@/components/my-list/MyListSheet";
@@ -24,6 +25,7 @@ import {
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
+import { normalizePriority } from "@/app/(app)/schedule/priorities/utils";
 import { dispatchCreatorXpRewardVisual } from "@/lib/effects/creatorXpRewardVisual";
 import type { CreatorXpBurstRect } from "@/lib/effects/creatorXpBurstBus";
 import {
@@ -35,6 +37,7 @@ import {
 import {
   loadPinnedSourceMyListItems,
   updatePinnedSourceMyListItemCompletion,
+  updatePinnedSourceMyListItemMetadata,
   type MyListPinnedSourceStorageItem,
 } from "@/lib/my-list/myListItemsStorage";
 
@@ -193,6 +196,17 @@ export function GlobalMyList({
           item.completedAt,
         ])
       );
+      const metadataByKey = new Map(
+        pinnedItems.map((item) => [
+          `${item.sourceType}:${item.sourceId}`,
+          {
+            priorityId: item.priorityId
+              ? normalizePriority(item.priorityId)
+              : null,
+            dayBucketId: item.dayBucketId,
+          },
+        ])
+      );
       const orderByKey = new Map(
         pinnedItems.map((item, index) => [
           `${item.sourceType}:${item.sourceId}`,
@@ -211,21 +225,29 @@ export function GlobalMyList({
             Boolean(entry[0] && entry[1])
           )
       );
+      const loadProjects = () => {
+        const query = supabase
+          .from("projects")
+          .select("id, name, priority, energy, stage, goal_id")
+          .eq("user_id", user.id);
+
+        return pinnedIds.GOAL.length > 0
+          ? query
+          : query.in("id", pinnedIds.PROJECT);
+      };
       const [goalsResult, projectsResult, tasksResult, habitsResult] =
         await Promise.all([
           pinnedIds.GOAL.length > 0
             ? supabase
                 .from("goals")
-                .select("id, name, emoji, priority, energy, status")
+                .select(
+                  "id, name, emoji, priority, energy, status, monument:monuments(title, emoji)"
+                )
                 .eq("user_id", user.id)
                 .in("id", pinnedIds.GOAL)
             : Promise.resolve({ data: [], error: null }),
-          pinnedIds.PROJECT.length > 0
-            ? supabase
-                .from("projects")
-                .select("id, name, priority, energy, stage")
-                .eq("user_id", user.id)
-                .in("id", pinnedIds.PROJECT)
+          pinnedIds.PROJECT.length > 0 || pinnedIds.GOAL.length > 0
+            ? loadProjects()
             : Promise.resolve({ data: [], error: null }),
           pinnedIds.TASK.length > 0
             ? supabase
@@ -256,6 +278,7 @@ export function GlobalMyList({
         priority: string | null;
         energy: string | null;
         stage: string | null;
+        goal_id?: string | null;
       }[];
       const projectIds = projectRows
         .map((project) => project.id)
@@ -294,12 +317,28 @@ export function GlobalMyList({
           priority: string | null;
           energy: string | null;
           status: string | null;
+          monument?:
+            | { title?: string | null; emoji?: string | null }
+            | { title?: string | null; emoji?: string | null }[]
+            | null;
         }[]).map((goal) => ({
+          ...(() => {
+            const monument = Array.isArray(goal.monument)
+              ? goal.monument[0]
+              : goal.monument;
+            return {
+              monumentIcon: monument?.emoji ?? null,
+              monumentName: monument?.title ?? null,
+            };
+          })(),
           id: goal.id,
           sourceType: "GOAL" as const,
           title: goal.name ?? "Untitled Goal",
+          goalIcon: goal.emoji ?? null,
           icon: goal.emoji ?? null,
           priority: goal.priority,
+          priorityId: metadataByKey.get(`GOAL:${goal.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`GOAL:${goal.id}`)?.dayBucketId ?? null,
           energy: goal.energy,
           stage: goal.status,
           completedAt: completionByKey.get(`GOAL:${goal.id}`) ?? null,
@@ -309,9 +348,14 @@ export function GlobalMyList({
           sourceType: "PROJECT" as const,
           title: project.name ?? "Untitled Project",
           icon: projectIconById.get(project.id) ?? null,
+          skillIcon: projectIconById.get(project.id) ?? null,
           priority: project.priority,
+          priorityId: metadataByKey.get(`PROJECT:${project.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`PROJECT:${project.id}`)?.dayBucketId ?? null,
           energy: project.energy,
           stage: project.stage,
+          goalId: project.goal_id ?? null,
+          isPinned: pinnedIds.PROJECT.includes(project.id),
           completedAt: completionByKey.get(`PROJECT:${project.id}`) ?? null,
         })),
         ...((tasksResult.data ?? []) as {
@@ -327,6 +371,8 @@ export function GlobalMyList({
           title: task.name ?? "Untitled Task",
           icon: task.skill_id ? skillIconById.get(task.skill_id) ?? null : null,
           priority: task.priority,
+          priorityId: metadataByKey.get(`TASK:${task.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`TASK:${task.id}`)?.dayBucketId ?? null,
           energy: task.energy,
           stage: task.stage,
           completedAt: completionByKey.get(`TASK:${task.id}`) ?? null,
@@ -343,6 +389,8 @@ export function GlobalMyList({
           title: habit.name ?? "Untitled Habit",
           icon: habit.skill_id ? skillIconById.get(habit.skill_id) ?? null : null,
           priority: "MEDIUM",
+          priorityId: metadataByKey.get(`HABIT:${habit.id}`)?.priorityId ?? null,
+          dayBucketId: metadataByKey.get(`HABIT:${habit.id}`)?.dayBucketId ?? null,
           energy: habit.energy,
           stage: habit.habit_type,
           completedAt: completionByKey.get(`HABIT:${habit.id}`) ?? null,
@@ -385,6 +433,8 @@ export function GlobalMyList({
             sourceId,
             done: false,
             completedAt: null,
+            priorityId: null,
+            dayBucketId: null,
             sortOrder: index,
           }))
         );
@@ -505,6 +555,30 @@ export function GlobalMyList({
       }),
     [pinnedSourceRows, scheduledTaskIds],
   );
+  const pinnedGoalRows = useMemo<MyListPinnedGoalRow[]>(
+    () => {
+      const goalRows = visiblePinnedSourceRows.filter(
+        (row): row is MyListPinnedSourceRow & { sourceType: "GOAL" } =>
+          row.sourceType === "GOAL"
+      );
+      const projects = pinnedSourceRows.filter(
+        (row) => row.sourceType === "PROJECT" && row.goalId
+      );
+
+      return goalRows.map((goal) => ({
+        ...goal,
+        projects: projects.filter((project) => project.goalId === goal.id),
+      }));
+    },
+    [pinnedSourceRows, visiblePinnedSourceRows]
+  );
+  const visibleTodoPinnedSourceRows = useMemo(
+    () =>
+      visiblePinnedSourceRows.filter(
+        (row) => row.sourceType !== "GOAL" && row.isPinned !== false
+      ),
+    [visiblePinnedSourceRows]
+  );
 
   const handleRemovePinnedSource = useCallback(
     (row: MyListPinnedSourceRow) => {
@@ -544,6 +618,37 @@ export function GlobalMyList({
         completedAt,
       }).catch((error) => {
         console.error("Failed to persist pinned My List completion", error);
+      });
+    },
+    [user?.id]
+  );
+
+  const handleUpdatePinnedSourceMetadata = useCallback(
+    (
+      row: MyListPinnedSourceRow,
+      updates: {
+        priorityId?: MyListPinnedSourceRow["priorityId"];
+        dayBucketId?: MyListPinnedSourceRow["dayBucketId"];
+      }
+    ) => {
+      if (!user?.id) return;
+
+      setPinnedSourceRows((currentRows) =>
+        currentRows.map((currentRow) =>
+          currentRow.sourceType === row.sourceType && currentRow.id === row.id
+            ? { ...currentRow, ...updates }
+            : currentRow
+        )
+      );
+
+      void updatePinnedSourceMyListItemMetadata({
+        userId: user.id,
+        sourceType: row.sourceType,
+        sourceId: row.id,
+        priorityId: updates.priorityId ?? undefined,
+        dayBucketId: updates.dayBucketId,
+      }).catch((error) => {
+        console.error("Failed to persist pinned My List metadata", error);
       });
     },
     [user?.id]
@@ -741,7 +846,8 @@ export function GlobalMyList({
       open={open}
       userId={user?.id ?? null}
       tasks={myListTasks}
-      pinnedSourceRows={visiblePinnedSourceRows}
+      pinnedSourceRows={visibleTodoPinnedSourceRows}
+      pinnedGoalRows={pinnedGoalRows}
       skills={skills}
       skillCategories={skillCategories}
       pendingTaskIds={pendingTaskIds}
@@ -749,6 +855,7 @@ export function GlobalMyList({
       enableScheduleTimelineDrag={enableScheduleTimelineDrag === true}
       onRemovePinnedSource={handleRemovePinnedSource}
       onTogglePinnedSourceCompletion={handleTogglePinnedSourceCompletion}
+      onUpdatePinnedSourceMetadata={handleUpdatePinnedSourceMetadata}
       onToggleTask={handleToggleTask}
       onTaskSkillSelect={handleTaskSkillSelect}
       onOpenChange={(nextOpen) => {

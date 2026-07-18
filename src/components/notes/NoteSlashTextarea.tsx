@@ -108,6 +108,23 @@ import {
 } from "@/lib/nutrition/foods";
 import { getFoodIcon, type FoodIcon } from "@/lib/nutrition/foodIcons";
 import {
+  getChefCuisinesWithCounts,
+  getChefDishFamiliesForCuisine,
+  getChefOptionGroupsForDishFamily,
+  getChefRecipesForNode,
+  getChefStylesForDishFamily,
+  getDefaultChefRecipeOptions,
+  resolveChefRecipeIngredients,
+  resolveChefRecipeName,
+} from "@/lib/nutrition/chefRecipes";
+import {
+  calculateChefIngredientNutrition,
+  calculateResolvedChefRecipeAvailability,
+  calculateResolvedChefRecipeNutrition,
+  formatChefMacroSummary,
+  formatChefNutritionNumber,
+} from "@/lib/nutrition/chefRecipeNutrition";
+import {
   DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
   DEFAULT_NUTRITION_RECIPE_ICON,
   type NutritionMealDraft,
@@ -124,6 +141,16 @@ import {
   FITNESS_WORKOUT_FOCUS_SESSION_STORAGE_KEY,
   type FitnessWorkoutFocusSessionPayload,
 } from "@/lib/focus/fitnessWorkoutFocusSession";
+import {
+  FITNESS_ROUTINE_GROUPS,
+  routinePrescriptionToWorkoutDetail,
+  type FitnessRoutineTemplate,
+} from "@/lib/fitness/routineTemplates";
+import {
+  FITNESS_PLAN_TEMPLATES,
+  resolveFitnessPlanRoutineSequence,
+  type FitnessPlanTemplate,
+} from "@/lib/fitness/planTemplates";
 import { cn } from "@/lib/utils";
 
 type SlashCommandId =
@@ -287,6 +314,16 @@ const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
   duration: 0.22,
   ease: [0.22, 1, 0.36, 1],
 } as const;
+const DEFAULT_CHEF_CATALOG_ICON = "🍽️";
+const CHEF_CATALOG_EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+
+function resolveChefCatalogIcon(icon: unknown): string {
+  if (typeof icon !== "string") return DEFAULT_CHEF_CATALOG_ICON;
+  const normalizedIcon = icon.trim();
+  return normalizedIcon && CHEF_CATALOG_EMOJI_PATTERN.test(normalizedIcon)
+    ? normalizedIcon
+    : DEFAULT_CHEF_CATALOG_ICON;
+}
 const NUTRITION_FOOD_ACTION_TABS = [
   { id: "search", label: "Search", icon: Search },
   { id: "grocery", label: "Grocery", icon: ShoppingBasket },
@@ -337,27 +374,7 @@ type FitnessWorkoutExerciseDetail = {
 type FitnessWorkoutLogExerciseDetail = FitnessWorkoutExerciseDetail & {
   weight: string;
 };
-type FitnessRoutineSample = {
-  name: string;
-  focus: string;
-  exercises: string[];
-};
-type FitnessRoutineGroupSample = {
-  name: string;
-  routines: FitnessRoutineSample[];
-};
-type FitnessPlanSample = {
-  name: string;
-  description: string;
-  equipment: string[];
-  levels: string[];
-  daysPerWeek: number[];
-  goals: string[];
-  progressionNote: string;
-  sessionsByDays: Record<number, Array<{ label: string; exercises: string[] }>>;
-};
-const FITNESS_PLAN_SESSION_LENGTH_OPTIONS = [30, 45, 60] as const;
-type FitnessPlanSessionLength = (typeof FITNESS_PLAN_SESSION_LENGTH_OPTIONS)[number];
+type FitnessPlanSessionLength = number;
 type FitnessPlanSetup = {
   goal: string;
   level: string;
@@ -1242,286 +1259,6 @@ function formatFitnessWorkoutExerciseDetail(
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 }
-const FITNESS_ROUTINE_GROUP_SAMPLES: FitnessRoutineGroupSample[] = [
-  {
-    name: "Calisthenics",
-    routines: [
-      {
-        name: "Calisthenics Push / Chest",
-        focus: "Chest, shoulders, triceps",
-        exercises: ["Push-up", "Decline Push-up", "Dip", "Pike Push-up"],
-      },
-      {
-        name: "Calisthenics Pull",
-        focus: "Back, biceps, grip",
-        exercises: ["Pull-up", "Chin-up", "Inverted Row", "Dead Hang"],
-      },
-      {
-        name: "Calisthenics Legs",
-        focus: "Quads, glutes, hamstrings",
-        exercises: ["Bodyweight Squat", "Split Squat", "Reverse Lunge", "Nordic Curl"],
-      },
-      {
-        name: "Calisthenics Core",
-        focus: "Trunk strength and control",
-        exercises: ["Plank", "Side Plank", "Hanging Knee Raise", "Dead Bug"],
-      },
-      {
-        name: "Calisthenics Full Body",
-        focus: "Total-body strength",
-        exercises: ["Push-up", "Pull-up", "Bodyweight Squat", "Lunge", "Plank"],
-      },
-    ],
-  },
-  {
-    name: "Weightlifting",
-    routines: [
-      {
-        name: "Weightlifting Chest",
-        focus: "Chest and triceps",
-        exercises: ["Bench Press", "Incline Bench Press", "Dumbbell Press", "Chest Fly"],
-      },
-      {
-        name: "Weightlifting Back",
-        focus: "Lats and upper back",
-        exercises: ["Bent-Over Row", "Lat Pulldown", "Dumbbell Row", "Face Pull"],
-      },
-      {
-        name: "Weightlifting Legs",
-        focus: "Quads, glutes, hamstrings",
-        exercises: ["Back Squat", "Romanian Deadlift", "Walking Lunge", "Leg Curl", "Calf Raise"],
-      },
-      {
-        name: "Weightlifting Shoulders",
-        focus: "Delts and upper traps",
-        exercises: ["Shoulder Press", "Lateral Raise", "Front Raise", "Reverse Fly"],
-      },
-      {
-        name: "Weightlifting Arms",
-        focus: "Biceps and triceps",
-        exercises: ["Curl", "Hammer Curl", "Triceps Extension", "Skull Crusher"],
-      },
-      {
-        name: "Weightlifting Full Body",
-        focus: "Balanced total-body session",
-        exercises: ["Goblet Squat", "Bench Press", "Dumbbell Row", "Romanian Deadlift", "Shoulder Press"],
-      },
-    ],
-  },
-  {
-    name: "Powerlifting",
-    routines: [
-      { name: "Squat Day", focus: "Squat strength", exercises: ["Back Squat", "Front Squat", "Romanian Deadlift", "Leg Curl"] },
-      { name: "Bench Day", focus: "Bench strength", exercises: ["Bench Press", "Close-Grip Push-up", "Dumbbell Press", "Triceps Extension"] },
-      { name: "Deadlift Day", focus: "Deadlift strength", exercises: ["Deadlift", "Romanian Deadlift", "Bent-Over Row", "Dead Hang"] },
-      { name: "Upper Accessories", focus: "Upper-body support work", exercises: ["Shoulder Press", "Dumbbell Row", "Face Pull", "Hammer Curl", "Triceps Extension"] },
-      { name: "Lower Accessories", focus: "Lower-body support work", exercises: ["Front Squat", "Hip Thrust", "Walking Lunge", "Leg Curl", "Calf Raise"] },
-    ],
-  },
-  {
-    name: "Athletic",
-    routines: [
-      { name: "Conditioning Circuit", focus: "Work capacity", exercises: ["Jump Rope", "Burpee", "Kettlebell Swing", "Mountain Climber"] },
-      { name: "Explosive Lower Body", focus: "Speed and power", exercises: ["Broad Jump", "Box Jump", "Skater Jump", "Hang Clean"] },
-      { name: "Carries & Grip", focus: "Loaded movement and grip", exercises: ["Farmer's Carry", "Suitcase Carry", "Overhead Carry", "Dead Hang", "Plate Pinch"] },
-      { name: "Core Athletic Stability", focus: "Bracing and rotation control", exercises: ["Pallof Press", "Bird Dog", "Side Plank", "Dead Bug", "Russian Twist"] },
-    ],
-  },
-  {
-    name: "Mobility / Recovery",
-    routines: [
-      { name: "Full Body Mobility", focus: "Head-to-toe mobility", exercises: ["World's Greatest Stretch", "Hip Opener", "Arm Circles", "Thoracic Rotation"] },
-      { name: "Hips & Hamstrings", focus: "Lower-body range of motion", exercises: ["Hip Opener", "Hamstring Stretch", "Couch Stretch", "Child's Pose"] },
-      { name: "Shoulders & T-Spine", focus: "Upper-body mobility", exercises: ["Arm Circles", "Thoracic Rotation", "Dead Hang", "Child's Pose"] },
-      { name: "Recovery Reset", focus: "Easy recovery flow", exercises: ["Child's Pose", "Hamstring Stretch", "Couch Stretch", "Thoracic Rotation"] },
-    ],
-  },
-];
-const FITNESS_PLAN_SAMPLES: FitnessPlanSample[] = [
-  {
-    name: "Push Pull Legs",
-    description: "Build muscle through a repeating push, pull, legs split.",
-    equipment: ["gym", "hybrid"],
-    levels: ["beginner", "intermediate", "advanced"],
-    daysPerWeek: [3, 4, 5, 6],
-    goals: ["build muscle", "get stronger", "get toned / lean"],
-    progressionNote: "Progress by hitting the top of the rep range, then increasing weight.",
-    sessionsByDays: {
-      3: [
-        { label: "Push", exercises: ["Bench Press", "Shoulder Press", "Dip", "Push-up"] },
-        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row", "Dumbbell Row"] },
-        { label: "Legs", exercises: ["Goblet Squat", "Lunge", "Deadlift", "Plank"] },
-      ],
-      4: [
-        { label: "Push", exercises: ["Bench Press", "Shoulder Press", "Dip", "Push-up"] },
-        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row", "Dumbbell Row"] },
-        { label: "Legs", exercises: ["Goblet Squat", "Lunge", "Deadlift", "Plank"] },
-        { label: "Upper Pump", exercises: ["Dumbbell Press", "Lat Pulldown", "Row", "Dip"] },
-      ],
-      5: [
-        { label: "Push Strength", exercises: ["Bench Press", "Shoulder Press", "Dip"] },
-        { label: "Pull Strength", exercises: ["Pull-up", "Chin-up", "Row"] },
-        { label: "Legs Strength", exercises: ["Goblet Squat", "Deadlift", "Lunge"] },
-        { label: "Push Volume", exercises: ["Dumbbell Press", "Push-up", "Shoulder Press"] },
-        { label: "Pull Volume", exercises: ["Lat Pulldown", "Dumbbell Row", "Dead Hang"] },
-      ],
-      6: [
-        { label: "Push A", exercises: ["Bench Press", "Shoulder Press", "Dip"] },
-        { label: "Pull A", exercises: ["Pull-up", "Row", "Chin-up"] },
-        { label: "Legs A", exercises: ["Goblet Squat", "Lunge", "Plank"] },
-        { label: "Push B", exercises: ["Dumbbell Press", "Push-up", "Push Press"] },
-        { label: "Pull B", exercises: ["Lat Pulldown", "Dumbbell Row", "Dead Hang"] },
-        { label: "Legs B", exercises: ["Deadlift", "Romanian Deadlift", "Suitcase Carry"] },
-      ],
-    },
-  },
-  {
-    name: "Upper / Lower",
-    description: "Balanced strength and muscle split across upper and lower sessions.",
-    equipment: ["gym", "dumbbells", "hybrid"],
-    levels: ["beginner", "intermediate", "advanced"],
-    daysPerWeek: [2, 4],
-    goals: ["build muscle", "get stronger", "general fitness"],
-    progressionNote: "Progress by hitting the top of the rep range, then increasing weight.",
-    sessionsByDays: {
-      2: [
-        { label: "Upper", exercises: ["Bench Press", "Row", "Shoulder Press", "Pull-up"] },
-        { label: "Lower", exercises: ["Goblet Squat", "Deadlift", "Lunge", "Plank"] },
-      ],
-      4: [
-        { label: "Upper Strength", exercises: ["Bench Press", "Pull-up", "Shoulder Press", "Row"] },
-        { label: "Lower Strength", exercises: ["Goblet Squat", "Deadlift", "Lunge"] },
-        { label: "Upper Volume", exercises: ["Dumbbell Press", "Lat Pulldown", "Dumbbell Row", "Dip"] },
-        { label: "Lower Volume", exercises: ["Romanian Deadlift", "Lunge", "Suitcase Carry", "Plank"] },
-      ],
-    },
-  },
-  {
-    name: "Full Body Foundation",
-    description: "Simple total-body training for consistency, strength, and base fitness.",
-    equipment: ["gym", "dumbbells", "home", "hybrid"],
-    levels: ["beginner", "intermediate"],
-    daysPerWeek: [2, 3, 4],
-    goals: ["general fitness", "build muscle", "get toned / lean"],
-    progressionNote: "Progress by adding reps, cleaning up form, or increasing load when sets feel steady.",
-    sessionsByDays: {
-      2: [
-        { label: "Squat / Push / Pull", exercises: ["Goblet Squat", "Push-up", "Row", "Plank"] },
-        { label: "Hinge / Push / Pull", exercises: ["Romanian Deadlift", "Dumbbell Press", "Pull-up", "Suitcase Carry"] },
-      ],
-      3: [
-        { label: "Squat / Push / Pull", exercises: ["Goblet Squat", "Push-up", "Row", "Plank"] },
-        { label: "Hinge / Push / Pull", exercises: ["Romanian Deadlift", "Dumbbell Press", "Pull-up", "Farmer's Carry"] },
-        { label: "Legs / Upper / Core", exercises: ["Lunge", "Bench Press", "Lat Pulldown", "Plank"] },
-      ],
-      4: [
-        { label: "Squat / Push / Pull", exercises: ["Goblet Squat", "Push-up", "Row"] },
-        { label: "Hinge / Core", exercises: ["Romanian Deadlift", "Suitcase Carry", "Plank"] },
-        { label: "Legs / Upper", exercises: ["Lunge", "Dumbbell Press", "Lat Pulldown"] },
-        { label: "Conditioning Base", exercises: ["Kettlebell Swing", "Farmer's Carry", "Mountain Climber"] },
-      ],
-    },
-  },
-  {
-    name: "Calisthenics",
-    description: "Build control, strength, and muscle using bodyweight progressions.",
-    equipment: ["calisthenics", "home", "hybrid"],
-    levels: ["beginner", "intermediate", "advanced"],
-    daysPerWeek: [2, 3, 4, 5],
-    goals: ["build muscle", "get stronger", "athleticism", "general fitness"],
-    progressionNote: "Progress through harder variations, cleaner control, slower tempo, or more reps.",
-    sessionsByDays: {
-      2: [
-        { label: "Push / Legs", exercises: ["Push-up", "Dip", "Bodyweight Squat", "Plank"] },
-        { label: "Pull / Core", exercises: ["Pull-up", "Chin-up", "Row", "Dead Hang"] },
-      ],
-      3: [
-        { label: "Push", exercises: ["Push-up", "Dip", "Decline Push-up", "Plank"] },
-        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row", "Dead Hang"] },
-        { label: "Legs-Core", exercises: ["Bodyweight Squat", "Lunge", "Mountain Climber", "Plank"] },
-      ],
-      4: [
-        { label: "Push", exercises: ["Push-up", "Dip", "Decline Push-up"] },
-        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row"] },
-        { label: "Legs-Core", exercises: ["Bodyweight Squat", "Lunge", "Plank"] },
-        { label: "Skills", exercises: ["Dead Hang", "Arm Circles", "Hip Opener", "World's Greatest Stretch"] },
-      ],
-      5: [
-        { label: "Push", exercises: ["Push-up", "Dip", "Decline Push-up"] },
-        { label: "Pull", exercises: ["Pull-up", "Chin-up", "Row"] },
-        { label: "Legs-Core", exercises: ["Bodyweight Squat", "Lunge", "Plank"] },
-        { label: "Skills", exercises: ["Dead Hang", "Arm Circles", "Hip Opener"] },
-        { label: "Conditioning", exercises: ["Burpee", "Mountain Climber", "Jumping Jack"] },
-      ],
-    },
-  },
-  {
-    name: "Athletic Conditioning",
-    description: "Improve work capacity, movement, conditioning, and core strength.",
-    equipment: ["gym", "home", "hybrid"],
-    levels: ["beginner", "intermediate", "advanced"],
-    daysPerWeek: [2, 3, 4, 5],
-    goals: ["athleticism", "get toned / lean", "general fitness"],
-    progressionNote: "Progress with more rounds, longer intervals, or shorter rest.",
-    sessionsByDays: {
-      2: [
-        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge", "Plank"] },
-        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber", "Farmer's Carry"] },
-      ],
-      3: [
-        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge", "Plank"] },
-        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber"] },
-        { label: "Carries-Core", exercises: ["Farmer's Carry", "Suitcase Carry", "Dead Hang", "Plank"] },
-      ],
-      4: [
-        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge"] },
-        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber"] },
-        { label: "Carries-Core", exercises: ["Farmer's Carry", "Suitcase Carry", "Plank"] },
-        { label: "Mobility-Conditioning", exercises: ["World's Greatest Stretch", "Hip Opener", "Skater Jump"] },
-      ],
-      5: [
-        { label: "Circuit", exercises: ["Kettlebell Swing", "Push-up", "Lunge"] },
-        { label: "Intervals", exercises: ["Burpee", "Jump Rope", "Mountain Climber"] },
-        { label: "Carries-Core", exercises: ["Farmer's Carry", "Suitcase Carry", "Plank"] },
-        { label: "Mobility-Conditioning", exercises: ["World's Greatest Stretch", "Hip Opener", "Skater Jump"] },
-        { label: "Power", exercises: ["Broad Jump", "Skater Jump", "Push Press"] },
-      ],
-    },
-  },
-  {
-    name: "Mobility / Recovery",
-    description: "Maintain joints, range, control, and recovery between harder sessions.",
-    equipment: ["home", "calisthenics", "hybrid"],
-    levels: ["beginner", "intermediate", "advanced"],
-    daysPerWeek: [2, 3, 4, 5],
-    goals: ["mobility", "general fitness", "recovery"],
-    progressionNote: "Progress with cleaner positions, longer holds, slower control, or smoother breathing.",
-    sessionsByDays: {
-      2: [
-        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
-        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Plank"] },
-      ],
-      3: [
-        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
-        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Bodyweight Squat"] },
-        { label: "Core Control", exercises: ["Plank", "Mountain Climber", "Suitcase Carry"] },
-      ],
-      4: [
-        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
-        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Bodyweight Squat"] },
-        { label: "Core Control", exercises: ["Plank", "Mountain Climber", "Suitcase Carry"] },
-        { label: "Recovery Flow", exercises: ["World's Greatest Stretch", "Hip Opener", "Arm Circles"] },
-      ],
-      5: [
-        { label: "Upper Mobility", exercises: ["Arm Circles", "Dead Hang", "World's Greatest Stretch"] },
-        { label: "Lower Mobility", exercises: ["Hip Opener", "Lunge", "Bodyweight Squat"] },
-        { label: "Core Control", exercises: ["Plank", "Mountain Climber", "Suitcase Carry"] },
-        { label: "Recovery Flow", exercises: ["World's Greatest Stretch", "Hip Opener", "Arm Circles"] },
-        { label: "Light Conditioning", exercises: ["Jumping Jack", "Farmer's Carry", "Plank"] },
-      ],
-    },
-  },
-];
 const GROCERY_FOOD_ACTION_TAB_IDS = new Set<NutritionFoodActionTabId>([
   "search",
   "grocery",
@@ -6927,6 +6664,12 @@ export function NoteDatabaseEntrySheet({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedNutritionFoodAction, setSelectedNutritionFoodAction] =
     useState<NutritionFoodActionTabId>("search");
+  const [openChefCuisineId, setOpenChefCuisineId] = useState<string | null>(null);
+  const [openChefDishFamilyKey, setOpenChefDishFamilyKey] = useState<string | null>(null);
+  const [selectedChefStyleId, setSelectedChefStyleId] = useState<string | null>(null);
+  const [selectedChefOptions, setSelectedChefOptions] = useState<Record<string, string>>({});
+  const [selectedChefTags, setSelectedChefTags] = useState<string[]>([]);
+  const [expandedChefRecipeId, setExpandedChefRecipeId] = useState<string | null>(null);
   const [selectedFitnessAction, setSelectedFitnessAction] =
     useState<FitnessActionTabId>("start");
   const [selectedFitnessWorkoutExercises, setSelectedFitnessWorkoutExercises] = useState<
@@ -7608,7 +7351,11 @@ export function NoteDatabaseEntrySheet({
   }, [isDefaultNutritionDatabase, selectedNutritionFoodAction]);
 
   useEffect(() => {
-    if (!isGroceryDatabase || selectedNutritionFoodAction !== "grocery") {
+    const shouldLoadChefResources = selectedNutritionFoodAction === "chef" &&
+      (isGroceryDatabase || isDefaultNutritionDatabase);
+    const shouldLoadGroceryResources = isGroceryDatabase &&
+      selectedNutritionFoodAction === "grocery";
+    if (!shouldLoadChefResources && !shouldLoadGroceryResources) {
       setGroceryResourceItems([]);
       setIsGroceryResourcesLoading(false);
       setGroceryResourcesError(null);
@@ -7646,7 +7393,7 @@ export function NoteDatabaseEntrySheet({
     return () => {
       controller.abort();
     };
-  }, [isGroceryDatabase, selectedNutritionFoodAction]);
+  }, [isDefaultNutritionDatabase, isGroceryDatabase, selectedNutritionFoodAction]);
 
   useEffect(() => {
     if (!isDefaultNutritionDatabase || selectedNutritionFoodAction !== "recent") {
@@ -8153,81 +7900,42 @@ export function NoteDatabaseEntrySheet({
     void hapticSnap();
   }
 
-  function getFitnessRoutineExercise(
-    routine: FitnessRoutineSample,
-    exerciseName: string,
-  ): FitnessExerciseSample {
-    return (
-      FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName) ?? {
-        name: exerciseName,
-        movementType: "Routine",
-        primaryArea: routine.focus,
-        equipment: "",
-        guidance: "",
-        notes: "",
-      }
-    );
-  }
 
-  function loadFitnessWorkoutExercises(
-    workoutName: string,
-    workoutExercises: FitnessExerciseSample[],
+  function loadFitnessRoutineTemplate(
+    routine: FitnessRoutineTemplate,
+    workoutName = routine.title,
   ) {
-    setSelectedFitnessWorkoutExercises((currentExercises) => {
-      const currentExerciseIds = new Set(currentExercises.map(getFitnessExerciseId));
-      const nextExercises = workoutExercises.filter(
-        (exercise) => !currentExerciseIds.has(getFitnessExerciseId(exercise)),
-      );
+    const routineExercises = routine.exercises.map((prescription) => {
+      const exercise = FITNESS_EXERCISE_SAMPLE_BY_NAME.get(prescription.name);
 
-      return nextExercises.length > 0
-        ? [...currentExercises, ...nextExercises]
-        : currentExercises;
+      if (!exercise) {
+        throw new Error(`Routine exercise is missing from fitness seeds: ${prescription.name}`);
+      }
+
+      return exercise;
     });
-    setFitnessWorkoutExerciseDetailsById((currentDetails) => {
-      const nextDetails = { ...currentDetails };
+    const routineDetails = routine.exercises.reduce<
+      Record<string, FitnessWorkoutExerciseDetail>
+    >((details, prescription) => {
+      details[prescription.name] = routinePrescriptionToWorkoutDetail(prescription);
+      return details;
+    }, {});
 
-      workoutExercises.forEach((exercise) => {
-        const exerciseId = getFitnessExerciseId(exercise);
-
-        if (!nextDetails[exerciseId]) {
-          nextDetails[exerciseId] = getInitialFitnessWorkoutExerciseDetail(exercise);
-        }
-      });
-
-      return nextDetails;
-    });
+    setSelectedFitnessWorkoutExercises(routineExercises);
+    setFitnessWorkoutExerciseDetailsById(routineDetails);
+    setFitnessWorkoutLogDetailsById({});
     setSelectedFitnessRoutineName(workoutName);
     setIsFitnessWorkoutReviewOpen(false);
     selectFitnessAction("start");
     void hapticSoftTick();
   }
 
-  function selectFitnessRoutine(routine: FitnessRoutineSample) {
-    const routineExercises = routine.exercises.map((exerciseName) =>
-      getFitnessRoutineExercise(routine, exerciseName),
-    );
-
-    loadFitnessWorkoutExercises(routine.name, routineExercises);
+  function selectFitnessRoutine(routine: FitnessRoutineTemplate) {
+    loadFitnessRoutineTemplate(routine);
   }
 
-  function getFitnessPlanExercise(
-    plan: FitnessPlanSample,
-    exerciseName: string,
-  ): FitnessExerciseSample {
-    return (
-      FITNESS_EXERCISE_SAMPLE_BY_NAME.get(exerciseName) ?? {
-        name: exerciseName,
-        movementType: "Plan",
-        primaryArea: plan.name,
-        equipment: "",
-        guidance: "",
-        notes: "",
-      }
-    );
-  }
-
-  function startFitnessPlan(plan: FitnessPlanSample) {
-    setSelectedFitnessPlanName(plan.name);
+  function startFitnessPlan(plan: FitnessPlanTemplate) {
+    setSelectedFitnessPlanName(plan.id);
     setSelectedFitnessPlanSetup({});
     void hapticSoftTick();
   }
@@ -8255,26 +7963,14 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function getFitnessPlanSessions(
-    plan: FitnessPlanSample,
-    setup: Pick<FitnessPlanSetup, "daysPerWeek">,
-  ) {
-    return plan.sessionsByDays[setup.daysPerWeek] ?? [];
-  }
-
-  function loadFirstFitnessPlanWorkout(plan: FitnessPlanSample) {
+  function loadFirstFitnessPlanWorkout(plan: FitnessPlanTemplate) {
     if (!isFitnessPlanSetupReady(selectedFitnessPlanSetup)) return;
 
-    const firstPlanSession = getFitnessPlanSessions(plan, selectedFitnessPlanSetup)[0];
+    const firstRoutine = resolveFitnessPlanRoutineSequence(plan)[0];
 
-    if (!firstPlanSession) return;
+    if (!firstRoutine) return;
 
-    loadFitnessWorkoutExercises(
-      `${plan.name} · Session 1`,
-      firstPlanSession.exercises.map((exerciseName) =>
-        getFitnessPlanExercise(plan, exerciseName),
-      ),
-    );
+    loadFitnessRoutineTemplate(firstRoutine, `${plan.title} · ${firstRoutine.title}`);
   }
 
   function updateFitnessWorkoutExerciseDetail(
@@ -9584,24 +9280,21 @@ export function NoteDatabaseEntrySheet({
       <div className="mt-3 space-y-2">
         <div className="px-1">
           <p className="text-sm font-semibold text-white/82">Routines</p>
-          <p className="mt-0.5 text-xs font-medium text-white/38">
-            Reusable workout sessions made from exercises.
-          </p>
         </div>
         <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
-          {FITNESS_ROUTINE_GROUP_SAMPLES.map((routineGroup, groupIndex) => {
-            const isGroupOpen = expandedFitnessRoutineGroups.has(routineGroup.name);
+          {FITNESS_ROUTINE_GROUPS.map((routineGroup, groupIndex) => {
+            const isGroupOpen = expandedFitnessRoutineGroups.has(routineGroup.id);
 
             return (
-              <Fragment key={routineGroup.name}>
+              <Fragment key={routineGroup.id}>
                 <button
                   type="button"
                   aria-expanded={isGroupOpen}
                   onClick={() => {
                     setExpandedFitnessRoutineGroups((currentGroups) => {
                       const nextGroups = new Set(currentGroups);
-                      if (nextGroups.has(routineGroup.name)) nextGroups.delete(routineGroup.name);
-                      else nextGroups.add(routineGroup.name);
+                      if (nextGroups.has(routineGroup.id)) nextGroups.delete(routineGroup.id);
+                      else nextGroups.add(routineGroup.id);
                       return nextGroups;
                     });
                   }}
@@ -9620,7 +9313,7 @@ export function NoteDatabaseEntrySheet({
                     aria-hidden="true"
                   />
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                    {routineGroup.name}
+                    {routineGroup.title}
                   </span>
                   <span className="shrink-0 text-[11px] font-semibold text-white/38">
                     {routineGroup.routines.length} routines
@@ -9630,13 +9323,15 @@ export function NoteDatabaseEntrySheet({
                   <div className="space-y-2 border-t border-white/[0.045] bg-black/20 p-2">
                     {routineGroup.routines.map((routine) => (
                       <div
-                        key={routine.name}
+                        key={routine.id}
                         className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-white/86">{routine.name}</p>
-                            <p className="mt-1 text-xs font-medium text-white/42">{routine.focus}</p>
+                            <p className="text-sm font-semibold text-white/86">{routine.title}</p>
+                            <p className="mt-1 text-xs font-medium text-white/42">
+                              {routine.goal} · {routine.equipment} · {routine.durationMinutes} min
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -9646,16 +9341,6 @@ export function NoteDatabaseEntrySheet({
                             <Check className="h-3.5 w-3.5" aria-hidden="true" />
                             Use
                           </button>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {routine.exercises.map((exerciseName) => (
-                            <span
-                              key={exerciseName}
-                              className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50"
-                            >
-                              {exerciseName}
-                            </span>
-                          ))}
                         </div>
                       </div>
                     ))}
@@ -9670,13 +9355,13 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderFitnessPlanBrowser() {
-    const selectedFitnessPlan = FITNESS_PLAN_SAMPLES.find(
-      (plan) => plan.name === selectedFitnessPlanName,
+    const selectedFitnessPlan = FITNESS_PLAN_TEMPLATES.find(
+      (plan) => plan.id === selectedFitnessPlanName,
     );
     const isSelectedFitnessPlanReady = isFitnessPlanSetupReady(selectedFitnessPlanSetup);
     const selectedFitnessPlanSessions =
       selectedFitnessPlan && isSelectedFitnessPlanReady
-        ? getFitnessPlanSessions(selectedFitnessPlan, selectedFitnessPlanSetup)
+        ? resolveFitnessPlanRoutineSequence(selectedFitnessPlan)
         : [];
 
     function formatFitnessPlanLabel(value: string) {
@@ -9684,14 +9369,6 @@ export function NoteDatabaseEntrySheet({
         .split(" ")
         .map((word) => (word === "/" ? word : `${word.charAt(0).toUpperCase()}${word.slice(1)}`))
         .join(" ");
-    }
-
-    function getFitnessPlanRangeLabel(values: string[]) {
-      if (values.length <= 1) return formatFitnessPlanLabel(values[0] ?? "");
-
-      return `${formatFitnessPlanLabel(values[0])}-${formatFitnessPlanLabel(
-        values[values.length - 1],
-      )}`;
     }
 
     function getFitnessPlanDaysLabel(daysPerWeek: number[]) {
@@ -9756,7 +9433,7 @@ export function NoteDatabaseEntrySheet({
                   Plan setup
                 </p>
                 <p className="mt-1 text-sm font-semibold text-white/88">
-                  {selectedFitnessPlan.name}
+                  {selectedFitnessPlan.title}
                 </p>
                 <p className="mt-1 text-xs font-medium text-white/46">
                   {selectedFitnessPlan.description}
@@ -9770,7 +9447,7 @@ export function NoteDatabaseEntrySheet({
             </div>
             <div className="mt-3 space-y-3">
               {renderFitnessPlanOptionGroup(
-                selectedFitnessPlan.goals.map((goal) =>
+                [selectedFitnessPlan.goal].map((goal) =>
                   renderFitnessPlanOptionButton(
                     formatFitnessPlanLabel(goal),
                     goal,
@@ -9781,7 +9458,7 @@ export function NoteDatabaseEntrySheet({
                 "Goal",
               )}
               {renderFitnessPlanOptionGroup(
-                selectedFitnessPlan.levels.map((level) =>
+                [selectedFitnessPlan.level].map((level) =>
                   renderFitnessPlanOptionButton(
                     formatFitnessPlanLabel(level),
                     level,
@@ -9792,7 +9469,7 @@ export function NoteDatabaseEntrySheet({
                 "Level",
               )}
               {renderFitnessPlanOptionGroup(
-                selectedFitnessPlan.equipment.map((equipment) =>
+                [selectedFitnessPlan.equipment].map((equipment) =>
                   renderFitnessPlanOptionButton(
                     formatFitnessPlanLabel(equipment),
                     equipment,
@@ -9803,7 +9480,7 @@ export function NoteDatabaseEntrySheet({
                 "Equipment",
               )}
               {renderFitnessPlanOptionGroup(
-                selectedFitnessPlan.daysPerWeek.map((daysPerWeek) =>
+                selectedFitnessPlan.daysPerWeekOptions.map((daysPerWeek) =>
                   renderFitnessPlanOptionButton(
                     `${daysPerWeek} days/week`,
                     daysPerWeek,
@@ -9814,7 +9491,7 @@ export function NoteDatabaseEntrySheet({
                 "Days/week",
               )}
               {renderFitnessPlanOptionGroup(
-                FITNESS_PLAN_SESSION_LENGTH_OPTIONS.map((sessionLength) =>
+                selectedFitnessPlan.sessionLengthOptions.map((sessionLength) =>
                   renderFitnessPlanOptionButton(
                     `${sessionLength} min`,
                     sessionLength,
@@ -9826,14 +9503,14 @@ export function NoteDatabaseEntrySheet({
               )}
             </div>
             <p className="mt-3 rounded-lg border border-white/[0.055] bg-black/18 px-2.5 py-2 text-[11px] font-medium leading-5 text-white/44">
-              {selectedFitnessPlan.progressionNote}
+              Routines repeat in order as the plan&apos;s workout cycle.
             </p>
             {isSelectedFitnessPlanReady ? (
               <div className="mt-3 rounded-lg border border-white/[0.055] bg-black/24 p-2.5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-white/82">
-                      {selectedFitnessPlan.name}
+                      {selectedFitnessPlan.title}
                     </p>
                     <p className="mt-1 text-[11px] font-medium leading-5 text-white/42">
                       {formatFitnessPlanLabel(selectedFitnessPlanSetup.goal)} ·{" "}
@@ -9853,9 +9530,9 @@ export function NoteDatabaseEntrySheet({
                   </button>
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                  {selectedFitnessPlanSessions.map((session, sessionIndex) => (
+                  {selectedFitnessPlanSessions.map((routine, sessionIndex) => (
                     <div
-                      key={`${selectedFitnessPlan.name}-${session.label}-${sessionIndex}`}
+                      key={`${selectedFitnessPlan.id}-${routine.id}-${sessionIndex}`}
                       className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.03] px-2.5 py-2"
                     >
                       <span className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-[11px] font-semibold text-white/58">
@@ -9866,7 +9543,7 @@ export function NoteDatabaseEntrySheet({
                           Session {sessionIndex + 1}
                         </p>
                         <p className="mt-0.5 truncate text-[11px] font-medium text-white/34">
-                          {session.label}
+                          {routine.title}
                         </p>
                       </div>
                     </div>
@@ -9877,14 +9554,14 @@ export function NoteDatabaseEntrySheet({
           </div>
         ) : null}
         <div className="space-y-2">
-          {FITNESS_PLAN_SAMPLES.map((plan) => (
+          {FITNESS_PLAN_TEMPLATES.map((plan) => (
             <div
-              key={plan.name}
+              key={plan.id}
               className="rounded-xl border border-white/[0.055] bg-black/42 p-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white/86">{plan.name}</p>
+                  <p className="text-sm font-semibold text-white/86">{plan.title}</p>
                   <p className="mt-1 text-xs font-medium text-white/42">
                     {plan.description}
                   </p>
@@ -9900,13 +9577,13 @@ export function NoteDatabaseEntrySheet({
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {plan.equipment.map(formatFitnessPlanLabel).join(" / ")}
+                  {formatFitnessPlanLabel(plan.equipment)}
                 </span>
                 <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {getFitnessPlanRangeLabel(plan.levels)}
+                  {formatFitnessPlanLabel(plan.level)}
                 </span>
                 <span className="rounded-full border border-white/[0.05] bg-white/[0.035] px-2 py-1 text-[11px] font-medium leading-none text-white/50">
-                  {getFitnessPlanDaysLabel(plan.daysPerWeek)}
+                  {getFitnessPlanDaysLabel([...plan.daysPerWeekOptions])}
                 </span>
               </div>
             </div>
@@ -11749,6 +11426,18 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  // Saved recipe behavior stays intact for the future Recipes surface even though V1
+  // intentionally presents that tab as a placeholder.
+  void [
+    getNutritionSavedRecipeMeta,
+    nutritionRecipes,
+    isNutritionRecipesLoading,
+    nutritionRecipesError,
+    selectNutritionSavedRecipe,
+    openNutritionRecipeBuilder,
+    renderSelectedNutritionRecipe,
+  ];
+
   function renderNutritionMealBuilderSearchResults() {
     const hasResults =
       nutritionMealBuilderFoodResults.length > 0 ||
@@ -12353,80 +12042,175 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function renderNutritionRecipesContent() {
+  function renderChefCatalog() {
+    const cuisines = getChefCuisinesWithCounts();
+    const filterTags = ["high-protein", "cheap", "quick", "pantry", "meal-prep", "snack", "low-effort"];
+    const contextLabel = isGroceryDatabase
+      ? "Use this as a grocery idea."
+      : "Use this as a meal idea.";
+
     return (
-      <div className="mt-3 rounded-xl border border-white/[0.055] bg-black/42 p-2.5">
-        {renderSelectedNutritionRecipe()}
-        <div className={selectedNutritionRecipe ? "mt-2 space-y-1.5" : "space-y-1.5"}>
-          <button
-            type="button"
-            onClick={openNutritionRecipeBuilder}
-            className="flex w-full items-center gap-3 rounded-lg border border-dashed border-white/[0.105] bg-white/[0.026] px-2.5 py-2.5 text-left outline-none transition hover:border-white/[0.16] hover:bg-white/[0.045] focus-visible:border-white/[0.18] focus-visible:bg-white/[0.06]"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-black/44 text-white/64 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <Plus className="h-4 w-4" aria-hidden="true" />
+      <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-black/42">
+        <div className="border-b border-white/[0.055] p-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/68">
+              <ChefHat className="h-4 w-4" aria-hidden="true" />
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-white/84">
-                Create recipe
-              </span>
-              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
-                Build from foods
-              </span>
-            </span>
-          </button>
-
-          {isNutritionRecipesLoading ? (
-            <p className="px-2 py-2 text-xs font-medium text-white/42">
-              Loading recipes...
-            </p>
-          ) : nutritionRecipesError ? (
-            <p className="px-2 py-2 text-xs font-medium text-red-200/72">
-              {nutritionRecipesError}
-            </p>
-          ) : nutritionRecipes.length > 0 ? (
-            nutritionRecipes.map((recipe) => {
-              const isSelected = selectedNutritionRecipe?.recipe.id === recipe.id;
-              const hasItems = getNutritionSavedRecipeItemCount(recipe) > 0;
-
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white/86">Chef ideas</p>
+              <p className="truncate text-[11px] font-medium text-white/40">
+                Simple recipes for whatever sounds good
+              </p>
+            </div>
+          </div>
+          <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {filterTags.map((tag) => {
+              const isSelected = selectedChefTags.includes(tag);
               return (
+              <button
+                key={tag}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => {
+                  setSelectedChefTags((current) => isSelected ? current.filter((item) => item !== tag) : [...current, tag]);
+                  setExpandedChefRecipeId(null);
+                }}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold outline-none transition ${
+                  isSelected
+                    ? "border-white/[0.18] bg-white/[0.12] text-white/88"
+                    : "border-white/[0.06] bg-white/[0.035] text-white/46 hover:bg-white/[0.06]"
+                }`}
+              >
+                {tag.split("-").map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" ")}
+              </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="divide-y divide-white/[0.05]">
+          {cuisines.map((cuisine) => {
+            const isCuisineOpen = openChefCuisineId === cuisine.id;
+            return (
+              <section key={cuisine.id}>
                 <button
-                  key={recipe.id}
                   type="button"
-                  aria-pressed={isSelected}
-                  disabled={!hasItems}
-                  onClick={() => selectNutritionSavedRecipe(recipe)}
-                  className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2.5 text-left outline-none transition ${
-                    isSelected
-                      ? "border-white/[0.14] bg-white/[0.08] shadow-[inset_3px_0_0_rgba(255,255,255,0.66)]"
-                      : "border-white/[0.055] bg-white/[0.026] hover:border-white/[0.09] hover:bg-white/[0.045]"
-                  } disabled:cursor-not-allowed disabled:opacity-42 focus-visible:border-white/[0.15] focus-visible:bg-white/[0.06]`}
+                  aria-expanded={isCuisineOpen}
+                  onClick={() => {
+                    setOpenChefCuisineId(isCuisineOpen ? null : cuisine.id);
+                    setOpenChefDishFamilyKey(null);
+                    setSelectedChefStyleId(null);
+                    setExpandedChefRecipeId(null);
+                  }}
+                  className="flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.05]"
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.055] bg-black/44 text-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <NutritionMealTemplateIcon icon={getNutritionSavedRecipeIcon(recipe)} />
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.065] bg-white/[0.035] text-[15px] leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]" aria-hidden="true">
+                    {resolveChefCatalogIcon(cuisine.icon)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-white/84">
-                      {recipe.name}
+                      {cuisine.label}
                     </span>
-                    <span className="mt-0.5 block truncate text-[11px] font-medium text-white/40">
-                      {hasItems ? getNutritionSavedRecipeMeta(recipe) : "No foods"}
+                    <span className="mt-0.5 block text-[11px] font-medium text-white/38">
+                      {cuisine.description}
                     </span>
                   </span>
-                  <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
-                    {formatFoodNutritionNumber(
-                      parseNutritionProgressNumber(recipe.total_calories),
-                    ) ?? "0"}{" "}
-                    cal
-                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-white/36">{cuisine.recipeCount}</span>
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 text-white/34 transition-transform ${isCuisineOpen ? "rotate-90" : ""}`}
+                    aria-hidden="true"
+                  />
                 </button>
-              );
-            })
-          ) : (
-            <p className="px-2 py-2 text-xs font-medium text-white/38">
-              Create recipes for one-tap logging.
-            </p>
-          )}
+                {isCuisineOpen ? (
+                  <div className="border-t border-white/[0.045] bg-white/[0.018] px-2 py-2">
+                    {getChefDishFamiliesForCuisine(cuisine.id).map((dishFamily) => {
+                      const familyKey = `${cuisine.id}:${dishFamily.id}`;
+                      const isFamilyOpen = openChefDishFamilyKey === familyKey;
+                      const optionGroups = isFamilyOpen ? getChefOptionGroupsForDishFamily(cuisine.id, dishFamily.id) : [];
+                      const styles = isFamilyOpen && optionGroups.length === 0 ? getChefStylesForDishFamily(cuisine.id, dishFamily.id) : [];
+                      const recipes = isFamilyOpen ? getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id, styleId: selectedChefStyleId ?? undefined, tags: selectedChefTags }) : [];
+                      return (
+                        <div key={familyKey} className="overflow-hidden rounded-xl border border-white/[0.05] bg-black/30 [&+&]:mt-1.5">
+                          <button type="button" aria-expanded={isFamilyOpen} onClick={() => {
+                            setOpenChefDishFamilyKey(isFamilyOpen ? null : familyKey);
+                            setSelectedChefStyleId(null);
+                            setExpandedChefRecipeId(null);
+                          }} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.03] text-[13px] leading-none" aria-hidden="true">
+                              {resolveChefCatalogIcon(dishFamily.icon)}
+                            </span>
+                            <span className="min-w-0 flex-1 text-[13px] font-semibold text-white/74">{dishFamily.label}</span>
+                            <span className="text-[10px] font-semibold tabular-nums text-white/32">{dishFamily.recipeCount}</span>
+                            <ChevronRight className={`h-3.5 w-3.5 text-white/30 transition-transform ${isFamilyOpen ? "rotate-90" : ""}`} aria-hidden="true" />
+                          </button>
+                          {isFamilyOpen ? (
+                            <div className="border-t border-white/[0.045] p-2">
+                              {optionGroups.map((optionGroup) => (
+                                <div key={optionGroup.id} className="mb-2">
+                                  <p className="mb-1 px-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-white/28">{optionGroup.label}</p>
+                                  <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                    {optionGroup.options.map((chefOption) => {
+                                      const selectedOptionId = selectedChefOptions[optionGroup.id] ?? optionGroup.defaultOptionId;
+                                      const isSelected = selectedOptionId === chefOption.id;
+                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                              {styles.length > 0 ? (
+                                <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                  <button type="button" aria-pressed={!selectedChefStyleId} onClick={() => { setSelectedChefStyleId(null); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${!selectedChefStyleId ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>All</button>
+                                  {styles.map((chefStyle) => <button key={chefStyle.id} type="button" aria-pressed={selectedChefStyleId === chefStyle.id} onClick={() => { setSelectedChefStyleId(chefStyle.id); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${selectedChefStyleId === chefStyle.id ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefStyle.label}</button>)}
+                                </div>
+                              ) : null}
+                              <div className="space-y-1.5">
+                                {recipes.length > 0 ? recipes.map((recipe) => {
+                                  const isExpanded = expandedChefRecipeId === recipe.id;
+                                  const familyOptions = Object.fromEntries(optionGroups.map((group) => [group.id, selectedChefOptions[group.id] ?? group.defaultOptionId]));
+                                  const recipeOptions = { ...getDefaultChefRecipeOptions(recipe), ...familyOptions };
+                                  const resolvedIngredients = resolveChefRecipeIngredients(recipe, recipeOptions);
+                                  const resolvedName = resolveChefRecipeName(recipe, recipeOptions);
+                                  const nutrition = calculateResolvedChefRecipeNutrition(recipe, recipeOptions);
+                                  const availability = calculateResolvedChefRecipeAvailability(recipe, recipeOptions, groceryResourceItems);
+                                  return (
+                                    <article key={recipe.id} className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
+                                      <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left outline-none hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
+                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-0.5 block text-[10px] font-medium text-white/34">{recipe.timeMinutes} min · {recipe.difficulty}</span></span>
+                                        <span className="hidden shrink-0 rounded-full border border-white/[0.06] bg-black/30 px-2 py-1 text-[9px] font-semibold text-white/48 min-[360px]:inline">{formatChefMacroSummary(nutrition)}</span>
+                                        <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-white/30 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
+                                      </button>
+                                      {isExpanded ? (
+                                        <div className="border-t border-white/[0.045] px-2.5 pb-2.5 pt-2">
+                                          <div className="flex flex-wrap gap-1">{recipe.tags.map((tag) => <span key={tag} className="rounded-full border border-white/[0.05] bg-black/25 px-2 py-0.5 text-[9px] font-semibold text-white/40">{tag}</span>)}</div>
+                                          <p className="mt-2 text-xs leading-5 text-white/48">{recipe.shortDescription}</p>
+                                          <div className="mt-2.5 grid grid-cols-4 gap-1 rounded-xl border border-white/[0.055] bg-black/30 p-1.5">
+                                            {[{ label: "Calories", value: formatChefNutritionNumber(nutrition.calories) }, { label: "Protein", value: `${formatChefNutritionNumber(nutrition.protein_g)}g` }, { label: "Carbs", value: `${formatChefNutritionNumber(nutrition.carbs_g)}g` }, { label: "Fat", value: `${formatChefNutritionNumber(nutrition.fat_g)}g` }].map((macro) => <div key={macro.label} className="rounded-lg bg-white/[0.035] px-1 py-2 text-center"><span className="block text-xs font-bold tabular-nums text-white/78">{macro.value}</span><span className="mt-0.5 block text-[8px] font-bold uppercase tracking-wide text-white/28">{macro.label}</span></div>)}
+                                          </div>
+                                          <div className="mt-2 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[10px] font-medium text-white/46">
+                                            <p>{availability.summary}</p>
+                                            {availability.missingIngredientNames.length > 0 ? <p className="mt-0.5 text-white/34">Missing: {availability.missingIngredientNames.join(", ")}</p> : null}
+                                          </div>
+                                          <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.13em] text-white/30">Ingredients</p>
+                                          <ul className="mt-1 space-y-1">{resolvedIngredients.map((item) => { const itemNutrition = calculateChefIngredientNutrition(item); const itemAvailability = availability.ingredients[item.id]; const availabilityLabel = itemAvailability?.availability === "have" ? "Have" : itemAvailability?.availability === "partial" ? "Partial" : itemAvailability?.availability === "unknown" ? "Unknown" : "Missing"; return <li key={`${recipe.id}-${item.id}`} className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.02] px-2 py-1.5"><span className="text-sm" aria-hidden="true">{item.icon}</span><span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-semibold text-white/62">{item.quantity} {item.unit} {item.name}</span>{!itemNutrition.unknownNutrition ? <span className="block text-[9px] font-medium text-white/28">{formatChefNutritionNumber(itemNutrition.calories)} cal · {formatChefNutritionNumber(itemNutrition.protein_g)}g protein{itemNutrition.estimated ? " · est." : ""}</span> : <span className="block text-[9px] font-medium text-white/24">Nutrition unknown</span>}</span><span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${availabilityLabel === "Have" ? "border-emerald-300/15 bg-emerald-300/[0.07] text-emerald-100/65" : "border-white/[0.055] bg-black/25 text-white/38"}`}>{availabilityLabel}</span></li>; })}</ul>
+                                          <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.13em] text-white/30">Steps</p>
+                                          <ol className="mt-1 space-y-1 text-xs leading-5 text-white/50">{recipe.steps.map((step, index) => <li key={`${recipe.id}-step-${index}`} className="flex gap-2"><span className="text-white/25">{index + 1}.</span><span>{step}</span></li>)}</ol>
+                                          <p className="mt-2.5 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[11px] font-medium text-white/42">{contextLabel}</p>
+                                        </div>
+                                      ) : null}
+                                    </article>
+                                  );
+                                }) : <p className="px-2 py-3 text-xs font-medium text-white/36">No ideas match these filters.</p>}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
         </div>
       </div>
     );
@@ -12439,7 +12223,7 @@ export function NoteDatabaseEntrySheet({
       recipes: {
         icon: BookOpen,
         title: "Recipes",
-        body: "Recipe ideas from Grocery List items will live here later.",
+        body: "Saved and custom recipes will live here later. Browse menu ideas in Chef.",
       },
       chef: {
         icon: ChefHat,
@@ -12756,13 +12540,9 @@ export function NoteDatabaseEntrySheet({
         ) : selectedNutritionFoodAction === "recent" ? (
           renderNutritionSavedMealsContent()
         ) : selectedNutritionFoodAction === "recipes" ? (
-          isGroceryMode ? (
-            renderGroceryPlanningPlaceholder("recipes")
-          ) : (
-            renderNutritionRecipesContent()
-          )
-        ) : selectedNutritionFoodAction === "chef" && isGroceryMode ? (
-          renderGroceryPlanningPlaceholder("chef")
+          renderGroceryPlanningPlaceholder("recipes")
+        ) : selectedNutritionFoodAction === "chef" ? (
+          renderChefCatalog()
         ) : selectedNutritionFoodAction === "meal-plan" && isGroceryMode ? (
           renderGroceryPlanningPlaceholder("meal-plan")
         ) : (
