@@ -57,7 +57,7 @@ function formatDatabaseCreatedAtMetadata(openedAt: string) {
 }
 
 const LEGACY_FORM_TEMPLATE_TARGETS: Record<string, string | null> = {
-  "water-log": "hydration",
+  "water-log": null,
   "food-log": "nutrition",
   "meds-log": null,
   "workout-log": "fitness",
@@ -195,7 +195,7 @@ export function MemoCompletionDialog({
   const handleFormSubmit = async () => {
     if (!context) return;
     if (!formTarget) {
-      setError("Choose Nutrition, Hydration, or Fitness before saving this MEMO.");
+      setError("Choose Nutrition or Fitness before saving this MEMO.");
       return;
     }
     if (!context.skillId) {
@@ -455,7 +455,7 @@ export function MemoCompletionDialog({
                     </div>
                   ) : (
                     <p className="mt-2 text-xs leading-5 text-red-300/85">
-                      Choose Nutrition, Hydration, or Fitness for this MEMO form.
+                      Choose Nutrition or Fitness for this MEMO form.
                     </p>
                   )}
                 </div>

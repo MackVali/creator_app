@@ -9,7 +9,17 @@ type FoodResourceInsert = Database["public"]["Tables"]["food_resources"]["Insert
 type FoodResourceUpdate = Database["public"]["Tables"]["food_resources"]["Update"];
 
 const VALID_STATUSES = new Set(["active", "used", "discarded", "archived"]);
-const VALID_UNITS = new Set(["servings", "package", "g", "oz", "item"]);
+const VALID_UNITS = new Set([
+  "servings",
+  "package",
+  "g",
+  "kg",
+  "oz",
+  "lb",
+  "ml",
+  "l",
+  "item",
+]);
 const LOCATIONS = new Set(["pantry", "fridge", "freezer", "counter", "other"]);
 const MAX_LIMIT = 200;
 const MAX_QUANTITY = 1_000_000_000;
@@ -316,6 +326,9 @@ export async function PATCH(request: NextRequest) {
     updatePayload = {
       quantity,
       unit,
+      ...(payload.metadata === undefined
+        ? {}
+        : { metadata: normalizeMetadata(payload.metadata) }),
       updated_at: new Date().toISOString(),
     };
   } else if (action === "setStatus") {
