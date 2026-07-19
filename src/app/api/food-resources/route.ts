@@ -105,7 +105,34 @@ function normalizeUnit(value: unknown) {
 
 function normalizeMetadata(value: unknown): Json {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Json;
+  const metadata = { ...(value as Record<string, unknown>) };
+  const profile = metadata.inventory_measurement_profile;
+  if (profile && typeof profile === "object" && !Array.isArray(profile)) {
+    const candidate = profile as Record<string, unknown>;
+    const countUnitKey = normalizeText(candidate.countUnitKey, 64);
+    const singularLabel = normalizeText(candidate.singularLabel, 32);
+    const pluralLabel = normalizeText(candidate.pluralLabel, 32);
+    if (candidate.preferredKind === "count" && countUnitKey && singularLabel && pluralLabel) {
+      metadata.inventory_measurement_profile = {
+        preferredKind: "count",
+        allowedKinds: ["count", "package", "weight", "serving"],
+        countUnitKey,
+        singularLabel,
+        pluralLabel,
+        ...(typeof candidate.gramsPerItem === "number" && candidate.gramsPerItem > 0
+          ? { gramsPerItem: candidate.gramsPerItem }
+          : {}),
+        ...(typeof candidate.packageItemCount === "number" && candidate.packageItemCount > 0
+          ? { packageItemCount: candidate.packageItemCount }
+          : {}),
+        source: candidate.source === "catalog" || candidate.source === "barcode" ? candidate.source : "name_fallback",
+        confidence: candidate.confidence === "high" ? "high" : "medium",
+      };
+    } else {
+      delete metadata.inventory_measurement_profile;
+    }
+  }
+  return metadata as Json;
 }
 
 function mapFoodResource(row: FoodResourceRow) {
@@ -152,6 +179,11 @@ function parseFoodResourcePayload(payload: Record<string, unknown>) {
     return { ok: false as const, error: "Expires on must be a valid YYYY-MM-DD date." };
   }
 
+  const unit = normalizeUnit(payload.unit);
+  if (unit === undefined) {
+    return { ok: false as const, error: "Unit is invalid." };
+  }
+
   return {
     ok: true as const,
     value: {
@@ -159,7 +191,7 @@ function parseFoodResourcePayload(payload: Record<string, unknown>) {
       name,
       brand_name: normalizeText(payload.brand_name, 120),
       quantity,
-      unit: normalizeText(payload.unit, 32),
+      unit,
       location,
       expires_on: expiresOn,
       notes: normalizeText(payload.notes, 2000),

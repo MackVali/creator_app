@@ -63,6 +63,33 @@ export type ChefRecipeOptionGroup = {
 };
 export type ChefRecipeSelectedOptions = Readonly<Record<string, string>>;
 
+export type ChefDishSlotRole = "structural" | "recommended" | "optional";
+export type ChefDishSlotCandidate = {
+  id: string;
+  label: string;
+  ingredient: ChefRecipeIngredient;
+  foodFamilies?: string[];
+  contextualAliases?: string[];
+  preferred?: boolean;
+};
+export type ChefDishTemplateSlot = {
+  id: string;
+  label: string;
+  role: ChefDishSlotRole;
+  minimumSelections: number;
+  maximumSelections: number;
+  blocksAvailability: boolean;
+  includeInSummary?: boolean;
+  candidates: ChefDishSlotCandidate[];
+};
+export type ChefDishTemplate = {
+  templateId: string;
+  permanentTitle: string;
+  displayNameMode: "permanent";
+  slots: ChefDishTemplateSlot[];
+  stepTemplates: string[];
+};
+
 export type ChefRecipe = {
   id: string;
   name: string;
@@ -82,6 +109,7 @@ export type ChefRecipe = {
   allowOptionLabelInName?: boolean;
   steps: string[];
   groceryKeywords?: string[];
+  dishTemplate?: ChefDishTemplate;
 };
 
 export const chefCuisines: readonly ChefCuisine[] = [
@@ -142,10 +170,10 @@ type RecipeSeed = Omit<ChefRecipe, "id" | "shortDescription" | "timeMinutes" | "
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 const CHEF_INGREDIENT_DEFINITIONS: Record<string, { foodKey: string; icon: string; quantity?: number; unit?: string; aliases?: string[] }> = {
-  "flour tortilla": { foodKey: "tortilla-flour", icon: "🌯", aliases: ["flour tortillas", "tortillas", "wrap"] },
-  "flour tortillas": { foodKey: "tortilla-flour", icon: "🌯", quantity: 2, aliases: ["flour tortilla", "tortillas", "wrap"] },
-  "corn tortillas": { foodKey: "tortilla-corn", icon: "🌮", quantity: 3, aliases: ["corn tortilla", "tortillas"] },
-  "taco shells": { foodKey: "taco-shell", icon: "🌮", quantity: 3, aliases: ["hard taco shells"] },
+  "flour tortilla": { foodKey: "tortilla-flour", icon: "🌯", unit: "each", aliases: ["flour tortillas", "tortillas", "wrap"] },
+  "flour tortillas": { foodKey: "tortilla-flour", icon: "🌯", quantity: 2, unit: "each", aliases: ["flour tortilla", "tortillas", "wrap"] },
+  "corn tortillas": { foodKey: "tortilla-corn", icon: "🌮", quantity: 3, unit: "each", aliases: ["corn tortilla", "tortillas"] },
+  "taco shells": { foodKey: "taco-shell", icon: "🌮", quantity: 3, unit: "each", aliases: ["hard taco shells"] },
   chicken: { foodKey: "chicken-breast", icon: "🍗", quantity: 4, unit: "oz", aliases: ["chicken breast", "cooked chicken"] },
   "cooked chicken": { foodKey: "chicken-breast", icon: "🍗", quantity: 4, unit: "oz", aliases: ["chicken", "chicken breast"] },
   "chicken breast": { foodKey: "chicken-breast", icon: "🍗", quantity: 4, unit: "oz", aliases: ["chicken", "cooked chicken"] },
@@ -183,6 +211,9 @@ function makeIngredient(name: string, index: number): ChefRecipeIngredient {
   const definition = CHEF_INGREDIENT_DEFINITIONS[name] ?? { foodKey: slug(name), icon: "🍽️" };
   return { id: `${definition.foodKey}-${index + 1}`, foodKey: definition.foodKey, icon: definition.icon, name, quantity: definition.quantity ?? 1, unit: definition.unit ?? "serving", ...(definition.aliases ? { aliases: definition.aliases } : {}) };
 }
+const slotCandidate = (id: string, label: string, name: string, extra: Partial<ChefDishSlotCandidate> = {}): ChefDishSlotCandidate => ({ id, label, ingredient: { ...makeIngredient(name, 0), id: `slot-${id}` }, ...extra });
+const dishSlot = (id: string, label: string, role: ChefDishSlotRole, candidates: ChefDishSlotCandidate[], extra: Partial<ChefDishTemplateSlot> = {}): ChefDishTemplateSlot => ({ id, label, role, minimumSelections: role === "structural" ? 1 : 0, maximumSelections: 1, blocksAvailability: role === "structural", includeInSummary: true, candidates, ...extra });
+const dishTemplate = (templateId: string, permanentTitle: string, slots: ChefDishTemplateSlot[], stepTemplates: string[]): ChefDishTemplate => ({ templateId, permanentTitle, displayNameMode: "permanent", slots, stepTemplates });
 const makeRecipe = (seed: RecipeSeed): ChefRecipe => ({
   id: slug(seed.name), shortDescription: `A simple, everyday ${seed.name.toLowerCase()}.`, timeMinutes: 20, difficulty: "easy", mealTypes: ["lunch", "dinner"], tags: ["quick", "low-effort"],
   ...seed,
@@ -208,18 +239,53 @@ export const chefRecipeOptionGroups: readonly ChefRecipeOptionGroup[] = [
   group("sandwich-filling", "sandwiches", ["sandwiches"], "Filling", "filling", "tuna", [option("tuna", "Tuna", ["canned tuna"]), option("turkey", "Turkey", ["turkey"]), option("chicken", "Chicken", ["cooked chicken"]), option("egg", "Egg", ["eggs"]), option("peanut-butter", "Peanut Butter", ["peanut butter"])]),
 ] as const;
 
+const shells = [slotCandidate("flour-tortilla", "Flour tortilla", "flour tortillas", { preferred: true, contextualAliases: ["soft taco flour tortillas"] }), slotCandidate("corn-tortilla", "Corn tortilla", "corn tortillas")];
+const proteins = [
+  slotCandidate("ground-beef", "Ground beef", "ground beef"), slotCandidate("chicken", "Chicken", "cooked chicken", { preferred: true }), slotCandidate("steak", "Steak", "lean beef"),
+  slotCandidate("pork", "Pork", "pork"), slotCandidate("white-fish", "White fish", "white fish"), slotCandidate("salmon", "Salmon", "salmon"), slotCandidate("shrimp", "Shrimp", "shrimp"),
+  slotCandidate("tuna", "Tuna", "canned tuna", { contextualAliases: ["chunk light tuna", "tuna in water"] }), slotCandidate("beans", "Beans", "black beans"), slotCandidate("eggs", "Eggs", "eggs"), slotCandidate("cheese", "Cheese", "shredded cheese"),
+];
+const extras = (names: string[]) => names.map((name) => slotCandidate(slug(name), name.replace(/\b\w/g, (letter) => letter.toUpperCase()), name));
+const tacoTemplate = dishTemplate("dish-tacos", "Tacos", [
+  dishSlot("shell", "Shell", "structural", shells), dishSlot("filling", "Filling", "structural", proteins),
+  dishSlot("add-ons", "Add-ons", "recommended", extras(["shredded cheese", "lettuce", "tomato", "onion", "salsa", "hot sauce", "sour cream", "guacamole", "taco seasoning", "lime", "cilantro"]), { maximumSelections: 11 }),
+], ["Warm the selected {shell}.", "Cook or prepare {filling} and season to taste.", "Fill the shells and finish with the selected {add-ons}."]);
+const burritoTemplate = dishTemplate("dish-burrito", "Burritos", [
+  dishSlot("base", "Tortilla / wrap", "structural", [slotCandidate("large-tortilla", "Large tortilla", "flour tortilla", { contextualAliases: ["burrito tortilla", "large wrap"] })]),
+  dishSlot("filling", "Filling", "structural", [...proteins.filter((item) => ["ground-beef", "chicken", "steak", "pork", "tuna", "beans", "eggs", "cheese"].includes(item.id)), slotCandidate("rice", "Rice", "rice")]),
+  dishSlot("add-ons", "Add-ons", "recommended", extras(["rice", "black beans", "shredded cheese", "salsa", "sour cream", "mixed vegetables", "taco seasoning", "hot sauce", "guacamole"]), { maximumSelections: 9 }),
+], ["Warm {base} until flexible.", "Prepare {filling} and any selected {add-ons}.", "Fill, fold, and serve the burrito."]);
+const quesadillaTemplate = dishTemplate("dish-quesadilla", "Quesadillas", [
+  dishSlot("tortilla", "Tortilla", "structural", shells), dishSlot("cheese", "Melting cheese", "structural", [slotCandidate("cheddar", "Cheddar", "shredded cheese"), slotCandidate("mozzarella", "Mozzarella", "mozzarella")]),
+  dishSlot("filling", "Optional filling", "optional", proteins.filter((item) => ["chicken", "ground-beef", "pork", "beans", "tuna", "eggs"].includes(item.id)).concat(extras(["mixed vegetables"])), { maximumSelections: 3 }),
+  dishSlot("extras", "Extras", "recommended", extras(["salsa", "sour cream", "hot sauce", "taco seasoning"]), { maximumSelections: 4 }),
+], ["Layer {cheese} and the selected {filling} on {tortilla}.", "Cook until crisp and the cheese has melted.", "Slice and serve with the selected {extras}."]);
+const riceBowlTemplate = dishTemplate("dish-rice-bowl", "Rice Bowls", [
+  dishSlot("base", "Bowl base", "structural", [slotCandidate("rice", "Rice", "rice", { preferred: true }), slotCandidate("quinoa", "Quinoa", "quinoa")]),
+  dishSlot("topping", "Topping / filling", "structural", proteins.filter((item) => !["steak", "salmon", "cheese"].includes(item.id)).concat(extras(["mixed vegetables"]))),
+  dishSlot("extras", "Extras", "recommended", extras(["shredded cheese", "mixed vegetables", "salsa", "soy sauce", "hot sauce", "seasoning", "cilantro"]), { maximumSelections: 7 }),
+], ["Prepare {base}.", "Cook or warm {topping}.", "Assemble the bowl and finish with {extras}."]);
+const sandwichTemplate = dishTemplate("dish-sandwich-wrap", "Sandwiches / Wraps", [
+  dishSlot("base", "Bread / wrap", "structural", [slotCandidate("bread", "Bread", "bread"), slotCandidate("bun", "Bun", "burger bun"), slotCandidate("wrap", "Wrap", "flour tortilla")]),
+  dishSlot("filling", "Filling", "structural", [slotCandidate("deli-meat", "Deli meat", "turkey"), ...proteins.filter((item) => ["chicken", "tuna", "eggs", "cheese", "beans"].includes(item.id)), slotCandidate("burger-patty", "Burger patty", "burger patty"), slotCandidate("peanut-butter", "Peanut butter", "peanut butter")]),
+  dishSlot("extras", "Condiments / vegetables", "recommended", extras(["mayonnaise", "mustard", "lettuce", "tomato", "onion", "pickles"]), { maximumSelections: 6 }),
+], ["Prepare {base}.", "Add {filling} and the selected {extras}.", "Close, slice if desired, and serve."]);
+const pastaTemplate = dishTemplate("dish-pasta", "Pasta", [
+  dishSlot("pasta", "Pasta", "structural", [slotCandidate("pasta", "Pasta", "pasta")]),
+  dishSlot("finish", "Sauce / finish", "structural", [slotCandidate("marinara", "Marinara", "marinara"), slotCandidate("alfredo", "Alfredo", "alfredo sauce"), slotCandidate("pesto", "Pesto", "pesto"), slotCandidate("butter", "Butter", "butter"), slotCandidate("olive-oil", "Olive oil", "olive oil"), slotCandidate("cheese", "Cheese", "parmesan")]),
+  dishSlot("add-ins", "Add-ins", "recommended", [...proteins.filter((item) => ["ground-beef", "chicken", "tuna"].includes(item.id)), ...extras(["mixed vegetables", "garlic", "seasoning", "parsley"])], { maximumSelections: 7 }),
+], ["Cook {pasta} until tender.", "Toss with {finish}.", "Fold in the selected {add-ins}, season, and serve."]);
+
+const templateRecipe = (name: string, cuisineId: string, dishFamilyId: string, template: ChefDishTemplate, tags: string[]) => r(name, cuisineId, dishFamilyId, [], { dishTemplate: template, tags, steps: template.stepTemplates });
+
 export const chefRecipes: readonly ChefRecipe[] = [
-  r("Classic burrito", "mexican", "burritos", ["flour tortilla", "rice", "black beans", "shredded cheese", "salsa"], { optionGroupIds: ["mexican-burrito-filling"], nameTemplate: "{filling} classic burrito", allowOptionLabelInName: true, tags: ["high-protein", "bulk"] }),
-  r("Rice and bean burrito", "mexican", "burritos", ["flour tortilla", "rice", "black beans", "salsa"], { tags: ["cheap", "bulk", "pantry"] }),
-  r("Street tacos", "mexican", "tacos", ["corn tortillas", "salsa"], { optionGroupIds: ["mexican-taco-filling"], nameTemplate: "{filling} street tacos", allowOptionLabelInName: true, tags: ["high-protein", "quick"] }),
-  r("Egg breakfast tacos", "mexican", "tacos", ["corn tortillas", "eggs", "shredded cheese"], { mealTypes: ["breakfast"], tags: ["quick", "cheap"] }),
-  r("Quesadilla", "mexican", "quesadillas", ["flour tortillas", "shredded cheese", "salsa"], { optionGroupIds: ["mexican-quesadilla-filling"], nameTemplate: "{filling} quesadilla", allowOptionLabelInName: true, tags: ["cheap", "quick"] }),
+  templateRecipe("Burritos", "mexican", "burritos", burritoTemplate, ["quick", "high-protein", "bulk"]),
+  templateRecipe("Tacos", "mexican", "tacos", tacoTemplate, ["quick", "high-protein", "cheap"]),
+  templateRecipe("Quesadillas", "mexican", "quesadillas", quesadillaTemplate, ["quick", "cheap", "low-effort"]),
   r("Burrito bowl", "mexican", "bowls", ["rice", "black beans", "salsa"], { optionGroupIds: ["mexican-bowl-protein"], nameTemplate: "{protein} burrito bowl", allowOptionLabelInName: true, tags: ["bulk", "high-protein"] }),
   r("Beef nachos", "mexican", "nachos", ["tortilla chips", "ground beef", "shredded cheese", "salsa"], { styleId: "nachos-beef", mealTypes: ["snack", "dinner"], tags: ["comfort", "snack"] }),
   r("Chicken fajita plate", "mexican", "plates", ["chicken", "bell peppers", "onion", "rice"], { styleId: "fajita-plate", tags: ["high-protein", "meal-prep"] }),
-  r("Classic pasta", "italian", "pasta-red", ["pasta", "parmesan"], { optionGroupIds: ["italian-pasta-style"], nameTemplate: "{sauce} pasta", allowOptionLabelInName: true, tags: ["comfort", "bulk"] }),
-  r("Creamy pasta", "italian", "pasta-creamy", ["fettuccine", "parmesan"], { optionGroupIds: ["italian-pasta-style"], defaultSelectedOptions: { "italian-pasta-style": "alfredo" }, nameTemplate: "{sauce} pasta", allowOptionLabelInName: true, tags: ["high-protein", "comfort"] }),
-  r("Simple pasta", "italian", "pasta-simple", ["pasta", "parmesan"], { optionGroupIds: ["italian-pasta-style"], defaultSelectedOptions: { "italian-pasta-style": "garlic-butter" }, nameTemplate: "{sauce} pasta", allowOptionLabelInName: true, tags: ["cheap", "quick", "pantry"] }),
+  templateRecipe("Pasta", "italian", "pasta-simple", pastaTemplate, ["comfort", "quick", "pantry"]),
   r("Burger bowl", "american", "burgers", ["ground beef", "lettuce", "cheddar", "pickles"], { styleId: "beef-burger", tags: ["high-protein", "comfort"] }),
   r("Cheeseburger", "american", "burgers", ["burger bun", "ground beef", "cheddar"], { styleId: "beef-burger", tags: ["comfort", "quick"] }),
   r("Grilled cheese", "american", "classics", ["bread", "cheddar", "butter"], { styleId: "cheesy", tags: ["cheap", "comfort"] }),
@@ -234,12 +300,10 @@ export const chefRecipes: readonly ChefRecipe[] = [
   r("Protein smoothie", "breakfast", "drinks", ["protein powder", "milk", "banana", "peanut butter"], { mealTypes: ["breakfast", "snack"], tags: ["high-protein", "quick"] }),
   r("Greek yogurt protein bowl", "breakfast", "breakfast-bowls", ["Greek yogurt", "protein powder", "berries"], { styleId: "yogurt", mealTypes: ["breakfast", "snack"], tags: ["high-protein", "snack"] }),
   r("Cottage cheese fruit bowl", "breakfast", "breakfast-bowls", ["cottage cheese", "fruit", "honey"], { mealTypes: ["breakfast", "snack"], tags: ["snack", "high-protein", "low-effort"] }),
-  r("Everyday wrap", "sandwiches", "wraps", ["flour tortilla", "cheese", "lettuce"], { optionGroupIds: ["wrap-filling"], nameTemplate: "{filling} wrap", allowOptionLabelInName: true, tags: ["quick", "high-protein"] }),
-  r("Everyday sandwich", "sandwiches", "sandwiches", ["bread", "cheddar", "mayonnaise"], { optionGroupIds: ["sandwich-filling"], nameTemplate: "{filling} sandwich", allowOptionLabelInName: true, tags: ["cheap", "high-protein"] }),
+  templateRecipe("Sandwiches / Wraps", "sandwiches", "sandwiches", sandwichTemplate, ["quick", "cheap", "high-protein"]),
   r("Peanut butter banana toast", "sandwiches", "toast", ["bread", "peanut butter", "banana"], { mealTypes: ["breakfast", "snack"], tags: ["cheap", "snack", "quick"] }),
   r("Chicken salad bowl", "sandwiches", "wraps", ["cooked chicken", "salad greens", "dressing"], { tags: ["high-protein", "low-effort"] }),
-  r("Protein rice bowl", "rice-bowls", "protein-bowls", ["rice", "frozen vegetables"], { optionGroupIds: ["rice-bowl-protein"], nameTemplate: "{protein} rice bowl", allowOptionLabelInName: true, tags: ["high-protein", "bulk"] }),
-  r("Quick rice bowl", "rice-bowls", "quick-bowls", ["rice", "salsa"], { optionGroupIds: ["rice-bowl-protein"], defaultSelectedOptions: { "rice-bowl-protein": "tuna" }, nameTemplate: "{protein} rice bowl", allowOptionLabelInName: true, tags: ["cheap", "high-protein", "pantry"] }),
+  templateRecipe("Rice Bowls", "rice-bowls", "protein-bowls", riceBowlTemplate, ["high-protein", "bulk", "meal-prep"]),
   r("Egg fried rice", "chinese", "fried-rice", ["cooked rice", "eggs", "frozen peas", "soy sauce"], { styleId: "egg-fried-rice", tags: ["cheap", "quick", "pantry"] }),
   r("Ramen upgrade", "chinese", "noodles", ["instant ramen", "egg", "frozen vegetables"], { styleId: "ramen", tags: ["cheap", "quick", "pantry"] }),
   r("Chicken vegetable stir-fry", "chinese", "stir-fries", ["chicken", "frozen stir-fry vegetables", "soy sauce", "rice"], { styleId: "chicken-stir-fry", tags: ["high-protein", "quick"] }),
@@ -272,7 +336,8 @@ export function getChefStylesForDishFamily(cuisineId: string, dishFamilyId: stri
 }
 
 export function getChefOptionGroupsForDishFamily(cuisineId: string, dishFamilyId: string) {
-  return chefRecipeOptionGroups.filter((item) => item.cuisineId === cuisineId && item.dishFamilyIds.includes(dishFamilyId));
+  const usedGroupIds = new Set(chefRecipes.filter((recipe) => recipe.cuisineId === cuisineId && recipe.dishFamilyId === dishFamilyId).flatMap((recipe) => recipe.optionGroupIds ?? []));
+  return chefRecipeOptionGroups.filter((item) => item.cuisineId === cuisineId && item.dishFamilyIds.includes(dishFamilyId) && usedGroupIds.has(item.id));
 }
 
 function getAvailableChefOptions(group: ChefRecipeOptionGroup, recipe: ChefRecipe) {

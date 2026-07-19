@@ -25,6 +25,94 @@ export type FoodSearchResult = {
   metadata?: Json | null;
 };
 
+export type FoodInventoryMeasurementProfile = {
+  preferredKind: "count" | "package" | "weight" | "serving";
+  allowedKinds: readonly ("count" | "package" | "weight" | "serving")[];
+  countUnitKey: string;
+  singularLabel: string;
+  pluralLabel: string;
+  gramsPerItem?: number;
+  packageItemCount?: number;
+  source: "catalog" | "barcode" | "name_fallback";
+  confidence: "high" | "medium";
+};
+
+type InventoryProfileFood = Pick<FoodSearchResult, "name" | "serving_unit" | "serving_grams" | "metadata">;
+
+const COUNTABLE_FOOD_RULES: readonly {
+  pattern: RegExp;
+  countUnitKey: string;
+  singularLabel: string;
+  pluralLabel: string;
+}[] = [
+  { pattern: /\b(?:flour|corn)?\s*tortillas?\b/i, countUnitKey: "tortilla", singularLabel: "tortilla", pluralLabel: "tortillas" },
+  { pattern: /\b(?:white|wheat|sandwich)?\s*bread\b|\btoast\b/i, countUnitKey: "bread-slice", singularLabel: "slice", pluralLabel: "slices" },
+  { pattern: /\bhamburger buns?\b/i, countUnitKey: "hamburger-bun", singularLabel: "bun", pluralLabel: "buns" },
+  { pattern: /\bhot dog buns?\b/i, countUnitKey: "hot-dog-bun", singularLabel: "bun", pluralLabel: "buns" },
+  { pattern: /^eggs?$/i, countUnitKey: "egg", singularLabel: "egg", pluralLabel: "eggs" },
+  { pattern: /\bcanned tuna\b/i, countUnitKey: "tuna-can", singularLabel: "can", pluralLabel: "cans" },
+  { pattern: /\bcanned (?:black |pinto |kidney |white |baked )?beans?\b/i, countUnitKey: "bean-can", singularLabel: "can", pluralLabel: "cans" },
+  { pattern: /\byogurt\b/i, countUnitKey: "yogurt-container", singularLabel: "container", pluralLabel: "containers" },
+  { pattern: /\bprotein bars?\b/i, countUnitKey: "protein-bar", singularLabel: "bar", pluralLabel: "bars" },
+  { pattern: /\bcheese slices?\b/i, countUnitKey: "cheese-slice", singularLabel: "slice", pluralLabel: "slices" },
+  { pattern: /\b(?:frozen )?(?:burger|hamburger) patt(?:y|ies)\b/i, countUnitKey: "burger-patty", singularLabel: "patty", pluralLabel: "patties" },
+];
+
+function inventoryMetadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+export function getFoodInventoryMeasurementProfile(
+  food: InventoryProfileFood,
+): FoodInventoryMeasurementProfile | null {
+  const metadata = inventoryMetadataRecord(food.metadata);
+  const stored = inventoryMetadataRecord(metadata.inventory_measurement_profile);
+  if (
+    stored.preferredKind === "count" &&
+    typeof stored.countUnitKey === "string" &&
+    typeof stored.singularLabel === "string" &&
+    typeof stored.pluralLabel === "string"
+  ) {
+    return {
+      preferredKind: "count",
+      allowedKinds: ["count", "package", "weight", "serving"],
+      countUnitKey: stored.countUnitKey,
+      singularLabel: stored.singularLabel,
+      pluralLabel: stored.pluralLabel,
+      ...(typeof stored.gramsPerItem === "number" && stored.gramsPerItem > 0 ? { gramsPerItem: stored.gramsPerItem } : {}),
+      ...(typeof stored.packageItemCount === "number" && stored.packageItemCount > 0 ? { packageItemCount: stored.packageItemCount } : {}),
+      source: stored.source === "barcode" || stored.source === "catalog" ? stored.source : "name_fallback",
+      confidence: stored.confidence === "high" ? "high" : "medium",
+    };
+  }
+
+  const rule = COUNTABLE_FOOD_RULES.find((candidate) => candidate.pattern.test(food.name));
+  if (!rule) return null;
+  const servingUnit = (food.serving_unit ?? "").toLowerCase();
+  const discreteServing = new RegExp(`\\b(?:${rule.singularLabel}|${rule.pluralLabel}|each|item)s?\\b`, "i").test(servingUnit);
+  return {
+    preferredKind: "count",
+    allowedKinds: ["count", "package", "weight", "serving"],
+    countUnitKey: rule.countUnitKey,
+    singularLabel: rule.singularLabel,
+    pluralLabel: rule.pluralLabel,
+    ...(discreteServing && typeof food.serving_grams === "number" && food.serving_grams > 0
+      ? { gramsPerItem: food.serving_grams }
+      : {}),
+    source: "name_fallback",
+    confidence: "medium",
+  };
+}
+
+export function formatInventoryCountLabel(
+  quantity: number,
+  profile: Pick<FoodInventoryMeasurementProfile, "singularLabel" | "pluralLabel">,
+) {
+  return quantity === 1 ? profile.singularLabel : profile.pluralLabel;
+}
+
 export const FOOD_BROWSE_DEPARTMENTS = [
   {
     label: "Everyday",
