@@ -99,6 +99,8 @@ import {
 } from "@/lib/nutrition/barcodeScanner";
 import {
   findNutritionEntryFields,
+  formatInventoryCountLabel,
+  getFoodInventoryMeasurementProfile,
   normalizeFoodBarcode,
   normalizeFoodSearchText,
   type FoodBarcodeLookupResult,
@@ -126,6 +128,7 @@ import {
   formatChefMacroSummary,
   formatChefNutritionNumber,
   isResolvedChefRecipeAvailable,
+  resolveChefDishTemplate,
 } from "@/lib/nutrition/chefRecipeNutrition";
 import {
   DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
@@ -2651,6 +2654,7 @@ type GrocerySearchInventorySave = {
   displayUnit: GroceryInventoryUnit;
   conversionSource: string;
   conversionConfidence: "high" | "medium" | "none";
+  countUnitKey?: string;
 };
 type GroceryPackageServingsContext =
   | {
@@ -3566,6 +3570,11 @@ function getGroceryPackageServingsContext(
 function getGroceryDefaultInventoryAmount(food: FoodSearchResult) {
   const metadata = getRecordMetadata(food.metadata);
   const servingsContext = getGroceryPackageServingsContext(metadata);
+  const measurementProfile = getFoodInventoryMeasurementProfile(food);
+
+  if (servingsContext.source === "explicit" && measurementProfile?.gramsPerItem) {
+    return { quantity: servingsContext.servingsPerContainer, unit: "item" as const };
+  }
 
   if (
     servingsContext.source === "explicit" ||
@@ -3633,6 +3642,18 @@ function prepareGrocerySearchInventorySave(
 
   const displayUnit = normalizeGroceryInventoryUnit(unitValue);
   const metadata = getRecordMetadata(food.metadata);
+  const measurementProfile = getFoodInventoryMeasurementProfile(food);
+  if (displayUnit === "item" && measurementProfile) {
+    return {
+      canonicalQuantity: displayQuantity,
+      canonicalUnit: "item",
+      displayQuantity,
+      displayUnit,
+      conversionSource: "natural_count",
+      conversionConfidence: measurementProfile.confidence,
+      countUnitKey: measurementProfile.countUnitKey,
+    };
+  }
   const canonicalGrams = getGroceryInventoryGramEquivalent(
     metadata,
     displayQuantity,
@@ -3776,6 +3797,23 @@ function formatGroceryRemainingLabel(quantity: number, unit: string) {
           : "items";
 
   return `${formattedQuantity} ${unitLabel} left`;
+}
+
+function getGroceryInventoryUnitOptions(foodOrMetadata?: FoodSearchResult | Record<string, unknown>) {
+  const food = foodOrMetadata && "name" in foodOrMetadata
+    ? foodOrMetadata as FoodSearchResult
+    : null;
+  const profile = food ? getFoodInventoryMeasurementProfile(food) : null;
+  return GROCERY_INVENTORY_UNIT_OPTIONS.map((option) =>
+    option.value === "item" && profile ? { ...option, label: profile.pluralLabel } : option,
+  );
+}
+
+function getStoredCountProfile(metadata: Record<string, unknown>) {
+  const profile = getRecordMetadata(metadata.inventory_measurement_profile);
+  return typeof profile.countUnitKey === "string" && typeof profile.singularLabel === "string" && typeof profile.pluralLabel === "string"
+    ? profile as { countUnitKey: string; singularLabel: string; pluralLabel: string }
+    : null;
 }
 
 function normalizeNutritionServingUnit(
@@ -4794,6 +4832,7 @@ function buildFoodNutritionMealItem(
 function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
   const { food } = item;
   const sourceMetadata = getRecordMetadata(food.metadata);
+  const inventoryMeasurementProfile = getFoodInventoryMeasurementProfile(food);
   const quantity = normalizeNutritionQuantity(item.quantity);
   const servingUnit = getSafeFoodServingUnit(food, item.servingUnit);
   const servingGrams = getPositiveNutritionNumber(food.serving_grams);
@@ -4819,6 +4858,7 @@ function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
 
   return {
     ...sourceMetadata,
+    ...(inventoryMeasurementProfile ? { inventory_measurement_profile: inventoryMeasurementProfile } : {}),
     source: "grocery-food-selection",
     catalogSource: food.source ?? "foods",
     food_family: foodFamily ?? undefined,
@@ -5545,6 +5585,15 @@ function getGroceryResourceDisplayAmount(resource: FoodResource): GroceryResourc
     const displayQuantity = getFoodResourceNumber(quantityValue);
     const displayUnit = getFoodResourceText(unitValue);
     if (displayQuantity !== null && displayUnit) {
+      const countProfile = getStoredCountProfile(metadata);
+      if (resource.unit?.toLowerCase() === "item" && countProfile) {
+        const label = formatInventoryCountLabel(displayQuantity, countProfile);
+        return {
+          displayQuantity,
+          displayUnit: label,
+          displayText: `${formatGroceryDisplayQuantity(displayQuantity)} ${label}`,
+        };
+      }
       return {
         displayQuantity,
         displayUnit,
@@ -5582,6 +5631,18 @@ function getGroceryResourceDisplayAmount(resource: FoodResource): GroceryResourc
         displayQuantity,
         displayUnit: "oz",
         displayText: formatGroceryDisplayText(displayQuantity, "oz"),
+      };
+    }
+  }
+
+  if (storedUnit.toLowerCase() === "item") {
+    const countProfile = getStoredCountProfile(metadata);
+    if (countProfile) {
+      const label = formatInventoryCountLabel(storedQuantity, countProfile);
+      return {
+        displayQuantity: storedQuantity,
+        displayUnit: label,
+        displayText: `${formatGroceryDisplayQuantity(storedQuantity)} ${label}`,
       };
     }
   }
@@ -10580,7 +10641,7 @@ export function NoteDatabaseEntrySheet({
         <p className="mt-1 text-[11px] font-medium text-white/38">
           {getGroceryServingGramHelper(metadata)}
         </p>
-        {renderGroceryInventoryControls(metadata, detectedInventoryLine)}
+        {renderGroceryInventoryControls(metadata, detectedInventoryLine, food)}
       </div>
     );
   }
@@ -10588,6 +10649,7 @@ export function NoteDatabaseEntrySheet({
   function renderGroceryInventoryControls(
     sourceMetadata: Record<string, unknown> = getRecordMetadata(entryFormValues.metadata),
     detectedInventoryLine?: string,
+    food?: FoodSearchResult,
   ) {
     if (!isGroceryDatabase) {
       return null;
@@ -10666,7 +10728,7 @@ export function NoteDatabaseEntrySheet({
               }
               className={`${compactInputClassName} flex-1`}
             >
-              {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
+              {getGroceryInventoryUnitOptions(food).map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -10950,6 +11012,10 @@ export function NoteDatabaseEntrySheet({
       const resourceQuantity = getFoodResourceNumber(resource.quantity);
       if (!resourceUnit || resourceQuantity === null) return false;
       const normalizedResourceUnit = normalizeGroceryInventoryUnit(resourceUnit);
+      if (save.canonicalUnit === "item") {
+        const storedProfile = getStoredCountProfile(getFoodResourceMetadata(resource));
+        return normalizedResourceUnit === "item" && Boolean(save.countUnitKey) && storedProfile?.countUnitKey === save.countUnitKey;
+      }
       if (save.canonicalUnit !== "g") return normalizedResourceUnit === save.canonicalUnit;
       return ["g", "kg", "oz", "lb"].includes(normalizedResourceUnit);
     });
@@ -11069,6 +11135,7 @@ export function NoteDatabaseEntrySheet({
 
     try {
       const selectedItem = makeNutritionSelectedFoodItem(food);
+      const measurementProfile = getFoodInventoryMeasurementProfile(food);
       const metadata = {
         ...buildGroceryFoodResourceMetadata(selectedItem),
         inventory_quantity: inventorySave.canonicalQuantity,
@@ -11076,11 +11143,17 @@ export function NoteDatabaseEntrySheet({
         acquired_quantity: inventorySave.displayQuantity,
         acquired_unit: inventorySave.displayUnit,
         display_quantity: inventorySave.displayQuantity,
-        display_unit: inventorySave.displayUnit,
+        display_unit:
+          inventorySave.displayUnit === "item" && measurementProfile
+            ? measurementProfile.pluralLabel
+            : inventorySave.displayUnit,
         canonical_quantity_g:
           inventorySave.canonicalUnit === "g" ? inventorySave.canonicalQuantity : undefined,
         inventory_quantity_source: inventorySave.conversionSource,
         inventory_conversion_confidence: inventorySave.conversionConfidence,
+        ...(inventorySave.countUnitKey && measurementProfile
+          ? { inventory_measurement_profile: measurementProfile }
+          : {}),
       };
       const existingQuantity = compatibleResource
         ? getFoodResourceNumber(compatibleResource.quantity)
@@ -11105,7 +11178,11 @@ export function NoteDatabaseEntrySheet({
                     ? existingGrams + inventorySave.canonicalQuantity
                     : (existingQuantity ?? 0) + inventorySave.canonicalQuantity,
                 unit: inventorySave.canonicalUnit,
-                metadata: { ...getFoodResourceMetadata(compatibleResource), ...metadata },
+                metadata: {
+                  ...getFoodResourceMetadata(compatibleResource),
+                  ...metadata,
+                  display_quantity: (existingQuantity ?? 0) + inventorySave.canonicalQuantity,
+                },
               }
             : {
                 food_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(food.id)
@@ -11226,7 +11303,9 @@ export function NoteDatabaseEntrySheet({
           >
             {GROCERY_SEARCH_INVENTORY_UNIT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {option.value === "item"
+                  ? getFoodInventoryMeasurementProfile(food)?.pluralLabel ?? option.label
+                  : option.label}
               </option>
             ))}
           </select>
@@ -11588,6 +11667,8 @@ export function NoteDatabaseEntrySheet({
     setGroceryResourceActionError(null);
 
     try {
+      const existingMetadata = getFoodResourceMetadata(resource);
+      const countProfile = getStoredCountProfile(existingMetadata);
       const response = await fetch("/api/food-resources", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -11596,6 +11677,16 @@ export function NoteDatabaseEntrySheet({
           action: "setQuantity",
           quantity,
           unit: groceryResourceEditDraft.unit,
+          metadata: {
+            ...existingMetadata,
+            display_quantity: quantity,
+            display_unit:
+              groceryResourceEditDraft.unit === "item" && countProfile
+                ? formatInventoryCountLabel(quantity, countProfile)
+                : groceryResourceEditDraft.unit,
+            inventory_quantity: quantity,
+            inventory_unit: groceryResourceEditDraft.unit,
+          },
         }),
       });
       const payload = (await response.json()) as FoodResourcesResponse;
@@ -11811,7 +11902,9 @@ export function NoteDatabaseEntrySheet({
                           >
                             {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
-                                {option.label}
+                                {option.value === "item"
+                                  ? getStoredCountProfile(getFoodResourceMetadata(resource))?.pluralLabel ?? option.label
+                                  : option.label}
                               </option>
                             ))}
                           </select>
@@ -12891,14 +12984,15 @@ export function NoteDatabaseEntrySheet({
                                   const isExpanded = expandedChefRecipeId === recipe.id;
                                   const familyOptions = Object.fromEntries(optionGroups.map((group) => [group.id, selectedChefOptions[group.id] ?? group.defaultOptionId]));
                                   const recipeOptions = { ...getDefaultChefRecipeOptions(recipe), ...familyOptions };
-                                  const resolvedIngredients = resolveChefRecipeIngredients(recipe, recipeOptions);
-                                  const resolvedName = resolveChefRecipeName(recipe, recipeOptions);
-                                  const nutrition = calculateResolvedChefRecipeNutrition(recipe, recipeOptions);
-                                  const availability = calculateResolvedChefRecipeAvailability(recipe, recipeOptions, groceryResourceItems);
+                                  const resolvedBuild = recipe.dishTemplate ? resolveChefDishTemplate(recipe, selectedChefOptions, groceryResourceItems) : null;
+                                  const resolvedIngredients = resolvedBuild?.ingredients ?? resolveChefRecipeIngredients(recipe, recipeOptions);
+                                  const resolvedName = resolvedBuild?.title ?? resolveChefRecipeName(recipe, recipeOptions);
+                                  const nutrition = resolvedBuild?.nutrition ?? calculateResolvedChefRecipeNutrition(recipe, recipeOptions);
+                                  const availability = resolvedBuild?.availability ?? calculateResolvedChefRecipeAvailability(recipe, recipeOptions, groceryResourceItems);
                                   return (
                                     <article key={recipe.id} className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
                                       <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left outline-none hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
-                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-0.5 block text-[10px] font-medium text-white/34">{recipe.timeMinutes} min · {recipe.difficulty}</span></span>
+                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-0.5 block text-[10px] font-medium text-white/34">{recipe.timeMinutes} min · {recipe.difficulty}</span>{resolvedBuild?.compactSummary ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{resolvedBuild.compactSummary}</span> : null}</span>
                                         <span className="hidden shrink-0 rounded-full border border-white/[0.06] bg-black/30 px-2 py-1 text-[9px] font-semibold text-white/48 min-[360px]:inline">{formatChefMacroSummary(nutrition)}</span>
                                         <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-white/30 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
                                       </button>
@@ -12906,17 +13000,19 @@ export function NoteDatabaseEntrySheet({
                                         <div className="border-t border-white/[0.045] px-2.5 pb-2.5 pt-2">
                                           <div className="flex flex-wrap gap-1">{recipe.tags.map((tag) => <span key={tag} className="rounded-full border border-white/[0.05] bg-black/25 px-2 py-0.5 text-[9px] font-semibold text-white/40">{tag}</span>)}</div>
                                           <p className="mt-2 text-xs leading-5 text-white/48">{recipe.shortDescription}</p>
+                                          {resolvedBuild ? <div className="mt-2.5 space-y-2">{resolvedBuild.slots.map((slot) => <div key={slot.slotId}><p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">{slot.label}{slot.role === "structural" ? " · required" : ""}</p><div className="flex flex-wrap gap-1">{slot.availableCandidates.map((candidate) => { const optionKey = `${recipe.id}:${slot.slotId}`; const selectedIds = (selectedChefOptions[optionKey] ?? slot.selected.map((item) => item.id).join(",")).split(",").filter(Boolean); const isSelected = selectedIds.includes(candidate.id); return <button key={candidate.id} type="button" aria-pressed={isSelected} onClick={() => setSelectedChefOptions((current) => { const currentIds = (current[optionKey] ?? slot.selected.map((item) => item.id).join(",")).split(",").filter(Boolean); const nextIds = slot.role === "structural" || slot.availableCandidates.length === 1 ? [candidate.id] : currentIds.includes(candidate.id) ? currentIds.filter((id) => id !== candidate.id) : [...currentIds, candidate.id]; return { ...current, [optionKey]: nextIds.join(",") }; })} className={`rounded-full border px-2 py-1 text-[9px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/78" : "border-white/[0.05] text-white/38"}`}>{candidate.label}</button>; })}{slot.availableCandidates.length === 0 ? <span className="text-[10px] text-white/28">No matching groceries</span> : null}</div></div>)}</div> : null}
                                           <div className="mt-2.5 grid grid-cols-4 gap-1 rounded-xl border border-white/[0.055] bg-black/30 p-1.5">
                                             {[{ label: "Calories", value: formatChefNutritionNumber(nutrition.calories) }, { label: "Protein", value: `${formatChefNutritionNumber(nutrition.protein_g)}g` }, { label: "Carbs", value: `${formatChefNutritionNumber(nutrition.carbs_g)}g` }, { label: "Fat", value: `${formatChefNutritionNumber(nutrition.fat_g)}g` }].map((macro) => <div key={macro.label} className="rounded-lg bg-white/[0.035] px-1 py-2 text-center"><span className="block text-xs font-bold tabular-nums text-white/78">{macro.value}</span><span className="mt-0.5 block text-[8px] font-bold uppercase tracking-wide text-white/28">{macro.label}</span></div>)}
                                           </div>
                                           <div className="mt-2 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[10px] font-medium text-white/46">
-                                            <p>{availability.summary}</p>
-                                            {availability.missingIngredientNames.length > 0 ? <p className="mt-0.5 text-white/34">Missing: {availability.missingIngredientNames.join(", ")}</p> : null}
+                                            <p>{resolvedBuild ? resolvedBuild.state.replaceAll("-", " ").replace(/^./, (letter) => letter.toUpperCase()) : availability.summary}</p>
+                                            {(resolvedBuild?.missingRequiredSlots ?? availability.missingIngredientNames).length > 0 ? <p className="mt-0.5 text-white/34">Missing required: {(resolvedBuild?.missingRequiredSlots ?? availability.missingIngredientNames).join(", ")}</p> : null}
                                           </div>
+                                          {resolvedBuild && resolvedBuild.missingExtras.length > 0 ? <div className="mt-2 rounded-lg border border-white/[0.04] bg-white/[0.02] px-2.5 py-2"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/30">Missing extras</p><p className="mt-0.5 text-[11px] text-white/42">{resolvedBuild.missingExtras.join(", ")}</p></div> : null}
                                           <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.13em] text-white/30">Ingredients</p>
                                           <ul className="mt-1 space-y-1">{resolvedIngredients.map((item) => { const itemNutrition = calculateChefIngredientNutrition(item); const itemAvailability = availability.ingredients[item.id]; const availabilityLabel = itemAvailability?.availability === "have" ? "Have" : itemAvailability?.availability === "partial" ? "Partial" : itemAvailability?.availability === "unknown" ? "Unknown" : "Missing"; return <li key={`${recipe.id}-${item.id}`} className="flex items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.02] px-2 py-1.5"><span className="text-sm" aria-hidden="true">{item.icon}</span><span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-semibold text-white/62">{item.quantity} {item.unit} {item.name}</span>{!itemNutrition.unknownNutrition ? <span className="block text-[9px] font-medium text-white/28">{formatChefNutritionNumber(itemNutrition.calories)} cal · {formatChefNutritionNumber(itemNutrition.protein_g)}g protein{itemNutrition.estimated ? " · est." : ""}</span> : <span className="block text-[9px] font-medium text-white/24">Nutrition unknown</span>}</span><span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${availabilityLabel === "Have" ? "border-emerald-300/15 bg-emerald-300/[0.07] text-emerald-100/65" : "border-white/[0.055] bg-black/25 text-white/38"}`}>{availabilityLabel}</span></li>; })}</ul>
                                           <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[0.13em] text-white/30">Steps</p>
-                                          <ol className="mt-1 space-y-1 text-xs leading-5 text-white/50">{recipe.steps.map((step, index) => <li key={`${recipe.id}-step-${index}`} className="flex gap-2"><span className="text-white/25">{index + 1}.</span><span>{step}</span></li>)}</ol>
+                                          <ol className="mt-1 space-y-1 text-xs leading-5 text-white/50">{(resolvedBuild?.steps ?? recipe.steps).map((step, index) => <li key={`${recipe.id}-step-${index}`} className="flex gap-2"><span className="text-white/25">{index + 1}.</span><span>{step}</span></li>)}</ol>
                                           <p className="mt-2.5 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[11px] font-medium text-white/42">{contextLabel}</p>
                                         </div>
                                       ) : null}
