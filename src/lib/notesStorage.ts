@@ -11,6 +11,7 @@ import type {
 import {
   DEFAULT_MEMO_DATABASE_TARGETS,
   getDefaultMemoDatabaseTarget,
+  isLegacyHydrationDatabase,
   repairDefaultNutritionDatabaseEntries,
 } from "@/lib/skillStarterNotes";
 
@@ -119,6 +120,33 @@ function getMemoDatabaseNoteMetadata(currentMetadata: unknown) {
   const databaseEntries: NoteDatabaseEntries = {
     ...currentEntries,
   } as NoteDatabaseEntries;
+
+  const legacyHydrationDatabaseIds = new Set(
+    Object.entries(currentDatabases)
+      .filter(([databaseId, definition]) =>
+        isLegacyHydrationDatabase(
+          databaseId,
+          isRecord(definition) ? definition : null,
+        ),
+      )
+      .map(([databaseId]) => databaseId),
+  );
+  Object.keys(databases).forEach((databaseId) => {
+    if (
+      legacyHydrationDatabaseIds.has(databaseId) ||
+      isLegacyHydrationDatabase(databaseId)
+    ) {
+      delete databases[databaseId];
+    }
+  });
+  Object.keys(databaseEntries).forEach((databaseId) => {
+    if (
+      legacyHydrationDatabaseIds.has(databaseId) ||
+      isLegacyHydrationDatabase(databaseId)
+    ) {
+      delete databaseEntries[databaseId];
+    }
+  });
 
   for (const target of DEFAULT_MEMO_DATABASE_TARGETS) {
     const existingDatabase: Partial<NoteDatabaseDefinition> = isRecord(
@@ -512,7 +540,7 @@ export async function createMemoDatabaseEntryForHabit(
   if (!target) {
     return {
       success: false,
-      error: "Choose Nutrition, Hydration, or Fitness before saving this MEMO.",
+      error: "Choose Nutrition or Fitness before saving this MEMO.",
       noteId: null,
     };
   }

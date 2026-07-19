@@ -83,6 +83,7 @@ export const formatChefMacroSummary = (totals: ChefNutritionTotals) => `${totals
 
 function metadataKey(metadata: unknown) { if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return ""; const value = metadata as Record<string, unknown>; return normalize(value.foodKey ?? value.food_key ?? value.canonicalKey ?? value.canonical_key); }
 function matchesIngredient(ingredient: ChefRecipeIngredient, resource: ChefFoodResourceLike) {
+  if (!resource || typeof resource !== "object") return false;
   const key = normalize(ingredient.foodKey); if (metadataKey(resource.metadata) === key) return true;
   const names = [resource.name, resource.brand_name].map(normalize).filter(Boolean); const candidates = [ingredient.name, ...(ingredient.aliases ?? [])].map(normalize).filter((item) => item.length >= 3 && !["sauce", "meat", "cheese"].includes(item));
   return names.some((name) => candidates.some((candidate) => name === candidate || (candidate.length >= 5 && name.includes(candidate))));
@@ -105,6 +106,17 @@ export function calculateChefRecipeAvailability(recipe: ChefRecipe, resources: r
 
 export function calculateResolvedChefRecipeAvailability(recipe: ChefRecipe, selectedOptions: ChefRecipeSelectedOptions = {}, resources: readonly ChefFoodResourceLike[]): ChefRecipeAvailability {
   return calculateIngredientsAvailability(resolveChefRecipeIngredients(recipe, selectedOptions), resources);
+}
+
+const CHEF_STAPLE_FOOD_KEYS = new Set(["olive-oil", "butter", "salt", "black-pepper", "water"]);
+
+export function isResolvedChefRecipeAvailable(recipe: ChefRecipe, selectedOptions: ChefRecipeSelectedOptions = {}, resources: readonly ChefFoodResourceLike[] = []): boolean {
+  const resolvedIngredients = resolveChefRecipeIngredients(recipe, selectedOptions);
+  const availability = calculateIngredientsAvailability(resolvedIngredients, Array.isArray(resources) ? resources : []);
+  return resolvedIngredients.every((ingredient) => {
+    if (ingredient.optional || CHEF_STAPLE_FOOD_KEYS.has(ingredient.foodKey)) return true;
+    return availability.ingredients[ingredient.id]?.availability !== "missing";
+  });
 }
 
 function calculateIngredientsAvailability(recipeIngredients: readonly ChefRecipeIngredient[], resources: readonly ChefFoodResourceLike[]): ChefRecipeAvailability {

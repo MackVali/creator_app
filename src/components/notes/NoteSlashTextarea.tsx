@@ -83,7 +83,9 @@ import {
   isOnHandDatabaseDefinition,
   isLockedStarterDatabase,
   isLockedStarterDatabaseId,
+  isLegacyHydrationDatabase,
   isDatabaseCreatedAtField,
+  NUTRITION_DATABASE_ID,
   ON_HAND_EXPIRES_ON_FIELD_ID,
   ON_HAND_LOCATION_FIELD_ID,
   ON_HAND_NAME_FIELD_ID,
@@ -123,6 +125,7 @@ import {
   calculateResolvedChefRecipeNutrition,
   formatChefMacroSummary,
   formatChefNutritionNumber,
+  isResolvedChefRecipeAvailable,
 } from "@/lib/nutrition/chefRecipeNutrition";
 import {
   DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
@@ -316,6 +319,16 @@ const NUTRITION_BROWSE_ACCORDION_TRANSITION = {
 } as const;
 const DEFAULT_CHEF_CATALOG_ICON = "🍽️";
 const CHEF_CATALOG_EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+const CHEF_FILTERS = [
+  { id: "all", label: "All", tags: [] },
+  { id: "available", label: "Available", tags: [] },
+  { id: "quick", label: "Quick", tags: ["quick"] },
+  { id: "high-protein", label: "High Protein", tags: ["high-protein"] },
+  { id: "cheap", label: "Cheap", tags: ["cheap"] },
+  { id: "low-effort", label: "Low Effort", tags: ["low-effort"] },
+  { id: "meal-prep", label: "Meal Prep", tags: ["meal-prep", "bulk"] },
+] as const;
+type ChefFilterId = (typeof CHEF_FILTERS)[number]["id"];
 
 function resolveChefCatalogIcon(icon: unknown): string {
   if (typeof icon !== "string") return DEFAULT_CHEF_CATALOG_ICON;
@@ -2368,11 +2381,21 @@ function normalizeDatabaseDefinitionsForSegments(
   const nextDefinitions: NoteDatabaseDefinitions = { ...currentDefinitions };
   let changed = false;
 
+  Object.entries(nextDefinitions).forEach(([databaseId, definition]) => {
+    if (isLegacyHydrationDatabase(databaseId, definition)) {
+      delete nextDefinitions[databaseId];
+      changed = true;
+    }
+  });
+
   segments.forEach((segment) => {
     if (segment.type !== "database") return;
 
     const currentDefinition =
       nextDefinitions[segment.databaseId] ?? createDefaultDatabaseDefinition(segment);
+    if (isLegacyHydrationDatabase(segment.databaseId, currentDefinition, segment.title)) {
+      return;
+    }
     const normalizedDefinition = normalizeDatabaseDefinition(currentDefinition);
 
     if (JSON.stringify(currentDefinition) !== JSON.stringify(normalizedDefinition)) {
@@ -2602,7 +2625,33 @@ type NutritionSelectedFoodItem = {
   servingUnit: NutritionServingUnit;
   groceryDeduction?: GroceryDeductionDraft | null;
 };
-type GroceryInventoryUnit = "servings" | "package" | "g" | "oz" | "item";
+type GroceryInventoryUnit =
+  | "servings"
+  | "package"
+  | "g"
+  | "kg"
+  | "oz"
+  | "lb"
+  | "ml"
+  | "l"
+  | "item";
+type GrocerySearchDraft = {
+  stableKey: string;
+  food: FoodSearchResult;
+  quantity: string;
+  unit: GroceryInventoryUnit;
+  status: "idle" | "saving" | "success" | "error";
+  message: string | null;
+  quantityManuallyEdited: boolean;
+};
+type GrocerySearchInventorySave = {
+  canonicalQuantity: number;
+  canonicalUnit: GroceryInventoryUnit;
+  displayQuantity: number;
+  displayUnit: GroceryInventoryUnit;
+  conversionSource: string;
+  conversionConfidence: "high" | "medium" | "none";
+};
 type GroceryPackageServingsContext =
   | {
       source: "explicit";
@@ -3252,6 +3301,13 @@ const GROCERY_INVENTORY_UNIT_OPTIONS = [
   { value: "oz", label: "oz" },
   { value: "item", label: "item" },
 ] as const satisfies readonly { value: GroceryInventoryUnit; label: string }[];
+const GROCERY_SEARCH_INVENTORY_UNIT_OPTIONS = [
+  ...GROCERY_INVENTORY_UNIT_OPTIONS,
+  { value: "kg", label: "kg" },
+  { value: "lb", label: "lb" },
+  { value: "ml", label: "ml" },
+  { value: "l", label: "l" },
+] as const satisfies readonly { value: GroceryInventoryUnit; label: string }[];
 const NUTRITION_SERVING_UNIT_ALIASES: Record<string, NutritionAllowedServingUnit> = {
   gram: "g",
   grams: "g",
@@ -3286,12 +3342,53 @@ function normalizeGroceryInventoryUnit(value: unknown): GroceryInventoryUnit {
     return "package";
   }
   if (normalized === "gram" || normalized === "grams") return "g";
+  if (normalized === "kilogram" || normalized === "kilograms") return "kg";
   if (normalized === "ounce" || normalized === "ounces") return "oz";
+  if (normalized === "pound" || normalized === "pounds" || normalized === "lbs") return "lb";
+  if (normalized === "milliliter" || normalized === "milliliters") return "ml";
+  if (normalized === "liter" || normalized === "liters" || normalized === "litre" || normalized === "litres") return "l";
   if (normalized === "items" || normalized === "each" || normalized === "ea") return "item";
+  if (["kg", "lb", "ml", "l"].includes(normalized)) {
+    return normalized as GroceryInventoryUnit;
+  }
 
   return GROCERY_INVENTORY_UNIT_OPTIONS.some((option) => option.value === normalized)
     ? (normalized as GroceryInventoryUnit)
     : "package";
+}
+
+function getGrocerySearchUnitDefault(unit: GroceryInventoryUnit) {
+  if (unit === "g") return 100;
+  if (unit === "oz") return 8;
+  if (unit === "ml") return 250;
+  return 1;
+}
+
+function convertGrocerySearchQuantity(
+  quantity: number,
+  oldUnit: GroceryInventoryUnit,
+  newUnit: GroceryInventoryUnit,
+) {
+  const weightGrams: Partial<Record<GroceryInventoryUnit, number>> = {
+    g: 1,
+    kg: 1000,
+    oz: GRAMS_PER_OUNCE,
+    lb: GRAMS_PER_OUNCE * 16,
+  };
+  const volumeMl: Partial<Record<GroceryInventoryUnit, number>> = { ml: 1, l: 1000 };
+  const oldWeight = weightGrams[oldUnit];
+  const newWeight = weightGrams[newUnit];
+  if (oldWeight && newWeight) return (quantity * oldWeight) / newWeight;
+
+  const oldVolume = volumeMl[oldUnit];
+  const newVolume = volumeMl[newUnit];
+  if (oldVolume && newVolume) return (quantity * oldVolume) / newVolume;
+  return null;
+}
+
+function formatGrocerySearchQuantity(quantity: number) {
+  if (!Number.isFinite(quantity) || quantity <= 0) return "";
+  return String(Number(quantity.toFixed(3)));
 }
 
 function parseGroceryInventoryNumber(value: unknown) {
@@ -3509,9 +3606,68 @@ function getGroceryInventoryGramEquivalent(
     return packageGrams ? quantity * packageGrams : null;
   }
   if (unit === "g") return quantity;
+  if (unit === "kg") return quantity * 1000;
   if (unit === "oz") return quantity * GRAMS_PER_OUNCE;
+  if (unit === "lb") return quantity * GRAMS_PER_OUNCE * 16;
+
+  if (unit === "item") {
+    for (const record of getGroceryMetadataRecords(metadata)) {
+      const itemGrams =
+        getPositiveNutritionMetadataNumber(record, "item_grams") ??
+        getPositiveNutritionMetadataNumber(record, "itemGrams") ??
+        getPositiveNutritionMetadataNumber(record, "each_grams");
+      if (itemGrams) return quantity * itemGrams;
+    }
+  }
 
   return null;
+}
+
+function prepareGrocerySearchInventorySave(
+  quantityValue: unknown,
+  unitValue: unknown,
+  food: FoodSearchResult,
+): GrocerySearchInventorySave | null {
+  const displayQuantity = parseGroceryInventoryNumber(quantityValue);
+  if (displayQuantity === null) return null;
+
+  const displayUnit = normalizeGroceryInventoryUnit(unitValue);
+  const metadata = getRecordMetadata(food.metadata);
+  const canonicalGrams = getGroceryInventoryGramEquivalent(
+    metadata,
+    displayQuantity,
+    displayUnit,
+  );
+
+  if (canonicalGrams !== null && Number.isFinite(canonicalGrams) && canonicalGrams > 0) {
+    const conversionSource =
+      displayUnit === "g"
+        ? "entered_grams"
+        : displayUnit === "kg" || displayUnit === "oz" || displayUnit === "lb"
+          ? "standard_weight_conversion"
+          : displayUnit === "servings"
+            ? "serving_grams"
+            : displayUnit === "package"
+              ? "package_net_grams"
+              : "item_grams";
+    return {
+      canonicalQuantity: Number(canonicalGrams.toFixed(3)),
+      canonicalUnit: "g",
+      displayQuantity,
+      displayUnit,
+      conversionSource,
+      conversionConfidence: displayUnit === "package" ? "medium" : "high",
+    };
+  }
+
+  return {
+    canonicalQuantity: displayQuantity,
+    canonicalUnit: displayUnit,
+    displayQuantity,
+    displayUnit,
+    conversionSource: "original_unit_fallback",
+    conversionConfidence: "none",
+  };
 }
 
 function getGroceryInventoryGramHelper(
@@ -5350,6 +5506,135 @@ function getFoodResourceMetadata(resource: FoodResource) {
     : {};
 }
 
+type GroceryResourceDisplayAmount = {
+  displayQuantity: number | null;
+  displayUnit: string;
+  displayText: string;
+  secondaryText?: string;
+};
+
+function formatGroceryDisplayQuantity(quantity: number) {
+  return String(Number(quantity.toFixed(1)));
+}
+
+function formatGroceryDisplayText(quantity: number, unit: string) {
+  const formattedQuantity = formatGroceryDisplayQuantity(quantity);
+  const normalizedUnit = unit.trim().toLowerCase();
+
+  if (["g", "kg", "oz", "lb", "ml", "l"].includes(normalizedUnit)) {
+    return normalizedUnit === "g"
+      ? `${formattedQuantity}g`
+      : `${formattedQuantity} ${unit.trim()}`;
+  }
+
+  const unitLabel =
+    quantity === 1
+      ? unit.trim().replace(/s$/i, "")
+      : unit.trim();
+  return `${formattedQuantity} ${unitLabel}`;
+}
+
+function getGroceryResourceDisplayAmount(resource: FoodResource): GroceryResourceDisplayAmount {
+  const metadata = getFoodResourceMetadata(resource);
+  const metadataAmounts = [
+    [metadata.display_quantity, metadata.display_unit],
+    [metadata.acquired_quantity, metadata.acquired_unit],
+  ] as const;
+
+  for (const [quantityValue, unitValue] of metadataAmounts) {
+    const displayQuantity = getFoodResourceNumber(quantityValue);
+    const displayUnit = getFoodResourceText(unitValue);
+    if (displayQuantity !== null && displayUnit) {
+      return {
+        displayQuantity,
+        displayUnit,
+        displayText: formatGroceryDisplayText(displayQuantity, displayUnit),
+      };
+    }
+  }
+
+  const storedQuantity = getFoodResourceNumber(resource.quantity);
+  const storedUnit = getFoodResourceText(resource.unit);
+  if (storedQuantity === null || !storedUnit) {
+    return {
+      displayQuantity: storedQuantity,
+      displayUnit: storedUnit,
+      displayText:
+        storedQuantity !== null
+          ? formatGroceryDisplayQuantity(storedQuantity)
+          : storedUnit,
+    };
+  }
+
+  if (storedUnit.toLowerCase() === "g") {
+    if (storedQuantity >= GRAMS_PER_OUNCE * 16) {
+      const displayQuantity = storedQuantity / (GRAMS_PER_OUNCE * 16);
+      return {
+        displayQuantity,
+        displayUnit: "lb",
+        displayText: formatGroceryDisplayText(displayQuantity, "lb"),
+      };
+    }
+
+    if (storedQuantity >= GRAMS_PER_OUNCE) {
+      const displayQuantity = storedQuantity / GRAMS_PER_OUNCE;
+      return {
+        displayQuantity,
+        displayUnit: "oz",
+        displayText: formatGroceryDisplayText(displayQuantity, "oz"),
+      };
+    }
+  }
+
+  return {
+    displayQuantity: storedQuantity,
+    displayUnit: storedUnit,
+    displayText: formatGroceryDisplayText(storedQuantity, storedUnit),
+  };
+}
+
+function getGroceryResourceFoodIcon(resource: FoodResource): FoodIcon {
+  const metadata = getFoodResourceMetadata(resource);
+  const iconMetadata = getRecordMetadata(metadata.icon);
+  const storedEmoji = [
+    metadata.food_emoji,
+    metadata.emoji,
+    iconMetadata.emoji,
+    metadata.food_icon,
+    typeof metadata.icon === "string" ? metadata.icon : null,
+  ].find(
+    (value): value is string =>
+      typeof value === "string" && /\p{Extended_Pictographic}/u.test(value.trim()),
+  );
+
+  if (storedEmoji) {
+    return {
+      assetPath: null,
+      fallbackEmoji: storedEmoji.trim(),
+      label: resource.name || "Food",
+    };
+  }
+
+  const iconName = getOptionalNutritionMetadataString(iconMetadata, "name");
+  const candidates = [
+    iconName,
+    getOptionalNutritionMetadataString(metadata, "food_icon"),
+    getOptionalNutritionMetadataString(metadata, "food_family"),
+    getOptionalNutritionMetadataString(metadata, "canonical_food_name"),
+    resource.name,
+    getOptionalNutritionMetadataString(metadata, "category"),
+    getOptionalNutritionMetadataString(metadata, "food_category"),
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const resolvedIcon = getFoodIcon({ name: resource.name, normalized_name: candidate });
+    if (resolvedIcon.assetPath || resolvedIcon.fallbackEmoji !== "🍽️") return resolvedIcon;
+  }
+
+  return getFoodIcon({ name: resource.name });
+}
+
 function getOptionalNutritionMetadataNumber(
   metadata: Record<string, unknown>,
   key: string,
@@ -6504,6 +6789,15 @@ function parseNoteSegments(content: string): NoteSegment[] {
     const databaseMarker = parseStandaloneNoteDatabaseMarker(line);
     if (databaseMarker) {
       flushText();
+      if (
+        isLegacyHydrationDatabase(
+          databaseMarker.databaseId,
+          null,
+          databaseMarker.title,
+        )
+      ) {
+        return;
+      }
       nextSegments.push({
         type: "database",
         marker: buildDatabaseMarker({
@@ -6668,7 +6962,7 @@ export function NoteDatabaseEntrySheet({
   const [openChefDishFamilyKey, setOpenChefDishFamilyKey] = useState<string | null>(null);
   const [selectedChefStyleId, setSelectedChefStyleId] = useState<string | null>(null);
   const [selectedChefOptions, setSelectedChefOptions] = useState<Record<string, string>>({});
-  const [selectedChefTags, setSelectedChefTags] = useState<string[]>([]);
+  const [selectedChefFilter, setSelectedChefFilter] = useState<ChefFilterId>("all");
   const [expandedChefRecipeId, setExpandedChefRecipeId] = useState<string | null>(null);
   const [selectedFitnessAction, setSelectedFitnessAction] =
     useState<FitnessActionTabId>("start");
@@ -6759,6 +7053,30 @@ export function NoteDatabaseEntrySheet({
   const [groceryResourcesError, setGroceryResourcesError] = useState<string | null>(
     null,
   );
+  const chefAvailabilityCatalog = useMemo(() => {
+    const availableRecipeIdsByFamily = new Map<string, Set<string>>();
+    const availableOptionIdsByGroup = new Map<string, Set<string>>();
+    const availableFamilyKeys = new Set<string>();
+
+    getChefCuisinesWithCounts().forEach((cuisine) => {
+      getChefDishFamiliesForCuisine(cuisine.id).forEach((dishFamily) => {
+        const familyKey = `${cuisine.id}:${dishFamily.id}`;
+        const optionGroups = getChefOptionGroupsForDishFamily(cuisine.id, dishFamily.id);
+        const recipes = getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id });
+        const selectedOptions = Object.fromEntries(optionGroups.map((group) => [group.id, selectedChefOptions[group.id] ?? group.defaultOptionId]));
+        const availableIds = new Set(recipes.filter((recipe) => isResolvedChefRecipeAvailable(recipe, { ...getDefaultChefRecipeOptions(recipe), ...selectedOptions }, groceryResourceItems)).map((recipe) => recipe.id));
+        availableRecipeIdsByFamily.set(familyKey, availableIds);
+
+        optionGroups.forEach((group) => {
+          const availableOptionIds = new Set(group.options.filter((option) => recipes.some((recipe) => isResolvedChefRecipeAvailable(recipe, { ...getDefaultChefRecipeOptions(recipe), ...selectedOptions, [group.id]: option.id }, groceryResourceItems))).map((option) => option.id));
+          availableOptionIdsByGroup.set(group.id, availableOptionIds);
+        });
+        if (availableIds.size > 0 || optionGroups.some((group) => (availableOptionIdsByGroup.get(group.id)?.size ?? 0) > 0)) availableFamilyKeys.add(familyKey);
+      });
+    });
+
+    return { availableRecipeIdsByFamily, availableOptionIdsByGroup, availableFamilyKeys };
+  }, [groceryResourceItems, selectedChefOptions]);
   const [openGroceryResourceMenuId, setOpenGroceryResourceMenuId] = useState<string | null>(
     null,
   );
@@ -6775,15 +7093,10 @@ export function NoteDatabaseEntrySheet({
   const [groceryResourceActionError, setGroceryResourceActionError] = useState<
     string | null
   >(null);
-  const [expandedGrocerySearchFood, setExpandedGrocerySearchFood] =
-    useState<FoodSearchResult | null>(null);
-  const [grocerySearchAmount, setGrocerySearchAmount] = useState("1");
-  const [grocerySearchUnit, setGrocerySearchUnit] =
-    useState<GroceryInventoryUnit>("package");
-  const [isGrocerySearchSaving, setIsGrocerySearchSaving] = useState(false);
-  const [grocerySearchSaveError, setGrocerySearchSaveError] = useState<string | null>(
-    null,
-  );
+  const [grocerySearchDrafts, setGrocerySearchDrafts] = useState<
+    Record<string, GrocerySearchDraft>
+  >({});
+  const grocerySearchSavingIdsRef = useRef(new Set<string>());
   const [nutritionSavedMeals, setNutritionSavedMeals] = useState<NutritionSavedMeal[]>([]);
   const [isNutritionSavedMealsLoading, setIsNutritionSavedMealsLoading] = useState(false);
   const [nutritionSavedMealsError, setNutritionSavedMealsError] = useState<string | null>(
@@ -10591,62 +10904,194 @@ export function NoteDatabaseEntrySheet({
   }
 
   function getActiveGroceryResourcesForFood(food: FoodSearchResult) {
-    return groceryResourceItems.filter(
-      (resource) => resource.status === "active" && resource.food_id === food.id,
-    );
-  }
-
-  function getCompatibleGrocerySearchResource(
-    food: FoodSearchResult,
-    unit: GroceryInventoryUnit,
-  ) {
-    return getActiveGroceryResourcesForFood(food).find((resource) => {
-      const resourceUnit = getFoodResourceText(resource.unit);
+    const foodName = food.name.trim().toLocaleLowerCase();
+    const brandName = (food.brand_name ?? "").trim().toLocaleLowerCase();
+    return groceryResourceItems.filter((resource) => {
+      if (resource.status !== "active") return false;
+      if (resource.food_id && resource.food_id === food.id) return true;
+      const metadata = getFoodResourceMetadata(resource);
+      const snapshot = getRecordMetadata(metadata.foodSnapshot);
+      if (snapshot.id === food.id) return true;
       return (
-        resourceUnit &&
-        getFoodResourceNumber(resource.quantity) !== null &&
-        normalizeGroceryInventoryUnit(resourceUnit) === unit
+        (resource.name ?? "").trim().toLocaleLowerCase() === foodName &&
+        (resource.brand_name ?? "").trim().toLocaleLowerCase() === brandName
       );
     });
   }
 
-  function toggleGrocerySearchFood(food: FoodSearchResult) {
-    if (expandedGrocerySearchFood?.id === food.id) {
-      setExpandedGrocerySearchFood(null);
-      setGrocerySearchSaveError(null);
-      return;
-    }
+  function getGrocerySearchDraftKey(food: FoodSearchResult) {
+    const foodId = typeof food.id === "string" ? food.id.trim() : "";
+    if (foodId) return `food:${foodId}`;
 
+    const metadata =
+      food.metadata && typeof food.metadata === "object" && !Array.isArray(food.metadata)
+        ? (food.metadata as Record<string, unknown>)
+        : {};
+    const barcode =
+      typeof metadata.barcode === "string" ? normalizeFoodBarcode(metadata.barcode) : "";
+    if (barcode) return `barcode:${barcode}`;
+
+    const canonicalName =
+      typeof metadata.canonical_food_name === "string"
+        ? metadata.canonical_food_name.trim().toLocaleLowerCase()
+        : "";
+    const foodName = typeof food.name === "string" ? food.name.trim().toLocaleLowerCase() : "";
+    const brandName =
+      typeof food.brand_name === "string"
+        ? food.brand_name.trim().toLocaleLowerCase()
+        : "";
+    const fallbackName = canonicalName || foodName;
+    return fallbackName ? `name:${fallbackName}:${brandName}` : null;
+  }
+
+  function getCompatibleGrocerySearchResource(food: FoodSearchResult, save: GrocerySearchInventorySave) {
+    return getActiveGroceryResourcesForFood(food).find((resource) => {
+      const resourceUnit = getFoodResourceText(resource.unit);
+      const resourceQuantity = getFoodResourceNumber(resource.quantity);
+      if (!resourceUnit || resourceQuantity === null) return false;
+      const normalizedResourceUnit = normalizeGroceryInventoryUnit(resourceUnit);
+      if (save.canonicalUnit !== "g") return normalizedResourceUnit === save.canonicalUnit;
+      return ["g", "kg", "oz", "lb"].includes(normalizedResourceUnit);
+    });
+  }
+
+  function toggleGrocerySearchFood(food: FoodSearchResult) {
+    const draftKey = getGrocerySearchDraftKey(food);
+    if (!draftKey) return;
     const defaultInventory = getGroceryDefaultInventoryAmount(food);
-    setExpandedGrocerySearchFood(food);
-    setGrocerySearchAmount(formatNutritionServingAmount(defaultInventory.quantity));
-    setGrocerySearchUnit(defaultInventory.unit);
-    setGrocerySearchSaveError(null);
+    setGrocerySearchDrafts((currentDrafts) => {
+      if (currentDrafts[draftKey]) {
+        if (
+          currentDrafts[draftKey].status === "saving" ||
+          currentDrafts[draftKey].status === "success"
+        ) {
+          return currentDrafts;
+        }
+        const remainingDrafts = { ...currentDrafts };
+        delete remainingDrafts[draftKey];
+        return remainingDrafts;
+      }
+      return {
+        ...currentDrafts,
+        [draftKey]: {
+          stableKey: draftKey,
+          food,
+          quantity: formatGrocerySearchQuantity(defaultInventory.quantity),
+          unit: defaultInventory.unit,
+          status: "idle",
+          message: null,
+          quantityManuallyEdited: false,
+        },
+      };
+    });
     setExpandedGroceryInventoryField(null);
     void hapticSoftTick();
   }
 
-  async function saveGrocerySearchFood(food: FoodSearchResult) {
-    if (isGrocerySearchSaving) return;
+  function updateGrocerySearchDraft(
+    foodId: string,
+    changes: Partial<Pick<GrocerySearchDraft, "quantity" | "unit" | "quantityManuallyEdited">>,
+  ) {
+    setGrocerySearchDrafts((currentDrafts) => {
+      const draft = currentDrafts[foodId];
+      if (!draft || draft.status === "saving" || draft.status === "success") {
+        return currentDrafts;
+      }
+      return {
+        ...currentDrafts,
+        [foodId]: { ...draft, ...changes, status: "idle", message: null },
+      };
+    });
+  }
 
-    const addedAmount = parseGroceryInventoryNumber(grocerySearchAmount);
-    if (!addedAmount || addedAmount <= 0) {
-      setGrocerySearchSaveError("Enter an amount greater than 0.");
-      void hapticErrorPattern();
-      return;
+  function changeGrocerySearchDraftUnit(foodId: string, unit: GroceryInventoryUnit) {
+    setGrocerySearchDrafts((currentDrafts) => {
+      const draft = currentDrafts[foodId];
+      if (
+        !draft ||
+        draft.status === "saving" ||
+        draft.status === "success" ||
+        draft.unit === unit
+      ) {
+        return currentDrafts;
+      }
+
+      const currentQuantity = parseGroceryInventoryNumber(draft.quantity);
+      const convertedQuantity =
+        draft.quantityManuallyEdited && currentQuantity
+          ? convertGrocerySearchQuantity(currentQuantity, draft.unit, unit)
+          : null;
+      const quantity = formatGrocerySearchQuantity(
+        convertedQuantity ?? getGrocerySearchUnitDefault(unit),
+      );
+
+      return {
+        ...currentDrafts,
+        [foodId]: {
+          ...draft,
+          quantity,
+          unit,
+          quantityManuallyEdited: convertedQuantity !== null,
+          status: "idle",
+          message: null,
+        },
+      };
+    });
+  }
+
+  async function saveGrocerySearchFood(draftKey: string) {
+    const draft = grocerySearchDrafts[draftKey];
+    if (!draft || draft.status === "saving" || grocerySearchSavingIdsRef.current.has(draftKey)) {
+      return false;
     }
 
-    const compatibleResource = getCompatibleGrocerySearchResource(food, grocerySearchUnit);
-    setIsGrocerySearchSaving(true);
-    setGrocerySearchSaveError(null);
+    const { food } = draft;
+    const inventorySave = prepareGrocerySearchInventorySave(draft.quantity, draft.unit, food);
+    if (!inventorySave) {
+      setGrocerySearchDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [draftKey]: {
+          ...currentDrafts[draftKey],
+          status: "error",
+          message: "Add an amount.",
+        },
+      }));
+      void hapticErrorPattern();
+      return false;
+    }
+
+    const compatibleResource = getCompatibleGrocerySearchResource(food, inventorySave);
+    grocerySearchSavingIdsRef.current.add(draftKey);
+    setGrocerySearchDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [draftKey]: { ...currentDrafts[draftKey], status: "saving", message: null },
+    }));
 
     try {
       const selectedItem = makeNutritionSelectedFoodItem(food);
       const metadata = {
         ...buildGroceryFoodResourceMetadata(selectedItem),
-        inventory_quantity: addedAmount,
-        inventory_unit: grocerySearchUnit,
+        inventory_quantity: inventorySave.canonicalQuantity,
+        inventory_unit: inventorySave.canonicalUnit,
+        acquired_quantity: inventorySave.displayQuantity,
+        acquired_unit: inventorySave.displayUnit,
+        display_quantity: inventorySave.displayQuantity,
+        display_unit: inventorySave.displayUnit,
+        canonical_quantity_g:
+          inventorySave.canonicalUnit === "g" ? inventorySave.canonicalQuantity : undefined,
+        inventory_quantity_source: inventorySave.conversionSource,
+        inventory_conversion_confidence: inventorySave.conversionConfidence,
       };
+      const existingQuantity = compatibleResource
+        ? getFoodResourceNumber(compatibleResource.quantity)
+        : null;
+      const existingGrams = compatibleResource && existingQuantity !== null
+        ? getGroceryInventoryGramEquivalent(
+            getFoodResourceMetadata(compatibleResource),
+            existingQuantity,
+            normalizeGroceryInventoryUnit(compatibleResource.unit),
+          )
+        : null;
       const response = await fetch("/api/food-resources", {
         method: compatibleResource ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -10655,15 +11100,21 @@ export function NoteDatabaseEntrySheet({
             ? {
                 id: compatibleResource.id,
                 action: "setQuantity",
-                quantity: (getFoodResourceNumber(compatibleResource.quantity) ?? 0) + addedAmount,
-                unit: grocerySearchUnit,
+                quantity:
+                  inventorySave.canonicalUnit === "g" && existingGrams !== null
+                    ? existingGrams + inventorySave.canonicalQuantity
+                    : (existingQuantity ?? 0) + inventorySave.canonicalQuantity,
+                unit: inventorySave.canonicalUnit,
+                metadata: { ...getFoodResourceMetadata(compatibleResource), ...metadata },
               }
             : {
-                food_id: food.id,
+                food_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(food.id)
+                  ? food.id
+                  : null,
                 brand_name: food.brand_name ?? null,
                 name: food.name,
-                quantity: addedAmount,
-                unit: grocerySearchUnit,
+                quantity: inventorySave.canonicalQuantity,
+                unit: inventorySave.canonicalUnit,
                 location: null,
                 expires_on: null,
                 notes: null,
@@ -10685,61 +11136,95 @@ export function NoteDatabaseEntrySheet({
             )
           : [savedResource, ...currentItems],
       );
-      setExpandedGrocerySearchFood(null);
+      setGrocerySearchDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [draftKey]: {
+          ...currentDrafts[draftKey],
+          quantity: "",
+          quantityManuallyEdited: false,
+          status: "success",
+          message: compatibleResource ? "Updated existing Grocery amount." : "Added to Grocery.",
+        },
+      }));
       void hapticComplete();
+      return true;
     } catch (error) {
       console.error("Failed to add Grocery search result", { error, foodId: food.id });
-      setGrocerySearchSaveError("Unable to add this grocery right now.");
+      setGrocerySearchDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [draftKey]: {
+          ...currentDrafts[draftKey],
+          status: "error",
+          message: "Unable to add this grocery right now.",
+        },
+      }));
       void hapticErrorPattern();
+      return false;
     } finally {
-      setIsGrocerySearchSaving(false);
+      grocerySearchSavingIdsRef.current.delete(draftKey);
     }
   }
 
-  function renderGrocerySearchExpansion(food: FoodSearchResult) {
+  function renderGrocerySearchDraftRow(draft: GrocerySearchDraft) {
+    const { food, stableKey } = draft;
     const activeResources = getActiveGroceryResourcesForFood(food);
-    const compatibleResource = getCompatibleGrocerySearchResource(food, grocerySearchUnit);
+    const previewSave = prepareGrocerySearchInventorySave(draft.quantity, draft.unit, food);
+    const compatibleResource = previewSave
+      ? getCompatibleGrocerySearchResource(food, previewSave)
+      : undefined;
     const existingResource = compatibleResource ?? activeResources[0] ?? null;
     const existingQuantity = existingResource
       ? getFoodResourceNumber(existingResource.quantity)
       : null;
     const existingUnit = existingResource ? getFoodResourceText(existingResource.unit) : "";
-    const hasUnitMismatch = activeResources.length > 0 && !compatibleResource;
+    const existingAmount =
+      existingQuantity !== null && existingUnit
+        ? `${formatFoodNutritionNumber(existingQuantity) ?? existingQuantity}${
+            ["g", "kg", "oz", "lb", "ml", "l"].includes(existingUnit.toLowerCase())
+              ? ""
+              : " "
+          }${existingUnit}`
+        : null;
 
     return (
       <div className="border-t border-white/[0.045] bg-white/[0.025] px-3 pb-3 pt-2.5">
-        {existingQuantity !== null && existingUnit ? (
-          <p className="mb-2 text-[11px] font-semibold text-white/48">
-            Already have: {formatFoodNutritionNumber(existingQuantity) ?? existingQuantity}{" "}
-            {existingUnit}
-          </p>
-        ) : null}
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/42">
-          Amount acquired
-        </p>
+        <div className="flex min-w-0 items-baseline justify-between gap-3 text-[11px] font-semibold">
+          <p className="shrink-0 uppercase tracking-[0.12em] text-white/42">Add amount</p>
+          {existingAmount ? (
+            <p className="truncate text-right text-white/48">
+              Already have: {existingAmount}
+            </p>
+          ) : null}
+        </div>
         <div className="mt-1.5 flex min-w-0 items-center gap-2">
           <input
             type="number"
-            min={0.01}
+            min={0}
             step="any"
-            value={grocerySearchAmount}
-            onChange={(event) => {
-              setGrocerySearchAmount(event.target.value);
-              setGrocerySearchSaveError(null);
-            }}
+            value={draft.quantity}
+            disabled={draft.status === "saving" || draft.status === "success"}
+            onChange={(event) =>
+              updateGrocerySearchDraft(stableKey, {
+                quantity: event.target.value,
+                quantityManuallyEdited: true,
+              })
+            }
             className="h-9 w-24 rounded-lg border border-white/[0.065] bg-black/32 px-2.5 text-sm font-semibold tabular-nums text-white outline-none transition focus-visible:border-white/[0.16] focus-visible:ring-1 focus-visible:ring-white/12"
-            aria-label="Amount acquired"
+            aria-label="Add amount"
           />
           <select
-            value={grocerySearchUnit}
-            onChange={(event) => {
-              setGrocerySearchUnit(event.target.value as GroceryInventoryUnit);
-              setGrocerySearchSaveError(null);
-            }}
+            value={draft.unit}
+            disabled={draft.status === "saving" || draft.status === "success"}
+            onChange={(event) =>
+              changeGrocerySearchDraftUnit(
+                stableKey,
+                event.target.value as GroceryInventoryUnit,
+              )
+            }
             className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.065] bg-[#101010] px-2.5 text-xs font-semibold text-white/78 outline-none transition focus-visible:border-white/[0.16] focus-visible:ring-1 focus-visible:ring-white/12"
             aria-label="Inventory unit"
           >
-            {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
+            {GROCERY_SEARCH_INVENTORY_UNIT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -10747,25 +11232,39 @@ export function NoteDatabaseEntrySheet({
           </select>
           <button
             type="button"
-            onClick={() => void saveGrocerySearchFood(food)}
-            disabled={isGrocerySearchSaving || isGroceryResourcesLoading}
+            onClick={() => void saveGrocerySearchFood(stableKey)}
+            disabled={
+              draft.status === "saving" ||
+              draft.status === "success" ||
+              isGroceryResourcesLoading
+            }
             className="h-9 shrink-0 rounded-lg border border-zinc-50/28 bg-zinc-200/82 px-3 text-xs font-bold text-zinc-950 outline-none transition hover:bg-zinc-100 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {isGrocerySearchSaving
+            {draft.status === "saving"
               ? "Adding..."
               : isGroceryResourcesLoading
                 ? "Checking..."
-                : "Add to Grocery"}
+                : draft.status === "success"
+                  ? "Added"
+                  : "Add"}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleGrocerySearchFood(food)}
+            disabled={draft.status === "saving" || draft.status === "success"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.065] text-white/48 outline-none transition hover:bg-white/[0.06] hover:text-white/78 focus-visible:ring-1 focus-visible:ring-white/14 disabled:opacity-40"
+            aria-label={`Remove ${food.name || "grocery"} from selected groceries`}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>
-        {hasUnitMismatch ? (
-          <p className="mt-1.5 text-[11px] font-medium text-amber-100/62">
-            The saved unit differs, so this amount will be kept as a separate row.
-          </p>
-        ) : null}
-        {grocerySearchSaveError ? (
-          <p className="mt-1.5 text-[11px] font-medium text-red-200/72">
-            {grocerySearchSaveError}
+        {draft.message ? (
+          <p
+            className={`mt-1.5 text-[11px] font-medium ${
+              draft.status === "success" ? "text-emerald-100/68" : "text-red-200/72"
+            }`}
+          >
+            {draft.message}
           </p>
         ) : null}
       </div>
@@ -10798,8 +11297,11 @@ export function NoteDatabaseEntrySheet({
               const selectedItem = getSelectedNutritionFoodItem(food);
               const isGrocerySearchResult =
                 isGroceryDatabase && selectedNutritionFoodAction === "search";
+              const groceryDraftKey = isGrocerySearchResult
+                ? getGrocerySearchDraftKey(food)
+                : null;
               const isSelected = isGrocerySearchResult
-                ? expandedGrocerySearchFood?.id === food.id
+                ? Boolean(groceryDraftKey && grocerySearchDrafts[groceryDraftKey])
                 : Boolean(selectedItem);
               const displayMeta = selectedItem
                 ? isGroceryDatabase
@@ -10823,8 +11325,7 @@ export function NoteDatabaseEntrySheet({
                   <div className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition hover:bg-white/[0.045]">
                     <button
                       type="button"
-                      aria-expanded={isGrocerySearchResult ? isSelected : undefined}
-                      aria-pressed={isGrocerySearchResult ? undefined : isSelected}
+                      aria-pressed={isSelected}
                       onClick={() =>
                         isGrocerySearchResult
                           ? toggleGrocerySearchFood(food)
@@ -10835,7 +11336,7 @@ export function NoteDatabaseEntrySheet({
                       <NutritionFoodIcon food={food} />
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          {isSelected ? (
+                          {isSelected && !isGrocerySearchResult ? (
                             <Check
                               className="h-3.5 w-3.5 shrink-0 text-white/76"
                               aria-hidden="true"
@@ -10858,10 +11359,15 @@ export function NoteDatabaseEntrySheet({
                       <span className="shrink-0 text-right text-[11px] font-semibold text-white/46">
                         {meta}
                       </span>
+                    ) : isSelected ? (
+                      <Check
+                        className="h-4 w-4 shrink-0 text-emerald-100/82"
+                        aria-hidden="true"
+                      />
                     ) : null}
                   </div>
-                  {isGrocerySearchResult && isSelected
-                    ? renderGrocerySearchExpansion(food)
+                  {isGrocerySearchResult && groceryDraftKey && isSelected
+                    ? renderGrocerySearchDraftRow(grocerySearchDrafts[groceryDraftKey])
                     : null}
                 </div>
               );
@@ -10995,28 +11501,6 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function getGroceryResourceQuantityLabel(resource: FoodResource) {
-    const quantity = getFoodResourceNumber(resource.quantity);
-    const unit = getFoodResourceText(resource.unit);
-
-    if (quantity !== null && unit) return formatGroceryRemainingLabel(quantity, unit);
-    if (quantity !== null) return `${formatFoodNutritionNumber(quantity) ?? quantity} left`;
-    return unit ?? "";
-  }
-
-  function getGroceryResourceQuantityGramHelper(resource: FoodResource) {
-    const quantity = getFoodResourceNumber(resource.quantity);
-    const unit = normalizeGroceryInventoryUnit(resource.unit);
-    const metadata = getFoodResourceMetadata(resource);
-
-    if (quantity === null || !getFoodResourceText(resource.unit)) return "grams unknown";
-
-    return getGroceryInventoryGramHelper(metadata, quantity, unit, {
-      packageUnknownText: "servings unknown",
-      unknownText: "grams unknown",
-    });
-  }
-
   function getGroceryResourceMetadataNumber(resource: FoodResource, key: NutritionMacroSourceKey) {
     const metadata = getFoodResourceMetadata(resource);
     const directValue = getNutritionSnapshotNumber(metadata[key]);
@@ -11050,7 +11534,7 @@ export function NoteDatabaseEntrySheet({
   }
 
   function getGroceryResourceDetailParts(resource: FoodResource) {
-    const quantity = getGroceryResourceQuantityLabel(resource);
+    const quantity = getGroceryResourceDisplayAmount(resource).displayText;
     const brandName = getFoodResourceText(resource.brand_name);
     const location = getFoodResourceText(resource.location);
     const expiresOn = getFoodResourceText(resource.expires_on);
@@ -11196,7 +11680,6 @@ export function NoteDatabaseEntrySheet({
             ) : null}
             {groceryResourceItems.map((resource) => {
               const detailLine = getGroceryResourceDetailParts(resource).join(" · ");
-              const quantityGramHelper = getGroceryResourceQuantityGramHelper(resource);
               const nutritionMeta = getGroceryResourceNutritionMeta(resource);
               const isMenuOpen = openGroceryResourceMenuId === resource.id;
               const isEditing = editingGroceryResourceId === resource.id;
@@ -11221,9 +11704,10 @@ export function NoteDatabaseEntrySheet({
                 >
                   <div className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left">
                     <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.045] text-white/60">
-                        <ShoppingBasket className="h-4 w-4" aria-hidden="true" />
-                      </span>
+                      <NutritionFoodIconSlot
+                        icon={getGroceryResourceFoodIcon(resource)}
+                        fallbackInitial={resource.name.charAt(0)}
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-white/84">
                           {resource.name}
@@ -11233,9 +11717,6 @@ export function NoteDatabaseEntrySheet({
                             {detailLine}
                           </span>
                         ) : null}
-                        <span className="mt-0.5 block truncate text-[11px] font-medium text-white/34">
-                          {quantityGramHelper}
-                        </span>
                         {nutritionMeta ? (
                           <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/46">
                             {nutritionMeta}
@@ -12256,8 +12737,26 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderChefCatalog() {
-    const cuisines = getChefCuisinesWithCounts();
-    const filterTags = ["high-protein", "cheap", "quick", "pantry", "meal-prep", "snack", "low-effort"];
+    const showAvailableChefRecipesOnly = selectedChefFilter === "available";
+    const selectedFilter = CHEF_FILTERS.find((filter) => filter.id === selectedChefFilter) ?? CHEF_FILTERS[0];
+    const recipeMatchesSelectedFilter = (recipe: ReturnType<typeof getChefRecipesForNode>[number]) => {
+      if (selectedFilter.tags.length === 0) return true;
+      const resolvedOptionTags = getChefOptionGroupsForDishFamily(recipe.cuisineId, recipe.dishFamilyId)
+        .filter((group) => recipe.optionGroupIds?.includes(group.id))
+        .flatMap((group) => {
+          const selectedOptionId = selectedChefOptions[group.id] ?? group.defaultOptionId;
+          return group.options.find((option) => option.id === selectedOptionId)?.tags ?? [];
+        });
+      return selectedFilter.tags.some((tag) => recipe.tags.includes(tag) || resolvedOptionTags.includes(tag));
+    };
+    const familyHasMatches = (cuisineId: string, dishFamilyId: string) => {
+      const familyKey = `${cuisineId}:${dishFamilyId}`;
+      if (showAvailableChefRecipesOnly) return chefAvailabilityCatalog.availableFamilyKeys.has(familyKey);
+      return getChefRecipesForNode({ cuisineId, dishFamilyId }).some(recipeMatchesSelectedFilter);
+    };
+    const cuisines = getChefCuisinesWithCounts().filter((cuisine) =>
+      getChefDishFamiliesForCuisine(cuisine.id).some((family) => familyHasMatches(cuisine.id, family.id)),
+    );
     const contextLabel = isGroceryDatabase
       ? "Use this as a grocery idea."
       : "Use this as a meal idea.";
@@ -12269,7 +12768,7 @@ export function NoteDatabaseEntrySheet({
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.075] bg-white/[0.045] text-white/68">
               <ChefHat className="h-4 w-4" aria-hidden="true" />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-white/86">Chef ideas</p>
               <p className="truncate text-[11px] font-medium text-white/40">
                 Simple recipes for whatever sounds good
@@ -12277,15 +12776,15 @@ export function NoteDatabaseEntrySheet({
             </div>
           </div>
           <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {filterTags.map((tag) => {
-              const isSelected = selectedChefTags.includes(tag);
+            {CHEF_FILTERS.map((filter) => {
+              const isSelected = selectedChefFilter === filter.id;
               return (
               <button
-                key={tag}
+                key={filter.id}
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => {
-                  setSelectedChefTags((current) => isSelected ? current.filter((item) => item !== tag) : [...current, tag]);
+                  setSelectedChefFilter(filter.id);
                   setExpandedChefRecipeId(null);
                 }}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold outline-none transition ${
@@ -12294,7 +12793,7 @@ export function NoteDatabaseEntrySheet({
                     : "border-white/[0.06] bg-white/[0.035] text-white/46 hover:bg-white/[0.06]"
                 }`}
               >
-                {tag.split("-").map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" ")}
+                {filter.label}
               </button>
               );
             })}
@@ -12302,7 +12801,17 @@ export function NoteDatabaseEntrySheet({
         </div>
 
         <div className="divide-y divide-white/[0.05]">
-          {cuisines.map((cuisine) => {
+          {showAvailableChefRecipesOnly && isGroceryResourcesLoading ? <p className="px-4 py-5 text-xs font-medium text-white/40">Checking your groceries…</p> : null}
+          {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && cuisines.length === 0 ? (
+            <div className="px-4 py-5">
+              <p className="text-sm font-semibold text-white/72">Add groceries to unlock available meals.</p>
+              <p className="mt-1 text-[11px] leading-4 text-white/38">Try basics like chicken, eggs, tortillas, rice, pasta, cheese, beans, or bread.</p>
+            </div>
+          ) : null}
+          {!showAvailableChefRecipesOnly && selectedChefFilter !== "all" && cuisines.length === 0 ? (
+            <p className="px-4 py-5 text-xs font-medium text-white/40">No meals match this filter yet.</p>
+          ) : null}
+          {!isGroceryResourcesLoading || !showAvailableChefRecipesOnly ? cuisines.map((cuisine) => {
             const isCuisineOpen = openChefCuisineId === cuisine.id;
             return (
               <section key={cuisine.id}>
@@ -12336,12 +12845,12 @@ export function NoteDatabaseEntrySheet({
                 </button>
                 {isCuisineOpen ? (
                   <div className="border-t border-white/[0.045] bg-white/[0.018] px-2 py-2">
-                    {getChefDishFamiliesForCuisine(cuisine.id).map((dishFamily) => {
+                    {getChefDishFamiliesForCuisine(cuisine.id).filter((dishFamily) => familyHasMatches(cuisine.id, dishFamily.id)).map((dishFamily) => {
                       const familyKey = `${cuisine.id}:${dishFamily.id}`;
                       const isFamilyOpen = openChefDishFamilyKey === familyKey;
                       const optionGroups = isFamilyOpen ? getChefOptionGroupsForDishFamily(cuisine.id, dishFamily.id) : [];
                       const styles = isFamilyOpen && optionGroups.length === 0 ? getChefStylesForDishFamily(cuisine.id, dishFamily.id) : [];
-                      const recipes = isFamilyOpen ? getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id, styleId: selectedChefStyleId ?? undefined, tags: selectedChefTags }) : [];
+                      const recipes = isFamilyOpen ? getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id, styleId: selectedChefStyleId ?? undefined }).filter((recipe) => recipeMatchesSelectedFilter(recipe) && (!showAvailableChefRecipesOnly || chefAvailabilityCatalog.availableRecipeIdsByFamily.get(familyKey)?.has(recipe.id))) : [];
                       return (
                         <div key={familyKey} className="overflow-hidden rounded-xl border border-white/[0.05] bg-black/30 [&+&]:mt-1.5">
                           <button type="button" aria-expanded={isFamilyOpen} onClick={() => {
@@ -12365,7 +12874,8 @@ export function NoteDatabaseEntrySheet({
                                     {optionGroup.options.map((chefOption) => {
                                       const selectedOptionId = selectedChefOptions[optionGroup.id] ?? optionGroup.defaultOptionId;
                                       const isSelected = selectedOptionId === chefOption.id;
-                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
+                                      const isOptionAvailable = chefAvailabilityCatalog.availableOptionIdsByGroup.get(optionGroup.id)?.has(chefOption.id) ?? false;
+                                      return <button key={chefOption.id} type="button" aria-pressed={isSelected} onClick={() => { setSelectedChefOptions((current) => ({ ...current, [optionGroup.id]: chefOption.id })); setExpandedChefRecipeId(null); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${isSelected ? "border-white/[0.16] bg-white/[0.1] text-white/80" : showAvailableChefRecipesOnly && !isOptionAvailable ? "border-white/[0.035] text-white/20" : "border-white/[0.05] text-white/38"}`}>{chefOption.shortLabel ?? chefOption.label}</button>;
                                     })}
                                   </div>
                                 </div>
@@ -12412,7 +12922,7 @@ export function NoteDatabaseEntrySheet({
                                       ) : null}
                                     </article>
                                   );
-                                }) : <p className="px-2 py-3 text-xs font-medium text-white/36">No ideas match these filters.</p>}
+                                }) : <p className="px-2 py-3 text-xs font-medium text-white/36">{showAvailableChefRecipesOnly && optionGroups.length > 0 ? "Nothing available for this build." : "No meals match this filter yet."}</p>}
                               </div>
                             </div>
                           ) : null}
@@ -12423,7 +12933,7 @@ export function NoteDatabaseEntrySheet({
                 ) : null}
               </section>
             );
-          })}
+          }) : null}
         </div>
       </div>
     );
@@ -12469,13 +12979,17 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderNutritionFoodBrowseContent() {
+    const browseSelectedCount = isGroceryDatabase
+      ? Object.keys(grocerySearchDrafts).length
+      : selectedNutritionFoods.length;
+
     return (
       <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#090909]">
-        {selectedNutritionFoods.length > 0 ? (
+        {browseSelectedCount > 0 ? (
           <div className="flex min-h-9 items-center gap-2 border-b border-white/[0.055] bg-white/[0.035] px-3 text-xs font-semibold text-white/62">
             <Check className="h-3.5 w-3.5 shrink-0 text-white/70" aria-hidden="true" />
             <span className="min-w-0 truncate">
-              {selectedNutritionFoods.length} selected
+              {browseSelectedCount} selected
             </span>
             <span className="shrink-0 text-white/34">· Search and Browse</span>
           </div>
@@ -12498,7 +13012,7 @@ export function NoteDatabaseEntrySheet({
                     setOpenNutritionBrowseAisle(null);
                   }}
                   className={`flex h-11 w-full items-center gap-3 border-t px-3 text-left outline-none transition ${
-                    selectedNutritionFoods.length > 0 || !isFirstDepartment
+                    browseSelectedCount > 0 || !isFirstDepartment
                       ? "border-white/[0.055]"
                       : "border-transparent"
                   } ${
@@ -12585,7 +13099,15 @@ export function NoteDatabaseEntrySheet({
                                   ) : nutritionFoodBrowseResults.length > 0 ? (
                                     nutritionFoodBrowseResults.map((food) => {
                                       const selectedItem = getSelectedNutritionFoodItem(food);
-                                      const isSelected = Boolean(selectedItem);
+                                      const groceryDraftKey = isGroceryDatabase
+                                        ? getGrocerySearchDraftKey(food)
+                                        : null;
+                                      const isSelected = isGroceryDatabase
+                                        ? Boolean(
+                                            groceryDraftKey &&
+                                              grocerySearchDrafts[groceryDraftKey],
+                                          )
+                                        : Boolean(selectedItem);
                                       const nutritionPreview =
                                         selectedItem
                                           ? isGroceryDatabase
@@ -12598,41 +13120,57 @@ export function NoteDatabaseEntrySheet({
                                       return (
                                         <div
                                           key={food.id}
-                                          className={`flex w-full items-center gap-3 border-t border-white/[0.04] py-2.5 pl-12 pr-3 text-left outline-none transition ${
+                                          className={`border-t border-white/[0.04] transition ${
                                             isSelected
                                               ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.68)]"
                                               : "hover:bg-white/[0.022]"
                                           } focus-visible:bg-white/[0.055]`}
                                         >
-                                          <button
-                                            type="button"
-                                            aria-pressed={isSelected}
-                                            onClick={() => toggleNutritionFoodSelection(food)}
-                                            className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
-                                          >
-                                            <NutritionFoodIcon food={food} />
-                                            <span className="min-w-0 flex-1">
-                                              <span className="flex min-w-0 items-center gap-1.5">
-                                                {isSelected ? (
-                                                  <Check
-                                                    className="h-3.5 w-3.5 shrink-0 text-white/68"
-                                                    aria-hidden="true"
-                                                  />
-                                                ) : null}
-                                                <span className="block truncate text-sm font-semibold text-white/84">
-                                                  {food.name}
+                                          <div className="flex w-full items-center gap-3 py-2.5 pl-12 pr-3 text-left">
+                                            <button
+                                              type="button"
+                                              aria-pressed={isSelected}
+                                              onClick={() =>
+                                                isGroceryDatabase
+                                                  ? toggleGrocerySearchFood(food)
+                                                  : toggleNutritionFoodSelection(food)
+                                              }
+                                              className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
+                                            >
+                                              <NutritionFoodIcon food={food} />
+                                              <span className="min-w-0 flex-1">
+                                                <span className="flex min-w-0 items-center gap-1.5">
+                                                  {isSelected && !isGroceryDatabase ? (
+                                                    <Check
+                                                      className="h-3.5 w-3.5 shrink-0 text-white/68"
+                                                      aria-hidden="true"
+                                                    />
+                                                  ) : null}
+                                                  <span className="block truncate text-sm font-semibold text-white/84">
+                                                    {food.name}
+                                                  </span>
+                                                </span>
+                                                <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                                                  {nutritionPreview ||
+                                                    (isGroceryDatabase
+                                                      ? "Catalog item"
+                                                      : "Nutrition details unavailable")}
                                                 </span>
                                               </span>
-                                              <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
-                                                {nutritionPreview ||
-                                                  (isGroceryDatabase
-                                                    ? "Catalog item"
-                                                    : "Nutrition details unavailable")}
-                                              </span>
-                                            </span>
-                                          </button>
-                                          {selectedItem
-                                            ? renderNutritionFoodQuantityControl(selectedItem)
+                                            </button>
+                                            {!isGroceryDatabase && selectedItem ? (
+                                              renderNutritionFoodQuantityControl(selectedItem)
+                                            ) : isSelected ? (
+                                              <Check
+                                                className="h-4 w-4 shrink-0 text-emerald-100/82"
+                                                aria-hidden="true"
+                                              />
+                                            ) : null}
+                                          </div>
+                                          {isGroceryDatabase && groceryDraftKey && isSelected
+                                            ? renderGrocerySearchDraftRow(
+                                                grocerySearchDrafts[groceryDraftKey],
+                                              )
                                             : null}
                                         </div>
                                       );
@@ -13122,10 +13660,20 @@ export function NoteDatabaseFocusedView({
     () => normalizeDatabaseDefinitionsForSegments(segments, databaseDefinitions).definitions,
     [databaseDefinitions, segments],
   );
-  const databaseDefinition =
-    databaseSegment
-      ? (normalizedDatabaseDefinitions[databaseId] ?? createDefaultDatabaseDefinition(databaseSegment))
-      : null;
+  const databaseDefinition = databaseSegment
+    ? (() => {
+        const storedDefinition = databaseDefinitions?.[databaseId];
+        if (isLegacyHydrationDatabase(databaseId, storedDefinition, databaseSegment.title)) {
+          return null;
+        }
+        const definition =
+          normalizedDatabaseDefinitions[databaseId] ??
+          createDefaultDatabaseDefinition(databaseSegment);
+        return isLegacyHydrationDatabase(databaseId, definition, databaseSegment.title)
+          ? null
+          : definition;
+      })()
+    : null;
   const databaseFields = databaseDefinition
     ? getDatabaseFieldsWithTitleFirst(databaseDefinition)
     : [];
@@ -14046,6 +14594,48 @@ function NoteSlashTextarea({
     () => normalizeDatabaseDefinitionsForSegments(segments, databaseDefinitions).definitions,
     [databaseDefinitions, segments],
   );
+  const nutritionDatabaseId = useMemo(() => {
+    return segments.find((segment): segment is NoteDatabaseSegment => {
+      if (segment.type !== "database") return false;
+      const definition = normalizedDatabaseDefinitions[segment.databaseId];
+      return (
+        segment.databaseId === NUTRITION_DATABASE_ID ||
+        definition?.systemDatabaseKey?.trim().toLowerCase() === "nutrition" ||
+        getDatabaseMenuDisplayTitle(
+          definition ?? createDefaultDatabaseDefinition(segment),
+          segment.title,
+        ) === "Nutrition"
+      );
+    })?.databaseId ?? null;
+  }, [normalizedDatabaseDefinitions, segments]);
+
+  useEffect(() => {
+    const isHydrationDatabaseId = (databaseId: string | null) => {
+      if (databaseId === null) return false;
+
+      const definition =
+        databaseDefinitions?.[databaseId] ?? normalizedDatabaseDefinitions[databaseId];
+      const segment = segments.find(
+        (segment): segment is NoteDatabaseSegment =>
+          segment.type === "database" && segment.databaseId === databaseId,
+      );
+      return isLegacyHydrationDatabase(databaseId, definition, segment?.title);
+    };
+
+    if (isHydrationDatabaseId(activeDatabaseId)) {
+      setActiveDatabaseId(nutritionDatabaseId);
+    }
+    if (isHydrationDatabaseId(activeEntryDatabaseId)) {
+      setActiveEntryDatabaseId(nutritionDatabaseId);
+    }
+  }, [
+    activeDatabaseId,
+    activeEntryDatabaseId,
+    databaseDefinitions,
+    normalizedDatabaseDefinitions,
+    nutritionDatabaseId,
+    segments,
+  ]);
   const activeDatabaseSegment = useMemo(
     () =>
       activeDatabaseId
@@ -14058,8 +14648,28 @@ function NoteSlashTextarea({
   );
   const activeDatabaseDefinition =
     activeDatabaseId && activeDatabaseSegment
-      ? (normalizedDatabaseDefinitions[activeDatabaseId] ??
-        createDefaultDatabaseDefinition(activeDatabaseSegment))
+      ? (() => {
+          const storedDefinition = databaseDefinitions?.[activeDatabaseId];
+          if (
+            isLegacyHydrationDatabase(
+              activeDatabaseId,
+              storedDefinition,
+              activeDatabaseSegment.title,
+            )
+          ) {
+            return null;
+          }
+          const definition =
+            normalizedDatabaseDefinitions[activeDatabaseId] ??
+            createDefaultDatabaseDefinition(activeDatabaseSegment);
+          return isLegacyHydrationDatabase(
+            activeDatabaseId,
+            definition,
+            activeDatabaseSegment.title,
+          )
+            ? null
+            : definition;
+        })()
       : null;
   const activeEntryDatabaseSegment = useMemo(
     () =>
@@ -14073,8 +14683,28 @@ function NoteSlashTextarea({
   );
   const activeEntryDatabaseDefinition =
     activeEntryDatabaseId && activeEntryDatabaseSegment
-      ? (normalizedDatabaseDefinitions[activeEntryDatabaseId] ??
-        createDefaultDatabaseDefinition(activeEntryDatabaseSegment))
+      ? (() => {
+          const storedDefinition = databaseDefinitions?.[activeEntryDatabaseId];
+          if (
+            isLegacyHydrationDatabase(
+              activeEntryDatabaseId,
+              storedDefinition,
+              activeEntryDatabaseSegment.title,
+            )
+          ) {
+            return null;
+          }
+          const definition =
+            normalizedDatabaseDefinitions[activeEntryDatabaseId] ??
+            createDefaultDatabaseDefinition(activeEntryDatabaseSegment);
+          return isLegacyHydrationDatabase(
+            activeEntryDatabaseId,
+            definition,
+            activeEntryDatabaseSegment.title,
+          )
+            ? null
+            : definition;
+        })()
       : null;
   const hasOnHandDatabase = useMemo(
     () =>
@@ -14853,9 +15483,13 @@ function NoteSlashTextarea({
   }
 
   function openDatabase(segment: NoteDatabaseSegment) {
+    const storedDefinition = databaseDefinitions?.[segment.databaseId];
+    if (isLegacyHydrationDatabase(segment.databaseId, storedDefinition, segment.title)) return;
     const currentDefinition =
       normalizedDatabaseDefinitions[segment.databaseId] ??
       createDefaultDatabaseDefinition(segment);
+
+    if (isLegacyHydrationDatabase(segment.databaseId, currentDefinition, segment.title)) return;
 
     if (!databaseDefinitions?.[segment.databaseId]) {
       updateDatabaseDefinition(segment.databaseId, (currentDefinition) => currentDefinition);
@@ -14903,6 +15537,13 @@ function NoteSlashTextarea({
   }
 
   function openDatabaseEntrySheet(segment: NoteDatabaseSegment) {
+    const storedDefinition = databaseDefinitions?.[segment.databaseId];
+    if (isLegacyHydrationDatabase(segment.databaseId, storedDefinition, segment.title)) return;
+    const definition =
+      normalizedDatabaseDefinitions[segment.databaseId] ??
+      createDefaultDatabaseDefinition(segment);
+    if (isLegacyHydrationDatabase(segment.databaseId, definition, segment.title)) return;
+
     setActiveEntryDatabaseId(segment.databaseId);
 
     if (!databaseDefinitions?.[segment.databaseId]) {
@@ -15551,10 +16192,24 @@ function NoteSlashTextarea({
             }
 
             if (segment.type === "database") {
+              const storedDefinition = databaseDefinitions?.[segment.databaseId];
+              if (
+                isLegacyHydrationDatabase(
+                  segment.databaseId,
+                  storedDefinition,
+                  segment.title,
+                )
+              ) {
+                return null;
+              }
               const definition =
                 normalizedDatabaseDefinitions[segment.databaseId] ??
                 createDefaultDatabaseDefinition(segment);
               const displayTitle = getDatabaseMenuDisplayTitle(definition, segment.title);
+              if (isLegacyHydrationDatabase(segment.databaseId, definition, segment.title)) {
+                return null;
+              }
+
               const isLockedSystemDatabase = definition.lockedSystemDatabase === true;
               const isStarterDatabaseSchemaLocked = isLockedStarterDatabase(definition);
               const canOpenDatabase = !isStarterDatabaseSchemaLocked || Boolean(onOpenDatabase);

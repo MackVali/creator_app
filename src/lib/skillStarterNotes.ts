@@ -24,7 +24,7 @@ export type SkillStarterNote = {
   };
 };
 
-export type DefaultMemoDatabaseTargetId = "nutrition" | "hydration" | "fitness";
+export type DefaultMemoDatabaseTargetId = "nutrition" | "fitness";
 
 export type DefaultMemoDatabaseTarget = {
   id: DefaultMemoDatabaseTargetId;
@@ -32,6 +32,31 @@ export type DefaultMemoDatabaseTarget = {
   databaseId: string;
   database: NoteDatabaseDefinition;
 };
+
+const LEGACY_HYDRATION_DATABASE_IDS = new Set([
+  "starter-health-hydration",
+  "hydration",
+]);
+
+export function isLegacyHydrationDatabase(
+  databaseId: string | null | undefined,
+  definition?: { title?: unknown; systemDatabaseKey?: unknown } | null,
+  markerTitle?: string | null,
+) {
+  if (databaseId && LEGACY_HYDRATION_DATABASE_IDS.has(databaseId.trim().toLowerCase())) {
+    return true;
+  }
+
+  if (
+    typeof definition?.systemDatabaseKey === "string" &&
+    definition.systemDatabaseKey.trim().toLowerCase() === "hydration"
+  ) {
+    return true;
+  }
+
+  const title = typeof definition?.title === "string" ? definition.title : markerTitle;
+  return title?.trim().toLowerCase() === "hydration";
+}
 
 type SkillStarterNoteIconKey = "stomach" | "dumbbell" | "chef-hat";
 
@@ -156,7 +181,6 @@ function buildStarterNote(
 }
 
 export const NUTRITION_DATABASE_ID = "starter-health-nutrition";
-export const HYDRATION_DATABASE_ID = "starter-health-hydration";
 export const FITNESS_DATABASE_ID = "starter-fitness-fitness";
 export const ON_HAND_DATABASE_ID = "starter-cooking-on-hand";
 export const NUTRITION_FOOD_FIELD_ID = `${NUTRITION_DATABASE_ID}-food`;
@@ -170,10 +194,9 @@ export const ON_HAND_NOTES_FIELD_ID = `${ON_HAND_DATABASE_ID}-notes`;
 
 const LOCKED_STARTER_DATABASE_IDS = new Set([
   NUTRITION_DATABASE_ID,
-  HYDRATION_DATABASE_ID,
   ON_HAND_DATABASE_ID,
 ]);
-const LOCKED_STARTER_DATABASE_KEYS = new Set(["nutrition", "hydration", "on-hand"]);
+const LOCKED_STARTER_DATABASE_KEYS = new Set(["nutrition", "on-hand"]);
 
 export function isLockedStarterDatabaseId(databaseId: string | null | undefined) {
   return typeof databaseId === "string" && LOCKED_STARTER_DATABASE_IDS.has(databaseId);
@@ -211,18 +234,6 @@ const NUTRITION_DATABASE = database(
     field(NUTRITION_DATABASE_ID, "protein", "Protein", "number"),
     field(NUTRITION_DATABASE_ID, "fat", "Fat", "number"),
     field(NUTRITION_DATABASE_ID, "created-at", "When", "createdAt"),
-  ],
-);
-
-const HYDRATION_DATABASE = database(
-  HYDRATION_DATABASE_ID,
-  "Hydration",
-  "hydration",
-  "droplet",
-  [
-    field(HYDRATION_DATABASE_ID, "name", "Name", "text", true),
-    field(HYDRATION_DATABASE_ID, "amount", "Amount", "number"),
-    field(HYDRATION_DATABASE_ID, "notes", "Notes", "longText"),
   ],
 );
 
@@ -265,12 +276,6 @@ export const DEFAULT_MEMO_DATABASE_TARGETS: DefaultMemoDatabaseTarget[] = [
     database: NUTRITION_DATABASE,
   },
   {
-    id: "hydration",
-    label: "Hydration",
-    databaseId: HYDRATION_DATABASE_ID,
-    database: HYDRATION_DATABASE,
-  },
-  {
     id: "fitness",
     label: "Fitness",
     databaseId: FITNESS_DATABASE_ID,
@@ -288,7 +293,6 @@ export function getDefaultMemoDatabaseTarget(
 
 const HEALTH_STARTER_NOTE = buildStarterNote("health", "Health", "🩺", "stomach", [
   NUTRITION_DATABASE,
-  HYDRATION_DATABASE,
 ]);
 
 const FITNESS_STARTER_NOTE = buildStarterNote("fitness", "Fitness", "💪", "dumbbell", [
@@ -534,6 +538,21 @@ export function getSkillStarterNoteMetadataRepair(
     ...currentDatabases,
   } as NoteDatabaseDefinitions;
 
+  const legacyHydrationDatabaseIds = new Set(
+    Object.entries(currentDatabases)
+      .filter(([databaseId, definition]) =>
+        isLegacyHydrationDatabase(
+          databaseId,
+          isRecord(definition) ? definition : null,
+        ),
+      )
+      .map(([databaseId]) => databaseId),
+  );
+  legacyHydrationDatabaseIds.forEach((databaseId) => {
+    delete nextDatabases[databaseId];
+    changed = true;
+  });
+
   for (const [databaseId, starterDatabase] of Object.entries(starterNote.metadata.databases)) {
     const currentDatabase = isRecord(currentDatabases[databaseId])
       ? currentDatabases[databaseId]
@@ -583,7 +602,17 @@ export function getSkillStarterNoteMetadataRepair(
     nextMetadata.databaseEntries = starterNote.metadata.databaseEntries;
     changed = true;
   } else {
-    const entryRepair = repairDefaultNutritionDatabaseEntries(currentMetadata.databaseEntries);
+    const nextDatabaseEntries = { ...currentMetadata.databaseEntries };
+    Object.keys(nextDatabaseEntries).forEach((databaseId) => {
+      if (
+        legacyHydrationDatabaseIds.has(databaseId) ||
+        isLegacyHydrationDatabase(databaseId)
+      ) {
+        delete nextDatabaseEntries[databaseId];
+        changed = true;
+      }
+    });
+    const entryRepair = repairDefaultNutritionDatabaseEntries(nextDatabaseEntries);
     nextMetadata.databaseEntries = entryRepair.databaseEntries;
     changed = changed || entryRepair.changed;
   }
