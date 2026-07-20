@@ -1053,6 +1053,10 @@ export function MyListSheet({
   const [activeView, setActiveView] = useState<MyListActiveView>(() =>
     readStoredMyListViewModePreference(userId) === "matrix" ? "matrix" : "list"
   );
+  const [shouldInitializeMatrixTodo, setShouldInitializeMatrixTodo] =
+    useState(false);
+  const [matrixSettingsTriggerTarget, setMatrixSettingsTriggerTarget] =
+    useState<HTMLDivElement | null>(null);
   const [isDayLensActive, setIsDayLensActive] = useState(
     () => readStoredMyListViewModePreference(userId) === "day"
   );
@@ -4117,56 +4121,55 @@ export function MyListSheet({
         }}
       >
         <div className="relative border-b border-white/[0.07] bg-black/[0.18] px-4 pb-1.5 pt-1.5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.025)] sm:px-5">
-          <button
-            type="button"
-            aria-label={
-              activeView === "list" ? "Show Matrix view" : "Show My List view"
-            }
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onTouchStart={(event) => {
-              event.stopPropagation();
-            }}
-            onMouseDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setActiveSkillPickerRowKey(null);
-              setActivePriorityPickerRowKey(null);
-              setActiveDayPickerRowKey(null);
-              setPendingDeleteRowId(null);
-              setPendingTitleFocusRowId(null);
-              if (activeView === "list") {
-                onOpenChange(true);
-                setIsExpanded(true);
-                selectMyListViewModePreference("matrix");
-                return;
+          <div className="absolute left-4 top-1/2 flex -translate-y-1/2 items-center gap-1 sm:left-5">
+            <button
+              type="button"
+              aria-label={
+                activeView === "list" ? "Show Matrix view" : "Show My List view"
               }
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setActiveSkillPickerRowKey(null);
+                setActivePriorityPickerRowKey(null);
+                setActiveDayPickerRowKey(null);
+                setPendingDeleteRowId(null);
+                setPendingTitleFocusRowId(null);
+                if (activeView === "list") {
+                  onOpenChange(true);
+                  setIsExpanded(true);
+                  setShouldInitializeMatrixTodo(true);
+                  selectMyListViewModePreference("matrix");
+                  return;
+                }
 
-              selectMyListViewModePreference(
-                isTagLensActive ? "tags" : isDayLensActive ? "day" : "priority"
-              );
-            }}
-            tabIndex={open ? 0 : -1}
-            className="absolute left-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg border border-white/[0.08] bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35 sm:left-5"
-          >
-            {activeView === "list" ? (
-              <Grid2x2
-                className="h-3.5 w-3.5"
-                strokeWidth={1.8}
-                aria-hidden="true"
-              />
-            ) : (
-              <List
-                className="h-3.5 w-3.5"
-                strokeWidth={1.8}
-                aria-hidden="true"
-              />
-            )}
-          </button>
+                setShouldInitializeMatrixTodo(false);
+                selectMyListViewModePreference(
+                  isTagLensActive ? "tags" : isDayLensActive ? "day" : "priority"
+                );
+              }}
+              tabIndex={open ? 0 : -1}
+              className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/[0.08] bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35"
+            >
+              {activeView === "list" ? (
+                <Grid2x2
+                  className="h-3.5 w-3.5"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              ) : (
+                <List
+                  className="h-3.5 w-3.5"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              )}
+            </button>
+            <div ref={setMatrixSettingsTriggerTarget} className="flex" />
+          </div>
           <h2 className="text-center text-[0.72rem] font-semibold leading-none tracking-[0.08em] text-white/90">
             {activeView === "list" ? "My List" : "MATRIX"}
           </h2>
@@ -5190,10 +5193,10 @@ export function MyListSheet({
                           event.preventDefault();
                           event.stopPropagation();
                         }}
-                        className="absolute left-0 top-1/2 z-10 flex h-5 w-2.5 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
+                        className="absolute -left-3 top-1/2 z-10 flex h-10 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-sm text-zinc-500/75 opacity-80 transition hover:text-zinc-300/80 hover:opacity-100 active:cursor-grabbing"
                       >
                         <GripVertical
-                          className="h-3.5 w-3.5"
+                          className="h-3.5 w-3.5 translate-x-[5px]"
                           strokeWidth={2.3}
                         />
                       </span>
@@ -5492,7 +5495,13 @@ export function MyListSheet({
           </div>
             </>
           ) : (
-            <MatrixContent variant="sheet" />
+            <MatrixContent
+              variant="sheet"
+              settingsTriggerTarget={matrixSettingsTriggerTarget}
+              initialCardDensity={
+                shouldInitializeMatrixTodo ? "todo" : undefined
+              }
+            />
           )}
         </div>
       </motion.div>
