@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   Calendar,
   MousePointerClick,
+  Rows3,
   RefreshCcw,
   Recycle,
   X,
@@ -30,6 +31,8 @@ interface ScheduleTopBarProps {
   isRecyclingManualEvents?: boolean;
   isManualSchedulingMode?: boolean;
   onToggleManualSchedulingMode?: () => void;
+  isSimpleSchedulingMode?: boolean;
+  onToggleSimpleSchedulingMode?: () => void;
   onHeightChange?: (height: number) => void;
 }
 
@@ -49,6 +52,8 @@ export function ScheduleTopBar({
   isRecyclingManualEvents = false,
   isManualSchedulingMode = false,
   onToggleManualSchedulingMode,
+  isSimpleSchedulingMode = false,
+  onToggleSimpleSchedulingMode,
   onHeightChange,
 }: ScheduleTopBarProps) {
   const headerRef = useRef<HTMLElement | null>(null);
@@ -159,6 +164,12 @@ export function ScheduleTopBar({
     if (!onToggleManualSchedulingMode) return;
     triggerTopBarHaptic();
     onToggleManualSchedulingMode();
+  };
+
+  const handleToggleSimpleSchedulingModeClick = () => {
+    if (!onToggleSimpleSchedulingMode) return;
+    triggerTopBarHaptic();
+    onToggleSimpleSchedulingMode();
   };
 
   const iconButtonClass =
@@ -328,6 +339,21 @@ export function ScheduleTopBar({
               )}
             >
               <MousePointerClick className="h-[18px] w-[18px]" strokeWidth={2.4} />
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleSimpleSchedulingModeClick}
+              disabled={!onToggleSimpleSchedulingMode}
+              aria-label="Simple Scheduling"
+              title="Simple Scheduling"
+              aria-pressed={isSimpleSchedulingMode}
+              className={cn(
+                debugMenuActionClass,
+                isSimpleSchedulingMode &&
+                  "text-white hover:text-white focus-visible:ring-white/80"
+              )}
+            >
+              <Rows3 className="h-[18px] w-[18px]" strokeWidth={2.4} />
             </button>
           </div>
         </div>

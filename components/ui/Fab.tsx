@@ -10176,37 +10176,29 @@ export function Fab({
   const pageDragControls = useDragControls();
   const router = useRouter();
   const { isPlus } = useEntitlement();
-  const locationContextsResult = useLocationContexts();
-  const locationContextOptions = useMemo(() => {
-    if (Array.isArray(locationContextsResult)) {
-      return locationContextsResult;
+  const {
+    options: locationContextOptions,
+    loading: locationContextsLoading,
+    error: locationContextsError,
+    refresh: refreshLocationContexts,
+  } = useLocationContexts();
+  useEffect(() => {
+    const isFabHabitFormOpen = expanded && selected === "HABIT";
+    const isUnifiedHabitFormOpen =
+      isUnifiedEventSheetOpen &&
+      unifiedCreationMode === "TASKS" &&
+      unifiedEventType === "HABIT";
+    if (isFabHabitFormOpen || isUnifiedHabitFormOpen) {
+      void refreshLocationContexts();
     }
-    if (
-      locationContextsResult &&
-      typeof locationContextsResult === "object" &&
-      "contexts" in locationContextsResult &&
-      Array.isArray(locationContextsResult.contexts)
-    ) {
-      return locationContextsResult.contexts;
-    }
-    if (
-      locationContextsResult &&
-      typeof locationContextsResult === "object" &&
-      "locationContexts" in locationContextsResult &&
-      Array.isArray(locationContextsResult.locationContexts)
-    ) {
-      return locationContextsResult.locationContexts;
-    }
-    return [];
-  }, [locationContextsResult]);
-  const locationContextsLoading =
-    !Array.isArray(locationContextsResult) &&
-    Boolean(locationContextsResult?.loading);
-  const locationContextsError =
-    !Array.isArray(locationContextsResult) &&
-    typeof locationContextsResult?.error === "string"
-      ? locationContextsResult.error
-      : null;
+  }, [
+    expanded,
+    isUnifiedEventSheetOpen,
+    refreshLocationContexts,
+    selected,
+    unifiedCreationMode,
+    unifiedEventType,
+  ]);
   const validLocationContexts = useMemo(
     () =>
       locationContextOptions.filter(
@@ -10219,17 +10211,7 @@ export function Fab({
       ),
     [locationContextOptions],
   );
-  const overlayLocationContextOptions = useMemo<LocationContextOption[]>(() => {
-    if (
-      locationContextsResult &&
-      typeof locationContextsResult === "object" &&
-      "options" in locationContextsResult &&
-      Array.isArray(locationContextsResult.options)
-    ) {
-      return locationContextsResult.options;
-    }
-    return [];
-  }, [locationContextsResult]);
+  const overlayLocationContextOptions = locationContextOptions;
   const overlayDynamicLocationOptions = useMemo<
     OverlayConstraintChipOption[]
   >(

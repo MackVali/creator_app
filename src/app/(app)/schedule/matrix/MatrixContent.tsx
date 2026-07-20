@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BadgeAlert,
   Calendar,
   CircleAlert,
+  Filter,
   Grid2x2,
   Grid3x3,
   LayoutGrid,
   List,
+  ListChecks,
   OctagonAlert,
   Pin,
   TriangleAlert,
@@ -225,7 +228,7 @@ type MatrixMonumentGroup = {
 
 type MatrixPanel = "scheduled" | "unscheduled";
 type MatrixPanelSwipeAxis = "horizontal" | "vertical" | null;
-type MatrixCardDensity = "large" | "small" | "row";
+type MatrixCardDensity = "large" | "small" | "row" | "todo";
 type MatrixView = "monuments" | "skills" | "blocks" | "types";
 type MatrixScope = "scheduled" | "pinned";
 type MatrixTypeGroupKey = "chore" | "habit" | "project" | "sync";
@@ -598,7 +601,12 @@ function isMatrixScope(value: unknown): value is MatrixScope {
 }
 
 function isMatrixCardDensity(value: unknown): value is MatrixCardDensity {
-  return value === "large" || value === "small" || value === "row";
+  return (
+    value === "large" ||
+    value === "small" ||
+    value === "row" ||
+    value === "todo"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2316,6 +2324,115 @@ function MatrixEventRowCard({
   );
 }
 
+function MatrixTodoRow({
+  title,
+  completed,
+  disabled = false,
+  glyph,
+  meta,
+  onToggle,
+  onOpen,
+}: {
+  title: string;
+  completed: boolean;
+  disabled?: boolean;
+  glyph?: string | null;
+  meta?: string | null;
+  onToggle(source: MatrixXpSourceCapture): void;
+  onOpen?: () => void;
+}) {
+  return (
+    <div
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={onOpen}
+      onKeyDown={
+        onOpen
+          ? (event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onOpen();
+            }
+          : undefined
+      }
+      className={cn(
+        "group/todo-row flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg bg-transparent py-1 pl-1 pr-2 text-left text-sm text-white/84 transition-colors hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25",
+        onOpen ? "cursor-pointer" : null,
+        disabled ? "opacity-60" : null
+      )}
+    >
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={completed}
+        aria-label={completed ? "Mark item incomplete" : "Mark item complete"}
+        disabled={disabled}
+        data-matrix-checkbox="true"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const sourceRow = event.currentTarget.closest(
+            '[data-creator-xp-source="matrix-card"]'
+          );
+          onToggle({
+            rect: getUsableMatrixXpRect(sourceRow),
+            origin: "card",
+          });
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onTouchEnd={(event) => event.stopPropagation()}
+        className="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-md outline-none disabled:cursor-wait focus-visible:ring-2 focus-visible:ring-white/35"
+      >
+        <span
+          className={cn(
+            "relative flex h-4 w-4 items-center justify-center rounded-[0.32rem] border transition",
+            completed
+              ? "shimmer-border-complete focus-pomo-start-glint isolate z-0 overflow-hidden border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] text-white shadow-[0_8px_16px_rgba(3,83,45,0.24),inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-2px_8px_rgba(0,0,0,0.11)] ring-1 ring-green-900/45"
+              : "border-white/16 bg-black/24 text-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+          )}
+        >
+          <span
+            className={cn(
+              "h-2 w-1.5 rotate-45 border-b-2 border-r-2 border-current transition-opacity",
+              completed ? "opacity-100" : "opacity-0"
+            )}
+          />
+        </span>
+      </button>
+      {glyph ? (
+        <span
+          className={cn(
+            "flex h-4 w-4 shrink-0 items-center justify-center truncate text-[0.78rem] leading-none text-white/70",
+            completed ? "text-white/42" : null
+          )}
+          aria-hidden="true"
+        >
+          {glyph}
+        </span>
+      ) : null}
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate leading-snug text-white/84",
+          completed ? "text-white/42 line-through" : null
+        )}
+      >
+        {title}
+      </span>
+      {meta ? (
+        <span
+          className={cn(
+            "max-w-[35%] shrink-0 truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-white/38",
+            completed ? "text-white/28" : null
+          )}
+        >
+          {meta}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function MatrixHabitCard({
   glyph,
   title,
@@ -2935,6 +3052,12 @@ function ScheduledEventCard({
   const handleCardPointerDown = useCallback(
     (pointerEvent: PointerEvent<HTMLDivElement>) => {
       if (pointerEvent.pointerType === "mouse" && pointerEvent.button !== 0) return;
+      if (
+        pointerEvent.target instanceof Element &&
+        pointerEvent.target.closest("[data-matrix-checkbox]")
+      ) {
+        return;
+      }
       if (!fabCreation || event.routine) return;
 
       const element = pointerEvent.currentTarget;
@@ -3067,7 +3190,45 @@ function ScheduledEventCard({
   }, [event.goal, isCompleted]);
   const scheduledHabitPill = cleanStatus ?? "SCHEDULED";
 
-  const card = event.routine ? (
+  const card = density === "todo" && event.routine ? (
+    <MatrixRoutineCard
+      routine={event.routine}
+      density={density}
+      onCompleteHabit={(habitId, completed, source) => {
+        const routineHabit = event.routine?.habits.find(
+          (habit) => habit.id === habitId
+        );
+        const instanceId = routineHabit?.sourceInstance?.id;
+        if (!instanceId) {
+          void hapticWarningPattern();
+          return;
+        }
+        onComplete(instanceId, completed ? "scheduled" : "completed", {
+          xpSourceRect: source?.rect ?? null,
+          xpSourceOrigin: source?.origin,
+        });
+      }}
+    />
+  ) : density === "todo" ? (
+    <MatrixTodoRow
+      title={event.title}
+      glyph={event.glyph}
+      completed={isCompleted}
+      meta={
+        isCompleted
+          ? "Complete"
+          : event.routine
+            ? `${event.routine.dueHabitCount} ${event.routine.dueHabitCount === 1 ? "habit" : "habits"}`
+            : event.instance.source_type === "PROJECT"
+              ? "Project"
+              : event.instance.source_type === "EVENT"
+                ? "Event"
+                : scheduledHabitPill
+      }
+      onToggle={(source) => completeEvent(source)}
+      onOpen={scheduledGoal ? () => onOpenChange(!open) : undefined}
+    />
+  ) : event.routine ? (
     <MatrixRoutineCard
       routine={event.routine}
       density={density}
@@ -3230,6 +3391,12 @@ function DueHabitCard({
   const handleCardPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-matrix-checkbox]")
+      ) {
+        return;
+      }
       if (completing || !fabCreation) return;
 
       const element = event.currentTarget;
@@ -3393,15 +3560,26 @@ function DueHabitCard({
           completing ? "opacity-70" : null
         )}
       >
-        <MatrixHabitCard
-          glyph={habit.glyph}
-          title={habit.name}
-          pill={isCompletedToday ? "COMPLETE" : dueLabel}
-          habitType={habit.habit_type}
-          overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
-          completed={isCompletedToday}
-          density={density}
-        />
+        {density === "todo" ? (
+          <MatrixTodoRow
+            title={habit.name}
+            glyph={habit.glyph}
+            completed={isCompletedToday}
+            disabled={completing}
+            meta={isCompletedToday ? "Complete" : dueLabel}
+            onToggle={(source) => completeHabit(source)}
+          />
+        ) : (
+          <MatrixHabitCard
+            glyph={habit.glyph}
+            title={habit.name}
+            pill={isCompletedToday ? "COMPLETE" : dueLabel}
+            habitType={habit.habit_type}
+            overdue={isCompletedToday ? false : (habit.dueStatus?.isOverdue ?? false)}
+            completed={isCompletedToday}
+            density={density}
+          />
+        )}
       </div>
     </div>
   );
@@ -3434,6 +3612,48 @@ function MatrixRoutineCard({
     }
     return { rect: null, origin: undefined };
   }, []);
+
+  if (density === "todo") {
+    return (
+      <div
+        ref={routineCardRef}
+        className="matrix-event-card-shell group/routine-card relative min-w-0"
+        data-creator-xp-source="matrix-card"
+        data-creator-xp-kind="habit"
+        data-creator-xp-source-id={routine.id}
+        data-matrix-entity-id={routine.id}
+      >
+        <MatrixTodoRow
+          title={routineName}
+          glyph={routineGlyph}
+          completed={completed}
+          meta={completed ? "Complete" : habitCountLabel}
+          onToggle={(source) => {
+            for (const habit of routine.habits) {
+              if (completed || !habit.completed) {
+                onCompleteHabit(habit.id, Boolean(habit.completed), source);
+              }
+            }
+          }}
+        />
+        <div className="absolute inset-y-0 left-10 right-0 z-[4] opacity-0 [&>.goal-card]:!h-full [&>.goal-card]:!min-h-full">
+          <RelatedRoutineCard
+            routine={routine}
+            density="small"
+            fallbackIcon={routineGlyph}
+            onHabitCompletionToggle={(habitId) => {
+              const habit = routine.habits.find((item) => item.id === habitId);
+              onCompleteHabit(
+                habitId,
+                Boolean(habit?.completed),
+                getRoutineXpSource()
+              );
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (density === "row") {
     return (
@@ -3881,6 +4101,8 @@ function MatrixGridCarousel({
   groups,
   matrixView,
   matrixScope,
+  initialCardDensity,
+  persistCardDensity = true,
   onCompleteScheduledEvent,
   onCompleteDueHabit,
   completingDueHabitIds,
@@ -3890,6 +4112,8 @@ function MatrixGridCarousel({
   groups: MatrixMonumentGroup[];
   matrixView: MatrixView;
   matrixScope: MatrixScope;
+  initialCardDensity?: MatrixCardDensity;
+  persistCardDensity?: boolean;
   onCompleteScheduledEvent(
     instanceId: string,
     nextStatus: ScheduleInstance["status"],
@@ -3923,6 +4147,7 @@ function MatrixGridCarousel({
   const scheduledPanelRef = useRef<HTMLDivElement | null>(null);
   const unscheduledPanelRef = useRef<HTMLDivElement | null>(null);
   const matrixPanelPreferenceRestoredRef = useRef(false);
+  const initialCardDensityAppliedRef = useRef(false);
   const initialMatrixRevealActiveRef = useRef(false);
   const initialMatrixRevealTimeoutRef = useRef<ReturnType<
     typeof setTimeout
@@ -4026,13 +4251,14 @@ function MatrixGridCarousel({
     return activeGroups.map(({ group }) => group.key).join("|");
   }, [activeMatrixPanel, activeScheduledGroups, activeUnscheduledDueHabitGroups]);
   const matrixLibraryGridClass =
-    cardDensity === "row"
+    cardDensity === "row" || cardDensity === "todo"
       ? MATRIX_LIBRARY_ROW_LIST_CLASS
       : cardDensity === "small"
         ? MATRIX_LIBRARY_SMALL_GRID_CLASS
         : MATRIX_LIBRARY_GRID_CLASS;
   const isSmallCardDensity = cardDensity === "small";
   const isRowCardDensity = cardDensity === "row";
+  const isTodoRowDensity = cardDensity === "todo";
 
   const getMatrixPanelElement = useCallback((panel: MatrixPanel) => {
     return panel === "unscheduled"
@@ -4079,11 +4305,18 @@ function MatrixGridCarousel({
   const cardDensityPreferenceKey = `${matrixView}:grid`;
 
   useEffect(() => {
+    if (!initialCardDensityAppliedRef.current && initialCardDensity) {
+      initialCardDensityAppliedRef.current = true;
+      setCardDensity(initialCardDensity);
+      return;
+    }
+
+    initialCardDensityAppliedRef.current = true;
     const storedDensity = readMatrixCardDensityPreference(
       cardDensityPreferenceKey
     );
     setCardDensity(storedDensity ?? "large");
-  }, [cardDensityPreferenceKey]);
+  }, [cardDensityPreferenceKey, initialCardDensity]);
 
   useEffect(() => {
     const storedGroupKeys =
@@ -4129,22 +4362,34 @@ function MatrixGridCarousel({
           ? "small"
           : currentDensity === "small"
             ? "row"
-            : "large";
+            : currentDensity === "row"
+              ? "todo"
+              : "large";
 
-      writeMatrixCardDensityPreference(cardDensityPreferenceKey, nextDensity);
+      if (persistCardDensity) {
+        writeMatrixCardDensityPreference(cardDensityPreferenceKey, nextDensity);
+      }
 
       return nextDensity;
     });
-  }, [cardDensityPreferenceKey]);
+  }, [cardDensityPreferenceKey, persistCardDensity]);
 
   const nextCardDensity =
-    cardDensity === "large" ? "small" : cardDensity === "small" ? "row" : "large";
+    cardDensity === "large"
+      ? "small"
+      : cardDensity === "small"
+        ? "row"
+        : cardDensity === "row"
+          ? "todo"
+          : "large";
   const nextCardDensityLabel =
     nextCardDensity === "large"
       ? "large Matrix cards"
       : nextCardDensity === "small"
         ? "small Matrix cards"
-        : "Matrix row cards";
+        : nextCardDensity === "row"
+          ? "Matrix row cards"
+          : "Matrix checkbox rows";
 
   const matrixGridHeaderControls = (
     <>
@@ -4165,6 +4410,8 @@ function MatrixGridCarousel({
       >
         {isSmallCardDensity ? (
           <Grid3x3 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
+        ) : isTodoRowDensity ? (
+          <ListChecks className="h-3 w-3" strokeWidth={1.8} aria-hidden />
         ) : isRowCardDensity ? (
           <List className="h-3 w-3" strokeWidth={1.8} aria-hidden />
         ) : (
@@ -4761,8 +5008,12 @@ function MatrixGridCarousel({
 
 export function MatrixContent({
   variant = "page",
+  initialCardDensity,
+  settingsTriggerTarget,
 }: {
   variant?: "page" | "sheet";
+  initialCardDensity?: MatrixCardDensity;
+  settingsTriggerTarget?: HTMLElement | null;
 } = {}) {
   const { user } = useAuth();
   const { localTimeZone } = useProfile();
@@ -6929,8 +7180,33 @@ export function MatrixContent({
       />
     </button>
   );
+  const matrixSheetSettingsToggle = (
+    <button
+      type="button"
+      aria-label="Matrix filters"
+      title="Matrix filters"
+      aria-expanded={isMatrixTrayOpen}
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsMatrixTrayOpen((current) => !current);
+      }}
+      className={cn(
+        "flex h-6 w-6 items-center justify-center rounded-lg border border-white/[0.08] bg-black/24 p-0 text-white/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)] outline-none transition hover:border-white/[0.14] hover:bg-white/[0.055] hover:text-white/84 focus-visible:ring-2 focus-visible:ring-white/35",
+        isMatrixTrayOpen ? "bg-white/[0.055] text-white/84" : null
+      )}
+    >
+      <Filter className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+    </button>
+  );
   const matrixBody = (
     <>
+      {variant === "sheet" && settingsTriggerTarget
+        ? createPortal(matrixSheetSettingsToggle, settingsTriggerTarget)
+        : null}
       {variant === "page" ? (
         <header className="flex items-center justify-between gap-3 px-1 text-zinc-500">
           <div className="flex min-w-0 items-center gap-2">
@@ -6949,7 +7225,7 @@ export function MatrixContent({
             {matrixSettingsToggle}
           </div>
         </header>
-      ) : (
+      ) : settingsTriggerTarget ? null : (
         <div className="flex justify-end gap-1.5 px-0.5">
           {matrixSettingsToggle}
         </div>
@@ -6996,6 +7272,8 @@ export function MatrixContent({
               groups={activeMatrixGroups}
               matrixView={matrixView}
               matrixScope={matrixScope}
+              initialCardDensity={initialCardDensity}
+              persistCardDensity={variant !== "sheet"}
               onCompleteScheduledEvent={handleCompleteScheduledEvent}
               onCompleteDueHabit={handleCompleteDueHabit}
               completingDueHabitIds={completingDueHabitIds}
