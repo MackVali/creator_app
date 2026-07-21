@@ -87,6 +87,7 @@ export type ChefDishTemplate = {
   permanentTitle: string;
   displayNameMode: "permanent";
   slots: ChefDishTemplateSlot[];
+  anchorSlotIds?: string[];
   stepTemplates: string[];
 };
 
@@ -213,7 +214,7 @@ function makeIngredient(name: string, index: number): ChefRecipeIngredient {
 }
 const slotCandidate = (id: string, label: string, name: string, extra: Partial<ChefDishSlotCandidate> = {}): ChefDishSlotCandidate => ({ id, label, ingredient: { ...makeIngredient(name, 0), id: `slot-${id}` }, ...extra });
 const dishSlot = (id: string, label: string, role: ChefDishSlotRole, candidates: ChefDishSlotCandidate[], extra: Partial<ChefDishTemplateSlot> = {}): ChefDishTemplateSlot => ({ id, label, role, minimumSelections: role === "structural" ? 1 : 0, maximumSelections: 1, blocksAvailability: role === "structural", includeInSummary: true, candidates, ...extra });
-const dishTemplate = (templateId: string, permanentTitle: string, slots: ChefDishTemplateSlot[], stepTemplates: string[]): ChefDishTemplate => ({ templateId, permanentTitle, displayNameMode: "permanent", slots, stepTemplates });
+const dishTemplate = (templateId: string, permanentTitle: string, slots: ChefDishTemplateSlot[], stepTemplates: string[], anchorSlotIds?: string[]): ChefDishTemplate => ({ templateId, permanentTitle, displayNameMode: "permanent", slots, stepTemplates, ...(anchorSlotIds ? { anchorSlotIds } : {}) });
 const makeRecipe = (seed: RecipeSeed): ChefRecipe => ({
   id: slug(seed.name), shortDescription: `A simple, everyday ${seed.name.toLowerCase()}.`, timeMinutes: 20, difficulty: "easy", mealTypes: ["lunch", "dinner"], tags: ["quick", "low-effort"],
   ...seed,
@@ -247,34 +248,34 @@ const proteins = [
 ];
 const extras = (names: string[]) => names.map((name) => slotCandidate(slug(name), name.replace(/\b\w/g, (letter) => letter.toUpperCase()), name));
 const tacoTemplate = dishTemplate("dish-tacos", "Tacos", [
-  dishSlot("shell", "Shell", "structural", shells), dishSlot("filling", "Filling", "structural", proteins),
+  dishSlot("shell", "Tortillas", "structural", shells), dishSlot("filling", "Filling", "structural", proteins),
   dishSlot("add-ons", "Add-ons", "recommended", extras(["shredded cheese", "lettuce", "tomato", "onion", "salsa", "hot sauce", "sour cream", "guacamole", "taco seasoning", "lime", "cilantro"]), { maximumSelections: 11 }),
-], ["Warm the selected {shell}.", "Cook or prepare {filling} and season to taste.", "Fill the shells and finish with the selected {add-ons}."]);
+], ["Warm the selected {shell}.", "Cook or prepare {filling} and season to taste.", "Fill the shells and finish with the selected {add-ons}."], ["shell", "filling"]);
 const burritoTemplate = dishTemplate("dish-burrito", "Burritos", [
   dishSlot("base", "Tortilla / wrap", "structural", [slotCandidate("large-tortilla", "Large tortilla", "flour tortilla", { contextualAliases: ["burrito tortilla", "large wrap"] })]),
   dishSlot("filling", "Filling", "structural", [...proteins.filter((item) => ["ground-beef", "chicken", "steak", "pork", "tuna", "beans", "eggs", "cheese"].includes(item.id)), slotCandidate("rice", "Rice", "rice")]),
   dishSlot("add-ons", "Add-ons", "recommended", extras(["rice", "black beans", "shredded cheese", "salsa", "sour cream", "mixed vegetables", "taco seasoning", "hot sauce", "guacamole"]), { maximumSelections: 9 }),
-], ["Warm {base} until flexible.", "Prepare {filling} and any selected {add-ons}.", "Fill, fold, and serve the burrito."]);
+], ["Warm {base} until flexible.", "Prepare {filling} and any selected {add-ons}.", "Fill, fold, and serve the burrito."], ["base", "filling"]);
 const quesadillaTemplate = dishTemplate("dish-quesadilla", "Quesadillas", [
   dishSlot("tortilla", "Tortilla", "structural", shells), dishSlot("cheese", "Melting cheese", "structural", [slotCandidate("cheddar", "Cheddar", "shredded cheese"), slotCandidate("mozzarella", "Mozzarella", "mozzarella")]),
   dishSlot("filling", "Optional filling", "optional", proteins.filter((item) => ["chicken", "ground-beef", "pork", "beans", "tuna", "eggs"].includes(item.id)).concat(extras(["mixed vegetables"])), { maximumSelections: 3 }),
   dishSlot("extras", "Extras", "recommended", extras(["salsa", "sour cream", "hot sauce", "taco seasoning"]), { maximumSelections: 4 }),
-], ["Layer {cheese} and the selected {filling} on {tortilla}.", "Cook until crisp and the cheese has melted.", "Slice and serve with the selected {extras}."]);
+], ["Layer {cheese} and the selected {filling} on {tortilla}.", "Cook until crisp and the cheese has melted.", "Slice and serve with the selected {extras}."], ["tortilla", "cheese"]);
 const riceBowlTemplate = dishTemplate("dish-rice-bowl", "Rice Bowls", [
   dishSlot("base", "Bowl base", "structural", [slotCandidate("rice", "Rice", "rice", { preferred: true }), slotCandidate("quinoa", "Quinoa", "quinoa")]),
   dishSlot("topping", "Topping / filling", "structural", proteins.filter((item) => !["steak", "salmon", "cheese"].includes(item.id)).concat(extras(["mixed vegetables"]))),
   dishSlot("extras", "Extras", "recommended", extras(["shredded cheese", "mixed vegetables", "salsa", "soy sauce", "hot sauce", "seasoning", "cilantro"]), { maximumSelections: 7 }),
-], ["Prepare {base}.", "Cook or warm {topping}.", "Assemble the bowl and finish with {extras}."]);
+], ["Prepare {base}.", "Cook or warm {topping}.", "Assemble the bowl and finish with {extras}."], ["base", "topping"]);
 const sandwichTemplate = dishTemplate("dish-sandwich-wrap", "Sandwiches / Wraps", [
   dishSlot("base", "Bread / wrap", "structural", [slotCandidate("bread", "Bread", "bread"), slotCandidate("bun", "Bun", "burger bun"), slotCandidate("wrap", "Wrap", "flour tortilla")]),
   dishSlot("filling", "Filling", "structural", [slotCandidate("deli-meat", "Deli meat", "turkey"), ...proteins.filter((item) => ["chicken", "tuna", "eggs", "cheese", "beans"].includes(item.id)), slotCandidate("burger-patty", "Burger patty", "burger patty"), slotCandidate("peanut-butter", "Peanut butter", "peanut butter")]),
   dishSlot("extras", "Condiments / vegetables", "recommended", extras(["mayonnaise", "mustard", "lettuce", "tomato", "onion", "pickles"]), { maximumSelections: 6 }),
-], ["Prepare {base}.", "Add {filling} and the selected {extras}.", "Close, slice if desired, and serve."]);
+], ["Prepare {base}.", "Add {filling} and the selected {extras}.", "Close, slice if desired, and serve."], ["base", "filling"]);
 const pastaTemplate = dishTemplate("dish-pasta", "Pasta", [
   dishSlot("pasta", "Pasta", "structural", [slotCandidate("pasta", "Pasta", "pasta")]),
   dishSlot("finish", "Sauce / finish", "structural", [slotCandidate("marinara", "Marinara", "marinara"), slotCandidate("alfredo", "Alfredo", "alfredo sauce"), slotCandidate("pesto", "Pesto", "pesto"), slotCandidate("butter", "Butter", "butter"), slotCandidate("olive-oil", "Olive oil", "olive oil"), slotCandidate("cheese", "Cheese", "parmesan")]),
   dishSlot("add-ins", "Add-ins", "recommended", [...proteins.filter((item) => ["ground-beef", "chicken", "tuna"].includes(item.id)), ...extras(["mixed vegetables", "garlic", "seasoning", "parsley"])], { maximumSelections: 7 }),
-], ["Cook {pasta} until tender.", "Toss with {finish}.", "Fold in the selected {add-ins}, season, and serve."]);
+], ["Cook {pasta} until tender.", "Toss with {finish}.", "Fold in the selected {add-ins}, season, and serve."], ["pasta"]);
 
 const templateRecipe = (name: string, cuisineId: string, dishFamilyId: string, template: ChefDishTemplate, tags: string[]) => r(name, cuisineId, dishFamilyId, [], { dishTemplate: template, tags, steps: template.stepTemplates });
 
