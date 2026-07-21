@@ -16,6 +16,17 @@ export type ChefRecipeAvailability = { totalIngredients: number; haveCount: numb
 export type ChefDishAvailabilityState = "ready" | "ready-with-choices" | "ready-missing-extras" | "almost-ready" | "unavailable" | "quantity-uncertain";
 export type ChefResolvedDishSlot = { slotId: string; label: string; role: "structural" | "recommended" | "optional"; selected: ChefDishSlotCandidate[]; availableCandidates: ChefDishSlotCandidate[]; missing: boolean };
 export type ChefResolvedDishTemplate = { templateId: string; title: string; slots: ChefResolvedDishSlot[]; ingredients: ChefRecipeIngredient[]; availability: ChefRecipeAvailability; state: ChefDishAvailabilityState; isAvailable: boolean; missingRequiredSlots: string[]; missingExtras: string[]; compactSummary: string; nutrition: ChefNutritionTotals; steps: string[] };
+export type ChefAvailabilityTier = "ready" | "needs_one" | "needs_two" | "unavailable";
+export type ChefResolvedAvailabilityTier = {
+  tier: ChefAvailabilityTier;
+  satisfiedRequiredSlots: number;
+  missingRequiredSlots: string[];
+  anchorMatchStrength: number;
+  matchConfidence: number;
+  quantityUncertain: boolean;
+  missingExtrasCount: number;
+  compactSummary: string;
+};
 
 const entry = (foodKey: string, displayName: string, icon: string, baseAmount: number, baseUnit: string, calories: number, protein_g: number, carbs_g: number, fat_g: number, aliases: string[] = [], commonUnits?: Record<string, number>): ChefPantryNutritionEntry => ({ foodKey, displayName, icon, aliases, baseAmount, baseUnit, calories, protein_g, carbs_g, fat_g, ...(commonUnits ? { commonUnits } : {}) });
 
@@ -157,6 +168,36 @@ export function isResolvedChefRecipeAvailable(recipe: ChefRecipe, selectedOption
     if (ingredient.optional || CHEF_STAPLE_FOOD_KEYS.has(ingredient.foodKey)) return true;
     return availability.ingredients[ingredient.id]?.availability !== "missing";
   });
+}
+
+const MATCH_CONFIDENCE_SCORE = { high: 3, medium: 2, low: 1 } as const;
+
+function readableMissingSlot(slotId: string, label: string) {
+  if (slotId === "finish") return "a finishing component";
+  if (slotId === "base" && label === "Bread / wrap") return "bread or a wrap";
+  return label.toLowerCase();
+}
+
+export function classifyResolvedChefRecipeAvailability(recipe: ChefRecipe, selectedOptions: ChefRecipeSelectedOptions = {}, resources: readonly ChefFoodResourceLike[] = []): ChefResolvedAvailabilityTier {
+  const resolved = resolveChefDishTemplate(recipe, selectedOptions, resources);
+  if (!recipe.dishTemplate) {
+    return { tier: resolved.isAvailable ? "ready" : "unavailable", satisfiedRequiredSlots: resolved.isAvailable ? resolved.availability.totalIngredients : 0, missingRequiredSlots: resolved.missingRequiredSlots, anchorMatchStrength: 0, matchConfidence: 0, quantityUncertain: resolved.availability.unknownCount > 0, missingExtrasCount: 0, compactSummary: resolved.compactSummary };
+  }
+
+  const structuralSlots = resolved.slots.filter((slot) => slot.role === "structural");
+  const partialSlotIds = new Set(structuralSlots.filter((slot) => slot.selected.some((candidate) => resolved.availability.ingredients[`${slot.slotId}-${candidate.id}`]?.availability === "partial")).map((slot) => slot.slotId));
+  const unsatisfied = structuralSlots.filter((slot) => slot.missing || partialSlotIds.has(slot.slotId));
+  const satisfied = structuralSlots.filter((slot) => !unsatisfied.includes(slot));
+  const anchorIds = new Set(recipe.dishTemplate.anchorSlotIds ?? structuralSlots.map((slot) => slot.slotId));
+  const anchorSlots = structuralSlots.filter((slot) => anchorIds.has(slot.slotId) && slot.availableCandidates.length > 0);
+  const matched = structuralSlots.flatMap((slot) => slot.selected.map((candidate) => ({ slot, candidate, availability: resolved.availability.ingredients[`${slot.slotId}-${candidate.id}`] })));
+  const confidence = matched.reduce((total, item) => total + (item.availability?.matchConfidence ? MATCH_CONFIDENCE_SCORE[item.availability.matchConfidence] : 0), 0);
+  const quantityUncertain = matched.some((item) => item.availability?.availability === "unknown");
+  const missingRequiredSlots = unsatisfied.map((slot) => readableMissingSlot(slot.slotId, slot.label));
+  const tier: ChefAvailabilityTier = resolved.isAvailable ? "ready" : anchorSlots.length === 0 ? "unavailable" : missingRequiredSlots.length === 1 ? "needs_one" : missingRequiredSlots.length === 2 && confidence >= MATCH_CONFIDENCE_SCORE.medium ? "needs_two" : "unavailable";
+  const haveNames = matched.filter((item) => item.availability?.availability !== "missing").map((item) => item.availability?.matchedResourceName ?? item.candidate.label);
+  const compactSummary = tier === "ready" ? resolved.compactSummary : `${haveNames.length ? `Have ${haveNames.join(" + ")}` : ""}${haveNames.length && missingRequiredSlots.length ? " · " : ""}${missingRequiredSlots.length ? `Need ${missingRequiredSlots.join(" + ")}` : ""}`;
+  return { tier, satisfiedRequiredSlots: satisfied.length, missingRequiredSlots, anchorMatchStrength: anchorSlots.length, matchConfidence: confidence, quantityUncertain, missingExtrasCount: resolved.missingExtras.length, compactSummary };
 }
 
 export function resolveChefDishTemplate(recipe: ChefRecipe, selectedOptions: ChefRecipeSelectedOptions = {}, resources: readonly ChefFoodResourceLike[] = []): ChefResolvedDishTemplate {

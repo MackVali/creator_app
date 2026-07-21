@@ -125,10 +125,12 @@ import {
   calculateChefIngredientNutrition,
   calculateResolvedChefRecipeAvailability,
   calculateResolvedChefRecipeNutrition,
+  classifyResolvedChefRecipeAvailability,
   formatChefMacroSummary,
   formatChefNutritionNumber,
-  isResolvedChefRecipeAvailable,
   resolveChefDishTemplate,
+  type ChefAvailabilityTier,
+  type ChefResolvedAvailabilityTier,
 } from "@/lib/nutrition/chefRecipeNutrition";
 import {
   DEFAULT_NUTRITION_MEAL_TEMPLATE_ICON,
@@ -5078,7 +5080,6 @@ function buildNutritionMealDraft({
   databaseDefinition,
   databaseFields,
   selectedFoods,
-  selectedFood,
   selectedMeal,
   selectedRecipe,
   selectedAction,
@@ -5089,7 +5090,6 @@ function buildNutritionMealDraft({
   databaseDefinition: NoteDatabaseDefinition;
   databaseFields: NoteDatabaseFieldDefinition[];
   selectedFoods: NutritionSelectedFoodItem[];
-  selectedFood: NutritionSelectedFoodItem | null;
   selectedMeal: NutritionSavedMeal | null;
   selectedRecipe: NutritionSelectedRecipeItem | null;
   selectedAction: NutritionFoodActionTabId;
@@ -5104,8 +5104,8 @@ function buildNutritionMealDraft({
 
   if (selectedAction === "search" || selectedAction === "grocery") {
     items = selectedFoods.map(buildFoodNutritionMealItem);
-  } else if (selectedAction === "scan" && selectedFood) {
-    items = [buildFoodNutritionMealItem(selectedFood)];
+  } else if (selectedAction === "scan") {
+    items = selectedFoods.map(buildFoodNutritionMealItem);
   } else if ((selectedAction === "meals" || selectedAction === "recent") && selectedMeal) {
     items = getSortedNutritionMealItems(selectedMeal).map(buildCopiedNutritionMealItem);
   } else if (selectedAction === "recipes" && selectedRecipe) {
@@ -7024,6 +7024,7 @@ export function NoteDatabaseEntrySheet({
   const [selectedChefStyleId, setSelectedChefStyleId] = useState<string | null>(null);
   const [selectedChefOptions, setSelectedChefOptions] = useState<Record<string, string>>({});
   const [selectedChefFilter, setSelectedChefFilter] = useState<ChefFilterId>("all");
+  const [chefAvailableRevealLevel, setChefAvailableRevealLevel] = useState<0 | 1 | 2>(0);
   const [expandedChefRecipeId, setExpandedChefRecipeId] = useState<string | null>(null);
   const [selectedFitnessAction, setSelectedFitnessAction] =
     useState<FitnessActionTabId>("start");
@@ -7115,9 +7116,10 @@ export function NoteDatabaseEntrySheet({
     null,
   );
   const chefAvailabilityCatalog = useMemo(() => {
-    const availableRecipeIdsByFamily = new Map<string, Set<string>>();
+    const recipeTiers = new Map<string, ChefResolvedAvailabilityTier>();
+    const recipeIdsByFamilyAndTier = new Map<string, Set<string>>();
     const availableOptionIdsByGroup = new Map<string, Set<string>>();
-    const availableFamilyKeys = new Set<string>();
+    const tierCounts: Record<Exclude<ChefAvailabilityTier, "unavailable">, number> = { ready: 0, needs_one: 0, needs_two: 0 };
 
     getChefCuisinesWithCounts().forEach((cuisine) => {
       getChefDishFamiliesForCuisine(cuisine.id).forEach((dishFamily) => {
@@ -7125,18 +7127,24 @@ export function NoteDatabaseEntrySheet({
         const optionGroups = getChefOptionGroupsForDishFamily(cuisine.id, dishFamily.id);
         const recipes = getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id });
         const selectedOptions = Object.fromEntries(optionGroups.map((group) => [group.id, selectedChefOptions[group.id] ?? group.defaultOptionId]));
-        const availableIds = new Set(recipes.filter((recipe) => isResolvedChefRecipeAvailable(recipe, { ...getDefaultChefRecipeOptions(recipe), ...selectedOptions }, groceryResourceItems)).map((recipe) => recipe.id));
-        availableRecipeIdsByFamily.set(familyKey, availableIds);
+        recipes.forEach((recipe) => {
+          const classification = classifyResolvedChefRecipeAvailability(recipe, { ...getDefaultChefRecipeOptions(recipe), ...selectedOptions }, groceryResourceItems);
+          recipeTiers.set(recipe.id, classification);
+          if (classification.tier === "unavailable") return;
+          const tierKey = `${familyKey}:${classification.tier}`;
+          if (!recipeIdsByFamilyAndTier.has(tierKey)) recipeIdsByFamilyAndTier.set(tierKey, new Set());
+          recipeIdsByFamilyAndTier.get(tierKey)?.add(recipe.id);
+          tierCounts[classification.tier] += 1;
+        });
 
         optionGroups.forEach((group) => {
-          const availableOptionIds = new Set(group.options.filter((option) => recipes.some((recipe) => isResolvedChefRecipeAvailable(recipe, { ...getDefaultChefRecipeOptions(recipe), ...selectedOptions, [group.id]: option.id }, groceryResourceItems))).map((option) => option.id));
+          const availableOptionIds = new Set(group.options.filter((option) => recipes.some((recipe) => classifyResolvedChefRecipeAvailability(recipe, { ...getDefaultChefRecipeOptions(recipe), ...selectedOptions, [group.id]: option.id }, groceryResourceItems).tier !== "unavailable")).map((option) => option.id));
           availableOptionIdsByGroup.set(group.id, availableOptionIds);
         });
-        if (availableIds.size > 0 || optionGroups.some((group) => (availableOptionIdsByGroup.get(group.id)?.size ?? 0) > 0)) availableFamilyKeys.add(familyKey);
       });
     });
 
-    return { availableRecipeIdsByFamily, availableOptionIdsByGroup, availableFamilyKeys };
+    return { recipeTiers, recipeIdsByFamilyAndTier, availableOptionIdsByGroup, tierCounts };
   }, [groceryResourceItems, selectedChefOptions]);
   const [openGroceryResourceMenuId, setOpenGroceryResourceMenuId] = useState<string | null>(
     null,
@@ -7158,6 +7166,7 @@ export function NoteDatabaseEntrySheet({
     Record<string, GrocerySearchDraft>
   >({});
   const grocerySearchSavingIdsRef = useRef(new Set<string>());
+  const isDatabaseEntrySubmittingRef = useRef(false);
   const [nutritionSavedMeals, setNutritionSavedMeals] = useState<NutritionSavedMeal[]>([]);
   const [isNutritionSavedMealsLoading, setIsNutritionSavedMealsLoading] = useState(false);
   const [nutritionSavedMealsError, setNutritionSavedMealsError] = useState<string | null>(
@@ -7230,6 +7239,8 @@ export function NoteDatabaseEntrySheet({
     useState(false);
   const [isNutritionBarcodeLookupLoading, setIsNutritionBarcodeLookupLoading] =
     useState(false);
+  const nutritionBarcodeScannerLoadingRef = useRef(false);
+  const nutritionBarcodeLookupLoadingRef = useRef(false);
   const [nutritionBarcodeLookupStatus, setNutritionBarcodeLookupStatus] = useState<
     string | null
   >(null);
@@ -7358,12 +7369,7 @@ export function NoteDatabaseEntrySheet({
   );
   const selectedNutritionFavoriteTargets = useMemo<NutritionFavoriteTarget[]>(() => {
     const targets: NutritionFavoriteTarget[] = [];
-    const selectedFoodItems =
-      selectedNutritionFoodAction === "scan"
-        ? selectedNutritionFood
-          ? [selectedNutritionFood]
-          : []
-        : selectedNutritionFoods;
+    const selectedFoodItems = selectedNutritionFoods;
 
     selectedFoodItems.forEach((item) => {
       if (item.food.source?.startsWith("grocery")) return;
@@ -7393,7 +7399,6 @@ export function NoteDatabaseEntrySheet({
 
     return targets;
   }, [
-    selectedNutritionFood,
     selectedNutritionFoodAction,
     selectedNutritionFoods,
     selectedNutritionMeal,
@@ -8681,16 +8686,57 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
-  function selectNutritionFood(food: FoodSearchResult) {
+  function stageScannedFood(food: FoodSearchResult) {
+    if (isGroceryDatabase) {
+      const draftKey = getGrocerySearchDraftKey(food);
+      if (!draftKey) return false;
+      const defaultInventory = getGroceryDefaultInventoryAmount(food);
+      setGrocerySearchDrafts((currentDrafts) =>
+        currentDrafts[draftKey]
+          ? currentDrafts
+          : {
+              ...currentDrafts,
+              [draftKey]: {
+                stableKey: draftKey,
+                food,
+                quantity: formatGrocerySearchQuantity(defaultInventory.quantity),
+                unit: defaultInventory.unit,
+                status: "idle",
+                message: null,
+                quantityManuallyEdited: false,
+              },
+            },
+      );
+      return true;
+    }
+
+    const foodKey = getNutritionFoodSelectionKey(food);
     const nextItem = makeNutritionSelectedFoodItem(food);
-    const mappedValues = mapSelectedNutritionFoodsToEntryValues([nextItem], databaseDefinition);
-    setSelectedNutritionFoods([]);
-    setSelectedNutritionFood(nextItem);
+    setSelectedNutritionFoods((currentFoods) => {
+      if (
+        currentFoods.some(
+          (item) => getNutritionFoodSelectionKey(item.food) === foodKey,
+        )
+      ) {
+        return currentFoods;
+      }
+      return [...currentFoods, nextItem];
+    });
+    const nextFoodsForEntry = selectedNutritionFoods.some(
+      (item) => getNutritionFoodSelectionKey(item.food) === foodKey,
+    )
+      ? selectedNutritionFoods
+      : [...selectedNutritionFoods, nextItem];
+    setEntryFormValues((current) => ({
+      ...current,
+      ...mapSelectedNutritionFoodsToEntryValues(nextFoodsForEntry, databaseDefinition),
+    }));
+    setSelectedNutritionFood(null);
     setSelectedNutritionMeal(null);
     setSelectedNutritionMealSource(null);
     setSelectedNutritionRecipe(null);
-    setEntryFormValues((current) => ({ ...current, ...mappedValues }));
     setSubmitError(null);
+    return true;
   }
 
   function selectNutritionSavedMeal(
@@ -8942,7 +8988,7 @@ export function NoteDatabaseEntrySheet({
   }
 
   async function lookupNutritionBarcode(barcodeValue = nutritionBarcodeValue) {
-    if (isNutritionBarcodeLookupLoading) return;
+    if (isNutritionBarcodeLookupLoading || nutritionBarcodeLookupLoadingRef.current) return;
 
     const normalizedBarcode = normalizeFoodBarcode(barcodeValue);
     if (!normalizedBarcode) {
@@ -8952,6 +8998,7 @@ export function NoteDatabaseEntrySheet({
       return;
     }
 
+    nutritionBarcodeLookupLoadingRef.current = true;
     setIsNutritionBarcodeLookupLoading(true);
     setNutritionBarcodeLookupStatus(null);
     setNutritionBarcodeLookupError(null);
@@ -9009,15 +9056,16 @@ export function NoteDatabaseEntrySheet({
             }
           : payload.food;
 
-        selectNutritionFood(foodForSelection);
+        stageScannedFood(foodForSelection);
+        setNutritionBarcodeValue("");
         setNutritionBarcodeLookupStatus(
           payload.status === "created"
             ? isGroceryDatabase
-              ? "Added to foods catalog. Save to add it to Grocery List."
-              : "Added to foods catalog. Save entry to log it."
+              ? "Staged from foods catalog. Scan another or save Grocery List."
+              : "Staged from foods catalog. Scan another or save entry."
             : isGroceryDatabase
-              ? "Found in foods catalog. Save to add it to Grocery List."
-              : "Found in foods catalog. Save entry to log it.",
+              ? "Staged. Scan another or save Grocery List."
+              : "Staged. Scan another or save entry.",
         );
         return;
       }
@@ -9038,13 +9086,20 @@ export function NoteDatabaseEntrySheet({
       void hapticErrorPattern();
       setNutritionBarcodeLookupError("Barcode lookup is unavailable right now.");
     } finally {
+      nutritionBarcodeLookupLoadingRef.current = false;
       setIsNutritionBarcodeLookupLoading(false);
     }
   }
 
   async function scanAndLookupNutritionBarcode() {
-    if (isNutritionBarcodeScannerLoading || isNutritionBarcodeLookupLoading) return;
+    if (
+      isNutritionBarcodeScannerLoading ||
+      isNutritionBarcodeLookupLoading ||
+      nutritionBarcodeScannerLoadingRef.current ||
+      nutritionBarcodeLookupLoadingRef.current
+    ) return;
 
+    nutritionBarcodeScannerLoadingRef.current = true;
     setIsNutritionBarcodeScannerLoading(true);
     setNutritionBarcodeLookupStatus(null);
     setNutritionBarcodeLookupError(null);
@@ -9066,6 +9121,7 @@ export function NoteDatabaseEntrySheet({
       setNutritionBarcodeValue(result.barcode);
       await lookupNutritionBarcode(result.barcode);
     } finally {
+      nutritionBarcodeScannerLoadingRef.current = false;
       setIsNutritionBarcodeScannerLoading(false);
     }
   }
@@ -11242,7 +11298,11 @@ export function NoteDatabaseEntrySheet({
     }
   }
 
-  function renderGrocerySearchDraftRow(draft: GrocerySearchDraft) {
+  function renderGrocerySearchDraftRow(
+    draft: GrocerySearchDraft,
+    options: { showSaveButton?: boolean } = {},
+  ) {
+    const { showSaveButton = true } = options;
     const { food, stableKey } = draft;
     const activeResources = getActiveGroceryResourcesForFood(food);
     const previewSave = prepareGrocerySearchInventorySave(draft.quantity, draft.unit, food);
@@ -11309,24 +11369,26 @@ export function NoteDatabaseEntrySheet({
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => void saveGrocerySearchFood(stableKey)}
-            disabled={
-              draft.status === "saving" ||
-              draft.status === "success" ||
-              isGroceryResourcesLoading
-            }
-            className="h-9 shrink-0 rounded-lg border border-zinc-50/28 bg-zinc-200/82 px-3 text-xs font-bold text-zinc-950 outline-none transition hover:bg-zinc-100 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {draft.status === "saving"
-              ? "Adding..."
-              : isGroceryResourcesLoading
-                ? "Checking..."
-                : draft.status === "success"
-                  ? "Added"
-                  : "Add"}
-          </button>
+          {showSaveButton ? (
+            <button
+              type="button"
+              onClick={() => void saveGrocerySearchFood(stableKey)}
+              disabled={
+                draft.status === "saving" ||
+                draft.status === "success" ||
+                isGroceryResourcesLoading
+              }
+              className="h-9 shrink-0 rounded-lg border border-zinc-50/28 bg-zinc-200/82 px-3 text-xs font-bold text-zinc-950 outline-none transition hover:bg-zinc-100 focus-visible:ring-1 focus-visible:ring-white/24 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {draft.status === "saving"
+                ? "Adding..."
+                : isGroceryResourcesLoading
+                  ? "Checking..."
+                  : draft.status === "success"
+                    ? "Added"
+                    : "Add"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => toggleGrocerySearchFood(food)}
@@ -11956,12 +12018,45 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderSelectedNutritionFoods() {
-    const selectedItems =
-      selectedNutritionFoodAction === "scan"
-        ? selectedNutritionFood
-          ? [selectedNutritionFood]
-          : []
-        : selectedNutritionFoods;
+    if (isGroceryDatabase && selectedNutritionFoodAction === "scan") {
+      const stagedDrafts = Object.values(grocerySearchDrafts);
+      if (stagedDrafts.length === 0) return null;
+
+      return (
+        <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.035]">
+          <div className="flex items-center justify-between gap-2 px-3 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+              Selected
+            </span>
+            <span className="shrink-0 text-[11px] font-semibold text-white/46">
+              {stagedDrafts.length}
+            </span>
+          </div>
+          <div className="divide-y divide-white/[0.045]">
+            {stagedDrafts.map((draft) => (
+              <div key={draft.stableKey}>
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <NutritionFoodIcon food={draft.food} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white/84">
+                      {draft.food.name}
+                    </span>
+                    {draft.food.brand_name ? (
+                      <span className="mt-0.5 block truncate text-[11px] font-medium text-white/38">
+                        {draft.food.brand_name}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+                {renderGrocerySearchDraftRow(draft, { showSaveButton: false })}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const selectedItems = selectedNutritionFoods;
 
     if (selectedItems.length === 0) return null;
 
@@ -12831,6 +12926,7 @@ export function NoteDatabaseEntrySheet({
 
   function renderChefCatalog() {
     const showAvailableChefRecipesOnly = selectedChefFilter === "available";
+    const visibleAvailableTiers: ChefAvailabilityTier[] = ["ready", ...(chefAvailableRevealLevel >= 1 ? ["needs_one" as const] : []), ...(chefAvailableRevealLevel >= 2 ? ["needs_two" as const] : [])];
     const selectedFilter = CHEF_FILTERS.find((filter) => filter.id === selectedChefFilter) ?? CHEF_FILTERS[0];
     const recipeMatchesSelectedFilter = (recipe: ReturnType<typeof getChefRecipesForNode>[number]) => {
       if (selectedFilter.tags.length === 0) return true;
@@ -12844,7 +12940,7 @@ export function NoteDatabaseEntrySheet({
     };
     const familyHasMatches = (cuisineId: string, dishFamilyId: string) => {
       const familyKey = `${cuisineId}:${dishFamilyId}`;
-      if (showAvailableChefRecipesOnly) return chefAvailabilityCatalog.availableFamilyKeys.has(familyKey);
+      if (showAvailableChefRecipesOnly) return visibleAvailableTiers.some((tier) => (chefAvailabilityCatalog.recipeIdsByFamilyAndTier.get(`${familyKey}:${tier}`)?.size ?? 0) > 0);
       return getChefRecipesForNode({ cuisineId, dishFamilyId }).some(recipeMatchesSelectedFilter);
     };
     const cuisines = getChefCuisinesWithCounts().filter((cuisine) =>
@@ -12878,6 +12974,7 @@ export function NoteDatabaseEntrySheet({
                 aria-pressed={isSelected}
                 onClick={() => {
                   setSelectedChefFilter(filter.id);
+                  if (filter.id === "available" && selectedChefFilter !== "available") setChefAvailableRevealLevel(0);
                   setExpandedChefRecipeId(null);
                 }}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold outline-none transition ${
@@ -12895,10 +12992,10 @@ export function NoteDatabaseEntrySheet({
 
         <div className="divide-y divide-white/[0.05]">
           {showAvailableChefRecipesOnly && isGroceryResourcesLoading ? <p className="px-4 py-5 text-xs font-medium text-white/40">Checking your groceries…</p> : null}
-          {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && cuisines.length === 0 ? (
+          {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && chefAvailabilityCatalog.tierCounts.ready === 0 ? (
             <div className="px-4 py-5">
-              <p className="text-sm font-semibold text-white/72">Add groceries to unlock available meals.</p>
-              <p className="mt-1 text-[11px] leading-4 text-white/38">Try basics like chicken, eggs, tortillas, rice, pasta, cheese, beans, or bread.</p>
+              <p className="text-sm font-semibold text-white/72">{chefAvailabilityCatalog.tierCounts.needs_one > 0 || chefAvailabilityCatalog.tierCounts.needs_two > 0 ? "No complete meals yet." : "Add groceries to unlock available meals."}</p>
+              {chefAvailabilityCatalog.tierCounts.needs_one === 0 && chefAvailabilityCatalog.tierCounts.needs_two === 0 ? <p className="mt-1 text-[11px] leading-4 text-white/38">Try basics like chicken, eggs, tortillas, rice, pasta, cheese, beans, or bread.</p> : null}
             </div>
           ) : null}
           {!showAvailableChefRecipesOnly && selectedChefFilter !== "all" && cuisines.length === 0 ? (
@@ -12943,7 +13040,16 @@ export function NoteDatabaseEntrySheet({
                       const isFamilyOpen = openChefDishFamilyKey === familyKey;
                       const optionGroups = isFamilyOpen ? getChefOptionGroupsForDishFamily(cuisine.id, dishFamily.id) : [];
                       const styles = isFamilyOpen && optionGroups.length === 0 ? getChefStylesForDishFamily(cuisine.id, dishFamily.id) : [];
-                      const recipes = isFamilyOpen ? getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id, styleId: selectedChefStyleId ?? undefined }).filter((recipe) => recipeMatchesSelectedFilter(recipe) && (!showAvailableChefRecipesOnly || chefAvailabilityCatalog.availableRecipeIdsByFamily.get(familyKey)?.has(recipe.id))) : [];
+                      const recipes = isFamilyOpen ? getChefRecipesForNode({ cuisineId: cuisine.id, dishFamilyId: dishFamily.id, styleId: selectedChefStyleId ?? undefined }).filter((recipe) => recipeMatchesSelectedFilter(recipe) && (!showAvailableChefRecipesOnly || visibleAvailableTiers.includes(chefAvailabilityCatalog.recipeTiers.get(recipe.id)?.tier ?? "unavailable"))).sort((a, b) => {
+                        if (!showAvailableChefRecipesOnly) return 0;
+                        const left = chefAvailabilityCatalog.recipeTiers.get(a.id);
+                        const right = chefAvailabilityCatalog.recipeTiers.get(b.id);
+                        if (!left || !right) return 0;
+                        const tierOrder = { ready: 0, needs_one: 1, needs_two: 2, unavailable: 3 };
+                        if (left.tier !== right.tier) return tierOrder[left.tier] - tierOrder[right.tier];
+                        if (left.tier === "ready") return Number(left.quantityUncertain) - Number(right.quantityUncertain) || right.matchConfidence - left.matchConfidence;
+                        return right.satisfiedRequiredSlots - left.satisfiedRequiredSlots || right.anchorMatchStrength - left.anchorMatchStrength || right.matchConfidence - left.matchConfidence || Number(left.quantityUncertain) - Number(right.quantityUncertain) || left.missingRequiredSlots.length - right.missingRequiredSlots.length || left.missingExtrasCount - right.missingExtrasCount;
+                      }) : [];
                       return (
                         <div key={familyKey} className="overflow-hidden rounded-xl border border-white/[0.05] bg-black/30 [&+&]:mt-1.5">
                           <button type="button" aria-expanded={isFamilyOpen} onClick={() => {
@@ -12980,7 +13086,7 @@ export function NoteDatabaseEntrySheet({
                                 </div>
                               ) : null}
                               <div className="space-y-1.5">
-                                {recipes.length > 0 ? recipes.map((recipe) => {
+                                {recipes.length > 0 ? recipes.map((recipe, recipeIndex) => {
                                   const isExpanded = expandedChefRecipeId === recipe.id;
                                   const familyOptions = Object.fromEntries(optionGroups.map((group) => [group.id, selectedChefOptions[group.id] ?? group.defaultOptionId]));
                                   const recipeOptions = { ...getDefaultChefRecipeOptions(recipe), ...familyOptions };
@@ -12989,10 +13095,14 @@ export function NoteDatabaseEntrySheet({
                                   const resolvedName = resolvedBuild?.title ?? resolveChefRecipeName(recipe, recipeOptions);
                                   const nutrition = resolvedBuild?.nutrition ?? calculateResolvedChefRecipeNutrition(recipe, recipeOptions);
                                   const availability = resolvedBuild?.availability ?? calculateResolvedChefRecipeAvailability(recipe, recipeOptions, groceryResourceItems);
+                                  const tierInfo = chefAvailabilityCatalog.recipeTiers.get(recipe.id);
+                                  const previousTier = recipeIndex > 0 ? chefAvailabilityCatalog.recipeTiers.get(recipes[recipeIndex - 1].id)?.tier : null;
                                   return (
-                                    <article key={recipe.id} className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
+                                    <Fragment key={recipe.id}>
+                                    {showAvailableChefRecipesOnly && tierInfo?.tier !== "ready" && tierInfo?.tier !== previousTier ? <p className="px-1 pt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/36">{tierInfo.tier === "needs_one" ? "Need 1 ingredient" : "Need 2 ingredients"}</p> : null}
+                                    <article className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.025]">
                                       <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedChefRecipeId(isExpanded ? null : recipe.id)} className="flex w-full items-center gap-2 px-2.5 py-2.5 text-left outline-none hover:bg-white/[0.035] focus-visible:bg-white/[0.05]">
-                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-0.5 block text-[10px] font-medium text-white/34">{recipe.timeMinutes} min · {recipe.difficulty}</span>{resolvedBuild?.compactSummary ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{resolvedBuild.compactSummary}</span> : null}</span>
+                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white/78">{resolvedName}</span><span className="mt-0.5 block text-[10px] font-medium text-white/34">{recipe.timeMinutes} min · {recipe.difficulty}</span>{(tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary) ? <span className="mt-0.5 block truncate text-[10px] font-medium text-white/42">{tierInfo?.tier !== "ready" ? tierInfo?.compactSummary : resolvedBuild?.compactSummary}</span> : null}</span>
                                         <span className="hidden shrink-0 rounded-full border border-white/[0.06] bg-black/30 px-2 py-1 text-[9px] font-semibold text-white/48 min-[360px]:inline">{formatChefMacroSummary(nutrition)}</span>
                                         <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-white/30 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
                                       </button>
@@ -13016,7 +13126,7 @@ export function NoteDatabaseEntrySheet({
                                           <p className="mt-2.5 rounded-lg border border-white/[0.04] bg-black/25 px-2.5 py-2 text-[11px] font-medium text-white/42">{contextLabel}</p>
                                         </div>
                                       ) : null}
-                                    </article>
+                                    </article></Fragment>
                                   );
                                 }) : <p className="px-2 py-3 text-xs font-medium text-white/36">{showAvailableChefRecipesOnly && optionGroups.length > 0 ? "Nothing available for this build." : "No meals match this filter yet."}</p>}
                               </div>
@@ -13030,6 +13140,9 @@ export function NoteDatabaseEntrySheet({
               </section>
             );
           }) : null}
+          {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && chefAvailableRevealLevel === 0 && chefAvailabilityCatalog.tierCounts.needs_one > 0 ? <button type="button" onClick={() => setChefAvailableRevealLevel(1)} className="w-full px-4 py-3 text-left text-xs font-semibold text-white/62 hover:bg-white/[0.035]">See meals needing 1 ingredient · {chefAvailabilityCatalog.tierCounts.needs_one}</button> : null}
+          {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && chefAvailableRevealLevel === 0 && chefAvailabilityCatalog.tierCounts.needs_one === 0 && chefAvailabilityCatalog.tierCounts.needs_two > 0 ? <button type="button" onClick={() => setChefAvailableRevealLevel(2)} className="w-full px-4 py-3 text-left text-xs font-semibold text-white/62 hover:bg-white/[0.035]">See meals needing 2 ingredients · {chefAvailabilityCatalog.tierCounts.needs_two}</button> : null}
+          {showAvailableChefRecipesOnly && !isGroceryResourcesLoading && chefAvailableRevealLevel === 1 && chefAvailabilityCatalog.tierCounts.needs_two > 0 ? <button type="button" onClick={() => setChefAvailableRevealLevel(2)} className="w-full px-4 py-3 text-left text-xs font-semibold text-white/62 hover:bg-white/[0.035]">See meals needing 2 ingredients · {chefAvailabilityCatalog.tierCounts.needs_two}</button> : null}
         </div>
       </div>
     );
@@ -13431,7 +13544,8 @@ export function NoteDatabaseEntrySheet({
   }
 
   async function saveDatabaseEntry(formValuesOverride?: Record<string, unknown>) {
-    if (isSubmitting) return;
+    if (isSubmitting || isDatabaseEntrySubmittingRef.current) return;
+    isDatabaseEntrySubmittingRef.current = true;
 
     const formValues = formValuesOverride ?? entryFormValues;
     const now = new Date().toISOString();
@@ -13508,7 +13622,6 @@ export function NoteDatabaseEntrySheet({
       databaseDefinition,
       databaseFields,
       selectedFoods: selectedNutritionFoods,
-      selectedFood: selectedNutritionFood,
       selectedMeal: selectedNutritionMeal,
       selectedRecipe: selectedNutritionRecipe,
       selectedAction: selectedNutritionFoodAction,
@@ -13520,6 +13633,29 @@ export function NoteDatabaseEntrySheet({
     setIsSubmitting(true);
     setSubmitError(null);
     try {
+      if (isGroceryDatabase && selectedNutritionFoodAction === "scan") {
+        const stagedDraftKeys = Object.keys(grocerySearchDrafts).filter(
+          (draftKey) => grocerySearchDrafts[draftKey]?.status !== "success",
+        );
+        if (stagedDraftKeys.length === 0) {
+          setSubmitError("Scan at least one grocery before saving.");
+          return;
+        }
+
+        const results = [];
+        for (const draftKey of stagedDraftKeys) {
+          results.push(await saveGrocerySearchFood(draftKey));
+        }
+        if (results.some((wasSaved) => !wasSaved)) {
+          setSubmitError("Some groceries could not be added. Check their amounts and try again.");
+          return;
+        }
+
+        void hapticComplete();
+        onClose();
+        return;
+      }
+
       let entryToSave = nextEntry;
 
       if (nutritionMealDraft) {
@@ -13557,6 +13693,7 @@ export function NoteDatabaseEntrySheet({
       void hapticErrorPattern();
       setSubmitError("Unable to save entry right now.");
     } finally {
+      isDatabaseEntrySubmittingRef.current = false;
       setIsSubmitting(false);
     }
   }
