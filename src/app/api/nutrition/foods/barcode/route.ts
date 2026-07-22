@@ -7,6 +7,7 @@ import {
   mapOpenFoodFactsProductToFoodInsert,
   mergeOpenFoodFactsFoodInsertWithExisting,
   normalizeFoodBarcode,
+  reconcileFoodPackageProfile,
   type FoodBarcodeLookupResult,
   type FoodSearchResult,
   type OpenFoodFactsProduct,
@@ -164,23 +165,27 @@ async function findUserFoodResourceByBarcode(
     const parsed = typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
     return Number.isFinite(parsed) ? parsed : null;
   };
+  const reusedFood = {
+    id: `resource:${data.id}`,
+    name: data.name,
+    brand_name: data.brand_name,
+    source: "user_food_resource",
+    serving_size: numberValue(snapshot.serving_size ?? metadata.serving_size),
+    serving_unit: typeof (snapshot.serving_unit ?? metadata.serving_unit) === "string"
+      ? String(snapshot.serving_unit ?? metadata.serving_unit)
+      : null,
+    serving_grams: numberValue(snapshot.serving_grams ?? metadata.serving_grams),
+    calories: numberValue(snapshot.calories ?? metadata.calories),
+    carbs_g: numberValue(snapshot.carbs_g ?? metadata.carbs_g),
+    protein_g: numberValue(snapshot.protein_g ?? metadata.protein_g),
+    fat_g: numberValue(snapshot.fat_g ?? metadata.fat_g),
+    metadata: { ...snapshot, ...metadata, barcode: normalizedBarcode },
+  } satisfies FoodSearchResult;
+  if (reconcileFoodPackageProfile({ ...reusedFood, barcode: normalizedBarcode }).completeness !== "complete") {
+    return { food: null, error: null };
+  }
   return {
-    food: {
-      id: `resource:${data.id}`,
-      name: data.name,
-      brand_name: data.brand_name,
-      source: "user_food_resource",
-      serving_size: numberValue(snapshot.serving_size ?? metadata.serving_size),
-      serving_unit: typeof (snapshot.serving_unit ?? metadata.serving_unit) === "string"
-        ? String(snapshot.serving_unit ?? metadata.serving_unit)
-        : null,
-      serving_grams: numberValue(snapshot.serving_grams ?? metadata.serving_grams),
-      calories: numberValue(snapshot.calories ?? metadata.calories),
-      carbs_g: numberValue(snapshot.carbs_g ?? metadata.carbs_g),
-      protein_g: numberValue(snapshot.protein_g ?? metadata.protein_g),
-      fat_g: numberValue(snapshot.fat_g ?? metadata.fat_g),
-      metadata: { ...snapshot, ...metadata, barcode: normalizedBarcode },
-    } satisfies FoodSearchResult,
+    food: reusedFood,
     error: null,
   };
 }

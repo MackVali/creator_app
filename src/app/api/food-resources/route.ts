@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { getAttachableFoodResourceId } from "@/lib/nutrition/foods";
+import {
+  getAttachableFoodResourceId,
+  reconcileFoodPackageProfile,
+} from "@/lib/nutrition/foods";
 import type { Database, Json } from "@/types/supabase";
 
 export const runtime = "nodejs";
@@ -241,6 +244,32 @@ function parseFoodResourcePayload(payload: Record<string, unknown>) {
     return { ok: false as const, error: "Unit is invalid." };
   }
 
+  const metadata = normalizeMetadata(payload.metadata);
+  const metadataRecord = metadata as Record<string, unknown>;
+  const isPackagedScan = Boolean(metadataRecord.barcode || metadataRecord.package_profile);
+  if (isPackagedScan) {
+    const packageProfile = reconcileFoodPackageProfile({
+      barcode: metadataRecord.barcode,
+      name,
+      brand_name: normalizeText(payload.brand_name, 120),
+      containersAdded: quantity,
+      metadata,
+      calories: metadataRecord.calories as number | null,
+      carbs_g: metadataRecord.carbs_g as number | null,
+      protein_g: metadataRecord.protein_g as number | null,
+      fat_g: metadataRecord.fat_g as number | null,
+    });
+    metadataRecord.package_profile = packageProfile;
+    if (packageProfile.completeness !== "complete") {
+      return {
+        ok: false as const,
+        error: packageProfile.conflicts.length
+          ? "Package details conflict. Confirm or correct the package facts."
+          : `Complete ${packageProfile.missingFields.length} package details before saving.`,
+      };
+    }
+  }
+
   return {
     ok: true as const,
     value: {
@@ -252,7 +281,7 @@ function parseFoodResourcePayload(payload: Record<string, unknown>) {
       location,
       expires_on: expiresOn,
       notes: normalizeText(payload.notes, 2000),
-      metadata: normalizeMetadata(payload.metadata),
+      metadata,
     },
   };
 }
@@ -433,13 +462,28 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const setQuantityMetadata = payload.metadata === undefined
+      ? undefined
+      : normalizeMetadata(payload.metadata);
+    const setQuantityMetadataRecord = setQuantityMetadata as Record<string, unknown> | undefined;
+    if (setQuantityMetadataRecord?.package_profile) {
+      const packageProfile = reconcileFoodPackageProfile({
+        containersAdded: quantity,
+        metadata: setQuantityMetadata,
+      });
+      setQuantityMetadataRecord.package_profile = packageProfile;
+      if (packageProfile.completeness !== "complete") {
+        return NextResponse.json(
+          { error: packageProfile.conflicts.length ? "Package details conflict." : `Complete ${packageProfile.missingFields.length} package details before saving.` },
+          { status: 400 },
+        );
+      }
+    }
     updatePayload = {
       quantity,
       unit,
       ...(attachFoodId ? { food_id: attachFoodId } : {}),
-      ...(payload.metadata === undefined
-        ? {}
-        : { metadata: normalizeMetadata(payload.metadata) }),
+      ...(setQuantityMetadata === undefined ? {} : { metadata: setQuantityMetadata }),
       updated_at: new Date().toISOString(),
     };
   } else if (action === "setStatus") {
