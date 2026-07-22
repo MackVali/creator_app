@@ -3345,13 +3345,6 @@ const GROCERY_INVENTORY_UNIT_OPTIONS = [
   { value: "oz", label: "oz" },
   { value: "item", label: "item" },
 ] as const satisfies readonly { value: GroceryInventoryUnit; label: string }[];
-const GROCERY_SEARCH_INVENTORY_UNIT_OPTIONS = [
-  ...GROCERY_INVENTORY_UNIT_OPTIONS,
-  { value: "kg", label: "kg" },
-  { value: "lb", label: "lb" },
-  { value: "ml", label: "ml" },
-  { value: "l", label: "l" },
-] as const satisfies readonly { value: GroceryInventoryUnit; label: string }[];
 const NUTRITION_SERVING_UNIT_ALIASES: Record<string, NutritionAllowedServingUnit> = {
   gram: "g",
   grams: "g",
@@ -3399,13 +3392,6 @@ function normalizeGroceryInventoryUnit(value: unknown): GroceryInventoryUnit {
   return GROCERY_INVENTORY_UNIT_OPTIONS.some((option) => option.value === normalized)
     ? (normalized as GroceryInventoryUnit)
     : "package";
-}
-
-function getGrocerySearchUnitDefault(unit: GroceryInventoryUnit) {
-  if (unit === "g") return 100;
-  if (unit === "oz") return 8;
-  if (unit === "ml") return 250;
-  return 1;
 }
 
 function convertGrocerySearchQuantity(
@@ -3608,17 +3594,14 @@ function getGroceryPackageServingsContext(
 }
 
 function getGroceryDefaultInventoryAmount(food: FoodSearchResult) {
-  const metadata = getRecordMetadata(food.metadata);
-  const servingsContext = getGroceryPackageServingsContext(metadata);
   const measurementProfile = getFoodInventoryMeasurementProfile(food);
 
-  if (measurementProfile && measurementProfile.countUnitKey !== "package") {
+  if (measurementProfile) {
     return { quantity: 1, unit: "item" as const };
   }
 
-  if (servingsContext.source === "explicit" && measurementProfile?.gramsPerItem) {
-    return { quantity: servingsContext.servingsPerContainer, unit: "item" as const };
-  }
+  const metadata = getRecordMetadata(food.metadata);
+  const servingsContext = getGroceryPackageServingsContext(metadata);
 
   if (
     servingsContext.source === "explicit" ||
@@ -3653,7 +3636,11 @@ function getGroceryInventoryGramEquivalent(
   const packageGrams = servingsContext.packageGrams;
 
   if (unit === "servings") {
-    return servingGrams ? quantity * servingGrams : null;
+    return servingGrams
+      ? quantity * servingGrams
+      : servingsContext.servingsPerContainer && packageGrams
+        ? quantity * (packageGrams / servingsContext.servingsPerContainer)
+        : null;
   }
   if (unit === "package") {
     return packageGrams ? quantity * packageGrams : null;
@@ -3664,6 +3651,11 @@ function getGroceryInventoryGramEquivalent(
   if (unit === "lb") return quantity * GRAMS_PER_OUNCE * 16;
 
   if (unit === "item") {
+    const profile = getRecordMetadata(metadata.inventory_measurement_profile);
+    const profileGrams =
+      getPositiveNutritionMetadataNumber(profile, "netGramsPerContainer") ??
+      getPositiveNutritionMetadataNumber(profile, "gramsPerItem");
+    if (profileGrams) return quantity * profileGrams;
     for (const record of getGroceryMetadataRecords(metadata)) {
       const itemGrams =
         getPositiveNutritionMetadataNumber(record, "item_grams") ??
@@ -3674,6 +3666,42 @@ function getGroceryInventoryGramEquivalent(
   }
 
   return null;
+}
+
+function getGroceryInventoryQuantityFromGrams(
+  metadata: Record<string, unknown>,
+  grams: number,
+  unit: GroceryInventoryUnit,
+) {
+  if (unit === "g") return grams;
+  if (unit === "kg") return grams / 1000;
+  if (unit === "oz") return grams / GRAMS_PER_OUNCE;
+  if (unit === "lb") return grams / (GRAMS_PER_OUNCE * 16);
+  const context = getGroceryPackageServingsContext(metadata);
+  if (unit === "servings") {
+    if (context.servingGrams) return grams / context.servingGrams;
+    if (context.servingsPerContainer && context.packageGrams) {
+      return grams / (context.packageGrams / context.servingsPerContainer);
+    }
+    return null;
+  }
+  if (unit === "package" && context.packageGrams) return grams / context.packageGrams;
+  if (unit === "item") {
+    const oneItemGrams = getGroceryInventoryGramEquivalent(metadata, 1, "item");
+    return oneItemGrams ? grams / oneItemGrams : null;
+  }
+  return null;
+}
+
+function convertGroceryInventoryQuantity(
+  metadata: Record<string, unknown>,
+  quantity: number,
+  oldUnit: GroceryInventoryUnit,
+  newUnit: GroceryInventoryUnit,
+) {
+  if (oldUnit === newUnit) return quantity;
+  const grams = getGroceryInventoryGramEquivalent(metadata, quantity, oldUnit);
+  return grams === null ? null : getGroceryInventoryQuantityFromGrams(metadata, grams, newUnit);
 }
 
 function prepareGrocerySearchInventorySave(
@@ -3697,6 +3725,25 @@ function prepareGrocerySearchInventorySave(
       conversionConfidence: measurementProfile.confidence,
       countUnitKey: measurementProfile.countUnitKey,
     };
+  }
+  if (measurementProfile) {
+    const canonicalCount = convertGroceryInventoryQuantity(
+      metadata,
+      displayQuantity,
+      displayUnit,
+      "item",
+    );
+    if (canonicalCount !== null && Number.isFinite(canonicalCount) && canonicalCount > 0) {
+      return {
+        canonicalQuantity: Number(canonicalCount.toFixed(6)),
+        canonicalUnit: "item",
+        displayQuantity,
+        displayUnit,
+        conversionSource: "container_equivalency",
+        conversionConfidence: measurementProfile.confidence,
+        countUnitKey: measurementProfile.countUnitKey,
+      };
+    }
   }
   const canonicalGrams = getGroceryInventoryGramEquivalent(
     metadata,
@@ -3858,8 +3905,19 @@ function getGroceryInventoryUnitOptions(foodOrMetadata?: FoodSearchResult | Reco
   const food = foodOrMetadata && "name" in foodOrMetadata
     ? foodOrMetadata as FoodSearchResult
     : null;
-  const profile = food ? getFoodInventoryMeasurementProfile(food) : null;
-  return GROCERY_INVENTORY_UNIT_OPTIONS.map((option) =>
+  const metadata = food ? getRecordMetadata(food.metadata) : getRecordMetadata(foodOrMetadata);
+  const profile = food ? getFoodInventoryMeasurementProfile(food) : getStoredCountProfile(metadata);
+  const hasWeight = Boolean(getGroceryPackageGrams(metadata) || getGroceryInventoryGramEquivalent(metadata, 1, "item"));
+  const hasServings = Boolean(getGroceryPackageServingsContext(metadata).servingsPerContainer);
+  return GROCERY_INVENTORY_UNIT_OPTIONS.filter((option) => {
+    if (profile) {
+      if (option.value === "item") return true;
+      if (option.value === "g" || option.value === "oz") return hasWeight;
+      if (option.value === "servings") return hasServings;
+      return false;
+    }
+    return option.value !== "item";
+  }).map((option) =>
     option.value === "item" && profile ? { ...option, label: profile.pluralLabel } : option,
   );
 }
@@ -4061,10 +4119,22 @@ function getDefaultGroceryDeductionDraft(
   } else if (groceryResource.unit === "oz" && selectedGrams) {
     amount = formatFoodNutritionNumber(selectedGrams / GRAMS_PER_OUNCE) ?? "";
   } else if (groceryResource.unit === "package" || groceryResource.unit === "item") {
-    amount = servingUnit === "container"
-      ? formatFoodNutritionNumber(servingQuantity) ?? String(servingQuantity)
-      : "1";
+    const metadata = getRecordMetadata(food.metadata);
+    const containerGrams = getGroceryInventoryGramEquivalent(metadata, 1, groceryResource.unit);
+    const servingsPerContainer = getGroceryPackageServingsContext(metadata).servingsPerContainer;
+    const containerAmount = servingUnit === "container"
+      ? servingQuantity
+      : selectedGrams && containerGrams
+        ? selectedGrams / containerGrams
+        : servingsPerContainer
+          ? servingMultiplier / servingsPerContainer
+          : null;
+    if (containerAmount !== null) {
+      amount = formatFoodNutritionNumber(containerAmount) ?? String(containerAmount);
+    }
   }
+
+  if (!amount) return null;
 
   return {
     foodResourceId: groceryResource.foodResourceId,
@@ -5997,11 +6067,12 @@ function getGroceryResourceDisplayAmount(resource: FoodResource): GroceryResourc
     if (displayQuantity !== null && displayUnit) {
       const countProfile = getStoredCountProfile(metadata);
       if (["item", "package"].includes(resource.unit?.toLowerCase() ?? "") && countProfile) {
-        const label = formatInventoryCountLabel(displayQuantity, countProfile);
+        const canonicalQuantity = getFoodResourceNumber(resource.quantity) ?? displayQuantity;
+        const label = formatInventoryCountLabel(canonicalQuantity, countProfile);
         return {
-          displayQuantity,
+          displayQuantity: canonicalQuantity,
           displayUnit: label,
-          displayText: `${formatGroceryDisplayQuantity(displayQuantity)} ${label}`,
+          displayText: `${formatGroceryDisplayQuantity(canonicalQuantity)} ${label}`,
         };
       }
       return {
@@ -9469,7 +9540,7 @@ export function NoteDatabaseEntrySheet({
       const messageByStatus: Record<FoodBarcodeLookupResult["status"], string> = {
         found: "Found in foods catalog.",
         created: "Added from Open Food Facts.",
-        not_found: "No food found for this barcode.",
+        not_found: "Product not found",
         invalid_barcode: "Enter a valid barcode.",
         missing_nutrition: "Nutrition data is incomplete for this product.",
         invalid_nutrition: "Nutrition data is incomplete for this product.",
@@ -11535,13 +11606,16 @@ export function NoteDatabaseEntrySheet({
       }
 
       const currentQuantity = parseGroceryInventoryNumber(draft.quantity);
-      const convertedQuantity =
-        draft.quantityManuallyEdited && currentQuantity
-          ? convertGrocerySearchQuantity(currentQuantity, draft.unit, unit)
-          : null;
-      const quantity = formatGrocerySearchQuantity(
-        convertedQuantity ?? getGrocerySearchUnitDefault(unit),
-      );
+      const convertedQuantity = currentQuantity
+        ? convertGroceryInventoryQuantity(
+            getRecordMetadata(draft.food.metadata),
+            currentQuantity,
+            draft.unit,
+            unit,
+          ) ?? convertGrocerySearchQuantity(currentQuantity, draft.unit, unit)
+        : null;
+      if (convertedQuantity === null) return currentDrafts;
+      const quantity = formatGrocerySearchQuantity(convertedQuantity);
 
       return {
         ...currentDrafts,
@@ -11549,7 +11623,7 @@ export function NoteDatabaseEntrySheet({
           ...draft,
           quantity,
           unit,
-          quantityManuallyEdited: convertedQuantity !== null,
+          quantityManuallyEdited: draft.quantityManuallyEdited,
           status: "idle",
           message: null,
         },
@@ -11637,6 +11711,10 @@ export function NoteDatabaseEntrySheet({
                   ...getFoodResourceMetadata(compatibleResource),
                   ...metadata,
                   display_quantity: (existingQuantity ?? 0) + inventorySave.canonicalQuantity,
+                  display_unit:
+                    inventorySave.canonicalUnit === "item" && measurementProfile
+                      ? measurementProfile.pluralLabel
+                      : inventorySave.canonicalUnit,
                 },
               }
             : {
@@ -11760,7 +11838,7 @@ export function NoteDatabaseEntrySheet({
             className="h-9 min-w-0 flex-1 rounded-lg border border-white/[0.065] bg-[#101010] px-2.5 text-xs font-semibold text-white/78 outline-none transition focus-visible:border-white/[0.16] focus-visible:ring-1 focus-visible:ring-white/12"
             aria-label="Inventory unit"
           >
-            {GROCERY_SEARCH_INVENTORY_UNIT_OPTIONS.map((option) => (
+            {getGroceryInventoryUnitOptions(food).map((option) => (
               <option key={option.value} value={option.value}>
                 {option.value === "item"
                   ? getFoodInventoryMeasurementProfile(food)?.pluralLabel ?? option.label
@@ -12137,23 +12215,36 @@ export function NoteDatabaseEntrySheet({
     try {
       const existingMetadata = getFoodResourceMetadata(resource);
       const countProfile = getStoredCountProfile(existingMetadata);
+      const storedUnit = normalizeGroceryInventoryUnit(resource.unit);
+      const canonicalQuantity = convertGroceryInventoryQuantity(
+        existingMetadata,
+        quantity,
+        groceryResourceEditDraft.unit,
+        storedUnit,
+      );
+      if (canonicalQuantity === null) {
+        setGroceryResourceActionError("That unit cannot be converted reliably.");
+        return;
+      }
       const response = await fetch("/api/food-resources", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: resource.id,
           action: "setQuantity",
-          quantity,
-          unit: groceryResourceEditDraft.unit,
+          quantity: Number(canonicalQuantity.toFixed(6)),
+          unit: storedUnit,
           metadata: {
             ...existingMetadata,
-            display_quantity: quantity,
+            display_quantity: Number(canonicalQuantity.toFixed(6)),
             display_unit:
-              groceryResourceEditDraft.unit === "item" && countProfile
-                ? formatInventoryCountLabel(quantity, countProfile)
-                : groceryResourceEditDraft.unit,
-            inventory_quantity: quantity,
-            inventory_unit: groceryResourceEditDraft.unit,
+              storedUnit === "item" && countProfile
+                ? formatInventoryCountLabel(canonicalQuantity, countProfile)
+                : storedUnit,
+            inventory_quantity: Number(canonicalQuantity.toFixed(6)),
+            inventory_unit: storedUnit,
+            last_edit_display_quantity: quantity,
+            last_edit_display_unit: groceryResourceEditDraft.unit,
           },
         }),
       });
@@ -12365,15 +12456,29 @@ export function NoteDatabaseEntrySheet({
                           </span>
                           <select
                             value={groceryResourceEditDraft.unit}
-                            onChange={(event) =>
-                              setGroceryResourceEditDraft((currentDraft) => ({
-                                ...currentDraft,
-                                unit: normalizeGroceryInventoryUnit(event.target.value),
-                              }))
-                            }
+                            onChange={(event) => {
+                              const nextUnit = normalizeGroceryInventoryUnit(event.target.value);
+                              setGroceryResourceEditDraft((currentDraft) => {
+                                const currentQuantity = parseGroceryResourceDraftQuantity(currentDraft.quantity);
+                                const converted = currentQuantity === null
+                                  ? null
+                                  : convertGroceryInventoryQuantity(
+                                      getFoodResourceMetadata(resource),
+                                      currentQuantity,
+                                      currentDraft.unit,
+                                      nextUnit,
+                                    );
+                                return converted === null
+                                  ? currentDraft
+                                  : {
+                                      quantity: formatGrocerySearchQuantity(converted),
+                                      unit: nextUnit,
+                                    };
+                              });
+                            }}
                             className="h-9 w-full rounded-lg border border-white/[0.07] bg-black/32 px-2 text-sm font-semibold text-white/82 outline-none transition focus:border-white/18 focus:bg-black/42 focus:ring-1 focus:ring-white/12"
                           >
-                            {GROCERY_INVENTORY_UNIT_OPTIONS.map((option) => (
+                            {getGroceryInventoryUnitOptions(getFoodResourceMetadata(resource)).map((option) => (
                               <option key={option.value} value={option.value}>
                                 {option.value === "item"
                                   ? getStoredCountProfile(getFoodResourceMetadata(resource))?.pluralLabel ?? option.label
@@ -13970,7 +14075,7 @@ export function NoteDatabaseEntrySheet({
                   {nutritionBarcodeLookupStatus}
                 </p>
                 {isGroceryMode &&
-                nutritionBarcodeLookupStatus === "No food found for this barcode." ? (
+                nutritionBarcodeLookupStatus === "Product not found" ? (
                   <button
                     type="button"
                     onClick={() => {

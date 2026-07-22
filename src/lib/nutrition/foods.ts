@@ -234,7 +234,7 @@ export type FoodBrowsePlacementInput = {
 
 export type FoodBarcodeLookupResult = {
   food: FoodSearchResult | null;
-  source: "foods" | "open_food_facts" | null;
+  source: "foods" | "open_food_facts" | "user_food_resource" | null;
   status:
     | "found"
     | "created"

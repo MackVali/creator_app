@@ -139,6 +139,52 @@ async function findFoodByBarcode(supabase: SupabaseClient, normalizedBarcode: st
   };
 }
 
+async function findUserFoodResourceByBarcode(
+  supabase: SupabaseClient,
+  userId: string,
+  normalizedBarcode: string,
+) {
+  const { data, error } = await supabase
+    .from("food_resources")
+    .select("id,name,brand_name,metadata,updated_at")
+    .eq("user_id", userId)
+    .contains("metadata", { barcode: normalizedBarcode })
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return { food: null, error };
+
+  const metadata = data.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
+    ? data.metadata as Record<string, unknown>
+    : {};
+  const snapshot = metadata.foodSnapshot && typeof metadata.foodSnapshot === "object" && !Array.isArray(metadata.foodSnapshot)
+    ? metadata.foodSnapshot as Record<string, unknown>
+    : {};
+  const numberValue = (value: unknown) => {
+    const parsed = typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    food: {
+      id: `resource:${data.id}`,
+      name: data.name,
+      brand_name: data.brand_name,
+      source: "user_food_resource",
+      serving_size: numberValue(snapshot.serving_size ?? metadata.serving_size),
+      serving_unit: typeof (snapshot.serving_unit ?? metadata.serving_unit) === "string"
+        ? String(snapshot.serving_unit ?? metadata.serving_unit)
+        : null,
+      serving_grams: numberValue(snapshot.serving_grams ?? metadata.serving_grams),
+      calories: numberValue(snapshot.calories ?? metadata.calories),
+      carbs_g: numberValue(snapshot.carbs_g ?? metadata.carbs_g),
+      protein_g: numberValue(snapshot.protein_g ?? metadata.protein_g),
+      fat_g: numberValue(snapshot.fat_g ?? metadata.fat_g),
+      metadata: { ...snapshot, ...metadata, barcode: normalizedBarcode },
+    } satisfies FoodSearchResult,
+    error: null,
+  };
+}
+
 function rememberOpenFoodFactsResult(
   normalizedBarcode: string,
   result: OpenFoodFactsFetchResult,
@@ -304,22 +350,33 @@ export async function GET(request: NextRequest) {
     return rateLimitedBarcodeResponse(endpointLimit);
   }
 
-  if (!shouldPreferExternalProduct) {
-    const existingFood = await findFoodByBarcode(supabase, normalizedBarcode);
-    if (existingFood.error) {
-      console.error("Failed to look up nutrition food by barcode", {
-        error: existingFood.error,
-      });
-      return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
-    }
+  const userResource = await findUserFoodResourceByBarcode(supabase, user.id, normalizedBarcode);
+  if (userResource.error) {
+    console.error("Failed to look up user-owned food resource by barcode", { error: userResource.error });
+    return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
+  }
+  if (userResource.food) {
+    return barcodeResponse({
+      food: userResource.food,
+      source: "user_food_resource",
+      status: "found",
+    });
+  }
 
-    if (existingFood.food) {
-      return barcodeResponse({
-        food: existingFood.food,
-        source: "foods",
-        status: "found",
-      });
-    }
+  const sharedFood = await findFoodByBarcode(supabase, normalizedBarcode);
+  if (sharedFood.error) {
+    console.error("Failed to look up nutrition food by barcode", {
+      error: sharedFood.error,
+    });
+    return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
+  }
+
+  if (sharedFood.food) {
+    return barcodeResponse({
+      food: sharedFood.food,
+      source: "foods",
+      status: "found",
+    });
   }
 
   let externalLimit: ApiRateLimitDecision;
