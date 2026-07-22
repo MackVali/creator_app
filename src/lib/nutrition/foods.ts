@@ -273,6 +273,67 @@ export type OpenFoodFactsProduct = {
   nutriments?: unknown;
 };
 
+export type FoodPackageProfileSource =
+  | "user_food_resource"
+  | "foods_catalog"
+  | "external_barcode"
+  | "name_inference"
+  | "derived"
+  | "user_confirmation";
+export type FoodPackageProfileConfidence = "high" | "medium" | "low";
+export type FoodPackageNutritionBasis = "per_serving" | "per_container" | "per_100g";
+export type FoodPackageNutritionSnapshot = {
+  calories: number | null;
+  carbs_g: number | null;
+  protein_g: number | null;
+  fat_g: number | null;
+  [key: string]: number | null;
+};
+export type FoodPackageProfileConflict = {
+  field: string;
+  message: string;
+  facts: [string, string];
+};
+export type FoodPackageProfile = {
+  version: 1;
+  barcode: string | null;
+  productName: string;
+  brandName: string | null;
+  containerKey: string | null;
+  containerSingularLabel: string | null;
+  containerPluralLabel: string | null;
+  containersAdded: number | null;
+  netQuantityPerContainer: number | null;
+  netQuantityUnit: string | null;
+  netGramsPerContainer: number | null;
+  netMillilitersPerContainer: number | null;
+  servingQuantity: number | null;
+  servingUnit: string | null;
+  servingGrams: number | null;
+  servingMilliliters: number | null;
+  servingsPerContainer: number | null;
+  nutritionBasis: FoodPackageNutritionBasis | null;
+  nutritionPerServing: FoodPackageNutritionSnapshot | null;
+  nutritionPerContainer: FoodPackageNutritionSnapshot | null;
+  nutritionPer100g: FoodPackageNutritionSnapshot | null;
+  fieldSources: Record<string, FoodPackageProfileSource>;
+  fieldConfidence: Record<string, FoodPackageProfileConfidence>;
+  fieldStatus: Record<string, "explicit" | "derived" | "inferred" | "confirmed">;
+  originalPackageText: string | null;
+  originalServingText: string | null;
+  userConfirmedFields: string[];
+  completeness: "complete" | "incomplete" | "conflict";
+  missingFields: string[];
+  conflicts: FoodPackageProfileConflict[];
+};
+
+export type FoodPackageProfileInput = Partial<Omit<FoodSearchResult, "metadata" | "source">> & {
+  barcode?: unknown;
+  containersAdded?: unknown;
+  metadata?: unknown;
+  source?: string | null;
+};
+
 const NATURAL_CONTAINER_RULES: readonly {
   key: string;
   singular: string;
@@ -290,6 +351,148 @@ const NATURAL_CONTAINER_RULES: readonly {
   { key: "tub", singular: "tub", plural: "tubs", pattern: /\btub(?:s)?\b/i },
   { key: "tray", singular: "tray", plural: "trays", pattern: /\btray(?:s)?\b/i },
 ];
+
+const PACKAGE_WEIGHT_GRAMS: Record<string, number> = { g: 1, kg: 1000, oz: 28.3495, lb: 453.592 };
+const PACKAGE_VOLUME_ML: Record<string, number> = { ml: 1, l: 1000, "fl oz": 29.5735 };
+const PACKAGE_PROFILE_TOLERANCE = 0.1;
+
+function packageProfileRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function packageProfileNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === "") continue;
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function packageProfileText(...values: unknown[]) {
+  for (const value of values) if (typeof value === "string" && value.trim()) return value.trim();
+  return null;
+}
+
+function normalizePackageUnit(value: unknown) {
+  const unit = packageProfileText(value)?.toLowerCase().replace(/\s+/g, " ") ?? null;
+  if (!unit) return null;
+  const aliases: Record<string, string> = { gram: "g", grams: "g", kilogram: "kg", kilograms: "kg", ounce: "oz", ounces: "oz", pound: "lb", pounds: "lb", lbs: "lb", milliliter: "ml", milliliters: "ml", liter: "l", liters: "l", litre: "l", litres: "l", "fluid ounce": "fl oz", "fluid ounces": "fl oz", floz: "fl oz" };
+  return (aliases[unit] ?? unit).slice(0, SERVING_UNIT_MAX_LENGTH);
+}
+
+function parsePackageQuantityText(value: unknown) {
+  const match = packageProfileText(value)?.match(/(\d+(?:[.,]\d+)?)\s*(fl\s*oz|ml|l|kg|g|oz|lb)\b/i);
+  if (!match) return null;
+  const quantity = Number(match[1].replace(",", "."));
+  const unit = normalizePackageUnit(match[2]);
+  return quantity > 0 && unit ? { quantity, unit } : null;
+}
+
+function normalizePackageNutrition(value: unknown): FoodPackageNutritionSnapshot | null {
+  const record = packageProfileRecord(value);
+  const read = (...keys: string[]) => {
+    for (const key of keys) {
+      const raw = record[key];
+      if (raw === null || raw === undefined || raw === "") continue;
+      const parsed = typeof raw === "number" ? raw : Number(raw);
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    }
+    return null;
+  };
+  const result: FoodPackageNutritionSnapshot = { calories: read("calories"), carbs_g: read("carbs_g", "carbohydrates"), protein_g: read("protein_g", "protein"), fat_g: read("fat_g", "fat") };
+  for (const [key, raw] of Object.entries(record)) {
+    if (raw === null || raw === undefined || raw === "") continue;
+    const parsed = typeof raw === "number" ? raw : Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) result[key] = parsed;
+  }
+  return Object.values(result).some((value) => value !== null) ? result : null;
+}
+
+function scalePackageNutrition(value: FoodPackageNutritionSnapshot | null, multiplier: number) {
+  if (!value || !Number.isFinite(multiplier) || multiplier <= 0) return null;
+  return Object.fromEntries(Object.entries(value).map(([key, amount]) => [key, typeof amount === "number" ? Math.round(amount * multiplier * 1000) / 1000 : null])) as FoodPackageNutritionSnapshot;
+}
+
+function completePackageNutrition(value: FoodPackageNutritionSnapshot | null) {
+  return Boolean(value && [value.calories, value.carbs_g, value.protein_g, value.fat_g].every((amount) => typeof amount === "number" && Number.isFinite(amount) && amount >= 0));
+}
+
+/** Reconciles package facts without mutating the barcode/catalog response. */
+export function reconcileFoodPackageProfile(input: FoodPackageProfileInput): FoodPackageProfile {
+  const metadata = packageProfileRecord(input.metadata);
+  const stored = packageProfileRecord(metadata.package_profile);
+  const summary = packageProfileRecord(metadata.source_summary);
+  const inventory = packageProfileRecord(metadata.inventory_measurement_profile);
+  const records = [stored, metadata, summary];
+  const firstNumber = (...keys: string[]) => { for (const record of records) { const value = packageProfileNumber(...keys.map((key) => record[key])); if (value !== null) return value; } return null; };
+  const firstText = (...keys: string[]) => { for (const record of records) { const value = packageProfileText(...keys.map((key) => record[key])); if (value) return value; } return null; };
+  const materialSource: FoodPackageProfileSource = input.source === "user_food_resource" ? "user_food_resource" : input.source === "open_food_facts" ? "external_barcode" : "foods_catalog";
+  const fieldSources = { ...packageProfileRecord(stored.fieldSources) } as Record<string, FoodPackageProfileSource>;
+  const fieldConfidence = { ...packageProfileRecord(stored.fieldConfidence) } as Record<string, FoodPackageProfileConfidence>;
+  const fieldStatus = { ...packageProfileRecord(stored.fieldStatus) } as Record<string, "explicit" | "derived" | "inferred" | "confirmed">;
+  const mark = (field: string, source: FoodPackageProfileSource = materialSource, confidence: FoodPackageProfileConfidence = "high", status: "explicit" | "derived" | "inferred" | "confirmed" = "explicit") => { fieldSources[field] ??= source; fieldConfidence[field] ??= confidence; fieldStatus[field] ??= status; };
+  const packageText = firstText("originalPackageText", "original_package_text", "net_weight", "quantity");
+  const parsedPackage = parsePackageQuantityText(packageText);
+  let netQuantityPerContainer = firstNumber("netQuantityPerContainer", "product_quantity", "package_quantity") ?? parsedPackage?.quantity ?? null;
+  let netQuantityUnit = normalizePackageUnit(firstText("netQuantityUnit", "product_quantity_unit", "package_quantity_unit") ?? parsedPackage?.unit);
+  let netGramsPerContainer = firstNumber("netGramsPerContainer", "normalized_package_grams", "net_package_grams");
+  let netMillilitersPerContainer = firstNumber("netMillilitersPerContainer", "normalized_package_ml", "net_package_ml");
+  if (netQuantityPerContainer && netQuantityUnit && PACKAGE_WEIGHT_GRAMS[netQuantityUnit]) netGramsPerContainer ??= netQuantityPerContainer * PACKAGE_WEIGHT_GRAMS[netQuantityUnit];
+  if (netQuantityPerContainer && netQuantityUnit && PACKAGE_VOLUME_ML[netQuantityUnit]) netMillilitersPerContainer ??= netQuantityPerContainer * PACKAGE_VOLUME_ML[netQuantityUnit];
+  let servingQuantity = firstNumber("servingQuantity", "serving_quantity", "serving_size");
+  let servingUnit = normalizePackageUnit(firstText("servingUnit", "serving_unit"));
+  let servingGrams = firstNumber("servingGrams", "serving_grams");
+  let servingMilliliters = firstNumber("servingMilliliters", "serving_milliliters", "serving_ml");
+  if (servingQuantity && servingUnit && PACKAGE_WEIGHT_GRAMS[servingUnit]) servingGrams ??= servingQuantity * PACKAGE_WEIGHT_GRAMS[servingUnit];
+  if (servingQuantity && servingUnit && PACKAGE_VOLUME_ML[servingUnit]) servingMilliliters ??= servingQuantity * PACKAGE_VOLUME_ML[servingUnit];
+  let servingsPerContainer = firstNumber("servingsPerContainer", "servings_per_container", "servings_per_package");
+  const explicitContainer = firstText("containerKey", "container_type", "countUnitKey") ?? packageProfileText(inventory.countUnitKey);
+  const containerRule = NATURAL_CONTAINER_RULES.find((rule) => rule.key === explicitContainer?.toLowerCase()) ?? NATURAL_CONTAINER_RULES.find((rule) => rule.pattern.test(`${input.name ?? ""} ${packageText ?? ""}`));
+  const containerKey = containerRule?.key ?? explicitContainer?.toLowerCase() ?? "package";
+  const containerSingularLabel = firstText("containerSingularLabel", "container_singular_label") ?? packageProfileText(inventory.singularLabel) ?? containerRule?.singular ?? "package";
+  const containerPluralLabel = firstText("containerPluralLabel", "container_plural_label") ?? packageProfileText(inventory.pluralLabel) ?? containerRule?.plural ?? "packages";
+  const containersAdded = packageProfileNumber(input.containersAdded, stored.containersAdded, metadata.container_count) ?? 1;
+  const basis = firstText("nutritionBasis", "nutrition_basis")?.toLowerCase();
+  const nutritionBasis: FoodPackageNutritionBasis | null = basis === "serving" || basis === "per_serving" || basis === "computed_serving" ? "per_serving" : basis === "container" || basis === "per_container" ? "per_container" : basis === "100g" || basis === "per_100g" ? "per_100g" : null;
+  let nutritionPerServing = normalizePackageNutrition(stored.nutritionPerServing ?? metadata.nutrition_per_serving);
+  let nutritionPerContainer = normalizePackageNutrition(stored.nutritionPerContainer ?? metadata.nutrition_per_container);
+  let nutritionPer100g = normalizePackageNutrition(stored.nutritionPer100g ?? metadata.nutrition_per_100g);
+  const rowNutrition = normalizePackageNutrition(input);
+  if (nutritionBasis === "per_serving") nutritionPerServing ??= rowNutrition;
+  if (nutritionBasis === "per_container") nutritionPerContainer ??= rowNutrition;
+  if (nutritionBasis === "per_100g") nutritionPer100g ??= rowNutrition;
+  if (!servingsPerContainer && netGramsPerContainer && servingGrams) { servingsPerContainer = netGramsPerContainer / servingGrams; mark("servingsPerContainer", "derived", "high", "derived"); }
+  else if (!servingsPerContainer && netMillilitersPerContainer && servingMilliliters) { servingsPerContainer = netMillilitersPerContainer / servingMilliliters; mark("servingsPerContainer", "derived", "high", "derived"); }
+  else if (!netGramsPerContainer && !netMillilitersPerContainer && servingGrams && servingsPerContainer) { netGramsPerContainer = servingGrams * servingsPerContainer; netQuantityPerContainer ??= netGramsPerContainer; netQuantityUnit ??= "g"; mark("netGramsPerContainer", "derived", "high", "derived"); }
+  else if (!netGramsPerContainer && !netMillilitersPerContainer && servingMilliliters && servingsPerContainer) { netMillilitersPerContainer = servingMilliliters * servingsPerContainer; netQuantityPerContainer ??= netMillilitersPerContainer; netQuantityUnit ??= "ml"; mark("netMillilitersPerContainer", "derived", "high", "derived"); }
+  else if (!servingGrams && !servingMilliliters && netGramsPerContainer && servingsPerContainer) { servingGrams = netGramsPerContainer / servingsPerContainer; servingQuantity ??= servingGrams; servingUnit ??= "g"; mark("servingGrams", "derived", "high", "derived"); }
+  else if (!servingGrams && !servingMilliliters && netMillilitersPerContainer && servingsPerContainer) { servingMilliliters = netMillilitersPerContainer / servingsPerContainer; servingQuantity ??= servingMilliliters; servingUnit ??= "ml"; mark("servingMilliliters", "derived", "high", "derived"); }
+  if (!nutritionPerContainer && nutritionPerServing && servingsPerContainer) { nutritionPerContainer = scalePackageNutrition(nutritionPerServing, servingsPerContainer); mark("nutritionPerContainer", "derived", "high", "derived"); }
+  if (!nutritionPerContainer && nutritionPer100g && netGramsPerContainer) { nutritionPerContainer = scalePackageNutrition(nutritionPer100g, netGramsPerContainer / 100); mark("nutritionPerContainer", "derived", "high", "derived"); }
+  if (!nutritionPerServing && nutritionPerContainer && servingsPerContainer) { nutritionPerServing = scalePackageNutrition(nutritionPerContainer, 1 / servingsPerContainer); mark("nutritionPerServing", "derived", "high", "derived"); }
+  const conflicts: FoodPackageProfileConflict[] = [];
+  if (netGramsPerContainer && servingGrams && servingsPerContainer) { const implied = servingGrams * servingsPerContainer; if (Math.abs(implied - netGramsPerContainer) / Math.max(implied, netGramsPerContainer) > PACKAGE_PROFILE_TOLERANCE) conflicts.push({ field: "packageServingRelationship", message: "Package details conflict", facts: [`Package says ${Math.round(netGramsPerContainer * 10) / 10}g`, `Serving facts imply ${Math.round(implied * 10) / 10}g`] }); }
+  if (netMillilitersPerContainer && servingMilliliters && servingsPerContainer) { const implied = servingMilliliters * servingsPerContainer; if (Math.abs(implied - netMillilitersPerContainer) / Math.max(implied, netMillilitersPerContainer) > PACKAGE_PROFILE_TOLERANCE) conflicts.push({ field: "packageServingVolumeRelationship", message: "Package details conflict", facts: [`Package says ${Math.round(netMillilitersPerContainer * 10) / 10}ml`, `Serving facts imply ${Math.round(implied * 10) / 10}ml`] }); }
+  const productName = packageProfileText(input.name, stored.productName, metadata.source_product_name) ?? "";
+  const missingFields: string[] = [];
+  if (!productName) missingFields.push("productName");
+  if (!containerKey || !containerSingularLabel || !containerPluralLabel) missingFields.push("containerType");
+  if (!containersAdded) missingFields.push("containersAdded");
+  if (!netQuantityPerContainer) missingFields.push("netQuantityPerContainer");
+  if (!netQuantityUnit) missingFields.push("netQuantityUnit");
+  if (!servingQuantity) missingFields.push("servingQuantity");
+  if (!servingUnit) missingFields.push("servingUnit");
+  if (!servingsPerContainer) missingFields.push("servingsPerContainer");
+  if (!nutritionBasis) missingFields.push("nutritionBasis");
+  const basisNutrition = nutritionBasis === "per_container" ? nutritionPerContainer : nutritionBasis === "per_100g" ? nutritionPer100g : nutritionPerServing;
+  for (const [key, label] of [["calories", "calories"], ["carbs_g", "carbs"], ["protein_g", "protein"], ["fat_g", "fat"]] as const) if (!basisNutrition || typeof basisNutrition[key] !== "number" || !Number.isFinite(basisNutrition[key])) missingFields.push(label);
+  const connected = nutritionBasis === "per_container" ? completePackageNutrition(nutritionPerContainer) : nutritionBasis === "per_serving" ? Boolean(servingsPerContainer && completePackageNutrition(nutritionPerServing)) : nutritionBasis === "per_100g" ? Boolean(netGramsPerContainer && completePackageNutrition(nutritionPer100g)) : false;
+  if (nutritionBasis && !connected) missingFields.push("nutritionConversion");
+  ["barcode", "productName", "containerKey", "containersAdded", "netQuantityPerContainer", "netQuantityUnit", "servingQuantity", "servingUnit", "servingsPerContainer", "nutritionBasis"].forEach((field) => mark(field));
+  const userConfirmedFields = Array.isArray(stored.userConfirmedFields) ? stored.userConfirmedFields.filter((item): item is string => typeof item === "string") : [];
+  return { version: 1, barcode: normalizeFoodBarcode(packageProfileText(input.barcode, stored.barcode, metadata.barcode) ?? "") || null, productName, brandName: packageProfileText(input.brand_name, stored.brandName, metadata.source_brand_name), containerKey, containerSingularLabel, containerPluralLabel, containersAdded, netQuantityPerContainer, netQuantityUnit, netGramsPerContainer, netMillilitersPerContainer, servingQuantity, servingUnit, servingGrams, servingMilliliters, servingsPerContainer, nutritionBasis, nutritionPerServing, nutritionPerContainer, nutritionPer100g, fieldSources, fieldConfidence, fieldStatus, originalPackageText: packageText, originalServingText: firstText("originalServingText", "serving_size_text", "serving_size"), userConfirmedFields, completeness: conflicts.length ? "conflict" : missingFields.length ? "incomplete" : "complete", missingFields: [...new Set(missingFields)], conflicts };
+}
 
 function detectOpenFoodFactsContainer(product: OpenFoodFactsProduct, productName: string) {
   const explicitPackaging = [product.packaging, product.packaging_text, product.packaging_tags]
@@ -1029,7 +1232,7 @@ function parseOpenFoodFactsServing(product: OpenFoodFactsProduct) {
     ? parseOpenFoodFactsNumber(gramMatch[1])
     : servingUnit === "g"
       ? servingSize
-      : servingQuantity;
+      : null;
 
   return {
     serving_size: sanitizePositiveNumber(servingSize, MAX_SERVING_SIZE),
@@ -1128,10 +1331,9 @@ export function mapOpenFoodFactsProductToFoodInsert(
     return null;
   }
 
-  const serving =
-    nutrition?.basis === "100g" && !parsedServing.serving_grams
-      ? { serving_size: 100, serving_unit: "g", serving_grams: 100 }
-      : parsedServing;
+  // A 100g nutrition basis is not a label serving. Keep it unresolved unless
+  // the provider supplied an actual serving measurement.
+  const serving = parsedServing;
   const packageInfo = parseOpenFoodFactsPackage(product, serving.serving_grams);
   const container = detectOpenFoodFactsContainer(product, foodName);
   const normalizedServingUnit = serving.serving_unit?.trim().toLowerCase() ?? null;
@@ -1238,6 +1440,20 @@ export function mapOpenFoodFactsProductToFoodInsert(
     },
     ...(browsePlacement ? { browse: [browsePlacement] } : {}),
   };
+  (metadata as Record<string, unknown>).package_profile = reconcileFoodPackageProfile({
+    barcode,
+    name: foodName,
+    brand_name: brandName,
+    source: "open_food_facts",
+    serving_size: serving.serving_size,
+    serving_unit: serving.serving_unit,
+    serving_grams: serving.serving_grams,
+    calories: nutrition?.calories ?? null,
+    carbs_g: nutrition?.carbs_g ?? null,
+    protein_g: nutrition?.protein_g ?? null,
+    fat_g: nutrition?.fat_g ?? null,
+    metadata,
+  });
 
   return {
     name: foodName,
