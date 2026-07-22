@@ -7859,7 +7859,9 @@ export function NoteDatabaseEntrySheet({
           typeof createdAtValue === "string" ? createdAtValue : openedAt,
         )
       : "";
-  const databaseFormTitle = getDatabaseFormTitle(databaseDefinition.title);
+  const databaseFormTitle = isOnHandDatabaseDefinition(databaseDefinition)
+    ? "My Food"
+    : getDatabaseFormTitle(databaseDefinition.title);
   const isDefaultNutritionDatabase = isDefaultNutritionDatabaseDefinition(databaseDefinition);
   const isDefaultFitnessDatabase = isDefaultFitnessDatabaseDefinition(databaseDefinition);
   const isGroceryDatabase = isOnHandDatabaseDefinition(databaseDefinition);
