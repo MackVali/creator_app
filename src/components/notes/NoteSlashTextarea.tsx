@@ -61,9 +61,11 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
+  type Dispatch,
   Fragment,
   type KeyboardEvent,
   type ReactNode,
+  type SetStateAction,
   forwardRef,
   useCallback,
   useEffect,
@@ -101,6 +103,7 @@ import {
   findNutritionEntryFields,
   formatInventoryCountLabel,
   getFoodInventoryMeasurementProfile,
+  getFoodPrimaryGroceryDepartment,
   normalizeFoodBarcode,
   normalizeFoodSearchText,
   type FoodBarcodeLookupResult,
@@ -2649,6 +2652,37 @@ type GrocerySearchDraft = {
   message: string | null;
   quantityManuallyEdited: boolean;
 };
+type FoodDepartmentGroup<T> = {
+  key: FoodBrowseDepartmentLabel | "other";
+  label: FoodBrowseDepartmentLabel | "Other";
+  items: T[];
+};
+
+function groupFoodsByBrowseDepartment<T>(
+  items: readonly T[],
+  getFood: (item: T) => FoodSearchResult,
+): FoodDepartmentGroup<T>[] {
+  const groupedItems = new Map<FoodDepartmentGroup<T>["key"], T[]>();
+
+  for (const item of items) {
+    const department = getFoodPrimaryGroceryDepartment(getFood(item));
+    const key = department ?? "other";
+    const groupItems = groupedItems.get(key);
+    if (groupItems) groupItems.push(item);
+    else groupedItems.set(key, [item]);
+  }
+
+  const groups: FoodDepartmentGroup<T>[] = [];
+  for (const department of FOOD_BROWSE_DEPARTMENTS) {
+    const groupItems = groupedItems.get(department.label);
+    if (groupItems) {
+      groups.push({ key: department.label, label: department.label, items: groupItems });
+    }
+  }
+  const otherItems = groupedItems.get("other");
+  if (otherItems) groups.push({ key: "other", label: "Other", items: otherItems });
+  return groups;
+}
 type GrocerySearchInventorySave = {
   canonicalQuantity: number;
   canonicalUnit: GroceryInventoryUnit;
@@ -2755,7 +2789,8 @@ type NutritionAllowedServingUnit =
   | "cup"
   | "ml"
   | "fl oz"
-  | "serving";
+  | "serving"
+  | "container";
 type NutritionFoodSearchResponse = {
   foods?: FoodSearchResult[];
   error?: string;
@@ -2806,6 +2841,7 @@ type FoodResource = {
   metadata?: unknown;
   created_at: string;
   updated_at: string;
+  catalog_food?: unknown;
 };
 type FoodResourcesResponse = {
   foodResources?: unknown;
@@ -2846,6 +2882,7 @@ function normalizeFoodResource(value: unknown, index: number): FoodResource {
     metadata: getRecordMetadata(resource.metadata),
     created_at: getFoodResourceText(resource.created_at),
     updated_at: getFoodResourceText(resource.updated_at),
+    catalog_food: resource.catalog_food,
   };
 }
 
@@ -3299,6 +3336,7 @@ const NUTRITION_ALLOWED_SERVING_UNITS = [
   ...NUTRITION_WEIGHT_UNITS,
   ...NUTRITION_VOLUME_UNITS,
   "serving",
+  "container",
 ] as const satisfies readonly NutritionAllowedServingUnit[];
 const GROCERY_INVENTORY_UNIT_OPTIONS = [
   { value: "servings", label: "servings" },
@@ -3574,6 +3612,10 @@ function getGroceryDefaultInventoryAmount(food: FoodSearchResult) {
   const servingsContext = getGroceryPackageServingsContext(metadata);
   const measurementProfile = getFoodInventoryMeasurementProfile(food);
 
+  if (measurementProfile && measurementProfile.countUnitKey !== "package") {
+    return { quantity: 1, unit: "item" as const };
+  }
+
   if (servingsContext.source === "explicit" && measurementProfile?.gramsPerItem) {
     return { quantity: servingsContext.servingsPerContainer, unit: "item" as const };
   }
@@ -3757,16 +3799,18 @@ function getGroceryDeductionGramHelper(
 
 function getGroceryScanDetectedInventoryLine(metadata: Record<string, unknown>) {
   const servingsContext = getGroceryPackageServingsContext(metadata);
+  const profile = getStoredCountProfile(metadata);
+  const containerPrefix = profile ? `Container: ${profile.singularLabel} · ` : "";
 
   if (servingsContext.source === "explicit") {
-    return `Detected: ${
+    return `${containerPrefix}Detected: ${
       formatFoodNutritionNumber(servingsContext.servingsPerContainer) ??
       servingsContext.servingsPerContainer
     } servings per container`;
   }
 
   if (servingsContext.source === "inferred") {
-    return `Estimated: ${
+    return `${containerPrefix}Estimated: ${
       formatFoodNutritionNumber(servingsContext.servingsPerContainer) ??
       servingsContext.servingsPerContainer
     } servings from ${formatGroceryGramValue(servingsContext.packageGrams)}g package ÷ ${
@@ -3774,7 +3818,7 @@ function getGroceryScanDetectedInventoryLine(metadata: Record<string, unknown>) 
     }g serving`;
   }
 
-  return "Package servings not found from barcode";
+  return `${containerPrefix}Package servings not found from barcode`;
 }
 
 function formatGroceryRemainingLabel(quantity: number, unit: string) {
@@ -3799,6 +3843,15 @@ function formatGroceryRemainingLabel(quantity: number, unit: string) {
           : "items";
 
   return `${formattedQuantity} ${unitLabel} left`;
+}
+
+function getGroceryNaturalUnitLabel(
+  metadata: Record<string, unknown>,
+  quantity: number,
+  fallbackUnit: string,
+) {
+  const profile = getStoredCountProfile(metadata);
+  return profile ? formatInventoryCountLabel(quantity, profile) : fallbackUnit;
 }
 
 function getGroceryInventoryUnitOptions(foodOrMetadata?: FoodSearchResult | Record<string, unknown>) {
@@ -3881,9 +3934,18 @@ function getFoodVolumeAnchor(food: FoodSearchResult) {
 }
 
 function getFoodServingOptions(food: FoodSearchResult): NutritionServingOption[] {
-  const options = new Map<NutritionAllowedServingUnit, NutritionServingOption>();
+  const options = new Map<NutritionServingUnit, NutritionServingOption>();
   const defaultUnit = getRawNutritionServingUnitKey(food.serving_unit);
   const volumeAnchor = getFoodVolumeAnchor(food);
+  const groceryResource = getGroceryResourceMetadata(food);
+  const countProfile = getFoodInventoryMeasurementProfile(food);
+
+  if (groceryResource && (groceryResource.unit === "item" || groceryResource.unit === "package")) {
+    options.set("container", {
+      value: "container",
+      label: countProfile?.singularLabel ?? (groceryResource.unit === "package" ? "package" : "item"),
+    });
+  }
 
   if (hasExplicitFoodServingAnchor(food)) {
     options.set("serving", { value: "serving", label: "serving" });
@@ -3915,7 +3977,10 @@ function getFoodServingOptions(food: FoodSearchResult): NutritionServingOption[]
 function getSafeFoodServingUnit(
   food: FoodSearchResult,
   unit: unknown,
-): NutritionAllowedServingUnit {
+): NutritionServingUnit {
+  if (unit === "container" && getFoodServingOptions(food).some((option) => option.value === "container")) {
+    return "container";
+  }
   const normalizedUnit = getRawNutritionServingUnitKey(unit);
   const optionValues = new Set(getFoodServingOptions(food).map((option) => option.value));
 
@@ -3926,6 +3991,10 @@ function getSafeFoodServingUnit(
 }
 
 function getDefaultFoodServingUnit(food: FoodSearchResult) {
+  const groceryResource = getGroceryResourceMetadata(food);
+  if (groceryResource && (groceryResource.unit === "item" || groceryResource.unit === "package")) {
+    return "container";
+  }
   if (hasFoodGramAnchor(food)) return "g";
 
   const defaultUnit = getRawNutritionServingUnitKey(food.serving_unit);
@@ -3935,6 +4004,8 @@ function getDefaultFoodServingUnit(food: FoodSearchResult) {
 function getDefaultFoodServingAmount(food: FoodSearchResult) {
   const servingUnit = getDefaultFoodServingUnit(food);
   const servingSize = getPositiveNutritionNumber(food.serving_size);
+
+  if (servingUnit === "container") return 1;
 
   if (servingUnit === "g") {
     return getPositiveNutritionNumber(food.serving_grams) ?? servingSize ?? 1;
@@ -3969,14 +4040,17 @@ function getDefaultGroceryDeductionDraft(
   if (!groceryResource) return null;
 
   const servingGrams = getPositiveNutritionNumber(food.serving_grams);
-  const servingMultiplier = getNutritionServingMultiplier({
-    amount: servingQuantity,
-    unit: getSafeFoodServingUnit(food, servingUnit),
-    defaultServingGrams: servingGrams,
-    defaultServingSize: getPositiveNutritionNumber(food.serving_size),
-    defaultServingUnit: getDefaultFoodServingUnit(food),
-    gramsPerMl: getFoodVolumeAnchor(food)?.gramsPerMl,
-  });
+  const safeServingUnit = getSafeFoodServingUnit(food, servingUnit);
+  const servingMultiplier = safeServingUnit === "container"
+    ? getGroceryContainerNutritionResolution(food, servingQuantity).servingMultiplier ?? 0
+    : getNutritionServingMultiplier({
+        amount: servingQuantity,
+        unit: safeServingUnit,
+        defaultServingGrams: servingGrams,
+        defaultServingSize: getPositiveNutritionNumber(food.serving_size),
+        defaultServingUnit: getDefaultFoodServingUnit(food),
+        gramsPerMl: getFoodVolumeAnchor(food)?.gramsPerMl,
+      });
   const selectedGrams = servingGrams ? servingGrams * servingMultiplier : null;
   let amount = "";
 
@@ -3987,7 +4061,9 @@ function getDefaultGroceryDeductionDraft(
   } else if (groceryResource.unit === "oz" && selectedGrams) {
     amount = formatFoodNutritionNumber(selectedGrams / GRAMS_PER_OUNCE) ?? "";
   } else if (groceryResource.unit === "package" || groceryResource.unit === "item") {
-    amount = "1";
+    amount = servingUnit === "container"
+      ? formatFoodNutritionNumber(servingQuantity) ?? String(servingQuantity)
+      : "1";
   }
 
   return {
@@ -4062,6 +4138,9 @@ function getNutritionServingMultiplier({
 function getFoodServingMultiplier(item: NutritionSelectedFoodItem | NutritionMealBuilderItem) {
   if (!item.food) return normalizeNutritionQuantity(item.quantity);
   const safeUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
+  if (safeUnit === "container") {
+    return getGroceryContainerNutritionResolution(item.food, item.quantity).servingMultiplier ?? 0;
+  }
   const volumeAnchor = getFoodVolumeAnchor(item.food);
 
   return getNutritionServingMultiplier({
@@ -4072,6 +4151,245 @@ function getFoodServingMultiplier(item: NutritionSelectedFoodItem | NutritionMea
     defaultServingUnit: getDefaultFoodServingUnit(item.food),
     gramsPerMl: volumeAnchor?.gramsPerMl,
   });
+}
+
+type GroceryContainerNutritionResolution = {
+  servingMultiplier: number | null;
+  source:
+    | "per_container"
+    | "selected_snapshot"
+    | "servings_per_container"
+    | "container_grams"
+    | "grocery_package_direct"
+    | "unknown";
+  confidence?: "inferred";
+  helper: string;
+};
+
+type GroceryContainerNutritionSnapshot = Record<NutritionMacroSourceKey, number | null>;
+
+function isContainerNutritionUnit(value: unknown, metadata: Record<string, unknown>) {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  const profile = getStoredCountProfile(metadata);
+  return [
+    "container",
+    "package",
+    "pack",
+    "pkg",
+    profile?.countUnitKey,
+    profile?.singularLabel,
+    profile?.pluralLabel,
+  ].some((unit) => typeof unit === "string" && unit.toLowerCase() === normalized);
+}
+
+function getGroceryContainerNutritionSnapshot(
+  food: FoodSearchResult,
+): GroceryContainerNutritionSnapshot | null {
+  const metadata = getRecordMetadata(food.metadata);
+  const records = getGroceryMetadataRecords(metadata);
+
+  for (const record of records) {
+    const explicitSnapshot = getRecordMetadata(record.nutrition_per_container);
+    if (getOptionalNutritionSnapshotNumber(explicitSnapshot.calories) !== null) {
+      return {
+        calories: getOptionalNutritionSnapshotNumber(explicitSnapshot.calories),
+        carbs_g: getOptionalNutritionSnapshotNumber(explicitSnapshot.carbs_g),
+        protein_g: getOptionalNutritionSnapshotNumber(explicitSnapshot.protein_g),
+        fat_g: getOptionalNutritionSnapshotNumber(explicitSnapshot.fat_g),
+      };
+    }
+  }
+
+  for (const record of records) {
+    const basis = typeof record.nutrition_basis === "string"
+      ? record.nutrition_basis.trim().toLowerCase()
+      : null;
+    const hasExplicitContainerBasis = basis === "per_container" || basis === "container";
+    const isLegacyBarcodeContainer =
+      (record.source === "open_food_facts" || record.scan_source === "open_food_facts") &&
+      isContainerNutritionUnit(record.serving_unit, metadata);
+    if (!hasExplicitContainerBasis && !isLegacyBarcodeContainer) continue;
+
+    const basisSnapshot = getRecordMetadata(record.nutrition_per_serving);
+    const snapshot = Object.keys(basisSnapshot).length > 0 ? basisSnapshot : record;
+    if (getOptionalNutritionSnapshotNumber(snapshot.calories) === null) continue;
+    return {
+      calories: getOptionalNutritionSnapshotNumber(snapshot.calories),
+      carbs_g: getOptionalNutritionSnapshotNumber(snapshot.carbs_g),
+      protein_g: getOptionalNutritionSnapshotNumber(snapshot.protein_g),
+      fat_g: getOptionalNutritionSnapshotNumber(snapshot.fat_g),
+    };
+  }
+
+  return null;
+}
+
+function hasExplicitPerServingNutritionBasis(food: FoodSearchResult) {
+  if (hasExplicitFoodServingAnchor(food)) return true;
+  const metadata = getRecordMetadata(food.metadata);
+  const groceryResource = getGroceryResourceMetadata(food);
+  const hasExplicitServingFields =
+    !groceryResource ||
+    Boolean(
+      getPositiveNutritionMetadataNumber(metadata, "serving_quantity") &&
+      getOptionalNutritionMetadataString(metadata, "serving_unit"),
+    );
+  if (
+    hasExplicitServingFields &&
+    getRawNutritionServingUnitKey(food.serving_unit) === "serving" &&
+    getPositiveNutritionNumber(food.serving_size)
+  ) {
+    return true;
+  }
+
+  return getGroceryMetadataRecords(metadata).some((record) => {
+    const basis = typeof record.nutrition_basis === "string"
+      ? record.nutrition_basis.trim().toLowerCase()
+      : null;
+    return basis === "per_serving" || basis === "serving";
+  });
+}
+
+function getSelectedNutritionFoodPerUnitSnapshot(
+  food: FoodSearchResult,
+): GroceryContainerNutritionSnapshot | null {
+  const explicitContainerSnapshot = getGroceryContainerNutritionSnapshot(food);
+  if (explicitContainerSnapshot) return explicitContainerSnapshot;
+
+  const groceryResource = getGroceryResourceMetadata(food);
+  if (
+    !groceryResource ||
+    (groceryResource.unit !== "package" && groceryResource.unit !== "item") ||
+    hasExplicitPerServingNutritionBasis(food)
+  ) {
+    return null;
+  }
+
+  const snapshot = {
+    calories: getOptionalNutritionSnapshotNumber(food.calories),
+    carbs_g: getOptionalNutritionSnapshotNumber(food.carbs_g),
+    protein_g: getOptionalNutritionSnapshotNumber(food.protein_g),
+    fat_g: getOptionalNutritionSnapshotNumber(food.fat_g),
+  };
+
+  return Object.values(snapshot).every((value) => value !== null) ? snapshot : null;
+}
+
+function hasExplicitPer100gNutritionBasis(metadata: Record<string, unknown>) {
+  return getGroceryMetadataRecords(metadata).some((record) => {
+    const basis = getOptionalNutritionMetadataString(record, "nutrition_basis")
+      ?.toLowerCase()
+      .replace(/[\s_-]+/g, "");
+    const dataPer = getOptionalNutritionMetadataString(record, "nutrition_data_per")
+      ?.toLowerCase()
+      .replace(/[\s_-]+/g, "");
+    return basis === "100g" || basis === "per100g" || dataPer === "100g" || dataPer === "per100g";
+  });
+}
+
+function hasExplicitMultipleServingsPerContainer(metadata: Record<string, unknown>) {
+  return getGroceryMetadataRecords(metadata).some((record) =>
+    [
+      "explicit_servings_per_container",
+      "inferred_servings_per_container",
+      "servings_per_container",
+      "servings_per_package",
+    ].some((key) => (getPositiveNutritionMetadataNumber(record, key) ?? 0) > 1),
+  );
+}
+
+function getGroceryContainerNutritionResolution(
+  food: FoodSearchResult,
+  selectedContainerCount: number,
+): GroceryContainerNutritionResolution {
+  const count = normalizeNutritionQuantity(selectedContainerCount);
+  const profile = getFoodInventoryMeasurementProfile(food);
+  const label = formatInventoryCountLabel(count, profile ?? { singularLabel: "package", pluralLabel: "packages" });
+  const quantityLabel = formatFoodNutritionNumber(count) ?? String(count);
+  const metadata = getRecordMetadata(food.metadata);
+  const perContainer = getGroceryContainerNutritionSnapshot(food);
+  const selectedSnapshot = getSelectedNutritionFoodPerUnitSnapshot(food);
+  const perServingCalories = getOptionalNutritionSnapshotNumber(food.calories);
+  const containerCalories = perContainer?.calories ?? null;
+  if (containerCalories !== null) {
+    return {
+      servingMultiplier:
+        perServingCalories && perServingCalories > 0
+          ? count * containerCalories / perServingCalories
+          : count,
+      source: "per_container",
+      helper:
+        count === 1
+          ? `Nutrition for ${quantityLabel} ${label}`
+          : `${quantityLabel} ${label} × package nutrition`,
+    };
+  }
+
+  if (selectedSnapshot) {
+    return {
+      servingMultiplier: count,
+      source: "selected_snapshot",
+      helper:
+        count === 1
+          ? `Nutrition for ${quantityLabel} ${label}`
+          : `${quantityLabel} ${label} × package nutrition`,
+    };
+  }
+
+  const context = getGroceryPackageServingsContext(metadata);
+  const servingsPerContainer = context.servingsPerContainer ?? profile?.servingsPerContainer ?? null;
+  if (servingsPerContainer) {
+    const servings = count * servingsPerContainer;
+    return {
+      servingMultiplier: servings,
+      source: "servings_per_container",
+      helper: `${quantityLabel} ${label} × ${formatFoodNutritionNumber(servingsPerContainer) ?? servingsPerContainer} servings = ${formatFoodNutritionNumber(servings) ?? servings} servings`,
+    };
+  }
+
+  const containerGrams = context.packageGrams ?? profile?.netGramsPerContainer ?? profile?.gramsPerItem ?? null;
+  const servingGrams = getPositiveNutritionNumber(food.serving_grams);
+  if (containerGrams && servingGrams) {
+    const grams = count * containerGrams;
+    return {
+      servingMultiplier: grams / servingGrams,
+      source: "container_grams",
+      helper: `${quantityLabel} ${label} ≈ ${formatGroceryGramValue(grams)}g total`,
+    };
+  }
+
+  const groceryResource = getGroceryResourceMetadata(food);
+  const hasFiniteBaseNutrition = [
+    food.calories,
+    food.carbs_g,
+    food.protein_g,
+    food.fat_g,
+  ].every((value) => getOptionalNutritionSnapshotNumber(value) !== null);
+  if (
+    groceryResource &&
+    (groceryResource.unit === "package" || groceryResource.unit === "item") &&
+    hasFiniteBaseNutrition &&
+    !hasExplicitPer100gNutritionBasis(metadata) &&
+    !hasExplicitMultipleServingsPerContainer(metadata)
+  ) {
+    return {
+      servingMultiplier: count,
+      source: "grocery_package_direct",
+      confidence: "inferred",
+      helper:
+        count === 1
+          ? `Nutrition for ${quantityLabel} ${label}`
+          : `${quantityLabel} ${label} × package nutrition`,
+    };
+  }
+
+  return {
+    servingMultiplier: null,
+    source: "unknown",
+    helper: `${quantityLabel} ${label} · Container nutrition estimate unavailable`,
+  };
 }
 
 function getRecipeServingMultiplier(
@@ -4085,12 +4403,25 @@ function getNutritionLineValue(baseValue: unknown, multiplier: number) {
   return value * multiplier;
 }
 
+function getResolvedFoodNutritionLineValue(
+  item: NutritionSelectedFoodItem,
+  key: NutritionMacroSourceKey,
+) {
+  const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
+  if (servingUnit === "container") {
+    const perUnitValue = getSelectedNutritionFoodPerUnitSnapshot(item.food)?.[key] ?? null;
+    if (perUnitValue !== null) return perUnitValue * normalizeNutritionQuantity(item.quantity);
+  }
+
+  return getNutritionLineValue(item.food[key], getFoodServingMultiplier(item));
+}
+
 function formatNutritionServingAmount(value: number) {
   return formatFoodNutritionNumber(normalizeNutritionQuantity(value)) ?? "1";
 }
 
 function formatNutritionServingLabel(amount: number, unit: NutritionServingUnit) {
-  return `${formatNutritionServingAmount(amount)} ${normalizeNutritionServingUnit(unit)}`;
+  return `${formatNutritionServingAmount(amount)} ${unit === "container" ? "container" : normalizeNutritionServingUnit(unit)}`;
 }
 
 function getNextWholeNutritionQuantity(quantity: number, step: -1 | 1) {
@@ -4142,6 +4473,12 @@ function getNutritionSelectedFoodName(item: NutritionSelectedFoodItem) {
   const defaultUnit = getDefaultFoodServingUnit(item.food);
   const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
 
+  if (servingUnit === "container") {
+    const profile = getFoodInventoryMeasurementProfile(item.food);
+    const label = formatInventoryCountLabel(item.quantity, profile ?? { singularLabel: "package", pluralLabel: "packages" });
+    return `${formatNutritionServingAmount(item.quantity)} ${label} ${item.food.name}`;
+  }
+
   if (item.quantity === defaultAmount && servingUnit === defaultUnit) {
     return item.food.name;
   }
@@ -4154,6 +4491,11 @@ function getNutritionSelectedFoodQuantityBadgeLabel(item: NutritionSelectedFoodI
   const defaultUnit = getDefaultFoodServingUnit(item.food);
   const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
 
+  if (servingUnit === "container") {
+    const profile = getFoodInventoryMeasurementProfile(item.food);
+    const label = formatInventoryCountLabel(item.quantity, profile ?? { singularLabel: "package", pluralLabel: "packages" });
+    return `${formatNutritionServingAmount(item.quantity)} ${label}`;
+  }
   if (item.quantity === defaultAmount && servingUnit === defaultUnit) return null;
   return formatNutritionServingLabel(item.quantity, servingUnit);
 }
@@ -4332,20 +4674,15 @@ function getNutritionFoodLineValue(
   item: NutritionSelectedFoodItem,
   key: NutritionMacroSourceKey,
 ) {
-  const value = item.food[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return value * getFoodServingMultiplier(item);
+  return getOptionalFoodNutritionLineValue(item, key);
 }
 
 function getNutritionSelectedFoodLineMeta(item: NutritionSelectedFoodItem) {
-  const calories = formatFoodNutritionNumber(
-    getNutritionFoodLineValue(item, "calories"),
-  );
-  const carbs = formatFoodNutritionNumber(getNutritionFoodLineValue(item, "carbs_g"));
-  const protein = formatFoodNutritionNumber(
-    getNutritionFoodLineValue(item, "protein_g"),
-  );
-  const fat = formatFoodNutritionNumber(getNutritionFoodLineValue(item, "fat_g"));
+  const snapshot = getNutritionSelectedFoodNutrientSnapshot(item);
+  const calories = formatFoodNutritionNumber(snapshot.calories);
+  const carbs = formatFoodNutritionNumber(snapshot.carbohydrates);
+  const protein = formatFoodNutritionNumber(snapshot.protein);
+  const fat = formatFoodNutritionNumber(snapshot.fat);
   const nutritionParts = [
     calories ? `${calories} cal` : null,
     carbs ? `C ${carbs}g` : null,
@@ -4421,10 +4758,66 @@ function getOptionalFoodNutritionLineValue(
   item: NutritionSelectedFoodItem,
   key: NutritionMacroSourceKey,
 ) {
+  const servingUnit = getSafeFoodServingUnit(item.food, item.servingUnit);
   const value = getOptionalNutritionSnapshotNumber(item.food[key]);
-  if (value === null) return null;
+  if (value === null && servingUnit !== "container") {
+    return null;
+  }
 
-  return value * getFoodServingMultiplier(item);
+  if (servingUnit === "container") {
+    const perUnitSnapshot = getSelectedNutritionFoodPerUnitSnapshot(item.food);
+    const hasPerUnitValue = perUnitSnapshot?.[key] !== null && perUnitSnapshot?.[key] !== undefined;
+    const resolution = getGroceryContainerNutritionResolution(item.food, item.quantity);
+
+    if (!hasPerUnitValue && resolution.servingMultiplier === null) {
+      const selectedQuantity = item.quantity;
+      const rawNutrientValue = item.food[key];
+      if (
+        typeof selectedQuantity === "number" &&
+        Number.isFinite(selectedQuantity) &&
+        selectedQuantity > 0 &&
+        typeof rawNutrientValue === "number" &&
+        Number.isFinite(rawNutrientValue)
+      ) {
+        return rawNutrientValue * selectedQuantity;
+      }
+      return null;
+    }
+  }
+
+  return getResolvedFoodNutritionLineValue(item, key);
+}
+
+type NutritionSelectedFoodNutrientSnapshot = {
+  calories: number | null;
+  protein: number | null;
+  carbohydrates: number | null;
+  fat: number | null;
+};
+
+function getNutritionSelectedFoodNutrientSnapshot(
+  item: NutritionSelectedFoodItem,
+): NutritionSelectedFoodNutrientSnapshot {
+  return {
+    calories: getOptionalFoodNutritionLineValue(item, "calories"),
+    protein: getOptionalFoodNutritionLineValue(item, "protein_g"),
+    carbohydrates: getOptionalFoodNutritionLineValue(item, "carbs_g"),
+    fat: getOptionalFoodNutritionLineValue(item, "fat_g"),
+  };
+}
+
+function aggregateSelectedNutritionFoodSnapshots(items: NutritionSelectedFoodItem[]) {
+  return items.reduce<Record<NutritionDailyMetricKey, number>>(
+    (totals, item) => {
+      const snapshot = getNutritionSelectedFoodNutrientSnapshot(item);
+      totals.calories += snapshot.calories ?? 0;
+      totals.protein += snapshot.protein ?? 0;
+      totals.carbs += snapshot.carbohydrates ?? 0;
+      totals.fat += snapshot.fat ?? 0;
+      return totals;
+    },
+    { ...EMPTY_NUTRITION_TOTALS },
+  );
 }
 
 function formatOptionalFoodNutritionLineValue(
@@ -4757,10 +5150,11 @@ function buildFoodNutritionMealItem(
   const servingUnit = getSafeFoodServingUnit(food, item.servingUnit);
   const servingGrams = getPositiveNutritionNumber(food.serving_grams);
   const multiplier = getFoodServingMultiplier(item);
-  const calories = getNutritionLineValue(food.calories, multiplier);
-  const carbs = getNutritionLineValue(food.carbs_g, multiplier);
-  const protein = getNutritionLineValue(food.protein_g, multiplier);
-  const fat = getNutritionLineValue(food.fat_g, multiplier);
+  const nutrientSnapshot = getNutritionSelectedFoodNutrientSnapshot(item);
+  const calories = nutrientSnapshot.calories ?? 0;
+  const carbs = nutrientSnapshot.carbohydrates ?? 0;
+  const protein = nutrientSnapshot.protein ?? 0;
+  const fat = nutrientSnapshot.fat ?? 0;
   const metadata =
     food.metadata && typeof food.metadata === "object" && !Array.isArray(food.metadata)
       ? (food.metadata as Record<string, unknown>)
@@ -4848,9 +5242,14 @@ function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
     food.name,
     food.brand_name,
   );
+  const containerNutrition = getGroceryContainerNutritionSnapshot(food);
+  const sourceOriginalScannedNutrition = getRecordMetadata(
+    sourceMetadata.originalScannedNutrition,
+  );
   const originalScannedNutrition = {
+    ...sourceOriginalScannedNutrition,
     serving_quantity: quantity,
-    serving_unit: servingUnit,
+    serving_unit: sourceOriginalScannedNutrition.serving_unit ?? servingUnit,
     serving_grams: servingGrams,
     calories: getOptionalNutritionSnapshotNumber(food.calories),
     carbs_g: getOptionalNutritionSnapshotNumber(food.carbs_g),
@@ -4860,6 +5259,8 @@ function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
 
   return {
     ...sourceMetadata,
+    browse_department: food.browse_department ?? sourceMetadata.browse_department,
+    browse_aisle: food.browse_aisle ?? sourceMetadata.browse_aisle,
     ...(inventoryMeasurementProfile ? { inventory_measurement_profile: inventoryMeasurementProfile } : {}),
     source: "grocery-food-selection",
     catalogSource: food.source ?? "foods",
@@ -4872,6 +5273,14 @@ function buildGroceryFoodResourceMetadata(item: NutritionSelectedFoodItem) {
     carbs_g: lineCarbs ?? undefined,
     protein_g: lineProtein ?? undefined,
     fat_g: lineFat ?? undefined,
+    ...(containerNutrition
+      ? {
+          nutrition_basis: "per_container",
+          nutrition_per_container: containerNutrition,
+          nutrition_per_container_source: "barcode_snapshot",
+          nutrition_per_container_confidence: "high",
+        }
+      : {}),
     selectedServing: {
       amount: quantity,
       unit: servingUnit,
@@ -5326,10 +5735,11 @@ function mapSelectedNutritionFoodsToEntryValues(
   };
 
   for (const item of items) {
-    const calories = getNutritionFoodLineValue(item, "calories");
-    const carbs = getNutritionFoodLineValue(item, "carbs_g");
-    const protein = getNutritionFoodLineValue(item, "protein_g");
-    const fat = getNutritionFoodLineValue(item, "fat_g");
+    const snapshot = getNutritionSelectedFoodNutrientSnapshot(item);
+    const calories = snapshot.calories;
+    const carbs = snapshot.carbohydrates;
+    const protein = snapshot.protein;
+    const fat = snapshot.fat;
 
     if (calories !== null) {
       totals.calories += calories;
@@ -5586,7 +5996,7 @@ function getGroceryResourceDisplayAmount(resource: FoodResource): GroceryResourc
     const displayUnit = getFoodResourceText(unitValue);
     if (displayQuantity !== null && displayUnit) {
       const countProfile = getStoredCountProfile(metadata);
-      if (resource.unit?.toLowerCase() === "item" && countProfile) {
+      if (["item", "package"].includes(resource.unit?.toLowerCase() ?? "") && countProfile) {
         const label = formatInventoryCountLabel(displayQuantity, countProfile);
         return {
           displayQuantity,
@@ -5635,7 +6045,7 @@ function getGroceryResourceDisplayAmount(resource: FoodResource): GroceryResourc
     }
   }
 
-  if (storedUnit.toLowerCase() === "item") {
+  if (storedUnit.toLowerCase() === "item" || storedUnit.toLowerCase() === "package") {
     const countProfile = getStoredCountProfile(metadata);
     if (countProfile) {
       const label = formatInventoryCountLabel(storedQuantity, countProfile);
@@ -5722,6 +6132,8 @@ function getOptionalNutritionMetadataString(
 
 function mapFoodResourceToFoodSearchResult(resource: FoodResource): FoodSearchResult {
   const metadata = getFoodResourceMetadata(resource);
+  const catalogFood = getRecordMetadata(resource.catalog_food);
+  const catalogMetadata = getRecordMetadata(catalogFood.metadata);
   const servingQuantity =
     getPositiveNutritionMetadataNumber(metadata, "serving_quantity") ??
     1;
@@ -5745,8 +6157,9 @@ function mapFoodResourceToFoodSearchResult(resource: FoodResource): FoodSearchRe
 
   return {
     id: `grocery-resource-${resource.id}`,
-    name: resource.name,
-    brand_name: resource.brand_name,
+    name: resource.name || getFoodResourceText(catalogFood.name),
+    normalized_name: getFoodResourceText(catalogFood.normalized_name) || null,
+    brand_name: resource.brand_name || getFoodResourceText(catalogFood.brand_name) || null,
     source,
     serving_size: servingQuantity,
     serving_unit: servingUnit,
@@ -5755,6 +6168,7 @@ function mapFoodResourceToFoodSearchResult(resource: FoodResource): FoodSearchRe
     carbs_g: getOptionalNutritionMetadataNumber(metadata, "carbs_g"),
     protein_g: getOptionalNutritionMetadataNumber(metadata, "protein_g"),
     fat_g: getOptionalNutritionMetadataNumber(metadata, "fat_g"),
+    catalog_metadata: catalogMetadata,
     metadata: foodMetadata,
   };
 }
@@ -7063,6 +7477,15 @@ export function NoteDatabaseEntrySheet({
     useState<FoodBrowseDepartmentLabel | null>(null);
   const [openNutritionBrowseAisle, setOpenNutritionBrowseAisle] =
     useState<FoodBrowseAisleLabel | null>(null);
+  const [collapsedStagedFoodGroups, setCollapsedStagedFoodGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [collapsedGroceryResourceGroups, setCollapsedGroceryResourceGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [collapsedNutritionGroceryGroups, setCollapsedNutritionGroceryGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [selectedNutritionFoods, setSelectedNutritionFoods] = useState<
     NutritionSelectedFoodItem[]
   >([]);
@@ -7452,11 +7875,13 @@ export function NoteDatabaseEntrySheet({
     ? nutritionDailySavedTotals
     : EMPTY_NUTRITION_TOTALS;
   const nutritionDailyPreviewTotals = shouldRenderNutritionDailyProgress
-    ? aggregateNutritionDraftTotals({
-        values: entryFormValues,
-        caloriesField: nutritionCaloriesField,
-        macroFields: nutritionMacroFields,
-      })
+    ? selectedNutritionFoods.length > 0
+      ? aggregateSelectedNutritionFoodSnapshots(selectedNutritionFoods)
+      : aggregateNutritionDraftTotals({
+          values: entryFormValues,
+          caloriesField: nutritionCaloriesField,
+          macroFields: nutritionMacroFields,
+        })
     : EMPTY_NUTRITION_TOTALS;
   const refreshNutritionDailyTotals = useCallback(async () => {
     if (!shouldRenderNutritionDailyProgress) {
@@ -8644,37 +9069,6 @@ export function NoteDatabaseEntrySheet({
         : selectedFood,
     );
     applyNutritionFoodSelection(nextFoods);
-  }
-
-  function updateNutritionGroceryDeduction(food: FoodSearchResult, amount: string) {
-    const foodKey = getNutritionFoodSelectionKey(food);
-
-    setSelectedNutritionFoods((currentFoods) =>
-      currentFoods.map((selectedFood) => {
-        if (getNutritionFoodSelectionKey(selectedFood.food) !== foodKey) {
-          return selectedFood;
-        }
-
-        const currentDeduction =
-          selectedFood.groceryDeduction ??
-          getDefaultGroceryDeductionDraft(
-            selectedFood.food,
-            selectedFood.quantity,
-            selectedFood.servingUnit,
-          );
-
-        return currentDeduction
-          ? {
-              ...selectedFood,
-              groceryDeduction: {
-                ...currentDeduction,
-                amount,
-              },
-            }
-          : selectedFood;
-      }),
-    );
-    setSubmitError(null);
   }
 
   function getSelectedNutritionFoodItem(food: FoodSearchResult) {
@@ -10512,23 +10906,23 @@ export function NoteDatabaseEntrySheet({
       remainingPreview,
       deduction.inventoryUnit,
     );
+    const deductionUnitLabel = getGroceryNaturalUnitLabel(
+      getRecordMetadata(item.food.metadata),
+      remainingPreview ?? 2,
+      deduction.inventoryUnit,
+    );
 
     return (
-      <label className="mt-2 block min-w-0 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-1.5">
+      <div className="mt-2 block min-w-0 rounded-lg border border-white/[0.045] bg-white/[0.025] px-2 py-1.5">
         <span className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-[11px] font-semibold text-white/42">
             Deduct from Grocery
           </span>
-          <input
-            type="number"
-            min={0.01}
-            step="any"
-            value={deduction.amount}
-            onChange={(event) => updateNutritionGroceryDeduction(item.food, event.target.value)}
-            className="h-8 w-24 min-w-0 rounded-lg border border-white/[0.055] bg-black/28 px-2.5 text-xs font-semibold tabular-nums text-white outline-none transition placeholder:text-white/26 selection:bg-white/[0.18] hover:border-white/[0.09] hover:bg-black/34 focus-visible:border-white/[0.14] focus-visible:bg-black/38 focus-visible:ring-1 focus-visible:ring-white/12"
-          />
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-white/72">
+            {deduction.amount}
+          </span>
           <span className="shrink-0 text-xs font-semibold text-white/58">
-            {deduction.inventoryUnit}
+            {deductionUnitLabel}
           </span>
           {nextRemaining !== null ? (
             <span className="min-w-0 truncate text-[11px] font-medium text-white/34">
@@ -10539,7 +10933,7 @@ export function NoteDatabaseEntrySheet({
         <span className="mt-1 block text-[11px] font-medium text-white/38">
           {deductionGramHelper}
         </span>
-      </label>
+      </div>
     );
   }
 
@@ -11229,6 +11623,9 @@ export function NoteDatabaseEntrySheet({
             ? {
                 id: compatibleResource.id,
                 action: "setQuantity",
+                food_id: compatibleResource.food_id === null && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(food.id)
+                  ? food.id
+                  : undefined,
                 quantity:
                   inventorySave.canonicalUnit === "g" && existingGrams !== null
                     ? existingGrams + inventorySave.canonicalQuantity
@@ -11507,9 +11904,6 @@ export function NoteDatabaseEntrySheet({
                       />
                     ) : null}
                   </div>
-                  {isGrocerySearchResult && groceryDraftKey && isSelected
-                    ? renderGrocerySearchDraftRow(grocerySearchDrafts[groceryDraftKey])
-                    : null}
                 </div>
               );
             })}
@@ -11564,6 +11958,11 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderNutritionGroceryContent() {
+    const groceryFoodGroups = groupFoodsByBrowseDepartment(
+      nutritionGroceryFoods,
+      (food) => food,
+    );
+
     return (
       <div className="mt-2">
         {renderSelectedNutritionFoods()}
@@ -11577,8 +11976,11 @@ export function NoteDatabaseEntrySheet({
               {nutritionGroceryError}
             </p>
           ) : nutritionGroceryFoods.length > 0 ? (
-            <div className="divide-y divide-white/[0.045]">
-              {nutritionGroceryFoods.map((food) => {
+            <div className="p-1.5">
+              {renderFoodDepartmentGroups(
+                groceryFoodGroups,
+                (food) => food.id,
+                (food) => {
                 const selectedItem = getSelectedNutritionFoodItem(food);
                 const isSelected = Boolean(selectedItem);
                 const details = getNutritionGroceryFoodDetails(food);
@@ -11588,7 +11990,6 @@ export function NoteDatabaseEntrySheet({
 
                 return (
                   <div
-                    key={food.id}
                     className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition ${
                       isSelected
                         ? "bg-white/[0.07] shadow-[inset_3px_0_0_rgba(255,255,255,0.7)]"
@@ -11630,7 +12031,10 @@ export function NoteDatabaseEntrySheet({
                     ) : null}
                   </div>
                 );
-              })}
+                },
+                collapsedNutritionGroceryGroups,
+                setCollapsedNutritionGroceryGroups,
+              )}
             </div>
           ) : (
             <p className="px-3 py-2.5 text-xs font-medium text-white/38">
@@ -11814,6 +12218,11 @@ export function NoteDatabaseEntrySheet({
   }
 
   function renderGroceryResourcesContent() {
+    const groceryResourceGroups = groupFoodsByBrowseDepartment(
+      groceryResourceItems,
+      mapFoodResourceToFoodSearchResult,
+    );
+
     return (
       <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.055] bg-black/36">
         {isGroceryResourcesLoading ? (
@@ -11825,13 +12234,16 @@ export function NoteDatabaseEntrySheet({
             {groceryResourcesError}
           </p>
         ) : groceryResourceItems.length > 0 ? (
-          <div className="divide-y divide-white/[0.045]">
+          <div className="p-1.5">
             {groceryResourceActionError ? (
               <p className="px-3 py-2.5 text-xs font-medium text-red-200/72">
                 {groceryResourceActionError}
               </p>
             ) : null}
-            {groceryResourceItems.map((resource) => {
+            {renderFoodDepartmentGroups(
+              groceryResourceGroups,
+              (resource) => resource.id,
+              (resource) => {
               const detailLine = getGroceryResourceDetailParts(resource).join(" · ");
               const nutritionMeta = getGroceryResourceNutritionMeta(resource);
               const isMenuOpen = openGroceryResourceMenuId === resource.id;
@@ -11851,10 +12263,7 @@ export function NoteDatabaseEntrySheet({
               );
 
               return (
-                <div
-                  key={resource.id}
-                  className="relative"
-                >
+                <div className="relative">
                   <div className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left">
                     <div className="flex min-w-0 flex-1 items-center gap-2.5">
                       <NutritionFoodIconSlot
@@ -11997,7 +12406,10 @@ export function NoteDatabaseEntrySheet({
                   ) : null}
                 </div>
               );
-            })}
+              },
+              collapsedGroceryResourceGroups,
+              setCollapsedGroceryResourceGroups,
+            )}
           </div>
         ) : (
           <div className="px-3 py-5 text-center">
@@ -12017,13 +12429,73 @@ export function NoteDatabaseEntrySheet({
     );
   }
 
+  function renderFoodDepartmentGroups<T>(
+    groups: FoodDepartmentGroup<T>[],
+    getRowKey: (item: T) => string,
+    renderRow: (item: T) => ReactNode,
+    collapsedGroups: Set<string> = collapsedStagedFoodGroups,
+    setCollapsedGroups: Dispatch<SetStateAction<Set<string>>> = setCollapsedStagedFoodGroups,
+  ) {
+    return (
+      <div className="space-y-1.5">
+        {groups.map((group) => {
+          const isCollapsed = collapsedGroups.has(group.key);
+          return (
+            <section
+              key={group.key}
+              className="overflow-hidden rounded-lg border border-white/[0.055] bg-black/18"
+            >
+              <button
+                type="button"
+                aria-expanded={!isCollapsed}
+                onClick={() =>
+                  setCollapsedGroups((currentGroups) => {
+                    const nextGroups = new Set(currentGroups);
+                    if (nextGroups.has(group.key)) nextGroups.delete(group.key);
+                    else nextGroups.add(group.key);
+                    return nextGroups;
+                  })
+                }
+                className="flex min-h-9 w-full items-center gap-2 px-2.5 py-2 text-left outline-none transition hover:bg-white/[0.035] focus-visible:bg-white/[0.045] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/12"
+              >
+                <ChevronRight
+                  className={`h-3.5 w-3.5 shrink-0 text-white/36 transition-transform ${
+                    isCollapsed ? "" : "rotate-90"
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-white/68">
+                  {group.label}
+                </span>
+                <span className="shrink-0 rounded-full bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white/48">
+                  {group.items.length}
+                </span>
+              </button>
+              {!isCollapsed ? (
+                <div className="space-y-1.5 border-t border-white/[0.045] p-1.5">
+                  {group.items.map((item) => (
+                    <div key={getRowKey(item)}>{renderRow(item)}</div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderSelectedNutritionFoods() {
-    if (isGroceryDatabase && selectedNutritionFoodAction === "scan") {
+    if (isGroceryDatabase) {
       const stagedDrafts = Object.values(grocerySearchDrafts);
       if (stagedDrafts.length === 0) return null;
+      const stagedGroups = groupFoodsByBrowseDepartment(
+        stagedDrafts,
+        (draft) => draft.food,
+      );
 
       return (
-        <div className="mt-2 overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.035]">
+        <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
           <div className="flex items-center justify-between gap-2 px-3 py-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
               Selected
@@ -12032,9 +12504,11 @@ export function NoteDatabaseEntrySheet({
               {stagedDrafts.length}
             </span>
           </div>
-          <div className="divide-y divide-white/[0.045]">
-            {stagedDrafts.map((draft) => (
-              <div key={draft.stableKey}>
+          {renderFoodDepartmentGroups(
+            stagedGroups,
+            (draft) => draft.stableKey,
+            (draft) => (
+              <div className="overflow-hidden rounded-lg border border-white/[0.055] bg-black/28">
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
                   <NutritionFoodIcon food={draft.food} />
                   <span className="min-w-0 flex-1">
@@ -12050,8 +12524,8 @@ export function NoteDatabaseEntrySheet({
                 </div>
                 {renderGrocerySearchDraftRow(draft, { showSaveButton: false })}
               </div>
-            ))}
-          </div>
+            ),
+          )}
         </div>
       );
     }
@@ -12059,6 +12533,10 @@ export function NoteDatabaseEntrySheet({
     const selectedItems = selectedNutritionFoods;
 
     if (selectedItems.length === 0) return null;
+    const stagedGroups = groupFoodsByBrowseDepartment(
+      selectedItems,
+      (item) => item.food,
+    );
 
     return (
       <div className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.035] p-2">
@@ -12070,8 +12548,10 @@ export function NoteDatabaseEntrySheet({
             {selectedItems.length}
           </span>
         </div>
-        <div className="space-y-1.5">
-          {selectedItems.map((item) => {
+        {renderFoodDepartmentGroups(
+          stagedGroups,
+          (item) => getNutritionFoodSelectionKey(item.food),
+          (item) => {
             const { food } = item;
             if (isGroceryDatabase) {
               return renderGrocerySelectedFoodDetail(item);
@@ -12080,10 +12560,11 @@ export function NoteDatabaseEntrySheet({
             const meta = isGroceryDatabase ? food.brand_name : getNutritionSelectedFoodLineMeta(item);
             const quantityBadgeLabel = getNutritionSelectedFoodQuantityBadgeLabel(item);
             const isScannedSelection = selectedNutritionFoodAction === "scan";
-            const groceryServingGramHelper =
-              selectedNutritionFoodAction === "grocery"
-                ? getGroceryServingGramHelper(getRecordMetadata(food.metadata))
-                : null;
+            const groceryServingGramHelper = selectedNutritionFoodAction === "grocery"
+              ? item.servingUnit === "container"
+                ? getGroceryContainerNutritionResolution(food, item.quantity).helper
+                : getGroceryServingGramHelper(getRecordMetadata(food.metadata))
+              : null;
             const favoriteTarget: NutritionFavoriteTarget | null =
               food.source?.startsWith("grocery")
                 ? null
@@ -12176,8 +12657,8 @@ export function NoteDatabaseEntrySheet({
                   : null}
               </div>
             );
-          })}
-        </div>
+          },
+        )}
       </div>
     );
   }
@@ -13376,11 +13857,6 @@ export function NoteDatabaseEntrySheet({
                                               />
                                             ) : null}
                                           </div>
-                                          {isGroceryDatabase && groceryDraftKey && isSelected
-                                            ? renderGrocerySearchDraftRow(
-                                                grocerySearchDrafts[groceryDraftKey],
-                                              )
-                                            : null}
                                         </div>
                                       );
                                     })
@@ -13521,9 +13997,7 @@ export function NoteDatabaseEntrySheet({
                 aria-label="Food"
               />
             </div>
-            {isGroceryMode && selectedNutritionFoodAction === "search"
-              ? null
-              : renderSelectedNutritionFoods()}
+            {renderSelectedNutritionFoods()}
             {selectedNutritionFoodAction === "search" &&
             normalizedNutritionFoodSearchValue.length >= 2 ? (
               renderNutritionFoodResultList({

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
-  getFoodBrowsePlacements,
+  getFoodBrowsePlacementForSection,
   normalizeFoodBrowseAisle,
   normalizeFoodBrowseDepartment,
   normalizeFoodSearchText,
@@ -158,10 +158,7 @@ export async function GET(request: NextRequest) {
     const foods = ((data ?? []) as FoodSearchRow[])
       .map((row) => ({
         row,
-        placement: getFoodBrowsePlacements(row).find(
-          (placement) =>
-            placement.department === department && placement.aisle === aisle,
-        ),
+        placement: getFoodBrowsePlacementForSection(row, department, aisle),
       }))
       .filter(
         (match): match is { row: FoodSearchRow; placement: FoodBrowsePlacement } =>

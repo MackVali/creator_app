@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { getAttachableFoodResourceId } from "@/lib/nutrition/foods";
 import type { Database, Json } from "@/types/supabase";
 
 export const runtime = "nodejs";
@@ -125,6 +126,12 @@ function normalizeMetadata(value: unknown): Json {
         ...(typeof candidate.packageItemCount === "number" && candidate.packageItemCount > 0
           ? { packageItemCount: candidate.packageItemCount }
           : {}),
+        ...(typeof candidate.servingsPerContainer === "number" && candidate.servingsPerContainer > 0
+          ? { servingsPerContainer: candidate.servingsPerContainer }
+          : {}),
+        ...(typeof candidate.netGramsPerContainer === "number" && candidate.netGramsPerContainer > 0
+          ? { netGramsPerContainer: candidate.netGramsPerContainer }
+          : {}),
         source: candidate.source === "catalog" || candidate.source === "barcode" ? candidate.source : "name_fallback",
         confidence: candidate.confidence === "high" ? "high" : "medium",
       };
@@ -135,7 +142,18 @@ function normalizeMetadata(value: unknown): Json {
   return metadata as Json;
 }
 
-function mapFoodResource(row: FoodResourceRow) {
+type FoodResourceWithCatalog = FoodResourceRow & {
+  catalog_food?: {
+    name: string;
+    brand_name: string | null;
+    normalized_name: string;
+    normalized_brand_name: string | null;
+    source: string | null;
+    metadata: Json;
+  } | null;
+};
+
+function mapFoodResource(row: FoodResourceWithCatalog) {
   return {
     id: row.id,
     food_id: row.food_id,
@@ -150,6 +168,7 @@ function mapFoodResource(row: FoodResourceRow) {
     metadata: row.metadata,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    catalog_food: row.catalog_food ?? null,
   };
 }
 
@@ -237,7 +256,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("food_resources")
     .select(
-      "id,user_id,food_id,name,brand_name,quantity,unit,location,expires_on,notes,status,metadata,created_at,updated_at",
+      "id,user_id,food_id,name,brand_name,quantity,unit,location,expires_on,notes,status,metadata,created_at,updated_at,catalog_food:foods!food_resources_food_id_fkey(name,brand_name,normalized_name,normalized_brand_name,source,metadata)",
     )
     .eq("user_id", user.id)
     .order("expires_on", { ascending: true, nullsFirst: false })
@@ -255,7 +274,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    foodResources: ((data ?? []) as FoodResourceRow[]).map(mapFoodResource),
+    foodResources: ((data ?? []) as FoodResourceWithCatalog[]).map(mapFoodResource),
   });
 }
 
@@ -355,9 +374,31 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unit is invalid." }, { status: 400 });
     }
 
+    const requestedFoodId = normalizeFoodId(payload.food_id);
+    if (requestedFoodId === undefined) {
+      return NextResponse.json({ error: "Food id must be a valid UUID." }, { status: 400 });
+    }
+    let attachFoodId: string | null = null;
+    if (requestedFoodId) {
+      const { data: existingResource, error: existingResourceError } = await supabase
+        .from("food_resources")
+        .select("food_id")
+        .eq("user_id", user.id)
+        .eq("id", id)
+        .maybeSingle();
+      if (existingResourceError) {
+        return databaseErrorResponse("Unable to inspect food resource", existingResourceError);
+      }
+      attachFoodId = getAttachableFoodResourceId(
+        (existingResource as { food_id: string | null } | null)?.food_id ?? null,
+        requestedFoodId,
+      );
+    }
+
     updatePayload = {
       quantity,
       unit,
+      ...(attachFoodId ? { food_id: attachFoodId } : {}),
       ...(payload.metadata === undefined
         ? {}
         : { metadata: normalizeMetadata(payload.metadata) }),
