@@ -11,6 +11,7 @@ import type { Database, Json } from "@/types/supabase";
 export type FoodSearchResult = {
   id: string;
   name: string;
+  normalized_name?: string | null;
   brand_name: string | null;
   source?: string | null;
   serving_size: number | null;
@@ -22,6 +23,7 @@ export type FoodSearchResult = {
   fat_g: number | null;
   browse_department?: string | null;
   browse_aisle?: string | null;
+  catalog_metadata?: Json | null;
   metadata?: Json | null;
 };
 
@@ -33,6 +35,8 @@ export type FoodInventoryMeasurementProfile = {
   pluralLabel: string;
   gramsPerItem?: number;
   packageItemCount?: number;
+  servingsPerContainer?: number;
+  netGramsPerContainer?: number;
   source: "catalog" | "barcode" | "name_fallback";
   confidence: "high" | "medium";
 };
@@ -83,6 +87,8 @@ export function getFoodInventoryMeasurementProfile(
       pluralLabel: stored.pluralLabel,
       ...(typeof stored.gramsPerItem === "number" && stored.gramsPerItem > 0 ? { gramsPerItem: stored.gramsPerItem } : {}),
       ...(typeof stored.packageItemCount === "number" && stored.packageItemCount > 0 ? { packageItemCount: stored.packageItemCount } : {}),
+      ...(typeof stored.servingsPerContainer === "number" && stored.servingsPerContainer > 0 ? { servingsPerContainer: stored.servingsPerContainer } : {}),
+      ...(typeof stored.netGramsPerContainer === "number" && stored.netGramsPerContainer > 0 ? { netGramsPerContainer: stored.netGramsPerContainer } : {}),
       source: stored.source === "barcode" || stored.source === "catalog" ? stored.source : "name_fallback",
       confidence: stored.confidence === "high" ? "high" : "medium",
     };
@@ -195,6 +201,9 @@ export type FoodBrowsePlacementInput = {
   brand_name?: string | null;
   normalized_brand_name?: string | null;
   source?: string | null;
+  browse_department?: string | null;
+  browse_aisle?: string | null;
+  catalog_metadata?: Json | null;
   metadata?: Json | null;
 };
 
@@ -230,9 +239,53 @@ export type OpenFoodFactsProduct = {
   product_quantity_unit?: unknown;
   servings_per_container?: unknown;
   servings_per_package?: unknown;
+  packaging?: unknown;
+  packaging_text?: unknown;
+  packaging_tags?: unknown;
+  categories?: unknown;
+  categories_tags?: unknown;
   nutrition_data_per?: unknown;
   nutriments?: unknown;
 };
+
+const NATURAL_CONTAINER_RULES: readonly {
+  key: string;
+  singular: string;
+  plural: string;
+  pattern: RegExp;
+}[] = [
+  { key: "can", singular: "can", plural: "cans", pattern: /\b(?:can|canned|tin|tinned)\b/i },
+  { key: "bottle", singular: "bottle", plural: "bottles", pattern: /\b(?:bottle|bottled)\b/i },
+  { key: "jar", singular: "jar", plural: "jars", pattern: /\bjar(?:red)?\b/i },
+  { key: "pouch", singular: "pouch", plural: "pouches", pattern: /\bpouch(?:es)?\b/i },
+  { key: "packet", singular: "packet", plural: "packets", pattern: /\bpacket(?:s)?\b/i },
+  { key: "carton", singular: "carton", plural: "cartons", pattern: /\bcarton(?:s)?\b/i },
+  { key: "box", singular: "box", plural: "boxes", pattern: /\bbox(?:es)?\b/i },
+  { key: "bag", singular: "bag", plural: "bags", pattern: /\bbag(?:ged|s)?\b/i },
+  { key: "tub", singular: "tub", plural: "tubs", pattern: /\btub(?:s)?\b/i },
+  { key: "tray", singular: "tray", plural: "trays", pattern: /\btray(?:s)?\b/i },
+];
+
+function detectOpenFoodFactsContainer(product: OpenFoodFactsProduct, productName: string) {
+  const explicitPackaging = [product.packaging, product.packaging_text, product.packaging_tags]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .map(coerceOpenFoodFactsString)
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const explicitMatch = NATURAL_CONTAINER_RULES.find((rule) => rule.pattern.test(explicitPackaging));
+  if (explicitMatch) return { ...explicitMatch, source: "barcode" as const, confidence: "high" as const, originalText: explicitPackaging };
+
+  const categoryText = [product.categories, product.categories_tags]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .map(coerceOpenFoodFactsString)
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const strongText = `${productName} ${categoryText}`;
+  const nameMatch = NATURAL_CONTAINER_RULES.find((rule) => rule.pattern.test(strongText));
+  if (nameMatch) return { ...nameMatch, source: "name_fallback" as const, confidence: "medium" as const, originalText: strongText.trim() };
+
+  return { key: "package", singular: "package", plural: "packages", source: "name_fallback" as const, confidence: "medium" as const, originalText: explicitPackaging || null };
+}
 
 const FOOD_NAME_MAX_LENGTH = 160;
 const FOOD_BRAND_MAX_LENGTH = 120;
@@ -240,6 +293,8 @@ const SERVING_UNIT_MAX_LENGTH = 24;
 const MAX_SERVING_SIZE = 10000;
 const MAX_SERVING_GRAMS = 5000;
 const VALID_NORMALIZED_BARCODE_PATTERN = /^(\d{8}|\d{12}|\d{13}|\d{14})$/;
+const FOOD_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PLACEHOLDER_FOOD_NAMES = new Set([
   "unknown",
   "unknown product",
@@ -296,6 +351,9 @@ const FOOD_BROWSE_KNOWN_NAME_PLACEMENTS: Record<
   "chicken breast": [
     { department: "Everyday", aisle: "High protein regulars" },
     { department: "Meat & Seafood", aisle: "Chicken" },
+  ],
+  cereal: [
+    { department: "Pantry", aisle: "Rice & grains" },
   ],
   "white rice": [
     { department: "Everyday", aisle: "Cheap bulk foods" },
@@ -415,7 +473,7 @@ export function normalizeFoodBrowseAisle(
   );
 }
 
-function getFoodBrowsePlacement(
+export function getFoodBrowsePlacement(
   department: string | null | undefined,
   aisle: string | null | undefined,
 ): FoodBrowsePlacement | null {
@@ -428,6 +486,82 @@ function getFoodBrowsePlacement(
       `${normalizedDepartment}:${normalizedAisle}`,
     ) ?? null
   );
+}
+
+const OPEN_FOOD_FACTS_BROWSE_RULES: readonly {
+  categories: readonly string[];
+  placement: FoodBrowsePlacement;
+}[] = [
+  { categories: ["frozen pizzas", "frozen pizza"], placement: { department: "Frozen", aisle: "Frozen meals" } },
+  { categories: ["frozen meals", "frozen ready meals"], placement: { department: "Frozen", aisle: "Frozen meals" } },
+  { categories: ["frozen vegetables"], placement: { department: "Frozen", aisle: "Frozen vegetables" } },
+  { categories: ["frozen fruits"], placement: { department: "Frozen", aisle: "Frozen fruit" } },
+  { categories: ["frozen fish", "frozen seafood", "frozen meats"], placement: { department: "Frozen", aisle: "Frozen protein" } },
+  { categories: ["refrigerated meals", "refrigerated ready meals", "prepared meals", "ready meals"], placement: { department: "Prepared", aisle: "Ready meals" } },
+  { categories: ["meal kits"], placement: { department: "Prepared", aisle: "Meal kits" } },
+  { categories: ["canned tuna", "tunas", "tuna"], placement: { department: "Meat & Seafood", aisle: "Fish" } },
+  { categories: ["fish"], placement: { department: "Meat & Seafood", aisle: "Fish" } },
+  { categories: ["seafood"], placement: { department: "Meat & Seafood", aisle: "Seafood" } },
+  { categories: ["chicken"], placement: { department: "Meat & Seafood", aisle: "Chicken" } },
+  { categories: ["beef"], placement: { department: "Meat & Seafood", aisle: "Beef" } },
+  { categories: ["pork"], placement: { department: "Meat & Seafood", aisle: "Pork" } },
+  { categories: ["turkey"], placement: { department: "Meat & Seafood", aisle: "Turkey" } },
+  { categories: ["yogurts", "yogurt"], placement: { department: "Dairy & Eggs", aisle: "Yogurt" } },
+  { categories: ["milks", "milk"], placement: { department: "Dairy & Eggs", aisle: "Milk" } },
+  { categories: ["cheeses", "cheese"], placement: { department: "Dairy & Eggs", aisle: "Cheese" } },
+  { categories: ["eggs"], placement: { department: "Dairy & Eggs", aisle: "Eggs" } },
+  { categories: ["butters", "creams", "butter", "cream"], placement: { department: "Dairy & Eggs", aisle: "Butter / Cream" } },
+  { categories: ["breakfast cereals", "cereals"], placement: { department: "Pantry", aisle: "Rice & grains" } },
+  { categories: ["pastas", "pasta"], placement: { department: "Pantry", aisle: "Pasta" } },
+  { categories: ["breads", "tortillas"], placement: { department: "Pantry", aisle: "Bread & tortillas" } },
+  { categories: ["legumes", "beans"], placement: { department: "Pantry", aisle: "Beans & legumes" } },
+  { categories: ["canned foods"], placement: { department: "Pantry", aisle: "Canned foods" } },
+  { categories: ["nut butters"], placement: { department: "Pantry", aisle: "Nut butters" } },
+  { categories: ["cooking oils", "oils"], placement: { department: "Pantry", aisle: "Oils" } },
+  { categories: ["potato chips", "chips"], placement: { department: "Snacks", aisle: "Chips" } },
+  { categories: ["crackers"], placement: { department: "Snacks", aisle: "Crackers" } },
+  { categories: ["nuts", "trail mixes"], placement: { department: "Snacks", aisle: "Nuts & trail mix" } },
+  { categories: ["snack bars", "cereal bars"], placement: { department: "Snacks", aisle: "Bars" } },
+  { categories: ["candies", "chocolates", "sweet snacks"], placement: { department: "Snacks", aisle: "Sweet snacks" } },
+  { categories: ["sodas", "soda"], placement: { department: "Drinks", aisle: "Soda" } },
+  { categories: ["waters", "water"], placement: { department: "Drinks", aisle: "Water" } },
+  { categories: ["fruit juices", "juices"], placement: { department: "Drinks", aisle: "Juice" } },
+  { categories: ["coffees", "teas", "coffee", "tea"], placement: { department: "Drinks", aisle: "Coffee / tea" } },
+  { categories: ["energy drinks", "sports drinks"], placement: { department: "Drinks", aisle: "Sports / energy drinks" } },
+  { categories: ["protein drinks"], placement: { department: "Drinks", aisle: "Protein drinks" } },
+  { categories: ["ketchups", "ketchup"], placement: { department: "Condiments & Sauces", aisle: "Sauces" } },
+  { categories: ["salad dressings", "dressings"], placement: { department: "Condiments & Sauces", aisle: "Dressings" } },
+  { categories: ["spreads"], placement: { department: "Condiments & Sauces", aisle: "Spreads" } },
+  { categories: ["seasonings", "spices"], placement: { department: "Condiments & Sauces", aisle: "Seasonings" } },
+  { categories: ["sweeteners"], placement: { department: "Condiments & Sauces", aisle: "Sweeteners" } },
+  { categories: ["fruits", "fruit"], placement: { department: "Produce", aisle: "Fruit" } },
+  { categories: ["vegetables", "vegetable"], placement: { department: "Produce", aisle: "Vegetables" } },
+  { categories: ["herbs", "fresh herbs"], placement: { department: "Produce", aisle: "Herbs" } },
+];
+
+function normalizeOpenFoodFactsCategories(value: unknown, tags: boolean) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return new Set(values.flatMap((item) => {
+    if (typeof item !== "string") return [];
+    const withoutLanguage = tags ? item.replace(/^[a-z]{2,3}:/i, "") : item;
+    const normalized = normalizeFoodSearchText(withoutLanguage);
+    return normalized ? [normalized] : [];
+  }));
+}
+
+export function mapOpenFoodFactsCategoriesToBrowsePlacement(
+  product: Pick<OpenFoodFactsProduct, "categories_tags" | "categories">,
+): FoodBrowsePlacement | null {
+  const tagCategories = normalizeOpenFoodFactsCategories(product.categories_tags, true);
+  const namedCategories = normalizeOpenFoodFactsCategories(product.categories, false);
+
+  for (const categories of [tagCategories, namedCategories]) {
+    for (const rule of OPEN_FOOD_FACTS_BROWSE_RULES) {
+      if (!rule.categories.some((category) => categories.has(category))) continue;
+      return getFoodBrowsePlacement(rule.placement.department, rule.placement.aisle);
+    }
+  }
+  return null;
 }
 
 function addFoodBrowsePlacement(
@@ -541,15 +675,52 @@ export function getFoodBrowsePlacements(
 ): FoodBrowsePlacement[] {
   const placements = new Map<string, FoodBrowsePlacement>();
 
+  for (const placement of collectFoodMetadataPlacements(food.catalog_metadata)) {
+    addFoodBrowsePlacement(placements, placement);
+  }
   for (const placement of collectFoodMetadataPlacements(food.metadata)) {
     addFoodBrowsePlacement(placements, placement);
   }
+  addFoodBrowsePlacement(
+    placements,
+    getFoodBrowsePlacement(food.browse_department, food.browse_aisle),
+  );
   const normalizedName = normalizeFoodSearchText(food.normalized_name || food.name);
   for (const placement of FOOD_BROWSE_KNOWN_NAME_PLACEMENTS[normalizedName] ?? []) {
     addFoodBrowsePlacement(placements, placement);
   }
 
   return [...placements.values()];
+}
+
+export function getFoodBrowsePlacementForSection(
+  food: FoodBrowsePlacementInput,
+  department: FoodBrowseDepartmentLabel,
+  aisle?: FoodBrowseAisleLabel,
+): FoodBrowsePlacement | null {
+  return (
+    getFoodBrowsePlacements(food).find(
+      (placement) =>
+        placement.department === department &&
+        (aisle === undefined || placement.aisle === aisle),
+    ) ?? null
+  );
+}
+
+export function getFoodPrimaryBrowseDepartment(
+  food: FoodBrowsePlacementInput,
+): FoodBrowseDepartmentLabel | null {
+  return getFoodBrowsePlacements(food)[0]?.department ?? null;
+}
+
+export function getFoodPrimaryGroceryDepartment(
+  food: FoodBrowsePlacementInput,
+): FoodBrowseDepartmentLabel | null {
+  return (
+    getFoodBrowsePlacements(food).find(
+      (placement) => placement.department !== "Everyday",
+    )?.department ?? null
+  );
 }
 
 export function normalizeFoodBarcode(value: string | null | undefined) {
@@ -560,6 +731,17 @@ export function normalizeFoodBarcode(value: string | null | undefined) {
   if (!/^\d+$/.test(normalized)) return null;
 
   return normalized.length > 0 ? normalized : null;
+}
+
+export function getAttachableFoodResourceId(
+  existingFoodId: string | null,
+  requestedFoodId: unknown,
+) {
+  if (existingFoodId !== null || typeof requestedFoodId !== "string") return null;
+  const normalizedRequestedFoodId = requestedFoodId.trim();
+  return FOOD_UUID_PATTERN.test(normalizedRequestedFoodId)
+    ? normalizedRequestedFoodId
+    : null;
 }
 
 export function isValidNormalizedFoodBarcode(
@@ -926,6 +1108,21 @@ export function mapOpenFoodFactsProductToFoodInsert(
       ? { serving_size: 100, serving_unit: "g", serving_grams: 100 }
       : parsedServing;
   const packageInfo = parseOpenFoodFactsPackage(product, serving.serving_grams);
+  const container = detectOpenFoodFactsContainer(product, foodName);
+  const normalizedServingUnit = serving.serving_unit?.trim().toLowerCase() ?? null;
+  const hasContainerNutritionBasis = Boolean(
+    nutrition &&
+      normalizedServingUnit &&
+      [
+        "container",
+        "package",
+        "pack",
+        "pkg",
+        container.key,
+        container.singular,
+        container.plural,
+      ].includes(normalizedServingUnit),
+  );
   const externalId = normalizedBarcode;
   const nutritionPerServing = nutrition?.per_serving ?? {
     calories: null,
@@ -935,6 +1132,11 @@ export function mapOpenFoodFactsProductToFoodInsert(
   };
   const nutritionPer100g = nutrition?.per_100g ?? null;
   const needsReview = nutrition?.needs_review ?? true;
+  const mappedBrowsePlacement = mapOpenFoodFactsCategoriesToBrowsePlacement(product);
+  const exactNameBrowsePlacement = getFoodBrowsePlacements({ name: foodName }).find(
+    (placement) => placement.department !== "Everyday",
+  );
+  const browsePlacement = mappedBrowsePlacement ?? exactNameBrowsePlacement ?? null;
   const metadata: Json = {
     source: "open_food_facts",
     source_summary: {
@@ -956,12 +1158,17 @@ export function mapOpenFoodFactsProductToFoodInsert(
       serving_quantity_unit: coerceOpenFoodFactsString(product.serving_quantity_unit),
       serving_unit: serving.serving_unit,
       serving_grams: serving.serving_grams,
-      nutrition_basis: nutrition?.basis ?? null,
+      nutrition_basis: hasContainerNutritionBasis ? "per_container" : nutrition?.basis ?? null,
+      nutrition_per_container: hasContainerNutritionBasis ? nutritionPerServing : null,
       nutrition_per_serving: nutritionPerServing,
       nutrition_per_100g: nutritionPer100g,
       nutrition_computed_from_100g: nutrition?.computed_from_100g ?? false,
       nutrition_needs_review: needsReview,
       nutrition_data_per: coerceOpenFoodFactsString(product.nutrition_data_per),
+      container_type: container.key,
+      container_source: container.source,
+      container_confidence: container.confidence,
+      original_package_text: container.originalText,
     },
     barcode,
     source_product_name: foodName,
@@ -978,9 +1185,33 @@ export function mapOpenFoodFactsProductToFoodInsert(
     product_quantity_unit: packageInfo.product_quantity_unit,
     net_weight: packageInfo.net_weight,
     nutrition_per_serving: nutritionPerServing,
+    nutrition_basis: hasContainerNutritionBasis ? "per_container" : nutrition?.basis ?? null,
+    nutrition_per_container: hasContainerNutritionBasis ? nutritionPerServing : null,
     nutrition_per_100g: nutritionPer100g,
     nutrition_computed_from_100g: nutrition?.computed_from_100g ?? false,
     nutrition_needs_review: needsReview,
+    container_type: container.key,
+    container_singular_label: container.singular,
+    container_plural_label: container.plural,
+    container_source: container.source,
+    container_confidence: container.confidence,
+    original_package_text: container.originalText,
+    inventory_measurement_profile: {
+      preferredKind: "count",
+      allowedKinds: ["count", "package", "weight", "serving"],
+      countUnitKey: container.key,
+      singularLabel: container.singular,
+      pluralLabel: container.plural,
+      ...(packageInfo.product_quantity && packageInfo.product_quantity_unit === "g"
+        ? { gramsPerItem: packageInfo.product_quantity, netGramsPerContainer: packageInfo.product_quantity }
+        : {}),
+      ...(packageInfo.servings_per_container
+        ? { servingsPerContainer: packageInfo.servings_per_container }
+        : {}),
+      source: container.source,
+      confidence: container.confidence,
+    },
+    ...(browsePlacement ? { browse: [browsePlacement] } : {}),
   };
 
   return {
@@ -1004,6 +1235,38 @@ export function mapOpenFoodFactsProductToFoodInsert(
     created_by_user_id: input.createdByUserId ?? null,
     is_active: true,
     metadata,
+  };
+}
+
+export function mergeOpenFoodFactsFoodInsertWithExisting(
+  foodInsert: FoodInsert,
+  existingFood: Pick<FoodSearchResult, "id" | "metadata"> | null,
+): FoodInsert {
+  if (!existingFood) return foodInsert;
+
+  const existingMetadata = existingFood.metadata && typeof existingFood.metadata === "object" && !Array.isArray(existingFood.metadata)
+    ? existingFood.metadata as Record<string, Json | undefined>
+    : {};
+  const incomingMetadata = foodInsert.metadata && typeof foodInsert.metadata === "object" && !Array.isArray(foodInsert.metadata)
+    ? foodInsert.metadata as Record<string, Json | undefined>
+    : {};
+  const existingPlacements = collectFoodMetadataPlacements(existingFood.metadata);
+  const existingPhysicalPlacement = existingPlacements.find(
+    (placement) => placement.department !== "Everyday",
+  );
+  const incomingPlacements = collectFoodMetadataPlacements(foodInsert.metadata);
+  const selectedPlacements = existingPhysicalPlacement
+    ? existingPlacements
+    : [...existingPlacements, ...incomingPlacements];
+
+  return {
+    ...foodInsert,
+    id: existingFood.id,
+    metadata: {
+      ...existingMetadata,
+      ...incomingMetadata,
+      ...(selectedPlacements.length > 0 ? { browse: selectedPlacements } : {}),
+    },
   };
 }
 

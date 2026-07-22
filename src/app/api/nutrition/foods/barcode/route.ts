@@ -5,6 +5,7 @@ import {
   extractOpenFoodFactsNutrition,
   isValidNormalizedFoodBarcode,
   mapOpenFoodFactsProductToFoodInsert,
+  mergeOpenFoodFactsFoodInsertWithExisting,
   normalizeFoodBarcode,
   type FoodBarcodeLookupResult,
   type FoodSearchResult,
@@ -34,6 +35,11 @@ const OPEN_FOOD_FACTS_FIELDS = [
   "product_quantity_unit",
   "servings_per_container",
   "servings_per_package",
+  "packaging",
+  "packaging_text",
+  "packaging_tags",
+  "categories",
+  "categories_tags",
   "nutrition_data_per",
   "nutriments",
 ].join(",");
@@ -423,6 +429,15 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const existingFood = await findFoodByBarcode(supabase, normalizedBarcode);
+  if (existingFood.error) {
+    console.error("Failed to protect existing nutrition food during barcode refresh", {
+      error: existingFood.error,
+    });
+    return NextResponse.json({ error: "Unable to look up food" }, { status: 500 });
+  }
+  const mergedFoodInsert = mergeOpenFoodFactsFoodInsertWithExisting(foodInsert, existingFood.food);
+
   const admin = createAdminClient();
   if (!admin) {
     return NextResponse.json({ error: "Admin client not initialized" }, { status: 500 });
@@ -430,7 +445,7 @@ export async function GET(request: NextRequest) {
 
   const { data: upsertedRows, error: upsertError } = await admin
     .from("foods")
-    .upsert(foodInsert, {
+    .upsert(mergedFoodInsert, {
       onConflict: "normalized_barcode",
     })
     .select(FOOD_SELECT);
