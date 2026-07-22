@@ -3800,13 +3800,13 @@ function getGroceryDeductionGramHelper(
 function getGroceryScanDetectedInventoryLine(metadata: Record<string, unknown>) {
   const servingsContext = getGroceryPackageServingsContext(metadata);
   const profile = getStoredCountProfile(metadata);
-  const containerPrefix = profile ? `Container: ${profile.singularLabel} · ` : "";
+  const containerPrefix = profile ? `Detected ${profile.singularLabel} · ` : "";
 
   if (servingsContext.source === "explicit") {
-    return `${containerPrefix}Detected: ${
+    return `${containerPrefix}about ${
       formatFoodNutritionNumber(servingsContext.servingsPerContainer) ??
       servingsContext.servingsPerContainer
-    } servings per container`;
+    } servings`;
   }
 
   if (servingsContext.source === "inferred") {
@@ -4853,7 +4853,7 @@ function getGroceryScanPackageLine(metadata: Record<string, unknown>) {
       : null;
   const servingsContext = getGroceryPackageServingsContext(metadata);
   const servingsLabel = servingsContext.servingsPerContainer
-    ? `${formatFoodNutritionNumber(servingsContext.servingsPerContainer) ?? servingsContext.servingsPerContainer} servings`
+    ? `about ${formatFoodNutritionNumber(servingsContext.servingsPerContainer) ?? servingsContext.servingsPerContainer} servings`
     : null;
   const netWeight =
     getGroceryMetadataRecords(metadata)
@@ -4867,7 +4867,7 @@ function getGroceryScanPackageLine(metadata: Record<string, unknown>) {
       ? `${formatGroceryGramValue(servingsContext.packageGrams)}g package`
       : null);
 
-  return [servingLabel, servingsLabel ?? netWeight].filter(Boolean).join(" · ");
+  return [netWeight, servingsLabel, servingLabel].filter(Boolean).join(" · ");
 }
 
 function toFoodFamilyTitle(value: string) {
@@ -6264,7 +6264,9 @@ function mapOnHandEntryToFoodResourcePayload(entry: NoteDatabaseEntry) {
 }
 
 function getGroceryCustomMetadata(entryValues: Record<string, unknown>) {
-  const metadata: Record<string, unknown> = {};
+  const metadata: Record<string, unknown> = {
+    ...getRecordMetadata(entryValues.metadata),
+  };
   const calories = getOptionalNutritionSnapshotNumber(
     entryValues[GROCERY_CUSTOM_CALORIES_FIELD_ID],
   );
@@ -13963,9 +13965,35 @@ export function NoteDatabaseEntrySheet({
                 {nutritionBarcodeLookupError}
               </p>
             ) : nutritionBarcodeLookupStatus ? (
-              <p className="mt-2 text-xs font-medium text-white/42">
-                {nutritionBarcodeLookupStatus}
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-xs font-medium text-white/42">
+                  {nutritionBarcodeLookupStatus}
+                </p>
+                {isGroceryMode &&
+                nutritionBarcodeLookupStatus === "No food found for this barcode." ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEntryFormValues((current) => ({
+                        ...current,
+                        [ON_HAND_QUANTITY_FIELD_ID]: 1,
+                        [ON_HAND_UNIT_FIELD_ID]: "package",
+                        metadata: {
+                          ...getRecordMetadata(current.metadata),
+                          barcode: normalizedBarcodeValue,
+                          scan_status: "not_found",
+                          scan_source: "manual_fallback",
+                        },
+                      }));
+                      setSelectedNutritionFoodAction("custom");
+                      setNutritionBarcodeLookupStatus(null);
+                    }}
+                    className="inline-flex h-8 items-center rounded-lg border border-white/[0.07] bg-white/[0.07] px-2.5 text-xs font-semibold text-white/76 outline-none transition hover:bg-white/[0.11] focus-visible:ring-1 focus-visible:ring-white/16"
+                  >
+                    Add manually
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             {renderSelectedNutritionFoods()}
           </div>

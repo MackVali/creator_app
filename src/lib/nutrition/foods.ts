@@ -94,6 +94,31 @@ export function getFoodInventoryMeasurementProfile(
     };
   }
 
+  // Older barcode rows may contain the detected container fields without the
+  // newer inventory_measurement_profile. Rehydrate the natural count profile
+  // so nutrition servings never become the Grocery inventory fallback.
+  const sourceSummary = inventoryMetadataRecord(metadata.source_summary);
+  const containerKey = [metadata.container_type, sourceSummary.container_type]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim()
+    .toLowerCase();
+  const naturalContainer = containerKey
+    ? NATURAL_CONTAINER_RULES.find((candidate) => candidate.key === containerKey)
+    : null;
+  if (naturalContainer) {
+    const sourceValue = metadata.container_source ?? sourceSummary.container_source;
+    const confidenceValue = metadata.container_confidence ?? sourceSummary.container_confidence;
+    return {
+      preferredKind: "count",
+      allowedKinds: ["count", "package", "weight", "serving"],
+      countUnitKey: naturalContainer.key,
+      singularLabel: naturalContainer.singular,
+      pluralLabel: naturalContainer.plural,
+      source: sourceValue === "barcode" ? "barcode" : "name_fallback",
+      confidence: confidenceValue === "high" ? "high" : "medium",
+    };
+  }
+
   const rule = COUNTABLE_FOOD_RULES.find((candidate) => candidate.pattern.test(food.name));
   if (!rule) return null;
   const servingUnit = (food.serving_unit ?? "").toLowerCase();
