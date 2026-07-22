@@ -234,7 +234,7 @@ export type FoodBrowsePlacementInput = {
 
 export type FoodBarcodeLookupResult = {
   food: FoodSearchResult | null;
-  source: "foods" | "open_food_facts" | "user_food_resource" | null;
+  source: "foods" | "open_food_facts" | "user_food_resource" | "barcode_resolver" | null;
   status:
     | "found"
     | "created"
@@ -243,8 +243,11 @@ export type FoodBarcodeLookupResult = {
     | "missing_nutrition"
     | "invalid_nutrition"
     | "external_error"
+    | "incomplete"
+    | "conflict"
     | "rate_limited";
   retryAfterSeconds?: number;
+  barcodeResolution?: import("@/lib/nutrition/barcodeResolver").BarcodeResolutionMetadata;
 };
 
 export type FoodInsert = Database["public"]["Tables"]["foods"]["Insert"];
